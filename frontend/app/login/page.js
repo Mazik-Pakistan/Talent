@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import { getApiErrorMessage, login } from "@/services/authService";
 
@@ -15,7 +15,16 @@ const ROLES = [
 ];
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [role, setRole] = useState("recruiter");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,6 +32,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formMessage, setFormMessage] = useState("");
+
+  useEffect(() => {
+    if (searchParams.get("reason") === "session_timeout") {
+      setFormMessage("Your session expired after inactivity. Please sign in again.");
+    }
+  }, [searchParams]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -43,6 +58,7 @@ export default function LoginPage() {
       localStorage.setItem("access_token", data.session.access_token);
       localStorage.setItem("refresh_token", data.session.refresh_token);
       localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("session_last_active", String(Date.now()));
       router.push(data.redirect_to);
     } catch (error) {
       setFormMessage(getApiErrorMessage(error, "Login failed. Please check your credentials."));

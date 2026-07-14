@@ -82,6 +82,28 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 
+class ResetPasswordRequest(BaseModel):
+    access_token: str = Field(min_length=1)
+    refresh_token: str = Field(min_length=1)
+    password: str
+    confirm_password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        if not PASSWORD_PATTERN.fullmatch(value):
+            raise ValueError(
+                "Password must be at least 8 characters and include uppercase, lowercase, number, and special character."
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_passwords(self):
+        if self.password != self.confirm_password:
+            raise ValueError("Password confirmation does not match.")
+        return self
+
+
 class BootstrapSuperAdminRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=100)
     email: EmailStr

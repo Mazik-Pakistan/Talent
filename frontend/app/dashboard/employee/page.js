@@ -3,24 +3,23 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import RequireAccess, { ModuleNav } from "@/components/RequireAccess";
+
 export default function EmployeeDashboardPage() {
+  return (
+    <RequireAccess anyOf={["onboarding.self", "profile.view"]} roles={["employee"]}>
+      <EmployeeDashboardContent />
+    </RequireAccess>
+  );
+}
+
+function EmployeeDashboardContent() {
   const router = useRouter();
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    const accessToken = localStorage.getItem("access_token");
-    if (!storedUser || !accessToken) {
-      router.replace("/login");
-      return;
-    }
-    const parsed = JSON.parse(storedUser);
-    if (parsed.role !== "employee") {
-      router.replace("/dashboard");
-      return;
-    }
-    setUser(parsed);
-  }, [router]);
+    setUser(JSON.parse(localStorage.getItem("user")));
+  }, []);
 
   function handleLogout() {
     localStorage.removeItem("access_token");
@@ -39,7 +38,8 @@ export default function EmployeeDashboardPage() {
         <div>
           <p className="eyebrow">Employee dashboard</p>
           <h1>Welcome, {user.full_name}</h1>
-          <p>Signed in as {user.email}</p>
+          <p>Signed in as {user.email} · Role: {user.role}</p>
+          <ModuleNav role={user.role} />
         </div>
         <button type="button" className="primary-button" onClick={handleLogout}>
           Log out
@@ -52,7 +52,7 @@ export default function EmployeeDashboardPage() {
           Title: <strong>{user.job_title || "—"}</strong> · Department:{" "}
           <strong>{user.department || "—"}</strong>
         </p>
-        <p>This is your employee workspace after onboarding is complete.</p>
+        <p>Candidate transitioned to employee. Access: onboarding history, learning, AI Coach, profile.</p>
       </section>
     </main>
   );

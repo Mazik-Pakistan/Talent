@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { ModuleNav } from "@/components/RequireAccess";
 import { bootstrapSuperAdmin, getApiErrorMessage } from "@/services/authService";
+import { can } from "@/services/rbac";
 
 const initialForm = {
   full_name: "",
@@ -26,7 +28,7 @@ export default function SuperAdminDashboardPage() {
     const accessToken = localStorage.getItem("access_token");
     if (storedUser && accessToken) {
       const parsed = JSON.parse(storedUser);
-      if (parsed.role === "super_admin") {
+      if (parsed.role === "super_admin" && can(parsed, "admin.access")) {
         setUser(parsed);
         return;
       }
@@ -115,7 +117,8 @@ export default function SuperAdminDashboardPage() {
         <div>
           <p className="eyebrow">Super Admin dashboard</p>
           <h1>Welcome, {user.full_name}</h1>
-          <p>Signed in as {user.email}</p>
+          <p>Signed in as {user.email} · Role: {user.role}</p>
+          <ModuleNav role={user.role} />
         </div>
         <button type="button" className="primary-button" onClick={handleLogout}>
           Log out
@@ -124,7 +127,12 @@ export default function SuperAdminDashboardPage() {
 
       <section className="dashboard-card">
         <h2>Platform control</h2>
-        <p>Manage platform-wide settings, roles, and oversight from this workspace.</p>
+        <p>Super Admin has access to all modules. Unauthorized API calls from other roles return HTTP 403.</p>
+        <div className="dashboard-actions" style={{ marginTop: "1rem" }}>
+          <a className="secondary-button" href="/dashboard/recruiter" style={{ display: "inline-flex", alignItems: "center" }}>
+            Open recruitment
+          </a>
+        </div>
       </section>
     </main>
   );

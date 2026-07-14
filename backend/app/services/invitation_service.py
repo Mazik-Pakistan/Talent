@@ -2,17 +2,15 @@ from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
 
 from fastapi import HTTPException, status
-from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
-from app.core.database import database, supabase
+from app.core.database import database
+from app.core.rbac import CurrentUser
 from app.schemas.invitation import CreateInvitationRequest
 
 
 class InvitationService:
-    async def create_invitation(self, request: CreateInvitationRequest, access_token: str) -> dict:
-        recruiter = await self._require_active_recruiter(access_token)
-
+    async def create_invitation(self, request: CreateInvitationRequest, actor: CurrentUser) -> dict:
         existing_candidate = await database.candidates.find_one({"email": request.email})
         if existing_candidate:
             raise HTTPException(
@@ -42,8 +40,9 @@ class InvitationService:
             "job_title": request.job_title,
             "department": request.department,
             "start_date": request.start_date.isoformat() if request.start_date else None,
-            "recruiter_id": recruiter["supabase_user_id"],
-            "recruiter_email": recruiter["email"],
+            "recruiter_id": actor.id,
+            "recruiter_email": actor.email,
+            "created_by_role": actor.role,
             "status": "pending",
             "expires_at": now + timedelta(days=request.expires_in_days),
             "used_at": None,
@@ -54,9 +53,11 @@ class InvitationService:
 
         await database.audit_logs.insert_one(
             {
-                "recruiter_id": recruiter["supabase_user_id"],
+                "user_id": actor.id,
+                "recruiter_id": actor.id,
                 "email": request.email,
-                "module": "onboarding",
+                "role": actor.role,
+                "module": "recruitment",
                 "action": "invitation_created",
                 "outcome": "success",
                 "created_at": now,
@@ -122,24 +123,3 @@ class InvitationService:
             )
 
         return invitation
-
-    async def _require_active_recruiter(self, access_token: str) -> dict:
-        try:
-            response = await run_in_threadpool(supabase.auth.get_user, access_token)
-            user = response.user
-        except Exception as error:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required.",
-            ) from error
-
-        if not user:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
-
-        recruiter = await database.recruiters.find_one({"supabase_user_id": user.id})
-        if not recruiter or recruiter["status"] != "active":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only active recruiters can create invitations.",
-            )
-        return recruiter

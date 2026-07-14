@@ -7,6 +7,7 @@ from app.schemas.auth import (
     LoginRequest,
     RefreshRequest,
     ForgotPasswordRequest,
+    ResetPasswordRequest,
     BootstrapSuperAdminRequest,
 )
 from app.schemas.invitation import CandidateRegisterRequest
@@ -61,3 +62,8 @@ async def refresh(request: RefreshRequest):
 @router.post("/forgot-password")
 async def forgot_password(request: ForgotPasswordRequest):
     return await service.forgot_password(request.email)
+
+
+@router.post("/reset-password")
+async def reset_password(request: ResetPasswordRequest):
+    return await service.reset_password(request.access_token, request.refresh_token, request.password)

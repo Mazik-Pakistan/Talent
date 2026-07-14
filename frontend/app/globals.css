@@ -42,7 +42,9 @@ button, input { font: inherit; }
 .dashboard-card > p { color: var(--muted); margin-top: 0; }
 .invite-link-box { display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 14px; background: #f3f8fa; }
 .invite-link-box code { word-break: break-all; font-size: .85rem; color: var(--ink); }
-.dashboard-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.module-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.module-nav-item { display: inline-flex; align-items: center; border: 1px solid #bed0dc; border-radius: 999px; padding: 6px 12px; color: var(--blue); font-size: .78rem; font-weight: 700; text-decoration: none; background: #f3f8fb; }
+.module-nav-item.muted { color: var(--muted); cursor: default; }
 .role-picker { border: 0; margin: 0; padding: 0; }
 .role-picker legend { margin-bottom: 10px; color: #29455e; font-size: .88rem; font-weight: 700; }
 .role-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

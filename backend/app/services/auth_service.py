@@ -419,29 +419,99 @@ class AuthService:
 
     async def forgot_password(self, email: str) -> dict:
         """
-        Send a password‑reset email.
-        US-006: Recruiter requests a secure password reset.
+        Send a password-reset email via Supabase.
+        US-006: Secure password reset for any role account.
         """
-        # Check if recruiter exists (optional, for audit logging)
-        recruiter = await database.recruiters.find_one({"email": email})
-        if recruiter and recruiter["status"] == "active":
-            await self._create_audit_log(
-                recruiter["supabase_user_id"], email, "recruiter_password_reset_requested", "success"
-            )
+        normalized_email = email.lower().strip()
+
+        for collection_name in ("recruiters", "candidates", "employees", "super_admins"):
+            profile = await database[collection_name].find_one({"email": normalized_email})
+            if profile and profile.get("status") == "active":
+                await database.audit_logs.insert_one(
+                    {
+                        "user_id": profile.get("supabase_user_id"),
+                        "email": normalized_email,
+                        "role": profile.get("role"),
+                        "module": "authentication",
+                        "action": "password_reset_requested",
+                        "outcome": "requested",
+                        "created_at": datetime.now(UTC),
+                    }
+                )
+                break
 
         try:
             await run_in_threadpool(
                 supabase.auth.reset_password_for_email,
-                email,
+                normalized_email,
                 {"redirect_to": settings.password_reset_redirect_url},
             )
         except Exception as error:
-            # Still return a generic message to prevent email enumeration
-            pass
+            message = str(error).lower()
+            await database.audit_logs.insert_one(
+                {
+                    "email": normalized_email,
+                    "module": "authentication",
+                    "action": "password_reset_failed",
+                    "outcome": "failed",
+                    "detail": str(error)[:500],
+                    "created_at": datetime.now(UTC),
+                }
+            )
+            if "rate limit" in message:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many reset emails were requested. Please wait a few minutes and try again.",
+                ) from error
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "We could not send the password reset email. "
+                    "Confirm the email exists in Supabase Auth, that "
+                    f"{settings.password_reset_redirect_url} is allowed in Supabase Redirect URLs, "
+                    "and that Auth email/SMTP is configured."
+                ),
+            ) from error
 
         return {
-            "message": "If an account with that email exists, a password reset link has been sent."
+            "message": "If an account with that email exists, a password reset link has been sent. Check your inbox and spam folder."
         }
+
+    async def reset_password(self, access_token: str, refresh_token: str, password: str) -> dict:
+        """Complete password reset using the recovery session from the email link."""
+        try:
+            await run_in_threadpool(supabase.auth.set_session, access_token, refresh_token)
+            await run_in_threadpool(supabase.auth.update_user, {"password": password})
+        except Exception as error:
+            message = str(error).lower()
+            if "session" in message or "token" in message or "jwt" in message:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="This reset link is invalid or has expired. Request a new one.",
+                ) from error
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="We could not update your password. Please try again.",
+            ) from error
+
+        try:
+            user_response = await run_in_threadpool(supabase.auth.get_user, access_token)
+            user = user_response.user
+            if user and user.email:
+                await database.audit_logs.insert_one(
+                    {
+                        "user_id": user.id,
+                        "email": user.email,
+                        "module": "authentication",
+                        "action": "password_reset_completed",
+                        "outcome": "success",
+                        "created_at": datetime.now(UTC),
+                    }
+                )
+        except Exception:
+            pass
+
+        return {"message": "Your password has been updated. You can now sign in."}
 
     async def _create_audit_log(self, recruiter_id: str, email: str, action: str, outcome: str) -> None:
         await database.audit_logs.insert_one(

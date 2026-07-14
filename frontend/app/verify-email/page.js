@@ -30,6 +30,7 @@ export default function VerifyEmailPage() {
           localStorage.setItem("access_token", accessToken);
           if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
           if (response.user) localStorage.setItem("user", JSON.stringify(response.user));
+          localStorage.setItem("session_last_active", String(Date.now()));
           sessionStorage.setItem("pendingRole", "candidate");
           setRedirectTo(response.redirect_to || "/onboarding");
         } else {

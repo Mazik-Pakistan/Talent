@@ -3,24 +3,23 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import RequireAccess, { ModuleNav } from "@/components/RequireAccess";
+
 export default function CandidateDashboardPage() {
+  return (
+    <RequireAccess anyOf={["onboarding.self", "profile.view"]} roles={["candidate"]}>
+      <CandidateDashboardContent />
+    </RequireAccess>
+  );
+}
+
+function CandidateDashboardContent() {
   const router = useRouter();
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    const accessToken = localStorage.getItem("access_token");
-    if (!storedUser || !accessToken) {
-      router.replace("/login");
-      return;
-    }
-    const parsed = JSON.parse(storedUser);
-    if (parsed.role !== "candidate") {
-      router.replace("/dashboard");
-      return;
-    }
-    setUser(parsed);
-  }, [router]);
+    setUser(JSON.parse(localStorage.getItem("user")));
+  }, []);
 
   function handleLogout() {
     localStorage.removeItem("access_token");
@@ -39,7 +38,8 @@ export default function CandidateDashboardPage() {
         <div>
           <p className="eyebrow">Candidate dashboard</p>
           <h1>Welcome, {user.full_name}</h1>
-          <p>Signed in as {user.email}</p>
+          <p>Signed in as {user.email} · Role: {user.role}</p>
+          <ModuleNav role={user.role} />
         </div>
         <div className="dashboard-actions">
           <button type="button" className="secondary-button" onClick={() => router.push("/onboarding")}>
@@ -56,7 +56,7 @@ export default function CandidateDashboardPage() {
         <p>
           Role: <strong>{user.job_title || "—"}</strong> · {user.department || "—"}
         </p>
-        <p>Use onboarding to finish your employee setup. After submission, you can also sign in as Employee.</p>
+        <p>Authorized modules: personal onboarding, learning, AI Coach, and profile.</p>
       </section>
     </main>
   );

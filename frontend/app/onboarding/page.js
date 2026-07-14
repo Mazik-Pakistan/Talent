@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage, getOnboarding, saveOnboarding } from "@/services/authService";
+import { can, ROLE_HOME } from "@/services/rbac";
 
 const STEPS = [
   { id: "personal", label: "Personal" },
@@ -60,8 +61,12 @@ export default function OnboardingPage() {
     }
 
     const parsedUser = JSON.parse(storedUser);
-    if (parsedUser.role !== "candidate") {
-      router.replace("/dashboard");
+    if (!can(parsedUser, "onboarding.self")) {
+      router.replace(ROLE_HOME[parsedUser.role] || "/login");
+      return;
+    }
+    if (parsedUser.role !== "candidate" && parsedUser.role !== "employee" && parsedUser.role !== "super_admin") {
+      router.replace(ROLE_HOME[parsedUser.role] || "/dashboard");
       return;
     }
 

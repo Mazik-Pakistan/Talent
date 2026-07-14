@@ -1,5 +1,9 @@
-from fastapi import APIRouter, Header, HTTPException, status
+from typing import Annotated
 
+from fastapi import APIRouter, Depends
+
+from app.core.rbac import CurrentUser
+from app.core.security import require_permissions
 from app.schemas.invitation import CreateInvitationRequest
 from app.services.invitation_service import InvitationService
 
@@ -7,26 +11,16 @@ router = APIRouter(prefix="/api/invitations", tags=["Invitations"])
 service = InvitationService()
 
 
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required.",
-        )
-    return authorization.removeprefix("Bearer ").strip()
-
-
 @router.post("", status_code=201)
 async def create_invitation(
     request: CreateInvitationRequest,
-    authorization: str | None = Header(default=None),
+    current_user: Annotated[CurrentUser, Depends(require_permissions("recruitment.invite"))],
 ):
-    """US-010 prerequisite: recruiter creates an invitation after offer acceptance."""
-    access_token = _extract_bearer_token(authorization)
-    return await service.create_invitation(request, access_token)
+    """US-010 + US-012: only roles with recruitment.invite may create invitations."""
+    return await service.create_invitation(request, current_user)
 
 
 @router.get("/{token}")
 async def get_invitation(token: str):
-    """Validate invitation token for candidate registration."""
+    """Public: validate invitation token for candidate registration."""
     return await service.get_invitation(token)

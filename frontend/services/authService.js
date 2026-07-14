@@ -51,6 +51,11 @@ export async function forgotPassword(email) {
   return data;
 }
 
+export async function resetPassword(payload) {
+  const { data } = await apiClient.post("/api/auth/reset-password", payload);
+  return data;
+}
+
 export async function getInvitation(token) {
   const { data } = await apiClient.get(`/api/invitations/${token}`);
   return data;

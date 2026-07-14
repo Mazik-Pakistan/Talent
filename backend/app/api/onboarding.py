@@ -1,5 +1,9 @@
-from fastapi import APIRouter, Header, HTTPException, status
+from typing import Annotated
 
+from fastapi import APIRouter, Depends
+
+from app.core.rbac import CurrentUser
+from app.core.security import require_permissions
 from app.schemas.invitation import OnboardingSaveRequest
 from app.services.candidate_service import CandidateService
 
@@ -7,25 +11,17 @@ router = APIRouter(prefix="/api/onboarding", tags=["Onboarding"])
 service = CandidateService()
 
 
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required.",
-        )
-    return authorization.removeprefix("Bearer ").strip()
-
-
 @router.get("")
-async def get_onboarding(authorization: str | None = Header(default=None)):
-    access_token = _extract_bearer_token(authorization)
-    return await service.get_onboarding(access_token)
+async def get_onboarding(
+    current_user: Annotated[CurrentUser, Depends(require_permissions("onboarding.self"))],
+):
+    """US-012: personal onboarding for Candidate/Employee (and Super Admin via all perms)."""
+    return await service.get_onboarding(current_user.access_token)
 
 
 @router.put("")
 async def save_onboarding(
     request: OnboardingSaveRequest,
-    authorization: str | None = Header(default=None),
+    current_user: Annotated[CurrentUser, Depends(require_permissions("onboarding.self"))],
 ):
-    access_token = _extract_bearer_token(authorization)
-    return await service.save_onboarding(access_token, request)
+    return await service.save_onboarding(current_user.access_token, request)

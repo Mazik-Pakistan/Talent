@@ -44,7 +44,7 @@ export default function ForgotPasswordPage() {
         <div className="auth-intro">
           <p className="eyebrow">Account recovery</p>
           <h1 id="forgot-heading">Reset your password</h1>
-          <p>Enter the email address associated with your recruiter account.</p>
+          <p>Enter the email address for your Talent account. We’ll send a one-time reset link.</p>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
