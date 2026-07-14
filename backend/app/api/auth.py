@@ -8,15 +8,24 @@ from app.schemas.auth import (
     RefreshRequest,
     ForgotPasswordRequest,
 )
+from app.schemas.invitation import CandidateRegisterRequest
 from app.services.auth_service import AuthService
+from app.services.candidate_service import CandidateService
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 service = AuthService()
+candidate_service = CandidateService()
 
 
 @router.post("/register", status_code=201)
 async def register(request: RegisterRequest):
     return await service.register(request)
+
+
+@router.post("/candidate/register", status_code=201)
+async def candidate_register(request: CandidateRegisterRequest):
+    """US-010: Candidate registers via recruiter invitation link."""
+    return await candidate_service.register(request)
 
 
 @router.post("/verify-email")

@@ -14,3 +14,12 @@ async def create_database_indexes() -> None:
     await database.recruiters.create_index("supabase_user_id", unique=True, sparse=True)
     await database.audit_logs.create_index([("created_at", -1)])
     await database.audit_logs.create_index([("recruiter_id", 1), ("created_at", -1)])
+
+    await database.invitations.create_index("token", unique=True)
+    await database.invitations.create_index([("email", 1), ("status", 1)])
+    await database.invitations.create_index([("recruiter_id", 1), ("created_at", -1)])
+    await database.invitations.create_index("expires_at")
+
+    await database.candidates.create_index("email", unique=True)
+    await database.candidates.create_index("supabase_user_id", unique=True, sparse=True)
+    await database.candidates.create_index("invitation_token", unique=True, sparse=True)

@@ -32,8 +32,7 @@ export default function LoginPage() {
       localStorage.setItem("refresh_token", data.session.refresh_token);
       localStorage.setItem("user", JSON.stringify(data.user));
 
-      // Redirect to the recruiter dashboard
-      router.push("/dashboard");
+      router.push(data.redirect_to || (data.user?.role === "candidate" ? "/onboarding" : "/dashboard"));
     } catch (error) {
       setFormMessage(getApiErrorMessage(error, "Login failed. Please check your credentials."));
     } finally {

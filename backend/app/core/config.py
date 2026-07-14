@@ -39,5 +39,14 @@ class Settings(BaseSettings):
             raise ValueError("ALLOWED_ORIGINS must include the frontend origin.")
         return f"{self.allowed_origins[0]}/reset-password"
 
+    @property
+    def frontend_base_url(self) -> str:
+        if not self.allowed_origins:
+            raise ValueError("ALLOWED_ORIGINS must include the frontend origin.")
+        return self.allowed_origins[0]
+
+    def invitation_link(self, token: str) -> str:
+        return f"{self.frontend_base_url}/invite/{token}"
+
 
 settings = Settings()

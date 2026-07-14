@@ -3,16 +3,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage, verifyEmail, resendVerification } from "@/services/authService";
 
 export default function VerifyEmailPage() {
+  const router = useRouter();
   const [state, setState] = useState(getInitialState);
   const [resendMessage, setResendMessage] = useState("");
   const [resending, setResending] = useState(false);
+  const [redirectTo, setRedirectTo] = useState(null);
 
   useEffect(() => {
-    const { accessToken, hashError } = getVerificationContext();
+    const { accessToken, hashError, refreshToken } = getVerificationContext();
     if (hashError) return;
     if (!accessToken) return;
 
@@ -22,14 +25,29 @@ export default function VerifyEmailPage() {
         const response = await verifyEmail(accessToken);
         setState({ status: "success", message: response.message });
         window.history.replaceState(null, "", window.location.pathname);
+
+        if (response.role === "candidate") {
+          localStorage.setItem("access_token", accessToken);
+          if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
+          if (response.user) localStorage.setItem("user", JSON.stringify(response.user));
+          sessionStorage.setItem("pendingRole", "candidate");
+          setRedirectTo(response.redirect_to || "/onboarding");
+        } else {
+          setRedirectTo(response.redirect_to || "/login");
+        }
       } catch (error) {
         setState({ status: "error", message: getApiErrorMessage(error, "We could not verify this email link.") });
       }
     });
   }, []);
 
+  useEffect(() => {
+    if (state.status !== "success" || !redirectTo) return;
+    const timer = setTimeout(() => router.push(redirectTo), 1600);
+    return () => clearTimeout(timer);
+  }, [state.status, redirectTo, router]);
+
   const handleResend = useCallback(async () => {
-    // Retrieve email from session storage (stored during registration)
     const email = sessionStorage.getItem("pendingEmail");
     if (!email) {
       setResendMessage("We couldn't find your email. Please try registering again.");
@@ -49,6 +67,8 @@ export default function VerifyEmailPage() {
   }, []);
 
   const showResend = state.status === "waiting";
+  const pendingRole = typeof window !== "undefined" ? sessionStorage.getItem("pendingRole") : null;
+  const returnHref = pendingRole === "candidate" ? "/login" : "/register";
 
   return (
     <main className="verification-shell">
@@ -68,16 +88,16 @@ export default function VerifyEmailPage() {
         <p className="verification-message" role="status">{state.message}</p>
         {state.status === "loading" && <span className="loading-dot" aria-label="Loading" />}
 
+        {state.status === "success" && redirectTo === "/onboarding" && (
+          <p className="verification-message">Redirecting you to onboarding…</p>
+        )}
+
         {showResend && (
           <div style={{ marginTop: "1rem" }}>
             <p style={{ marginBottom: "0.5rem", fontSize: "0.9rem" }}>
-              Didn't receive the email? You can request a new one.
+              Didn&apos;t receive the email? You can request a new one.
             </p>
-            <button
-              onClick={handleResend}
-              disabled={resending}
-              className="secondary-button"
-            >
+            <button onClick={handleResend} disabled={resending} className="secondary-button" type="button">
               {resending ? "Resending…" : "Resend verification email"}
             </button>
             {resendMessage && (
@@ -88,16 +108,28 @@ export default function VerifyEmailPage() {
           </div>
         )}
 
-        <Link className="secondary-link" href="/register">Return to registration</Link>
+        {state.status === "success" && redirectTo ? (
+          <Link className="secondary-link" href={redirectTo}>
+            {redirectTo === "/onboarding" ? "Continue to onboarding" : "Continue to sign in"}
+          </Link>
+        ) : (
+          <Link className="secondary-link" href={returnHref}>
+            {pendingRole === "candidate" ? "Go to sign in" : "Return to registration"}
+          </Link>
+        )}
       </section>
     </main>
   );
 }
 
 function getVerificationContext() {
-  if (typeof window === "undefined") return { accessToken: null, hashError: null };
+  if (typeof window === "undefined") return { accessToken: null, hashError: null, refreshToken: null };
   const hashParams = new URLSearchParams(window.location.hash.slice(1));
-  return { accessToken: hashParams.get("access_token"), hashError: hashParams.get("error_description") };
+  return {
+    accessToken: hashParams.get("access_token"),
+    refreshToken: hashParams.get("refresh_token"),
+    hashError: hashParams.get("error_description"),
+  };
 }
 
 function getInitialState() {

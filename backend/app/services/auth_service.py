@@ -43,6 +43,11 @@ class AuthService:
                     status_code=status.HTTP_409_CONFLICT,
                     detail="An account already exists for this email address.",
                 ) from error
+            if "rate limit" in message:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Email sending is temporarily rate-limited by Supabase. Wait a few minutes, then try again (or use a different email).",
+                ) from error
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="We could not create your account. Please try again.",
@@ -106,19 +111,36 @@ class AuthService:
             )
 
         recruiter = await database.recruiters.find_one({"supabase_user_id": user.id})
-        if not recruiter:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recruiter account was not found.")
+        if recruiter:
+            if recruiter["status"] == "active":
+                return {
+                    "message": "Your email has already been verified.",
+                    "already_verified": True,
+                    "role": "recruiter",
+                    "redirect_to": "/login",
+                }
 
-        if recruiter["status"] == "active":
-            return {"message": "Your email has already been verified.", "already_verified": True}
+            verified_at = datetime.now(UTC)
+            await database.recruiters.update_one(
+                {"_id": recruiter["_id"], "status": "pending_verification"},
+                {"$set": {"status": "active", "email_verified_at": verified_at, "updated_at": verified_at}},
+            )
+            await self._create_audit_log(user.id, recruiter["email"], "recruiter_email_verified", "success")
+            return {
+                "message": "Your email has been verified. Your recruiter account is now active.",
+                "already_verified": False,
+                "role": "recruiter",
+                "redirect_to": "/login",
+            }
 
-        verified_at = datetime.now(UTC)
-        await database.recruiters.update_one(
-            {"_id": recruiter["_id"], "status": "pending_verification"},
-            {"$set": {"status": "active", "email_verified_at": verified_at, "updated_at": verified_at}},
-        )
-        await self._create_audit_log(user.id, recruiter["email"], "recruiter_email_verified", "success")
-        return {"message": "Your email has been verified. Your recruiter account is now active.", "already_verified": False}
+        # US-010: candidate verification after invitation-based registration
+        from app.services.candidate_service import CandidateService
+
+        candidate_result = await CandidateService().activate_from_token(access_token)
+        if candidate_result:
+            return candidate_result
+
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account was not found.")
 
     # ------------------------------------------------------------------
     # New methods for US-003 → US-006
@@ -128,14 +150,35 @@ class AuthService:
         """
         Resend the verification email while the account is still inactive.
         US-003: Recruiter wants to resend verification if not received.
+        Also supports candidates (US-010) without changing recruiter behavior.
         """
         recruiter = await database.recruiters.find_one({"email": email})
-        if not recruiter:
-            # Don't reveal whether the account exists; return the same success message
-            return {"message": "If an account with that email exists, a new verification email has been sent."}
+        if recruiter:
+            if recruiter["status"] != "pending_verification":
+                return {"message": "If an account with that email exists, a new verification email has been sent."}
 
-        if recruiter["status"] != "pending_verification":
-            # Already active or in another state – still send a generic message to avoid enumeration
+            try:
+                await run_in_threadpool(
+                    supabase.auth.resend,
+                    {
+                        "type": "signup",
+                        "email": email,
+                        "options": {"email_redirect_to": settings.verification_redirect_url},
+                    },
+                )
+            except Exception as error:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="We could not resend the verification email. Please try again.",
+                ) from error
+
+            await self._create_audit_log(
+                recruiter["supabase_user_id"], email, "recruiter_verification_resent", "success"
+            )
+            return {"message": "A new verification email has been sent. Please check your inbox."}
+
+        candidate = await database.candidates.find_one({"email": email})
+        if not candidate or candidate["status"] != "pending_verification":
             return {"message": "If an account with that email exists, a new verification email has been sent."}
 
         try:
@@ -153,8 +196,15 @@ class AuthService:
                 detail="We could not resend the verification email. Please try again.",
             ) from error
 
-        await self._create_audit_log(
-            recruiter["supabase_user_id"], email, "recruiter_verification_resent", "success"
+        await database.audit_logs.insert_one(
+            {
+                "candidate_id": candidate["supabase_user_id"],
+                "email": email,
+                "module": "authentication",
+                "action": "candidate_verification_resent",
+                "outcome": "success",
+                "created_at": datetime.now(UTC),
+            }
         )
         return {"message": "A new verification email has been sent. Please check your inbox."}
 
@@ -183,30 +233,64 @@ class AuthService:
             )
 
         recruiter = await database.recruiters.find_one({"supabase_user_id": user.id})
-        if not recruiter or recruiter["status"] != "active":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your account is not active. Please verify your email.",
+        if recruiter and recruiter["status"] == "active":
+            await self._create_audit_log(user.id, recruiter["email"], "recruiter_login", "success")
+            return {
+                "message": "Login successful.",
+                "user": {
+                    "id": recruiter["supabase_user_id"],
+                    "full_name": recruiter["full_name"],
+                    "email": recruiter["email"],
+                    "phone": recruiter["phone"],
+                    "role": recruiter["role"],
+                },
+                "session": {
+                    "access_token": auth_response.session.access_token,
+                    "refresh_token": auth_response.session.refresh_token,
+                    "expires_in": auth_response.session.expires_in,
+                    "token_type": auth_response.session.token_type,
+                },
+                "redirect_to": "/dashboard",
+            }
+
+        candidate = await database.candidates.find_one({"supabase_user_id": user.id})
+        if candidate and candidate["status"] == "active":
+            await database.audit_logs.insert_one(
+                {
+                    "candidate_id": user.id,
+                    "email": candidate["email"],
+                    "module": "authentication",
+                    "action": "candidate_login",
+                    "outcome": "success",
+                    "created_at": datetime.now(UTC),
+                }
             )
+            onboarding_status = (candidate.get("onboarding") or {}).get("status")
+            redirect_to = "/onboarding" if onboarding_status != "submitted" else "/onboarding"
+            return {
+                "message": "Login successful.",
+                "user": {
+                    "id": candidate["supabase_user_id"],
+                    "full_name": candidate["full_name"],
+                    "email": candidate["email"],
+                    "phone": candidate["phone"],
+                    "role": candidate["role"],
+                    "job_title": candidate.get("job_title"),
+                    "department": candidate.get("department"),
+                },
+                "session": {
+                    "access_token": auth_response.session.access_token,
+                    "refresh_token": auth_response.session.refresh_token,
+                    "expires_in": auth_response.session.expires_in,
+                    "token_type": auth_response.session.token_type,
+                },
+                "redirect_to": redirect_to,
+            }
 
-        await self._create_audit_log(user.id, recruiter["email"], "recruiter_login", "success")
-
-        return {
-            "message": "Login successful.",
-            "user": {
-                "id": recruiter["supabase_user_id"],
-                "full_name": recruiter["full_name"],
-                "email": recruiter["email"],
-                "phone": recruiter["phone"],
-                "role": recruiter["role"],
-            },
-            "session": {
-                "access_token": auth_response.session.access_token,
-                "refresh_token": auth_response.session.refresh_token,
-                "expires_in": auth_response.session.expires_in,
-                "token_type": auth_response.session.token_type,
-            },
-        }
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is not active. Please verify your email.",
+        )
 
     async def refresh_token(self, refresh_token: str) -> dict:
         """

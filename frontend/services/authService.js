@@ -16,31 +16,59 @@ export async function register(payload) {
   return data;
 }
 
+export async function candidateRegister(payload) {
+  const { data } = await apiClient.post("/api/auth/candidate/register", payload);
+  return data;
+}
+
 export async function verifyEmail(accessToken) {
   const { data } = await apiClient.post("/api/auth/verify-email", { access_token: accessToken });
   return data;
 }
 
-// ----- US-003 -----
 export async function resendVerification(email) {
   const { data } = await apiClient.post("/api/auth/resend-verification", { email });
   return data;
 }
 
-// ----- US-004 / US-005 -----
 export async function login(payload) {
   const { data } = await apiClient.post("/api/auth/login", payload);
   return data;
 }
 
-export async function refreshToken(refreshToken) {
-  const { data } = await apiClient.post("/api/auth/refresh", { refresh_token: refreshToken });
+export async function refreshToken(refreshTokenValue) {
+  const { data } = await apiClient.post("/api/auth/refresh", { refresh_token: refreshTokenValue });
   return data;
 }
 
-// ----- US-006 -----
 export async function forgotPassword(email) {
   const { data } = await apiClient.post("/api/auth/forgot-password", { email });
+  return data;
+}
+
+export async function getInvitation(token) {
+  const { data } = await apiClient.get(`/api/invitations/${token}`);
+  return data;
+}
+
+export async function createInvitation(payload, accessToken) {
+  const { data } = await apiClient.post("/api/invitations", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getOnboarding(accessToken) {
+  const { data } = await apiClient.get("/api/onboarding", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function saveOnboarding(payload, accessToken) {
+  const { data } = await apiClient.put("/api/onboarding", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
   return data;
 }
 
