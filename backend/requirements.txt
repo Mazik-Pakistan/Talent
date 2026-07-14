@@ -26,35 +26,13 @@ requests
 
 aiofiles
 
-redis
-
 slowapi
 
 loguru
 
 rich
 
-pillow
-
-pandas
-
-openpyxl
-
-python-docx
-
-reportlab
-
 supabase
-
-google-generativeai
-
-llama-index
-
-sentence-transformers
-
-paddleocr
-
-paddlepaddle
 
 pytest
 
