@@ -17,15 +17,20 @@ class Settings(BaseSettings):
     SUPABASE_BUCKET: str
 
     GEMINI_API_KEY: str
-
     REDIS_URL: str
-
     ALLOWED_ORIGINS: str
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        return [origin.strip().rstrip("/") for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def verification_redirect_url(self) -> str:
+        if not self.allowed_origins:
+            raise ValueError("ALLOWED_ORIGINS must include the frontend origin.")
+        return f"{self.allowed_origins[0]}/verify-email"
 
 
 settings = Settings()
