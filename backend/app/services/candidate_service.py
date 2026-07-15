@@ -189,10 +189,11 @@ class CandidateService:
         candidate = await self._require_active_candidate(current_user)
         onboarding = candidate.get("onboarding") or {}
 
-        if onboarding.get("status") == "submitted":
+        # ✅ MODIFIED: Only block if already submitted AND trying to resubmit
+        if onboarding.get("status") == "submitted" and request.step == "submit":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Onboarding has already been submitted.",
+                detail="Onboarding has already been submitted. You cannot resubmit, but you can edit your information.",
             )
 
         updates: dict = {"updated_at": datetime.now(UTC)}
@@ -221,7 +222,9 @@ class CandidateService:
                 data["signed_at"] = now.isoformat()
             updates[f"onboarding.{field}"] = data
             updates["onboarding.current_step"] = STEP_FLOW[request.step]
-            updates["onboarding.status"] = "in_progress"
+            # ✅ MODIFIED: Only update status if NOT already submitted
+            if onboarding.get("status") != "submitted":
+                updates["onboarding.status"] = "in_progress"
         elif request.step == "submit":
             missing = onboarding_missing_keys(onboarding)
             if missing:
