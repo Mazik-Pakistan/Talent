@@ -25,3 +25,11 @@ async def save_onboarding(
     current_user: Annotated[CurrentUser, Depends(require_permissions("onboarding.self"))],
 ):
     return await service.save_onboarding(current_user.access_token, request)
+
+
+@router.get("/progress")
+async def get_onboarding_progress(
+    current_user: Annotated[CurrentUser, Depends(require_permissions("onboarding.self"))],
+):
+    """US-019: onboarding completion percentage and step checklist."""
+    return await service.get_progress(current_user.access_token)

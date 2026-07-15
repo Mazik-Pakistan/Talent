@@ -164,6 +164,128 @@ export async function saveOnboarding(payload, accessToken) {
   return data;
 }
 
+// ─── Onboarding Progress ─────────────────────────────────────────────────────
+
+export async function getOnboardingProgress(accessToken) {
+  const { data } = await apiClient.get("/api/onboarding/progress", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  return data;
+}
+
+// ─── Recruiter Dashboard ─────────────────────────────────────────────────────
+
+export async function getDashboardSummary(accessToken) {
+  const { data } = await apiClient.get("/api/dashboard/summary", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  return data;
+}
+
+export async function getDashboardActivity(accessToken, limit = 20) {
+  const { data } = await apiClient.get("/api/dashboard/activity", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    params: {
+      limit,
+    },
+  });
+
+  return data;
+}
+
+// ─── Candidate Dashboard ─────────────────────────────────────────────────────
+
+export async function getCandidateDashboard(accessToken) {
+  const { data } = await apiClient.get("/api/dashboard/candidate", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  return data;
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+export async function getNotifications(accessToken, limit = 30) {
+  const { data } = await apiClient.get("/api/notifications", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    params: {
+      limit,
+    },
+  });
+
+  return data;
+}
+
+export async function markNotificationsRead(payload, accessToken) {
+  const { data } = await apiClient.put(
+    "/api/notifications/read",
+    payload,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  return data;
+}
+
+// ─── Global Search ───────────────────────────────────────────────────────────
+
+export async function globalSearch(query, accessToken) {
+  const { data } = await apiClient.get("/api/search", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    params: {
+      q: query,
+    },
+  });
+
+  return data;
+}
+
+// ─── Announcements ───────────────────────────────────────────────────────────
+
+export async function getAnnouncements(accessToken, limit = 20) {
+  const { data } = await apiClient.get("/api/announcements", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    params: {
+      limit,
+    },
+  });
+
+  return data;
+}
+
+export async function createAnnouncement(payload, accessToken) {
+  const { data } = await apiClient.post(
+    "/api/announcements",
+    payload,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  return data;
+}
+
 // ─── Error Helpers ───────────────────────────────────────────────────────────
 
 export function getApiErrorMessage(error, fallbackMessage) {

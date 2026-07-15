@@ -39,6 +39,7 @@ class InvitationService:
             "full_name": request.full_name,
             "job_title": request.job_title,
             "department": request.department,
+            "office_location": request.office_location,
             "start_date": request.start_date.isoformat() if request.start_date else None,
             "recruiter_id": actor.id,
             "recruiter_email": actor.email,
@@ -64,22 +65,6 @@ class InvitationService:
             }
         )
 
-        # Send invitation email
-        invite_link = settings.invitation_link(token)
-        expires_str = invitation["expires_at"].strftime("%B %d, %Y")
-        try:
-            from app.services.email_service import email_service
-            email_service.send_invitation_email(
-                to_email=request.email,
-                full_name=request.full_name,
-                job_title=request.job_title,
-                department=request.department,
-                invite_link=invite_link,
-                expires_at=expires_str,
-            )
-        except Exception:
-            pass  # Best-effort; token is already stored in DB
-
         return {
             "message": "Invitation created successfully.",
             "invitation": {
@@ -88,6 +73,7 @@ class InvitationService:
                 "full_name": request.full_name,
                 "job_title": request.job_title,
                 "department": request.department,
+                "office_location": invitation["office_location"],
                 "start_date": invitation["start_date"],
                 "status": "pending",
                 "expires_at": invitation["expires_at"].isoformat(),
@@ -104,6 +90,7 @@ class InvitationService:
                 "full_name": invitation["full_name"],
                 "job_title": invitation["job_title"],
                 "department": invitation["department"],
+                "office_location": invitation.get("office_location"),
                 "start_date": invitation.get("start_date"),
                 "expires_at": invitation["expires_at"].isoformat()
                 if isinstance(invitation["expires_at"], datetime)

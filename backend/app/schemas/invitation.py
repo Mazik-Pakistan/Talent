@@ -11,6 +11,7 @@ class CreateInvitationRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=100)
     job_title: str = Field(min_length=2, max_length=120)
     department: str = Field(min_length=2, max_length=120)
+    office_location: str | None = Field(default=None, max_length=120)
     start_date: date | None = None
     expires_in_days: int = Field(default=7, ge=1, le=30)
 
@@ -21,6 +22,14 @@ class CreateInvitationRequest(BaseModel):
         if len(normalized) < 2:
             raise ValueError("Value must contain at least two characters.")
         return normalized
+
+    @field_validator("office_location")
+    @classmethod
+    def normalize_office_location(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        return normalized or None
 
     @field_validator("email")
     @classmethod

@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.dashboard import router as dashboard_router
 from app.api.invitations import router as invitations_router
 from app.api.onboarding import router as onboarding_router
 from app.api.rbac import router as rbac_router
@@ -21,13 +22,10 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
-origins = [
-    "http://localhost:3000",  # Your Next.js frontend
-    "http://127.0.0.1:3000",
-]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,3 +35,4 @@ app.include_router(auth_router)
 app.include_router(invitations_router)
 app.include_router(onboarding_router)
 app.include_router(rbac_router)
+app.include_router(dashboard_router)
