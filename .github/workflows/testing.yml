@@ -1,0 +1,29 @@
+name: Deploy Testing Environment
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+
+  deploy:
+
+    runs-on: self-hosted
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stop Containers
+        run: docker compose down
+
+      - name: Build Containers
+        run: docker compose build
+
+      - name: Start Containers
+        run: docker compose up -d
+
+      - name: Remove old images
+        run: docker image prune -f
