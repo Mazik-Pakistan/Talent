@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import RequireAccess, { ModuleNav } from "@/components/RequireAccess";
-import { createInvitation, getApiErrorMessage } from "@/services/authService";
+import { clearLocalSession, createInvitation, getApiErrorMessage, logout } from "@/services/authService";
 
 const initialInvite = {
   full_name: "",
@@ -36,10 +36,10 @@ function RecruiterDashboardContent() {
     setUser(JSON.parse(storedUser));
   }, []);
 
-  function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user");
+  async function handleLogout() {
+    const accessToken = localStorage.getItem("access_token");
+    await logout(accessToken);
+    clearLocalSession();
     router.replace("/login");
   }
 

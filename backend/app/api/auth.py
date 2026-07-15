@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.core.security import RequireUser
 from app.schemas.auth import (
     RegisterRequest,
     VerifyEmailRequest,
@@ -67,3 +68,10 @@ async def forgot_password(request: ForgotPasswordRequest):
 @router.post("/reset-password")
 async def reset_password(request: ResetPasswordRequest):
     return await service.reset_password(request.access_token, request.refresh_token, request.password)
+
+
+# ----- US-008 -----
+@router.post("/logout")
+async def logout(current_user: RequireUser):
+    """Destroy the session server-side, revoke the refresh token, and audit the event."""
+    return await service.logout(current_user)

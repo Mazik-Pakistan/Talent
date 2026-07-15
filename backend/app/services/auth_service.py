@@ -1,15 +1,21 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
+from pymongo import ReturnDocument
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.database import database, supabase
+from app.core.rbac import CurrentUser
 from app.schemas.auth import (
     LoginRequest,
     RegisterRequest,
     BootstrapSuperAdminRequest,
 )
+
+# ----- US-004: account lockout after repeated failed sign-ins -----
+LOCKOUT_THRESHOLD = 5
+LOCKOUT_DURATION_MINUTES = 15
 
 
 class AuthService:
@@ -307,13 +313,18 @@ class AuthService:
         """
         Authenticate by selected role and route to the matching dashboard.
         US-004: Secure login for recruiter (extended for candidate, employee, super_admin).
+        Business rule: maximum 5 failed attempts, then the account is locked for 15 minutes.
         """
+        normalized_email = request.email.lower().strip()
+        await self._check_account_lock(normalized_email)
+
         try:
             auth_response = await run_in_threadpool(
                 supabase.auth.sign_in_with_password,
                 {"email": request.email, "password": request.password},
             )
         except Exception as error:
+            await self._register_failed_login(normalized_email)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password.",
@@ -325,6 +336,9 @@ class AuthService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Please verify your email before logging in.",
             )
+
+        # Credentials are valid — clear any prior failed-attempt history for this email.
+        await self._clear_failed_login(normalized_email)
 
         profile = await self._resolve_role_profile(user.id, request.role)
         if not profile:
@@ -369,6 +383,105 @@ class AuthService:
             },
             "redirect_to": redirect_to,
         }
+
+    async def _check_account_lock(self, email: str) -> None:
+        """Raise 423 Locked if this email is currently locked out from failed sign-ins."""
+        record = await database.login_attempts.find_one({"email": email})
+        if not record or not record.get("locked_until"):
+            return
+
+        locked_until = record["locked_until"]
+        if locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=UTC)
+
+        now = datetime.now(UTC)
+        if locked_until <= now:
+            # Lock has expired — reset so the next attempt is evaluated fresh.
+            await database.login_attempts.update_one(
+                {"email": email}, {"$set": {"failed_count": 0, "locked_until": None}}
+            )
+            return
+
+        minutes_left = max(1, int((locked_until - now).total_seconds() // 60) + 1)
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=(
+                "This account is temporarily locked after too many failed sign-in attempts. "
+                f"Try again in {minutes_left} minute(s)."
+            ),
+        )
+
+    async def _register_failed_login(self, email: str) -> None:
+        """Increment the failed-attempt counter and lock the account after 5 failures."""
+        now = datetime.now(UTC)
+        record = await database.login_attempts.find_one_and_update(
+            {"email": email},
+            {
+                "$inc": {"failed_count": 1},
+                "$set": {"last_attempt_at": now},
+                "$setOnInsert": {"email": email},
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+
+        await database.audit_logs.insert_one(
+            {
+                "email": email,
+                "module": "authentication",
+                "action": "login_failed",
+                "outcome": "failed",
+                "created_at": now,
+            }
+        )
+
+        if record and record.get("failed_count", 0) >= LOCKOUT_THRESHOLD:
+            locked_until = now + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
+            await database.login_attempts.update_one(
+                {"email": email},
+                {"$set": {"locked_until": locked_until, "failed_count": 0}},
+            )
+            await database.audit_logs.insert_one(
+                {
+                    "email": email,
+                    "module": "authentication",
+                    "action": "account_locked",
+                    "outcome": "locked",
+                    "detail": (
+                        f"Locked for {LOCKOUT_DURATION_MINUTES} minutes after "
+                        f"{LOCKOUT_THRESHOLD} consecutive failed attempts."
+                    ),
+                    "created_at": now,
+                }
+            )
+
+    async def _clear_failed_login(self, email: str) -> None:
+        await database.login_attempts.delete_one({"email": email})
+
+    async def logout(self, current_user: CurrentUser) -> dict:
+        """
+        US-008: Destroy the session server-side, revoke the refresh token, and audit the event.
+        Best-effort: even if the upstream revoke call fails (e.g. token already expired),
+        the caller should still be treated as signed out locally.
+        """
+        outcome = "success"
+        try:
+            await run_in_threadpool(supabase.auth.admin.sign_out, current_user.access_token, "global")
+        except Exception:
+            outcome = "token_already_invalid"
+
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "email": current_user.email,
+                "role": current_user.role,
+                "module": "authentication",
+                "action": f"{current_user.role}_logout",
+                "outcome": outcome,
+                "created_at": datetime.now(UTC),
+            }
+        )
+        return {"message": "You have been signed out."}
 
     async def _resolve_role_profile(self, supabase_user_id: str, role: str) -> dict | None:
         collections = {

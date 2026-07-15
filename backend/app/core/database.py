@@ -29,3 +29,5 @@ async def create_database_indexes() -> None:
 
     await database.super_admins.create_index("email", unique=True)
     await database.super_admins.create_index("supabase_user_id", unique=True, sparse=True)
+
+    await database.login_attempts.create_index("email", unique=True)

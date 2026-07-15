@@ -36,6 +36,32 @@ export async function login(payload) {
   return data;
 }
 
+/**
+ * US-008: Ask the server to revoke the session (refresh token) and record an audit log.
+ * Best-effort — if the network call fails (e.g. the token already expired) we still
+ * want the caller to proceed with clearing the local session.
+ */
+export async function logout(accessToken) {
+  if (!accessToken) return;
+  try {
+    await apiClient.post(
+      "/api/auth/logout",
+      {},
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+  } catch {
+    // Ignore — local session is cleared regardless by the caller.
+  }
+}
+
+/** Clears every piece of session state stored in the browser. */
+export function clearLocalSession() {
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+  localStorage.removeItem("user");
+  localStorage.removeItem("session_last_active");
+}
+
 export async function bootstrapSuperAdmin(payload) {
   const { data } = await apiClient.post("/api/auth/bootstrap-super-admin", payload);
   return data;

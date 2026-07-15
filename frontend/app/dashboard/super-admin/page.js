@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ModuleNav } from "@/components/RequireAccess";
-import { bootstrapSuperAdmin, getApiErrorMessage } from "@/services/authService";
+import { bootstrapSuperAdmin, clearLocalSession, getApiErrorMessage, logout } from "@/services/authService";
 import { can } from "@/services/rbac";
 
 const initialForm = {
@@ -38,10 +38,10 @@ export default function SuperAdminDashboardPage() {
     setNeedsBootstrap(true);
   }, [router]);
 
-  function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user");
+  async function handleLogout() {
+    const accessToken = localStorage.getItem("access_token");
+    await logout(accessToken);
+    clearLocalSession();
     router.replace("/login");
   }
 

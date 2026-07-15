@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { getApiErrorMessage, getOnboarding, saveOnboarding } from "@/services/authService";
+import { clearLocalSession, getApiErrorMessage, getOnboarding, logout, saveOnboarding } from "@/services/authService";
 import { can, ROLE_HOME } from "@/services/rbac";
 
 const STEPS = [
@@ -165,10 +165,10 @@ export default function OnboardingPage() {
     setMessage("");
   }
 
-  function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user");
+  async function handleLogout() {
+    const accessToken = localStorage.getItem("access_token");
+    await logout(accessToken);
+    clearLocalSession();
     router.replace("/login");
   }
 

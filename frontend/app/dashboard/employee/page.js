@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import RequireAccess, { ModuleNav } from "@/components/RequireAccess";
+import { clearLocalSession, logout } from "@/services/authService";
 
 export default function EmployeeDashboardPage() {
   return (
@@ -21,10 +22,10 @@ function EmployeeDashboardContent() {
     setUser(JSON.parse(localStorage.getItem("user")));
   }, []);
 
-  function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user");
+  async function handleLogout() {
+    const accessToken = localStorage.getItem("access_token");
+    await logout(accessToken);
+    clearLocalSession();
     router.replace("/login");
   }
 
