@@ -124,9 +124,12 @@ class DashboardService:
                 "submitted_at": _iso((c.get("onboarding") or {}).get("submitted_at")),
             }
             for c in candidates
-            if (c.get("onboarding") or {}).get("status") == "submitted"
-            and (c.get("onboarding") or {}).get("submitted_at")
-            and _as_aware(c["onboarding"]["submitted_at"]) >= seven_days_ago
+            if (
+                (c.get("onboarding") or {}).get("status") == "submitted"
+                and c.get("conversion_status") != "converted"
+                and (c.get("onboarding") or {}).get("submitted_at")
+                and _as_aware(c["onboarding"]["submitted_at"]) >= seven_days_ago
+)
         ]
         pending_approvals.sort(key=lambda item: item["submitted_at"] or "", reverse=True)
 
