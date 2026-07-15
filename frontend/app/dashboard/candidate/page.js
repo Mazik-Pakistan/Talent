@@ -56,12 +56,9 @@ function CandidateDashboardContent() {
     router.replace("/login");
   }
 
-  function goToOnboarding(step) {
-    if (step) {
-      router.push(`/onboarding?step=${encodeURIComponent(step)}`);
-      return;
-    }
-    router.push("/onboarding");
+  // ★ Unified navigation to onboarding with edit mode
+  function goToEditProfile() {
+    router.push("/onboarding?edit=true");
   }
 
   if (!user) {
@@ -83,8 +80,9 @@ function CandidateDashboardContent() {
           <ModuleNav role={user.role} />
         </div>
         <div className="dashboard-actions">
-          <button type="button" className="secondary-button" onClick={goToOnboarding}>
-            Open onboarding
+          {/* ★ Replaced "Open onboarding" with "Edit Profile" */}
+          <button type="button" className="secondary-button" onClick={goToEditProfile}>
+            Edit Profile
           </button>
           <button type="button" className="primary-button" onClick={handleLogout}>
             Log out
@@ -162,7 +160,7 @@ function CandidateDashboardContent() {
                     className={`task-item ${task.completed ? "completed" : ""} ${!task.available ? "disabled" : ""}`}
                     disabled={!task.available}
                     onClick={() =>
-                      task.available && !task.completed && goToOnboarding(task.action_step || undefined)
+                      task.available && !task.completed && router.push(`/onboarding?step=${task.action_step || ""}`)
                     }
                   >
                     <span className="task-check">{task.completed ? "✓" : ""}</span>

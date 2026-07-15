@@ -91,6 +91,8 @@ function OnboardingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedStep = searchParams.get("step");
+  const isEditMode = searchParams.get("edit") === "true";
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -109,6 +111,14 @@ function OnboardingContent() {
   const [nda, setNda] = useState(emptySignature);
   const [contract, setContract] = useState(emptySignature);
   const [resume, setResume] = useState(emptyResume);
+
+  // Filter steps: hide "submit" when in edit mode
+  const steps = useMemo(() => {
+    if (isEditMode) {
+      return STEPS.filter((s) => s.id !== "submit");
+    }
+    return STEPS;
+  }, [isEditMode]);
 
   useEffect(() => {
     const accessToken = localStorage.getItem("access_token");
@@ -165,7 +175,8 @@ function OnboardingContent() {
     if (data.resume) setResume({ ...emptyResume, ...data.resume });
   }
 
-  const stepIndex = useMemo(() => STEPS.findIndex((item) => item.id === step), [step]);
+  // Use filtered steps for index
+  const stepIndex = useMemo(() => steps.findIndex((item) => item.id === step), [step, steps]);
   const submitted = onboarding?.status === "submitted";
 
   async function persist(payload) {
@@ -247,7 +258,7 @@ function OnboardingContent() {
 
   async function handleNext(event) {
     event.preventDefault();
-    if (submitted) return;
+    if (submitted && !isEditMode) return;
 
     if (step === "personal") {
       if (!personal.date_of_birth || !personal.national_id || !personal.address_line1 || !personal.city || !personal.state || !personal.postal_code || !personal.country) {
@@ -321,12 +332,6 @@ function OnboardingContent() {
     }
   }
 
-  function goBack() {
-    if (stepIndex <= 0 || submitted) return;
-    setStep(STEPS[stepIndex - 1].id);
-    setMessage("");
-  }
-
   async function handleLogout() {
     const accessToken = localStorage.getItem("access_token");
     await logout(accessToken);
@@ -350,29 +355,96 @@ function OnboardingContent() {
           <span className="brand-divider" aria-hidden="true" />
           <span className="product-name">Talent</span>
         </div>
-        <button type="button" className="toggle-button" onClick={handleLogout}>Sign out</button>
+        <button
+          type="button"
+          onClick={handleLogout}
+          style={{
+            backgroundColor: "#dc2626",
+            color: "white",
+            padding: "8px 16px",
+            borderRadius: "4px",
+            border: "none",
+            cursor: "pointer",
+            fontWeight: "bold",
+            fontSize: "14px",
+          }}
+        >
+          Sign out
+        </button>
       </header>
 
       <section className="onboarding-card">
+        {/* Edit Mode Banner */}
+        {isEditMode && (
+          <div style={{
+            backgroundColor: "#dbeafe",
+            border: "2px solid #3b82f6",
+            borderRadius: "8px",
+            padding: "12px 16px",
+            marginBottom: "16px",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+          }}>
+            <span style={{ fontSize: "20px" }}>✏️</span>
+            <span style={{ fontWeight: "500", color: "#1e40af" }}>
+              Edit Mode: All sections are editable. Changes will be saved automatically.
+            </span>
+          </div>
+        )}
+
         <p className="eyebrow">Employee onboarding</p>
         <h1>Welcome, {candidate?.full_name}</h1>
         <p className="onboarding-lead">
           Role: <strong>{candidate?.job_title}</strong> · {candidate?.department}
           {progress ? <> · Progress: <strong>{progress.percentage}%</strong></> : null}
+          {isEditMode && <span style={{ marginLeft: 12, color: "#2563eb", fontWeight: "bold" }}> (editing)</span>}
         </p>
 
+        {/* Updated Steps with Edit Mode Styling */}
         <ol className="onboarding-steps" aria-label="Onboarding progress">
-          {STEPS.map((item, index) => (
-            <li key={item.id} className={index <= stepIndex ? "active" : ""}>
-              <button type="button" disabled={submitted} onClick={() => !submitted && setStep(item.id)}>
-                {item.label}
-              </button>
-            </li>
-          ))}
+          {steps.map((item, index) => {
+            const isActive = index <= stepIndex;
+            const isCurrent = index === stepIndex;
+            const isCompleted = index < stepIndex;
+            
+            return (
+              <li 
+                key={item.id} 
+                className={isActive ? "active" : ""}
+                style={isEditMode && isActive ? {
+                  border: isCurrent ? "2px solid #3b82f6" : "1px solid #93c5fd",
+                  borderRadius: "8px",
+                  padding: "2px 4px",
+                  backgroundColor: isCurrent ? "#eff6ff" : "transparent",
+                } : {}}
+              >
+                <button 
+                  type="button" 
+                  disabled={submitted && !isEditMode} 
+                  onClick={() => (!submitted || isEditMode) ? setStep(item.id) : null}
+                  style={isEditMode && isCurrent ? {
+                    backgroundColor: "#3b82f6",
+                    color: "white",
+                    fontWeight: "bold",
+                    borderRadius: "6px",
+                    padding: "4px 12px",
+                  } : isEditMode && isCompleted ? {
+                    color: "#1e40af",
+                    fontWeight: "500",
+                  } : {}}
+                >
+                  {item.label}
+                  {isEditMode && isCurrent && " (editing)"}
+                  {isEditMode && isCompleted && " (done)"}
+                </button>
+              </li>
+            );
+          })}
         </ol>
 
         {message && <p className="form-message" role="status">{message}</p>}
-        {submitted && (
+        {submitted && !isEditMode && (
           <p className="form-message" role="status">
             Onboarding submitted. A recruiter will review your documents and convert you to an employee.
           </p>
@@ -382,33 +454,33 @@ function OnboardingContent() {
           {step === "personal" && (
             <div className="form-grid">
               <h2 className="step-title">Personal information</h2>
-              <Field label="Date of birth" name="date_of_birth" type="date" value={personal.date_of_birth} onChange={(e) => setPersonal({ ...personal, date_of_birth: e.target.value })} disabled={submitted} />
-              <Field label="National ID / CNIC" name="national_id" value={personal.national_id} onChange={(e) => setPersonal({ ...personal, national_id: e.target.value })} disabled={submitted} />
-              <Field label="Address line 1" name="address_line1" value={personal.address_line1} onChange={(e) => setPersonal({ ...personal, address_line1: e.target.value })} disabled={submitted} wide />
-              <Field label="Address line 2" name="address_line2" value={personal.address_line2} onChange={(e) => setPersonal({ ...personal, address_line2: e.target.value })} disabled={submitted} wide />
-              <Field label="City" name="city" value={personal.city} onChange={(e) => setPersonal({ ...personal, city: e.target.value })} disabled={submitted} />
-              <Field label="State" name="state" value={personal.state} onChange={(e) => setPersonal({ ...personal, state: e.target.value })} disabled={submitted} />
-              <Field label="Postal code" name="postal_code" value={personal.postal_code} onChange={(e) => setPersonal({ ...personal, postal_code: e.target.value })} disabled={submitted} />
-              <Field label="Country" name="country" value={personal.country} onChange={(e) => setPersonal({ ...personal, country: e.target.value })} disabled={submitted} />
+              <Field label="Date of birth" name="date_of_birth" type="date" value={personal.date_of_birth} onChange={(e) => setPersonal({ ...personal, date_of_birth: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
+              <Field label="National ID / CNIC" name="national_id" value={personal.national_id} onChange={(e) => setPersonal({ ...personal, national_id: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
+              <Field label="Address line 1" name="address_line1" value={personal.address_line1} onChange={(e) => setPersonal({ ...personal, address_line1: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} wide />
+              <Field label="Address line 2" name="address_line2" value={personal.address_line2} onChange={(e) => setPersonal({ ...personal, address_line2: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} wide />
+              <Field label="City" name="city" value={personal.city} onChange={(e) => setPersonal({ ...personal, city: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
+              <Field label="State" name="state" value={personal.state} onChange={(e) => setPersonal({ ...personal, state: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
+              <Field label="Postal code" name="postal_code" value={personal.postal_code} onChange={(e) => setPersonal({ ...personal, postal_code: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
+              <Field label="Country" name="country" value={personal.country} onChange={(e) => setPersonal({ ...personal, country: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
             </div>
           )}
 
           {step === "emergency" && (
             <div className="form-grid">
               <h2 className="step-title">Emergency contact</h2>
-              <Field label="Full name" name="name" value={emergency.name} onChange={(e) => setEmergency({ ...emergency, name: e.target.value })} disabled={submitted} />
-              <Field label="Relationship" name="relationship" value={emergency.relationship} onChange={(e) => setEmergency({ ...emergency, relationship: e.target.value })} disabled={submitted} />
-              <Field label="Phone" name="phone" value={emergency.phone} onChange={(e) => setEmergency({ ...emergency, phone: e.target.value })} disabled={submitted} />
+              <Field label="Full name" name="name" value={emergency.name} onChange={(e) => setEmergency({ ...emergency, name: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
+              <Field label="Relationship" name="relationship" value={emergency.relationship} onChange={(e) => setEmergency({ ...emergency, relationship: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
+              <Field label="Phone" name="phone" value={emergency.phone} onChange={(e) => setEmergency({ ...emergency, phone: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
             </div>
           )}
 
           {step === "employment" && (
             <div className="form-grid">
               <h2 className="step-title">Payroll & tax</h2>
-              <Field label="Bank name" name="bank_name" value={employment.bank_name} onChange={(e) => setEmployment({ ...employment, bank_name: e.target.value })} disabled={submitted} />
-              <Field label="Account holder" name="account_holder_name" value={employment.account_holder_name} onChange={(e) => setEmployment({ ...employment, account_holder_name: e.target.value })} disabled={submitted} />
-              <Field label="Account number" name="account_number" value={employment.account_number} onChange={(e) => setEmployment({ ...employment, account_number: e.target.value })} disabled={submitted} />
-              <Field label="Tax ID" name="tax_id" value={employment.tax_id} onChange={(e) => setEmployment({ ...employment, tax_id: e.target.value })} disabled={submitted} />
+              <Field label="Bank name" name="bank_name" value={employment.bank_name} onChange={(e) => setEmployment({ ...employment, bank_name: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
+              <Field label="Account holder" name="account_holder_name" value={employment.account_holder_name} onChange={(e) => setEmployment({ ...employment, account_holder_name: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
+              <Field label="Account number" name="account_number" value={employment.account_number} onChange={(e) => setEmployment({ ...employment, account_number: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
+              <Field label="Tax ID" name="tax_id" value={employment.tax_id} onChange={(e) => setEmployment({ ...employment, tax_id: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
             </div>
           )}
 
@@ -421,30 +493,30 @@ function OnboardingContent() {
                     const next = [...educationEntries];
                     next[index] = { ...next[index], institution: e.target.value };
                     setEducationEntries(next);
-                  }} disabled={submitted} />
+                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
                   <Field label="Degree" value={entry.degree} onChange={(e) => {
                     const next = [...educationEntries];
                     next[index] = { ...next[index], degree: e.target.value };
                     setEducationEntries(next);
-                  }} disabled={submitted} />
+                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
                   <Field label="Field of study" value={entry.field_of_study} onChange={(e) => {
                     const next = [...educationEntries];
                     next[index] = { ...next[index], field_of_study: e.target.value };
                     setEducationEntries(next);
-                  }} disabled={submitted} />
+                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
                   <Field label="Year completed" value={entry.year_completed} onChange={(e) => {
                     const next = [...educationEntries];
                     next[index] = { ...next[index], year_completed: e.target.value };
                     setEducationEntries(next);
-                  }} disabled={submitted} />
+                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
                   <label className="field wide">
                     <span>Certificate upload (optional)</span>
-                    <input type="file" disabled={submitted || uploading} onChange={(e) => handleFileUpload(e, "education_cert", index)} />
+                    <input type="file" disabled={(submitted && !isEditMode) || uploading} onChange={(e) => handleFileUpload(e, "education_cert", index)} />
                     {entry.certificate_file && <small>Uploaded: {entry.certificate_file}</small>}
                   </label>
                 </div>
               ))}
-              {!submitted && (
+              {(!submitted || isEditMode) && (
                 <button type="button" className="secondary-button" onClick={() => setEducationEntries((c) => [...c, { ...emptyEducationEntry }])}>
                   Add another education entry
                 </button>
@@ -461,12 +533,17 @@ function OnboardingContent() {
                     <span>Document type</span>
                     <select
                       value={doc.doc_type}
-                      disabled={submitted}
+                      disabled={submitted && !isEditMode}
                       onChange={(e) => {
                         const next = [...govDocs];
                         next[index] = { ...next[index], doc_type: e.target.value };
                         setGovDocs(next);
                       }}
+                      style={isEditMode && !(submitted && !isEditMode) ? {
+                        borderColor: "#3b82f6",
+                        backgroundColor: "#f8fafc",
+                        borderWidth: "2px",
+                      } : {}}
                     >
                       <option value="cnic">CNIC</option>
                       <option value="passport">Passport</option>
@@ -477,15 +554,15 @@ function OnboardingContent() {
                     const next = [...govDocs];
                     next[index] = { ...next[index], document_number: e.target.value };
                     setGovDocs(next);
-                  }} disabled={submitted} />
+                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
                   <label className="field wide">
                     <span>Upload document</span>
-                    <input type="file" disabled={submitted || uploading} onChange={(e) => handleFileUpload(e, "government_doc", index)} />
+                    <input type="file" disabled={(submitted && !isEditMode) || uploading} onChange={(e) => handleFileUpload(e, "government_doc", index)} />
                     {doc.file_url && <small>Uploaded: {doc.file_name || doc.file_url}</small>}
                   </label>
                 </div>
               ))}
-              {!submitted && (
+              {(!submitted || isEditMode) && (
                 <button type="button" className="secondary-button" onClick={() => setGovDocs((c) => [...c, { ...emptyGovDoc }])}>
                   Add another document
                 </button>
@@ -503,27 +580,27 @@ function OnboardingContent() {
                     const next = [...references];
                     next[index] = { ...next[index], full_name: e.target.value };
                     setReferences(next);
-                  }} disabled={submitted} />
+                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
                   <Field label="Relationship" value={ref.relationship} onChange={(e) => {
                     const next = [...references];
                     next[index] = { ...next[index], relationship: e.target.value };
                     setReferences(next);
-                  }} disabled={submitted} />
+                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
                   <Field label="Email" type="email" value={ref.email} onChange={(e) => {
                     const next = [...references];
                     next[index] = { ...next[index], email: e.target.value };
                     setReferences(next);
-                  }} disabled={submitted} />
+                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
                   <Field label="Phone" value={ref.phone} onChange={(e) => {
                     const next = [...references];
                     next[index] = { ...next[index], phone: e.target.value };
                     setReferences(next);
-                  }} disabled={submitted} />
+                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
                   <Field label="Company" value={ref.company} onChange={(e) => {
                     const next = [...references];
                     next[index] = { ...next[index], company: e.target.value };
                     setReferences(next);
-                  }} disabled={submitted} wide />
+                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} wide />
                 </div>
               ))}
             </div>
@@ -533,15 +610,15 @@ function OnboardingContent() {
             <div>
               <h2 className="step-title">Acknowledge documents</h2>
               <label className="checkbox-field">
-                <input type="checkbox" checked={documents.accepted_code_of_conduct} disabled={submitted} onChange={(e) => setDocuments({ ...documents, accepted_code_of_conduct: e.target.checked })} />
+                <input type="checkbox" checked={documents.accepted_code_of_conduct} disabled={submitted && !isEditMode} onChange={(e) => setDocuments({ ...documents, accepted_code_of_conduct: e.target.checked })} />
                 <span>I accept the Code of Conduct</span>
               </label>
               <label className="checkbox-field">
-                <input type="checkbox" checked={documents.accepted_privacy_policy} disabled={submitted} onChange={(e) => setDocuments({ ...documents, accepted_privacy_policy: e.target.checked })} />
+                <input type="checkbox" checked={documents.accepted_privacy_policy} disabled={submitted && !isEditMode} onChange={(e) => setDocuments({ ...documents, accepted_privacy_policy: e.target.checked })} />
                 <span>I accept the Privacy Policy</span>
               </label>
               <label className="checkbox-field">
-                <input type="checkbox" checked={documents.accepted_employee_handbook} disabled={submitted} onChange={(e) => setDocuments({ ...documents, accepted_employee_handbook: e.target.checked })} />
+                <input type="checkbox" checked={documents.accepted_employee_handbook} disabled={submitted && !isEditMode} onChange={(e) => setDocuments({ ...documents, accepted_employee_handbook: e.target.checked })} />
                 <span>I accept the Employee Handbook</span>
               </label>
             </div>
@@ -551,9 +628,9 @@ function OnboardingContent() {
             <div>
               <h2 className="step-title">Sign NDA</h2>
               <p>By signing below you agree to keep company information confidential.</p>
-              <Field label="Full legal name" value={nda.full_legal_name} onChange={(e) => setNda({ ...nda, full_legal_name: e.target.value })} disabled={submitted} wide />
+              <Field label="Full legal name" value={nda.full_legal_name} onChange={(e) => setNda({ ...nda, full_legal_name: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} wide />
               <label className="checkbox-field">
-                <input type="checkbox" checked={nda.agreed} disabled={submitted} onChange={(e) => setNda({ ...nda, agreed: e.target.checked })} />
+                <input type="checkbox" checked={nda.agreed} disabled={submitted && !isEditMode} onChange={(e) => setNda({ ...nda, agreed: e.target.checked })} />
                 <span>I digitally sign this Non-Disclosure Agreement</span>
               </label>
             </div>
@@ -563,9 +640,9 @@ function OnboardingContent() {
             <div>
               <h2 className="step-title">Sign employment contract</h2>
               <p>Confirm that you accept the offered role, compensation, and terms shared by your recruiter.</p>
-              <Field label="Full legal name" value={contract.full_legal_name} onChange={(e) => setContract({ ...contract, full_legal_name: e.target.value })} disabled={submitted} wide />
+              <Field label="Full legal name" value={contract.full_legal_name} onChange={(e) => setContract({ ...contract, full_legal_name: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} wide />
               <label className="checkbox-field">
-                <input type="checkbox" checked={contract.agreed} disabled={submitted} onChange={(e) => setContract({ ...contract, agreed: e.target.checked })} />
+                <input type="checkbox" checked={contract.agreed} disabled={submitted && !isEditMode} onChange={(e) => setContract({ ...contract, agreed: e.target.checked })} />
                 <span>I digitally sign this employment contract</span>
               </label>
             </div>
@@ -579,20 +656,32 @@ function OnboardingContent() {
                 <textarea
                   rows={4}
                   value={resume.summary}
-                  disabled={submitted}
+                  disabled={submitted && !isEditMode}
                   onChange={(e) => setResume({ ...resume, summary: e.target.value })}
-                  style={{ width: "100%", border: "1px solid #bed0dc", borderRadius: 8, padding: "13px 14px", fontFamily: "inherit" }}
+                  style={{ 
+                    width: "100%", 
+                    border: isEditMode && !(submitted && !isEditMode) ? "2px solid #3b82f6" : "1px solid #bed0dc", 
+                    borderRadius: 8, 
+                    padding: "13px 14px", 
+                    fontFamily: "inherit",
+                    backgroundColor: isEditMode && !(submitted && !isEditMode) ? "#f8fafc" : "white",
+                  }}
                 />
+                {isEditMode && !(submitted && !isEditMode) && (
+                  <small style={{ color: "#3b82f6", fontSize: "11px", marginTop: "4px", display: "block" }}>
+                    Click to edit
+                  </small>
+                )}
               </label>
               <label className="field wide">
                 <span>Upload resume (PDF/DOC)</span>
-                <input type="file" disabled={submitted || uploading} onChange={(e) => handleFileUpload(e, "resume")} />
+                <input type="file" disabled={(submitted && !isEditMode) || uploading} onChange={(e) => handleFileUpload(e, "resume")} />
                 {resume.file_url && <small>Uploaded: {resume.file_name || resume.file_url}</small>}
               </label>
             </div>
           )}
 
-          {step === "submit" && (
+          {step === "submit" && !isEditMode && (
             <div>
               <h2 className="step-title">Review & submit</h2>
               <p>Confirm every section is complete. After submit, your recruiter reviews and converts you to an employee.</p>
@@ -608,16 +697,25 @@ function OnboardingContent() {
             </div>
           )}
 
-          <div className="dashboard-actions" style={{ marginTop: 20 }}>
-            <button type="button" className="secondary-button" onClick={goBack} disabled={stepIndex === 0 || saving || submitted}>
-              Back
+          {/* Action Buttons */}
+          <div className="dashboard-actions" style={{ marginTop: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            {/* Left: Go to dashboard (always visible) */}
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => router.push("/dashboard/candidate")}
+            >
+              Go to dashboard
             </button>
-            <button className="primary-button" type="submit" disabled={saving || uploading || submitted}>
-              {saving || uploading ? "Saving…" : step === "submit" ? "Submit onboarding" : "Save & continue"}
-            </button>
-            {submitted && (
-              <button type="button" className="secondary-button" onClick={() => router.push("/dashboard/candidate")}>
-                Go to dashboard
+
+            {/* Right: primary action */}
+            {!isEditMode && step === "submit" ? (
+              <button className="primary-button" type="submit" disabled={saving || uploading || submitted}>
+                {saving || uploading ? "Saving…" : "Submit onboarding"}
+              </button>
+            ) : (
+              <button className="primary-button" type="submit" disabled={saving || uploading || (submitted && !isEditMode)}>
+                {saving || uploading ? "Saving…" : "Save & continue"}
               </button>
             )}
           </div>
@@ -627,11 +725,39 @@ function OnboardingContent() {
   );
 }
 
-function Field({ label, name, value, onChange, type = "text", disabled, wide }) {
+function Field({ label, name, value, onChange, type = "text", disabled, wide, isEditMode }) {
+  const isEditable = isEditMode && !disabled;
+  
   return (
     <label className={`field ${wide ? "wide" : ""}`}>
       <span>{label}</span>
-      <input name={name} type={type} value={value} onChange={onChange} disabled={disabled} />
+      <input 
+        name={name} 
+        type={type} 
+        value={value} 
+        onChange={onChange} 
+        disabled={disabled}
+        style={isEditable ? {
+          borderColor: "#3b82f6",
+          backgroundColor: "#f8fafc",
+          borderWidth: "2px",
+          boxShadow: "0 0 0 1px #3b82f6",
+          transition: "all 0.2s ease",
+        } : {}}
+        onFocus={isEditable ? (e) => {
+          e.target.style.borderColor = "#2563eb";
+          e.target.style.boxShadow = "0 0 0 3px rgba(59, 130, 246, 0.3)";
+        } : undefined}
+        onBlur={isEditable ? (e) => {
+          e.target.style.borderColor = "#3b82f6";
+          e.target.style.boxShadow = "0 0 0 1px #3b82f6";
+        } : undefined}
+      />
+      {isEditable && (
+        <small style={{ color: "#3b82f6", fontSize: "11px", marginTop: "4px", display: "block" }}>
+          Click to edit
+        </small>
+      )}
     </label>
   );
 }
