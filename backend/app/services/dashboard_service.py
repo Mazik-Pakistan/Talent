@@ -66,7 +66,7 @@ def _parse_start_date(value) -> date | None:
 
 class DashboardService:
     # ------------------------------------------------------------------
-    # US-013: Recruiter Dashboard Overview
+    # US-013: Recruiter's Dashboard Overview
     # ------------------------------------------------------------------
     async def get_summary(self, current_user: CurrentUser) -> dict:
         candidate_filter = self._scope_filter(current_user)
