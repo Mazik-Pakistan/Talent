@@ -76,6 +76,7 @@ export default function VerifyEmailPage() {
     try {
       const response = await verifyOtp(email, code);
       setState({ status: "success", message: response.message });
+      sessionStorage.removeItem("pendingEmail");
 
       // For candidates: store session and redirect to onboarding
       if (response.role === "candidate" && response.session) {
@@ -86,6 +87,7 @@ export default function VerifyEmailPage() {
         sessionStorage.setItem("pendingRole", "candidate");
         setRedirectTo(response.redirect_to || "/onboarding");
       } else {
+        sessionStorage.removeItem("pendingRole");
         setRedirectTo(response.redirect_to || "/login");
       }
     } catch (error) {
@@ -132,6 +134,11 @@ export default function VerifyEmailPage() {
             ? "Your account is active"
             : "Enter verification code"}
         </h1>
+        <p style={{ fontSize: "0.9rem", color: "#64748b", textAlign: "center", marginTop: "-0.5rem", marginBottom: "1rem" }}>
+          {isSuccess
+            ? null
+            : "Check your inbox for a 6-digit code from TalentAI. It expires in about 10 minutes."}
+        </p>
 
         {state.message && (
           <p className="verification-message" role="status">{state.message}</p>

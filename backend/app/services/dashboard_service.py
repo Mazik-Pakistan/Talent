@@ -20,8 +20,10 @@ ACTIVITY_LABELS: dict[str, str] = {
     "candidate_email_verified": "Candidate verified their email",
     "invitation_created": "Invitation sent to candidate",
     "onboarding_submitted": "Onboarding submitted",
+    "candidate_converted_to_employee": "Candidate converted to employee",
     "recruiter_registered": "Recruiter account created",
     "recruiter_email_verified": "Recruiter verified their email",
+    "super_admin_email_verified": "Super admin verified their email",
 }
 
 
@@ -240,6 +242,7 @@ class DashboardService:
                 {"phone": pattern},
                 {"department": pattern},
                 {"job_title": pattern},
+                {"user_id": pattern},
                 {"supabase_user_id": pattern},
             ]
         }
@@ -251,10 +254,13 @@ class DashboardService:
         candidates = await database.candidates.find(candidate_query).limit(15).to_list(length=15)
         employees = await database.employees.find(employee_query).limit(15).to_list(length=15)
 
+        def _record_id(doc: dict) -> str:
+            return str(doc.get("user_id") or doc.get("supabase_user_id") or doc.get("_id"))
+
         results = [
             {
                 "type": "employee",
-                "id": e.get("supabase_user_id"),
+                "id": _record_id(e),
                 "full_name": e.get("full_name"),
                 "email": e.get("email"),
                 "department": e.get("department"),
@@ -264,13 +270,15 @@ class DashboardService:
             for e in employees
         ]
         seen_ids = {r["id"] for r in results}
+        seen_emails = {r["email"] for r in results if r.get("email")}
         for c in candidates:
-            if c.get("supabase_user_id") in seen_ids:
+            rid = _record_id(c)
+            if rid in seen_ids or c.get("email") in seen_emails:
                 continue
             results.append(
                 {
                     "type": "candidate",
-                    "id": c.get("supabase_user_id"),
+                    "id": rid,
                     "full_name": c.get("full_name"),
                     "email": c.get("email"),
                     "department": c.get("department"),

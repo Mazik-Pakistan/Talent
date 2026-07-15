@@ -286,6 +286,64 @@ export async function createAnnouncement(payload, accessToken) {
   return data;
 }
 
+// ─── Employees (US-023 / US-024) ─────────────────────────────────────────────
+
+export async function getReadyForConversion(accessToken) {
+  const { data } = await apiClient.get("/api/employees/ready-for-conversion", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function listEmployees(accessToken) {
+  const { data } = await apiClient.get("/api/employees", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function generateEmployeeId(accessToken, year) {
+  const { data } = await apiClient.post(
+    "/api/employees/generate-id",
+    year ? { year } : {},
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  return data;
+}
+
+export async function createEmployeeFromCandidate(candidateId, accessToken) {
+  const { data } = await apiClient.post(
+    "/api/employees/create-from-candidate",
+    { candidate_id: candidateId },
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  return data;
+}
+
+export async function getCandidateDetail(candidateId, accessToken) {
+  const { data } = await apiClient.get(`/api/employees/candidates/${candidateId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getMyEmployeeProfile(accessToken) {
+  const { data } = await apiClient.get("/api/employees/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function uploadOnboardingFile(formData, accessToken) {
+  const { data } = await apiClient.post("/api/employees/upload", formData, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return data;
+}
+
 // ─── Error Helpers ───────────────────────────────────────────────────────────
 
 export function getApiErrorMessage(error, fallbackMessage) {

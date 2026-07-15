@@ -7,13 +7,16 @@ import RequireAccess, { ModuleNav } from "@/components/RequireAccess";
 import {
   clearLocalSession,
   createAnnouncement,
+  createEmployeeFromCandidate,
   createInvitation,
   getAnnouncements,
   getApiErrorMessage,
   getDashboardActivity,
   getDashboardSummary,
   getNotifications,
+  getReadyForConversion,
   globalSearch,
+  listEmployees,
   logout,
   markNotificationsRead,
 } from "@/services/authService";
@@ -66,6 +69,8 @@ function RecruiterDashboardContent() {
   const [inviteForm, setInviteForm] = useState(initialInvite);
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviteLink, setInviteLink] = useState("");
+  const [inviteEmailSent, setInviteEmailSent] = useState(null);
+  const [selectedPerson, setSelectedPerson] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
 
   // ----- US-020: announcements -----
@@ -73,6 +78,13 @@ function RecruiterDashboardContent() {
   const [announcementForm, setAnnouncementForm] = useState({ title: "", body: "" });
   const [announcementMessage, setAnnouncementMessage] = useState("");
   const [isPublishing, setIsPublishing] = useState(false);
+
+  // ----- US-023 / US-024: conversion -----
+  const [readyCandidates, setReadyCandidates] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [conversionMessage, setConversionMessage] = useState("");
+  const [convertingId, setConvertingId] = useState(null);
+  const [expandedCandidateId, setExpandedCandidateId] = useState(null);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -83,17 +95,22 @@ function RecruiterDashboardContent() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const [summaryData, activityData, notificationsData, announcementsData] = await Promise.all([
-        getDashboardSummary(accessToken),
-        getDashboardActivity(accessToken, 15),
-        getNotifications(accessToken, 20),
-        getAnnouncements(accessToken, 10),
-      ]);
+      const [summaryData, activityData, notificationsData, announcementsData, readyData, employeesData] =
+        await Promise.all([
+          getDashboardSummary(accessToken),
+          getDashboardActivity(accessToken, 15),
+          getNotifications(accessToken, 20),
+          getAnnouncements(accessToken, 10),
+          getReadyForConversion(accessToken),
+          listEmployees(accessToken),
+        ]);
       setSummary(summaryData);
       setActivities(activityData.activities);
       setNotifications(notificationsData.notifications);
       setUnreadCount(notificationsData.unread_count);
       setAnnouncements(announcementsData.announcements);
+      setReadyCandidates(readyData.candidates || []);
+      setEmployees(employeesData.employees || []);
       setDashboardError("");
     } catch (error) {
       setDashboardError(getApiErrorMessage(error, "Could not load dashboard data."));
@@ -173,6 +190,35 @@ function RecruiterDashboardContent() {
     }
   }
 
+  function handleNotificationClick(notification) {
+    if (!notification.read) {
+      handleMarkOneRead(notification.id);
+    }
+    if (notification.link) {
+      if (notification.link.includes("#")) {
+        const hash = notification.link.split("#")[1];
+        scrollToSection(hash);
+      } else if (notification.type === "invitation_sent") {
+        scrollToSection("invite-section");
+      } else if (notification.type === "onboarding_submitted") {
+        scrollToSection("conversion-section");
+      } else if (notification.type === "candidate_registered") {
+        scrollToSection("approvals-section");
+      } else if (notification.type === "employee_created") {
+        scrollToSection("employees-section");
+      } else {
+        scrollToSection("conversion-section");
+      }
+    }
+  }
+
+  function handleSearchSelect(result) {
+    setSelectedPerson(result);
+    setSearchOpen(false);
+    setSearchQuery(result.full_name || "");
+    scrollToSection("search-detail-section");
+  }
+
   function scrollToSection(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -187,6 +233,7 @@ function RecruiterDashboardContent() {
     event.preventDefault();
     setInviteMessage("");
     setInviteLink("");
+    setInviteEmailSent(null);
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) {
       router.replace("/login");
@@ -208,6 +255,7 @@ function RecruiterDashboardContent() {
       const data = await createInvitation(payload, accessToken);
       setInviteMessage(data.message);
       setInviteLink(data.invitation.invite_link);
+      setInviteEmailSent(Boolean(data.email_sent));
       setInviteForm(initialInvite);
       loadDashboard();
     } catch (error) {
@@ -250,6 +298,29 @@ function RecruiterDashboardContent() {
       setAnnouncementMessage(getApiErrorMessage(error, "Could not publish the announcement."));
     } finally {
       setIsPublishing(false);
+    }
+  }
+
+  async function handleConvertCandidate(candidateId) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) {
+      router.replace("/login");
+      return;
+    }
+    setConvertingId(candidateId);
+    setConversionMessage("");
+    try {
+      const data = await createEmployeeFromCandidate(candidateId, accessToken);
+      setConversionMessage(
+        `${data.message} Employee ID: ${data.employee?.employee_id}${
+          data.email_sent ? " · Welcome email sent." : " · Welcome email could not be sent."
+        }`
+      );
+      await loadDashboard();
+    } catch (error) {
+      setConversionMessage(getApiErrorMessage(error, "Could not convert candidate."));
+    } finally {
+      setConvertingId(null);
     }
   }
 
@@ -310,7 +381,14 @@ function RecruiterDashboardContent() {
               )}
               {!searching &&
                 searchResults.map((result) => (
-                  <div className="search-result-item" key={`${result.type}-${result.id}`}>
+                  <button
+                    type="button"
+                    className="search-result-item"
+                    key={`${result.type}-${result.id}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleSearchSelect(result)}
+                    style={{ width: "100%", textAlign: "left", cursor: "pointer", background: "transparent", border: 0 }}
+                  >
                     <div>
                       <strong>{result.full_name}</strong>
                       <div className="muted-text">
@@ -318,35 +396,53 @@ function RecruiterDashboardContent() {
                       </div>
                     </div>
                     <span className="type-pill">{result.type}</span>
-                  </div>
+                  </button>
                 ))}
             </div>
           )}
         </div>
+
+        {selectedPerson && (
+          <section id="search-detail-section" className="invite-link-box" style={{ marginTop: 16 }} aria-live="polite">
+            <div>
+              <strong>{selectedPerson.full_name}</strong>
+              <div className="muted-text">
+                {selectedPerson.type} · {selectedPerson.email} · {selectedPerson.job_title || "—"} ·{" "}
+                {selectedPerson.department || "—"} · status: {selectedPerson.status || "—"}
+              </div>
+            </div>
+            <button type="button" className="secondary-button" onClick={() => setSelectedPerson(null)}>
+              Clear
+            </button>
+          </section>
+        )}
 
         <div className="section-heading-row" style={{ marginTop: 24 }}>
           <h2 style={{ fontSize: "1rem" }}>Quick actions</h2>
         </div>
         <div className="quick-actions-grid">
           <button type="button" className="quick-action" onClick={() => scrollToSection("invite-section")}>
-            <span className="qa-icon">➕</span>
+            <span className="qa-icon" aria-hidden="true">+</span>
             <strong>Add employee</strong>
-            <span className="qa-hint">Send an onboarding invitation</span>
+            <span className="qa-hint">Email an onboarding invitation</span>
           </button>
           <button type="button" className="quick-action" onClick={() => scrollToSection("approvals-section")}>
-            <span className="qa-icon">✅</span>
+            <span className="qa-icon" aria-hidden="true">✓</span>
             <strong>Pending approvals</strong>
             <span className="qa-hint">{summary?.pending_approvals?.length || 0} awaiting review</span>
           </button>
-          <QuickActionComingSoon icon="📄" label="View documents" hint="Coming in Phase 2 — Epic 4" />
-          <QuickActionComingSoon icon="🧑‍🤝‍🧑" label="Candidate list" hint="Coming in Phase 2 — Epic 3" />
-          <button type="button" className="quick-action" onClick={() => scrollToSection("announcements-section")}>
-            <span className="qa-icon">📣</span>
-            <strong>Announcements</strong>
-            <span className="qa-hint">Publish an update to candidates</span>
+          <button type="button" className="quick-action" onClick={() => scrollToSection("conversion-section")}>
+            <span className="qa-icon" aria-hidden="true">→</span>
+            <strong>Convert to employee</strong>
+            <span className="qa-hint">{readyCandidates.length} ready at 100%</span>
           </button>
-          <QuickActionComingSoon icon="📊" label="Reports" hint="Coming in a later phase" />
-          <QuickActionComingSoon icon="🎓" label="Learning assignments" hint="Coming in Phase 3" />
+          <button type="button" className="quick-action" onClick={() => scrollToSection("employees-section")}>
+            <span className="qa-icon" aria-hidden="true">ID</span>
+            <strong>Employee directory</strong>
+            <span className="qa-hint">{employees.length} active employees</span>
+          </button>
+          <QuickActionComingSoon icon="Doc" label="View documents" hint="Embedded in conversion review" />
+          <QuickActionComingSoon icon="Learn" label="Learning assignments" hint="Coming in Phase 3" />
         </div>
       </section>
 
@@ -374,6 +470,115 @@ function RecruiterDashboardContent() {
               </ul>
             ) : (
               <p className="empty-state">Nothing pending review right now.</p>
+            )}
+          </section>
+
+          {/* US-023: Convert candidates with 100% onboarding */}
+          <section className="dashboard-card wide" id="conversion-section" aria-labelledby="conversion-heading">
+            <div className="section-heading-row">
+              <h2 id="conversion-heading">Ready for conversion (100%)</h2>
+            </div>
+            <p style={{ marginTop: -8 }}>
+              Candidates who completed personal details, documents, references, NDA, contract, and resume.
+              Convert only once — this generates an Employee ID and sends congratulations email.
+            </p>
+            {conversionMessage && <p className="form-message" role="status">{conversionMessage}</p>}
+            {dashboardLoading ? (
+              <p className="empty-state">Loading…</p>
+            ) : readyCandidates.length ? (
+              <ul className="mini-list">
+                {readyCandidates.map((candidate) => (
+                  <li key={candidate.id} style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, width: "100%", flexWrap: "wrap" }}>
+                      <div>
+                        <strong>{candidate.full_name}</strong>
+                        <div className="muted-text">
+                          {candidate.email} · {candidate.job_title} · {candidate.department} ·{" "}
+                          {candidate.progress_percentage}%
+                        </div>
+                        <div className="muted-text">Submitted {formatDate(candidate.submitted_at)}</div>
+                      </div>
+                      <div className="dashboard-actions">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() =>
+                            setExpandedCandidateId((current) => (current === candidate.id ? null : candidate.id))
+                          }
+                        >
+                          {expandedCandidateId === candidate.id ? "Hide details" : "Review details"}
+                        </button>
+                        <button
+                          type="button"
+                          className="primary-button"
+                          disabled={convertingId === candidate.id}
+                          onClick={() => handleConvertCandidate(candidate.id)}
+                        >
+                          {convertingId === candidate.id ? "Converting…" : "Convert to employee"}
+                        </button>
+                      </div>
+                    </div>
+                    {expandedCandidateId === candidate.id && (
+                      <div className="review-block" style={{ width: "100%" }}>
+                        <h3>Onboarding package</h3>
+                        <dl>
+                          <div>
+                            <dt>NDA</dt>
+                            <dd>{candidate.onboarding?.nda?.full_legal_name || "—"}</dd>
+                          </div>
+                          <div>
+                            <dt>Contract</dt>
+                            <dd>{candidate.onboarding?.contract?.full_legal_name || "—"}</dd>
+                          </div>
+                          <div>
+                            <dt>Education entries</dt>
+                            <dd>{candidate.onboarding?.education?.entries?.length || 0}</dd>
+                          </div>
+                          <div>
+                            <dt>Government docs</dt>
+                            <dd>{candidate.onboarding?.government_docs?.documents?.length || 0}</dd>
+                          </div>
+                          <div>
+                            <dt>References</dt>
+                            <dd>{candidate.onboarding?.references?.references?.length || 0}</dd>
+                          </div>
+                          <div>
+                            <dt>Resume</dt>
+                            <dd>{candidate.onboarding?.resume?.file_name || "—"}</dd>
+                          </div>
+                        </dl>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-state">No candidates have completed 100% onboarding yet.</p>
+            )}
+          </section>
+
+          {/* US-024: Employee directory with IDs */}
+          <section className="dashboard-card wide" id="employees-section" aria-labelledby="employees-heading">
+            <h2 id="employees-heading">Employee directory</h2>
+            <p style={{ marginTop: -8 }}>Converted employees with unique Employee IDs (format MZK-YYYY-000123).</p>
+            {dashboardLoading ? (
+              <p className="empty-state">Loading…</p>
+            ) : employees.length ? (
+              <ul className="mini-list">
+                {employees.map((employee) => (
+                  <li key={employee.employee_id || employee.id}>
+                    <div>
+                      <strong>{employee.full_name}</strong>
+                      <div className="muted-text">
+                        {employee.employee_id} · {employee.email} · {employee.job_title} · {employee.department}
+                      </div>
+                    </div>
+                    <span className="muted-text">{formatDate(employee.converted_at || employee.start_date)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-state">No employees converted yet.</p>
             )}
           </section>
 
@@ -447,7 +652,10 @@ function RecruiterDashboardContent() {
           {canInvite ? (
             <section className="dashboard-card wide" id="invite-section" aria-labelledby="invite-heading">
               <h2 id="invite-heading">Invite candidate to register</h2>
-              <p>After an offer is accepted, create an invitation link so the candidate can register and start onboarding.</p>
+              <p>
+                After an offer is accepted, invite the candidate by email. They will receive a link, create an account,
+                and verify with a 6-digit code before onboarding.
+              </p>
 
               <form className="auth-form" onSubmit={handleCreateInvite}>
                 <div className="form-grid">
@@ -482,6 +690,12 @@ function RecruiterDashboardContent() {
                 </div>
 
                 {inviteMessage && <p className="form-message" role="status">{inviteMessage}</p>}
+                {inviteEmailSent === true && (
+                  <p className="form-message" role="status">Invitation email sent. You can still copy the link as a backup.</p>
+                )}
+                {inviteEmailSent === false && (
+                  <p className="form-message" role="alert">Email delivery failed. Share the invitation link below manually.</p>
+                )}
                 {inviteLink && (
                   <div className="invite-link-box">
                     <code>{inviteLink}</code>
@@ -490,7 +704,7 @@ function RecruiterDashboardContent() {
                 )}
 
                 <button className="primary-button" type="submit" disabled={isCreating}>
-                  {isCreating ? "Creating…" : "Create invitation"}
+                  {isCreating ? "Sending invitation…" : "Send invitation"}
                 </button>
               </form>
             </section>
@@ -561,8 +775,8 @@ function RecruiterDashboardContent() {
                   type="button"
                   key={notification.id}
                   className={`notif-item ${notification.read ? "read" : ""}`}
-                  style={{ width: "100%", textAlign: "left", background: "transparent", border: 0, cursor: notification.read ? "default" : "pointer", padding: "12px 0" }}
-                  onClick={() => !notification.read && handleMarkOneRead(notification.id)}
+                  style={{ width: "100%", textAlign: "left", background: "transparent", border: 0, cursor: "pointer", padding: "12px 0" }}
+                  onClick={() => handleNotificationClick(notification)}
                 >
                   <span className="notif-dot" />
                   <span className="notif-body">

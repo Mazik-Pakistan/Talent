@@ -170,10 +170,17 @@ class AuthService:
             "employee": database.employees,
         }
         collection = collection_map.get(role)
+        extra = pending.get("extra_data") or {}
         if collection is not None:
-            # Merge any extra data stored during registration
-            extra = pending.get("extra_data") or {}
             profile_doc.update(extra)
+            if role == "candidate":
+                # Remove any leftover unverified docs from the old Supabase path
+                await database.candidates.delete_many(
+                    {"email": email, "status": {"$ne": "active"}}
+                )
+                onboarding = profile_doc.get("onboarding") or {}
+                onboarding["status"] = "in_progress"
+                profile_doc["onboarding"] = onboarding
             await collection.insert_one(profile_doc)
 
         # Remove the pending record
@@ -191,7 +198,28 @@ class AuthService:
                 "redirect_to": "/login",
             }
 
-        # For candidates: issue tokens so they can start onboarding immediately
+        # Candidate: mark invitation used, notify recruiter, issue JWT for onboarding
+        invite_token = extra.get("invitation_token")
+        if invite_token:
+            await database.invitations.update_one(
+                {"token": invite_token},
+                {"$set": {"status": "used", "used_at": now, "updated_at": now}},
+            )
+
+        recruiter_id = extra.get("recruiter_id")
+        if recruiter_id:
+            from app.services.dashboard_service import create_notification
+
+            await create_notification(
+                recipient_id=recruiter_id,
+                recipient_role="recruiter",
+                notif_type="candidate_registered",
+                title="Candidate registered",
+                message=f"{pending['full_name']} verified their email and started onboarding.",
+                link="/dashboard/recruiter#approvals-section",
+                related_id=user_id,
+            )
+
         access_token = create_access_token({"user_id": user_id, "email": email, "role": role})
         refresh_token_str = create_refresh_token({"user_id": user_id, "email": email, "role": role})
         await self._store_refresh_token(user_id, refresh_token_str)
@@ -348,6 +376,16 @@ class AuthService:
         # Resolve the role profile
         profile = await self._resolve_role_profile(user_id, request.role)
         if not profile:
+            # Helpful message when candidate was converted to employee
+            if request.role == "candidate":
+                converted = await database.candidates.find_one(
+                    {"email": email, "status": "converted"}
+                )
+                if converted:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Your candidate profile was converted to an employee. Sign in with the Employee role.",
+                    )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"No active {request.role.replace('_', ' ')} account found for these credentials.",
@@ -358,6 +396,8 @@ class AuthService:
             onboarding_status = (profile.get("onboarding") or {}).get("status")
             if onboarding_status != "submitted":
                 redirect_to = "/onboarding"
+        if request.role == "employee":
+            redirect_to = "/dashboard/employee"
 
         access_token = create_access_token({"user_id": user_id, "email": email, "role": request.role})
         refresh_token_str = create_refresh_token({"user_id": user_id, "email": email, "role": request.role})
@@ -384,6 +424,7 @@ class AuthService:
                 "role": request.role,
                 "job_title": profile.get("job_title"),
                 "department": profile.get("department"),
+                "employee_id": profile.get("employee_id"),
             },
             "session": {
                 "access_token": access_token,

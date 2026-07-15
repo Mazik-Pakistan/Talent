@@ -204,5 +204,62 @@ class EmailService:
 """
         self._send(to_email, subject, html)
 
+    def send_employee_welcome(
+        self,
+        to_email: str,
+        full_name: str,
+        employee_id: str,
+        job_title: str,
+        department: str,
+    ) -> None:
+        subject = "Congratulations — Welcome to TalentAI"
+        html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Welcome – TalentAI</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#1e3a5f 0%,#2d6cdf 100%);padding:36px 40px;">
+            <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">TalentAI</h1>
+            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 8px;color:#64748b;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;">Congratulations</p>
+            <h2 style="margin:0 0 20px;color:#0f172a;font-size:22px;font-weight:700;">Welcome aboard, {full_name}!</h2>
+            <p style="margin:0 0 20px;color:#475569;font-size:15px;line-height:1.6;">
+              Your onboarding has been approved and you are now an official employee at Mazik Global.
+            </p>
+            <div style="background:#f1f5fe;border:2px solid #2d6cdf;border-radius:10px;padding:20px;margin-bottom:28px;">
+              <p style="margin:0 0 8px;color:#64748b;font-size:12px;font-weight:600;text-transform:uppercase;">Your Employee ID</p>
+              <p style="margin:0;color:#1e3a5f;font-size:28px;font-weight:800;letter-spacing:2px;">{employee_id}</p>
+              <p style="margin:12px 0 0;color:#475569;font-size:14px;">{job_title} · {department}</p>
+            </div>
+            <p style="margin:0;color:#475569;font-size:15px;line-height:1.6;">
+              Sign in to TalentAI and choose the <strong>Employee</strong> role to open your employee dashboard.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
+            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mazik Global – TalentAI. All rights reserved.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+        self._send(to_email, subject, html)
+
 
 email_service = EmailService()

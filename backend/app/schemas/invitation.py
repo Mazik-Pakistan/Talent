@@ -117,6 +117,49 @@ class OnboardingEmploymentInfo(BaseModel):
     tax_id: str = Field(min_length=4, max_length=40)
 
 
+class EducationEntry(BaseModel):
+    institution: str = Field(min_length=2, max_length=200)
+    degree: str = Field(min_length=2, max_length=120)
+    field_of_study: str = Field(min_length=2, max_length=120)
+    year_completed: str = Field(min_length=4, max_length=4)
+    certificate_file: str | None = None
+
+
+class OnboardingEducationInfo(BaseModel):
+    entries: list[EducationEntry] = Field(min_length=1)
+
+
+class GovernmentDocument(BaseModel):
+    doc_type: Literal["cnic", "passport", "other_id"]
+    document_number: str = Field(min_length=5, max_length=60)
+    file_name: str | None = None
+    file_url: str | None = None
+
+
+class OnboardingGovernmentDocs(BaseModel):
+    documents: list[GovernmentDocument] = Field(min_length=1)
+
+
+class ReferenceEntry(BaseModel):
+    full_name: str = Field(min_length=2, max_length=100)
+    relationship: str = Field(min_length=2, max_length=60)
+    email: EmailStr
+    phone: str
+    company: str = Field(min_length=2, max_length=120)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        normalized = value.strip()
+        if not PHONE_PATTERN.fullmatch(normalized):
+            raise ValueError("Enter a valid phone number.")
+        return normalized
+
+
+class OnboardingReferences(BaseModel):
+    references: list[ReferenceEntry] = Field(min_length=2, max_length=5)
+
+
 class OnboardingDocumentsAck(BaseModel):
     accepted_code_of_conduct: bool
     accepted_privacy_policy: bool
@@ -133,9 +176,54 @@ class OnboardingDocumentsAck(BaseModel):
         return self
 
 
+class OnboardingSignature(BaseModel):
+    full_legal_name: str = Field(min_length=2, max_length=100)
+    agreed: bool
+    signed_at: str | None = None
+
+    @model_validator(mode="after")
+    def require_agreement(self):
+        if not self.agreed:
+            raise ValueError("You must agree to sign this document.")
+        return self
+
+
+class OnboardingResume(BaseModel):
+    summary: str = Field(min_length=20, max_length=2000)
+    file_name: str | None = None
+    file_url: str | None = None
+
+    @model_validator(mode="after")
+    def require_file(self):
+        if not self.file_url and not self.file_name:
+            raise ValueError("Upload a resume file before continuing.")
+        return self
+
+
+ONBOARDING_STEPS = Literal[
+    "personal",
+    "emergency",
+    "employment",
+    "education",
+    "government_docs",
+    "references",
+    "documents",
+    "nda",
+    "contract",
+    "resume",
+    "submit",
+]
+
+
 class OnboardingSaveRequest(BaseModel):
-    step: Literal["personal", "emergency", "employment", "documents", "submit"]
+    step: ONBOARDING_STEPS
     personal: OnboardingPersonalInfo | None = None
     emergency: OnboardingEmergencyContact | None = None
     employment: OnboardingEmploymentInfo | None = None
+    education: OnboardingEducationInfo | None = None
+    government_docs: OnboardingGovernmentDocs | None = None
+    references: OnboardingReferences | None = None
     documents: OnboardingDocumentsAck | None = None
+    nda: OnboardingSignature | None = None
+    contract: OnboardingSignature | None = None
+    resume: OnboardingResume | None = None

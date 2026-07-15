@@ -56,9 +56,10 @@ export default function SuperAdminDashboardPage() {
         email: form.email.trim(),
         phone: form.phone.trim(),
       });
+      sessionStorage.setItem("pendingEmail", form.email.trim());
+      sessionStorage.setItem("pendingRole", "super_admin");
       setMessage(data.message);
-      setNeedsBootstrap(false);
-      setForm(initialForm);
+      router.push("/verify-email");
     } catch (error) {
       setMessage(getApiErrorMessage(error, "Could not create super admin."));
     } finally {

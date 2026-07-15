@@ -23,9 +23,15 @@ async def create_database_indexes() -> None:
     await database.candidates.create_index("email", unique=True)
     await database.candidates.create_index("supabase_user_id", unique=True, sparse=True)
     await database.candidates.create_index("invitation_token", unique=True, sparse=True)
+    await database.candidates.create_index("user_id", unique=True, sparse=True)
+    await database.candidates.create_index([("conversion_status", 1), ("recruiter_id", 1)])
+    await database.candidates.create_index("recruiter_id")
 
     await database.employees.create_index("email", unique=True)
     await database.employees.create_index("supabase_user_id", unique=True, sparse=True)
+    await database.employees.create_index("employee_id", unique=True, sparse=True)
+    await database.employees.create_index("user_id", unique=True, sparse=True)
+    await database.employees.create_index("recruiter_id")
 
     await database.super_admins.create_index("email", unique=True)
     await database.super_admins.create_index("supabase_user_id", unique=True, sparse=True)
@@ -36,6 +42,3 @@ async def create_database_indexes() -> None:
     await database.notifications.create_index([("recipient_id", 1), ("read", 1)])
 
     await database.announcements.create_index([("created_at", -1)])
-
-    await database.candidates.create_index("recruiter_id")
-    await database.employees.create_index("recruiter_id")

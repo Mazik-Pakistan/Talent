@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import RequireAccess, { ModuleNav } from "@/components/RequireAccess";
 import { clearLocalSession, getApiErrorMessage, getCandidateDashboard, logout } from "@/services/authService";
 
+const DASHBOARD_REFRESH_MS = 60000;
+
 export default function CandidateDashboardPage() {
   return (
     <RequireAccess anyOf={["onboarding.self", "profile.view"]} roles={["candidate"]}>
@@ -43,6 +45,8 @@ function CandidateDashboardContent() {
 
   useEffect(() => {
     loadDashboard();
+    const interval = setInterval(loadDashboard, DASHBOARD_REFRESH_MS);
+    return () => clearInterval(interval);
   }, [loadDashboard]);
 
   async function handleLogout() {
@@ -52,7 +56,11 @@ function CandidateDashboardContent() {
     router.replace("/login");
   }
 
-  function goToOnboarding() {
+  function goToOnboarding(step) {
+    if (step) {
+      router.push(`/onboarding?step=${encodeURIComponent(step)}`);
+      return;
+    }
     router.push("/onboarding");
   }
 
@@ -153,7 +161,9 @@ function CandidateDashboardContent() {
                     type="button"
                     className={`task-item ${task.completed ? "completed" : ""} ${!task.available ? "disabled" : ""}`}
                     disabled={!task.available}
-                    onClick={() => task.available && !task.completed && goToOnboarding()}
+                    onClick={() =>
+                      task.available && !task.completed && goToOnboarding(task.action_step || undefined)
+                    }
                   >
                     <span className="task-check">{task.completed ? "✓" : ""}</span>
                     <span className="task-label">{task.label}</span>

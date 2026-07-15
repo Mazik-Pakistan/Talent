@@ -140,7 +140,8 @@ export default function InviteRegisterPage() {
           <h1 id="candidate-register-heading">Create your account</h1>
           <p>
             You&apos;ve been invited for <strong>{invitation.job_title}</strong> in{" "}
-            <strong>{invitation.department}</strong>. Complete registration to begin onboarding.
+            <strong>{invitation.department}</strong>. Create your account, then enter the
+            6-digit code we email you to verify and start onboarding.
           </p>
         </div>
 

@@ -34,7 +34,7 @@ async def get_dashboard_activity(
 # ----- US-018 / US-019 / US-021 / US-022 -----
 @router.get("/api/dashboard/candidate")
 async def get_candidate_dashboard(current_user: RequireOnboardingSelf):
-    return await candidate_service.get_dashboard(current_user.access_token)
+    return await candidate_service.get_dashboard(current_user)
 
 
 # ----- US-014 -----
