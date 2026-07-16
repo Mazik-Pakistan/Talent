@@ -201,6 +201,10 @@ export async function getDashboardActivity(accessToken, limit = 20) {
   return data;
 }
 
+export async function getRecruiterActivity(accessToken, limit = 20) {
+  return getDashboardActivity(accessToken, limit);
+}
+
 // ─── Candidate Dashboard ─────────────────────────────────────────────────────
 
 export async function getCandidateDashboard(accessToken) {
