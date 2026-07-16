@@ -22,6 +22,7 @@ from app.schemas.auth import (
     RegisterRequest,
 )
 from app.services.email_service import email_service
+from app.services.profile_image_service import profile_image_service
 
 # ---------- Brute-force protection constants ----------
 LOCKOUT_THRESHOLD = 5
@@ -235,6 +236,7 @@ class AuthService:
                 "email": email,
                 "phone": pending.get("phone"),
                 "role": role,
+                "profileImage": None,
             },
             "session": {
                 "access_token": access_token,
@@ -425,6 +427,7 @@ class AuthService:
                 "job_title": profile.get("job_title"),
                 "department": profile.get("department"),
                 "employee_id": profile.get("employee_id"),
+                "profileImage": await profile_image_service.get_profile_image_by_user_id(user_id),
             },
             "session": {
                 "access_token": access_token,

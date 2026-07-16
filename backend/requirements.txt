@@ -34,6 +34,8 @@ rich
 
 supabase
 
+cloudinary
+
 pytest
 
 pytest-asyncio

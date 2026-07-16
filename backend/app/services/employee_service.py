@@ -13,6 +13,7 @@ from app.core.rbac import CurrentUser
 from app.services.candidate_service import CandidateService, onboarding_missing_keys
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
+from app.services.profile_image_service import profile_image_service
 
 EMPLOYEE_ID_PREFIX = "MZK"
 
@@ -91,6 +92,9 @@ class EmployeeService:
             query["recruiter_id"] = current_user.id
 
         docs = await database.candidates.find(query).sort("onboarding.submitted_at", -1).to_list(length=100)
+        profile_images = await profile_image_service.get_profile_images_by_user_ids(
+            [candidate.get("user_id") for candidate in docs if candidate.get("user_id")]
+        )
         pending = []
         for candidate in docs:
             pending.append(
@@ -100,6 +104,7 @@ class EmployeeService:
                     "email": candidate.get("email"),
                     "job_title": candidate.get("job_title"),
                     "department": candidate.get("department"),
+                    "profileImage": profile_images.get(candidate.get("user_id")),
                     "submitted_at": (
                         candidate.get("onboarding", {}).get("submitted_at").isoformat()
                         if hasattr(candidate.get("onboarding", {}).get("submitted_at"), "isoformat")
@@ -131,6 +136,7 @@ class EmployeeService:
                     "department": offer.get("department") or candidate.get("department"),
                     "office_location": offer.get("office_location") or candidate.get("office_location"),
                     "start_date": offer.get("start_date") or candidate.get("start_date"),
+                    "profileImage": await profile_image_service.get_profile_image_by_user_id(candidate.get("user_id")),
                     "signed_at": offer.get("signed_at").isoformat() if hasattr(offer.get("signed_at"), "isoformat") else offer.get("signed_at"),
                     "monthly_salary": offer.get("monthly_salary"),
                     "reporting_manager": offer.get("reporting_manager"),
@@ -308,12 +314,248 @@ class EmployeeService:
         query: dict = {"status": "active"}
         if current_user.role != "super_admin":
             query["recruiter_id"] = current_user.id
+<<<<<<< Updated upstream
         docs = await database.employees.find(query).sort("created_at", -1).to_list(length=200)
+=======
+        if status:
+            query["status"] = status
+        else:
+            query["status"] = {"$in": ["active", "inactive", "on_leave"]}
+        if employee_id:
+            query["employee_id"] = {"$regex": employee_id.strip(), "$options": "i"}
+        if department:
+            query["department"] = {"$regex": department.strip(), "$options": "i"}
+        if job_title:
+            query["job_title"] = {"$regex": job_title.strip(), "$options": "i"}
+        if joining_from or joining_to:
+            date_filter: dict = {}
+            if joining_from:
+                date_filter["$gte"] = joining_from
+            if joining_to:
+                date_filter["$lte"] = joining_to
+            query["start_date"] = date_filter
+        if q and q.strip():
+            term = q.strip()
+            query["$or"] = [
+                {"full_name": {"$regex": term, "$options": "i"}},
+                {"email": {"$regex": term, "$options": "i"}},
+                {"employee_id": {"$regex": term, "$options": "i"}},
+                {"department": {"$regex": term, "$options": "i"}},
+                {"job_title": {"$regex": term, "$options": "i"}},
+            ]
+        return query
+
+    async def list_employees(
+        self,
+        current_user: CurrentUser,
+        *,
+        q: str | None = None,
+        employee_id: str | None = None,
+        department: str | None = None,
+        job_title: str | None = None,
+        status: str | None = None,
+        joining_from: str | None = None,
+        joining_to: str | None = None,
+        sort: str = "created_at",
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict:
+        page = max(1, page)
+        page_size = max(1, min(page_size, 100))
+        query = self._directory_query(
+            current_user,
+            q=q,
+            employee_id=employee_id,
+            department=department,
+            job_title=job_title,
+            status=status,
+            joining_from=joining_from,
+            joining_to=joining_to,
+        )
+        sort_field = sort.lstrip("-") if sort else "created_at"
+        if sort_field not in {"created_at", "full_name", "employee_id", "department", "job_title", "start_date"}:
+            sort_field = "created_at"
+        sort_dir = -1 if (sort or "").startswith("-") or sort_field == "created_at" else 1
+        if sort == "full_name" or sort == "employee_id":
+            sort_dir = 1
+        if sort and sort.startswith("-"):
+            sort_dir = -1
+        elif sort in {"full_name", "employee_id", "department", "job_title", "start_date"}:
+            sort_dir = 1
+
+        total = await database.employees.count_documents(query)
+        skip = (page - 1) * page_size
+        docs = (
+            await database.employees.find(query)
+            .sort(sort_field, sort_dir)
+            .skip(skip)
+            .limit(page_size)
+            .to_list(length=page_size)
+        )
+        profile_images = await profile_image_service.get_profile_images_by_user_ids(
+            [doc.get("user_id") for doc in docs if doc.get("user_id")]
+        )
+>>>>>>> Stashed changes
         return {
-            "employees": [self._public_employee(doc) for doc in docs],
+            "employees": [self._public_employee({**doc, "profileImage": profile_images.get(doc.get("user_id"))}) for doc in docs],
             "count": len(docs),
         }
 
+<<<<<<< Updated upstream
+=======
+    async def export_employees_csv(self, current_user: CurrentUser, **filters) -> str:
+        filters.pop("page", None)
+        filters.pop("page_size", None)
+        result = await self.list_employees(current_user, page=1, page_size=5000, **filters)
+        import csv
+        import io
+
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(
+            [
+                "employee_id",
+                "full_name",
+                "email",
+                "phone",
+                "job_title",
+                "department",
+                "office_location",
+                "reporting_manager",
+                "start_date",
+                "status",
+                "profile_status",
+            ]
+        )
+        for emp in result["employees"]:
+            writer.writerow(
+                [
+                    emp.get("employee_id") or "",
+                    emp.get("full_name") or "",
+                    emp.get("email") or "",
+                    emp.get("phone") or "",
+                    emp.get("job_title") or "",
+                    emp.get("department") or "",
+                    emp.get("office_location") or "",
+                    emp.get("reporting_manager") or "",
+                    emp.get("start_date") or "",
+                    emp.get("status") or "",
+                    emp.get("profile_status") or "",
+                ]
+            )
+        return buffer.getvalue()
+
+    async def get_employee_profile(self, current_user: CurrentUser, employee_id: str, *, reveal_banking: bool = False) -> dict:
+        key = (employee_id or "").strip()
+        if not key:
+            raise HTTPException(status_code=404, detail="Employee not found.")
+
+        query_or: list[dict] = [
+            {"employee_id": key},
+            {"user_id": key},
+            {"email": key.lower()},
+            {"candidate_id": key},
+        ]
+        if ObjectId.is_valid(key):
+            query_or.append({"_id": ObjectId(key)})
+
+        employee = await database.employees.find_one({"$or": query_or})
+        if not employee:
+            raise HTTPException(status_code=404, detail="Employee not found.")
+        if current_user.role != "super_admin":
+            owner = str(employee.get("recruiter_id") or "")
+            if owner and owner != str(current_user.id):
+                raise HTTPException(status_code=403, detail="Not allowed.")
+        employee["profileImage"] = await profile_image_service.get_profile_image_by_user_id(employee.get("user_id"))
+        payload = self._public_employee(employee, include_onboarding=True)
+        onboarding = dict(payload.get("onboarding") or {})
+        banking = onboarding.get("employment")
+        onboarding["employment"] = decrypt_banking_payload(banking, mask=not reveal_banking)
+        payload["onboarding"] = onboarding
+        career = await self.list_career_events(employee.get("employee_id") or key)
+        payload["career"] = career["events"]
+        return {"employee": payload}
+
+    async def list_career_events(self, employee_id: str) -> dict:
+        docs = (
+            await database.employee_career_events.find({"employee_id": employee_id})
+            .sort("effective_date", -1)
+            .to_list(length=200)
+        )
+        events = []
+        for doc in docs:
+            events.append(
+                {
+                    "id": str(doc["_id"]),
+                    "employee_id": doc.get("employee_id"),
+                    "event_type": doc.get("event_type"),
+                    "effective_date": doc.get("effective_date"),
+                    "from_title": doc.get("from_title"),
+                    "to_title": doc.get("to_title"),
+                    "from_department": doc.get("from_department"),
+                    "to_department": doc.get("to_department"),
+                    "from_manager": doc.get("from_manager"),
+                    "to_manager": doc.get("to_manager"),
+                    "from_status": doc.get("from_status"),
+                    "to_status": doc.get("to_status"),
+                    "note": doc.get("note"),
+                    "actor_email": doc.get("actor_email"),
+                    "created_at": doc.get("created_at").isoformat()
+                    if hasattr(doc.get("created_at"), "isoformat")
+                    else doc.get("created_at"),
+                }
+            )
+        return {"events": events}
+
+    async def add_career_event(self, current_user: CurrentUser, employee_id: str, request) -> dict:
+        employee = await database.employees.find_one({"employee_id": employee_id})
+        if not employee:
+            raise HTTPException(status_code=404, detail="Employee not found.")
+        if current_user.role != "super_admin" and employee.get("recruiter_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="Not allowed.")
+
+        now = datetime.now(UTC)
+        data = request.model_dump(mode="json")
+        event_doc = {
+            "employee_id": employee_id,
+            "employee_user_id": employee.get("user_id"),
+            **data,
+            "actor_id": current_user.id,
+            "actor_email": current_user.email,
+            "created_at": now,
+        }
+        result = await database.employee_career_events.insert_one(event_doc)
+        event_doc["_id"] = result.inserted_id
+
+        # Mirror key changes onto the employee record
+        emp_updates: dict = {"updated_at": now}
+        if data.get("to_title"):
+            emp_updates["job_title"] = data["to_title"]
+        if data.get("to_department"):
+            emp_updates["department"] = data["to_department"]
+        if data.get("to_manager"):
+            emp_updates["reporting_manager"] = data["to_manager"]
+        if data.get("to_status"):
+            emp_updates["status"] = data["to_status"]
+        if len(emp_updates) > 1:
+            await database.employees.update_one({"_id": employee["_id"]}, {"$set": emp_updates})
+
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "recruiter_id": current_user.id,
+                "employee_id": employee_id,
+                "email": employee.get("email"),
+                "actor_email": current_user.email,
+                "module": "employees",
+                "action": f"career_{data['event_type']}",
+                "outcome": "success",
+                "created_at": now,
+            }
+        )
+        return await self.list_career_events(employee_id)
+
+>>>>>>> Stashed changes
     async def get_my_profile(self, current_user: CurrentUser) -> dict:
         employee = await database.employees.find_one(
             {
@@ -326,6 +568,14 @@ class EmployeeService:
         )
         if not employee:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee profile not found.")
+<<<<<<< Updated upstream
+=======
+        employee["profileImage"] = await profile_image_service.get_profile_image_by_user_id(employee.get("user_id"))
+        payload = self._public_employee(employee, include_onboarding=True)
+        onboarding = dict(payload.get("onboarding") or {})
+        onboarding["employment"] = decrypt_banking_payload(onboarding.get("employment"), mask=False)
+        payload["onboarding"] = onboarding
+>>>>>>> Stashed changes
         return {
             "employee": self._public_employee(employee, include_onboarding=True),
         }
@@ -336,6 +586,7 @@ class EmployeeService:
             raise HTTPException(status_code=404, detail="Candidate not found.")
         if current_user.role != "super_admin" and candidate.get("recruiter_id") != current_user.id:
             raise HTTPException(status_code=403, detail="Not allowed.")
+        candidate["profileImage"] = await profile_image_service.get_profile_image_by_user_id(candidate.get("user_id"))
         progress = CandidateService()._progress_payload(candidate)
         return {
             "candidate": {
@@ -352,6 +603,7 @@ class EmployeeService:
                 "employee_id": candidate.get("employee_id"),
                 "onboarding": candidate.get("onboarding"),
                 "progress": progress,
+                "profileImage": candidate.get("profileImage"),
             }
         }
 
@@ -469,6 +721,7 @@ class EmployeeService:
             if hasattr(doc.get("converted_at"), "isoformat")
             else doc.get("converted_at"),
             "candidate_id": doc.get("candidate_id"),
+            "profileImage": doc.get("profileImage"),
         }
         if include_onboarding:
             payload["onboarding"] = doc.get("onboarding")

@@ -12,6 +12,7 @@ import {
   saveOnboarding,
   uploadOnboardingFile,
 } from "@/services/authService";
+import ProfileImageControl from "@/components/ProfileImageControl";
 import { can, ROLE_HOME } from "@/services/rbac";
 
 // Phase 2 flow: candidates complete a short pre-offer INTAKE only. Emergency
@@ -211,6 +212,7 @@ function OnboardingContent() {
 
   const stepIndex = useMemo(() => steps.findIndex((item) => item.id === step), [step, steps]);
   const submitted = onboarding?.status === "submitted";
+  const profileImage = candidate?.profileImage;
 
   async function persist(payload) {
     const accessToken = localStorage.getItem("access_token");
@@ -365,11 +367,57 @@ function OnboardingContent() {
         </button>
       </header>
 
+<<<<<<< Updated upstream
       <section className="onboarding-card">
         {isEditMode && (
           <div className="form-message" style={{ background: "#dbeafe", color: "#1e40af", fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
             <span>✏️</span>
             <span>Edit mode — changes save automatically as you move through each step.</span>
+=======
+          <div className={styles.navSectionLabel}>Workspace</div>
+          <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {NAV_ITEMS.map((item) => {
+              const isActive = item.key === "onboarding";
+              return (
+                <li key={item.key}>
+                  <button
+                    type="button"
+                    className={`${styles.navItem} ${isActive ? styles.active : ""} ${item.disabled ? styles.disabled : ""}`}
+                    onClick={() => item.href && router.push(item.href)}
+                    title={item.disabled ? `${item.label} — coming in Phase 3` : item.label}
+                    disabled={item.disabled}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                    {item.badge && <span className={styles.navBadge}>{item.badge}</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className={styles.sidebarFooter}>
+            <div className={styles.avatarSm}>
+              {profileImage?.secure_url ? (
+                <img
+                  src={profileImage.secure_url}
+                  alt={candidate?.full_name || "Candidate"}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              ) : (
+                initials
+              )}
+            </div>
+            <div>
+              <div className={styles.name}>{candidate?.full_name || "…"}</div>
+              <div className={styles.role}>Candidate</div>
+            </div>
+            <button type="button" className={styles.logoutBtn} title="Log out" onClick={handleLogout}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" />
+              </svg>
+            </button>
+>>>>>>> Stashed changes
           </div>
         )}
 
@@ -424,6 +472,7 @@ function OnboardingContent() {
                 </div>
               )}
 
+<<<<<<< Updated upstream
               {step === "education" && (
                 <div>
                   <h2 className="step-title">Education history</h2>
@@ -461,6 +510,74 @@ function OnboardingContent() {
                   </button>
                 </div>
               )}
+=======
+                    <form onSubmit={handleNext}>
+                      {step === "personal" && (
+                        <div className={styles.formGrid}>
+                          <h2 className={styles.stepTitle}>Personal &amp; contact information</h2>
+                          <div className={styles.wide} style={{ marginBottom: 8 }}>
+                            <ProfileImageControl
+                              user={candidate}
+                              profileImage={profileImage}
+                              required
+                              label="Candidate profile image"
+                              description="Upload a clear JPG, PNG, or WEBP image before submitting your profile."
+                              allowDelete={false}
+                              onChange={(nextProfileImage) => setCandidate((current) => (current ? { ...current, profileImage: nextProfileImage } : current))}
+                            />
+                          </div>
+                          <Field styles={styles} label="First name" value={personal.first_name} onChange={(e) => setPersonal({ ...personal, first_name: e.target.value })} />
+                          <Field styles={styles} label="Last name" value={personal.last_name} onChange={(e) => setPersonal({ ...personal, last_name: e.target.value })} />
+                          <Field styles={styles} label="Date of birth" type="date" value={personal.date_of_birth} onChange={(e) => setPersonal({ ...personal, date_of_birth: e.target.value })} />
+                          <label className={styles.field}>
+                            <span>Gender</span>
+                            <select value={personal.gender} onChange={(e) => setPersonal({ ...personal, gender: e.target.value })}>
+                              <option value="male">Male</option>
+                              <option value="female">Female</option>
+                              <option value="other">Other</option>
+                              <option value="prefer_not_to_say">Prefer not to say</option>
+                            </select>
+                          </label>
+                          <Field styles={styles} label="Nationality" value={personal.nationality} onChange={(e) => setPersonal({ ...personal, nationality: e.target.value })} />
+                          <label className={styles.field}>
+                            <span>Marital status</span>
+                            <select value={personal.marital_status} onChange={(e) => setPersonal({ ...personal, marital_status: e.target.value })}>
+                              <option value="single">Single</option>
+                              <option value="married">Married</option>
+                              <option value="divorced">Divorced</option>
+                              <option value="widowed">Widowed</option>
+                              <option value="other">Other</option>
+                            </select>
+                          </label>
+                          <label className={styles.field}>
+                            <span>Blood group</span>
+                            <select value={personal.blood_group} onChange={(e) => setPersonal({ ...personal, blood_group: e.target.value })}>
+                              {["unknown", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((g) => (
+                                <option key={g} value={g}>{g}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <Field styles={styles} label="National ID / CNIC / Passport" value={personal.national_id} onChange={(e) => setPersonal({ ...personal, national_id: e.target.value })} />
+                          <Field styles={styles} label="Alternate phone" value={personal.alternate_phone} onChange={(e) => setPersonal({ ...personal, alternate_phone: e.target.value })} />
+                          <Field styles={styles} label="Current address" value={personal.current_address} onChange={(e) => setPersonal({ ...personal, current_address: e.target.value })} wide />
+                          <label className={`${styles.field} ${styles.wide}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <input
+                              type="checkbox"
+                              checked={!!personal.same_as_current}
+                              onChange={(e) => setPersonal({ ...personal, same_as_current: e.target.checked, permanent_address: e.target.checked ? personal.current_address : personal.permanent_address })}
+                            />
+                            <span>Permanent address same as current</span>
+                          </label>
+                          {!personal.same_as_current && (
+                            <Field styles={styles} label="Permanent address" value={personal.permanent_address} onChange={(e) => setPersonal({ ...personal, permanent_address: e.target.value })} wide />
+                          )}
+                          <Field styles={styles} label="City" value={personal.city} onChange={(e) => setPersonal({ ...personal, city: e.target.value })} />
+                          <Field styles={styles} label="State / Province" value={personal.state} onChange={(e) => setPersonal({ ...personal, state: e.target.value })} />
+                          <Field styles={styles} label="Postal code" value={personal.postal_code} onChange={(e) => setPersonal({ ...personal, postal_code: e.target.value })} />
+                          <Field styles={styles} label="Country" value={personal.country} onChange={(e) => setPersonal({ ...personal, country: e.target.value })} />
+                        </div>
+                      )}
+>>>>>>> Stashed changes
 
               {step === "government_docs" && (
                 <div>

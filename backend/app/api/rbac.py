@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.rbac import CurrentUser, PERMISSIONS, ROLE_PERMISSIONS, ROLE_HOME
 from app.core.security import get_current_user
+from app.services.profile_image_service import profile_image_service
 
 router = APIRouter(prefix="/api/rbac", tags=["RBAC"])
 
@@ -20,6 +21,7 @@ async def get_my_access(current_user: Annotated[CurrentUser, Depends(get_current
             "role": current_user.role,
             "job_title": current_user.job_title,
             "department": current_user.department,
+            "profileImage": await profile_image_service.get_profile_image(current_user),
         },
         "permissions": permissions,
         "home": ROLE_HOME.get(current_user.role, "/login"),

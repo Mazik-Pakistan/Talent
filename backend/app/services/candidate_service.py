@@ -10,6 +10,7 @@ from app.schemas.invitation import CandidateRegisterRequest, OnboardingSaveReque
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
 from app.services.invitation_service import InvitationService
+from app.services.profile_image_service import profile_image_service
 
 # ------------------------------------------------------------------------
 # PHASE 2 FLOW: candidates now complete a short pre-offer INTAKE only
@@ -167,6 +168,8 @@ class CandidateService:
 
     async def get_onboarding(self, current_user: CurrentUser) -> dict:
         candidate = await self._require_active_candidate(current_user)
+        candidate = dict(candidate)
+        candidate["profileImage"] = await profile_image_service.get_profile_image_by_user_id(candidate.get("user_id"))
         return {
             "candidate": self._public_user(candidate),
             "onboarding": candidate.get("onboarding") or dict(EMPTY_ONBOARDING),
@@ -213,6 +216,11 @@ class CandidateService:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Complete these steps before submitting: {', '.join(missing)}.",
+                )
+            if not await profile_image_service.get_profile_image_by_user_id(candidate.get("user_id")):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Upload a profile image before submitting your profile.",
                 )
             updates["onboarding.status"] = "submitted"
             updates["onboarding.current_step"] = "complete"
@@ -415,6 +423,7 @@ class CandidateService:
                 "initials": self._initials(candidate.get("full_name")),
                 "recruiter": recruiter_contact,
                 "conversion_status": candidate.get("conversion_status", "pending"),
+                "profileImage": await profile_image_service.get_profile_image_by_user_id(candidate.get("user_id")),
             },
             "progress": self._progress_payload(candidate),
             "tasks": self._task_list(onboarding),
@@ -454,4 +463,5 @@ class CandidateService:
             "office_location": candidate.get("office_location"),
             "start_date": candidate.get("start_date"),
             "conversion_status": candidate.get("conversion_status"),
+            "profileImage": candidate.get("profileImage"),
         }

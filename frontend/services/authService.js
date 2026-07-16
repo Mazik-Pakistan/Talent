@@ -460,3 +460,29 @@ export async function saveProfileCompletion(payload, accessToken) {
   });
   return data;
 }
+
+// â”€â”€â”€ Profile Images â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export async function getProfileImage(accessToken) {
+  const { data } = await apiClient.get("/api/profile/image", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function uploadProfileImage(formData, accessToken) {
+  const { data } = await apiClient.post("/api/profile/image", formData, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return data;
+}
+
+export async function deleteProfileImage(accessToken) {
+  const { data } = await apiClient.delete("/api/profile/image", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}

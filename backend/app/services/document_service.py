@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+import tempfile
 
 from bson import ObjectId
 from fastapi import HTTPException, UploadFile, status
@@ -66,7 +67,6 @@ class DocumentService:
         version = 1
         if previous:
             version = int(previous.get("version", 1)) + 1
-            await database.documents.update_one({"_id": previous["_id"]}, {"$set": {"is_active": False}})
 
         needs_ocr = settings.ENABLE_OCR
 
@@ -80,9 +80,16 @@ class DocumentService:
             "file_name": original,
             "storage_backend": stored["backend"],
             "object_path": stored["object_path"],
-            "file_url": stored["file_url"],
+            "public_id": stored["public_id"],
+            "secure_url": stored["secure_url"],
+            "file_url": stored["secure_url"],
+            "original_filename": stored["original_filename"],
+            "file_type": stored["file_type"],
+            "mime_type": stored["mime_type"],
+            "size": stored["size"],
+            "resource_type": stored["resource_type"],
             "version": version,
-            "previous_version_id": str(previous["_id"]) if previous else None,
+            "previous_version_id": None,
             "is_active": True,
             "status": "processing" if needs_ocr else "pending_verification",
             "ocr_result": None,
@@ -95,18 +102,21 @@ class DocumentService:
             "uploaded_at": now,
             "updated_at": now,
         }
-        result = await database.documents.insert_one(doc)
-        doc["_id"] = result.inserted_id
 
         if needs_ocr:
-            import asyncio
             try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=Path(original).suffix.lower()) as tmp:
+                    tmp.write(content)
+                    temp_path = Path(tmp.name)
+
                 def _run_extraction():
-                    return document_extraction_service.extract_text(stored["local_path"])
-                
+                    return document_extraction_service.extract_text(str(temp_path))
+
+                import asyncio
+
                 raw_text = await asyncio.to_thread(_run_extraction)
                 parsed = await document_extraction_service.parse_structured_data(raw_text)
-                
+
                 ocr_result = {
                     "status": "completed" if raw_text.strip() else "failed",
                     "confidence": 1.0 if raw_text.strip() else 0.0,
@@ -126,6 +136,9 @@ class DocumentService:
                     "engine": "document_extraction_service",
                     "error": str(exc),
                 }
+            finally:
+                if "temp_path" in locals() and temp_path.exists():
+                    temp_path.unlink(missing_ok=True)
 
             update = {
                 "ocr_result": ocr_result,
@@ -135,7 +148,6 @@ class DocumentService:
                 else "pending_verification",
                 "updated_at": datetime.now(UTC),
             }
-            await database.documents.update_one({"_id": doc["_id"]}, {"$set": update})
             doc.update(update)
 
             # Generate resume embeddings for Phase 3 prep if enabled
@@ -144,6 +156,27 @@ class DocumentService:
                     await self.generate_resume_embedding(current_user, raw_text)
                 except Exception:
                     pass
+
+        db_update = {k: v for k, v in doc.items() if k != "_id"}
+        if previous:
+            previous_public_id = previous.get("public_id")
+            previous_resource_type = previous.get("resource_type") or "raw"
+            update_result = await database.documents.update_one({"_id": previous["_id"]}, {"$set": db_update})
+            if update_result.modified_count == 0:
+                await storage_service.delete_file(stored["public_id"], resource_type=stored["resource_type"])
+                raise HTTPException(status_code=500, detail="Unable to save the uploaded document.")
+
+            if previous_public_id:
+                deleted = await storage_service.delete_file(previous_public_id, resource_type=previous_resource_type)
+                if not deleted:
+                    previous_restore = {k: v for k, v in previous.items() if k != "_id"}
+                    await database.documents.update_one({"_id": previous["_id"]}, {"$set": previous_restore})
+                    await storage_service.delete_file(stored["public_id"], resource_type=stored["resource_type"])
+                    raise HTTPException(status_code=502, detail="Could not replace the previous uploaded file.")
+            doc["_id"] = previous["_id"]
+        else:
+            result = await database.documents.insert_one(db_update)
+            doc["_id"] = result.inserted_id
 
         await self._notify_recruiter_owner(current_user, doc_type, category)
         await database.audit_logs.insert_one(
@@ -302,6 +335,13 @@ class DocumentService:
             "category": doc.get("category"),
             "doc_type": doc.get("doc_type"),
             "file_name": doc.get("file_name"),
+            "original_filename": doc.get("original_filename"),
+            "public_id": doc.get("public_id"),
+            "secure_url": doc.get("secure_url") or doc.get("file_url"),
+            "file_url": doc.get("file_url") or doc.get("secure_url"),
+            "file_type": doc.get("file_type"),
+            "mime_type": doc.get("mime_type"),
+            "size": doc.get("size"),
             "status": doc.get("status"),
             "version": doc.get("version"),
             "verification_status": doc.get("verification_status"),

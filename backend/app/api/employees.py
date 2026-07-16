@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from app.core.rbac import CurrentUser
 from app.core.security import require_permissions, require_roles
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
-from app.services import storage_service
 from app.services.candidate_service import CandidateService
 from app.services.document_service import document_service
 from app.services.employee_service import EmployeeService
@@ -122,25 +121,36 @@ async def upload_onboarding_file(
     category = PURPOSE_TO_CATEGORY.get(purpose, "other")
     resolved_doc_type = doc_type or PURPOSE_TO_DEFAULT_DOC_TYPE.get(purpose, "other")
 
+<<<<<<< Updated upstream
     stored = await storage_service.save_file(current_user.id, category, original, content)
     file_url = stored["file_url"] or f"/api/documents/{stored['object_path']}/download"
 
     # Track as a first-class Document (drives OCR + recruiter review UI).
+=======
+>>>>>>> Stashed changes
     class _FakeUpload:
         filename = original
 
         async def read(self_inner):
             return content
 
+    doc_res = None
     ocr_result = None
     try:
         doc_res = await document_service.upload(current_user, file=_FakeUpload(), category=category, doc_type=resolved_doc_type)
         if doc_res and "document" in doc_res:
-            ocr_result = doc_res["document"].get("ocr_result")
+            doc = doc_res["document"]
+            ocr_result = doc.get("ocr_result")
     except HTTPException:
         raise
     except Exception:
+<<<<<<< Updated upstream
         pass  # Document tracking is best-effort; the wizard attachment below always succeeds.
+=======
+        raise
+
+    file_url = doc_res["document"].get("secure_url") or doc_res["document"].get("file_url")
+>>>>>>> Stashed changes
 
     resp = await candidate_service.attach_uploaded_file(
         current_user,

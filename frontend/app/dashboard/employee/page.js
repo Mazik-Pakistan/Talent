@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+<<<<<<< Updated upstream
 import RequireAccess, { ModuleNav } from "@/components/RequireAccess";
+=======
+import RequireAccess from "@/components/RequireAccess";
+import ProfileImageControl from "@/components/ProfileImageControl";
+>>>>>>> Stashed changes
 import {
   clearLocalSession,
   getApiErrorMessage,
@@ -63,6 +68,50 @@ function EmployeeDashboardContent() {
     router.replace("/login");
   }
 
+<<<<<<< Updated upstream
+=======
+  const modules = useMemo(() => moduleAccess(user?.role), [user?.role]);
+
+  const onboarding = useMemo(() => employee?.onboarding || {}, [employee]);
+  const profileImage = employee?.profileImage || user?.profileImage;
+  const profileIncomplete = employee?.profile_status === "incomplete";
+  const percentage = progress?.percentage ?? (profileIncomplete ? 0 : 100);
+  const documentsSummary = onboarding?.government_docs?.documents?.length ?? null;
+
+  // ----- Client-side "Search records" over the data already on this page -----
+  const searchIndex = useMemo(() => {
+    if (!employee) return [];
+    const rows = [
+      { label: "Employee ID", value: employee.employee_id, anchor: "profile-section" },
+      { label: "Designation", value: employee.job_title, anchor: "profile-section" },
+      { label: "Department", value: employee.department, anchor: "profile-section" },
+      { label: "Reporting manager", value: employee.reporting_manager, anchor: "profile-section" },
+      { label: "Office location", value: employee.office_location, anchor: "profile-section" },
+      { label: "Joining date", value: formatDate(employee.start_date), anchor: "profile-section" },
+      { label: "Personal", value: summarize(onboarding.personal), anchor: "onboarding-section" },
+      { label: "Emergency contact", value: summarize(onboarding.emergency), anchor: "onboarding-section" },
+      { label: "Payroll", value: summarize(onboarding.employment), anchor: "onboarding-section" },
+      { label: "NDA", value: onboarding.nda?.full_legal_name || "Not on file", anchor: "onboarding-section" },
+      { label: "Resume", value: onboarding.resume?.file_name || "Not on file", anchor: "onboarding-section" },
+    ];
+    return rows.filter((row) => row.value);
+  }, [employee, onboarding]);
+
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return searchIndex.filter(
+      (row) => row.label.toLowerCase().includes(q) || String(row.value).toLowerCase().includes(q)
+    ).slice(0, 8);
+  }, [searchQuery, searchIndex]);
+
+  function goToResult(anchor) {
+    setSearchOpen(false);
+    setSearchQuery("");
+    document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+>>>>>>> Stashed changes
   if (!user) {
     return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
   }
@@ -93,6 +142,7 @@ function EmployeeDashboardContent() {
         </section>
       )}
 
+<<<<<<< Updated upstream
       {!loading && profileIncomplete && (
         <section className="dashboard-card wide" style={{ padding: 0, background: "transparent", border: "none", boxShadow: "none", marginBottom: 0 }}>
           <div className="profile-incomplete-banner">
@@ -103,6 +153,23 @@ function EmployeeDashboardContent() {
                 Add your emergency contact, banking details, references, sign the NDA, and acknowledge company
                 policies to unlock your full workspace.
               </p>
+=======
+          <div className={styles.sidebarFooter}>
+            <div className={styles.avatarSm}>
+              {profileImage?.secure_url ? (
+                <img
+                  src={profileImage.secure_url}
+                  alt={user.full_name}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              ) : (
+                initials
+              )}
+            </div>
+            <div className={styles.sidebarFooterText}>
+              <div className={styles.name}>{employee?.full_name || user.full_name}</div>
+              <div className={styles.role}>{employee?.job_title || "Employee"}</div>
+>>>>>>> Stashed changes
             </div>
             <button type="button" className="primary-button" onClick={() => router.push("/dashboard/employee/complete-profile")}>
               Complete my profile
@@ -185,11 +252,63 @@ function EmployeeDashboardContent() {
             </div>
           </section>
 
+<<<<<<< Updated upstream
           <section className="dashboard-card wide">
             <h2>Workplace modules</h2>
             <div className="dashboard-columns" style={{ marginTop: 0 }}>
               <div className="widget-placeholder">Assigned learning modules will appear here in Phase 3.</div>
               <div className="widget-placeholder">AI Coach will appear here in Phase 3.</div>
+=======
+            {/* Employment profile */}
+            <div className={styles.section} id="profile-section">
+              <div className={styles.sectionHead}>
+                <div className={styles.sectionHeadLeft}>
+                  <div className={`${styles.bar} ${styles.navy}`} />
+                  <div>
+                    <div className={styles.sectionTitle}>Employment profile</div>
+                    <div className={styles.sectionDesc}>Core employment record synced from HR onboarding.</div>
+                  </div>
+                </div>
+              </div>
+              <div className={styles.sectionBody}>
+                {!loading && (
+                  <div style={{ marginBottom: 16 }}>
+                    <ProfileImageControl
+                      user={employee || user}
+                      profileImage={profileImage}
+                      label="Employee profile image"
+                      description="Replace your Cloudinary profile image whenever you need to."
+                      allowDelete={false}
+                      onChange={(nextProfileImage) =>
+                        setEmployee((current) => (current ? { ...current, profileImage: nextProfileImage } : current))
+                      }
+                    />
+                  </div>
+                )}
+                {loading ? (
+                  <p className={styles.emptySub}>Loading…</p>
+                ) : (
+                  <div className={styles.fieldGrid}>
+                    <Field label="Employee ID" value={employee?.employee_id} styles={styles} />
+                    <Field label="Designation" value={employee?.job_title} styles={styles} />
+                    <Field label="Department" value={employee?.department} styles={styles} />
+                    <Field label="Reporting manager" value={employee?.reporting_manager} styles={styles} />
+                    <Field label="Office location" value={employee?.office_location} styles={styles} />
+                    <Field label="Joining date" value={formatDate(employee?.start_date)} styles={styles} />
+                    <Field label="Converted on" value={formatDate(employee?.converted_at)} styles={styles} />
+                    <div>
+                      <div className={styles.fieldLabel}>Profile status</div>
+                      <span className={`${styles.statusPill} ${profileIncomplete ? styles.incomplete : ""}`}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                          <path d="M20 6L9 17l-5-5" />
+                        </svg>
+                        {profileIncomplete ? "Incomplete" : "Complete"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+>>>>>>> Stashed changes
             </div>
           </section>
         </div>

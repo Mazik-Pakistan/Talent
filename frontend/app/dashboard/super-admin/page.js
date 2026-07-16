@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import ProfileImageControl from "@/components/ProfileImageControl";
 import { ModuleNav } from "@/components/RequireAccess";
 import { bootstrapSuperAdmin, clearLocalSession, getApiErrorMessage, logout } from "@/services/authService";
 import { can } from "@/services/rbac";
@@ -18,6 +19,7 @@ const initialForm = {
 export default function SuperAdminDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
+  const [profileImage, setProfileImage] = useState(null);
   const [needsBootstrap, setNeedsBootstrap] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [message, setMessage] = useState("");
@@ -30,6 +32,7 @@ export default function SuperAdminDashboardPage() {
       const parsed = JSON.parse(storedUser);
       if (parsed.role === "super_admin" && can(parsed, "admin.access")) {
         setUser(parsed);
+        setProfileImage(parsed.profileImage || null);
         return;
       }
       router.replace("/dashboard");
@@ -129,6 +132,16 @@ export default function SuperAdminDashboardPage() {
       <section className="dashboard-card">
         <h2>Platform control</h2>
         <p>Super Admin has access to all modules. Unauthorized API calls from other roles return HTTP 403.</p>
+        <div style={{ marginTop: "1rem" }}>
+          <ProfileImageControl
+            user={user}
+            profileImage={profileImage}
+            label="Super Admin profile image"
+            description="Optional Cloudinary profile image for the Super Admin account."
+            allowDelete
+            onChange={setProfileImage}
+          />
+        </div>
         <div className="dashboard-actions" style={{ marginTop: "1rem" }}>
           <a className="secondary-button" href="/dashboard/recruiter" style={{ display: "inline-flex", alignItems: "center" }}>
             Open recruitment

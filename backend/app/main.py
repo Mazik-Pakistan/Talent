@@ -11,6 +11,7 @@ from app.api.documents import router as documents_router
 from app.api.employees import router as employees_router
 from app.api.invitations import router as invitations_router
 from app.api.offers import router as offers_router
+from app.api.profile import router as profile_router
 from app.api.onboarding import router as onboarding_router
 from app.api.rbac import router as rbac_router
 from app.core.config import settings
@@ -46,5 +47,6 @@ app.include_router(rbac_router)
 app.include_router(dashboard_router)
 app.include_router(employees_router)
 app.include_router(offers_router)
+app.include_router(profile_router)
 app.include_router(documents_router)
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")
