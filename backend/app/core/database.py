@@ -42,3 +42,11 @@ async def create_database_indexes() -> None:
     await database.notifications.create_index([("recipient_id", 1), ("read", 1)])
 
     await database.announcements.create_index([("created_at", -1)])
+
+    await database.offer_letters.create_index("candidate_id")
+    await database.offer_letters.create_index([("status", 1), ("recruiter_id", 1)])
+    await database.offer_letters.create_index("candidate_email")
+
+    await database.documents.create_index([("owner_id", 1), ("is_active", 1)])
+    await database.documents.create_index([("owner_id", 1), ("doc_type", 1)])
+    await database.documents.create_index([("status", 1)])

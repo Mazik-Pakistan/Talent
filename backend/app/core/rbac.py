@@ -14,6 +14,10 @@ PERMISSIONS: dict[str, str] = {
     "recruitment.invite": "Create candidate invitations",
     "onboarding.self": "Complete personal onboarding",
     "onboarding.manage": "Manage candidate onboarding",
+    "documents.self": "Upload and manage own documents",
+    "documents.review": "Review and verify candidate/employee documents",
+    "offers.self": "View and sign own offer letter",
+    "offers.manage": "Create, send, and approve offer letters",
     "learning.access": "Access learning modules",
     "ai.access": "Access AI modules",
     "ai.coach": "Access AI Coach",
@@ -31,6 +35,8 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             "recruitment.view",
             "recruitment.invite",
             "onboarding.manage",
+            "documents.review",
+            "offers.manage",
             "learning.access",
             "ai.access",
             "reporting.view",
@@ -41,6 +47,8 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "candidate": frozenset(
         {
             "onboarding.self",
+            "documents.self",
+            "offers.self",
             "learning.access",
             "ai.coach",
             "profile.view",
@@ -49,6 +57,8 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "employee": frozenset(
         {
             "onboarding.self",
+            "documents.self",
+            "offers.self",
             "learning.access",
             "ai.coach",
             "profile.view",

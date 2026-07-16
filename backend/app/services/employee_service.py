@@ -1,4 +1,6 @@
-"""US-023 / US-024: Convert candidate → employee and generate Employee IDs."""
+"""US-023 / US-024: Convert candidate → employee and generate Employee IDs.
+Also owns the post-hire 'complete your profile' flow (US-025..US-033 subset
+that moved to the employee side of the offer-letter flow)."""
 
 from datetime import UTC, datetime
 
@@ -8,11 +10,29 @@ from fastapi import HTTPException, status
 
 from app.core.database import database
 from app.core.rbac import CurrentUser
-from app.services.candidate_service import CandidateService, is_onboarding_complete, onboarding_missing_keys
+from app.services.candidate_service import CandidateService, onboarding_missing_keys
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
 
 EMPLOYEE_ID_PREFIX = "MZK"
+
+# Post-hire profile completion — the flow the user lands on right after
+# their Employee ID is issued ("profile incomplete" banner on the dashboard).
+PROFILE_TASK_DEFS = [
+    {"id": "emergency", "label": "Add emergency contact", "step": "emergency"},
+    {"id": "employment", "label": "Complete bank & payroll details", "step": "employment"},
+    {"id": "references", "label": "Provide professional references", "step": "references"},
+    {"id": "documents", "label": "Acknowledge company policies", "step": "documents"},
+    {"id": "nda", "label": "Sign the NDA", "step": "nda"},
+]
+PROFILE_REQUIRED_KEYS = ["emergency", "employment", "references", "documents", "nda"]
+PROFILE_STEP_FLOW = {
+    "emergency": "employment",
+    "employment": "references",
+    "references": "documents",
+    "documents": "nda",
+    "nda": "submit",
+}
 
 
 class EmployeeService:
@@ -60,39 +80,60 @@ class EmployeeService:
             "allocated": allocate,
         }
 
-    async def list_ready_for_conversion(self, current_user: CurrentUser) -> dict:
-        """Candidates with 100% onboarding ready for recruiter conversion."""
+    async def list_pending_review(self, current_user: CurrentUser) -> dict:
+        """Candidates who submitted their intake and are awaiting an offer letter."""
         query: dict = {
-            "status": "active",
             "onboarding.status": "submitted",
-            "conversion_status": {"$ne": "converted"},
+            "status": {"$ne": "converted"},
+            "conversion_status": {"$in": ["intake_submitted", None]},
         }
         if current_user.role != "super_admin":
             query["recruiter_id"] = current_user.id
 
         docs = await database.candidates.find(query).sort("onboarding.submitted_at", -1).to_list(length=100)
-        ready = []
+        pending = []
         for candidate in docs:
-            onboarding = candidate.get("onboarding") or {}
-            if not is_onboarding_complete(onboarding):
-                continue
-            progress = CandidateService()._progress_payload(candidate)
-            ready.append(
+            pending.append(
                 {
                     "id": candidate.get("user_id") or str(candidate["_id"]),
                     "full_name": candidate.get("full_name"),
                     "email": candidate.get("email"),
                     "job_title": candidate.get("job_title"),
                     "department": candidate.get("department"),
-                    "office_location": candidate.get("office_location"),
-                    "start_date": candidate.get("start_date"),
                     "submitted_at": (
-                        onboarding.get("submitted_at").isoformat()
-                        if hasattr(onboarding.get("submitted_at"), "isoformat")
-                        else onboarding.get("submitted_at")
+                        candidate.get("onboarding", {}).get("submitted_at").isoformat()
+                        if hasattr(candidate.get("onboarding", {}).get("submitted_at"), "isoformat")
+                        else candidate.get("onboarding", {}).get("submitted_at")
                     ),
-                    "progress_percentage": progress["percentage"],
-                    "onboarding": onboarding,
+                }
+            )
+        return {"candidates": pending, "count": len(pending)}
+
+    async def list_ready_for_conversion(self, current_user: CurrentUser) -> dict:
+        """Candidates whose offer has been signed and is awaiting HR approval/activation."""
+        query: dict = {"status": "signed"}
+        if current_user.role != "super_admin":
+            query["recruiter_id"] = current_user.id
+
+        offers = await database.offer_letters.find(query).sort("signed_at", -1).to_list(length=100)
+        ready = []
+        for offer in offers:
+            candidate = await self._find_candidate(offer["candidate_id"])
+            if not candidate or candidate.get("status") == "converted":
+                continue
+            ready.append(
+                {
+                    "id": candidate.get("user_id") or str(candidate["_id"]),
+                    "offer_id": str(offer["_id"]),
+                    "full_name": candidate.get("full_name"),
+                    "email": candidate.get("email"),
+                    "job_title": offer.get("job_title") or candidate.get("job_title"),
+                    "department": offer.get("department") or candidate.get("department"),
+                    "office_location": offer.get("office_location") or candidate.get("office_location"),
+                    "start_date": offer.get("start_date") or candidate.get("start_date"),
+                    "signed_at": offer.get("signed_at").isoformat() if hasattr(offer.get("signed_at"), "isoformat") else offer.get("signed_at"),
+                    "monthly_salary": offer.get("monthly_salary"),
+                    "reporting_manager": offer.get("reporting_manager"),
                 }
             )
         return {"candidates": ready, "count": len(ready)}
@@ -136,10 +177,19 @@ class EmployeeService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    "Candidate onboarding is incomplete. Missing: "
+                    "Candidate's pre-offer profile is incomplete. Missing: "
                     + (", ".join(missing) if missing else "final submission")
                     + "."
                 ),
+            )
+
+        offer = await database.offer_letters.find_one(
+            {"candidate_id": candidate.get("user_id") or str(candidate["_id"]), "status": "signed"}
+        )
+        if not offer:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This candidate does not have a signed offer letter yet. Send and get the offer signed before activation.",
             )
 
         id_payload = await self.generate_employee_id(allocate=True)
@@ -155,15 +205,24 @@ class EmployeeService:
             "phone": candidate.get("phone"),
             "role": "employee",
             "status": "active",
-            "job_title": candidate.get("job_title"),
-            "department": candidate.get("department"),
-            "office_location": candidate.get("office_location"),
-            "start_date": candidate.get("start_date"),
+            "job_title": offer.get("job_title") or candidate.get("job_title"),
+            "department": offer.get("department") or candidate.get("department"),
+            "employment_type": offer.get("employment_type"),
+            "office_location": offer.get("office_location") or candidate.get("office_location"),
+            "start_date": offer.get("start_date") or candidate.get("start_date"),
+            "reporting_manager": offer.get("reporting_manager"),
+            "monthly_salary": offer.get("monthly_salary"),
+            "currency": offer.get("currency"),
             "recruiter_id": candidate.get("recruiter_id"),
             "recruiter_email": candidate.get("recruiter_email"),
             "candidate_id": user_id or str(candidate["_id"]),
             "invitation_token": candidate.get("invitation_token"),
+            "offer_id": str(offer["_id"]),
+            # Intake fields carry over as-is; post-hire fields start empty and
+            # drive the "Profile incomplete" banner until completed.
             "onboarding": onboarding,
+            "profile_status": "incomplete",
+            "profile_completed_at": None,
             "converted_at": now,
             "converted_by": current_user.id,
             "converted_by_email": current_user.email,
@@ -171,6 +230,10 @@ class EmployeeService:
             "updated_at": now,
         }
         await database.employees.insert_one(employee_doc)
+
+        await database.offer_letters.update_one(
+            {"_id": offer["_id"]}, {"$set": {"status": "approved", "approved_at": now, "approved_by": current_user.id}}
+        )
 
         await database.candidates.update_one(
             {"_id": candidate["_id"]},
@@ -217,8 +280,8 @@ class EmployeeService:
                 to_email=candidate["email"],
                 full_name=candidate["full_name"],
                 employee_id=employee_id,
-                job_title=candidate.get("job_title") or "Team Member",
-                department=candidate.get("department") or "—",
+                job_title=employee_doc.get("job_title") or "Team Member",
+                department=employee_doc.get("department") or "—",
             )
             email_sent = True
         except Exception:
@@ -298,6 +361,95 @@ class EmployeeService:
             query_or.append({"_id": ObjectId(candidate_id)})
         return await database.candidates.find_one({"$or": query_or})
 
+    # ------------------------------------------------------------------
+    # Post-hire "complete your profile" flow (Profile Incomplete banner)
+    # ------------------------------------------------------------------
+    async def _require_employee(self, current_user: CurrentUser) -> dict:
+        employee = await database.employees.find_one(
+            {
+                "$or": [{"user_id": current_user.id}, {"email": current_user.email}],
+                "status": "active",
+            }
+        )
+        if not employee:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee profile not found.")
+        return employee
+
+    def _profile_progress(self, employee: dict) -> dict:
+        onboarding = employee.get("onboarding") or {}
+        tasks = []
+        for task_def in PROFILE_TASK_DEFS:
+            completed = bool(onboarding.get(task_def["step"]))
+            tasks.append({**task_def, "completed": completed})
+        completed_count = sum(1 for t in tasks if t["completed"])
+        percentage = round((completed_count / len(tasks)) * 100) if tasks else 100
+        return {
+            "profile_status": employee.get("profile_status", "complete"),
+            "percentage": percentage,
+            "tasks": tasks,
+            "current_step": next((t["step"] for t in tasks if not t["completed"]), "submit"),
+        }
+
+    async def get_profile_completion(self, current_user: CurrentUser) -> dict:
+        employee = await self._require_employee(current_user)
+        return {
+            "employee": self._public_employee(employee),
+            "onboarding": employee.get("onboarding"),
+            "progress": self._profile_progress(employee),
+        }
+
+    async def save_profile_completion(self, current_user: CurrentUser, request) -> dict:
+        employee = await self._require_employee(current_user)
+        onboarding = employee.get("onboarding") or {}
+        now = datetime.now(UTC)
+        updates: dict = {"updated_at": now}
+
+        step_handlers = {
+            "emergency": ("emergency", request.emergency, "Emergency contact is required."),
+            "employment": ("employment", request.employment, "Banking information is required."),
+            "references": ("references", request.references, "At least two references are required."),
+            "documents": ("documents", request.documents, "Policy acknowledgements are required."),
+            "nda": ("nda", request.nda, "NDA signature is required."),
+        }
+
+        if request.step in step_handlers:
+            field, payload, error = step_handlers[request.step]
+            if not payload:
+                raise HTTPException(status_code=400, detail=error)
+            data = payload.model_dump(mode="json")
+            if request.step == "nda" and not data.get("signed_at"):
+                data["signed_at"] = now.isoformat()
+            updates[f"onboarding.{field}"] = data
+        elif request.step == "submit":
+            missing = [k for k in PROFILE_REQUIRED_KEYS if not onboarding.get(k)]
+            if missing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Complete these sections first: {', '.join(missing)}.",
+                )
+            updates["profile_status"] = "complete"
+            updates["profile_completed_at"] = now
+            await create_notification(
+                recipient_id=employee.get("recruiter_id"),
+                recipient_role="recruiter",
+                notif_type="employee_profile_completed",
+                title="Employee profile completed",
+                message=f"{employee['full_name']} finished their post-hire profile checklist.",
+                link="/dashboard/recruiter#employees-section",
+                related_id=employee.get("employee_id"),
+            ) if employee.get("recruiter_id") else None
+        else:
+            raise HTTPException(status_code=400, detail="Unknown profile step.")
+
+        await database.employees.update_one({"_id": employee["_id"]}, {"$set": updates})
+        refreshed = await database.employees.find_one({"_id": employee["_id"]})
+        return {
+            "message": "Profile saved." if request.step != "submit" else "Profile completed — welcome aboard!",
+            "employee": self._public_employee(refreshed),
+            "onboarding": refreshed.get("onboarding"),
+            "progress": self._profile_progress(refreshed),
+        }
+
     @staticmethod
     def _public_employee(doc: dict, include_onboarding: bool = False) -> dict:
         payload = {
@@ -310,6 +462,8 @@ class EmployeeService:
             "department": doc.get("department"),
             "office_location": doc.get("office_location"),
             "start_date": doc.get("start_date"),
+            "reporting_manager": doc.get("reporting_manager"),
+            "profile_status": doc.get("profile_status", "complete"),
             "status": doc.get("status"),
             "converted_at": doc.get("converted_at").isoformat()
             if hasattr(doc.get("converted_at"), "isoformat")

@@ -151,3 +151,90 @@ button, input { font: inherit; }
 .announcement-stack { display: grid; gap: 12px; }
 
 .widget-placeholder { border: 1px dashed var(--line); border-radius: 10px; padding: 16px; color: var(--muted); font-size: .84rem; text-align: center; }
+
+/* ────────────────────────────────────────────────────────────────────
+   Phase 2 additions: Offer Letters, Signature Pad, Profile-Incomplete,
+   Document Management & Verification
+   ──────────────────────────────────────────────────────────────────── */
+:root { --success: #0e9f6e; --success-deep: #087a55; --warning: #b8860b; --warning-bg: #fdf3dc; --gold: #a9812f; --gold-deep: #8a6a22; }
+
+/* Signature pad */
+.signature-pad { display: grid; gap: 8px; }
+.signature-pad__canvas { width: 100%; height: 170px; border: 1.5px dashed #bed0dc; border-radius: 10px; background: repeating-linear-gradient(#fff, #fff 27px, #eef3f6 28px); }
+.signature-pad__footer { display: flex; align-items: center; justify-content: space-between; font-size: .78rem; color: var(--muted); }
+.signature-pad__clear { border: 0; background: transparent; color: var(--danger); font-weight: 700; cursor: pointer; font-size: .78rem; }
+
+/* Offer letter */
+.offer-shell { min-height: 100vh; padding: 28px clamp(16px, 4vw, 48px) 64px; background: radial-gradient(circle at top right, #d6edf0, transparent 32%), var(--surface); }
+.offer-letter-card { width: min(100%, 760px); margin: 0 auto; border-radius: 18px; overflow: hidden; background: white; box-shadow: 0 24px 70px rgb(18 58 99 / .12); }
+.offer-letter-head { padding: 40px clamp(24px, 5vw, 48px) 32px; background: linear-gradient(135deg, var(--ink), var(--teal)); color: white; position: relative; }
+.offer-letter-head::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 88% -10%, rgb(255 255 255 / .18), transparent 45%); }
+.offer-letter-head .eyebrow { color: rgb(255 255 255 / .75); }
+.offer-letter-head h1 { margin: 6px 0 0; color: white; font-size: clamp(1.6rem, 3vw, 2.1rem); letter-spacing: -.03em; position: relative; }
+.offer-letter-head p { color: rgb(255 255 255 / .82); margin: 10px 0 0; position: relative; max-width: 480px; }
+.offer-status-pill { position: absolute; top: 36px; right: clamp(24px, 5vw, 48px); border-radius: 999px; padding: 6px 14px; font-size: .72rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; background: rgb(255 255 255 / .18); color: white; border: 1px solid rgb(255 255 255 / .4); }
+.offer-status-pill.signed, .offer-status-pill.approved { background: #def3ed; color: var(--success-deep); border-color: transparent; }
+.offer-letter-body { padding: clamp(24px, 5vw, 48px); }
+.offer-terms-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 28px; margin-bottom: 28px; }
+.offer-term { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+.offer-term dt { color: var(--muted); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.offer-term dd { margin: 0; font-size: 1.02rem; font-weight: 700; color: var(--ink); }
+.offer-terms-text { border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: var(--surface); color: #405266; font-size: .9rem; line-height: 1.7; white-space: pre-wrap; margin-bottom: 28px; }
+.offer-sign-block { border: 1.5px solid var(--gold); border-radius: 14px; padding: 24px; background: linear-gradient(180deg, #fbf6e9, #ffffff); }
+.offer-sign-block h3 { margin: 0 0 6px; color: var(--gold-deep); }
+.offer-sign-block > p { margin: 0 0 18px; color: var(--muted); font-size: .88rem; }
+.offer-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; flex-wrap: wrap; }
+.offer-actions .danger-link-button { border: 0; background: transparent; color: var(--danger); font-weight: 700; cursor: pointer; margin-right: auto; font-size: .85rem; }
+.offer-signed-confirmation { display: grid; gap: 6px; border-radius: 12px; border: 1px solid #bfe3d2; background: #f3faf7; padding: 20px; text-align: center; }
+.offer-signed-confirmation strong { font-size: 1.05rem; color: var(--success-deep); }
+.offer-empty { text-align: center; padding: 60px 24px; color: var(--muted); }
+
+/* Profile-incomplete banner (employee dashboard) */
+.profile-incomplete-banner { display: flex; align-items: center; gap: 20px; border-radius: 14px; padding: 22px 26px; margin-bottom: 24px; background: linear-gradient(120deg, #fff7e6, #fffdf7); border: 1.5px solid #f0d68a; }
+.profile-incomplete-banner .ring-wrap { flex: none; }
+.profile-incomplete-banner .banner-copy { flex: 1; }
+.profile-incomplete-banner h3 { margin: 0 0 4px; color: #7a5c0a; font-size: 1.08rem; }
+.profile-incomplete-banner p { margin: 0; color: #8a7440; font-size: .87rem; }
+.profile-incomplete-banner .primary-button { min-width: 180px; }
+.progress-ring-svg circle { transition: stroke-dashoffset .5s ease; }
+.progress-ring-label { font-weight: 800; font-size: 1.05rem; fill: var(--ink); }
+
+/* Status badges shared by documents / offers / tasks */
+.status-badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 11px; font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
+.status-badge.pending, .status-badge.processing, .status-badge.uploaded, .status-badge.sent { background: #e8eef3; color: var(--muted); }
+.status-badge.pending_verification, .status-badge.viewed { background: var(--warning-bg); color: var(--warning); }
+.status-badge.verified, .status-badge.signed, .status-badge.approved, .status-badge.complete { background: #def3ed; color: var(--success-deep); }
+.status-badge.rejected, .status-badge.reupload_required, .status-badge.declined, .status-badge.expired { background: #fee9e7; color: var(--danger); }
+.status-badge.incomplete { background: var(--warning-bg); color: var(--warning); }
+
+/* Document management */
+.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.doc-card { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: white; display: grid; gap: 10px; }
+.doc-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.doc-card-head h4 { margin: 0; font-size: .92rem; text-transform: capitalize; }
+.doc-card-meta { color: var(--muted); font-size: .76rem; }
+.doc-uploader { border: 1.5px dashed #bed0dc; border-radius: 12px; padding: 18px; text-align: center; background: #fbfdfe; }
+.doc-uploader input[type="file"] { margin-top: 10px; font-size: .82rem; }
+.ocr-panel { border-top: 1px dashed var(--line); margin-top: 4px; padding-top: 10px; font-size: .78rem; }
+.ocr-panel dt { color: var(--muted); font-weight: 700; display: inline; }
+.ocr-panel dd { display: inline; margin: 0 12px 0 4px; color: var(--ink); }
+.ocr-mismatch { color: var(--danger); font-weight: 700; }
+.doc-reject-form { display: grid; gap: 8px; margin-top: 6px; }
+.doc-reject-form select, .doc-reject-form textarea { width: 100%; border: 1px solid #bed0dc; border-radius: 8px; padding: 8px 10px; font: inherit; font-size: .82rem; }
+.doc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.doc-actions button { border-radius: 7px; border: 1px solid var(--line); background: white; padding: 6px 12px; font-size: .78rem; font-weight: 700; cursor: pointer; }
+.doc-actions button.approve { border-color: #bfe3d2; color: var(--success-deep); }
+.doc-actions button.reject { border-color: #f3c9c3; color: var(--danger); }
+
+/* Recruiter dashboard: tabs + pending-review + candidate offer composer */
+.section-tabs { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
+.section-tabs button { border: 1px solid var(--line); background: white; border-radius: 999px; padding: 8px 16px; font-size: .82rem; font-weight: 700; color: var(--muted); cursor: pointer; }
+.section-tabs button.active { background: var(--ink); border-color: var(--ink); color: white; }
+.candidate-review-card { border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; background: white; display: grid; gap: 12px; margin-bottom: 14px; }
+.candidate-review-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.candidate-review-head h4 { margin: 0; font-size: 1rem; }
+.candidate-review-head span { color: var(--muted); font-size: .82rem; }
+.offer-form-modal-backdrop { position: fixed; inset: 0; background: rgb(10 30 46 / .55); display: grid; place-items: center; z-index: 60; padding: 20px; }
+.offer-form-modal { width: min(100%, 620px); max-height: 88vh; overflow-y: auto; background: white; border-radius: 16px; padding: clamp(20px, 4vw, 34px); }
+.offer-form-modal h2 { margin: 0 0 4px; }
+.offer-form-modal .form-grid { margin-top: 18px; }

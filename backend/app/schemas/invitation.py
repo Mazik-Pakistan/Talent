@@ -202,14 +202,8 @@ class OnboardingResume(BaseModel):
 
 ONBOARDING_STEPS = Literal[
     "personal",
-    "emergency",
-    "employment",
     "education",
     "government_docs",
-    "references",
-    "documents",
-    "nda",
-    "contract",
     "resume",
     "submit",
 ]

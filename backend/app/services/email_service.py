@@ -261,5 +261,61 @@ class EmailService:
 """
         self._send(to_email, subject, html)
 
+    def send_offer_letter(
+        self,
+        to_email: str,
+        full_name: str,
+        job_title: str,
+        department: str,
+        start_date: str,
+    ) -> None:
+        subject = f"Your Offer Letter for {job_title} — TalentAI"
+        html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Offer Letter – TalentAI</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#123a63 0%,#32a6ae 100%);padding:36px 40px;">
+            <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">TalentAI</h1>
+            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 8px;color:#64748b;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;">Offer Letter</p>
+            <h2 style="margin:0 0 20px;color:#0f172a;font-size:22px;font-weight:700;">You've been offered a role, {full_name}!</h2>
+            <p style="margin:0 0 20px;color:#475569;font-size:15px;line-height:1.6;">
+              We're delighted to offer you the position below. Sign in to review the full terms and digitally sign your offer letter.
+            </p>
+            <div style="background:#f1f5fe;border:2px solid #32a6ae;border-radius:10px;padding:20px;margin-bottom:28px;">
+              <p style="margin:0 0 4px;color:#123a63;font-size:18px;font-weight:800;">{job_title}</p>
+              <p style="margin:0;color:#475569;font-size:14px;">{department} · Starting {start_date}</p>
+            </div>
+            <p style="margin:0;color:#475569;font-size:15px;line-height:1.6;">
+              Sign in to your candidate dashboard and open <strong>My Offer Letter</strong> to review and sign.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
+            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mazik Global – TalentAI. All rights reserved.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+        self._send(to_email, subject, html)
+
 
 email_service = EmailService()

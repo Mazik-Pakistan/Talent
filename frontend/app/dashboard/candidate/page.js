@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import RequireAccess, { ModuleNav } from "@/components/RequireAccess";
-import { clearLocalSession, getApiErrorMessage, getCandidateDashboard, logout } from "@/services/authService";
+import { clearLocalSession, getApiErrorMessage, getCandidateDashboard, getMyOffer, logout } from "@/services/authService";
+import DocumentStatusList from "@/components/DocumentStatusList";
 
 const DASHBOARD_REFRESH_MS = 60000;
 
@@ -22,6 +23,7 @@ function CandidateDashboardContent() {
 
   // ----- US-018 / US-019 / US-021 / US-022 -----
   const [dashboard, setDashboard] = useState(null);
+  const [offer, setOffer] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -33,8 +35,12 @@ function CandidateDashboardContent() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const data = await getCandidateDashboard(accessToken);
+      const [data, offerData] = await Promise.all([
+        getCandidateDashboard(accessToken),
+        getMyOffer(accessToken).catch(() => null),
+      ]);
       setDashboard(data);
+      setOffer(offerData?.offer || null);
       setLoadError("");
     } catch (error) {
       setLoadError(getApiErrorMessage(error, "Could not load your dashboard."));
@@ -93,6 +99,28 @@ function CandidateDashboardContent() {
       {loadError && (
         <section className="dashboard-card wide">
           <p className="form-message" role="alert">{loadError}</p>
+        </section>
+      )}
+
+      {!loading && offer && offer.status !== "approved" && (
+        <section className="dashboard-card wide" style={{ padding: 0, background: "transparent", border: "none", boxShadow: "none" }}>
+          <div className="profile-incomplete-banner" style={{ background: offer.status === "signed" ? "linear-gradient(120deg, #f3faf7, #ffffff)" : undefined, borderColor: offer.status === "signed" ? "#bfe3d2" : undefined }}>
+            <div className="banner-copy">
+              <h3 style={{ color: offer.status === "signed" ? "#087a55" : undefined }}>
+                {offer.status === "signed" ? "Offer signed — awaiting HR approval" : "Your offer letter has arrived"}
+              </h3>
+              <p style={{ color: offer.status === "signed" ? "#3a6f5a" : undefined }}>
+                {offer.status === "signed"
+                  ? `You signed the ${offer.job_title} offer. HR will approve it and issue your Employee ID shortly.`
+                  : `Review and digitally sign your offer for ${offer.job_title}.`}
+              </p>
+            </div>
+            {offer.status !== "signed" && (
+              <button type="button" className="primary-button" onClick={() => router.push("/offer")}>
+                Review my offer
+              </button>
+            )}
+          </div>
         </section>
       )}
 
@@ -180,6 +208,12 @@ function CandidateDashboardContent() {
               <div className="widget-placeholder">🎓 Assigned learning modules will appear here once Phase 3 launches.</div>
               <div className="widget-placeholder">🤖 Your AI Coach assistant will appear here once Phase 3 launches.</div>
             </div>
+          </section>
+
+          <section className="dashboard-card wide" id="documents-section">
+            <h2>My documents</h2>
+            <p>Government ID and education documents you&apos;ve uploaded, with live OCR/verification status.</p>
+            <DocumentStatusList />
           </section>
         </div>
 

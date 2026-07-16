@@ -36,6 +36,18 @@ class Settings(BaseSettings):
     OTP_EXPIRE_MINUTES: int = 10
     INVITATION_EXPIRE_HOURS: int = 48
 
+    # ── Phase 2: Document management / OCR / embeddings ──────────────────
+    ENABLE_OCR: bool = True
+    OCR_LANG: str = "en"
+    OCR_USE_GPU: bool = False
+    # Embeddings are a Phase 3 concern — generated now (only for resumes) so
+    # Phase 3 can consume them without re-processing every document.
+    ENABLE_EMBEDDINGS: bool = False
+    EMBEDDING_MODEL: str = "BAAI/bge-m3"
+    MAX_DOCUMENT_MB: int = 10
+    SIGNED_URL_EXPIRE_SECONDS: int = 3600
+    OFFER_EXPIRE_DAYS: int = 14
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

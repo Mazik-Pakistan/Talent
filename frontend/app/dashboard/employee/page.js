@@ -8,8 +8,11 @@ import {
   clearLocalSession,
   getApiErrorMessage,
   getMyEmployeeProfile,
+  getProfileCompletion,
   logout,
 } from "@/services/authService";
+import ProgressRing from "@/components/ProgressRing";
+import DocumentStatusList from "@/components/DocumentStatusList";
 
 export default function EmployeeDashboardPage() {
   return (
@@ -23,6 +26,7 @@ function EmployeeDashboardContent() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [employee, setEmployee] = useState(null);
+  const [progress, setProgress] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -34,8 +38,12 @@ function EmployeeDashboardContent() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const data = await getMyEmployeeProfile(accessToken);
-      setEmployee(data.employee);
+      const [profileData, completionData] = await Promise.all([
+        getMyEmployeeProfile(accessToken),
+        getProfileCompletion(accessToken).catch(() => null),
+      ]);
+      setEmployee(profileData.employee);
+      setProgress(completionData?.progress || null);
       setLoadError("");
     } catch (error) {
       setLoadError(getApiErrorMessage(error, "Could not load your employee profile."));
@@ -60,6 +68,7 @@ function EmployeeDashboardContent() {
   }
 
   const onboarding = employee?.onboarding || {};
+  const profileIncomplete = employee?.profile_status === "incomplete";
 
   return (
     <main className="dashboard-shell">
@@ -84,6 +93,24 @@ function EmployeeDashboardContent() {
         </section>
       )}
 
+      {!loading && profileIncomplete && (
+        <section className="dashboard-card wide" style={{ padding: 0, background: "transparent", border: "none", boxShadow: "none", marginBottom: 0 }}>
+          <div className="profile-incomplete-banner">
+            <ProgressRing percentage={progress?.percentage ?? 0} />
+            <div className="banner-copy">
+              <h3>Your profile is incomplete</h3>
+              <p>
+                Add your emergency contact, banking details, references, sign the NDA, and acknowledge company
+                policies to unlock your full workspace.
+              </p>
+            </div>
+            <button type="button" className="primary-button" onClick={() => router.push("/dashboard/employee/complete-profile")}>
+              Complete my profile
+            </button>
+          </div>
+        </section>
+      )}
+
       <section className="dashboard-card wide" aria-labelledby="emp-profile-heading">
         <h2 id="emp-profile-heading">Employment profile</h2>
         {loading ? (
@@ -103,6 +130,10 @@ function EmployeeDashboardContent() {
               <dd>{employee?.department || "—"}</dd>
             </div>
             <div className="profile-fact">
+              <dt>Reporting manager</dt>
+              <dd>{employee?.reporting_manager || "—"}</dd>
+            </div>
+            <div className="profile-fact">
               <dt>Office location</dt>
               <dd>{employee?.office_location || "—"}</dd>
             </div>
@@ -114,15 +145,25 @@ function EmployeeDashboardContent() {
               <dt>Converted on</dt>
               <dd>{formatDate(employee?.converted_at)}</dd>
             </div>
+            <div className="profile-fact">
+              <dt>Profile status</dt>
+              <dd><span className={`status-badge ${employee?.profile_status || "complete"}`}>{employee?.profile_status || "complete"}</span></dd>
+            </div>
           </dl>
         )}
       </section>
 
       <div className="dashboard-columns">
         <div className="dashboard-stack">
+          <section className="dashboard-card wide" id="documents-section">
+            <h2>My documents</h2>
+            <p>Identity and education documents you submitted during onboarding, with live verification status.</p>
+            <DocumentStatusList />
+          </section>
+
           <section className="dashboard-card wide">
             <h2>Onboarding record retained</h2>
-            <p>All information collected during candidate onboarding is preserved on your employee profile.</p>
+            <p>All information collected during your onboarding is preserved on your employee profile.</p>
             <div className="form-grid" style={{ marginTop: 12 }}>
               <InfoCard title="Personal" body={summarize(onboarding.personal)} />
               <InfoCard title="Emergency contact" body={summarize(onboarding.emergency)} />
@@ -140,7 +181,6 @@ function EmployeeDashboardContent() {
                 body={`${onboarding.references?.references?.length || 0} reference(s)`}
               />
               <InfoCard title="NDA" body={onboarding.nda?.full_legal_name || "Not on file"} />
-              <InfoCard title="Contract" body={onboarding.contract?.full_legal_name || "Not on file"} />
               <InfoCard title="Resume" body={onboarding.resume?.file_name || "Not on file"} />
             </div>
           </section>
@@ -172,6 +212,7 @@ function summarize(obj) {
   if (obj.full_name) return obj.full_name;
   if (obj.national_id) return `ID on file · ${obj.city || ""}`.trim();
   if (obj.bank_name) return obj.bank_name;
+  if (obj.name) return obj.name;
   return "On file";
 }
 

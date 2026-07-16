@@ -1,14 +1,15 @@
-import os
 import uuid
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.core.rbac import CurrentUser
 from app.core.security import require_permissions, require_roles
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
+from app.services import storage_service
 from app.services.candidate_service import CandidateService
+from app.services.document_service import document_service
 from app.services.employee_service import EmployeeService
 
 router = APIRouter(prefix="/api/employees", tags=["Employees"])
@@ -19,9 +20,19 @@ RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "su
 RequireEmployee = Annotated[CurrentUser, Depends(require_roles("employee", "super_admin"))]
 RequireCandidate = Annotated[CurrentUser, Depends(require_permissions("onboarding.self"))]
 
-UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads"
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx"}
-MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+
+PURPOSE_TO_CATEGORY = {
+    "resume": "other",
+    "government_doc": "identity",
+    "education_cert": "education",
+}
+PURPOSE_TO_DEFAULT_DOC_TYPE = {
+    "resume": "resume",
+    "government_doc": "cnic",
+    "education_cert": "degree",
+}
 
 
 @router.post("/generate-id")
@@ -35,12 +46,24 @@ async def generate_employee_id(
 
 @router.post("/create-from-candidate", status_code=201)
 async def create_from_candidate(request: CreateFromCandidateRequest, current_user: RequireRecruiter):
-    """US-023: Convert a fully onboarded candidate into an employee."""
+    """US-023: Activate an employee for a candidate whose offer has been signed & approved.
+
+    NOTE: as of the offer-letter flow, this is normally called internally by
+    OfferService.approve(). It stays exposed for recruiters recovering from a
+    failed auto-activation, but still enforces the same offer-signed gate.
+    """
     return await service.create_from_candidate(current_user, request.candidate_id)
+
+
+@router.get("/pending-review")
+async def list_pending_review(current_user: RequireRecruiter):
+    """Candidates who submitted their intake and are awaiting an offer letter."""
+    return await service.list_pending_review(current_user)
 
 
 @router.get("/ready-for-conversion")
 async def list_ready_for_conversion(current_user: RequireRecruiter):
+    """Candidates whose offer has been signed and is awaiting HR approval/activation."""
     return await service.list_ready_for_conversion(current_user)
 
 
@@ -52,6 +75,20 @@ async def list_employees(current_user: RequireRecruiter):
 @router.get("/me")
 async def get_my_employee_profile(current_user: RequireEmployee):
     return await service.get_my_profile(current_user)
+
+
+@router.get("/profile-completion")
+async def get_profile_completion(current_user: RequireEmployee):
+    """Post-hire 'complete your profile' checklist (emergency, banking, references, NDA, policies)."""
+    return await service.get_profile_completion(current_user)
+
+
+@router.put("/profile-completion")
+async def save_profile_completion(payload: dict, current_user: RequireEmployee):
+    from app.schemas.employee_profile import EmployeeProfileSaveRequest
+
+    request = EmployeeProfileSaveRequest.model_validate(payload)
+    return await service.save_profile_completion(current_user, request)
 
 
 @router.get("/candidates/{candidate_id}")
@@ -66,33 +103,42 @@ async def upload_onboarding_file(
     purpose: Literal["resume", "government_doc", "education_cert"] = Form(...),
     doc_type: str | None = Form(default=None),
 ):
-    """Store an onboarding document for the current candidate."""
+    """US-036/037: candidate intake upload — stored via storage_service and tracked as a
+    Document (with OCR auto-triggered for identity/education categories), then reflected
+    into the onboarding wizard's local draft state."""
     if current_user.role not in ("candidate", "super_admin"):
-        from fastapi import HTTPException, status
-
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only candidates can upload onboarding files.")
 
     original = file.filename or "upload.bin"
     ext = Path(original).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=400, detail=f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
 
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
-        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="File is too large (max 10 MB).")
+    await file.seek(0)
 
-        raise HTTPException(status_code=400, detail="File is too large (max 8 MB).")
+    category = PURPOSE_TO_CATEGORY.get(purpose, "other")
+    resolved_doc_type = doc_type or PURPOSE_TO_DEFAULT_DOC_TYPE.get(purpose, "other")
 
-    folder = UPLOAD_ROOT / current_user.id
-    folder.mkdir(parents=True, exist_ok=True)
-    stored_name = f"{purpose}_{uuid.uuid4().hex}{ext}"
-    dest = folder / stored_name
-    dest.write_bytes(content)
+    stored = await storage_service.save_file(current_user.id, category, original, content)
+    file_url = stored["file_url"] or f"/api/documents/{stored['object_path']}/download"
 
-    # Public-ish path served via /uploads static mount
-    file_url = f"/uploads/{current_user.id}/{stored_name}"
+    # Track as a first-class Document (drives OCR + recruiter review UI).
+    class _FakeUpload:
+        filename = original
+
+        async def read(self_inner):
+            return content
+
+    try:
+        await document_service.upload(current_user, file=_FakeUpload(), category=category, doc_type=resolved_doc_type)
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # Document tracking is best-effort; the wizard attachment below always succeeds.
+
     return await candidate_service.attach_uploaded_file(
         current_user,
         purpose=purpose,

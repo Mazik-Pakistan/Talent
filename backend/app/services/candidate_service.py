@@ -11,45 +11,33 @@ from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
 from app.services.invitation_service import InvitationService
 
-# Full onboarding checklist for US-021 / US-023 prerequisites.
+# ------------------------------------------------------------------------
+# PHASE 2 FLOW: candidates now complete a short pre-offer INTAKE only
+# (personal info, education, government ID, resume). Everything else
+# (emergency contact, banking, references, NDA, policy acknowledgements)
+# moves to the post-hire "complete your profile" stage handled by
+# EmployeeService once the signed offer has been approved. See
+# app/services/offer_service.py for the bridge between the two stages.
+# ------------------------------------------------------------------------
 ONBOARDING_TASK_DEFS = [
     {"id": "personal", "label": "Complete personal information", "step": "personal", "available": True},
-    {"id": "emergency", "label": "Add emergency contact", "step": "emergency", "available": True},
-    {"id": "employment", "label": "Complete bank & payroll details", "step": "employment", "available": True},
     {"id": "education", "label": "Add education history", "step": "education", "available": True},
     {"id": "government_docs", "label": "Upload government ID documents", "step": "government_docs", "available": True},
-    {"id": "references", "label": "Provide professional references", "step": "references", "available": True},
-    {"id": "documents", "label": "Acknowledge company policies", "step": "documents", "available": True},
-    {"id": "nda", "label": "Sign NDA", "step": "nda", "available": True},
-    {"id": "contract", "label": "Sign employment contract", "step": "contract", "available": True},
     {"id": "resume", "label": "Upload resume", "step": "resume", "available": True},
-    {"id": "submit", "label": "Submit onboarding for recruiter review", "step": "submit", "available": True},
-    {"id": "learning", "label": "Complete assigned learning", "step": None, "available": False},
+    {"id": "submit", "label": "Submit profile for HR review", "step": "submit", "available": True},
 ]
 
 REQUIRED_ONBOARDING_KEYS = [
     "personal",
-    "emergency",
-    "employment",
     "education",
     "government_docs",
-    "references",
-    "documents",
-    "nda",
-    "contract",
     "resume",
 ]
 
 STEP_FLOW = {
-    "personal": "emergency",
-    "emergency": "employment",
-    "employment": "education",
+    "personal": "education",
     "education": "government_docs",
-    "government_docs": "references",
-    "references": "documents",
-    "documents": "nda",
-    "nda": "contract",
-    "contract": "resume",
+    "government_docs": "resume",
     "resume": "submit",
 }
 
@@ -202,14 +190,8 @@ class CandidateService:
 
         step_handlers = {
             "personal": ("personal", request.personal, "Personal information is required."),
-            "emergency": ("emergency", request.emergency, "Emergency contact is required."),
-            "employment": ("employment", request.employment, "Employment information is required."),
             "education": ("education", request.education, "Education history is required."),
             "government_docs": ("government_docs", request.government_docs, "Government documents are required."),
-            "references": ("references", request.references, "At least two references are required."),
-            "documents": ("documents", request.documents, "Document acknowledgements are required."),
-            "nda": ("nda", request.nda, "NDA signature is required."),
-            "contract": ("contract", request.contract, "Contract signature is required."),
             "resume": ("resume", request.resume, "Resume upload is required."),
         }
 
@@ -235,7 +217,7 @@ class CandidateService:
             updates["onboarding.status"] = "submitted"
             updates["onboarding.current_step"] = "complete"
             updates["onboarding.submitted_at"] = now
-            updates["conversion_status"] = "ready"
+            updates["conversion_status"] = "intake_submitted"
             await database.audit_logs.insert_one(
                 {
                     "candidate_id": candidate_id,
@@ -243,7 +225,7 @@ class CandidateService:
                     "email": candidate["email"],
                     "recruiter_id": candidate.get("recruiter_id"),
                     "module": "onboarding",
-                    "action": "onboarding_submitted",
+                    "action": "intake_submitted",
                     "outcome": "success",
                     "created_at": now,
                 }
@@ -252,13 +234,13 @@ class CandidateService:
                 await create_notification(
                     recipient_id=candidate["recruiter_id"],
                     recipient_role="recruiter",
-                    notif_type="onboarding_submitted",
-                    title="Onboarding ready for conversion",
+                    notif_type="intake_submitted",
+                    title="Candidate ready for offer review",
                     message=(
-                        f"{candidate['full_name']} completed 100% of onboarding. "
-                        "Review and convert them to an employee."
+                        f"{candidate['full_name']} submitted their profile, resume, and documents. "
+                        "Review and send an offer letter."
                     ),
-                    link="/dashboard/recruiter#conversion-section",
+                    link="/dashboard/recruiter#pending-review-section",
                     related_id=candidate_id,
                 )
         else:
@@ -269,7 +251,7 @@ class CandidateService:
         return {
             "message": "Onboarding progress saved."
             if request.step != "submit"
-            else "Onboarding submitted successfully. A recruiter will review and convert your profile.",
+            else "Profile submitted. Your recruiter will review it and send your offer letter.",
             "onboarding": refreshed.get("onboarding"),
             "candidate": self._public_user(refreshed),
             "progress": self._progress_payload(refreshed),

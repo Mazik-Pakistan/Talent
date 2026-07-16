@@ -14,16 +14,14 @@ import {
 } from "@/services/authService";
 import { can, ROLE_HOME } from "@/services/rbac";
 
+// Phase 2 flow: candidates complete a short pre-offer INTAKE only. Emergency
+// contact, banking, references, NDA, and policy sign-off move to the
+// post-hire "complete your profile" stage (see /dashboard/employee/complete-profile)
+// once HR approves their signed offer letter.
 const STEPS = [
   { id: "personal", label: "Personal" },
-  { id: "emergency", label: "Emergency" },
-  { id: "employment", label: "Payroll" },
   { id: "education", label: "Education" },
   { id: "government_docs", label: "ID docs" },
-  { id: "references", label: "References" },
-  { id: "documents", label: "Policies" },
-  { id: "nda", label: "NDA" },
-  { id: "contract", label: "Contract" },
   { id: "resume", label: "Resume" },
   { id: "submit", label: "Review" },
 ];
@@ -38,13 +36,6 @@ const emptyPersonal = {
   postal_code: "",
   country: "",
 };
-const emptyEmergency = { name: "", relationship: "", phone: "" };
-const emptyEmployment = {
-  bank_name: "",
-  account_holder_name: "",
-  account_number: "",
-  tax_id: "",
-};
 const emptyEducationEntry = {
   institution: "",
   degree: "",
@@ -58,26 +49,13 @@ const emptyGovDoc = {
   file_name: null,
   file_url: null,
 };
-const emptyReference = {
-  full_name: "",
-  relationship: "",
-  email: "",
-  phone: "",
-  company: "",
-};
-const emptyDocuments = {
-  accepted_code_of_conduct: false,
-  accepted_privacy_policy: false,
-  accepted_employee_handbook: false,
-};
-const emptySignature = { full_legal_name: "", agreed: false, signed_at: null };
 const emptyResume = { summary: "", file_name: null, file_url: null };
 
 export default function OnboardingPage() {
   return (
     <Suspense
       fallback={
-        <main className="dashboard-shell">
+        <main className="onboarding-shell">
           <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading onboarding…</p>
         </main>
       }
@@ -102,23 +80,11 @@ function OnboardingContent() {
   const [progress, setProgress] = useState(null);
   const [step, setStep] = useState("personal");
   const [personal, setPersonal] = useState(emptyPersonal);
-  const [emergency, setEmergency] = useState(emptyEmergency);
-  const [employment, setEmployment] = useState(emptyEmployment);
   const [educationEntries, setEducationEntries] = useState([{ ...emptyEducationEntry }]);
   const [govDocs, setGovDocs] = useState([{ ...emptyGovDoc }]);
-  const [references, setReferences] = useState([{ ...emptyReference }, { ...emptyReference }]);
-  const [documents, setDocuments] = useState(emptyDocuments);
-  const [nda, setNda] = useState(emptySignature);
-  const [contract, setContract] = useState(emptySignature);
   const [resume, setResume] = useState(emptyResume);
 
-  // Filter steps: hide "submit" when in edit mode
-  const steps = useMemo(() => {
-    if (isEditMode) {
-      return STEPS.filter((s) => s.id !== "submit");
-    }
-    return STEPS;
-  }, [isEditMode]);
+  const steps = useMemo(() => (isEditMode ? STEPS.filter((s) => s.id !== "submit") : STEPS), [isEditMode]);
 
   useEffect(() => {
     const accessToken = localStorage.getItem("access_token");
@@ -146,12 +112,9 @@ function OnboardingContent() {
         setProgress(data.progress);
         hydrateForms(data.onboarding);
         const allowedSteps = new Set(STEPS.map((item) => item.id));
-        const deepLinkStep =
-          requestedStep && allowedSteps.has(requestedStep) ? requestedStep : null;
+        const deepLinkStep = requestedStep && allowedSteps.has(requestedStep) ? requestedStep : null;
         const nextStep =
-          data.onboarding?.status === "submitted"
-            ? "submit"
-            : deepLinkStep || data.onboarding?.current_step || "personal";
+          data.onboarding?.status === "submitted" ? "submit" : deepLinkStep || data.onboarding?.current_step || "personal";
         setStep(nextStep === "complete" ? "submit" : nextStep);
       } catch (error) {
         setMessage(getApiErrorMessage(error, "Unable to load onboarding."));
@@ -164,18 +127,11 @@ function OnboardingContent() {
   function hydrateForms(data) {
     if (!data) return;
     if (data.personal) setPersonal({ ...emptyPersonal, ...data.personal });
-    if (data.emergency) setEmergency({ ...emptyEmergency, ...data.emergency });
-    if (data.employment) setEmployment({ ...emptyEmployment, ...data.employment });
     if (data.education?.entries?.length) setEducationEntries(data.education.entries);
     if (data.government_docs?.documents?.length) setGovDocs(data.government_docs.documents);
-    if (data.references?.references?.length) setReferences(data.references.references);
-    if (data.documents) setDocuments({ ...emptyDocuments, ...data.documents });
-    if (data.nda) setNda({ ...emptySignature, ...data.nda });
-    if (data.contract) setContract({ ...emptySignature, ...data.contract });
     if (data.resume) setResume({ ...emptyResume, ...data.resume });
   }
 
-  // Use filtered steps for index
   const stepIndex = useMemo(() => steps.findIndex((item) => item.id === step), [step, steps]);
   const submitted = onboarding?.status === "submitted";
 
@@ -224,11 +180,7 @@ function OnboardingContent() {
       setOnboarding(data.onboarding);
       hydrateForms(data.onboarding);
       if (purpose === "resume") {
-        setResume((current) => ({
-          ...current,
-          file_name: data.file_name,
-          file_url: data.file_url,
-        }));
+        setResume((current) => ({ ...current, file_name: data.file_name, file_url: data.file_url }));
       } else if (purpose === "government_doc") {
         setGovDocs((current) => {
           const next = [...current];
@@ -240,6 +192,7 @@ function OnboardingContent() {
           };
           return next;
         });
+        setMessage("Document uploaded — we're extracting the details automatically (OCR).");
       } else if (purpose === "education_cert") {
         setEducationEntries((current) => {
           const next = [...current];
@@ -247,7 +200,7 @@ function OnboardingContent() {
           return next;
         });
       }
-      setMessage("File uploaded.");
+      if (purpose !== "government_doc") setMessage("File uploaded.");
     } catch (error) {
       setMessage(getApiErrorMessage(error, "Upload failed."));
     } finally {
@@ -266,18 +219,6 @@ function OnboardingContent() {
         return;
       }
       await persist({ step: "personal", personal });
-    } else if (step === "emergency") {
-      if (!emergency.name || !emergency.relationship || !emergency.phone) {
-        setMessage("Please complete your emergency contact.");
-        return;
-      }
-      await persist({ step: "emergency", emergency });
-    } else if (step === "employment") {
-      if (!employment.bank_name || !employment.account_holder_name || !employment.account_number || !employment.tax_id) {
-        setMessage("Please complete payroll details.");
-        return;
-      }
-      await persist({ step: "employment", employment });
     } else if (step === "education") {
       const valid = educationEntries.every(
         (entry) => entry.institution && entry.degree && entry.field_of_study && entry.year_completed
@@ -290,37 +231,10 @@ function OnboardingContent() {
     } else if (step === "government_docs") {
       const valid = govDocs.every((doc) => doc.doc_type && doc.document_number && doc.file_url);
       if (!valid) {
-        setMessage("Add government ID number and upload the document file.");
+        setMessage("Add your ID number and upload the document file.");
         return;
       }
       await persist({ step: "government_docs", government_docs: { documents: govDocs } });
-    } else if (step === "references") {
-      const valid =
-        references.length >= 2 &&
-        references.every((ref) => ref.full_name && ref.relationship && ref.email && ref.phone && ref.company);
-      if (!valid) {
-        setMessage("Provide at least two complete professional references.");
-        return;
-      }
-      await persist({ step: "references", references: { references } });
-    } else if (step === "documents") {
-      if (!documents.accepted_code_of_conduct || !documents.accepted_privacy_policy || !documents.accepted_employee_handbook) {
-        setMessage("Acknowledge all required documents to continue.");
-        return;
-      }
-      await persist({ step: "documents", documents });
-    } else if (step === "nda") {
-      if (!nda.full_legal_name || !nda.agreed) {
-        setMessage("Type your legal name and agree to sign the NDA.");
-        return;
-      }
-      await persist({ step: "nda", nda });
-    } else if (step === "contract") {
-      if (!contract.full_legal_name || !contract.agreed) {
-        setMessage("Type your legal name and agree to sign the employment contract.");
-        return;
-      }
-      await persist({ step: "contract", contract });
     } else if (step === "resume") {
       if (!resume.summary || resume.summary.length < 20 || !resume.file_url) {
         setMessage("Add a short resume summary and upload your resume file.");
@@ -355,409 +269,231 @@ function OnboardingContent() {
           <span className="brand-divider" aria-hidden="true" />
           <span className="product-name">Talent</span>
         </div>
-        <button
-          type="button"
-          onClick={handleLogout}
-          style={{
-            backgroundColor: "#dc2626",
-            color: "white",
-            padding: "8px 16px",
-            borderRadius: "4px",
-            border: "none",
-            cursor: "pointer",
-            fontWeight: "bold",
-            fontSize: "14px",
-          }}
-        >
+        <button type="button" onClick={handleLogout} className="secondary-button" style={{ borderColor: "#f3c9c3", color: "#b42318" }}>
           Sign out
         </button>
       </header>
 
       <section className="onboarding-card">
-        {/* Edit Mode Banner */}
         {isEditMode && (
-          <div style={{
-            backgroundColor: "#dbeafe",
-            border: "2px solid #3b82f6",
-            borderRadius: "8px",
-            padding: "12px 16px",
-            marginBottom: "16px",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-          }}>
-            <span style={{ fontSize: "20px" }}>✏️</span>
-            <span style={{ fontWeight: "500", color: "#1e40af" }}>
-              Edit Mode: All sections are editable. Changes will be saved automatically.
-            </span>
+          <div className="form-message" style={{ background: "#dbeafe", color: "#1e40af", fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
+            <span>✏️</span>
+            <span>Edit mode — changes save automatically as you move through each step.</span>
           </div>
         )}
 
-        <p className="eyebrow">Employee onboarding</p>
+        <p className="eyebrow">Step 1 of 3 · Candidate intake</p>
         <h1>Welcome, {candidate?.full_name}</h1>
         <p className="onboarding-lead">
           Role: <strong>{candidate?.job_title}</strong> · {candidate?.department}
-          {progress ? <> · Progress: <strong>{progress.percentage}%</strong></> : null}
-          {isEditMode && <span style={{ marginLeft: 12, color: "#2563eb", fontWeight: "bold" }}> (editing)</span>}
+          {progress ? (
+            <>
+              {" "}
+              · Progress: <strong>{progress.percentage}%</strong>
+            </>
+          ) : null}
         </p>
 
-        {/* Updated Steps with Edit Mode Styling */}
-        <ol className="onboarding-steps" aria-label="Onboarding progress">
-          {steps.map((item, index) => {
-            const isActive = index <= stepIndex;
-            const isCurrent = index === stepIndex;
-            const isCompleted = index < stepIndex;
-            
-            return (
-              <li 
-                key={item.id} 
-                className={isActive ? "active" : ""}
-                style={isEditMode && isActive ? {
-                  border: isCurrent ? "2px solid #3b82f6" : "1px solid #93c5fd",
-                  borderRadius: "8px",
-                  padding: "2px 4px",
-                  backgroundColor: isCurrent ? "#eff6ff" : "transparent",
-                } : {}}
-              >
-                <button 
-                  type="button" 
-                  disabled={submitted && !isEditMode} 
-                  onClick={() => (!submitted || isEditMode) ? setStep(item.id) : null}
-                  style={isEditMode && isCurrent ? {
-                    backgroundColor: "#3b82f6",
-                    color: "white",
-                    fontWeight: "bold",
-                    borderRadius: "6px",
-                    padding: "4px 12px",
-                  } : isEditMode && isCompleted ? {
-                    color: "#1e40af",
-                    fontWeight: "500",
-                  } : {}}
-                >
-                  {item.label}
-                  {isEditMode && isCurrent && " (editing)"}
-                  {isEditMode && isCompleted && " (done)"}
-                </button>
-              </li>
-            );
-          })}
-        </ol>
+        {submitted && !isEditMode ? (
+          <SubmittedState candidate={candidate} onEdit={() => router.push("/onboarding?edit=true")} onDashboard={() => router.push("/dashboard/candidate")} />
+        ) : (
+          <>
+            <ol className="onboarding-steps" aria-label="Onboarding progress">
+              {steps.map((item, index) => {
+                const isActive = index <= stepIndex;
+                const isCurrent = index === stepIndex;
+                return (
+                  <li key={item.id} className={isActive ? "active" : ""}>
+                    <button type="button" disabled={submitted && !isEditMode} onClick={() => setStep(item.id)}>
+                      <span>{index + 1}</span>
+                      {item.label}
+                      {isEditMode && isCurrent && " (editing)"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
 
-        {message && <p className="form-message" role="status">{message}</p>}
-        {submitted && !isEditMode && (
-          <p className="form-message" role="status">
-            Onboarding submitted. A recruiter will review your documents and convert you to an employee.
-          </p>
-        )}
+            {message && <p className="form-message" role="status">{message}</p>}
 
-        <form className="auth-form" onSubmit={handleNext}>
-          {step === "personal" && (
-            <div className="form-grid">
-              <h2 className="step-title">Personal information</h2>
-              <Field label="Date of birth" name="date_of_birth" type="date" value={personal.date_of_birth} onChange={(e) => setPersonal({ ...personal, date_of_birth: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-              <Field label="National ID / CNIC" name="national_id" value={personal.national_id} onChange={(e) => setPersonal({ ...personal, national_id: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-              <Field label="Address line 1" name="address_line1" value={personal.address_line1} onChange={(e) => setPersonal({ ...personal, address_line1: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} wide />
-              <Field label="Address line 2" name="address_line2" value={personal.address_line2} onChange={(e) => setPersonal({ ...personal, address_line2: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} wide />
-              <Field label="City" name="city" value={personal.city} onChange={(e) => setPersonal({ ...personal, city: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-              <Field label="State" name="state" value={personal.state} onChange={(e) => setPersonal({ ...personal, state: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-              <Field label="Postal code" name="postal_code" value={personal.postal_code} onChange={(e) => setPersonal({ ...personal, postal_code: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-              <Field label="Country" name="country" value={personal.country} onChange={(e) => setPersonal({ ...personal, country: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-            </div>
-          )}
-
-          {step === "emergency" && (
-            <div className="form-grid">
-              <h2 className="step-title">Emergency contact</h2>
-              <Field label="Full name" name="name" value={emergency.name} onChange={(e) => setEmergency({ ...emergency, name: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-              <Field label="Relationship" name="relationship" value={emergency.relationship} onChange={(e) => setEmergency({ ...emergency, relationship: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-              <Field label="Phone" name="phone" value={emergency.phone} onChange={(e) => setEmergency({ ...emergency, phone: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-            </div>
-          )}
-
-          {step === "employment" && (
-            <div className="form-grid">
-              <h2 className="step-title">Payroll & tax</h2>
-              <Field label="Bank name" name="bank_name" value={employment.bank_name} onChange={(e) => setEmployment({ ...employment, bank_name: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-              <Field label="Account holder" name="account_holder_name" value={employment.account_holder_name} onChange={(e) => setEmployment({ ...employment, account_holder_name: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-              <Field label="Account number" name="account_number" value={employment.account_number} onChange={(e) => setEmployment({ ...employment, account_number: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-              <Field label="Tax ID" name="tax_id" value={employment.tax_id} onChange={(e) => setEmployment({ ...employment, tax_id: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-            </div>
-          )}
-
-          {step === "education" && (
-            <div>
-              <h2 className="step-title">Education history</h2>
-              {educationEntries.map((entry, index) => (
-                <div key={index} className="form-grid" style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid #e2e8f0" }}>
-                  <Field label="Institution" value={entry.institution} onChange={(e) => {
-                    const next = [...educationEntries];
-                    next[index] = { ...next[index], institution: e.target.value };
-                    setEducationEntries(next);
-                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-                  <Field label="Degree" value={entry.degree} onChange={(e) => {
-                    const next = [...educationEntries];
-                    next[index] = { ...next[index], degree: e.target.value };
-                    setEducationEntries(next);
-                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-                  <Field label="Field of study" value={entry.field_of_study} onChange={(e) => {
-                    const next = [...educationEntries];
-                    next[index] = { ...next[index], field_of_study: e.target.value };
-                    setEducationEntries(next);
-                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-                  <Field label="Year completed" value={entry.year_completed} onChange={(e) => {
-                    const next = [...educationEntries];
-                    next[index] = { ...next[index], year_completed: e.target.value };
-                    setEducationEntries(next);
-                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-                  <label className="field wide">
-                    <span>Certificate upload (optional)</span>
-                    <input type="file" disabled={(submitted && !isEditMode) || uploading} onChange={(e) => handleFileUpload(e, "education_cert", index)} />
-                    {entry.certificate_file && <small>Uploaded: {entry.certificate_file}</small>}
-                  </label>
+            <form className="auth-form" onSubmit={handleNext}>
+              {step === "personal" && (
+                <div className="form-grid">
+                  <h2 className="step-title">Personal information</h2>
+                  <Field label="Date of birth" type="date" value={personal.date_of_birth} onChange={(e) => setPersonal({ ...personal, date_of_birth: e.target.value })} />
+                  <Field label="National ID / CNIC" value={personal.national_id} onChange={(e) => setPersonal({ ...personal, national_id: e.target.value })} />
+                  <Field label="Address line 1" value={personal.address_line1} onChange={(e) => setPersonal({ ...personal, address_line1: e.target.value })} wide />
+                  <Field label="Address line 2" value={personal.address_line2} onChange={(e) => setPersonal({ ...personal, address_line2: e.target.value })} wide />
+                  <Field label="City" value={personal.city} onChange={(e) => setPersonal({ ...personal, city: e.target.value })} />
+                  <Field label="State" value={personal.state} onChange={(e) => setPersonal({ ...personal, state: e.target.value })} />
+                  <Field label="Postal code" value={personal.postal_code} onChange={(e) => setPersonal({ ...personal, postal_code: e.target.value })} />
+                  <Field label="Country" value={personal.country} onChange={(e) => setPersonal({ ...personal, country: e.target.value })} />
                 </div>
-              ))}
-              {(!submitted || isEditMode) && (
-                <button type="button" className="secondary-button" onClick={() => setEducationEntries((c) => [...c, { ...emptyEducationEntry }])}>
-                  Add another education entry
-                </button>
               )}
-            </div>
-          )}
 
-          {step === "government_docs" && (
-            <div>
-              <h2 className="step-title">Government identity documents</h2>
-              {govDocs.map((doc, index) => (
-                <div key={index} className="form-grid" style={{ marginBottom: 16 }}>
-                  <label className="field">
-                    <span>Document type</span>
-                    <select
-                      value={doc.doc_type}
-                      disabled={submitted && !isEditMode}
-                      onChange={(e) => {
+              {step === "education" && (
+                <div>
+                  <h2 className="step-title">Education history</h2>
+                  {educationEntries.map((entry, index) => (
+                    <div key={index} className="form-grid" style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid #e2e8f0" }}>
+                      <Field label="Institution" value={entry.institution} onChange={(e) => {
+                        const next = [...educationEntries];
+                        next[index] = { ...next[index], institution: e.target.value };
+                        setEducationEntries(next);
+                      }} />
+                      <Field label="Degree" value={entry.degree} onChange={(e) => {
+                        const next = [...educationEntries];
+                        next[index] = { ...next[index], degree: e.target.value };
+                        setEducationEntries(next);
+                      }} />
+                      <Field label="Field of study" value={entry.field_of_study} onChange={(e) => {
+                        const next = [...educationEntries];
+                        next[index] = { ...next[index], field_of_study: e.target.value };
+                        setEducationEntries(next);
+                      }} />
+                      <Field label="Year completed" value={entry.year_completed} onChange={(e) => {
+                        const next = [...educationEntries];
+                        next[index] = { ...next[index], year_completed: e.target.value };
+                        setEducationEntries(next);
+                      }} />
+                      <label className="field wide">
+                        <span>Certificate upload (auto-read via OCR)</span>
+                        <input type="file" disabled={uploading} onChange={(e) => handleFileUpload(e, "education_cert", index)} />
+                        {entry.certificate_file && <small>Uploaded: {entry.certificate_file}</small>}
+                      </label>
+                    </div>
+                  ))}
+                  <button type="button" className="secondary-button" onClick={() => setEducationEntries((c) => [...c, { ...emptyEducationEntry }])}>
+                    Add another education entry
+                  </button>
+                </div>
+              )}
+
+              {step === "government_docs" && (
+                <div>
+                  <h2 className="step-title">Government identity documents</h2>
+                  <p style={{ marginTop: -8, color: "#5c7086" }}>
+                    We automatically read your name, ID number, and dates from the file using OCR — this speeds up
+                    verification on your recruiter&apos;s side.
+                  </p>
+                  {govDocs.map((doc, index) => (
+                    <div key={index} className="form-grid" style={{ marginBottom: 16 }}>
+                      <label className="field">
+                        <span>Document type</span>
+                        <select
+                          value={doc.doc_type}
+                          onChange={(e) => {
+                            const next = [...govDocs];
+                            next[index] = { ...next[index], doc_type: e.target.value };
+                            setGovDocs(next);
+                          }}
+                        >
+                          <option value="cnic">CNIC</option>
+                          <option value="passport">Passport</option>
+                          <option value="other_id">Other ID</option>
+                        </select>
+                      </label>
+                      <Field label="Document number" value={doc.document_number === "pending" ? "" : doc.document_number} onChange={(e) => {
                         const next = [...govDocs];
-                        next[index] = { ...next[index], doc_type: e.target.value };
+                        next[index] = { ...next[index], document_number: e.target.value };
                         setGovDocs(next);
-                      }}
-                      style={isEditMode && !(submitted && !isEditMode) ? {
-                        borderColor: "#3b82f6",
-                        backgroundColor: "#f8fafc",
-                        borderWidth: "2px",
-                      } : {}}
-                    >
-                      <option value="cnic">CNIC</option>
-                      <option value="passport">Passport</option>
-                      <option value="other_id">Other ID</option>
-                    </select>
-                  </label>
-                  <Field label="Document number" value={doc.document_number === "pending" ? "" : doc.document_number} onChange={(e) => {
-                    const next = [...govDocs];
-                    next[index] = { ...next[index], document_number: e.target.value };
-                    setGovDocs(next);
-                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-                  <label className="field wide">
-                    <span>Upload document</span>
-                    <input type="file" disabled={(submitted && !isEditMode) || uploading} onChange={(e) => handleFileUpload(e, "government_doc", index)} />
-                    {doc.file_url && <small>Uploaded: {doc.file_name || doc.file_url}</small>}
-                  </label>
+                      }} />
+                      <label className="field wide">
+                        <span>Upload document (PDF, JPG, or PNG — max 10 MB)</span>
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={uploading} onChange={(e) => handleFileUpload(e, "government_doc", index)} />
+                        {doc.file_url && <small>Uploaded: {doc.file_name || doc.file_url}</small>}
+                      </label>
+                    </div>
+                  ))}
+                  <button type="button" className="secondary-button" onClick={() => setGovDocs((c) => [...c, { ...emptyGovDoc }])}>
+                    Add another document
+                  </button>
                 </div>
-              ))}
-              {(!submitted || isEditMode) && (
-                <button type="button" className="secondary-button" onClick={() => setGovDocs((c) => [...c, { ...emptyGovDoc }])}>
-                  Add another document
-                </button>
               )}
-            </div>
-          )}
 
-          {step === "references" && (
-            <div>
-              <h2 className="step-title">Professional references</h2>
-              <p style={{ marginTop: -8 }}>Provide at least two references.</p>
-              {references.map((ref, index) => (
-                <div key={index} className="form-grid" style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid #e2e8f0" }}>
-                  <Field label="Full name" value={ref.full_name} onChange={(e) => {
-                    const next = [...references];
-                    next[index] = { ...next[index], full_name: e.target.value };
-                    setReferences(next);
-                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-                  <Field label="Relationship" value={ref.relationship} onChange={(e) => {
-                    const next = [...references];
-                    next[index] = { ...next[index], relationship: e.target.value };
-                    setReferences(next);
-                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-                  <Field label="Email" type="email" value={ref.email} onChange={(e) => {
-                    const next = [...references];
-                    next[index] = { ...next[index], email: e.target.value };
-                    setReferences(next);
-                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-                  <Field label="Phone" value={ref.phone} onChange={(e) => {
-                    const next = [...references];
-                    next[index] = { ...next[index], phone: e.target.value };
-                    setReferences(next);
-                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} />
-                  <Field label="Company" value={ref.company} onChange={(e) => {
-                    const next = [...references];
-                    next[index] = { ...next[index], company: e.target.value };
-                    setReferences(next);
-                  }} disabled={submitted && !isEditMode} isEditMode={isEditMode} wide />
+              {step === "resume" && (
+                <div className="form-grid">
+                  <h2 className="step-title">Resume</h2>
+                  <label className="field wide">
+                    <span>Professional summary</span>
+                    <textarea
+                      rows={4}
+                      value={resume.summary}
+                      onChange={(e) => setResume({ ...resume, summary: e.target.value })}
+                      style={{ width: "100%", border: "1px solid #bed0dc", borderRadius: 8, padding: "13px 14px", fontFamily: "inherit" }}
+                    />
+                  </label>
+                  <label className="field wide">
+                    <span>Upload resume (PDF/DOC)</span>
+                    <input type="file" disabled={uploading} onChange={(e) => handleFileUpload(e, "resume")} />
+                    {resume.file_url && <small>Uploaded: {resume.file_name || resume.file_url}</small>}
+                  </label>
                 </div>
-              ))}
-            </div>
-          )}
+              )}
 
-          {step === "documents" && (
-            <div>
-              <h2 className="step-title">Acknowledge documents</h2>
-              <label className="checkbox-field">
-                <input type="checkbox" checked={documents.accepted_code_of_conduct} disabled={submitted && !isEditMode} onChange={(e) => setDocuments({ ...documents, accepted_code_of_conduct: e.target.checked })} />
-                <span>I accept the Code of Conduct</span>
-              </label>
-              <label className="checkbox-field">
-                <input type="checkbox" checked={documents.accepted_privacy_policy} disabled={submitted && !isEditMode} onChange={(e) => setDocuments({ ...documents, accepted_privacy_policy: e.target.checked })} />
-                <span>I accept the Privacy Policy</span>
-              </label>
-              <label className="checkbox-field">
-                <input type="checkbox" checked={documents.accepted_employee_handbook} disabled={submitted && !isEditMode} onChange={(e) => setDocuments({ ...documents, accepted_employee_handbook: e.target.checked })} />
-                <span>I accept the Employee Handbook</span>
-              </label>
-            </div>
-          )}
+              {step === "submit" && !isEditMode && (
+                <div>
+                  <h2 className="step-title">Review & submit</h2>
+                  <p>Confirm every section is complete. Your recruiter reviews it next and sends your offer letter.</p>
+                  <div className="review-grid">
+                    <ReviewBlock title="Personal" items={Object.entries(personal)} />
+                    <ReviewBlock title="Education entries" items={[["count", String(educationEntries.length)]]} />
+                    <ReviewBlock title="Government docs" items={[["count", String(govDocs.length)]]} />
+                    <ReviewBlock title="Resume" items={[["file", resume.file_name || "—"], ["summary", resume.summary?.slice(0, 80)]]} />
+                  </div>
+                </div>
+              )}
 
-          {step === "nda" && (
-            <div>
-              <h2 className="step-title">Sign NDA</h2>
-              <p>By signing below you agree to keep company information confidential.</p>
-              <Field label="Full legal name" value={nda.full_legal_name} onChange={(e) => setNda({ ...nda, full_legal_name: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} wide />
-              <label className="checkbox-field">
-                <input type="checkbox" checked={nda.agreed} disabled={submitted && !isEditMode} onChange={(e) => setNda({ ...nda, agreed: e.target.checked })} />
-                <span>I digitally sign this Non-Disclosure Agreement</span>
-              </label>
-            </div>
-          )}
-
-          {step === "contract" && (
-            <div>
-              <h2 className="step-title">Sign employment contract</h2>
-              <p>Confirm that you accept the offered role, compensation, and terms shared by your recruiter.</p>
-              <Field label="Full legal name" value={contract.full_legal_name} onChange={(e) => setContract({ ...contract, full_legal_name: e.target.value })} disabled={submitted && !isEditMode} isEditMode={isEditMode} wide />
-              <label className="checkbox-field">
-                <input type="checkbox" checked={contract.agreed} disabled={submitted && !isEditMode} onChange={(e) => setContract({ ...contract, agreed: e.target.checked })} />
-                <span>I digitally sign this employment contract</span>
-              </label>
-            </div>
-          )}
-
-          {step === "resume" && (
-            <div className="form-grid">
-              <h2 className="step-title">Resume</h2>
-              <label className="field wide">
-                <span>Professional summary</span>
-                <textarea
-                  rows={4}
-                  value={resume.summary}
-                  disabled={submitted && !isEditMode}
-                  onChange={(e) => setResume({ ...resume, summary: e.target.value })}
-                  style={{ 
-                    width: "100%", 
-                    border: isEditMode && !(submitted && !isEditMode) ? "2px solid #3b82f6" : "1px solid #bed0dc", 
-                    borderRadius: 8, 
-                    padding: "13px 14px", 
-                    fontFamily: "inherit",
-                    backgroundColor: isEditMode && !(submitted && !isEditMode) ? "#f8fafc" : "white",
-                  }}
-                />
-                {isEditMode && !(submitted && !isEditMode) && (
-                  <small style={{ color: "#3b82f6", fontSize: "11px", marginTop: "4px", display: "block" }}>
-                    Click to edit
-                  </small>
+              <div className="onboarding-actions" style={{ justifyContent: "space-between" }}>
+                <button type="button" className="secondary-button" onClick={() => router.push("/dashboard/candidate")}>
+                  Go to dashboard
+                </button>
+                {!isEditMode && step === "submit" ? (
+                  <button className="primary-button" type="submit" disabled={saving || uploading}>
+                    {saving || uploading ? "Saving…" : "Submit for HR review"}
+                  </button>
+                ) : (
+                  <button className="primary-button" type="submit" disabled={saving || uploading}>
+                    {saving || uploading ? "Saving…" : "Save & continue"}
+                  </button>
                 )}
-              </label>
-              <label className="field wide">
-                <span>Upload resume (PDF/DOC)</span>
-                <input type="file" disabled={(submitted && !isEditMode) || uploading} onChange={(e) => handleFileUpload(e, "resume")} />
-                {resume.file_url && <small>Uploaded: {resume.file_name || resume.file_url}</small>}
-              </label>
-            </div>
-          )}
-
-          {step === "submit" && !isEditMode && (
-            <div>
-              <h2 className="step-title">Review & submit</h2>
-              <p>Confirm every section is complete. After submit, your recruiter reviews and converts you to an employee.</p>
-              <ReviewBlock title="Personal" items={Object.entries(personal)} />
-              <ReviewBlock title="Emergency" items={Object.entries(emergency)} />
-              <ReviewBlock title="Payroll" items={Object.entries(employment)} />
-              <ReviewBlock title="Education entries" items={[["count", String(educationEntries.length)]]} />
-              <ReviewBlock title="Government docs" items={[["count", String(govDocs.length)]]} />
-              <ReviewBlock title="References" items={[["count", String(references.length)]]} />
-              <ReviewBlock title="NDA" items={[["signed_by", nda.full_legal_name], ["agreed", String(nda.agreed)]]} />
-              <ReviewBlock title="Contract" items={[["signed_by", contract.full_legal_name], ["agreed", String(contract.agreed)]]} />
-              <ReviewBlock title="Resume" items={[["file", resume.file_name || "—"], ["summary", resume.summary?.slice(0, 80)]]} />
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div className="dashboard-actions" style={{ marginTop: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            {/* Left: Go to dashboard (always visible) */}
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => router.push("/dashboard/candidate")}
-            >
-              Go to dashboard
-            </button>
-
-            {/* Right: primary action */}
-            {!isEditMode && step === "submit" ? (
-              <button className="primary-button" type="submit" disabled={saving || uploading || submitted}>
-                {saving || uploading ? "Saving…" : "Submit onboarding"}
-              </button>
-            ) : (
-              <button className="primary-button" type="submit" disabled={saving || uploading || (submitted && !isEditMode)}>
-                {saving || uploading ? "Saving…" : "Save & continue"}
-              </button>
-            )}
-          </div>
-        </form>
+              </div>
+            </form>
+          </>
+        )}
       </section>
     </main>
   );
 }
 
-function Field({ label, name, value, onChange, type = "text", disabled, wide, isEditMode }) {
-  const isEditable = isEditMode && !disabled;
-  
+function SubmittedState({ candidate, onEdit, onDashboard }) {
+  return (
+    <div className="onboarding-complete">
+      <div className="verification-icon success" style={{ margin: "0 auto 18px" }}>✓</div>
+      <h2 style={{ margin: "0 0 10px" }}>You&apos;re all set, {candidate?.full_name?.split(" ")[0]}</h2>
+      <p className="onboarding-lead" style={{ maxWidth: 480, margin: "0 auto 24px" }}>
+        Your profile, education history, ID documents, and resume are with your recruiter now. Here&apos;s what
+        happens next:
+      </p>
+      <ol style={{ textAlign: "left", maxWidth: 440, margin: "0 auto 28px", color: "#405266", lineHeight: 1.8 }}>
+        <li>Your recruiter reviews your documents (OCR speeds this up automatically).</li>
+        <li>You&apos;ll receive an <strong>offer letter</strong> to review and digitally sign.</li>
+        <li>Once HR approves your signed offer, you become an employee with your own Employee ID.</li>
+        <li>You&apos;ll then complete a short post-hire profile (emergency contact, banking, references, NDA).</li>
+      </ol>
+      <div className="onboarding-actions" style={{ justifyContent: "center" }}>
+        <button type="button" className="secondary-button" onClick={onEdit}>Edit my details</button>
+        <button type="button" className="primary-button" onClick={onDashboard}>Go to my dashboard</button>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, name, value, onChange, type = "text", wide }) {
   return (
     <label className={`field ${wide ? "wide" : ""}`}>
       <span>{label}</span>
-      <input 
-        name={name} 
-        type={type} 
-        value={value} 
-        onChange={onChange} 
-        disabled={disabled}
-        style={isEditable ? {
-          borderColor: "#3b82f6",
-          backgroundColor: "#f8fafc",
-          borderWidth: "2px",
-          boxShadow: "0 0 0 1px #3b82f6",
-          transition: "all 0.2s ease",
-        } : {}}
-        onFocus={isEditable ? (e) => {
-          e.target.style.borderColor = "#2563eb";
-          e.target.style.boxShadow = "0 0 0 3px rgba(59, 130, 246, 0.3)";
-        } : undefined}
-        onBlur={isEditable ? (e) => {
-          e.target.style.borderColor = "#3b82f6";
-          e.target.style.boxShadow = "0 0 0 1px #3b82f6";
-        } : undefined}
-      />
-      {isEditable && (
-        <small style={{ color: "#3b82f6", fontSize: "11px", marginTop: "4px", display: "block" }}>
-          Click to edit
-        </small>
-      )}
+      <input name={name} type={type} value={value} onChange={onChange} />
     </label>
   );
 }

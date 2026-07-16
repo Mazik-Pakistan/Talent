@@ -5,21 +5,24 @@ import { useRouter } from "next/navigation";
 
 import RequireAccess, { ModuleNav } from "@/components/RequireAccess";
 import {
+  approveOffer,
   clearLocalSession,
   createAnnouncement,
-  createEmployeeFromCandidate,
   createInvitation,
   getAnnouncements,
   getApiErrorMessage,
   getDashboardActivity,
   getDashboardSummary,
   getNotifications,
+  getPendingReview,
   getReadyForConversion,
   globalSearch,
   listEmployees,
   logout,
   markNotificationsRead,
 } from "@/services/authService";
+import OfferComposerModal from "@/components/OfferComposerModal";
+import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
 
 const initialInvite = {
   full_name: "",
@@ -79,12 +82,14 @@ function RecruiterDashboardContent() {
   const [announcementMessage, setAnnouncementMessage] = useState("");
   const [isPublishing, setIsPublishing] = useState(false);
 
-  // ----- US-023 / US-024: conversion -----
+  // ----- Offer letter cycle: pending review -> send offer -> signed -> approve -----
+  const [pendingCandidates, setPendingCandidates] = useState([]);
   const [readyCandidates, setReadyCandidates] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [conversionMessage, setConversionMessage] = useState("");
-  const [convertingId, setConvertingId] = useState(null);
+  const [approvingOfferId, setApprovingOfferId] = useState(null);
   const [expandedCandidateId, setExpandedCandidateId] = useState(null);
+  const [offerModalCandidate, setOfferModalCandidate] = useState(null);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -95,12 +100,13 @@ function RecruiterDashboardContent() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const [summaryData, activityData, notificationsData, announcementsData, readyData, employeesData] =
+      const [summaryData, activityData, notificationsData, announcementsData, pendingData, readyData, employeesData] =
         await Promise.all([
           getDashboardSummary(accessToken),
           getDashboardActivity(accessToken, 15),
           getNotifications(accessToken, 20),
           getAnnouncements(accessToken, 10),
+          getPendingReview(accessToken),
           getReadyForConversion(accessToken),
           listEmployees(accessToken),
         ]);
@@ -109,6 +115,7 @@ function RecruiterDashboardContent() {
       setNotifications(notificationsData.notifications);
       setUnreadCount(notificationsData.unread_count);
       setAnnouncements(announcementsData.announcements);
+      setPendingCandidates(pendingData.candidates || []);
       setReadyCandidates(readyData.candidates || []);
       setEmployees(employeesData.employees || []);
       setDashboardError("");
@@ -200,8 +207,8 @@ function RecruiterDashboardContent() {
         scrollToSection(hash);
       } else if (notification.type === "invitation_sent") {
         scrollToSection("invite-section");
-      } else if (notification.type === "onboarding_submitted") {
-        scrollToSection("conversion-section");
+      } else if (notification.type === "intake_submitted") {
+        scrollToSection("pending-review-section");
       } else if (notification.type === "candidate_registered") {
         scrollToSection("approvals-section");
       } else if (notification.type === "employee_created") {
@@ -301,26 +308,22 @@ function RecruiterDashboardContent() {
     }
   }
 
-  async function handleConvertCandidate(candidateId) {
+  async function handleApproveOffer(offerId) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) {
       router.replace("/login");
       return;
     }
-    setConvertingId(candidateId);
+    setApprovingOfferId(offerId);
     setConversionMessage("");
     try {
-      const data = await createEmployeeFromCandidate(candidateId, accessToken);
-      setConversionMessage(
-        `${data.message} Employee ID: ${data.employee?.employee_id}${
-          data.email_sent ? " · Welcome email sent." : " · Welcome email could not be sent."
-        }`
-      );
+      const data = await approveOffer(offerId, {}, accessToken);
+      setConversionMessage(`${data.message} Employee ID: ${data.employee?.employee_id}.`);
       await loadDashboard();
     } catch (error) {
-      setConversionMessage(getApiErrorMessage(error, "Could not convert candidate."));
+      setConversionMessage(getApiErrorMessage(error, "Could not approve this offer."));
     } finally {
-      setConvertingId(null);
+      setApprovingOfferId(null);
     }
   }
 
@@ -431,17 +434,21 @@ function RecruiterDashboardContent() {
             <strong>Pending approvals</strong>
             <span className="qa-hint">{summary?.pending_approvals?.length || 0} awaiting review</span>
           </button>
-          <button type="button" className="quick-action" onClick={() => scrollToSection("conversion-section")}>
+          <button type="button" className="quick-action" onClick={() => scrollToSection("pending-review-section")}>
             <span className="qa-icon" aria-hidden="true">→</span>
-            <strong>Convert to employee</strong>
-            <span className="qa-hint">{readyCandidates.length} ready at 100%</span>
+            <strong>Review & send offers</strong>
+            <span className="qa-hint">{pendingCandidates.length} awaiting offer</span>
+          </button>
+          <button type="button" className="quick-action" onClick={() => scrollToSection("conversion-section")}>
+            <span className="qa-icon" aria-hidden="true">ID</span>
+            <strong>Activate employees</strong>
+            <span className="qa-hint">{readyCandidates.length} offer signed</span>
           </button>
           <button type="button" className="quick-action" onClick={() => scrollToSection("employees-section")}>
             <span className="qa-icon" aria-hidden="true">ID</span>
             <strong>Employee directory</strong>
             <span className="qa-hint">{employees.length} active employees</span>
           </button>
-          <QuickActionComingSoon icon="Doc" label="View documents" hint="Embedded in conversion review" />
           <QuickActionComingSoon icon="Learn" label="Learning assignments" hint="Coming in Phase 3" />
         </div>
       </section>
@@ -473,30 +480,29 @@ function RecruiterDashboardContent() {
             )}
           </section>
 
-          {/* US-023: Convert candidates with 100% onboarding */}
-          <section className="dashboard-card wide" id="conversion-section" aria-labelledby="conversion-heading">
+          {/* Pending review: candidates who submitted intake, awaiting an offer letter */}
+          <section className="dashboard-card wide" id="pending-review-section" aria-labelledby="pending-review-heading">
             <div className="section-heading-row">
-              <h2 id="conversion-heading">Ready for conversion (100%)</h2>
+              <h2 id="pending-review-heading">Pending offer review</h2>
             </div>
             <p style={{ marginTop: -8 }}>
-              Candidates who completed personal details, documents, references, NDA, contract, and resume.
-              Convert only once — this generates an Employee ID and sends congratulations email.
+              Candidates who submitted their profile, resume, and ID documents. Review their documents (OCR-assisted)
+              and send an offer letter.
             </p>
             {conversionMessage && <p className="form-message" role="status">{conversionMessage}</p>}
             {dashboardLoading ? (
               <p className="empty-state">Loading…</p>
-            ) : readyCandidates.length ? (
-              <ul className="mini-list">
-                {readyCandidates.map((candidate) => (
-                  <li key={candidate.id} style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, width: "100%", flexWrap: "wrap" }}>
+            ) : pendingCandidates.length ? (
+              <div>
+                {pendingCandidates.map((candidate) => (
+                  <div key={candidate.id} className="candidate-review-card">
+                    <div className="candidate-review-head">
                       <div>
-                        <strong>{candidate.full_name}</strong>
-                        <div className="muted-text">
-                          {candidate.email} · {candidate.job_title} · {candidate.department} ·{" "}
-                          {candidate.progress_percentage}%
-                        </div>
-                        <div className="muted-text">Submitted {formatDate(candidate.submitted_at)}</div>
+                        <h4>{candidate.full_name}</h4>
+                        <span>
+                          {candidate.email} · {candidate.job_title} · {candidate.department} · Submitted{" "}
+                          {formatDate(candidate.submitted_at)}
+                        </span>
                       </div>
                       <div className="dashboard-actions">
                         <button
@@ -506,56 +512,74 @@ function RecruiterDashboardContent() {
                             setExpandedCandidateId((current) => (current === candidate.id ? null : candidate.id))
                           }
                         >
-                          {expandedCandidateId === candidate.id ? "Hide details" : "Review details"}
+                          {expandedCandidateId === candidate.id ? "Hide documents" : "Review documents"}
                         </button>
-                        <button
-                          type="button"
-                          className="primary-button"
-                          disabled={convertingId === candidate.id}
-                          onClick={() => handleConvertCandidate(candidate.id)}
-                        >
-                          {convertingId === candidate.id ? "Converting…" : "Convert to employee"}
+                        <button type="button" className="primary-button" onClick={() => setOfferModalCandidate(candidate)}>
+                          Send offer letter
                         </button>
                       </div>
                     </div>
-                    {expandedCandidateId === candidate.id && (
-                      <div className="review-block" style={{ width: "100%" }}>
-                        <h3>Onboarding package</h3>
-                        <dl>
-                          <div>
-                            <dt>NDA</dt>
-                            <dd>{candidate.onboarding?.nda?.full_legal_name || "—"}</dd>
-                          </div>
-                          <div>
-                            <dt>Contract</dt>
-                            <dd>{candidate.onboarding?.contract?.full_legal_name || "—"}</dd>
-                          </div>
-                          <div>
-                            <dt>Education entries</dt>
-                            <dd>{candidate.onboarding?.education?.entries?.length || 0}</dd>
-                          </div>
-                          <div>
-                            <dt>Government docs</dt>
-                            <dd>{candidate.onboarding?.government_docs?.documents?.length || 0}</dd>
-                          </div>
-                          <div>
-                            <dt>References</dt>
-                            <dd>{candidate.onboarding?.references?.references?.length || 0}</dd>
-                          </div>
-                          <div>
-                            <dt>Resume</dt>
-                            <dd>{candidate.onboarding?.resume?.file_name || "—"}</dd>
-                          </div>
-                        </dl>
+                    {expandedCandidateId === candidate.id && <RecruiterDocumentReview ownerId={candidate.id} />}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-state">No candidates awaiting an offer right now.</p>
+            )}
+          </section>
+
+          {/* Ready to activate: offer signed by candidate, awaiting HR approval */}
+          <section className="dashboard-card wide" id="conversion-section" aria-labelledby="conversion-heading">
+            <div className="section-heading-row">
+              <h2 id="conversion-heading">Ready to activate (offer signed)</h2>
+            </div>
+            <p style={{ marginTop: -8 }}>
+              Candidates who digitally signed their offer letter. Approve to generate their Employee ID and activate
+              their account — this also sends a welcome email.
+            </p>
+            {dashboardLoading ? (
+              <p className="empty-state">Loading…</p>
+            ) : readyCandidates.length ? (
+              <ul className="mini-list">
+                {readyCandidates.map((candidate) => (
+                  <li key={candidate.offer_id} style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, width: "100%", flexWrap: "wrap" }}>
+                      <div>
+                        <strong>{candidate.full_name}</strong>
+                        <div className="muted-text">
+                          {candidate.email} · {candidate.job_title} · {candidate.department}
+                          {candidate.reporting_manager ? ` · reports to ${candidate.reporting_manager}` : ""}
+                        </div>
+                        <div className="muted-text">Signed {formatDate(candidate.signed_at)}</div>
                       </div>
-                    )}
+                      <button
+                        type="button"
+                        className="primary-button"
+                        disabled={approvingOfferId === candidate.offer_id}
+                        onClick={() => handleApproveOffer(candidate.offer_id)}
+                      >
+                        {approvingOfferId === candidate.offer_id ? "Activating…" : "Approve & activate"}
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="empty-state">No candidates have completed 100% onboarding yet.</p>
+              <p className="empty-state">No signed offers awaiting approval right now.</p>
             )}
           </section>
+
+          {offerModalCandidate && (
+            <OfferComposerModal
+              candidate={offerModalCandidate}
+              onClose={() => setOfferModalCandidate(null)}
+              onSent={(data) => {
+                setConversionMessage(data.message);
+                setOfferModalCandidate(null);
+                loadDashboard();
+              }}
+            />
+          )}
 
           {/* US-024: Employee directory with IDs */}
           <section className="dashboard-card wide" id="employees-section" aria-labelledby="employees-heading">

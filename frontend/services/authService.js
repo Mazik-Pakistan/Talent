@@ -295,6 +295,13 @@ export async function getReadyForConversion(accessToken) {
   return data;
 }
 
+export async function getPendingReview(accessToken) {
+  const { data } = await apiClient.get("/api/employees/pending-review", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
 export async function listEmployees(accessToken) {
   const { data } = await apiClient.get("/api/employees", {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -352,4 +359,104 @@ export function getApiErrorMessage(error, fallbackMessage) {
     return detail[0]?.msg || fallbackMessage;
   }
   return detail || fallbackMessage;
+}
+
+// ─── Offer Letters ───────────────────────────────────────────────────────────
+
+export async function createOffer(payload, accessToken) {
+  const { data } = await apiClient.post("/api/offers", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getMyOffer(accessToken) {
+  const { data } = await apiClient.get("/api/offers/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function listOffersForCandidate(candidateId, accessToken) {
+  const { data } = await apiClient.get(`/api/offers/candidate/${candidateId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function signOffer(offerId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/offers/${offerId}/sign`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function declineOffer(offerId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/offers/${offerId}/decline`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function approveOffer(offerId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/offers/${offerId}/approve`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+// ─── Documents (Epic 4 — OCR-backed document management) ────────────────────
+
+export async function uploadDocument(formData, accessToken) {
+  const { data } = await apiClient.post("/api/documents/upload", formData, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return data;
+}
+
+export async function listMyDocuments(accessToken) {
+  const { data } = await apiClient.get("/api/documents/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function listOwnerDocuments(ownerId, accessToken) {
+  const { data } = await apiClient.get(`/api/documents/owner/${ownerId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function verifyDocument(documentId, payload, accessToken) {
+  const { data } = await apiClient.put(`/api/documents/${documentId}/verify`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getDocumentDownloadUrl(documentId, accessToken) {
+  const { data } = await apiClient.get(`/api/documents/${documentId}/download`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+// ─── Employee profile completion (post-hire "Profile Incomplete" flow) ──────
+
+export async function getProfileCompletion(accessToken) {
+  const { data } = await apiClient.get("/api/employees/profile-completion", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function saveProfileCompletion(payload, accessToken) {
+  const { data } = await apiClient.put("/api/employees/profile-completion", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
 }
