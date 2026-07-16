@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import RequireAccess, { ModuleNav } from "@/components/RequireAccess";
@@ -23,6 +23,7 @@ import {
 } from "@/services/authService";
 import OfferComposerModal from "@/components/OfferComposerModal";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
+import styles from "./recruiter-dashboard.module.css";
 
 const initialInvite = {
   full_name: "",
@@ -37,6 +38,52 @@ const initialInvite = {
 /** US-013: Dashboard data refreshes every 60 seconds. */
 const DASHBOARD_REFRESH_MS = 60000;
 const SEARCH_DEBOUNCE_MS = 350;
+
+const ICONS = {
+  overview: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" />
+      <rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
+    </svg>
+  ),
+  approvals: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" />
+    </svg>
+  ),
+  offers: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" />
+    </svg>
+  ),
+  activate: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9h6M7 13h10M7 17h4" />
+    </svg>
+  ),
+  employees: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c1.2-3.5 3.8-5.5 6.5-5.5s5.3 2 6.5 5.5" />
+      <circle cx="17.5" cy="8.5" r="2.5" /><path d="M15.5 14.3c2.3.4 4 2 5 5.7" />
+    </svg>
+  ),
+  invite: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+      <path d="M19 8v6M22 11h-6" />
+    </svg>
+  ),
+  announcements: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 11v3a1 1 0 0 0 1 1h2l4 4V6L6 10H4a1 1 0 0 0-1 1z" /><path d="M15 8a4 4 0 0 1 0 8" /><path d="M18 5a8 8 0 0 1 0 14" />
+    </svg>
+  ),
+  activity: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 12h4l2 8 4-16 2 8h6" />
+    </svg>
+  ),
+};
 
 export default function RecruiterDashboardPage() {
   return (
@@ -60,6 +107,7 @@ function RecruiterDashboardContent() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifBusy, setNotifBusy] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
 
   // ----- US-017: global search -----
   const [searchQuery, setSearchQuery] = useState("");
@@ -201,6 +249,7 @@ function RecruiterDashboardContent() {
     if (!notification.read) {
       handleMarkOneRead(notification.id);
     }
+    setNotifOpen(false);
     if (notification.link) {
       if (notification.link.includes("#")) {
         const hash = notification.link.split("#")[1];
@@ -327,517 +376,643 @@ function RecruiterDashboardContent() {
     }
   }
 
+  const canInvite = user?.role === "recruiter" || user?.role === "super_admin";
+
+  const navItems = useMemo(() => {
+    const items = [
+      { key: "overview", label: "Overview", icon: ICONS.overview, anchor: "overview-section" },
+      { key: "approvals", label: "Pending approvals", icon: ICONS.approvals, anchor: "approvals-section", count: summary?.pending_approvals?.length },
+      { key: "offers", label: "Offer review", icon: ICONS.offers, anchor: "pending-review-section", count: pendingCandidates.length },
+      { key: "activate", label: "Activate employees", icon: ICONS.activate, anchor: "conversion-section", count: readyCandidates.length },
+      { key: "employees", label: "Employees", icon: ICONS.employees, anchor: "employees-section" },
+      { key: "activity", label: "Activity", icon: ICONS.activity, anchor: "activity-section" },
+    ];
+    if (canInvite) items.push({ key: "invite", label: "Invite candidate", icon: ICONS.invite, anchor: "invite-section" });
+    items.push({ key: "announcements", label: "Announcements", icon: ICONS.announcements, anchor: "announcements-section" });
+    return items;
+  }, [summary, pendingCandidates.length, readyCandidates.length, canInvite]);
+
   if (!user) {
     return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
   }
 
-  const canInvite = user.role === "recruiter" || user.role === "super_admin";
+  const initials = initialsFor(user.full_name);
 
   return (
-    <main className="dashboard-shell">
-      <header className="dashboard-header">
-        <div>
-          <p className="eyebrow">Recruiter dashboard</p>
-          <h1>Welcome, {user.full_name}</h1>
-          <p>Signed in as {user.email} · Role: {user.role}</p>
-          <ModuleNav role={user.role} />
-        </div>
-        <button onClick={handleLogout} className="primary-button" type="button">
-          Log out
-        </button>
-      </header>
-
-      {/* US-013: KPI overview + US-017: global search + US-015: quick actions */}
-      <section className="dashboard-card wide" aria-labelledby="overview-heading">
-        <h2 id="overview-heading">Onboarding overview</h2>
-        <p>
-          A snapshot of hiring activity across your candidates and employees. The middle two cards show
-          candidates waiting for recruiter review before an offer letter is sent. Refreshes automatically every minute.
-        </p>
-
-        {dashboardError && <p className="form-message" role="alert">{dashboardError}</p>}
-
-        <div className="kpi-grid">
-          <KpiCard label="Active employees" value={summary?.kpis?.active_employees} loading={dashboardLoading} />
-          <KpiCard label="Awaiting offer review" value={summary?.kpis?.pending_onboarding} loading={dashboardLoading} />
-          <KpiCard label="Documents review pending" value={summary?.kpis?.documents_pending} loading={dashboardLoading} />
-          <KpiCard label="Confirmed upcoming joinings" value={summary?.kpis?.upcoming_joinings} loading={dashboardLoading} />
-        </div>
-
-        <div className="search-bar">
-          <label className="field">
-            <span>Search employees &amp; candidates</span>
-            <input
-              type="text"
-              placeholder="Search by name, email, employee ID, department, or phone…"
-              value={searchQuery}
-              onChange={(event) => {
-                setSearchQuery(event.target.value);
-                setSearchOpen(true);
-              }}
-              onFocus={() => setSearchOpen(true)}
-              onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
-            />
-          </label>
-          {searchOpen && searchQuery.trim().length >= 2 && (
-            <div className="search-results">
-              {searching && <p className="empty-state">Searching…</p>}
-              {!searching && searchResults.length === 0 && (
-                <p className="empty-state">No matches for &ldquo;{searchQuery.trim()}&rdquo;.</p>
-              )}
-              {!searching &&
-                searchResults.map((result) => (
-                  <button
-                    type="button"
-                    className="search-result-item"
-                    key={`${result.type}-${result.id}`}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => handleSearchSelect(result)}
-                    style={{ width: "100%", textAlign: "left", cursor: "pointer", background: "transparent", border: 0 }}
-                  >
-                    <div>
-                      <strong>{result.full_name}</strong>
-                      <div className="muted-text">
-                        {result.email} · {result.job_title || "—"} · {result.department || "—"}
-                      </div>
-                    </div>
-                    <span className="type-pill">{result.type}</span>
-                  </button>
-                ))}
+    <div className={styles.root}>
+      <div className={styles.app}>
+        {/* Sidebar */}
+        <aside className={styles.sidebar}>
+          <button type="button" className={styles.brand}>
+            <div className={styles.brandMark}>MZ</div>
+            <div className={styles.brandText}>
+              <div className={styles.p1}>Talent</div>
+              <div className={styles.p2}>Mazik Global Pakistan</div>
             </div>
-          )}
-        </div>
+          </button>
 
-        {selectedPerson && (
-          <section id="search-detail-section" className="invite-link-box" style={{ marginTop: 16 }} aria-live="polite">
+          <div className={styles.navSectionLabel}>Recruiting</div>
+          <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {navItems.map((item) => (
+              <li key={item.key}>
+                <button type="button" className={styles.navItem} onClick={() => scrollToSection(item.anchor)}>
+                  {item.icon}
+                  <span>{item.label}</span>
+                  {!!item.count && <span className={styles.navCount}>{item.count}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className={styles.sidebarFooter}>
+            <div className={styles.avatarSm}>{initials}</div>
             <div>
-              <strong>{selectedPerson.full_name}</strong>
-              <div className="muted-text">
-                {selectedPerson.type} · {selectedPerson.email} · {selectedPerson.job_title || "—"} ·{" "}
-                {selectedPerson.department || "—"} · status: {selectedPerson.status || "—"}
-              </div>
+              <div className={styles.name}>{user.full_name}</div>
+              <div className={styles.role}>{user.role.replace("_", " ")}</div>
             </div>
-            <button type="button" className="secondary-button" onClick={() => setSelectedPerson(null)}>
-              Clear
+            <button type="button" className={styles.logoutBtn} title="Log out" onClick={handleLogout}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" />
+              </svg>
             </button>
-          </section>
-        )}
+          </div>
+        </aside>
 
-        <div className="section-heading-row" style={{ marginTop: 24 }}>
-          <h2 style={{ fontSize: "1rem" }}>Quick actions</h2>
-        </div>
-        <div className="quick-actions-grid">
-          <button type="button" className="quick-action" onClick={() => scrollToSection("invite-section")}>
-            <span className="qa-icon" aria-hidden="true">+</span>
-            <strong>Add employee</strong>
-            <span className="qa-hint">Email an onboarding invitation</span>
-          </button>
-          <button type="button" className="quick-action" onClick={() => scrollToSection("approvals-section")}>
-            <span className="qa-icon" aria-hidden="true">✓</span>
-            <strong>Pending approvals</strong>
-            <span className="qa-hint">{summary?.pending_approvals?.length || 0} awaiting review</span>
-          </button>
-          <button type="button" className="quick-action" onClick={() => scrollToSection("pending-review-section")}>
-            <span className="qa-icon" aria-hidden="true">→</span>
-            <strong>Review & send offers</strong>
-            <span className="qa-hint">{pendingCandidates.length} awaiting offer</span>
-          </button>
-          <button type="button" className="quick-action" onClick={() => scrollToSection("conversion-section")}>
-            <span className="qa-icon" aria-hidden="true">ID</span>
-            <strong>Activate employees</strong>
-            <span className="qa-hint">{readyCandidates.length} offer signed</span>
-          </button>
-          <button type="button" className="quick-action" onClick={() => scrollToSection("employees-section")}>
-            <span className="qa-icon" aria-hidden="true">ID</span>
-            <strong>Employee directory</strong>
-            <span className="qa-hint">{employees.length} active employees</span>
-          </button>
-          <QuickActionComingSoon icon="Learn" label="Learning assignments" hint="Coming in Phase 3" />
-        </div>
-      </section>
-
-      <div className="dashboard-columns">
-        <div className="dashboard-stack">
-          {/* Pending approvals (recently submitted onboarding) */}
-          <section className="dashboard-card wide" id="approvals-section" aria-labelledby="approvals-heading">
-            <div className="section-heading-row">
-              <h2 id="approvals-heading">Pending approvals</h2>
+        {/* Main */}
+        <main className={styles.main}>
+          <div className={styles.topbar}>
+            <div>
+              <div className={styles.topbarTitle}>Recruiter Dashboard</div>
+              <div className={styles.topbarSub}>Hiring pipeline &amp; onboarding overview</div>
             </div>
-            <p style={{ marginTop: -8 }}>Candidates who submitted onboarding in the last 7 days.</p>
-            {dashboardLoading ? (
-              <p className="empty-state">Loading…</p>
-            ) : summary?.pending_approvals?.length ? (
-              <ul className="mini-list">
-                {summary.pending_approvals.map((item) => (
-                  <li key={item.email}>
-                    <div>
-                      <strong>{item.full_name}</strong>
-                      <div className="muted-text">{item.job_title} · {item.department}</div>
-                    </div>
-                    <span className="muted-text">{formatDate(item.submitted_at)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="empty-state">Nothing pending review right now.</p>
-            )}
-          </section>
-
-          {/* Pending review: candidates who submitted intake, awaiting an offer letter */}
-          <section className="dashboard-card wide" id="pending-review-section" aria-labelledby="pending-review-heading">
-            <div className="section-heading-row">
-              <h2 id="pending-review-heading">Pending offer review</h2>
-            </div>
-            <p style={{ marginTop: -8 }}>
-              Candidates who submitted their profile, resume, and ID documents. Review their documents (OCR-assisted)
-              and send an offer letter.
-            </p>
-            {conversionMessage && <p className="form-message" role="status">{conversionMessage}</p>}
-            {dashboardLoading ? (
-              <p className="empty-state">Loading…</p>
-            ) : pendingCandidates.length ? (
-              <div>
-                {pendingCandidates.map((candidate) => (
-                  <div key={candidate.id} className="candidate-review-card">
-                    <div className="candidate-review-head">
-                      <div>
-                        <h4>{candidate.full_name}</h4>
-                        <span>
-                          {candidate.email} · {candidate.job_title} · {candidate.department} · Submitted{" "}
-                          {formatDate(candidate.submitted_at)}
-                        </span>
-                      </div>
-                      <div className="dashboard-actions">
+            <div className={styles.topbarActions}>
+              <div className={styles.searchWrap}>
+                <div className={styles.searchBox}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search by name, email, ID, department…"
+                    value={searchQuery}
+                    onChange={(event) => { setSearchQuery(event.target.value); setSearchOpen(true); }}
+                    onFocus={() => setSearchOpen(true)}
+                    onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+                  />
+                </div>
+                {searchOpen && searchQuery.trim().length >= 2 && (
+                  <div className={styles.searchResults}>
+                    {searching && <p className={styles.searchEmpty}>Searching…</p>}
+                    {!searching && searchResults.length === 0 && (
+                      <p className={styles.searchEmpty}>No matches for &ldquo;{searchQuery.trim()}&rdquo;.</p>
+                    )}
+                    {!searching &&
+                      searchResults.map((result) => (
                         <button
                           type="button"
-                          className="secondary-button"
-                          onClick={() =>
-                            setExpandedCandidateId((current) => (current === candidate.id ? null : candidate.id))
-                          }
+                          className={styles.searchResultItem}
+                          key={`${result.type}-${result.id}`}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleSearchSelect(result)}
                         >
-                          {expandedCandidateId === candidate.id ? "Hide documents" : "Review documents"}
+                          <div>
+                            <div className={styles.searchResultLabel}>{result.full_name}</div>
+                            <div className={styles.searchResultMeta}>
+                              {result.email} · {result.job_title || "—"} · {result.department || "—"}
+                            </div>
+                          </div>
+                          <span className={styles.typePill}>{result.type}</span>
                         </button>
-                        <button type="button" className="primary-button" onClick={() => setOfferModalCandidate(candidate)}>
-                          Send offer letter
-                        </button>
-                      </div>
-                    </div>
-                    {expandedCandidateId === candidate.id && <RecruiterDocumentReview ownerId={candidate.id} />}
+                      ))}
                   </div>
-                ))}
+                )}
               </div>
-            ) : (
-              <p className="empty-state">No candidates awaiting an offer right now.</p>
-            )}
-          </section>
 
-          {/* Ready to activate: offer signed by candidate, awaiting HR approval */}
-          <section className="dashboard-card wide" id="conversion-section" aria-labelledby="conversion-heading">
-            <div className="section-heading-row">
-              <h2 id="conversion-heading">Ready to activate (offer signed)</h2>
-            </div>
-            <p style={{ marginTop: -8 }}>
-              Candidates who digitally signed their offer letter. Approve to generate their Employee ID and activate
-              their account — this also sends a welcome email.
-            </p>
-            {dashboardLoading ? (
-              <p className="empty-state">Loading…</p>
-            ) : readyCandidates.length ? (
-              <ul className="mini-list">
-                {readyCandidates.map((candidate) => (
-                  <li key={candidate.offer_id} style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, width: "100%", flexWrap: "wrap" }}>
-                      <div>
-                        <strong>{candidate.full_name}</strong>
-                        <div className="muted-text">
-                          {candidate.email} · {candidate.job_title} · {candidate.department}
-                          {candidate.reporting_manager ? ` · reports to ${candidate.reporting_manager}` : ""}
-                        </div>
-                        <div className="muted-text">Signed {formatDate(candidate.signed_at)}</div>
-                      </div>
-                      <button
-                        type="button"
-                        className="primary-button"
-                        disabled={approvingOfferId === candidate.offer_id}
-                        onClick={() => handleApproveOffer(candidate.offer_id)}
-                      >
-                        {approvingOfferId === candidate.offer_id ? "Activating…" : "Approve & activate"}
+              <div className={styles.dropdownWrap}>
+                <div className={styles.iconBtn} title="Notifications" role="button" tabIndex={0} onClick={() => setNotifOpen((v) => !v)}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" />
+                  </svg>
+                  {unreadCount > 0 && <span className={styles.dot} />}
+                </div>
+                {notifOpen && (
+                  <div className={styles.notifDropdown}>
+                    <div className={styles.notifDropdownHead}>
+                      <strong>Notifications{unreadCount > 0 ? ` (${unreadCount})` : ""}</strong>
+                      <button type="button" className={styles.linkButton} onClick={handleMarkAllRead} disabled={notifBusy || unreadCount === 0}>
+                        Mark all read
                       </button>
                     </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="empty-state">No signed offers awaiting approval right now.</p>
-            )}
-          </section>
-
-          {offerModalCandidate && (
-            <OfferComposerModal
-              candidate={offerModalCandidate}
-              onClose={() => setOfferModalCandidate(null)}
-              onSent={(data) => {
-                setConversionMessage(data.message);
-                setOfferModalCandidate(null);
-                loadDashboard();
-              }}
-            />
-          )}
-
-          {/* US-024: Employee directory with IDs */}
-          <section className="dashboard-card wide" id="employees-section" aria-labelledby="employees-heading">
-            <h2 id="employees-heading">Employee directory</h2>
-            <p style={{ marginTop: -8 }}>Converted employees with unique Employee IDs (format MZK-YYYY-000123).</p>
-            {dashboardLoading ? (
-              <p className="empty-state">Loading…</p>
-            ) : employees.length ? (
-              <ul className="mini-list">
-                {employees.map((employee) => (
-                  <li key={employee.employee_id || employee.id}>
-                    <div>
-                      <strong>{employee.full_name}</strong>
-                      <div className="muted-text">
-                        {employee.employee_id} · {employee.email} · {employee.job_title} · {employee.department}
-                      </div>
+                    <div className={styles.notifList}>
+                      {dashboardLoading ? (
+                        <p className={styles.notifEmpty}>Loading…</p>
+                      ) : notifications.length ? (
+                        notifications.map((notification) => (
+                          <button
+                            type="button"
+                            key={notification.id}
+                            className={`${styles.notifItem} ${notification.read ? styles.read : ""}`}
+                            onClick={() => handleNotificationClick(notification)}
+                          >
+                            <span className={styles.notifItemDot} />
+                            <span className={styles.notifItemBody}>
+                              <span className={styles.notifItemTitle}>{notification.title}</span>
+                              <span className={styles.notifItemMessage}>{notification.message}</span>
+                              <span className={styles.notifItemTime}>{formatDateTime(notification.created_at)}</span>
+                            </span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className={styles.notifEmpty}>You&apos;re all caught up.</p>
+                      )}
                     </div>
-                    <span className="muted-text">{formatDate(employee.converted_at || employee.start_date)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="empty-state">No employees converted yet.</p>
-            )}
-          </section>
-
-          {/* US-016: Activity timeline */}
-          <section className="dashboard-card wide" aria-labelledby="activity-heading">
-            <h2 id="activity-heading">Recent activity</h2>
-            {dashboardLoading ? (
-              <p className="empty-state">Loading…</p>
-            ) : activities.length ? (
-              <ul className="activity-list">
-                {activities.map((activity, index) => (
-                  <li key={`${activity.action}-${activity.created_at}-${index}`}>
-                    <span className="activity-dot" />
-                    <div>
-                      <div className="activity-label">{activity.label}</div>
-                      <div className="activity-meta">
-                        {activity.email} · {formatDateTime(activity.created_at)}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="empty-state">No activity yet.</p>
-            )}
-          </section>
-
-          {/* Recently joined + upcoming joining dates */}
-          <section className="dashboard-card wide" aria-labelledby="roster-heading">
-            <h2 id="roster-heading">Roster snapshot</h2>
-            <div className="dashboard-columns" style={{ marginTop: 0 }}>
-              <div>
-                <h3 style={{ fontSize: ".9rem" }}>Recently joined employees</h3>
-                {summary?.recent_employees?.length ? (
-                  <ul className="mini-list">
-                    {summary.recent_employees.map((employee) => (
-                      <li key={employee.email}>
-                        <div>
-                          <strong>{employee.full_name}</strong>
-                          <div className="muted-text">{employee.job_title} · {employee.department}</div>
-                        </div>
-                        <span className="muted-text">{formatDate(employee.created_at)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="empty-state">No employees yet.</p>
-                )}
-              </div>
-              <div>
-                <h3 style={{ fontSize: ".9rem" }}>Upcoming joining dates</h3>
-                {summary?.upcoming_joining_dates?.length ? (
-                  <ul className="mini-list">
-                    {summary.upcoming_joining_dates.map((item, index) => (
-                      <li key={`${item.full_name}-${index}`}>
-                        <div>
-                          <strong>{item.full_name}</strong>
-                          <div className="muted-text">{item.department}</div>
-                        </div>
-                        <span className="muted-text">{formatDate(item.start_date)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="empty-state">Nothing in the next 30 days.</p>
+                  </div>
                 )}
               </div>
             </div>
-          </section>
+          </div>
 
-          {canInvite ? (
-            <section className="dashboard-card wide" id="invite-section" aria-labelledby="invite-heading">
-              <h2 id="invite-heading">Invite candidate to register</h2>
-              <p>
-                After an offer is accepted, invite the candidate by email. They will receive a link, create an account,
-                and verify with a 6-digit code before onboarding.
-              </p>
+          <div className={styles.content}>
+            {dashboardError && <div className={styles.loadError} role="alert">{dashboardError}</div>}
 
-              <form className="auth-form" onSubmit={handleCreateInvite}>
-                <div className="form-grid">
-                  <label className="field">
-                    <span>Candidate full name</span>
-                    <input name="full_name" value={inviteForm.full_name} onChange={updateInviteField} required />
-                  </label>
-                  <label className="field">
-                    <span>Candidate email</span>
-                    <input name="email" type="email" value={inviteForm.email} onChange={updateInviteField} required />
-                  </label>
-                  <label className="field">
-                    <span>Job title</span>
-                    <input name="job_title" value={inviteForm.job_title} onChange={updateInviteField} required />
-                  </label>
-                  <label className="field">
-                    <span>Department</span>
-                    <input name="department" value={inviteForm.department} onChange={updateInviteField} required />
-                  </label>
-                  <label className="field">
-                    <span>Office location (optional)</span>
-                    <input name="office_location" value={inviteForm.office_location} onChange={updateInviteField} />
-                  </label>
-                  <label className="field">
-                    <span>Start date (optional)</span>
-                    <input name="start_date" type="date" value={inviteForm.start_date} onChange={updateInviteField} />
-                  </label>
-                  <label className="field">
-                    <span>Expires in days</span>
-                    <input name="expires_in_days" type="number" min="1" max="30" value={inviteForm.expires_in_days} onChange={updateInviteField} />
-                  </label>
+            {/* Hero */}
+            <div className={styles.hero} id="overview-section">
+              <div className={styles.heroEyebrow}>Recruiter dashboard</div>
+              <h1>Welcome, {user.full_name}</h1>
+              <div className={styles.heroMeta}>
+                Signed in as <b>{user.email}</b> · Role: <b>{user.role.replace("_", " ")}</b>
+              </div>
+              <div style={{ marginTop: 14 }}>
+                <ModuleNav role={user.role} />
+              </div>
+            </div>
+
+            {/* KPI overview */}
+            <div className={styles.stats}>
+              <StatCard styles={styles} tone="green" value={dashboardLoading ? "—" : summary?.kpis?.active_employees ?? 0} label="Active employees" icon={ICONS.employees} />
+              <StatCard styles={styles} tone="orange" value={dashboardLoading ? "—" : summary?.kpis?.pending_onboarding ?? 0} label="Pending onboarding" icon={ICONS.approvals} />
+              <StatCard styles={styles} tone="cyan" value={dashboardLoading ? "—" : summary?.kpis?.documents_pending ?? 0} label="Documents pending" icon={ICONS.offers} />
+              <StatCard styles={styles} tone="navy" value={dashboardLoading ? "—" : summary?.kpis?.upcoming_joinings ?? 0} label="Upcoming joinings" icon={ICONS.activate} />
+            </div>
+
+            {selectedPerson && (
+              <div id="search-detail-section" className={styles.inviteLinkBox} style={{ marginBottom: 24 }}>
+                <div>
+                  <strong style={{ color: "var(--navy)" }}>{selectedPerson.full_name}</strong>
+                  <div className={styles.mutedText}>
+                    {selectedPerson.type} · {selectedPerson.email} · {selectedPerson.job_title || "—"} ·{" "}
+                    {selectedPerson.department || "—"} · status: {selectedPerson.status || "—"}
+                  </div>
+                </div>
+                <button type="button" className={styles.secondaryButton} onClick={() => setSelectedPerson(null)}>
+                  Clear
+                </button>
+              </div>
+            )}
+
+            {/* Quick actions */}
+            <div className={styles.quickGrid}>
+              <button type="button" className={styles.quickAction} onClick={() => scrollToSection("invite-section")}>
+                <span className={styles.qaIcon} aria-hidden="true">+</span>
+                <strong>Add employee</strong>
+                <span className={styles.qaHint}>Email an onboarding invitation</span>
+              </button>
+              <button type="button" className={styles.quickAction} onClick={() => scrollToSection("approvals-section")}>
+                <span className={styles.qaIcon} aria-hidden="true">✓</span>
+                <strong>Pending approvals</strong>
+                <span className={styles.qaHint}>{summary?.pending_approvals?.length || 0} awaiting review</span>
+              </button>
+              <button type="button" className={styles.quickAction} onClick={() => scrollToSection("pending-review-section")}>
+                <span className={styles.qaIcon} aria-hidden="true">→</span>
+                <strong>Review &amp; send offers</strong>
+                <span className={styles.qaHint}>{pendingCandidates.length} awaiting offer</span>
+              </button>
+              <button type="button" className={styles.quickAction} onClick={() => scrollToSection("conversion-section")}>
+                <span className={styles.qaIcon} aria-hidden="true">ID</span>
+                <strong>Activate employees</strong>
+                <span className={styles.qaHint}>{readyCandidates.length} offer signed</span>
+              </button>
+              <button type="button" className={styles.quickAction} onClick={() => scrollToSection("employees-section")}>
+                <span className={styles.qaIcon} aria-hidden="true">ID</span>
+                <strong>Employee directory</strong>
+                <span className={styles.qaHint}>{employees.length} active employees</span>
+              </button>
+              <div className={`${styles.quickAction} ${styles.disabled}`} aria-disabled="true">
+                <span className={styles.qaIcon}>Lrn</span>
+                <strong>Learning assignments</strong>
+                <span className={styles.qaHint}>Coming in Phase 3</span>
+              </div>
+            </div>
+
+            <div className={styles.cols2}>
+              <div className={styles.dashboardStack}>
+                {/* Pending approvals */}
+                <div className={styles.section} id="approvals-section">
+                  <div className={styles.sectionHead}>
+                    <div className={styles.sectionHeadLeft}>
+                      <div className={`${styles.bar} ${styles.orange}`} />
+                      <div>
+                        <div className={styles.sectionTitle}>Pending approvals</div>
+                        <div className={styles.sectionDesc}>Candidates who submitted onboarding in the last 7 days.</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.sectionBody}>
+                    {dashboardLoading ? (
+                      <p className={styles.emptySub}>Loading…</p>
+                    ) : summary?.pending_approvals?.length ? (
+                      <ul className={styles.miniList}>
+                        {summary.pending_approvals.map((item) => (
+                          <li className={styles.miniListItem} key={item.email}>
+                            <div>
+                              <strong>{item.full_name}</strong>
+                              <div className={styles.mutedText}>{item.job_title} · {item.department}</div>
+                            </div>
+                            <span className={styles.mutedText}>{formatDate(item.submitted_at)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className={styles.emptySub}>Nothing pending review right now.</p>
+                    )}
+                  </div>
                 </div>
 
-                {inviteMessage && <p className="form-message" role="status">{inviteMessage}</p>}
-                {inviteEmailSent === true && (
-                  <p className="form-message" role="status">Invitation email sent. You can still copy the link as a backup.</p>
+                {/* Pending offer review */}
+                <div className={styles.section} id="pending-review-section">
+                  <div className={styles.sectionHead}>
+                    <div className={styles.sectionHeadLeft}>
+                      <div className={`${styles.bar} ${styles.cyan}`} />
+                      <div>
+                        <div className={styles.sectionTitle}>Pending offer review</div>
+                        <div className={styles.sectionDesc}>
+                          Review documents (OCR-assisted) and send an offer letter.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.sectionBody}>
+                    {conversionMessage && <p className={styles.formMessage} role="status">{conversionMessage}</p>}
+                    {dashboardLoading ? (
+                      <p className={styles.emptySub}>Loading…</p>
+                    ) : pendingCandidates.length ? (
+                      <div>
+                        {pendingCandidates.map((candidate) => (
+                          <div key={candidate.id} className={styles.candidateCard}>
+                            <div className={styles.candidateHead}>
+                              <div>
+                                <h4>{candidate.full_name}</h4>
+                                <span>
+                                  {candidate.email} · {candidate.job_title} · {candidate.department} · Submitted{" "}
+                                  {formatDate(candidate.submitted_at)}
+                                </span>
+                              </div>
+                              <div className={styles.rowActions}>
+                                <button
+                                  type="button"
+                                  className={styles.secondaryButton}
+                                  onClick={() =>
+                                    setExpandedCandidateId((current) => (current === candidate.id ? null : candidate.id))
+                                  }
+                                >
+                                  {expandedCandidateId === candidate.id ? "Hide documents" : "Review documents"}
+                                </button>
+                                <button type="button" className={styles.primaryButton} onClick={() => setOfferModalCandidate(candidate)}>
+                                  Send offer letter
+                                </button>
+                              </div>
+                            </div>
+                            {expandedCandidateId === candidate.id && (
+                              <div style={{ marginTop: 14 }}>
+                                <RecruiterDocumentReview ownerId={candidate.id} />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className={styles.emptySub}>No candidates awaiting an offer right now.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Ready to activate */}
+                <div className={styles.section} id="conversion-section">
+                  <div className={styles.sectionHead}>
+                    <div className={styles.sectionHeadLeft}>
+                      <div className={`${styles.bar} ${styles.green}`} />
+                      <div>
+                        <div className={styles.sectionTitle}>Ready to activate (offer signed)</div>
+                        <div className={styles.sectionDesc}>
+                          Approve to generate an Employee ID and activate the account.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.sectionBody}>
+                    {dashboardLoading ? (
+                      <p className={styles.emptySub}>Loading…</p>
+                    ) : readyCandidates.length ? (
+                      <ul className={styles.miniList}>
+                        {readyCandidates.map((candidate) => (
+                          <li className={styles.miniListItem} key={candidate.offer_id}>
+                            <div>
+                              <strong>{candidate.full_name}</strong>
+                              <div className={styles.mutedText}>
+                                {candidate.email} · {candidate.job_title} · {candidate.department}
+                                {candidate.reporting_manager ? ` · reports to ${candidate.reporting_manager}` : ""}
+                              </div>
+                              <div className={styles.mutedText}>Signed {formatDate(candidate.signed_at)}</div>
+                            </div>
+                            <button
+                              type="button"
+                              className={styles.primaryButton}
+                              disabled={approvingOfferId === candidate.offer_id}
+                              onClick={() => handleApproveOffer(candidate.offer_id)}
+                            >
+                              {approvingOfferId === candidate.offer_id ? "Activating…" : "Approve & activate"}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className={styles.emptySub}>No signed offers awaiting approval right now.</p>
+                    )}
+                  </div>
+                </div>
+
+                {offerModalCandidate && (
+                  <OfferComposerModal
+                    candidate={offerModalCandidate}
+                    onClose={() => setOfferModalCandidate(null)}
+                    onSent={(data) => {
+                      setConversionMessage(data.message);
+                      setOfferModalCandidate(null);
+                      loadDashboard();
+                    }}
+                  />
                 )}
-                {inviteEmailSent === false && (
-                  <p className="form-message" role="alert">Email delivery failed. Share the invitation link below manually.</p>
-                )}
-                {inviteLink && (
-                  <div className="invite-link-box">
-                    <code>{inviteLink}</code>
-                    <button type="button" className="secondary-button" onClick={copyLink}>Copy link</button>
+
+                {/* Employee directory */}
+                <div className={styles.section} id="employees-section">
+                  <div className={styles.sectionHead}>
+                    <div className={styles.sectionHeadLeft}>
+                      <div className={`${styles.bar} ${styles.navy}`} />
+                      <div>
+                        <div className={styles.sectionTitle}>Employee directory</div>
+                        <div className={styles.sectionDesc}>Converted employees with unique Employee IDs (format MZK-YYYY-000123).</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.sectionBody}>
+                    {dashboardLoading ? (
+                      <p className={styles.emptySub}>Loading…</p>
+                    ) : employees.length ? (
+                      <ul className={styles.miniList}>
+                        {employees.map((employee) => (
+                          <li className={styles.miniListItem} key={employee.employee_id || employee.id}>
+                            <div>
+                              <strong>{employee.full_name}</strong>
+                              <div className={styles.mutedText}>
+                                {employee.employee_id} · {employee.email} · {employee.job_title} · {employee.department}
+                              </div>
+                            </div>
+                            <span className={styles.mutedText}>{formatDate(employee.converted_at || employee.start_date)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className={styles.emptySub}>No employees converted yet.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Recent activity */}
+                <div className={styles.section} id="activity-section">
+                  <div className={styles.sectionHead}>
+                    <div className={styles.sectionHeadLeft}>
+                      <div className={`${styles.bar} ${styles.purple}`} />
+                      <div>
+                        <div className={styles.sectionTitle}>Recent activity</div>
+                        <div className={styles.sectionDesc}>Latest hiring &amp; onboarding events.</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.sectionBody}>
+                    {dashboardLoading ? (
+                      <p className={styles.emptySub}>Loading…</p>
+                    ) : activities.length ? (
+                      <ul className={styles.activityList}>
+                        {activities.map((activity, index) => (
+                          <li key={`${activity.action}-${activity.created_at}-${index}`}>
+                            <span className={styles.activityDot} />
+                            <div>
+                              <div className={styles.activityLabel}>{activity.label}</div>
+                              <div className={styles.activityMeta}>
+                                {activity.email} · {formatDateTime(activity.created_at)}
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className={styles.emptySub}>No activity yet.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Roster snapshot */}
+                <div className={styles.section} style={{ marginBottom: 0 }}>
+                  <div className={styles.sectionHead}>
+                    <div className={styles.sectionHeadLeft}>
+                      <div className={`${styles.bar} ${styles.cyan}`} />
+                      <div>
+                        <div className={styles.sectionTitle}>Roster snapshot</div>
+                        <div className={styles.sectionDesc}>Recently joined and upcoming joining dates.</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.sectionBody}>
+                    <div className={styles.rosterGrid}>
+                      <div>
+                        <h3>Recently joined employees</h3>
+                        {summary?.recent_employees?.length ? (
+                          <ul className={styles.miniList}>
+                            {summary.recent_employees.map((employee) => (
+                              <li className={styles.miniListItem} key={employee.email}>
+                                <div>
+                                  <strong>{employee.full_name}</strong>
+                                  <div className={styles.mutedText}>{employee.job_title} · {employee.department}</div>
+                                </div>
+                                <span className={styles.mutedText}>{formatDate(employee.created_at)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className={styles.emptySub}>No employees yet.</p>
+                        )}
+                      </div>
+                      <div>
+                        <h3>Upcoming joining dates</h3>
+                        {summary?.upcoming_joining_dates?.length ? (
+                          <ul className={styles.miniList}>
+                            {summary.upcoming_joining_dates.map((item, index) => (
+                              <li className={styles.miniListItem} key={`${item.full_name}-${index}`}>
+                                <div>
+                                  <strong>{item.full_name}</strong>
+                                  <div className={styles.mutedText}>{item.department}</div>
+                                </div>
+                                <span className={styles.mutedText}>{formatDate(item.start_date)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className={styles.emptySub}>Nothing in the next 30 days.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right column: invite + announcements */}
+              <div className={styles.stickyCol}>
+                {canInvite && (
+                  <div className={styles.section} id="invite-section">
+                    <div className={styles.sectionHead}>
+                      <div className={styles.sectionHeadLeft}>
+                        <div className={`${styles.bar} ${styles.orange}`} />
+                        <div>
+                          <div className={styles.sectionTitle}>Invite candidate</div>
+                          <div className={styles.sectionDesc}>Email an onboarding invitation after an offer is accepted.</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className={styles.sectionBody}>
+                      <form onSubmit={handleCreateInvite}>
+                        <div className={styles.formGrid}>
+                          <label className={styles.field}>
+                            <span>Candidate full name</span>
+                            <input name="full_name" value={inviteForm.full_name} onChange={updateInviteField} required />
+                          </label>
+                          <label className={styles.field}>
+                            <span>Candidate email</span>
+                            <input name="email" type="email" value={inviteForm.email} onChange={updateInviteField} required />
+                          </label>
+                          <label className={styles.field}>
+                            <span>Job title</span>
+                            <input name="job_title" value={inviteForm.job_title} onChange={updateInviteField} required />
+                          </label>
+                          <label className={styles.field}>
+                            <span>Department</span>
+                            <input name="department" value={inviteForm.department} onChange={updateInviteField} required />
+                          </label>
+                          <label className={styles.field}>
+                            <span>Office location (optional)</span>
+                            <input name="office_location" value={inviteForm.office_location} onChange={updateInviteField} />
+                          </label>
+                          <label className={styles.field}>
+                            <span>Start date (optional)</span>
+                            <input name="start_date" type="date" value={inviteForm.start_date} onChange={updateInviteField} />
+                          </label>
+                          <label className={styles.field}>
+                            <span>Expires in days</span>
+                            <input name="expires_in_days" type="number" min="1" max="30" value={inviteForm.expires_in_days} onChange={updateInviteField} />
+                          </label>
+                        </div>
+
+                        {inviteMessage && <p className={styles.formMessage} role="status">{inviteMessage}</p>}
+                        {inviteEmailSent === true && (
+                          <p className={styles.formMessage} role="status">Invitation email sent. You can still copy the link as a backup.</p>
+                        )}
+                        {inviteEmailSent === false && (
+                          <p className={styles.formMessage} role="alert">Email delivery failed. Share the invitation link below manually.</p>
+                        )}
+                        {inviteLink && (
+                          <div className={styles.inviteLinkBox}>
+                            <code>{inviteLink}</code>
+                            <button type="button" className={styles.secondaryButton} onClick={copyLink}>Copy link</button>
+                          </div>
+                        )}
+
+                        <button className={styles.primaryButton} type="submit" disabled={isCreating}>
+                          {isCreating ? "Sending invitation…" : "Send invitation"}
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 )}
 
-                <button className="primary-button" type="submit" disabled={isCreating}>
-                  {isCreating ? "Sending invitation…" : "Send invitation"}
-                </button>
-              </form>
-            </section>
-          ) : null}
+                {/* Announcements */}
+                <div className={styles.section} id="announcements-section" style={{ marginBottom: 0 }}>
+                  <div className={styles.sectionHead}>
+                    <div className={styles.sectionHeadLeft}>
+                      <div className={`${styles.bar} ${styles.green}`} />
+                      <div>
+                        <div className={styles.sectionTitle}>Announcements</div>
+                        <div className={styles.sectionDesc}>Publish updates visible to all candidates.</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.sectionBody}>
+                    <form onSubmit={handlePublishAnnouncement}>
+                      <label className={styles.field} style={{ marginBottom: 12 }}>
+                        <span>Title</span>
+                        <input name="title" value={announcementForm.title} onChange={updateAnnouncementField} required />
+                      </label>
+                      <label className={styles.field}>
+                        <span>Message</span>
+                        <textarea
+                          name="body"
+                          rows={4}
+                          value={announcementForm.body}
+                          onChange={updateAnnouncementField}
+                          required
+                          className={styles.textarea}
+                        />
+                      </label>
+                      {announcementMessage && <p className={styles.formMessage} role="status">{announcementMessage}</p>}
+                      <button className={styles.primaryButton} type="submit" disabled={isPublishing}>
+                        {isPublishing ? "Publishing…" : "Publish announcement"}
+                      </button>
+                    </form>
 
-          {/* US-020: announcements management */}
-          <section className="dashboard-card wide" id="announcements-section" aria-labelledby="announcements-manage-heading">
-            <h2 id="announcements-manage-heading">Announcements</h2>
-            <p>Publish onboarding updates and company news visible to all candidates on their dashboard.</p>
-
-            <form className="auth-form" onSubmit={handlePublishAnnouncement}>
-              <label className="field">
-                <span>Title</span>
-                <input name="title" value={announcementForm.title} onChange={updateAnnouncementField} required />
-              </label>
-              <label className="field">
-                <span>Message</span>
-                <textarea
-                  name="body"
-                  rows={4}
-                  value={announcementForm.body}
-                  onChange={updateAnnouncementField}
-                  required
-                  style={{ width: "100%", border: "1px solid #bed0dc", borderRadius: 8, padding: "13px 14px", fontFamily: "inherit", fontSize: "1rem", resize: "vertical" }}
-                />
-              </label>
-              {announcementMessage && <p className="form-message" role="status">{announcementMessage}</p>}
-              <button className="primary-button" type="submit" disabled={isPublishing}>
-                {isPublishing ? "Publishing…" : "Publish announcement"}
-              </button>
-            </form>
-
-            <div className="announcement-stack" style={{ marginTop: 22 }}>
-              {announcements.length ? (
-                announcements.map((announcement) => (
-                  <article className="announcement-card" key={announcement.id}>
-                    <h4>{announcement.title}</h4>
-                    <p>{announcement.body}</p>
-                    <p className="announcement-meta">
-                      {announcement.created_by_name || user.full_name} · {formatDate(announcement.created_at)}
-                    </p>
-                  </article>
-                ))
-              ) : (
-                <p className="empty-state">No announcements published yet.</p>
-              )}
+                    <div className={styles.announcementStack} style={{ marginTop: 20 }}>
+                      {announcements.length ? (
+                        announcements.map((announcement) => (
+                          <article className={styles.announcementCard} key={announcement.id}>
+                            <h4>{announcement.title}</h4>
+                            <p>{announcement.body}</p>
+                            <p className={styles.announcementMeta}>
+                              {announcement.created_by_name || user.full_name} · {formatDate(announcement.created_at)}
+                            </p>
+                          </article>
+                        ))
+                      ) : (
+                        <p className={styles.emptySub}>No announcements published yet.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-          </section>
-        </div>
 
-        {/* US-014: Notifications panel */}
-        <section className="dashboard-card" aria-labelledby="notifications-heading">
-          <div className="section-heading-row">
-            <h2 id="notifications-heading" style={{ fontSize: "1.1rem" }}>
-              Notifications
-              {unreadCount > 0 && <span className="badge-count">{unreadCount}</span>}
-            </h2>
-            <button type="button" className="link-button" onClick={handleMarkAllRead} disabled={notifBusy || unreadCount === 0}>
-              Mark all read
-            </button>
+            <div className={styles.footerNote}>Talent by Mazik Global Pakistan · Recruiter Dashboard</div>
           </div>
-          <div className="notif-panel">
-            {dashboardLoading ? (
-              <p className="empty-state">Loading…</p>
-            ) : notifications.length ? (
-              notifications.map((notification) => (
-                <button
-                  type="button"
-                  key={notification.id}
-                  className={`notif-item ${notification.read ? "read" : ""}`}
-                  style={{ width: "100%", textAlign: "left", background: "transparent", border: 0, cursor: "pointer", padding: "12px 0" }}
-                  onClick={() => handleNotificationClick(notification)}
-                >
-                  <span className="notif-dot" />
-                  <span className="notif-body">
-                    <span className="notif-title">{notification.title}</span>
-                    <span className="notif-message">{notification.message}</span>
-                    <span className="notif-time">{formatDateTime(notification.created_at)}</span>
-                  </span>
-                </button>
-              ))
-            ) : (
-              <p className="empty-state">You&apos;re all caught up.</p>
-            )}
-          </div>
-        </section>
+        </main>
       </div>
-    </main>
-  );
-}
-
-function KpiCard({ label, value, loading }) {
-  return (
-    <div className="kpi-card">
-      <span className="kpi-value">{loading ? "—" : value ?? 0}</span>
-      <span className="kpi-label">{label}</span>
     </div>
   );
 }
 
-function QuickActionComingSoon({ icon, label, hint }) {
+function StatCard({ icon, tone, value, label, styles }) {
   return (
-    <div className="quick-action disabled" aria-disabled="true">
-      <span className="qa-icon">{icon}</span>
-      <strong>{label}</strong>
-      <span className="qa-hint">{hint}</span>
+    <div className={styles.statCard}>
+      <div className={styles.statTop}>
+        <div className={`${styles.statIcon} ${styles[tone]}`}>{icon}</div>
+      </div>
+      <div className={styles.statValue}>{value}</div>
+      <div className={styles.statLabel}>{label}</div>
     </div>
   );
 }
@@ -860,4 +1035,12 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function initialsFor(name) {
+  if (!name) return "RC";
+  const parts = name.trim().split(/\s+/);
+  const first = parts[0]?.[0] || "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (first + last).toUpperCase() || "RC";
 }
