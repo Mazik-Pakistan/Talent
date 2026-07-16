@@ -202,11 +202,13 @@ class DocumentService:
         doc.update(update)
         return {"message": "Document verification updated.", "document": self._public(doc)}
 
-    async def get_signed_url(self, current_user: CurrentUser, document_id: str) -> dict:
+    async def get_signed_url(self, current_user: CurrentUser, document_id: str, request) -> dict:
         doc = await self._find(document_id)
         if current_user.role not in ("recruiter", "super_admin") and doc["owner_id"] != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized to view this document.")
         url = await storage_service.get_signed_url(doc)
+        if url and doc.get("storage_backend") != "supabase" and url.startswith("/"):
+            url = str(request.base_url).rstrip("/") + url
         await database.audit_logs.insert_one(
             {
                 "user_id": current_user.id,

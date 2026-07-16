@@ -219,6 +219,10 @@ class OfferService:
             {"_id": offer["_id"]},
             {"$set": {"status": "declined", "declined_reason": request.reason, "declined_at": now, "updated_at": now}},
         )
+        await database.candidates.update_one(
+            {"$or": [{"user_id": current_user.id}, {"email": current_user.email}]},
+            {"$set": {"conversion_status": "offer_declined", "updated_at": now}},
+        )
         if offer.get("recruiter_id"):
             await create_notification(
                 recipient_id=offer["recruiter_id"],

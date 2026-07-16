@@ -85,7 +85,7 @@ class EmployeeService:
         query: dict = {
             "onboarding.status": "submitted",
             "status": {"$ne": "converted"},
-            "conversion_status": {"$in": ["intake_submitted", None]},
+            "conversion_status": {"$in": ["intake_submitted", None, "offer_sent"]},
         }
         if current_user.role != "super_admin":
             query["recruiter_id"] = current_user.id
@@ -93,9 +93,23 @@ class EmployeeService:
         docs = await database.candidates.find(query).sort("onboarding.submitted_at", -1).to_list(length=100)
         pending = []
         for candidate in docs:
+            candidate_id = candidate.get("user_id") or str(candidate["_id"])
+            if candidate.get("conversion_status") in {"offer_declined", "declined"}:
+                continue
+
+            offer_query = {
+                "candidate_id": {
+                    "$in": [candidate_id, candidate.get("email"), str(candidate.get("_id"))]
+                },
+                "status": {"$in": ["sent", "viewed", "signed", "approved", "declined", "expired", "withdrawn"]},
+            }
+            offer = await database.offer_letters.find_one(offer_query)
+            if offer:
+                continue
+
             pending.append(
                 {
-                    "id": candidate.get("user_id") or str(candidate["_id"]),
+                    "id": candidate_id,
                     "full_name": candidate.get("full_name"),
                     "email": candidate.get("email"),
                     "job_title": candidate.get("job_title"),

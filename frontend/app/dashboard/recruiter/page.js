@@ -350,15 +350,18 @@ function RecruiterDashboardContent() {
       {/* US-013: KPI overview + US-017: global search + US-015: quick actions */}
       <section className="dashboard-card wide" aria-labelledby="overview-heading">
         <h2 id="overview-heading">Onboarding overview</h2>
-        <p>A snapshot of hiring activity across your candidates and employees. Refreshes automatically every minute.</p>
+        <p>
+          A snapshot of hiring activity across your candidates and employees. The middle two cards show
+          candidates waiting for recruiter review before an offer letter is sent. Refreshes automatically every minute.
+        </p>
 
         {dashboardError && <p className="form-message" role="alert">{dashboardError}</p>}
 
         <div className="kpi-grid">
           <KpiCard label="Active employees" value={summary?.kpis?.active_employees} loading={dashboardLoading} />
-          <KpiCard label="Pending onboarding" value={summary?.kpis?.pending_onboarding} loading={dashboardLoading} />
-          <KpiCard label="Documents pending" value={summary?.kpis?.documents_pending} loading={dashboardLoading} />
-          <KpiCard label="Upcoming joinings" value={summary?.kpis?.upcoming_joinings} loading={dashboardLoading} />
+          <KpiCard label="Awaiting offer review" value={summary?.kpis?.pending_onboarding} loading={dashboardLoading} />
+          <KpiCard label="Documents review pending" value={summary?.kpis?.documents_pending} loading={dashboardLoading} />
+          <KpiCard label="Confirmed upcoming joinings" value={summary?.kpis?.upcoming_joinings} loading={dashboardLoading} />
         </div>
 
         <div className="search-bar">

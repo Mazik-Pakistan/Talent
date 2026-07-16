@@ -48,7 +48,7 @@ flake8
 # These are optional at runtime: app/services/ocr_service.py and
 # embedding_service.py lazy-import them and degrade gracefully (ENABLE_OCR /
 # ENABLE_EMBEDDINGS in .env) so the API keeps working before they're installed.
-paddlepaddle          # CPU build; see https://www.paddlepaddle.org.cn for GPU wheels
-paddleocr
-pymupdf                # PDF -> image rasterization for OCR (imported as `fitz`)
+#paddlepaddle          # CPU build; see https://www.paddlepaddle.org.cn for GPU wheels
+#paddleocr
+#pymupdf                # PDF -> image rasterization for OCR (imported as `fitz`)
 #FlagEmbedding           # BAAI/bge-m3 embeddings (Phase 3 prep, off by default)
