@@ -12,16 +12,14 @@ from app.services.email_service import email_service
 from app.services.invitation_service import InvitationService
 
 # ------------------------------------------------------------------------
-# PHASE 2 FLOW: candidates now complete a short pre-offer INTAKE only
-# (personal info, education, government ID, resume). Everything else
-# (emergency contact, banking, references, NDA, policy acknowledgements)
-# moves to the post-hire "complete your profile" stage handled by
-# EmployeeService once the signed offer has been approved. See
-# app/services/offer_service.py for the bridge between the two stages.
+# PHASE 2 FLOW: pre-offer INTAKE = personal/contact, education, skills,
+# government ID, resume. Post-hire (EmployeeService): emergency, banking,
+# references, NDA, policies. Internal career history is recruiter-managed.
 # ------------------------------------------------------------------------
 ONBOARDING_TASK_DEFS = [
-    {"id": "personal", "label": "Complete personal information", "step": "personal", "available": True},
+    {"id": "personal", "label": "Complete personal & contact information", "step": "personal", "available": True},
     {"id": "education", "label": "Add education history", "step": "education", "available": True},
+    {"id": "skills", "label": "Add skills & certifications", "step": "skills", "available": True},
     {"id": "government_docs", "label": "Upload government ID documents", "step": "government_docs", "available": True},
     {"id": "resume", "label": "Upload resume", "step": "resume", "available": True},
     {"id": "submit", "label": "Submit profile for HR review", "step": "submit", "available": True},
@@ -30,13 +28,15 @@ ONBOARDING_TASK_DEFS = [
 REQUIRED_ONBOARDING_KEYS = [
     "personal",
     "education",
+    "skills",
     "government_docs",
     "resume",
 ]
 
 STEP_FLOW = {
     "personal": "education",
-    "education": "government_docs",
+    "education": "skills",
+    "skills": "government_docs",
     "government_docs": "resume",
     "resume": "submit",
 }
@@ -49,6 +49,7 @@ EMPTY_ONBOARDING = {
     "emergency": None,
     "employment": None,
     "education": None,
+    "skills": None,
     "government_docs": None,
     "references": None,
     "documents": None,
@@ -191,6 +192,7 @@ class CandidateService:
         step_handlers = {
             "personal": ("personal", request.personal, "Personal information is required."),
             "education": ("education", request.education, "Education history is required."),
+            "skills": ("skills", request.skills, "Skills & certifications are required."),
             "government_docs": ("government_docs", request.government_docs, "Government documents are required."),
             "resume": ("resume", request.resume, "Resume upload is required."),
         }
@@ -204,9 +206,21 @@ class CandidateService:
                 data["signed_at"] = now.isoformat()
             updates[f"onboarding.{field}"] = data
             updates["onboarding.current_step"] = STEP_FLOW[request.step]
-            # ✅ MODIFIED: Only update status if NOT already submitted
             if onboarding.get("status") != "submitted":
                 updates["onboarding.status"] = "in_progress"
+            await database.audit_logs.insert_one(
+                {
+                    "candidate_id": candidate_id,
+                    "user_id": candidate_id,
+                    "email": candidate["email"],
+                    "recruiter_id": candidate.get("recruiter_id"),
+                    "module": "onboarding",
+                    "action": f"onboarding_{field}_saved",
+                    "outcome": "success",
+                    "actor_email": current_user.email,
+                    "created_at": now,
+                }
+            )
         elif request.step == "submit":
             missing = onboarding_missing_keys(onboarding)
             if missing:
@@ -227,6 +241,7 @@ class CandidateService:
                     "module": "onboarding",
                     "action": "intake_submitted",
                     "outcome": "success",
+                    "actor_email": current_user.email,
                     "created_at": now,
                 }
             )
@@ -342,10 +357,12 @@ class CandidateService:
         available_steps = [s for s in steps if s["available"]]
         completed = sum(1 for s in available_steps if s["completed"])
         percentage = round((completed / len(available_steps)) * 100) if available_steps else 0
+        missing_fields = onboarding_missing_keys(onboarding)
         return {
             "status": onboarding.get("status", "not_started"),
             "current_step": onboarding.get("current_step", "personal"),
             "percentage": percentage,
+            "missing_fields": missing_fields,
             "ready_for_conversion": is_onboarding_complete(onboarding)
             and candidate.get("status") == "active"
             and candidate.get("conversion_status") != "converted",

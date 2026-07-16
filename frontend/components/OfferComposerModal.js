@@ -31,8 +31,8 @@ export default function OfferComposerModal({ candidate, onClose, onSent }) {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (!form.job_title || !form.department || !form.start_date) {
-      setError("Job title, department, and start date are required.");
+    if (!form.job_title || !form.department || !form.start_date || !form.reporting_manager) {
+      setError("Job title, department, reporting manager, and start date are required.");
       return;
     }
     const accessToken = localStorage.getItem("access_token");
@@ -45,7 +45,7 @@ export default function OfferComposerModal({ candidate, onClose, onSent }) {
         department: form.department,
         employment_type: form.employment_type,
         office_location: form.office_location || null,
-        reporting_manager: form.reporting_manager || null,
+        reporting_manager: form.reporting_manager,
         start_date: form.start_date,
         monthly_salary: form.monthly_salary ? Number(form.monthly_salary) : null,
         currency: form.currency,
@@ -91,8 +91,8 @@ export default function OfferComposerModal({ candidate, onClose, onSent }) {
             <input value={form.office_location} onChange={(e) => update("office_location", e.target.value)} />
           </label>
           <label className="field">
-            <span>Reporting manager</span>
-            <input value={form.reporting_manager} onChange={(e) => update("reporting_manager", e.target.value)} />
+            <span>Reporting manager *</span>
+            <input value={form.reporting_manager} onChange={(e) => update("reporting_manager", e.target.value)} required />
           </label>
           <label className="field">
             <span>Start date</span>

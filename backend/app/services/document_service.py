@@ -138,6 +138,20 @@ class DocumentService:
             await database.documents.update_one({"_id": doc["_id"]}, {"$set": update})
             doc.update(update)
 
+            await database.audit_logs.insert_one(
+                {
+                    "user_id": current_user.id,
+                    "email": current_user.email,
+                    "actor_email": current_user.email,
+                    "module": "documents",
+                    "action": "ocr_completed" if ocr_result.get("status") == "completed" else "ocr_failed",
+                    "doc_type": doc_type,
+                    "category": category,
+                    "outcome": "success" if ocr_result.get("status") == "completed" else "failed",
+                    "created_at": datetime.now(UTC),
+                }
+            )
+
             # Generate resume embeddings for Phase 3 prep if enabled
             if (doc_type == "resume" or ocr_result.get("category") == "resume") and settings.ENABLE_EMBEDDINGS and raw_text:
                 try:
@@ -150,6 +164,7 @@ class DocumentService:
             {
                 "user_id": current_user.id,
                 "email": current_user.email,
+                "actor_email": current_user.email,
                 "module": "documents",
                 "action": "document_uploaded",
                 "doc_type": doc_type,
@@ -239,11 +254,13 @@ class DocumentService:
         doc.update(update)
         return {"message": "Document verification updated.", "document": self._public(doc)}
 
-    async def get_signed_url(self, current_user: CurrentUser, document_id: str) -> dict:
+    async def get_signed_url(self, current_user: CurrentUser, document_id: str, request) -> dict:
         doc = await self._find(document_id)
         if current_user.role not in ("recruiter", "super_admin") and doc["owner_id"] != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized to view this document.")
         url = await storage_service.get_signed_url(doc)
+        if url and doc.get("storage_backend") != "supabase" and url.startswith("/"):
+            url = str(request.base_url).rstrip("/") + url
         await database.audit_logs.insert_one(
             {
                 "user_id": current_user.id,

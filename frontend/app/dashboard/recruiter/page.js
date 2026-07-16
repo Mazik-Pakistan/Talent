@@ -5,14 +5,17 @@ import { useRouter } from "next/navigation";
 
 import RequireAccess, { ModuleNav } from "@/components/RequireAccess";
 import {
+  addCareerEvent,
   approveOffer,
   clearLocalSession,
   createAnnouncement,
   createInvitation,
+  exportEmployeesCsv,
   getAnnouncements,
   getApiErrorMessage,
   getDashboardActivity,
   getDashboardSummary,
+  getEmployeeDetail,
   getNotifications,
   getPendingReview,
   getReadyForConversion,
@@ -134,6 +137,25 @@ function RecruiterDashboardContent() {
   const [pendingCandidates, setPendingCandidates] = useState([]);
   const [readyCandidates, setReadyCandidates] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [employeeTotal, setEmployeeTotal] = useState(0);
+  const [employeePage, setEmployeePage] = useState(1);
+  const [employeePages, setEmployeePages] = useState(1);
+  const [dirFilters, setDirFilters] = useState({
+    q: "",
+    department: "",
+    job_title: "",
+    status: "active",
+    employee_id: "",
+  });
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [careerForm, setCareerForm] = useState({
+    event_type: "promoted",
+    effective_date: "",
+    to_title: "",
+    to_department: "",
+    to_manager: "",
+    note: "",
+  });
   const [conversionMessage, setConversionMessage] = useState("");
   const [approvingOfferId, setApprovingOfferId] = useState(null);
   const [expandedCandidateId, setExpandedCandidateId] = useState(null);
@@ -144,11 +166,30 @@ function RecruiterDashboardContent() {
     setUser(JSON.parse(storedUser));
   }, []);
 
+  const loadEmployees = useCallback(async (page = 1, filters = dirFilters) => {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    const data = await listEmployees(accessToken, {
+      q: filters.q || undefined,
+      department: filters.department || undefined,
+      job_title: filters.job_title || undefined,
+      status: filters.status || undefined,
+      employee_id: filters.employee_id || undefined,
+      page,
+      page_size: 10,
+      sort: "full_name",
+    });
+    setEmployees(data.employees || []);
+    setEmployeeTotal(data.total || 0);
+    setEmployeePage(data.page || 1);
+    setEmployeePages(data.pages || 1);
+  }, [dirFilters]);
+
   const loadDashboard = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const [summaryData, activityData, notificationsData, announcementsData, pendingData, readyData, employeesData] =
+      const [summaryData, activityData, notificationsData, announcementsData, pendingData, readyData] =
         await Promise.all([
           getDashboardSummary(accessToken),
           getDashboardActivity(accessToken, 15),
@@ -156,7 +197,6 @@ function RecruiterDashboardContent() {
           getAnnouncements(accessToken, 10),
           getPendingReview(accessToken),
           getReadyForConversion(accessToken),
-          listEmployees(accessToken),
         ]);
       setSummary(summaryData);
       setActivities(activityData.activities);
@@ -165,14 +205,14 @@ function RecruiterDashboardContent() {
       setAnnouncements(announcementsData.announcements);
       setPendingCandidates(pendingData.candidates || []);
       setReadyCandidates(readyData.candidates || []);
-      setEmployees(employeesData.employees || []);
+      await loadEmployees(1);
       setDashboardError("");
     } catch (error) {
       setDashboardError(getApiErrorMessage(error, "Could not load dashboard data."));
     } finally {
       setDashboardLoading(false);
     }
-  }, []);
+  }, [loadEmployees]);
 
   useEffect(() => {
     loadDashboard();
@@ -760,32 +800,242 @@ function RecruiterDashboardContent() {
                       <div className={`${styles.bar} ${styles.navy}`} />
                       <div>
                         <div className={styles.sectionTitle}>Employee directory</div>
-                        <div className={styles.sectionDesc}>Converted employees with unique Employee IDs (format MZK-YYYY-000123).</div>
+                        <div className={styles.sectionDesc}>
+                          Search, filter, export, and open profiles ({employeeTotal} total).
+                        </div>
                       </div>
                     </div>
                   </div>
                   <div className={styles.sectionBody}>
+                    <div className={styles.formGrid} style={{ marginBottom: 16 }}>
+                      <input
+                        className={styles.searchBox}
+                        placeholder="Search name, email, ID…"
+                        value={dirFilters.q}
+                        onChange={(e) => setDirFilters({ ...dirFilters, q: e.target.value })}
+                      />
+                      <input
+                        placeholder="Employee ID"
+                        value={dirFilters.employee_id}
+                        onChange={(e) => setDirFilters({ ...dirFilters, employee_id: e.target.value })}
+                      />
+                      <input
+                        placeholder="Department"
+                        value={dirFilters.department}
+                        onChange={(e) => setDirFilters({ ...dirFilters, department: e.target.value })}
+                      />
+                      <input
+                        placeholder="Designation"
+                        value={dirFilters.job_title}
+                        onChange={(e) => setDirFilters({ ...dirFilters, job_title: e.target.value })}
+                      />
+                      <select
+                        value={dirFilters.status}
+                        onChange={(e) => setDirFilters({ ...dirFilters, status: e.target.value })}
+                      >
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="on_leave">On leave</option>
+                        <option value="">All statuses</option>
+                      </select>
+                      <button
+                        type="button"
+                        className={styles.primaryButton}
+                        onClick={() => loadEmployees(1, dirFilters)}
+                      >
+                        Apply filters
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={async () => {
+                          const accessToken = localStorage.getItem("access_token");
+                          const blob = await exportEmployeesCsv(accessToken, {
+                            q: dirFilters.q || undefined,
+                            department: dirFilters.department || undefined,
+                            job_title: dirFilters.job_title || undefined,
+                            status: dirFilters.status || undefined,
+                            employee_id: dirFilters.employee_id || undefined,
+                          });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = "employees.csv";
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                      >
+                        Export CSV
+                      </button>
+                    </div>
                     {dashboardLoading ? (
                       <p className={styles.emptySub}>Loading…</p>
                     ) : employees.length ? (
-                      <ul className={styles.miniList}>
-                        {employees.map((employee) => (
-                          <li className={styles.miniListItem} key={employee.employee_id || employee.id}>
-                            <div>
-                              <strong>{employee.full_name}</strong>
-                              <div className={styles.mutedText}>
-                                {employee.employee_id} · {employee.email} · {employee.job_title} · {employee.department}
+                      <>
+                        <ul className={styles.miniList}>
+                          {employees.map((employee) => (
+                            <li className={styles.miniListItem} key={employee.employee_id || employee.id}>
+                              <div>
+                                <strong>{employee.full_name}</strong>
+                                <div className={styles.mutedText}>
+                                  {employee.employee_id} · {employee.email} · {employee.job_title} · {employee.department}
+                                </div>
                               </div>
-                            </div>
-                            <span className={styles.mutedText}>{formatDate(employee.converted_at || employee.start_date)}</span>
-                          </li>
-                        ))}
-                      </ul>
+                              <button
+                                type="button"
+                                className={styles.secondaryButton}
+                                onClick={async () => {
+                                  const accessToken = localStorage.getItem("access_token");
+                                  const id = employee.employee_id || employee.id || employee.email;
+                                  if (!id) {
+                                    setConversionMessage("This employee record has no ID to open.");
+                                    return;
+                                  }
+                                  try {
+                                    const data = await getEmployeeDetail(id, accessToken);
+                                    setSelectedEmployee(data.employee);
+                                    setCareerForm({
+                                      event_type: "promoted",
+                                      effective_date: new Date().toISOString().slice(0, 10),
+                                      to_title: data.employee.job_title || "",
+                                      to_department: data.employee.department || "",
+                                      to_manager: data.employee.reporting_manager || "",
+                                      note: "",
+                                    });
+                                  } catch (error) {
+                                    setConversionMessage(
+                                      getApiErrorMessage(error, "Could not open employee profile.")
+                                    );
+                                  }
+                                }}
+                              >
+                                View profile
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className={styles.actions} style={{ marginTop: 12 }}>
+                          <button
+                            type="button"
+                            className={styles.secondaryButton}
+                            disabled={employeePage <= 1}
+                            onClick={() => loadEmployees(employeePage - 1)}
+                          >
+                            Previous
+                          </button>
+                          <span className={styles.mutedText}>
+                            Page {employeePage} / {employeePages}
+                          </span>
+                          <button
+                            type="button"
+                            className={styles.secondaryButton}
+                            disabled={employeePage >= employeePages}
+                            onClick={() => loadEmployees(employeePage + 1)}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </>
                     ) : (
-                      <p className={styles.emptySub}>No employees converted yet.</p>
+                      <p className={styles.emptySub}>No employees match these filters.</p>
                     )}
                   </div>
                 </div>
+
+                {selectedEmployee && (
+                  <div className="offer-form-modal-backdrop" onClick={() => setSelectedEmployee(null)}>
+                    <div className="offer-form-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
+                      <h2>{selectedEmployee.full_name}</h2>
+                      <p className={styles.mutedText}>
+                        {selectedEmployee.employee_id} · {selectedEmployee.job_title} · {selectedEmployee.department}
+                      </p>
+                      <p>
+                        Manager: {selectedEmployee.reporting_manager || "—"} · Joined:{" "}
+                        {formatDate(selectedEmployee.start_date)} · Status: {selectedEmployee.status}
+                      </p>
+                      <h3>Career timeline</h3>
+                      <ul className={styles.miniList}>
+                        {(selectedEmployee.career || []).map((event) => (
+                          <li key={event.id} className={styles.miniListItem}>
+                            <div>
+                              <strong>{event.event_type}</strong>
+                              <div className={styles.mutedText}>
+                                {event.effective_date} · {event.to_title || event.to_department || event.note || "—"}
+                                {event.actor_email ? ` · by ${event.actor_email}` : ""}
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                      <h3>Add career event</h3>
+                      <div className={styles.formGrid}>
+                        <select
+                          value={careerForm.event_type}
+                          onChange={(e) => setCareerForm({ ...careerForm, event_type: e.target.value })}
+                        >
+                          <option value="promoted">Promoted</option>
+                          <option value="title_change">Title change</option>
+                          <option value="department_change">Department change</option>
+                          <option value="manager_change">Manager change</option>
+                          <option value="status_change">Status change</option>
+                        </select>
+                        <input
+                          type="date"
+                          value={careerForm.effective_date}
+                          onChange={(e) => setCareerForm({ ...careerForm, effective_date: e.target.value })}
+                        />
+                        <input
+                          placeholder="New title"
+                          value={careerForm.to_title}
+                          onChange={(e) => setCareerForm({ ...careerForm, to_title: e.target.value })}
+                        />
+                        <input
+                          placeholder="New department"
+                          value={careerForm.to_department}
+                          onChange={(e) => setCareerForm({ ...careerForm, to_department: e.target.value })}
+                        />
+                        <input
+                          placeholder="New manager"
+                          value={careerForm.to_manager}
+                          onChange={(e) => setCareerForm({ ...careerForm, to_manager: e.target.value })}
+                        />
+                        <input
+                          placeholder="Note"
+                          value={careerForm.note}
+                          onChange={(e) => setCareerForm({ ...careerForm, note: e.target.value })}
+                        />
+                      </div>
+                      <div className={styles.actions} style={{ marginTop: 12 }}>
+                        <button type="button" className={styles.secondaryButton} onClick={() => setSelectedEmployee(null)}>
+                          Close
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.primaryButton}
+                          onClick={async () => {
+                            const accessToken = localStorage.getItem("access_token");
+                            const data = await addCareerEvent(
+                              selectedEmployee.employee_id,
+                              {
+                                event_type: careerForm.event_type,
+                                effective_date: careerForm.effective_date,
+                                to_title: careerForm.to_title || null,
+                                to_department: careerForm.to_department || null,
+                                to_manager: careerForm.to_manager || null,
+                                note: careerForm.note || null,
+                              },
+                              accessToken
+                            );
+                            setSelectedEmployee({ ...selectedEmployee, career: data.events });
+                            await loadEmployees(employeePage);
+                          }}
+                        >
+                          Save event
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Recent activity */}
                 <div className={styles.section} id="activity-section">
@@ -809,7 +1059,7 @@ function RecruiterDashboardContent() {
                             <div>
                               <div className={styles.activityLabel}>{activity.label}</div>
                               <div className={styles.activityMeta}>
-                                {activity.email} · {formatDateTime(activity.created_at)}
+                                {(activity.actor_email || activity.email) || "system"} · {formatDateTime(activity.created_at)}
                               </div>
                             </div>
                           </li>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { getApiErrorMessage, listOwnerDocuments, verifyDocument } from "@/services/authService";
+import { getApiErrorMessage, getDocumentDownloadUrl, listOwnerDocuments, verifyDocument } from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
 
 const REJECTION_REASONS = [
@@ -22,6 +22,7 @@ export default function RecruiterDocumentReview({ ownerId }) {
   const [rejectFormFor, setRejectFormFor] = useState(null);
   const [rejectReason, setRejectReason] = useState("blurry_or_unreadable");
   const [rejectNote, setRejectNote] = useState("");
+  const [openingDocId, setOpeningDocId] = useState(null);
 
   useEffect(() => {
     load();
@@ -55,6 +56,24 @@ export default function RecruiterDocumentReview({ ownerId }) {
       setError(getApiErrorMessage(err, "Could not update document status."));
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function handleOpenDocument(doc) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken || !doc?.id) return;
+    setOpeningDocId(doc.id);
+    try {
+      const data = await getDocumentDownloadUrl(doc.id, accessToken);
+      if (data?.url) {
+        window.open(data.url, "_blank", "noopener,noreferrer");
+      } else {
+        setError("This document is not available for preview right now.");
+      }
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Could not open this document."));
+    } finally {
+      setOpeningDocId(null);
     }
   }
 
@@ -97,21 +116,31 @@ export default function RecruiterDocumentReview({ ownerId }) {
             </p>
           )}
 
-          {doc.status === "verified" || doc.status === "rejected" || doc.status === "reupload_required" ? (
-            <p className="doc-card-meta">
-              {doc.status === "verified" ? "Verified" : `Marked ${doc.status.replace(/_/g, " ")}`}
-              {doc.rejection_reason ? ` — ${doc.rejection_reason.replace(/_/g, " ")}` : ""}
-            </p>
-          ) : (
-            <div className="doc-actions">
-              <button type="button" className="approve" disabled={busyId === doc.id} onClick={() => handleVerify(doc.id, "verified")}>
-                Verify
-              </button>
-              <button type="button" className="reject" disabled={busyId === doc.id} onClick={() => setRejectFormFor(doc.id)}>
-                Reject
-              </button>
-            </div>
-          )}
+          <div className="doc-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={openingDocId === doc.id}
+              onClick={() => handleOpenDocument(doc)}
+            >
+              {openingDocId === doc.id ? "Opening…" : "Open document"}
+            </button>
+            {doc.status === "verified" || doc.status === "rejected" || doc.status === "reupload_required" ? (
+              <p className="doc-card-meta" style={{ marginTop: 8 }}>
+                {doc.status === "verified" ? "Verified" : `Marked ${doc.status.replace(/_/g, " ")}`}
+                {doc.rejection_reason ? ` — ${doc.rejection_reason.replace(/_/g, " ")}` : ""}
+              </p>
+            ) : (
+              <div className="doc-actions" style={{ marginTop: 8 }}>
+                <button type="button" className="approve" disabled={busyId === doc.id} onClick={() => handleVerify(doc.id, "verified")}>
+                  Verify
+                </button>
+                <button type="button" className="reject" disabled={busyId === doc.id} onClick={() => setRejectFormFor(doc.id)}>
+                  Reject
+                </button>
+              </div>
+            )}
+          </div>
 
           {rejectFormFor === doc.id && (
             <div className="doc-reject-form">

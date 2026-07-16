@@ -1,9 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 
 from app.core.rbac import CurrentUser
-from app.core.security import require_roles
+from app.core.security import RequireUser, require_roles
 from app.schemas.document import DOCUMENT_CATEGORIES, DocumentVerifyRequest
 from app.services.document_service import document_service
 
@@ -45,6 +45,6 @@ async def verify_document(document_id: str, payload: DocumentVerifyRequest, curr
 
 
 @router.get("/{document_id}/download")
-async def download_document(document_id: str, current_user: RequireSelf):
+async def download_document(document_id: str, request: Request, current_user: RequireUser):
     """US-048/US-050: authenticated, authorized, signed-URL download."""
-    return await document_service.get_signed_url(current_user, document_id)
+    return await document_service.get_signed_url(current_user, document_id, request)

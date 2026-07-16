@@ -100,6 +100,8 @@ class OfferService:
             {
                 "user_id": current_user.id,
                 "candidate_id": request.candidate_id,
+                "email": current_user.email,
+                "actor_email": current_user.email,
                 "module": "offers",
                 "action": "offer_sent",
                 "outcome": "success",
@@ -198,6 +200,8 @@ class OfferService:
                 "module": "offers",
                 "action": "offer_signed",
                 "offer_id": str(offer["_id"]),
+                "email": current_user.email,
+                "actor_email": current_user.email,
                 "outcome": "success",
                 "created_at": now,
             }
@@ -218,6 +222,10 @@ class OfferService:
         await database.offer_letters.update_one(
             {"_id": offer["_id"]},
             {"$set": {"status": "declined", "declined_reason": request.reason, "declined_at": now, "updated_at": now}},
+        )
+        await database.candidates.update_one(
+            {"$or": [{"user_id": current_user.id}, {"email": current_user.email}]},
+            {"$set": {"conversion_status": "offer_declined", "updated_at": now}},
         )
         if offer.get("recruiter_id"):
             await create_notification(
@@ -242,6 +250,18 @@ class OfferService:
             raise HTTPException(status_code=409, detail=f"Offer must be signed before approval (status: {offer['status']}).")
 
         result = await EmployeeService().create_from_candidate(current_user, offer["candidate_id"])
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "candidate_id": offer["candidate_id"],
+                "email": current_user.email,
+                "actor_email": current_user.email,
+                "module": "offers",
+                "action": "offer_approved",
+                "outcome": "success",
+                "created_at": datetime.now(UTC),
+            }
+        )
         return {
             "message": "Offer approved. Employee activated — they'll be asked to complete their profile.",
             "employee": result["employee"],

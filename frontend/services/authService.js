@@ -302,8 +302,42 @@ export async function getPendingReview(accessToken) {
   return data;
 }
 
-export async function listEmployees(accessToken) {
+export async function listEmployees(accessToken, params = {}) {
   const { data } = await apiClient.get("/api/employees", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params,
+  });
+  return data;
+}
+
+export async function exportEmployeesCsv(accessToken, params = {}) {
+  const response = await apiClient.get("/api/employees/export.csv", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params,
+    responseType: "blob",
+  });
+  return response.data;
+}
+
+export async function getEmployeeDetail(employeeId, accessToken) {
+  const id = encodeURIComponent(String(employeeId || "").trim());
+  const { data } = await apiClient.get(`/api/employees/detail/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function listCareerEvents(employeeId, accessToken) {
+  const id = encodeURIComponent(String(employeeId || "").trim());
+  const { data } = await apiClient.get(`/api/employees/${id}/career`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function addCareerEvent(employeeId, payload, accessToken) {
+  const id = encodeURIComponent(String(employeeId || "").trim());
+  const { data } = await apiClient.post(`/api/employees/${id}/career`, payload, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return data;

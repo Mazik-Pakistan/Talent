@@ -17,7 +17,7 @@ class OfferCreateRequest(BaseModel):
     department: str = Field(..., min_length=2)
     employment_type: str = Field(default="Full-time")
     office_location: str | None = None
-    reporting_manager: str | None = None
+    reporting_manager: str = Field(..., min_length=2, max_length=120)
     start_date: str
     monthly_salary: float | None = Field(default=None, ge=0)
     currency: str = Field(default="PKR")
@@ -32,7 +32,7 @@ class OfferCreateRequest(BaseModel):
     )
     message_to_candidate: str | None = Field(default=None, max_length=2000)
 
-    @field_validator("job_title", "department")
+    @field_validator("job_title", "department", "reporting_manager")
     @classmethod
     def _strip(cls, value: str) -> str:
         return value.strip()

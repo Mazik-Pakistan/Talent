@@ -32,6 +32,12 @@ async def create_database_indexes() -> None:
     await database.employees.create_index("employee_id", unique=True, sparse=True)
     await database.employees.create_index("user_id", unique=True, sparse=True)
     await database.employees.create_index("recruiter_id")
+    await database.employees.create_index("onboarding.employment.iban_hash", unique=True, sparse=True)
+    await database.employees.create_index([("department", 1), ("status", 1)])
+    await database.employees.create_index([("full_name", 1)])
+
+    await database.employee_career_events.create_index([("employee_id", 1), ("effective_date", -1)])
+    await database.employee_career_events.create_index([("created_at", -1)])
 
     await database.super_admins.create_index("email", unique=True)
     await database.super_admins.create_index("supabase_user_id", unique=True, sparse=True)

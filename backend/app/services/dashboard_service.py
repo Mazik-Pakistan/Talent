@@ -12,15 +12,29 @@ from app.schemas.dashboard import CreateAnnouncementRequest, MarkNotificationsRe
 UPCOMING_JOINING_WINDOW_DAYS = 30
 RECENT_ACTIVITY_LIMIT_DEFAULT = 20
 RECENT_ACTIVITY_LIMIT_MAX = 100
+REQUIRED_ONBOARDING_FIELDS = ("personal", "education", "skills", "government_docs", "resume")
+DECLINED_OFFER_STATUSES = {"declined", "expired", "withdrawn"}
 
-# US-016: friendly labels for the subset of audit-log actions that make up
-# the business-facing activity timeline (internal/security events are excluded).
+# US-016 / US-034: friendly labels for business-facing activity timeline.
 ACTIVITY_LABELS: dict[str, str] = {
-    "candidate_registered": "Candidate registered",
+    "candidate_registered": "Candidate Created",
     "candidate_email_verified": "Candidate verified their email",
     "invitation_created": "Invitation sent to candidate",
+    "intake_submitted": "Onboarding submitted",
     "onboarding_submitted": "Onboarding submitted",
-    "candidate_converted_to_employee": "Candidate converted to employee",
+    "offer_sent": "Offer Sent",
+    "offer_signed": "Offer Accepted",
+    "offer_approved": "Offer Approved",
+    "document_uploaded": "Documents Uploaded",
+    "ocr_completed": "OCR Verified",
+    "ocr_failed": "OCR Failed",
+    "candidate_converted_to_employee": "Employee Created",
+    "career_joined": "Employee Joined",
+    "career_promoted": "Employee Promoted",
+    "career_title_change": "Title Changed",
+    "career_department_change": "Department Changed",
+    "career_manager_change": "Manager Changed",
+    "career_status_change": "Employment Status Changed",
     "recruiter_registered": "Recruiter account created",
     "recruiter_email_verified": "Recruiter verified their email",
     "super_admin_email_verified": "Super admin verified their email",
@@ -65,6 +79,39 @@ def _parse_start_date(value) -> date | None:
 
 
 class DashboardService:
+    @staticmethod
+    def _candidate_id(candidate: dict) -> str:
+        return candidate.get("user_id") or str(candidate.get("_id") or "")
+
+    @staticmethod
+    def _missing_onboarding_fields(onboarding: dict | None) -> list[str]:
+        onboarding = onboarding or {}
+        return [field for field in REQUIRED_ONBOARDING_FIELDS if not onboarding.get(field)]
+
+    @classmethod
+    def _is_offer_declined(cls, candidate: dict, offer_status_by_candidate: dict[str, str] | None = None) -> bool:
+        offer_status_by_candidate = offer_status_by_candidate or {}
+        candidate_id = cls._candidate_id(candidate)
+        if candidate.get("conversion_status") in {"offer_declined", "declined"}:
+            return True
+        return offer_status_by_candidate.get(candidate_id) in DECLINED_OFFER_STATUSES
+
+    @classmethod
+    def _candidate_identifiers(cls, candidate: dict) -> set[str]:
+        identifiers = set()
+        candidate_id = cls._candidate_id(candidate)
+        if candidate_id:
+            identifiers.add(candidate_id)
+        if email := candidate.get("email"):
+            identifiers.add(email)
+        if _id := candidate.get("_id"):
+            identifiers.add(str(_id))
+        return identifiers
+
+    @classmethod
+    def _has_existing_offer(cls, candidate: dict, offer_candidate_ids: set[str]) -> bool:
+        return bool(cls._candidate_identifiers(candidate) & offer_candidate_ids)
+
     # ------------------------------------------------------------------
     # US-013: Recruiter's Dashboard Overview
     # ------------------------------------------------------------------
@@ -75,21 +122,47 @@ class DashboardService:
         candidates = await database.candidates.find(candidate_filter).to_list(length=None)
         employees = await database.employees.find(employee_filter).to_list(length=None)
 
+        candidate_identifiers: set[str] = set()
+        for candidate in candidates:
+            candidate_identifiers.update(self._candidate_identifiers(candidate))
+
+        offer_candidate_ids: set[str] = set()
+        offer_status_by_candidate: dict[str, str] = {}
+        if candidate_identifiers:
+            offers = await database.offer_letters.find({"candidate_id": {"$in": list(candidate_identifiers)}}).to_list(length=None)
+            for offer in offers:
+                candidate_id = offer.get("candidate_id")
+                if candidate_id:
+                    offer_candidate_ids.add(candidate_id)
+                    if offer.get("status") in DECLINED_OFFER_STATUSES:
+                        offer_status_by_candidate[candidate_id] = offer.get("status")
+
         active_employees = sum(1 for e in employees if e.get("status") == "active")
-        pending_onboarding = sum(
-            1 for c in candidates if (c.get("onboarding") or {}).get("status") != "submitted"
-        )
-        documents_pending = sum(
-            1
+        pending_review_candidates = [
+            c
             for c in candidates
-            if (c.get("onboarding") or {}).get("current_step") not in ("submit", "complete")
-            and (c.get("onboarding") or {}).get("status") != "submitted"
-        )
+            if c.get("status") not in {"converted", "declined", "offer_declined"}
+            and (c.get("conversion_status") in {"intake_submitted", None, "offer_sent"})
+            and (c.get("onboarding") or {}).get("status") == "submitted"
+            and not self._is_offer_declined(c, offer_status_by_candidate)
+            and not self._has_existing_offer(c, offer_candidate_ids)
+        ]
+
+        pending_onboarding = len(pending_review_candidates)
+        documents_pending = len(pending_review_candidates)
 
         today = datetime.now(UTC).date()
         window_end = today + timedelta(days=UPCOMING_JOINING_WINDOW_DAYS)
         upcoming = []
-        for record in (*candidates, *employees):
+
+        signed_candidates = [
+            c
+            for c in candidates
+            if c.get("conversion_status") == "offer_signed"
+            and c.get("status") not in {"converted", "declined", "offer_declined"}
+        ]
+
+        for record in (*employees, *signed_candidates):
             start = _parse_start_date(record.get("start_date"))
             if start and today <= start <= window_end:
                 upcoming.append(
@@ -125,7 +198,8 @@ class DashboardService:
             }
             for c in candidates
             if (
-                (c.get("onboarding") or {}).get("status") == "submitted"
+                not self._is_offer_declined(c, offer_status_by_candidate)
+                and (c.get("onboarding") or {}).get("status") == "submitted"
                 and c.get("conversion_status") != "converted"
                 and (c.get("onboarding") or {}).get("submitted_at")
                 and _as_aware(c["onboarding"]["submitted_at"]) >= seven_days_ago
@@ -173,6 +247,7 @@ class DashboardService:
                 "action": entry.get("action"),
                 "label": ACTIVITY_LABELS.get(entry.get("action"), entry.get("action")),
                 "email": entry.get("email"),
+                "actor_email": entry.get("actor_email") or entry.get("email"),
                 "outcome": entry.get("outcome"),
                 "created_at": _iso(entry.get("created_at")),
             }
