@@ -238,3 +238,7 @@ button, input { font: inherit; }
 .offer-form-modal { width: min(100%, 620px); max-height: 88vh; overflow-y: auto; background: white; border-radius: 16px; padding: clamp(20px, 4vw, 34px); }
 .offer-form-modal h2 { margin: 0 0 4px; }
 .offer-form-modal .form-grid { margin-top: 18px; }
+
+
+
+
