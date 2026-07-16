@@ -14,6 +14,14 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <head>
+        {/* Used by the employee dashboard (app/dashboard/employee) — Sora/Inter match the approved mockup. */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font -- this rule targets pages/_document.js; app-router root layouts are the correct place for shared font links. */}
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
+        />
+      </head>
       <body>
         <SessionTimeout />
         {children}
