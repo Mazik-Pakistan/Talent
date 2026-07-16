@@ -48,7 +48,14 @@ flake8
 # These are optional at runtime: app/services/ocr_service.py and
 # embedding_service.py lazy-import them and degrade gracefully (ENABLE_OCR /
 # ENABLE_EMBEDDINGS in .env) so the API keeps working before they're installed.
-paddlepaddle          # CPU build; see https://www.paddlepaddle.org.cn for GPU wheels
-paddleocr
-pymupdf                # PDF -> image rasterization for OCR (imported as `fitz`)
+
 #FlagEmbedding           # BAAI/bge-m3 embeddings (Phase 3 prep, off by default)
+
+# ── Document Text Extraction (US-EXT) ──────────────────────────────────────
+# These replace PaddleOCR for robust multi-format extraction. They are
+# lazy-imported inside DocumentExtractionService and degrade gracefully if
+# a library is not yet installed on the machine.
+pymupdf                  # PyMuPDF (fitz) — digital & scanned PDF text extraction
+python-docx              # Word DOCX paragraph/table text extraction
+easyocr                  # Image OCR (primary engine)
+pytesseract              # Image OCR (fallback when EasyOCR fails)

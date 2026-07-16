@@ -132,17 +132,23 @@ async def upload_onboarding_file(
         async def read(self_inner):
             return content
 
+    ocr_result = None
     try:
-        await document_service.upload(current_user, file=_FakeUpload(), category=category, doc_type=resolved_doc_type)
+        doc_res = await document_service.upload(current_user, file=_FakeUpload(), category=category, doc_type=resolved_doc_type)
+        if doc_res and "document" in doc_res:
+            ocr_result = doc_res["document"].get("ocr_result")
     except HTTPException:
         raise
     except Exception:
         pass  # Document tracking is best-effort; the wizard attachment below always succeeds.
 
-    return await candidate_service.attach_uploaded_file(
+    resp = await candidate_service.attach_uploaded_file(
         current_user,
         purpose=purpose,
         file_name=original,
         file_url=file_url,
         doc_type=doc_type,
     )
+    if ocr_result:
+        resp["ocr_result"] = ocr_result
+    return resp
