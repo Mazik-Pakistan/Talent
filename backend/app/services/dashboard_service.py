@@ -12,17 +12,29 @@ from app.schemas.dashboard import CreateAnnouncementRequest, MarkNotificationsRe
 UPCOMING_JOINING_WINDOW_DAYS = 30
 RECENT_ACTIVITY_LIMIT_DEFAULT = 20
 RECENT_ACTIVITY_LIMIT_MAX = 100
-REQUIRED_ONBOARDING_FIELDS = ("personal", "education", "government_docs", "resume")
+REQUIRED_ONBOARDING_FIELDS = ("personal", "education", "skills", "government_docs", "resume")
 DECLINED_OFFER_STATUSES = {"declined", "expired", "withdrawn"}
 
-# US-016: friendly labels for the subset of audit-log actions that make up
-# the business-facing activity timeline (internal/security events are excluded).
+# US-016 / US-034: friendly labels for business-facing activity timeline.
 ACTIVITY_LABELS: dict[str, str] = {
-    "candidate_registered": "Candidate registered",
+    "candidate_registered": "Candidate Created",
     "candidate_email_verified": "Candidate verified their email",
     "invitation_created": "Invitation sent to candidate",
+    "intake_submitted": "Onboarding submitted",
     "onboarding_submitted": "Onboarding submitted",
-    "candidate_converted_to_employee": "Candidate converted to employee",
+    "offer_sent": "Offer Sent",
+    "offer_signed": "Offer Accepted",
+    "offer_approved": "Offer Approved",
+    "document_uploaded": "Documents Uploaded",
+    "ocr_completed": "OCR Verified",
+    "ocr_failed": "OCR Failed",
+    "candidate_converted_to_employee": "Employee Created",
+    "career_joined": "Employee Joined",
+    "career_promoted": "Employee Promoted",
+    "career_title_change": "Title Changed",
+    "career_department_change": "Department Changed",
+    "career_manager_change": "Manager Changed",
+    "career_status_change": "Employment Status Changed",
     "recruiter_registered": "Recruiter account created",
     "recruiter_email_verified": "Recruiter verified their email",
     "super_admin_email_verified": "Super admin verified their email",
@@ -235,6 +247,7 @@ class DashboardService:
                 "action": entry.get("action"),
                 "label": ACTIVITY_LABELS.get(entry.get("action"), entry.get("action")),
                 "email": entry.get("email"),
+                "actor_email": entry.get("actor_email") or entry.get("email"),
                 "outcome": entry.get("outcome"),
                 "created_at": _iso(entry.get("created_at")),
             }

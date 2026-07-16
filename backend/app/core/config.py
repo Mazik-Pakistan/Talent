@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     SIGNED_URL_EXPIRE_SECONDS: int = 3600
     OFFER_EXPIRE_DAYS: int = 14
 
+    # US-031: Fernet key (url-safe base64 32-byte). If empty, derived from SECRET_KEY.
+    BANKING_ENCRYPTION_KEY: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

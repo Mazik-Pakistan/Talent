@@ -5,6 +5,9 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 
 from app.schemas.auth import PASSWORD_PATTERN, PHONE_PATTERN
 
+# Pakistani IBAN: PK + 2 check digits + 4-letter bank code + 16 digits = 24 chars
+IBAN_PATTERN = __import__("re").compile(r"^PK\d{2}[A-Z]{4}\d{16}$", __import__("re").IGNORECASE)
+
 
 class CreateInvitationRequest(BaseModel):
     email: EmailStr
@@ -85,21 +88,68 @@ class CandidateRegisterRequest(BaseModel):
         return self
 
 
+def _optional_phone(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if not PHONE_PATTERN.fullmatch(normalized):
+        raise ValueError("Enter a valid phone number.")
+    return normalized
+
+
 class OnboardingPersonalInfo(BaseModel):
+    """US-025 personal + US-026 contact fields in one intake step."""
+
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
     date_of_birth: date
+    gender: Literal["male", "female", "other", "prefer_not_to_say"]
+    nationality: str = Field(min_length=2, max_length=80)
+    marital_status: Literal["single", "married", "divorced", "widowed", "other"]
+    blood_group: Literal["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "unknown"] = "unknown"
     national_id: str = Field(min_length=5, max_length=40)
-    address_line1: str = Field(min_length=3, max_length=200)
-    address_line2: str = Field(default="", max_length=200)
+    profile_picture: str | None = None
+    # Contact (US-026)
+    alternate_phone: str | None = None
+    current_address: str = Field(min_length=3, max_length=300)
+    permanent_address: str = Field(min_length=3, max_length=300)
+    same_as_current: bool = False
     city: str = Field(min_length=2, max_length=100)
     state: str = Field(min_length=2, max_length=100)
     postal_code: str = Field(min_length=3, max_length=20)
     country: str = Field(min_length=2, max_length=100)
+    # Backward-compatible aliases still accepted by older clients
+    address_line1: str | None = Field(default=None, max_length=200)
+    address_line2: str | None = Field(default=None, max_length=200)
+
+    @field_validator("first_name", "last_name", "nationality", "city", "state", "country")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        return " ".join(value.split())
+
+    @field_validator("alternate_phone")
+    @classmethod
+    def validate_alternate_phone(cls, value: str | None) -> str | None:
+        return _optional_phone(value)
+
+    @model_validator(mode="after")
+    def apply_address_defaults(self):
+        if self.same_as_current:
+            self.permanent_address = self.current_address
+        # Keep legacy fields populated for older readers
+        if not self.address_line1:
+            self.address_line1 = self.current_address
+        return self
 
 
 class OnboardingEmergencyContact(BaseModel):
     name: str = Field(min_length=2, max_length=100)
     relationship: str = Field(min_length=2, max_length=60)
     phone: str
+    alternate_phone: str | None = None
+    address: str | None = Field(default=None, max_length=300)
 
     @field_validator("phone")
     @classmethod
@@ -109,24 +159,77 @@ class OnboardingEmergencyContact(BaseModel):
             raise ValueError("Enter a valid phone number.")
         return normalized
 
+    @field_validator("alternate_phone")
+    @classmethod
+    def validate_alternate_phone(cls, value: str | None) -> str | None:
+        return _optional_phone(value)
+
 
 class OnboardingEmploymentInfo(BaseModel):
+    """US-031 banking (post-hire). Plaintext in request; service encrypts at rest."""
+
     bank_name: str = Field(min_length=2, max_length=100)
     account_holder_name: str = Field(min_length=2, max_length=100)
     account_number: str = Field(min_length=4, max_length=40)
     tax_id: str = Field(min_length=4, max_length=40)
+    iban: str = Field(min_length=15, max_length=34)
+    branch: str = Field(min_length=2, max_length=120)
+    branch_code: str = Field(min_length=1, max_length=40)
+    swift_code: str | None = Field(default=None, max_length=20)
+
+    @field_validator("iban")
+    @classmethod
+    def validate_iban(cls, value: str) -> str:
+        normalized = value.replace(" ", "").upper()
+        if not IBAN_PATTERN.fullmatch(normalized):
+            raise ValueError("Enter a valid Pakistani IBAN (e.g. PK36SCBL0000001123456702).")
+        return normalized
+
+    @field_validator("swift_code")
+    @classmethod
+    def normalize_swift(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip().upper()
+        return cleaned or None
 
 
 class EducationEntry(BaseModel):
     institution: str = Field(min_length=2, max_length=200)
+    board_university: str | None = Field(default=None, max_length=200)
     degree: str = Field(min_length=2, max_length=120)
     field_of_study: str = Field(min_length=2, max_length=120)
     year_completed: str = Field(min_length=4, max_length=4)
+    cgpa_or_percentage: str | None = Field(default=None, max_length=20)
     certificate_file: str | None = None
 
 
 class OnboardingEducationInfo(BaseModel):
     entries: list[EducationEntry] = Field(min_length=1)
+
+
+class CertificationEntry(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    document_url: str | None = None
+    expiry_date: date | None = None
+
+
+class OnboardingSkillsInfo(BaseModel):
+    technical_skills: list[str] = Field(default_factory=list)
+    soft_skills: list[str] = Field(default_factory=list)
+    languages: list[str] = Field(default_factory=list)
+    certifications: list[CertificationEntry] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_some_skills(self):
+        has_skills = bool(self.technical_skills or self.soft_skills or self.languages or self.certifications)
+        if not has_skills:
+            raise ValueError("Add at least one technical skill, soft skill, language, or certification.")
+        # Normalize skill tags
+        self.technical_skills = [s.strip() for s in self.technical_skills if s and s.strip()]
+        self.soft_skills = [s.strip() for s in self.soft_skills if s and s.strip()]
+        self.languages = [s.strip() for s in self.languages if s and s.strip()]
+        return self
 
 
 class GovernmentDocument(BaseModel):
@@ -203,6 +306,7 @@ class OnboardingResume(BaseModel):
 ONBOARDING_STEPS = Literal[
     "personal",
     "education",
+    "skills",
     "government_docs",
     "resume",
     "submit",
@@ -215,6 +319,7 @@ class OnboardingSaveRequest(BaseModel):
     emergency: OnboardingEmergencyContact | None = None
     employment: OnboardingEmploymentInfo | None = None
     education: OnboardingEducationInfo | None = None
+    skills: OnboardingSkillsInfo | None = None
     government_docs: OnboardingGovernmentDocs | None = None
     references: OnboardingReferences | None = None
     documents: OnboardingDocumentsAck | None = None

@@ -138,6 +138,20 @@ class DocumentService:
             await database.documents.update_one({"_id": doc["_id"]}, {"$set": update})
             doc.update(update)
 
+            await database.audit_logs.insert_one(
+                {
+                    "user_id": current_user.id,
+                    "email": current_user.email,
+                    "actor_email": current_user.email,
+                    "module": "documents",
+                    "action": "ocr_completed" if ocr_result.get("status") == "completed" else "ocr_failed",
+                    "doc_type": doc_type,
+                    "category": category,
+                    "outcome": "success" if ocr_result.get("status") == "completed" else "failed",
+                    "created_at": datetime.now(UTC),
+                }
+            )
+
             # Generate resume embeddings for Phase 3 prep if enabled
             if (doc_type == "resume" or ocr_result.get("category") == "resume") and settings.ENABLE_EMBEDDINGS and raw_text:
                 try:
@@ -150,6 +164,7 @@ class DocumentService:
             {
                 "user_id": current_user.id,
                 "email": current_user.email,
+                "actor_email": current_user.email,
                 "module": "documents",
                 "action": "document_uploaded",
                 "doc_type": doc_type,

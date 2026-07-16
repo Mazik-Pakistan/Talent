@@ -1,11 +1,11 @@
-import uuid
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 
 from app.core.rbac import CurrentUser
 from app.core.security import require_permissions, require_roles
+from app.schemas.career import CareerEventCreateRequest
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
 from app.services import storage_service
 from app.services.candidate_service import CandidateService
@@ -27,11 +27,13 @@ PURPOSE_TO_CATEGORY = {
     "resume": "other",
     "government_doc": "identity",
     "education_cert": "education",
+    "certification": "other",
 }
 PURPOSE_TO_DEFAULT_DOC_TYPE = {
     "resume": "resume",
     "government_doc": "cnic",
     "education_cert": "degree",
+    "certification": "certificate",
 }
 
 
@@ -46,30 +48,78 @@ async def generate_employee_id(
 
 @router.post("/create-from-candidate", status_code=201)
 async def create_from_candidate(request: CreateFromCandidateRequest, current_user: RequireRecruiter):
-    """US-023: Activate an employee for a candidate whose offer has been signed & approved.
-
-    NOTE: as of the offer-letter flow, this is normally called internally by
-    OfferService.approve(). It stays exposed for recruiters recovering from a
-    failed auto-activation, but still enforces the same offer-signed gate.
-    """
     return await service.create_from_candidate(current_user, request.candidate_id)
 
 
 @router.get("/pending-review")
 async def list_pending_review(current_user: RequireRecruiter):
-    """Candidates who submitted their intake and are awaiting an offer letter."""
     return await service.list_pending_review(current_user)
 
 
 @router.get("/ready-for-conversion")
 async def list_ready_for_conversion(current_user: RequireRecruiter):
-    """Candidates whose offer has been signed and is awaiting HR approval/activation."""
     return await service.list_ready_for_conversion(current_user)
 
 
+@router.get("/export.csv")
+async def export_employees_csv(
+    current_user: RequireRecruiter,
+    q: str | None = None,
+    employee_id: str | None = None,
+    department: str | None = None,
+    job_title: str | None = None,
+    status_filter: str | None = Query(default=None, alias="status"),
+    joining_from: str | None = None,
+    joining_to: str | None = None,
+    sort: str = "created_at",
+):
+    """US-035: CSV export of employee directory with the same filters as list."""
+    content = await service.export_employees_csv(
+        current_user,
+        q=q,
+        employee_id=employee_id,
+        department=department,
+        job_title=job_title,
+        status=status_filter,
+        joining_from=joining_from,
+        joining_to=joining_to,
+        sort=sort,
+    )
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=employees.csv"},
+    )
+
+
 @router.get("")
-async def list_employees(current_user: RequireRecruiter):
-    return await service.list_employees(current_user)
+async def list_employees(
+    current_user: RequireRecruiter,
+    q: str | None = None,
+    employee_id: str | None = None,
+    department: str | None = None,
+    job_title: str | None = None,
+    status_filter: str | None = Query(default=None, alias="status"),
+    joining_from: str | None = None,
+    joining_to: str | None = None,
+    sort: str = "created_at",
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+):
+    """US-035: searchable, filterable, paginated employee directory."""
+    return await service.list_employees(
+        current_user,
+        q=q,
+        employee_id=employee_id,
+        department=department,
+        job_title=job_title,
+        status=status_filter,
+        joining_from=joining_from,
+        joining_to=joining_to,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/me")
@@ -79,7 +129,6 @@ async def get_my_employee_profile(current_user: RequireEmployee):
 
 @router.get("/profile-completion")
 async def get_profile_completion(current_user: RequireEmployee):
-    """Post-hire 'complete your profile' checklist (emergency, banking, references, NDA, policies)."""
     return await service.get_profile_completion(current_user)
 
 
@@ -96,18 +145,46 @@ async def get_candidate_detail(candidate_id: str, current_user: RequireRecruiter
     return await service.get_candidate_detail(current_user, candidate_id)
 
 
+@router.get("/detail/{employee_id}")
+async def get_employee_detail(employee_id: str, current_user: RequireRecruiter):
+    """US-035: open full employee profile from the directory.
+
+    Dedicated path (not /{employee_id}) so IDs like MZK-2026-000123 never collide
+    with static routes such as /me, /upload, or /export.csv.
+    """
+    return await service.get_employee_profile(current_user, employee_id, reveal_banking=False)
+
+
+@router.get("/{employee_id}/career")
+async def list_career(employee_id: str, current_user: RequireRecruiter):
+    employee = await service.get_employee_profile(current_user, employee_id)
+    return {"events": employee["employee"].get("career") or []}
+
+
+@router.post("/{employee_id}/career", status_code=201)
+async def add_career(
+    employee_id: str,
+    request: CareerEventCreateRequest,
+    current_user: RequireRecruiter,
+):
+    return await service.add_career_event(current_user, employee_id, request)
+
+
+@router.get("/{employee_id}")
+async def get_employee_detail_legacy(employee_id: str, current_user: RequireRecruiter):
+    """Backward-compatible alias for /detail/{employee_id}."""
+    return await service.get_employee_profile(current_user, employee_id, reveal_banking=False)
+
+
 @router.post("/upload")
 async def upload_onboarding_file(
     current_user: RequireCandidate,
     file: UploadFile = File(...),
-    purpose: Literal["resume", "government_doc", "education_cert"] = Form(...),
+    purpose: Literal["resume", "government_doc", "education_cert", "certification"] = Form(...),
     doc_type: str | None = Form(default=None),
 ):
-    """US-036/037: candidate intake upload — stored via storage_service and tracked as a
-    Document (with OCR auto-triggered for identity/education categories), then reflected
-    into the onboarding wizard's local draft state."""
-    if current_user.role not in ("candidate", "super_admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only candidates can upload onboarding files.")
+    if current_user.role not in ("candidate", "employee", "super_admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only candidates/employees can upload files.")
 
     original = file.filename or "upload.bin"
     ext = Path(original).suffix.lower()
@@ -125,7 +202,6 @@ async def upload_onboarding_file(
     stored = await storage_service.save_file(current_user.id, category, original, content)
     file_url = stored["file_url"] or f"/api/documents/{stored['object_path']}/download"
 
-    # Track as a first-class Document (drives OCR + recruiter review UI).
     class _FakeUpload:
         filename = original
 
@@ -140,15 +216,18 @@ async def upload_onboarding_file(
     except HTTPException:
         raise
     except Exception:
-        pass  # Document tracking is best-effort; the wizard attachment below always succeeds.
+        pass
 
-    resp = await candidate_service.attach_uploaded_file(
-        current_user,
-        purpose=purpose,
-        file_name=original,
-        file_url=file_url,
-        doc_type=doc_type,
-    )
+    if current_user.role == "candidate":
+        resp = await candidate_service.attach_uploaded_file(
+            current_user,
+            purpose=purpose if purpose != "certification" else "education_cert",
+            file_name=original,
+            file_url=file_url,
+            doc_type=doc_type,
+        )
+    else:
+        resp = {"file_name": original, "file_url": file_url, "purpose": purpose}
     if ocr_result:
         resp["ocr_result"] = ocr_result
     return resp

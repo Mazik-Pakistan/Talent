@@ -17,6 +17,7 @@ import styles from "./onboarding.module.css";
 const STEPS = [
   { id: "personal", label: "Personal" },
   { id: "education", label: "Education" },
+  { id: "skills", label: "Skills" },
   { id: "government_docs", label: "ID docs" },
   { id: "resume", label: "Resume" },
   { id: "submit", label: "Review" },
@@ -84,21 +85,38 @@ const NAV_ITEMS = [
 ];
 
 const emptyPersonal = {
+  first_name: "",
+  last_name: "",
   date_of_birth: "",
+  gender: "prefer_not_to_say",
+  nationality: "Pakistani",
+  marital_status: "single",
+  blood_group: "unknown",
   national_id: "",
-  address_line1: "",
-  address_line2: "",
+  profile_picture: null,
+  alternate_phone: "",
+  current_address: "",
+  permanent_address: "",
+  same_as_current: false,
   city: "",
   state: "",
   postal_code: "",
-  country: "",
+  country: "Pakistan",
 };
 const emptyEducationEntry = {
   institution: "",
+  board_university: "",
   degree: "",
   field_of_study: "",
   year_completed: "",
+  cgpa_or_percentage: "",
   certificate_file: null,
+};
+const emptySkills = {
+  technical_skills: "",
+  soft_skills: "",
+  languages: "",
+  certifications: [{ name: "", document_url: null, expiry_date: "" }],
 };
 const emptyGovDoc = {
   doc_type: "cnic",
@@ -140,6 +158,7 @@ function OnboardingContent() {
   const [step, setStep] = useState("personal");
   const [personal, setPersonal] = useState(emptyPersonal);
   const [educationEntries, setEducationEntries] = useState([{ ...emptyEducationEntry }]);
+  const [skills, setSkills] = useState(emptySkills);
   const [govDocs, setGovDocs] = useState([{ ...emptyGovDoc }]);
   const [resume, setResume] = useState(emptyResume);
   const [extractionPreview, setExtractionPreview] = useState(null);
@@ -186,10 +205,41 @@ function OnboardingContent() {
 
   function hydrateForms(data) {
     if (!data) return;
-    if (data.personal) setPersonal({ ...emptyPersonal, ...data.personal });
+    if (data.personal) {
+      const p = data.personal;
+      setPersonal({
+        ...emptyPersonal,
+        ...p,
+        current_address: p.current_address || p.address_line1 || "",
+        permanent_address: p.permanent_address || p.address_line2 || p.current_address || p.address_line1 || "",
+        first_name: p.first_name || "",
+        last_name: p.last_name || "",
+      });
+    }
     if (data.education?.entries?.length) setEducationEntries(data.education.entries);
+    if (data.skills) {
+      setSkills({
+        technical_skills: (data.skills.technical_skills || []).join(", "),
+        soft_skills: (data.skills.soft_skills || []).join(", "),
+        languages: (data.skills.languages || []).join(", "),
+        certifications: data.skills.certifications?.length
+          ? data.skills.certifications.map((c) => ({
+              name: c.name || "",
+              document_url: c.document_url || null,
+              expiry_date: c.expiry_date || "",
+            }))
+          : [{ name: "", document_url: null, expiry_date: "" }],
+      });
+    }
     if (data.government_docs?.documents?.length) setGovDocs(data.government_docs.documents);
     if (data.resume) setResume({ ...emptyResume, ...data.resume });
+  }
+
+  function splitTags(value) {
+    return String(value || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
 
   function autoFillFromOCR(ocrResult, purpose, index) {
@@ -364,11 +414,31 @@ function OnboardingContent() {
     if (submitted && !isEditMode) return;
 
     if (step === "personal") {
-      if (!personal.date_of_birth || !personal.national_id || !personal.address_line1 || !personal.city || !personal.state || !personal.postal_code || !personal.country) {
-        setMessage("Please complete all required personal fields.");
+      const requiredOk =
+        personal.first_name &&
+        personal.last_name &&
+        personal.date_of_birth &&
+        personal.gender &&
+        personal.nationality &&
+        personal.marital_status &&
+        personal.national_id &&
+        personal.current_address &&
+        (personal.same_as_current || personal.permanent_address) &&
+        personal.city &&
+        personal.state &&
+        personal.postal_code &&
+        personal.country;
+      if (!requiredOk) {
+        setMessage("Please complete all required personal & contact fields.");
         return;
       }
-      await persist({ step: "personal", personal });
+      const payload = {
+        ...personal,
+        permanent_address: personal.same_as_current ? personal.current_address : personal.permanent_address,
+        alternate_phone: personal.alternate_phone || null,
+        profile_picture: personal.profile_picture || null,
+      };
+      await persist({ step: "personal", personal: payload });
     } else if (step === "education") {
       const valid = educationEntries.every(
         (entry) => entry.institution && entry.degree && entry.field_of_study && entry.year_completed
@@ -378,6 +448,25 @@ function OnboardingContent() {
         return;
       }
       await persist({ step: "education", education: { entries: educationEntries } });
+    } else if (step === "skills") {
+      const technical_skills = splitTags(skills.technical_skills);
+      const soft_skills = splitTags(skills.soft_skills);
+      const languages = splitTags(skills.languages);
+      const certifications = (skills.certifications || [])
+        .filter((c) => c.name && c.name.trim())
+        .map((c) => ({
+          name: c.name.trim(),
+          document_url: c.document_url || null,
+          expiry_date: c.expiry_date || null,
+        }));
+      if (!technical_skills.length && !soft_skills.length && !languages.length && !certifications.length) {
+        setMessage("Add at least one skill, language, or certification.");
+        return;
+      }
+      await persist({
+        step: "skills",
+        skills: { technical_skills, soft_skills, languages, certifications },
+      });
     } else if (step === "government_docs") {
       const valid = govDocs.every((doc) => doc.doc_type && doc.document_number && doc.file_url);
       if (!valid) {
@@ -516,20 +605,66 @@ function OnboardingContent() {
                     </ol>
 
                     {message && <p className={styles.formMessage} role="status">{message}</p>}
-            {message && <p className="form-message" role="status">{message}</p>}
 
             {extractionPreview && <ExtractionPreview result={extractionPreview} onDismiss={() => setExtractionPreview(null)} />}
+
+                    {progress?.missing_fields?.length > 0 && !submitted && (
+                      <p className={styles.docHelper}>
+                        Missing sections: <strong>{progress.missing_fields.join(", ")}</strong>
+                      </p>
+                    )}
 
                     <form onSubmit={handleNext}>
                       {step === "personal" && (
                         <div className={styles.formGrid}>
-                          <h2 className={styles.stepTitle}>Personal information</h2>
+                          <h2 className={styles.stepTitle}>Personal &amp; contact information</h2>
+                          <Field styles={styles} label="First name" value={personal.first_name} onChange={(e) => setPersonal({ ...personal, first_name: e.target.value })} />
+                          <Field styles={styles} label="Last name" value={personal.last_name} onChange={(e) => setPersonal({ ...personal, last_name: e.target.value })} />
                           <Field styles={styles} label="Date of birth" type="date" value={personal.date_of_birth} onChange={(e) => setPersonal({ ...personal, date_of_birth: e.target.value })} />
-                          <Field styles={styles} label="National ID / CNIC" value={personal.national_id} onChange={(e) => setPersonal({ ...personal, national_id: e.target.value })} />
-                          <Field styles={styles} label="Address line 1" value={personal.address_line1} onChange={(e) => setPersonal({ ...personal, address_line1: e.target.value })} wide />
-                          <Field styles={styles} label="Address line 2" value={personal.address_line2} onChange={(e) => setPersonal({ ...personal, address_line2: e.target.value })} wide />
+                          <label className={styles.field}>
+                            <span>Gender</span>
+                            <select value={personal.gender} onChange={(e) => setPersonal({ ...personal, gender: e.target.value })}>
+                              <option value="male">Male</option>
+                              <option value="female">Female</option>
+                              <option value="other">Other</option>
+                              <option value="prefer_not_to_say">Prefer not to say</option>
+                            </select>
+                          </label>
+                          <Field styles={styles} label="Nationality" value={personal.nationality} onChange={(e) => setPersonal({ ...personal, nationality: e.target.value })} />
+                          <label className={styles.field}>
+                            <span>Marital status</span>
+                            <select value={personal.marital_status} onChange={(e) => setPersonal({ ...personal, marital_status: e.target.value })}>
+                              <option value="single">Single</option>
+                              <option value="married">Married</option>
+                              <option value="divorced">Divorced</option>
+                              <option value="widowed">Widowed</option>
+                              <option value="other">Other</option>
+                            </select>
+                          </label>
+                          <label className={styles.field}>
+                            <span>Blood group</span>
+                            <select value={personal.blood_group} onChange={(e) => setPersonal({ ...personal, blood_group: e.target.value })}>
+                              {["unknown", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((g) => (
+                                <option key={g} value={g}>{g}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <Field styles={styles} label="National ID / CNIC / Passport" value={personal.national_id} onChange={(e) => setPersonal({ ...personal, national_id: e.target.value })} />
+                          <Field styles={styles} label="Alternate phone" value={personal.alternate_phone} onChange={(e) => setPersonal({ ...personal, alternate_phone: e.target.value })} />
+                          <Field styles={styles} label="Current address" value={personal.current_address} onChange={(e) => setPersonal({ ...personal, current_address: e.target.value })} wide />
+                          <label className={`${styles.field} ${styles.wide}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <input
+                              type="checkbox"
+                              checked={!!personal.same_as_current}
+                              onChange={(e) => setPersonal({ ...personal, same_as_current: e.target.checked, permanent_address: e.target.checked ? personal.current_address : personal.permanent_address })}
+                            />
+                            <span>Permanent address same as current</span>
+                          </label>
+                          {!personal.same_as_current && (
+                            <Field styles={styles} label="Permanent address" value={personal.permanent_address} onChange={(e) => setPersonal({ ...personal, permanent_address: e.target.value })} wide />
+                          )}
                           <Field styles={styles} label="City" value={personal.city} onChange={(e) => setPersonal({ ...personal, city: e.target.value })} />
-                          <Field styles={styles} label="State" value={personal.state} onChange={(e) => setPersonal({ ...personal, state: e.target.value })} />
+                          <Field styles={styles} label="State / Province" value={personal.state} onChange={(e) => setPersonal({ ...personal, state: e.target.value })} />
                           <Field styles={styles} label="Postal code" value={personal.postal_code} onChange={(e) => setPersonal({ ...personal, postal_code: e.target.value })} />
                           <Field styles={styles} label="Country" value={personal.country} onChange={(e) => setPersonal({ ...personal, country: e.target.value })} />
                         </div>
@@ -545,12 +680,17 @@ function OnboardingContent() {
                                 next[index] = { ...next[index], institution: e.target.value };
                                 setEducationEntries(next);
                               }} />
+                              <Field styles={styles} label="Board / University" value={entry.board_university || ""} onChange={(e) => {
+                                const next = [...educationEntries];
+                                next[index] = { ...next[index], board_university: e.target.value };
+                                setEducationEntries(next);
+                              }} />
                               <Field styles={styles} label="Degree" value={entry.degree} onChange={(e) => {
                                 const next = [...educationEntries];
                                 next[index] = { ...next[index], degree: e.target.value };
                                 setEducationEntries(next);
                               }} />
-                              <Field styles={styles} label="Field of study" value={entry.field_of_study} onChange={(e) => {
+                              <Field styles={styles} label="Major / Field of study" value={entry.field_of_study} onChange={(e) => {
                                 const next = [...educationEntries];
                                 next[index] = { ...next[index], field_of_study: e.target.value };
                                 setEducationEntries(next);
@@ -560,15 +700,98 @@ function OnboardingContent() {
                                 next[index] = { ...next[index], year_completed: e.target.value };
                                 setEducationEntries(next);
                               }} />
+                              <Field styles={styles} label="CGPA / Percentage" value={entry.cgpa_or_percentage || ""} onChange={(e) => {
+                                const next = [...educationEntries];
+                                next[index] = { ...next[index], cgpa_or_percentage: e.target.value };
+                                setEducationEntries(next);
+                              }} />
                               <label className={`${styles.field} ${styles.wide}`}>
-                                <span>Certificate upload (auto-read via OCR)</span>
+                                <span>Transcript / certificate (optional)</span>
                                 <input type="file" disabled={uploading} onChange={(e) => handleFileUpload(e, "education_cert", index)} />
                                 {entry.certificate_file && <small>Uploaded: {entry.certificate_file}</small>}
                               </label>
+                              {educationEntries.length > 1 && (
+                                <button
+                                  type="button"
+                                  className={styles.secondaryButton}
+                                  onClick={() => setEducationEntries((c) => c.filter((_, i) => i !== index))}
+                                >
+                                  Remove entry
+                                </button>
+                              )}
                             </div>
                           ))}
                           <button type="button" className={styles.secondaryButton} onClick={() => setEducationEntries((c) => [...c, { ...emptyEducationEntry }])}>
                             Add another education entry
+                          </button>
+                        </div>
+                      )}
+
+                      {step === "skills" && (
+                        <div className={styles.formGrid}>
+                          <h2 className={styles.stepTitle}>Skills &amp; certifications</h2>
+                          <Field styles={styles} label="Technical skills (comma-separated)" value={skills.technical_skills} onChange={(e) => setSkills({ ...skills, technical_skills: e.target.value })} wide />
+                          <Field styles={styles} label="Soft skills (comma-separated)" value={skills.soft_skills} onChange={(e) => setSkills({ ...skills, soft_skills: e.target.value })} wide />
+                          <Field styles={styles} label="Languages (comma-separated)" value={skills.languages} onChange={(e) => setSkills({ ...skills, languages: e.target.value })} wide />
+                          <h3 className={styles.wide}>Certifications</h3>
+                          {(skills.certifications || []).map((cert, index) => (
+                            <div key={index} className={`${styles.formGrid} ${styles.educationEntry} ${styles.wide}`}>
+                              <Field styles={styles} label="Certification name" value={cert.name} onChange={(e) => {
+                                const next = [...skills.certifications];
+                                next[index] = { ...next[index], name: e.target.value };
+                                setSkills({ ...skills, certifications: next });
+                              }} />
+                              <Field styles={styles} label="Expiry date" type="date" value={cert.expiry_date || ""} onChange={(e) => {
+                                const next = [...skills.certifications];
+                                next[index] = { ...next[index], expiry_date: e.target.value };
+                                setSkills({ ...skills, certifications: next });
+                              }} />
+                              <label className={`${styles.field} ${styles.wide}`}>
+                                <span>Certificate document (optional)</span>
+                                <input
+                                  type="file"
+                                  disabled={uploading}
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    const accessToken = localStorage.getItem("access_token");
+                                    const formData = new FormData();
+                                    formData.append("file", file);
+                                    formData.append("purpose", "certification");
+                                    setUploading(true);
+                                    try {
+                                      const data = await uploadOnboardingFile(formData, accessToken);
+                                      const next = [...skills.certifications];
+                                      next[index] = { ...next[index], document_url: data.file_url };
+                                      setSkills({ ...skills, certifications: next });
+                                      setMessage("Certificate uploaded.");
+                                    } catch (error) {
+                                      setMessage(getApiErrorMessage(error, "Upload failed."));
+                                    } finally {
+                                      setUploading(false);
+                                      e.target.value = "";
+                                    }
+                                  }}
+                                />
+                                {cert.document_url && <small>Uploaded: {cert.document_url}</small>}
+                              </label>
+                              {(skills.certifications || []).length > 1 && (
+                                <button
+                                  type="button"
+                                  className={styles.secondaryButton}
+                                  onClick={() => setSkills({ ...skills, certifications: skills.certifications.filter((_, i) => i !== index) })}
+                                >
+                                  Remove certification
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            className={styles.secondaryButton}
+                            onClick={() => setSkills({ ...skills, certifications: [...(skills.certifications || []), { name: "", document_url: null, expiry_date: "" }] })}
+                          >
+                            Add certification
                           </button>
                         </div>
                       )}
@@ -642,8 +865,9 @@ function OnboardingContent() {
                             Confirm every section is complete. Your recruiter reviews it next and sends your offer letter.
                           </p>
                           <div className={styles.reviewGrid}>
-                            <ReviewBlock styles={styles} title="Personal" items={Object.entries(personal)} />
+                            <ReviewBlock styles={styles} title="Personal" items={Object.entries(personal).filter(([k]) => !["address_line1", "address_line2"].includes(k))} />
                             <ReviewBlock styles={styles} title="Education entries" items={[["count", String(educationEntries.length)]]} />
+                            <ReviewBlock styles={styles} title="Skills" items={[["technical", skills.technical_skills || "—"], ["soft", skills.soft_skills || "—"]]} />
                             <ReviewBlock styles={styles} title="Government docs" items={[["count", String(govDocs.length)]]} />
                             <ReviewBlock styles={styles} title="Resume" items={[["file", resume.file_name || "—"], ["summary", resume.summary?.slice(0, 80)]]} />
                           </div>

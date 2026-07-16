@@ -23,8 +23,17 @@ const STEPS = [
   { id: "submit", label: "Finish" },
 ];
 
-const emptyEmergency = { name: "", relationship: "", phone: "" };
-const emptyEmployment = { bank_name: "", account_holder_name: "", account_number: "", tax_id: "" };
+const emptyEmergency = { name: "", relationship: "", phone: "", alternate_phone: "", address: "" };
+const emptyEmployment = {
+  bank_name: "",
+  account_holder_name: "",
+  account_number: "",
+  tax_id: "",
+  iban: "",
+  branch: "",
+  branch_code: "",
+  swift_code: "",
+};
 const emptyReference = { full_name: "", relationship: "", email: "", phone: "", company: "" };
 const emptyDocuments = { accepted_code_of_conduct: false, accepted_privacy_policy: false, accepted_employee_handbook: false };
 
@@ -114,16 +123,37 @@ export default function CompleteProfilePage() {
     event.preventDefault();
     if (step === "emergency") {
       if (!emergency.name || !emergency.relationship || !emergency.phone) {
-        setMessage("Complete your emergency contact.");
+        setMessage("Complete your emergency contact (name, relationship, phone).");
         return;
       }
-      await persist({ step: "emergency", emergency });
+      await persist({
+        step: "emergency",
+        emergency: {
+          ...emergency,
+          alternate_phone: emergency.alternate_phone || null,
+          address: emergency.address || null,
+        },
+      });
     } else if (step === "employment") {
-      if (!employment.bank_name || !employment.account_holder_name || !employment.account_number || !employment.tax_id) {
-        setMessage("Complete your banking details.");
+      if (
+        !employment.bank_name ||
+        !employment.account_holder_name ||
+        !employment.account_number ||
+        !employment.tax_id ||
+        !employment.iban ||
+        !employment.branch ||
+        !employment.branch_code
+      ) {
+        setMessage("Complete your banking details including IBAN, branch, and branch code.");
         return;
       }
-      await persist({ step: "employment", employment });
+      await persist({
+        step: "employment",
+        employment: {
+          ...employment,
+          swift_code: employment.swift_code || null,
+        },
+      });
     } else if (step === "references") {
       const valid = references.length >= 2 && references.every((r) => r.full_name && r.relationship && r.email && r.phone && r.company);
       if (!valid) {
@@ -221,6 +251,8 @@ export default function CompleteProfilePage() {
                   <Field label="Full name" value={emergency.name} onChange={(e) => setEmergency({ ...emergency, name: e.target.value })} />
                   <Field label="Relationship" value={emergency.relationship} onChange={(e) => setEmergency({ ...emergency, relationship: e.target.value })} />
                   <Field label="Phone" value={emergency.phone} onChange={(e) => setEmergency({ ...emergency, phone: e.target.value })} />
+                  <Field label="Alternate phone" value={emergency.alternate_phone || ""} onChange={(e) => setEmergency({ ...emergency, alternate_phone: e.target.value })} />
+                  <Field label="Address" value={emergency.address || ""} onChange={(e) => setEmergency({ ...emergency, address: e.target.value })} />
                 </div>
               )}
 
@@ -228,8 +260,12 @@ export default function CompleteProfilePage() {
                 <div className="form-grid">
                   <h2 className="step-title">Banking details</h2>
                   <Field label="Bank name" value={employment.bank_name} onChange={(e) => setEmployment({ ...employment, bank_name: e.target.value })} />
-                  <Field label="Account holder" value={employment.account_holder_name} onChange={(e) => setEmployment({ ...employment, account_holder_name: e.target.value })} />
-                  <Field label="Account number / IBAN" value={employment.account_number} onChange={(e) => setEmployment({ ...employment, account_number: e.target.value })} />
+                  <Field label="Account title" value={employment.account_holder_name} onChange={(e) => setEmployment({ ...employment, account_holder_name: e.target.value })} />
+                  <Field label="Account number" value={employment.account_number} onChange={(e) => setEmployment({ ...employment, account_number: e.target.value })} />
+                  <Field label="IBAN" value={employment.iban || ""} onChange={(e) => setEmployment({ ...employment, iban: e.target.value })} />
+                  <Field label="Branch" value={employment.branch || ""} onChange={(e) => setEmployment({ ...employment, branch: e.target.value })} />
+                  <Field label="Branch code" value={employment.branch_code || ""} onChange={(e) => setEmployment({ ...employment, branch_code: e.target.value })} />
+                  <Field label="Swift code (optional)" value={employment.swift_code || ""} onChange={(e) => setEmployment({ ...employment, swift_code: e.target.value })} />
                   <Field label="Tax ID" value={employment.tax_id} onChange={(e) => setEmployment({ ...employment, tax_id: e.target.value })} />
                 </div>
               )}
