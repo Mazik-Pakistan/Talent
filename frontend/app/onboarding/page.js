@@ -83,6 +83,7 @@ function OnboardingContent() {
   const [educationEntries, setEducationEntries] = useState([{ ...emptyEducationEntry }]);
   const [govDocs, setGovDocs] = useState([{ ...emptyGovDoc }]);
   const [resume, setResume] = useState(emptyResume);
+  const [extractionPreview, setExtractionPreview] = useState(null);
 
   const steps = useMemo(() => (isEditMode ? STEPS.filter((s) => s.id !== "submit") : STEPS), [isEditMode]);
 
@@ -132,6 +133,82 @@ function OnboardingContent() {
     if (data.resume) setResume({ ...emptyResume, ...data.resume });
   }
 
+  function autoFillFromOCR(ocrResult, purpose, index) {
+    if (!ocrResult || ocrResult.status !== "completed") return;
+    const { category, fields } = ocrResult;
+    if (!fields) return;
+
+    if (purpose === "resume" && category === "resume") {
+      if (fields.full_name || fields.email || fields.phone_number) {
+        setPersonal((prev) => ({
+          ...prev,
+          ...(fields.address ? { address_line1: fields.address } : {}),
+        }));
+      }
+      if (fields.full_name || fields.email) {
+        // Resume summary auto-fill from name + skills
+        const skills = Array.isArray(fields.skills) ? fields.skills.join(", ") : (fields.skills || "");
+        const summary = [
+          fields.full_name ? `Name: ${fields.full_name}` : "",
+          fields.email ? `Email: ${fields.email}` : "",
+          fields.phone_number ? `Phone: ${fields.phone_number}` : "",
+          skills ? `Skills: ${skills}` : "",
+        ].filter(Boolean).join(" | ");
+        if (summary) {
+          setResume((prev) => ({ ...prev, summary: prev.summary || summary }));
+        }
+      }
+    } else if (purpose === "government_doc") {
+      if (category === "cnic") {
+        if (fields.cnic_number) {
+          setGovDocs((prev) => {
+            const next = [...prev];
+            next[index] = {
+              ...next[index],
+              document_number: next[index].document_number && next[index].document_number !== "pending"
+                ? next[index].document_number
+                : fields.cnic_number,
+            };
+            return next;
+          });
+        }
+        if (fields.date_of_birth) {
+          setPersonal((prev) => ({ ...prev, date_of_birth: prev.date_of_birth || fields.date_of_birth }));
+        }
+        if (fields.name) {
+          setPersonal((prev) => ({ ...prev, national_id: prev.national_id || fields.cnic_number || prev.national_id }));
+        }
+      } else if (category === "passport") {
+        if (fields.passport_number) {
+          setGovDocs((prev) => {
+            const next = [...prev];
+            next[index] = {
+              ...next[index],
+              document_number: next[index].document_number && next[index].document_number !== "pending"
+                ? next[index].document_number
+                : fields.passport_number,
+            };
+            return next;
+          });
+        }
+        if (fields.date_of_birth) {
+          setPersonal((prev) => ({ ...prev, date_of_birth: prev.date_of_birth || fields.date_of_birth }));
+        }
+      }
+    } else if (purpose === "education_cert" && category === "certificate") {
+      setEducationEntries((prev) => {
+        const next = [...prev];
+        next[index] = {
+          ...next[index],
+          institution: next[index].institution || fields.institute || "",
+          degree: next[index].degree || fields.degree || "",
+          year_completed: next[index].year_completed || fields.completion_date || "",
+        };
+        return next;
+      });
+    }
+  }
+
   const stepIndex = useMemo(() => steps.findIndex((item) => item.id === step), [step, steps]);
   const submitted = onboarding?.status === "submitted";
 
@@ -169,6 +246,7 @@ function OnboardingContent() {
     if (!accessToken) return;
     setUploading(true);
     setMessage("");
+    setExtractionPreview(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -192,7 +270,6 @@ function OnboardingContent() {
           };
           return next;
         });
-        setMessage("Document uploaded — we're extracting the details automatically (OCR).");
       } else if (purpose === "education_cert") {
         setEducationEntries((current) => {
           const next = [...current];
@@ -200,7 +277,21 @@ function OnboardingContent() {
           return next;
         });
       }
-      if (purpose !== "government_doc") setMessage("File uploaded.");
+
+      // Auto-fill from extraction result
+      if (data.ocr_result) {
+        autoFillFromOCR(data.ocr_result, purpose, index);
+        setExtractionPreview(data.ocr_result);
+        const cat = data.ocr_result.category;
+        const ok = data.ocr_result.status === "completed";
+        setMessage(
+          ok
+            ? `File uploaded. Document recognised as "${cat}" — fields auto-filled below. Review and adjust before saving.`
+            : "File uploaded. Text extraction failed — please fill in the fields manually."
+        );
+      } else {
+        setMessage("File uploaded.");
+      }
     } catch (error) {
       setMessage(getApiErrorMessage(error, "Upload failed."));
     } finally {
@@ -315,6 +406,8 @@ function OnboardingContent() {
             </ol>
 
             {message && <p className="form-message" role="status">{message}</p>}
+
+            {extractionPreview && <ExtractionPreview result={extractionPreview} onDismiss={() => setExtractionPreview(null)} />}
 
             <form className="auth-form" onSubmit={handleNext}>
               {step === "personal" && (
@@ -510,6 +603,130 @@ function ReviewBlock({ title, items }) {
           </div>
         ))}
       </dl>
+    </div>
+  );
+}
+
+// ─── ExtractionPreview ───────────────────────────────────────────────────────
+// Displays extracted text and structured fields immediately after upload.
+// Uses inline styles only so it cannot affect any existing CSS class layout.
+function ExtractionPreview({ result, onDismiss }) {
+  if (!result) return null;
+  const { category, fields, raw_text: rawText, status } = result;
+  const hasFields = fields && Object.keys(fields).some((k) => fields[k] !== null && fields[k] !== undefined && fields[k] !== "");
+
+  return (
+    <div
+      style={{
+        margin: "16px 0",
+        border: "1px solid #bed0dc",
+        borderRadius: 10,
+        background: "#f7fbff",
+        padding: "16px 20px",
+        position: "relative",
+      }}
+    >
+      <button
+        type="button"
+        onClick={onDismiss}
+        style={{
+          position: "absolute",
+          top: 10,
+          right: 12,
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          fontSize: "1.1rem",
+          color: "#5c7086",
+          lineHeight: 1,
+        }}
+        aria-label="Dismiss extraction preview"
+      >
+        ✕
+      </button>
+
+      <p
+        style={{
+          fontWeight: 600,
+          fontSize: ".85rem",
+          color: "#1e40af",
+          textTransform: "uppercase",
+          letterSpacing: ".05em",
+          marginBottom: 10,
+        }}
+      >
+        {status === "completed" ? "✅ Extracted Information" : "⚠️ Extraction Incomplete"}
+        {category && category !== "unknown" && (
+          <span
+            style={{
+              marginLeft: 8,
+              background: "#dbeafe",
+              borderRadius: 4,
+              padding: "2px 7px",
+              fontSize: ".78rem",
+              color: "#1e40af",
+              textTransform: "capitalize",
+            }}
+          >
+            {category}
+          </span>
+        )}
+      </p>
+
+      {hasFields && (
+        <dl
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+            gap: "6px 16px",
+            marginBottom: rawText ? 12 : 0,
+          }}
+        >
+          {Object.entries(fields)
+            .filter(([, v]) => v !== null && v !== undefined && v !== "")
+            .map(([key, value]) => (
+              <div key={key}>
+                <dt style={{ fontSize: ".78rem", color: "#5c7086", textTransform: "capitalize" }}>
+                  {key.replace(/_/g, " ")}
+                </dt>
+                <dd style={{ fontSize: ".88rem", color: "#1a2535", fontWeight: 500, margin: 0 }}>
+                  {Array.isArray(value) ? value.join(", ") : String(value)}
+                </dd>
+              </div>
+            ))}
+        </dl>
+      )}
+
+      {rawText && (
+        <details style={{ marginTop: 8 }}>
+          <summary
+            style={{
+              cursor: "pointer",
+              fontSize: ".82rem",
+              color: "#5c7086",
+              userSelect: "none",
+            }}
+          >
+            Show raw extracted text
+          </summary>
+          <pre
+            style={{
+              marginTop: 8,
+              padding: "10px 12px",
+              background: "#f0f4f8",
+              borderRadius: 6,
+              fontSize: ".78rem",
+              color: "#334155",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              maxHeight: 220,
+              overflowY: "auto",
+            }}
+          >
+            {typeof rawText === "string" ? rawText : JSON.stringify(rawText, null, 2)}
+          </pre>
+        </details>
+      )}
     </div>
   );
 }

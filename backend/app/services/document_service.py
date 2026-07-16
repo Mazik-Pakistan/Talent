@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.rbac import CurrentUser
 from app.core.database import database
 from app.services import embedding_service, ocr_service, storage_service
+from app.services.document_extraction_service import document_extraction_service
 from app.services.dashboard_service import create_notification
 
 MAX_UPLOAD_BYTES = settings.MAX_DOCUMENT_MB * 1024 * 1024
@@ -67,7 +68,7 @@ class DocumentService:
             version = int(previous.get("version", 1)) + 1
             await database.documents.update_one({"_id": previous["_id"]}, {"$set": {"is_active": False}})
 
-        needs_ocr = category in OCR_ELIGIBLE_CATEGORIES and settings.ENABLE_OCR
+        needs_ocr = settings.ENABLE_OCR
 
         doc = {
             "owner_id": current_user.id,
@@ -85,6 +86,7 @@ class DocumentService:
             "is_active": True,
             "status": "processing" if needs_ocr else "pending_verification",
             "ocr_result": None,
+            "raw_extracted_text": None,
             "verification_status": "pending",
             "verified_by": None,
             "verified_at": None,
@@ -97,9 +99,37 @@ class DocumentService:
         doc["_id"] = result.inserted_id
 
         if needs_ocr:
-            ocr_result = await ocr_service.process_document(stored["local_path"], doc_type, category)
+            import asyncio
+            try:
+                def _run_extraction():
+                    return document_extraction_service.extract_text(stored["local_path"])
+                
+                raw_text = await asyncio.to_thread(_run_extraction)
+                parsed = await document_extraction_service.parse_structured_data(raw_text)
+                
+                ocr_result = {
+                    "status": "completed" if raw_text.strip() else "failed",
+                    "confidence": 1.0 if raw_text.strip() else 0.0,
+                    "raw_text": raw_text,
+                    "category": parsed.get("category", "unknown"),
+                    "fields": parsed.get("fields", {}),
+                    "engine": "document_extraction_service"
+                }
+            except Exception as exc:
+                raw_text = ""
+                ocr_result = {
+                    "status": "failed",
+                    "confidence": 0.0,
+                    "raw_text": "",
+                    "category": "unknown",
+                    "fields": {},
+                    "engine": "document_extraction_service",
+                    "error": str(exc),
+                }
+
             update = {
                 "ocr_result": ocr_result,
+                "raw_extracted_text": raw_text,
                 "status": "pending_verification" if ocr_result["status"] == "completed" else "reupload_required"
                 if ocr_result["status"] == "failed"
                 else "pending_verification",
@@ -107,6 +137,13 @@ class DocumentService:
             }
             await database.documents.update_one({"_id": doc["_id"]}, {"$set": update})
             doc.update(update)
+
+            # Generate resume embeddings for Phase 3 prep if enabled
+            if (doc_type == "resume" or ocr_result.get("category") == "resume") and settings.ENABLE_EMBEDDINGS and raw_text:
+                try:
+                    await self.generate_resume_embedding(current_user, raw_text)
+                except Exception:
+                    pass
 
         await self._notify_recruiter_owner(current_user, doc_type, category)
         await database.audit_logs.insert_one(
@@ -273,6 +310,7 @@ class DocumentService:
             "rejection_reason": doc.get("rejection_reason"),
             "rejection_note": doc.get("rejection_note"),
             "ocr_result": doc.get("ocr_result"),
+            "raw_extracted_text": doc.get("raw_extracted_text"),
             "uploaded_at": doc.get("uploaded_at").isoformat() if hasattr(doc.get("uploaded_at"), "isoformat") else doc.get("uploaded_at"),
         }
 
