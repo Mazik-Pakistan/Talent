@@ -19,11 +19,20 @@ from app.services import embedding_service, ocr_service, storage_service
 from app.services.document_extraction_service import document_extraction_service
 from app.services.document_matching_service import compare_extractions
 from app.services.dashboard_service import create_notification
+from app.services.email_service import email_service
 
 MAX_UPLOAD_BYTES = settings.MAX_DOCUMENT_MB * 1024 * 1024
 
 STRICT_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
 RESUME_EXTENSIONS = STRICT_EXTENSIONS | {".doc", ".docx"}
+
+DOCUMENT_LABELS = {
+    "cnic": "National ID (CNIC/NIC)",
+    "passport": "Passport",
+    "transcript": "Academic Transcript",
+    "degree": "Academic Transcript",
+    "resume": "Resume/CV",
+}
 
 
 def _extensions_for(category: str, doc_type: str) -> set[str]:
@@ -84,6 +93,13 @@ class DocumentService:
         version = 1
         if previous:
             version = int(previous.get("version", 1)) + 1
+        requested_reupload = bool(
+            previous
+            and (
+                previous.get("status") == "reupload_required"
+                or previous.get("reupload_request_status") == "pending"
+            )
+        )
 
         needs_ocr = settings.ENABLE_OCR
         expected = document_extraction_service.resolve_expected_categories(
@@ -105,6 +121,7 @@ class DocumentService:
             "document_hash": document_hash,
             "version": version,
             "previous_version_id": str(previous["_id"]) if previous else None,
+            "reupload_request_id": str(previous["_id"]) if requested_reupload else None,
             "is_active": True,
             "status": "processing" if needs_ocr else "pending_verification",
             "ocr_result": None,
@@ -249,9 +266,21 @@ class DocumentService:
             # A failed/wrong replacement must not hide the last valid document.
             if ocr_result.get("status") == "completed":
                 if previous:
+                    previous_update = {
+                        "is_active": False,
+                        "updated_at": datetime.now(UTC),
+                    }
+                    if requested_reupload:
+                        previous_update.update(
+                            {
+                                "reupload_request_status": "fulfilled",
+                                "reupload_fulfilled_at": datetime.now(UTC),
+                                "reupload_replacement_id": str(doc["_id"]),
+                            }
+                        )
                     await database.documents.update_one(
                         {"_id": previous["_id"]},
-                        {"$set": {"is_active": False, "updated_at": datetime.now(UTC)}},
+                        {"$set": previous_update},
                     )
             else:
                 await database.documents.update_one(
@@ -311,12 +340,28 @@ class DocumentService:
                 await database.documents.update_one({"_id": doc["_id"]}, {"$set": update_match})
                 doc.update(update_match)
         elif previous:
+            previous_update = {"is_active": False, "updated_at": datetime.now(UTC)}
+            if requested_reupload:
+                previous_update.update(
+                    {
+                        "reupload_request_status": "fulfilled",
+                        "reupload_fulfilled_at": datetime.now(UTC),
+                        "reupload_replacement_id": str(doc["_id"]),
+                    }
+                )
             await database.documents.update_one(
                 {"_id": previous["_id"]},
-                {"$set": {"is_active": False, "updated_at": datetime.now(UTC)}},
+                {"$set": previous_update},
             )
 
-        await self._notify_recruiter_owner(current_user, doc_type, category)
+        await self._notify_recruiter_owner(
+            current_user,
+            doc_type,
+            category,
+            requested_reupload=requested_reupload
+            and (not needs_ocr or (doc.get("ocr_result") or {}).get("status") == "completed"),
+            document_id=str(doc["_id"]),
+        )
         await database.audit_logs.insert_one(
             {
                 "user_id": current_user.id,
@@ -375,7 +420,15 @@ class DocumentService:
             await database.documents.update_one({"_id": doc["_id"]}, {"$set": update})
         return result
 
-    async def _notify_recruiter_owner(self, current_user: CurrentUser, doc_type: str, category: str) -> None:
+    async def _notify_recruiter_owner(
+        self,
+        current_user: CurrentUser,
+        doc_type: str,
+        category: str,
+        *,
+        requested_reupload: bool = False,
+        document_id: str | None = None,
+    ) -> None:
         owner = await database.candidates.find_one(
             {"$or": [{"user_id": current_user.id}, {"email": current_user.email}]}
         ) or await database.employees.find_one(
@@ -387,11 +440,16 @@ class DocumentService:
         await create_notification(
             recipient_id=recruiter_id,
             recipient_role="recruiter",
-            notif_type="document_uploaded",
-            title="Document uploaded",
-            message=f"{current_user.full_name} uploaded a {doc_type.replace('_', ' ')} document for review.",
+            notif_type="document_reuploaded" if requested_reupload else "document_uploaded",
+            title="Requested document re-uploaded" if requested_reupload else "Document uploaded",
+            message=(
+                f"{current_user.full_name} uploaded a replacement "
+                f"{DOCUMENT_LABELS.get(doc_type, doc_type.replace('_', ' '))} for review."
+                if requested_reupload
+                else f"{current_user.full_name} uploaded a {doc_type.replace('_', ' ')} document for review."
+            ),
             link="/dashboard/recruiter#documents-section",
-            related_id=current_user.id,
+            related_id=document_id or current_user.id,
         )
 
     async def list_mine(self, current_user: CurrentUser) -> dict:
@@ -465,6 +523,16 @@ class DocumentService:
             "rejection_note": payload.note,
             "updated_at": now,
         }
+        if payload.status == "reupload_required":
+            update.update(
+                {
+                    "reupload_request_status": "pending",
+                    "reupload_requested_by": current_user.id,
+                    "reupload_requested_at": now,
+                    "reupload_request_reason": payload.rejection_reason,
+                    "reupload_request_note": payload.note,
+                }
+            )
         if approve_despite or payload.status == "verified":
             update["mismatch_approved"] = True
             update["mismatch_approved_by"] = current_user.id
@@ -519,19 +587,89 @@ class DocumentService:
                 },
             )
 
+        document_label = DOCUMENT_LABELS.get(doc["doc_type"], doc["doc_type"].replace("_", " ").title())
+        candidate_link = (
+            f"/dashboard/candidate#document-{doc['_id']}"
+            if doc["owner_role"] == "candidate"
+            else f"/dashboard/employee#document-{doc['_id']}"
+        )
+        if payload.status == "reupload_required":
+            reason_label = (payload.rejection_reason or "other").replace("_", " ")
+            notification_title = f"Re-upload required: {document_label}"
+            notification_message = f"Your recruiter requested a new {document_label}. Reason: {reason_label}."
+            if payload.note:
+                notification_message += f" Note: {payload.note}"
+            notification_type = "document_reupload_required"
+        else:
+            notification_title = f"Document {update['status'].replace('_', ' ')}"
+            notification_message = (
+                f"Your {document_label} was marked {update['status'].replace('_', ' ')}."
+            )
+            notification_type = f"document_{update['status']}"
+
         await create_notification(
             recipient_id=doc["owner_id"],
             recipient_role=doc["owner_role"],
-            notif_type=f"document_{update['status']}",
-            title=f"Document {update['status'].replace('_', ' ')}",
-            message=f"Your {doc['doc_type'].replace('_', ' ')} document was marked {update['status'].replace('_', ' ')}.",
-            link="/dashboard/candidate#documents-section"
-            if doc["owner_role"] == "candidate"
-            else "/dashboard/employee#documents-section",
+            notif_type=notification_type,
+            title=notification_title,
+            message=notification_message,
+            link=candidate_link,
             related_id=str(doc["_id"]),
         )
+
+        email_sent = None
+        email_error = None
+        if payload.status == "reupload_required" and doc.get("owner_email"):
+            import asyncio
+
+            dashboard_link = f"{settings.FRONTEND_URL.rstrip('/')}{candidate_link}"
+            try:
+                await asyncio.to_thread(
+                    email_service.send_document_reupload_request,
+                    doc["owner_email"],
+                    doc.get("owner_name") or "Candidate",
+                    document_label,
+                    (payload.rejection_reason or "other").replace("_", " "),
+                    payload.note,
+                    dashboard_link,
+                )
+                email_sent = True
+            except Exception as exc:
+                # The in-app request is authoritative; SMTP failure must not undo it.
+                email_sent = False
+                email_error = str(exc)
+
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "actor_email": current_user.email,
+                "module": "documents",
+                "action": (
+                    "document_reupload_requested"
+                    if payload.status == "reupload_required"
+                    else f"document_{update['status']}"
+                ),
+                "document_id": str(doc["_id"]),
+                "owner_id": doc["owner_id"],
+                "doc_type": doc["doc_type"],
+                "reason": payload.rejection_reason,
+                "note": payload.note,
+                "email_sent": email_sent,
+                "email_error": email_error,
+                "outcome": "success",
+                "created_at": now,
+            }
+        )
         doc.update(update)
-        return {"message": "Document verification updated.", "document": self._public(doc)}
+        return {
+            "message": (
+                "Re-upload request sent to the candidate."
+                if payload.status == "reupload_required"
+                else "Document verification updated."
+            ),
+            "email_sent": email_sent,
+            "document": self._public(doc),
+        }
 
     async def reextract(self, current_user: CurrentUser, document_id: str) -> dict:
         """Re-run extraction on the stored file while retaining the original audit copy."""
@@ -831,6 +969,14 @@ class DocumentService:
             else doc.get("verified_at"),
             "rejection_reason": doc.get("rejection_reason"),
             "rejection_note": doc.get("rejection_note"),
+            "reupload_request_status": doc.get("reupload_request_status"),
+            "reupload_requested_by": doc.get("reupload_requested_by"),
+            "reupload_requested_at": doc.get("reupload_requested_at").isoformat()
+            if hasattr(doc.get("reupload_requested_at"), "isoformat")
+            else doc.get("reupload_requested_at"),
+            "reupload_request_reason": doc.get("reupload_request_reason"),
+            "reupload_request_note": doc.get("reupload_request_note"),
+            "reupload_request_id": doc.get("reupload_request_id"),
             "mismatch_reasons": doc.get("mismatch_reasons") or [],
             "mismatch_approved": doc.get("mismatch_approved"),
             "profile_verification": doc.get("profile_verification"),

@@ -14,7 +14,7 @@ import StatusBadge from "@/components/StatusBadge";
 const DOC_TYPE_LABELS = {
   cnic: "National ID (CNIC)",
   passport: "Passport",
-  degree: "Degree certificate",
+  degree: "Academic Transcript",
   transcript: "Academic Transcript",
   certificate: "Certificate",
   resume: "Resume / CV",
@@ -77,9 +77,18 @@ export default function DocumentStatusList({ refreshKey, onChanged }) {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDocuments();
   }, [loadDocuments, refreshKey]);
+
+  useEffect(() => {
+    const targetId = window.location.hash.replace("#document-", "");
+    if (!targetId || !documents.some((doc) => doc.id === targetId)) return;
+    // Open the requested replacement control after a notification deep-link.
+    setEditingId(targetId);
+    window.setTimeout(() => {
+      document.getElementById(`document-${targetId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+  }, [documents]);
 
   function toggleEdit(docId) {
     setEditingId((current) => (current === docId ? null : docId));
@@ -183,6 +192,8 @@ export default function DocumentStatusList({ refreshKey, onChanged }) {
       )}
       <div className="doc-grid">
         {documents.map((doc) => {
+          const isRequestedReupload =
+            doc.status === "reupload_required" && doc.reupload_request_status === "pending";
           const isRejected =
             doc.status === "rejected" ||
             doc.status === "reupload_required" ||
@@ -191,7 +202,11 @@ export default function DocumentStatusList({ refreshKey, onChanged }) {
           const uploadMessage = uploadMessageByDoc[doc.id];
 
           return (
-            <div key={doc.id} className="doc-card">
+            <div
+              key={doc.id}
+              id={`document-${doc.id}`}
+              className={`doc-card ${isRequestedReupload ? "candidate-reupload-card" : ""}`}
+            >
               <div className="doc-card-head">
                 <h4>{DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type}</h4>
                 <StatusBadge status={doc.status} />
@@ -222,38 +237,58 @@ export default function DocumentStatusList({ refreshKey, onChanged }) {
                 </p>
               )}
 
-              {isRejected && doc.rejection_reason && (
-                <p className="doc-card-meta" style={{ color: "#b42318" }}>
-                  Rejected: {doc.rejection_reason.replace(/_/g, " ")}
-                  {doc.rejection_note ? ` — ${doc.rejection_note}` : ""}. Please re-upload a corrected file.
-                </p>
+              {isRequestedReupload ? (
+                <div className="candidate-reupload-warning" role="alert">
+                  <strong>Your recruiter requested a replacement.</strong>
+                  <span>
+                    Reason: {(doc.reupload_request_reason || doc.rejection_reason || "other").replace(/_/g, " ")}
+                  </span>
+                  {(doc.reupload_request_note || doc.rejection_note) && (
+                    <span>Note: {doc.reupload_request_note || doc.rejection_note}</span>
+                  )}
+                  <span>Upload another {DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type}; other document types will be rejected.</span>
+                </div>
+              ) : (
+                isRejected && doc.rejection_reason && (
+                  <p className="doc-card-meta" style={{ color: "#b42318" }}>
+                    Rejected: {doc.rejection_reason.replace(/_/g, " ")}
+                    {doc.rejection_note ? ` — ${doc.rejection_note}` : ""}. Please re-upload a corrected file.
+                  </p>
+                )
               )}
 
               <div className="doc-actions" style={{ marginTop: 8 }}>
-                <button
-                  type="button"
-                  disabled={busyId === doc.id || uploadingId === doc.id}
-                  onClick={() => handleReextract(doc.id)}
-                >
-                  {busyId === doc.id ? "Processing…" : "Re-extract"}
-                </button>
-                <button
-                  type="button"
-                  className="reject"
-                  disabled={busyId === doc.id || uploadingId === doc.id}
-                  onClick={() => handleDelete(doc.id)}
-                >
-                  Delete
-                </button>
+                {!isRequestedReupload && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busyId === doc.id || uploadingId === doc.id}
+                      onClick={() => handleReextract(doc.id)}
+                    >
+                      {busyId === doc.id ? "Processing…" : "Re-extract"}
+                    </button>
+                    <button
+                      type="button"
+                      className="reject"
+                      disabled={busyId === doc.id || uploadingId === doc.id}
+                      onClick={() => handleDelete(doc.id)}
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
                 {isRejected && !isEditing && (
-                  <button type="button" onClick={() => toggleEdit(doc.id)}>
-                    Edit / Re-upload
+                  <button type="button" className={isRequestedReupload ? "request" : ""} onClick={() => toggleEdit(doc.id)}>
+                    {isRequestedReupload ? "Upload replacement" : "Edit / Re-upload"}
                   </button>
                 )}
               </div>
 
               {isRejected && isEditing && (
                 <div className="doc-uploader">
+                  <strong>
+                    Replacement {DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type}
+                  </strong>
                   <input
                     ref={(el) => {
                       fileInputRefs.current[doc.id] = el;
@@ -280,7 +315,7 @@ export default function DocumentStatusList({ refreshKey, onChanged }) {
                       disabled={uploadingId === doc.id}
                       onClick={() => handleReupload(doc)}
                     >
-                      {uploadingId === doc.id ? "Uploading…" : "Submit"}
+                      {uploadingId === doc.id ? "Validating and extracting…" : "Submit replacement"}
                     </button>
                   </div>
                 </div>

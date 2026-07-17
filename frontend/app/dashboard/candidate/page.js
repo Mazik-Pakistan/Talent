@@ -8,8 +8,10 @@ import {
   clearLocalSession,
   getApiErrorMessage,
   getCandidateDashboard,
+  getNotifications,
   getMyOffer,
   logout,
+  markNotificationsRead,
 } from "@/services/authService";
 import DocumentStatusList from "@/components/DocumentStatusList";
 import styles from "./candidate-dashboard.module.css";
@@ -91,6 +93,8 @@ function CandidateDashboardContent() {
   const [user, setUser] = useState(null);
   const [dashboard, setDashboard] = useState(null);
   const [offer, setOffer] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -100,6 +104,7 @@ function CandidateDashboardContent() {
   const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUser(JSON.parse(localStorage.getItem("user")));
   }, []);
 
@@ -107,12 +112,15 @@ function CandidateDashboardContent() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const [data, offerData] = await Promise.all([
+      const [data, offerData, notificationData] = await Promise.all([
         getCandidateDashboard(accessToken),
         getMyOffer(accessToken).catch(() => null),
+        getNotifications(accessToken).catch(() => ({ notifications: [], unread_count: 0 })),
       ]);
       setDashboard(data);
       setOffer(offerData?.offer || null);
+      setNotifications(notificationData?.notifications || []);
+      setUnreadNotifications(notificationData?.unread_count || 0);
       setLoadError("");
     } catch (error) {
       setLoadError(getApiErrorMessage(error, "Could not load your dashboard."));
@@ -122,6 +130,7 @@ function CandidateDashboardContent() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDashboard();
     const interval = setInterval(loadDashboard, DASHBOARD_REFRESH_MS);
     return () => clearInterval(interval);
@@ -134,10 +143,31 @@ function CandidateDashboardContent() {
     router.replace("/login");
   }
 
+  async function handleNotification(notification) {
+    const accessToken = localStorage.getItem("access_token");
+    if (accessToken && !notification.read) {
+      try {
+        await markNotificationsRead({ ids: [notification.id], all: false }, accessToken);
+        setNotifications((current) =>
+          current.map((item) => (item.id === notification.id ? { ...item, read: true } : item))
+        );
+        setUnreadNotifications((current) => Math.max(0, current - 1));
+      } catch {
+        // Navigation remains available if read-state persistence is temporarily unavailable.
+      }
+    }
+    setNotifOpen(false);
+    if (notification.link) router.push(notification.link);
+  }
+
   const profile = dashboard?.profile;
   const progress = dashboard?.progress;
   const tasks = useMemo(() => dashboard?.tasks || [], [dashboard]);
   const announcements = useMemo(() => dashboard?.announcements || [], [dashboard]);
+  const pendingReuploadNotifications = useMemo(
+    () => notifications.filter((notification) => notification.type === "document_reupload_required" && !notification.read),
+    [notifications]
+  );
   const pct = progress?.percentage ?? 0;
   const completedCount = tasks.filter((t) => t.completed).length;
 
@@ -283,14 +313,31 @@ function CandidateDashboardContent() {
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" />
                   </svg>
-                  {announcements.length > 0 && <span className={styles.dot} />}
+                  {(unreadNotifications > 0 || announcements.length > 0) && <span className={styles.dot} />}
                 </div>
                 {notifOpen && (
                   <div className={styles.notifPanel}>
-                    <strong>Notifications</strong>
-                    {announcements.length
-                      ? `You have ${announcements.length} announcement(s) from the recruiting team — see the Announcements panel below.`
-                      : "In-app notifications for candidate accounts are landing in a later phase — you'll see onboarding updates here once that ships."}
+                    <div className={styles.notifHeading}>
+                      <strong>Notifications</strong>
+                      {unreadNotifications > 0 && <span>{unreadNotifications} unread</span>}
+                    </div>
+                    <div className={styles.notifList}>
+                      {notifications.length ? (
+                        notifications.slice(0, 8).map((notification) => (
+                          <button
+                            key={notification.id}
+                            type="button"
+                            className={`${styles.notifItem} ${!notification.read ? styles.unread : ""}`}
+                            onClick={() => handleNotification(notification)}
+                          >
+                            <strong>{notification.title}</strong>
+                            <span>{notification.message}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <span>No notifications yet.</span>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -311,6 +358,21 @@ function CandidateDashboardContent() {
 
           <div className={styles.content}>
             {loadError && <div className={styles.loadError} role="alert">{loadError}</div>}
+
+            {pendingReuploadNotifications.map((notification) => (
+              <button
+                key={notification.id}
+                type="button"
+                className={styles.documentActionBanner}
+                onClick={() => handleNotification(notification)}
+              >
+                <span>
+                  <strong>{notification.title}</strong>
+                  {notification.message}
+                </span>
+                <b>Upload replacement →</b>
+              </button>
+            ))}
 
             {/* Hero */}
             <div className={styles.hero}>
