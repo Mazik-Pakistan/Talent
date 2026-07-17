@@ -271,13 +271,8 @@ class DocumentExtractionService:
                 ),
             }
 
-        # Map legacy "certificate" → transcript only when transcript was expected
-        # and content looks academic (handled in heuristics already as academic_transcript).
-        normalized = category
-        if category == "certificate" and "academic_transcript" in expected:
-            normalized = "academic_transcript"
-
-        if normalized not in expected:
+        # A degree certificate is not an academic transcript.
+        if category not in expected:
             return {
                 "accepted": False,
                 "category": category,
@@ -289,7 +284,7 @@ class DocumentExtractionService:
 
         return {
             "accepted": True,
-            "category": normalized,
+            "category": category,
             "classification_confidence": classification_confidence,
             "rejection_message": None,
         }

@@ -476,6 +476,20 @@ export async function verifyDocument(documentId, payload, accessToken) {
   return data;
 }
 
+export async function reextractDocument(documentId, accessToken) {
+  const { data } = await apiClient.post(`/api/documents/${documentId}/reextract`, null, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function deleteDocument(documentId, accessToken) {
+  const { data } = await apiClient.delete(`/api/documents/${documentId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
 export async function getDocumentDownloadUrl(documentId, accessToken) {
   const { data } = await apiClient.get(`/api/documents/${documentId}/download`, {
     headers: { Authorization: `Bearer ${accessToken}` },

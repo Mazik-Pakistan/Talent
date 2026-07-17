@@ -25,6 +25,20 @@ def _display(value: Any) -> str | None:
     return text or None
 
 
+def _norm_date(value: Any) -> str:
+    text = _display(value)
+    if not text:
+        return ""
+    parts = re.findall(r"\d+", text)
+    if len(parts) != 3:
+        return _norm(text)
+    if len(parts[0]) == 4:
+        year, month, day = parts
+    else:
+        day, month, year = parts
+    return f"{year.zfill(4)}{month.zfill(2)}{day.zfill(2)}"
+
+
 def _name_from_fields(fields: dict) -> str | None:
     if not fields:
         return None
@@ -145,7 +159,7 @@ def compare_extractions(docs: list[dict]) -> dict:
     if identity and resume:
         dob_a = _dob_from_fields(identity["fields"])
         dob_b = _dob_from_fields(resume["fields"])
-        if dob_a and dob_b and _norm(dob_a) != _norm(dob_b):
+        if dob_a and dob_b and _norm_date(dob_a) != _norm_date(dob_b):
             mismatches.append(
                 {
                     "field": "date_of_birth",

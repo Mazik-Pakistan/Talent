@@ -61,6 +61,20 @@ class DocumentService:
             )
 
         document_hash = hashlib.sha256(content).hexdigest()
+        duplicate = await database.documents.find_one(
+            {
+                "owner_id": current_user.id,
+                "doc_type": doc_type,
+                "document_hash": document_hash,
+                "is_active": True,
+            }
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This exact document is already uploaded.",
+            )
+
         stored = await storage_service.save_file(current_user.id, category, original, content)
         now = datetime.now(UTC)
 
@@ -70,7 +84,6 @@ class DocumentService:
         version = 1
         if previous:
             version = int(previous.get("version", 1)) + 1
-            await database.documents.update_one({"_id": previous["_id"]}, {"$set": {"is_active": False}})
 
         needs_ocr = settings.ENABLE_OCR
         expected = document_extraction_service.resolve_expected_categories(
@@ -170,6 +183,7 @@ class DocumentService:
                     mismatch_reasons = []
                 else:
                     fields = parsed.get("fields") or {}
+                    low_quality = extraction_confidence < 0.2
                     ocr_result = {
                         "status": "completed",
                         "confidence": extraction_confidence or classification_confidence or 0.8,
@@ -182,6 +196,13 @@ class DocumentService:
                         "engine": "document_extraction_service",
                         "accepted": True,
                         "rejection_message": None,
+                        "low_quality": low_quality,
+                        "quality_warning": (
+                            "Only a small amount of reliable information was extracted. "
+                            "Please review every auto-filled value."
+                            if low_quality
+                            else None
+                        ),
                     }
                     doc_status = "pending_verification"
                     verification_status = "pending"
@@ -224,6 +245,20 @@ class DocumentService:
             }
             await database.documents.update_one({"_id": doc["_id"]}, {"$set": update})
             doc.update(update)
+
+            # A failed/wrong replacement must not hide the last valid document.
+            if ocr_result.get("status") == "completed":
+                if previous:
+                    await database.documents.update_one(
+                        {"_id": previous["_id"]},
+                        {"$set": {"is_active": False, "updated_at": datetime.now(UTC)}},
+                    )
+            else:
+                await database.documents.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"is_active": False, "updated_at": datetime.now(UTC)}},
+                )
+                doc["is_active"] = False
 
             await database.audit_logs.insert_one(
                 {
@@ -275,6 +310,11 @@ class DocumentService:
                     update_match["status"] = "mismatch"
                 await database.documents.update_one({"_id": doc["_id"]}, {"$set": update_match})
                 doc.update(update_match)
+        elif previous:
+            await database.documents.update_one(
+                {"_id": previous["_id"]},
+                {"$set": {"is_active": False, "updated_at": datetime.now(UTC)}},
+            )
 
         await self._notify_recruiter_owner(current_user, doc_type, category)
         await database.audit_logs.insert_one(
@@ -317,20 +357,22 @@ class DocumentService:
             },
         )
 
-        # Mark all active docs with shared mismatch summary when mismatches exist
-        if result.get("verification_status") == "mismatch":
-            await database.documents.update_many(
-                {"owner_id": owner_id, "is_active": True, "ocr_result.status": "completed"},
-                {
-                    "$set": {
-                        "profile_verification": result,
-                        "mismatch_reasons": result.get("mismatches") or [],
-                        "verification_status": "mismatch",
-                        "status": "mismatch",
-                        "updated_at": datetime.now(UTC),
-                    }
-                },
-            )
+        # Keep every active document synchronized, including clearing stale flags.
+        completed_docs = await database.documents.find(
+            {"owner_id": owner_id, "is_active": True, "ocr_result.status": "completed"}
+        ).to_list(length=50)
+        for doc in completed_docs:
+            is_verified = doc.get("verification_status") == "verified"
+            has_mismatch = result.get("verification_status") == "mismatch"
+            update = {
+                "profile_verification": result,
+                "mismatch_reasons": result.get("mismatches") or [],
+                "updated_at": datetime.now(UTC),
+            }
+            if not is_verified:
+                update["verification_status"] = "mismatch" if has_mismatch else "pending"
+                update["status"] = "mismatch" if has_mismatch else "pending_verification"
+            await database.documents.update_one({"_id": doc["_id"]}, {"$set": update})
         return result
 
     async def _notify_recruiter_owner(self, current_user: CurrentUser, doc_type: str, category: str) -> None:
@@ -433,6 +475,25 @@ class DocumentService:
 
         # If recruiter approves despite mismatch, clear profile-level mismatch flag
         if approve_despite or payload.status == "verified":
+            if approve_despite:
+                await database.documents.update_many(
+                    {
+                        "owner_id": doc["owner_id"],
+                        "is_active": True,
+                        "ocr_result.status": "completed",
+                    },
+                    {
+                        "$set": {
+                            "status": "verified",
+                            "verification_status": "verified",
+                            "mismatch_approved": True,
+                            "mismatch_approved_by": current_user.id,
+                            "mismatch_approved_at": now,
+                            "mismatch_approval_note": payload.note,
+                            "updated_at": now,
+                        }
+                    },
+                )
             await database.candidates.update_one(
                 {"$or": [{"user_id": doc["owner_id"]}, {"email": doc.get("owner_email")}]},
                 {
@@ -471,6 +532,223 @@ class DocumentService:
         )
         doc.update(update)
         return {"message": "Document verification updated.", "document": self._public(doc)}
+
+    async def reextract(self, current_user: CurrentUser, document_id: str) -> dict:
+        """Re-run extraction on the stored file while retaining the original audit copy."""
+        doc = await self._find(document_id)
+        self._assert_document_access(current_user, doc)
+        if doc.get("deleted_at"):
+            raise HTTPException(status_code=404, detail="Document has been deleted.")
+
+        try:
+            local_path = await storage_service.materialize_local_file(doc)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        import asyncio
+
+        raw_text = await asyncio.to_thread(document_extraction_service.extract_text, local_path)
+        parsed = await document_extraction_service.parse_structured_data(raw_text)
+        expected = document_extraction_service.resolve_expected_categories(
+            purpose=doc.get("purpose"),
+            doc_type=doc.get("doc_type"),
+            category=doc.get("category"),
+        )
+        validation = document_extraction_service.validate_classification(
+            parsed,
+            expected,
+            purpose=doc.get("purpose"),
+            doc_type=doc.get("doc_type"),
+        )
+
+        extraction_confidence = float(parsed.get("extraction_confidence") or 0.0)
+        classification_confidence = float(
+            validation.get("classification_confidence")
+            or parsed.get("classification_confidence")
+            or 0.0
+        )
+        accepted = bool(raw_text.strip()) and validation["accepted"]
+        low_quality = accepted and extraction_confidence < 0.2
+
+        if not raw_text.strip():
+            extraction_status = "failed"
+            rejection_message = "Could not read text from this document. Please upload a clearer scan."
+        elif not validation["accepted"]:
+            extraction_status = "rejected_type"
+            rejection_message = validation["rejection_message"]
+        else:
+            extraction_status = "completed"
+            rejection_message = None
+
+        ocr_result = {
+            "status": extraction_status,
+            "confidence": extraction_confidence or classification_confidence,
+            "extraction_confidence": extraction_confidence,
+            "classification_confidence": classification_confidence,
+            "matching_confidence": None,
+            "raw_text": raw_text,
+            "category": validation["category"],
+            "fields": parsed.get("fields") or {} if accepted else {},
+            "engine": "document_extraction_service",
+            "accepted": accepted,
+            "rejection_message": rejection_message,
+            "low_quality": low_quality,
+            "quality_warning": (
+                "Only a small amount of reliable information was extracted. "
+                "Please review every auto-filled value."
+                if low_quality
+                else None
+            ),
+        }
+        now = datetime.now(UTC)
+        previous_snapshot = {
+            "ocr_result": doc.get("ocr_result"),
+            "extraction_timestamp": (
+                doc.get("extraction_timestamp").isoformat()
+                if hasattr(doc.get("extraction_timestamp"), "isoformat")
+                else doc.get("extraction_timestamp")
+            ),
+            "reextracted_at": now.isoformat(),
+        }
+        update = {
+            "ocr_result": ocr_result,
+            "raw_extracted_text": raw_text,
+            "extraction_timestamp": now,
+            "status": "pending_verification" if accepted else "reupload_required",
+            "verification_status": "pending" if accepted else "rejected",
+            "verified_by": None,
+            "verified_at": None,
+            "updated_at": now,
+        }
+        await database.documents.update_one(
+            {"_id": doc["_id"]},
+            {"$set": update, "$push": {"extraction_history": previous_snapshot}},
+        )
+        doc.update(update)
+
+        if accepted and doc.get("is_active"):
+            profile_verification = await self._run_cross_document_match(doc["owner_id"])
+            ocr_result["matching_confidence"] = profile_verification.get("matching_confidence")
+            doc["profile_verification"] = profile_verification
+            doc["mismatch_reasons"] = profile_verification.get("mismatches") or []
+            await database.documents.update_one(
+                {"_id": doc["_id"]},
+                {
+                    "$set": {
+                        "ocr_result": ocr_result,
+                        "profile_verification": profile_verification,
+                        "mismatch_reasons": doc["mismatch_reasons"],
+                    }
+                },
+            )
+
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "actor_email": current_user.email,
+                "module": "documents",
+                "action": "document_reextracted",
+                "document_id": str(doc["_id"]),
+                "outcome": "success" if accepted else "failed",
+                "created_at": now,
+            }
+        )
+        return {"message": "Document extraction completed.", "document": self._public(doc)}
+
+    async def delete(self, current_user: CurrentUser, document_id: str) -> dict:
+        """Soft-delete metadata, remove stored bytes, and rerun consistency checks."""
+        doc = await self._find(document_id)
+        if current_user.role != "super_admin" and doc.get("owner_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this document.")
+        if doc.get("deleted_at"):
+            return {"message": "Document already deleted."}
+
+        now = datetime.now(UTC)
+        await database.documents.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$set": {
+                    "is_active": False,
+                    "status": "deleted",
+                    "deleted_at": now,
+                    "deleted_by": current_user.id,
+                    "updated_at": now,
+                }
+            },
+        )
+        await storage_service.delete_file(doc)
+        await self._clear_profile_document_reference(doc)
+
+        profile_verification = await self._run_cross_document_match(doc["owner_id"])
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "actor_email": current_user.email,
+                "module": "documents",
+                "action": "document_deleted",
+                "document_id": str(doc["_id"]),
+                "outcome": "success",
+                "created_at": now,
+            }
+        )
+        return {
+            "message": "Document deleted.",
+            "document_verification": profile_verification,
+        }
+
+    async def _clear_profile_document_reference(self, doc: dict) -> None:
+        for collection in (database.candidates, database.employees):
+            owner = await collection.find_one(
+                {
+                    "$or": [
+                        {"user_id": doc["owner_id"]},
+                        {"email": doc.get("owner_email")},
+                    ]
+                }
+            )
+            if not owner:
+                continue
+            onboarding = dict(owner.get("onboarding") or {})
+            changed = False
+            file_url = doc.get("file_url")
+            if doc.get("doc_type") == "resume":
+                resume = dict(onboarding.get("resume") or {})
+                if not file_url or resume.get("file_url") == file_url:
+                    resume.update({"file_name": None, "file_url": None})
+                    onboarding["resume"] = resume
+                    changed = True
+            elif doc.get("doc_type") in ("cnic", "passport"):
+                government = dict(onboarding.get("government_docs") or {})
+                documents = list(government.get("documents") or [])
+                filtered = [
+                    item
+                    for item in documents
+                    if item.get("file_url") != file_url
+                ]
+                if len(filtered) != len(documents):
+                    government["documents"] = filtered
+                    onboarding["government_docs"] = government
+                    changed = True
+            elif doc.get("doc_type") == "transcript":
+                education = dict(onboarding.get("education") or {})
+                entries = list(education.get("entries") or [])
+                for entry in entries:
+                    if entry.get("certificate_file") == file_url:
+                        entry["certificate_file"] = None
+                        changed = True
+                if changed:
+                    education["entries"] = entries
+                    onboarding["education"] = education
+            if changed:
+                await collection.update_one(
+                    {"_id": owner["_id"]},
+                    {"$set": {"onboarding": onboarding, "updated_at": datetime.now(UTC)}},
+                )
+
+    @staticmethod
+    def _assert_document_access(current_user: CurrentUser, doc: dict) -> None:
+        if current_user.role not in ("recruiter", "super_admin") and doc.get("owner_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this document.")
 
     async def get_signed_url(self, current_user: CurrentUser, document_id: str, request) -> dict:
         doc = await self._find(document_id)
@@ -542,6 +820,7 @@ class DocumentService:
             "doc_type": doc.get("doc_type"),
             "purpose": doc.get("purpose"),
             "file_name": doc.get("file_name"),
+            "file_url": doc.get("file_url"),
             "status": doc.get("status"),
             "version": doc.get("version"),
             "document_hash": doc.get("document_hash"),

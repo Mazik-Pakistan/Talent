@@ -278,6 +278,16 @@ function OnboardingContent() {
     return value || "";
   }
 
+  function normalizeDateForInput(value) {
+    if (!value) return "";
+    const text = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const match = text.match(/^(\d{1,2})[\/\-. ](\d{1,2})[\/\-. ](\d{4})$/);
+    if (!match) return "";
+    const [, day, month, year] = match;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
   function autoFillFromOCR(ocrResult, purpose, index) {
     if (!ocrResult || ocrResult.status !== "completed" || ocrResult.accepted === false) return;
     const { category, fields } = ocrResult;
@@ -306,8 +316,9 @@ function OnboardingContent() {
           next.last_name = last;
           filled.push("last_name");
         }
-        if (fields.date_of_birth && !prev.date_of_birth) {
-          next.date_of_birth = fields.date_of_birth;
+        const dateOfBirth = normalizeDateForInput(fields.date_of_birth);
+        if (dateOfBirth && !prev.date_of_birth) {
+          next.date_of_birth = dateOfBirth;
           filled.push("date_of_birth");
         }
         const gender = normalizeGender(fields.gender);
@@ -383,8 +394,9 @@ function OnboardingContent() {
           next.current_address = fields.address;
           filled.push("current_address");
         }
-        if (fields.date_of_birth && !prev.date_of_birth) {
-          next.date_of_birth = fields.date_of_birth;
+        const dateOfBirth = normalizeDateForInput(fields.date_of_birth);
+        if (dateOfBirth && !prev.date_of_birth) {
+          next.date_of_birth = dateOfBirth;
           filled.push("date_of_birth");
         }
         return next;
@@ -513,6 +525,23 @@ function OnboardingContent() {
   async function handleFileUpload(event, purpose, index = 0) {
     const file = event.target.files?.[0];
     if (!file) return;
+    const existingUrl =
+      purpose === "resume"
+        ? resume.file_url
+        : purpose === "government_doc"
+          ? govDocs[index]?.file_url
+          : purpose === "education_cert"
+            ? educationEntries[index]?.certificate_file
+            : null;
+    if (
+      existingUrl &&
+      !window.confirm(
+        "This will replace the current document. Extracted differences will be reviewed, and existing profile values will only fill when fields are empty. Continue?"
+      )
+    ) {
+      event.target.value = "";
+      return;
+    }
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setUploading(true);
@@ -796,6 +825,12 @@ function OnboardingContent() {
 
             {extractionPreview && <ExtractionPreview result={extractionPreview} onDismiss={() => setExtractionPreview(null)} />}
 
+                    {autoFilledKeys.length > 0 && (
+                      <p className={styles.docHelper} style={{ background: "#ecfdf5", color: "#166534", padding: "8px 10px", borderRadius: 6 }}>
+                        AI auto-filled: {autoFilledKeys.map((key) => key.replace(/_/g, " ")).join(", ")}. All values remain editable.
+                      </p>
+                    )}
+
                     {progress?.missing_fields?.length > 0 && !submitted && (
                       <p className={styles.docHelper}>
                         Missing sections: <strong>{progress.missing_fields.join(", ")}</strong>
@@ -937,35 +972,9 @@ function OnboardingContent() {
                                 next[index] = { ...next[index], expiry_date: e.target.value };
                                 setSkills({ ...skills, certifications: next });
                               }} />
-                              <label className={`${styles.field} ${styles.wide}`}>
-                                <span>Certificate document (optional)</span>
-                                <input
-                                  type="file"
-                                  disabled={uploading}
-                                  onChange={async (e) => {
-                                    const file = e.target.files?.[0];
-                                    if (!file) return;
-                                    const accessToken = localStorage.getItem("access_token");
-                                    const formData = new FormData();
-                                    formData.append("file", file);
-                                    formData.append("purpose", "certification");
-                                    setUploading(true);
-                                    try {
-                                      const data = await uploadOnboardingFile(formData, accessToken);
-                                      const next = [...skills.certifications];
-                                      next[index] = { ...next[index], document_url: data.file_url };
-                                      setSkills({ ...skills, certifications: next });
-                                      setMessage("Certificate uploaded.");
-                                    } catch (error) {
-                                      setMessage(getApiErrorMessage(error, "Upload failed."));
-                                    } finally {
-                                      setUploading(false);
-                                      e.target.value = "";
-                                    }
-                                  }}
-                                />
-                                {cert.document_url && <small>Uploaded: {cert.document_url}</small>}
-                              </label>
+                              <p className={`${styles.docHelper} ${styles.wide}`}>
+                                Certification details may be extracted from your resume. Separate certificate documents are not accepted.
+                              </p>
                               {(skills.certifications || []).length > 1 && (
                                 <button
                                   type="button"
@@ -1218,6 +1227,11 @@ function ExtractionPreview({ result, onDismiss }) {
 
       {rejectionMessage && (
         <p style={{ color: "#b91c1c", marginBottom: 8, fontSize: ".9rem" }}>{rejectionMessage}</p>
+      )}
+      {result.quality_warning && (
+        <p style={{ color: "#9a3412", marginBottom: 8, fontSize: ".9rem" }}>
+          {result.quality_warning}
+        </p>
       )}
 
       {(classConf != null || extractConf != null || matchConf != null) && !rejected && (

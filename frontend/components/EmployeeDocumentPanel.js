@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  deleteDocument,
   getApiErrorMessage,
   getDocumentDownloadUrl,
   listMyDocuments,
+  reextractDocument,
   uploadDocument,
 } from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
@@ -15,12 +17,6 @@ const DOC_TYPE_OPTIONS = [
   { value: "passport", label: "Passport", category: "identity", purpose: "government_doc" },
   { value: "transcript", label: "Academic Transcript", category: "education", purpose: "education_cert" },
   { value: "resume", label: "Resume / CV", category: "other", purpose: "resume" },
-  { value: "degree", label: "Degree certificate", category: "education", purpose: null },
-  { value: "experience_letter", label: "Experience letter", category: "employment", purpose: null },
-  { value: "relieving_letter", label: "Relieving letter", category: "employment", purpose: null },
-  { value: "salary_certificate", label: "Salary certificate", category: "employment", purpose: null },
-  { value: "reference_letter", label: "Reference letter", category: "legal", purpose: null },
-  { value: "other", label: "Other document", category: "other", purpose: null },
 ];
 
 const DOC_TYPE_LABELS = Object.fromEntries(DOC_TYPE_OPTIONS.map((opt) => [opt.value, opt.label]));
@@ -33,6 +29,7 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
   const [docType, setDocType] = useState(DOC_TYPE_OPTIONS[0].value);
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [actionBusyId, setActionBusyId] = useState(null);
   const [uploadMessage, setUploadMessage] = useState(null); // { type: 'error'|'success', text }
   const fileInputRef = useRef(null);
 
@@ -47,6 +44,7 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDocuments();
   }, [loadDocuments]);
 
@@ -54,6 +52,15 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
     e.preventDefault();
     if (!file) {
       setUploadMessage({ type: "error", text: "Choose a file to upload." });
+      return;
+    }
+    const existing = documents.find((doc) => doc.doc_type === docType);
+    if (
+      existing &&
+      !window.confirm(
+        "This replaces the active document. Existing profile values will not be overwritten automatically. Continue?"
+      )
+    ) {
       return;
     }
     const accessToken = localStorage.getItem("access_token");
@@ -104,6 +111,36 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
     }
   }
 
+  async function handleReextract(documentId) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setActionBusyId(documentId);
+    try {
+      await reextractDocument(documentId, accessToken);
+      loadDocuments();
+    } catch (err) {
+      setUploadMessage({ type: "error", text: getApiErrorMessage(err, "Could not re-extract document.") });
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  async function handleDelete(documentId) {
+    if (!window.confirm("Delete this uploaded document? This cannot be undone.")) return;
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setActionBusyId(documentId);
+    try {
+      await deleteDocument(documentId, accessToken);
+      loadDocuments();
+      onChanged?.();
+    } catch (err) {
+      setUploadMessage({ type: "error", text: getApiErrorMessage(err, "Could not delete document.") });
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
   if (loading) return <p className={styles.emptySub}>Loading documents…</p>;
   if (error) return <p className={`${styles.uploadMessage} ${styles.error}`}>{error}</p>;
 
@@ -147,6 +184,22 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
                 <button type="button" className={styles.docCardLink} onClick={() => handleDownload(doc.id)}>
                   View / download
                 </button>
+                <button
+                  type="button"
+                  className={styles.docCardLink}
+                  disabled={actionBusyId === doc.id}
+                  onClick={() => handleReextract(doc.id)}
+                >
+                  {actionBusyId === doc.id ? "Processing…" : "Re-extract"}
+                </button>
+                <button
+                  type="button"
+                  className={styles.docCardLink}
+                  disabled={actionBusyId === doc.id}
+                  onClick={() => handleDelete(doc.id)}
+                >
+                  Delete
+                </button>
               </div>
             ))}
           </div>
@@ -176,7 +229,7 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
               ref={fileInputRef}
               type="file"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
-              accept=".pdf,.jpg,.jpeg,.png"
+              accept={docType === "resume" ? ".pdf,.doc,.docx" : ".pdf,.jpg,.jpeg,.png"}
             />
           </div>
           {uploadMessage && (

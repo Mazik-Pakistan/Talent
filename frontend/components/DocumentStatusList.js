@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from "react";
 
-import { getApiErrorMessage, listMyDocuments } from "@/services/authService";
+import {
+  deleteDocument,
+  getApiErrorMessage,
+  listMyDocuments,
+  reextractDocument,
+} from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
 
 const DOC_TYPE_LABELS = {
@@ -24,19 +29,57 @@ export default function DocumentStatusList({ refreshKey }) {
   const [documentVerification, setDocumentVerification] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [busyId, setBusyId] = useState(null);
 
-  useEffect(() => {
+  async function loadDocuments() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setLoading(true);
-    listMyDocuments(accessToken)
-      .then((data) => {
-        setDocuments(data.documents || []);
-        setDocumentVerification(data.document_verification || null);
-      })
-      .catch((err) => setError(getApiErrorMessage(err, "Unable to load documents.")))
-      .finally(() => setLoading(false));
+    try {
+      const data = await listMyDocuments(accessToken);
+      setDocuments(data.documents || []);
+      setDocumentVerification(data.document_verification || null);
+      setError("");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Unable to load documents."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadDocuments();
   }, [refreshKey]);
+
+  async function handleReextract(documentId) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setBusyId(documentId);
+    try {
+      await reextractDocument(documentId, accessToken);
+      await loadDocuments();
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Could not re-extract this document."));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleDelete(documentId) {
+    if (!window.confirm("Delete this uploaded document? This cannot be undone.")) return;
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setBusyId(documentId);
+    try {
+      await deleteDocument(documentId, accessToken);
+      await loadDocuments();
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Could not delete this document."));
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   if (loading) return <p className="widget-placeholder">Loading documents…</p>;
   if (error) return <p className="form-message" style={{ background: "#fee9e7", color: "#b42318" }}>{error}</p>;
@@ -84,6 +127,23 @@ export default function DocumentStatusList({ refreshKey }) {
                 {doc.rejection_note ? ` — ${doc.rejection_note}` : ""}. Please re-upload a corrected file.
               </p>
             )}
+            <div className="doc-actions" style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                disabled={busyId === doc.id}
+                onClick={() => handleReextract(doc.id)}
+              >
+                {busyId === doc.id ? "Processing…" : "Re-extract"}
+              </button>
+              <button
+                type="button"
+                className="reject"
+                disabled={busyId === doc.id}
+                onClick={() => handleDelete(doc.id)}
+              >
+                Delete
+              </button>
+            </div>
           </div>
         ))}
       </div>

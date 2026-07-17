@@ -26,13 +26,11 @@ PURPOSE_TO_CATEGORY = {
     "resume": "other",
     "government_doc": "identity",
     "education_cert": "education",
-    "certification": "other",
 }
 PURPOSE_TO_DEFAULT_DOC_TYPE = {
     "resume": "resume",
     "government_doc": "cnic",
     "education_cert": "transcript",
-    "certification": "certificate",
 }
 IDENTITY_DOC_TYPES = {"cnic", "passport"}
 
@@ -180,7 +178,7 @@ async def get_employee_detail_legacy(employee_id: str, current_user: RequireRecr
 async def upload_onboarding_file(
     current_user: RequireCandidate,
     file: UploadFile = File(...),
-    purpose: Literal["resume", "government_doc", "education_cert", "certification"] = Form(...),
+    purpose: Literal["resume", "government_doc", "education_cert"] = Form(...),
     doc_type: str | None = Form(default=None),
 ):
     if current_user.role not in ("candidate", "employee", "super_admin"):
@@ -251,7 +249,7 @@ async def upload_onboarding_file(
         try:
             resp = await candidate_service.attach_uploaded_file(
                 current_user,
-                purpose=purpose if purpose != "certification" else "education_cert",
+                purpose=purpose,
                 file_name=file_name,
                 file_url=file_url,
                 doc_type=resolved_doc_type if purpose == "government_doc" else doc_type,

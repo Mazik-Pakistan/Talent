@@ -33,6 +33,7 @@ DOCUMENT_STATUSES = (
     "rejected",
     "reupload_required",
     "mismatch",
+    "deleted",
 )
 
 VERIFICATION_STATUSES = (
