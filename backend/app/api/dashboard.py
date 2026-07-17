@@ -39,12 +39,12 @@ async def get_candidate_dashboard(current_user: RequireOnboardingSelf):
 
 # ----- US-014 -----
 @router.get("/api/notifications")
-async def get_notifications(current_user: RequireRecruiter, limit: int = Query(default=30, ge=1, le=100)):
+async def get_notifications(current_user: RequireUser, limit: int = Query(default=30, ge=1, le=100)):
     return await service.get_notifications(current_user, limit)
 
 
 @router.put("/api/notifications/read")
-async def mark_notifications_read(request: MarkNotificationsReadRequest, current_user: RequireRecruiter):
+async def mark_notifications_read(request: MarkNotificationsReadRequest, current_user: RequireUser):
     return await service.mark_notifications_read(current_user, request)
 
 
