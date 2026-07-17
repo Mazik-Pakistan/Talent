@@ -93,6 +93,9 @@ const emptyPersonal = {
   marital_status: "single",
   blood_group: "unknown",
   national_id: "",
+  father_name: "",
+  id_issue_date: "",
+  id_expiry_date: "",
   profile_picture: null,
   alternate_phone: "",
   current_address: "",
@@ -162,6 +165,8 @@ function OnboardingContent() {
   const [govDocs, setGovDocs] = useState([{ ...emptyGovDoc }]);
   const [resume, setResume] = useState(emptyResume);
   const [extractionPreview, setExtractionPreview] = useState(null);
+  const [documentVerification, setDocumentVerification] = useState(null);
+  const [autoFilledKeys, setAutoFilledKeys] = useState([]);
 
   const steps = useMemo(() => (isEditMode ? STEPS.filter((s) => s.id !== "submit") : STEPS), [isEditMode]);
 
@@ -231,7 +236,14 @@ function OnboardingContent() {
           : [{ name: "", document_url: null, expiry_date: "" }],
       });
     }
-    if (data.government_docs?.documents?.length) setGovDocs(data.government_docs.documents);
+    if (data.government_docs?.documents?.length) {
+      setGovDocs(
+        data.government_docs.documents.map((d) => ({
+          ...d,
+          doc_type: d.doc_type === "passport" ? "passport" : "cnic",
+        }))
+      );
+    }
     if (data.resume) setResume({ ...emptyResume, ...data.resume });
   }
 
@@ -242,80 +254,242 @@ function OnboardingContent() {
       .filter(Boolean);
   }
 
+  function normalizeGender(value) {
+    if (!value) return null;
+    const v = String(value).trim().toLowerCase();
+    if (["male", "m"].includes(v)) return "male";
+    if (["female", "f"].includes(v)) return "female";
+    if (["other"].includes(v)) return "other";
+    return null;
+  }
+
+  function normalizeMarital(value) {
+    if (!value) return null;
+    const v = String(value).trim().toLowerCase();
+    if (["single", "unmarried"].includes(v)) return "single";
+    if (["married"].includes(v)) return "married";
+    if (["divorced"].includes(v)) return "divorced";
+    if (["widowed", "widow", "widower"].includes(v)) return "widowed";
+    return null;
+  }
+
+  function joinList(value) {
+    if (Array.isArray(value)) return value.filter(Boolean).join(", ");
+    return value || "";
+  }
+
+  function normalizeDateForInput(value) {
+    if (!value) return "";
+    const text = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const match = text.match(/^(\d{1,2})[\/\-. ](\d{1,2})[\/\-. ](\d{4})$/);
+    if (!match) return "";
+    const [, day, month, year] = match;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
   function autoFillFromOCR(ocrResult, purpose, index) {
-    if (!ocrResult || ocrResult.status !== "completed") return;
+    if (!ocrResult || ocrResult.status !== "completed" || ocrResult.accepted === false) return;
     const { category, fields } = ocrResult;
     if (!fields) return;
+    const filled = [];
 
-    if (purpose === "resume" && category === "resume") {
-      if (fields.full_name || fields.email || fields.phone_number) {
-        setPersonal((prev) => ({
-          ...prev,
-          ...(fields.address ? { address_line1: fields.address } : {}),
-        }));
+    if (purpose === "government_doc" && (category === "cnic" || category === "passport")) {
+      const first = fields.first_name || (fields.name || fields.full_name || "").toString().split(/\s+/)[0] || "";
+      const last =
+        fields.last_name ||
+        (fields.name || fields.full_name || "")
+          .toString()
+          .split(/\s+/)
+          .slice(1)
+          .join(" ") ||
+        "";
+      const idNumber = category === "cnic" ? fields.cnic_number : fields.passport_number;
+
+      setPersonal((prev) => {
+        const next = { ...prev };
+        if (first && !prev.first_name) {
+          next.first_name = first;
+          filled.push("first_name");
+        }
+        if (last && !prev.last_name) {
+          next.last_name = last;
+          filled.push("last_name");
+        }
+        const dateOfBirth = normalizeDateForInput(fields.date_of_birth);
+        if (dateOfBirth && !prev.date_of_birth) {
+          next.date_of_birth = dateOfBirth;
+          filled.push("date_of_birth");
+        }
+        const gender = normalizeGender(fields.gender);
+        if (gender && (!prev.gender || prev.gender === "prefer_not_to_say")) {
+          next.gender = gender;
+          filled.push("gender");
+        }
+        if (fields.nationality && (!prev.nationality || prev.nationality === "Pakistani")) {
+          next.nationality = fields.nationality;
+          filled.push("nationality");
+        }
+        const marital = normalizeMarital(fields.marital_status);
+        if (marital && prev.marital_status === "single") {
+          next.marital_status = marital;
+          filled.push("marital_status");
+        }
+        if (idNumber && !prev.national_id) {
+          next.national_id = idNumber;
+          filled.push("national_id");
+        }
+        if (fields.father_name && !prev.father_name) {
+          next.father_name = fields.father_name;
+          filled.push("father_name");
+        }
+        if (fields.issue_date && !prev.id_issue_date) {
+          next.id_issue_date = fields.issue_date;
+          filled.push("id_issue_date");
+        }
+        if (fields.expiry_date && !prev.id_expiry_date) {
+          next.id_expiry_date = fields.expiry_date;
+          filled.push("id_expiry_date");
+        }
+        return next;
+      });
+
+      if (idNumber) {
+        setGovDocs((prev) => {
+          const next = [...prev];
+          next[index] = {
+            ...next[index],
+            doc_type: category === "passport" ? "passport" : "cnic",
+            document_number:
+              next[index].document_number && next[index].document_number !== "pending"
+                ? next[index].document_number
+                : idNumber,
+          };
+          return next;
+        });
+        filled.push("document_number");
       }
-      if (fields.full_name || fields.email) {
-        // Resume summary auto-fill from name + skills
-        const skills = Array.isArray(fields.skills) ? fields.skills.join(", ") : (fields.skills || "");
-        const summary = [
+    } else if (purpose === "resume" && category === "resume") {
+      const first = fields.first_name || (fields.full_name || "").toString().split(/\s+/)[0] || "";
+      const last =
+        fields.last_name ||
+        (fields.full_name || "")
+          .toString()
+          .split(/\s+/)
+          .slice(1)
+          .join(" ") ||
+        "";
+
+      setPersonal((prev) => {
+        const next = { ...prev };
+        if (first && !prev.first_name) {
+          next.first_name = first;
+          filled.push("first_name");
+        }
+        if (last && !prev.last_name) {
+          next.last_name = last;
+          filled.push("last_name");
+        }
+        if (fields.address && !prev.current_address) {
+          next.current_address = fields.address;
+          filled.push("current_address");
+        }
+        const dateOfBirth = normalizeDateForInput(fields.date_of_birth);
+        if (dateOfBirth && !prev.date_of_birth) {
+          next.date_of_birth = dateOfBirth;
+          filled.push("date_of_birth");
+        }
+        return next;
+      });
+
+      const summary =
+        fields.professional_summary ||
+        [
           fields.full_name ? `Name: ${fields.full_name}` : "",
           fields.email ? `Email: ${fields.email}` : "",
           fields.phone_number ? `Phone: ${fields.phone_number}` : "",
-          skills ? `Skills: ${skills}` : "",
-        ].filter(Boolean).join(" | ");
-        if (summary) {
-          setResume((prev) => ({ ...prev, summary: prev.summary || summary }));
-        }
+          fields.linkedin ? `LinkedIn: ${fields.linkedin}` : "",
+          fields.github ? `GitHub: ${fields.github}` : "",
+          fields.portfolio ? `Portfolio: ${fields.portfolio}` : "",
+        ]
+          .filter(Boolean)
+          .join(" | ");
+
+      if (summary) {
+        setResume((prev) => ({ ...prev, summary: prev.summary || summary }));
+        filled.push("summary");
       }
-    } else if (purpose === "government_doc") {
-      if (category === "cnic") {
-        if (fields.cnic_number) {
-          setGovDocs((prev) => {
-            const next = [...prev];
-            next[index] = {
-              ...next[index],
-              document_number: next[index].document_number && next[index].document_number !== "pending"
-                ? next[index].document_number
-                : fields.cnic_number,
-            };
-            return next;
-          });
+
+      setSkills((prev) => {
+        const tech = joinList(fields.technical_skills || fields.skills);
+        const soft = joinList(fields.soft_skills);
+        const langs = joinList(fields.languages);
+        const certs = Array.isArray(fields.certifications)
+          ? fields.certifications.map((c) => (typeof c === "string" ? { name: c, document_url: null, expiry_date: "" } : { name: c?.name || "", document_url: null, expiry_date: "" }))
+          : null;
+        const next = { ...prev };
+        if (tech && !prev.technical_skills) {
+          next.technical_skills = tech;
+          filled.push("technical_skills");
         }
-        if (fields.date_of_birth) {
-          setPersonal((prev) => ({ ...prev, date_of_birth: prev.date_of_birth || fields.date_of_birth }));
+        if (soft && !prev.soft_skills) {
+          next.soft_skills = soft;
+          filled.push("soft_skills");
         }
-        if (fields.name) {
-          setPersonal((prev) => ({ ...prev, national_id: prev.national_id || fields.cnic_number || prev.national_id }));
+        if (langs && !prev.languages) {
+          next.languages = langs;
+          filled.push("languages");
         }
-      } else if (category === "passport") {
-        if (fields.passport_number) {
-          setGovDocs((prev) => {
-            const next = [...prev];
-            next[index] = {
-              ...next[index],
-              document_number: next[index].document_number && next[index].document_number !== "pending"
-                ? next[index].document_number
-                : fields.passport_number,
-            };
-            return next;
-          });
+        if (certs?.length && (!prev.certifications?.[0]?.name)) {
+          next.certifications = certs;
+          filled.push("certifications");
         }
-        if (fields.date_of_birth) {
-          setPersonal((prev) => ({ ...prev, date_of_birth: prev.date_of_birth || fields.date_of_birth }));
-        }
+        return next;
+      });
+
+      if (Array.isArray(fields.education) && fields.education.length) {
+        const mapped = fields.education.map((ed) => {
+          if (typeof ed === "string") {
+            return { ...emptyEducationEntry, institution: ed };
+          }
+          return {
+            ...emptyEducationEntry,
+            institution: ed.institute || ed.institution || "",
+            degree: ed.degree || "",
+            field_of_study: ed.major || ed.program || ed.field_of_study || "",
+            year_completed: String(ed.year || ed.passing_year || "").slice(0, 4),
+            cgpa_or_percentage: ed.cgpa || ed.gpa || ed.percentage || "",
+          };
+        });
+        setEducationEntries((prev) => {
+          const isEmpty = prev.length === 1 && !prev[0].institution && !prev[0].degree;
+          if (isEmpty) {
+            filled.push("education");
+            return mapped;
+          }
+          return prev;
+        });
       }
-    } else if (purpose === "education_cert" && category === "certificate") {
+    } else if (purpose === "education_cert" && (category === "academic_transcript" || category === "certificate")) {
       setEducationEntries((prev) => {
         const next = [...prev];
+        const cur = next[index] || { ...emptyEducationEntry };
         next[index] = {
-          ...next[index],
-          institution: next[index].institution || fields.institute || "",
-          degree: next[index].degree || fields.degree || "",
-          year_completed: next[index].year_completed || fields.completion_date || "",
+          ...cur,
+          institution: cur.institution || fields.institute || "",
+          board_university: cur.board_university || fields.institute || "",
+          degree: cur.degree || fields.degree || fields.program || "",
+          field_of_study: cur.field_of_study || fields.major || fields.program || "",
+          year_completed: cur.year_completed || String(fields.passing_year || "").slice(0, 4) || "",
+          cgpa_or_percentage:
+            cur.cgpa_or_percentage || fields.cgpa || fields.gpa || fields.percentage || "",
         };
+        filled.push("education_transcript");
         return next;
       });
     }
+
+    setAutoFilledKeys(filled);
   }
 
   const stepIndex = useMemo(() => steps.findIndex((item) => item.id === step), [step, steps]);
@@ -351,6 +525,23 @@ function OnboardingContent() {
   async function handleFileUpload(event, purpose, index = 0) {
     const file = event.target.files?.[0];
     if (!file) return;
+    const existingUrl =
+      purpose === "resume"
+        ? resume.file_url
+        : purpose === "government_doc"
+          ? govDocs[index]?.file_url
+          : purpose === "education_cert"
+            ? educationEntries[index]?.certificate_file
+            : null;
+    if (
+      existingUrl &&
+      !window.confirm(
+        "This will replace the current document. Extracted differences will be reviewed, and existing profile values will only fill when fields are empty. Continue?"
+      )
+    ) {
+      event.target.value = "";
+      return;
+    }
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setUploading(true);
@@ -365,7 +556,15 @@ function OnboardingContent() {
       }
       const data = await uploadOnboardingFile(formData, accessToken);
       setOnboarding(data.onboarding);
-      hydrateForms(data.onboarding);
+      if (data.onboarding) hydrateForms(data.onboarding);
+
+      const ocr = data.ocr_result;
+      if (ocr?.status === "rejected_type" || ocr?.accepted === false) {
+        setMessage(ocr.rejection_message || data.message || "Document type rejected.");
+        setExtractionPreview(ocr);
+        return;
+      }
+
       if (purpose === "resume") {
         setResume((current) => ({ ...current, file_name: data.file_name, file_url: data.file_url }));
       } else if (purpose === "government_doc") {
@@ -387,16 +586,19 @@ function OnboardingContent() {
         });
       }
 
-      // Auto-fill from extraction result
-      if (data.ocr_result) {
-        autoFillFromOCR(data.ocr_result, purpose, index);
-        setExtractionPreview(data.ocr_result);
-        const cat = data.ocr_result.category;
-        const ok = data.ocr_result.status === "completed";
+      if (data.document_verification) {
+        setDocumentVerification(data.document_verification);
+      }
+
+      if (ocr) {
+        autoFillFromOCR(ocr, purpose, index);
+        setExtractionPreview(ocr);
+        const cat = ocr.category;
+        const ok = ocr.status === "completed";
         setMessage(
           ok
             ? `File uploaded. Document recognised as "${cat}" — fields auto-filled below. Review and adjust before saving.`
-            : "File uploaded. Text extraction failed — please fill in the fields manually."
+            : ocr.rejection_message || "File uploaded. Text extraction failed — please fill in the fields manually."
         );
       } else {
         setMessage("File uploaded.");
@@ -473,7 +675,11 @@ function OnboardingContent() {
         setMessage("Add your ID number and upload the document file.");
         return;
       }
-      await persist({ step: "government_docs", government_docs: { documents: govDocs } });
+      const sanitized = govDocs.map((d) => ({
+        ...d,
+        doc_type: d.doc_type === "passport" ? "passport" : "cnic",
+      }));
+      await persist({ step: "government_docs", government_docs: { documents: sanitized } });
     } else if (step === "resume") {
       if (!resume.summary || resume.summary.length < 20 || !resume.file_url) {
         setMessage("Add a short resume summary and upload your resume file.");
@@ -606,7 +812,24 @@ function OnboardingContent() {
 
                     {message && <p className={styles.formMessage} role="status">{message}</p>}
 
+                    {documentVerification?.verification_status === "mismatch" && (
+                      <p className={styles.formMessage} style={{ background: "#fff7ed", color: "#9a3412", border: "1px solid #fdba74" }} role="alert">
+                        Some uploaded documents contain inconsistent information. Please review.
+                        {(documentVerification.mismatches || []).length > 0 && (
+                          <span style={{ display: "block", marginTop: 6, fontSize: ".9em" }}>
+                            {(documentVerification.mismatches || []).map((m) => m.reason).join(" · ")}
+                          </span>
+                        )}
+                      </p>
+                    )}
+
             {extractionPreview && <ExtractionPreview result={extractionPreview} onDismiss={() => setExtractionPreview(null)} />}
+
+                    {autoFilledKeys.length > 0 && (
+                      <p className={styles.docHelper} style={{ background: "#ecfdf5", color: "#166534", padding: "8px 10px", borderRadius: 6 }}>
+                        AI auto-filled: {autoFilledKeys.map((key) => key.replace(/_/g, " ")).join(", ")}. All values remain editable.
+                      </p>
+                    )}
 
                     {progress?.missing_fields?.length > 0 && !submitted && (
                       <p className={styles.docHelper}>
@@ -650,6 +873,9 @@ function OnboardingContent() {
                             </select>
                           </label>
                           <Field styles={styles} label="National ID / CNIC / Passport" value={personal.national_id} onChange={(e) => setPersonal({ ...personal, national_id: e.target.value })} />
+                          <Field styles={styles} label="Father's name (optional)" value={personal.father_name || ""} onChange={(e) => setPersonal({ ...personal, father_name: e.target.value })} />
+                          <Field styles={styles} label="ID issue date (optional)" value={personal.id_issue_date || ""} onChange={(e) => setPersonal({ ...personal, id_issue_date: e.target.value })} />
+                          <Field styles={styles} label="ID expiry date (optional)" value={personal.id_expiry_date || ""} onChange={(e) => setPersonal({ ...personal, id_expiry_date: e.target.value })} />
                           <Field styles={styles} label="Alternate phone" value={personal.alternate_phone} onChange={(e) => setPersonal({ ...personal, alternate_phone: e.target.value })} />
                           <Field styles={styles} label="Current address" value={personal.current_address} onChange={(e) => setPersonal({ ...personal, current_address: e.target.value })} wide />
                           <label className={`${styles.field} ${styles.wide}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -706,8 +932,8 @@ function OnboardingContent() {
                                 setEducationEntries(next);
                               }} />
                               <label className={`${styles.field} ${styles.wide}`}>
-                                <span>Transcript / certificate (optional)</span>
-                                <input type="file" disabled={uploading} onChange={(e) => handleFileUpload(e, "education_cert", index)} />
+                                <span>Academic transcript (PDF, JPG, or PNG)</span>
+                                <input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={uploading} onChange={(e) => handleFileUpload(e, "education_cert", index)} />
                                 {entry.certificate_file && <small>Uploaded: {entry.certificate_file}</small>}
                               </label>
                               {educationEntries.length > 1 && (
@@ -746,35 +972,9 @@ function OnboardingContent() {
                                 next[index] = { ...next[index], expiry_date: e.target.value };
                                 setSkills({ ...skills, certifications: next });
                               }} />
-                              <label className={`${styles.field} ${styles.wide}`}>
-                                <span>Certificate document (optional)</span>
-                                <input
-                                  type="file"
-                                  disabled={uploading}
-                                  onChange={async (e) => {
-                                    const file = e.target.files?.[0];
-                                    if (!file) return;
-                                    const accessToken = localStorage.getItem("access_token");
-                                    const formData = new FormData();
-                                    formData.append("file", file);
-                                    formData.append("purpose", "certification");
-                                    setUploading(true);
-                                    try {
-                                      const data = await uploadOnboardingFile(formData, accessToken);
-                                      const next = [...skills.certifications];
-                                      next[index] = { ...next[index], document_url: data.file_url };
-                                      setSkills({ ...skills, certifications: next });
-                                      setMessage("Certificate uploaded.");
-                                    } catch (error) {
-                                      setMessage(getApiErrorMessage(error, "Upload failed."));
-                                    } finally {
-                                      setUploading(false);
-                                      e.target.value = "";
-                                    }
-                                  }}
-                                />
-                                {cert.document_url && <small>Uploaded: {cert.document_url}</small>}
-                              </label>
+                              <p className={`${styles.docHelper} ${styles.wide}`}>
+                                Certification details may be extracted from your resume. Separate certificate documents are not accepted.
+                              </p>
                               {(skills.certifications || []).length > 1 && (
                                 <button
                                   type="button"
@@ -800,24 +1000,23 @@ function OnboardingContent() {
                         <div>
                           <h2 className={styles.stepTitle}>Government identity documents</h2>
                           <p className={styles.docHelper}>
-                            We automatically read your name, ID number, and dates from the file using OCR — this speeds up
-                            verification on your recruiter&apos;s side.
+                            Upload a National ID (CNIC/NIC) or Passport (for foreigners). Wrong document types are rejected.
+                            Extracted fields auto-fill your profile and stay editable.
                           </p>
                           {govDocs.map((doc, index) => (
                             <div key={index} className={`${styles.formGrid} ${styles.govDocEntry}`}>
                               <label className={styles.field}>
                                 <span>Document type</span>
                                 <select
-                                  value={doc.doc_type}
+                                  value={doc.doc_type === "other_id" ? "cnic" : doc.doc_type}
                                   onChange={(e) => {
                                     const next = [...govDocs];
                                     next[index] = { ...next[index], doc_type: e.target.value };
                                     setGovDocs(next);
                                   }}
                                 >
-                                  <option value="cnic">CNIC</option>
+                                  <option value="cnic">National ID (CNIC / NIC)</option>
                                   <option value="passport">Passport</option>
-                                  <option value="other_id">Other ID</option>
                                 </select>
                               </label>
                               <Field styles={styles} label="Document number" value={doc.document_number === "pending" ? "" : doc.document_number} onChange={(e) => {
@@ -851,8 +1050,8 @@ function OnboardingContent() {
                             />
                           </label>
                           <label className={`${styles.field} ${styles.wide}`}>
-                            <span>Upload resume (PDF/DOC)</span>
-                            <input type="file" disabled={uploading} onChange={(e) => handleFileUpload(e, "resume")} />
+                            <span>Upload resume / CV (PDF/DOC/DOCX)</span>
+                            <input type="file" accept=".pdf,.doc,.docx" disabled={uploading} onChange={(e) => handleFileUpload(e, "resume")} />
                             {resume.file_url && <small>Uploaded: {resume.file_name || resume.file_url}</small>}
                           </label>
                         </div>
@@ -957,16 +1156,24 @@ function ReviewBlock({ title, items, styles }) {
 // Uses inline styles only so it cannot affect any existing CSS class layout.
 function ExtractionPreview({ result, onDismiss }) {
   if (!result) return null;
-  const { category, fields, raw_text: rawText, status } = result;
-  const hasFields = fields && Object.keys(fields).some((k) => fields[k] !== null && fields[k] !== undefined && fields[k] !== "");
+  const { category, fields, raw_text: rawText, status, rejection_message: rejectionMessage } = result;
+  const hasFields =
+    fields &&
+    Object.keys(fields).some(
+      (k) => fields[k] !== null && fields[k] !== undefined && fields[k] !== "" && !(Array.isArray(fields[k]) && !fields[k].length)
+    );
+  const rejected = status === "rejected_type" || result.accepted === false;
+  const classConf = result.classification_confidence;
+  const extractConf = result.extraction_confidence;
+  const matchConf = result.matching_confidence;
 
   return (
     <div
       style={{
         margin: "16px 0",
-        border: "1px solid #bed0dc",
+        border: rejected ? "1px solid #fca5a5" : "1px solid #bed0dc",
         borderRadius: 10,
-        background: "#f7fbff",
+        background: rejected ? "#fef2f2" : "#f7fbff",
         padding: "16px 20px",
         position: "relative",
       }}
@@ -994,29 +1201,46 @@ function ExtractionPreview({ result, onDismiss }) {
         style={{
           fontWeight: 600,
           fontSize: ".85rem",
-          color: "#1e40af",
+          color: rejected ? "#b91c1c" : "#1e40af",
           textTransform: "uppercase",
           letterSpacing: ".05em",
           marginBottom: 10,
         }}
       >
-        {status === "completed" ? "✅ Extracted Information" : "⚠️ Extraction Incomplete"}
+        {rejected ? "Document rejected" : status === "completed" ? "Extracted Information" : "Extraction Incomplete"}
         {category && category !== "unknown" && (
           <span
             style={{
               marginLeft: 8,
-              background: "#dbeafe",
+              background: rejected ? "#fee2e2" : "#dbeafe",
               borderRadius: 4,
               padding: "2px 7px",
               fontSize: ".78rem",
-              color: "#1e40af",
+              color: rejected ? "#b91c1c" : "#1e40af",
               textTransform: "capitalize",
             }}
           >
-            {category}
+            {String(category).replace(/_/g, " ")}
           </span>
         )}
       </p>
+
+      {rejectionMessage && (
+        <p style={{ color: "#b91c1c", marginBottom: 8, fontSize: ".9rem" }}>{rejectionMessage}</p>
+      )}
+      {result.quality_warning && (
+        <p style={{ color: "#9a3412", marginBottom: 8, fontSize: ".9rem" }}>
+          {result.quality_warning}
+        </p>
+      )}
+
+      {(classConf != null || extractConf != null || matchConf != null) && !rejected && (
+        <p style={{ fontSize: ".8rem", color: "#5c7086", marginBottom: 10 }}>
+          {classConf != null && <>Classification: {Math.round(classConf * 100)}% · </>}
+          {extractConf != null && <>Extraction: {Math.round(extractConf * 100)}% · </>}
+          {matchConf != null && <>Matching: {Math.round(matchConf * 100)}%</>}
+        </p>
+      )}
 
       {hasFields && (
         <dl
@@ -1028,21 +1252,25 @@ function ExtractionPreview({ result, onDismiss }) {
           }}
         >
           {Object.entries(fields)
-            .filter(([, v]) => v !== null && v !== undefined && v !== "")
+            .filter(([, v]) => v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && !v.length))
             .map(([key, value]) => (
               <div key={key}>
                 <dt style={{ fontSize: ".78rem", color: "#5c7086", textTransform: "capitalize" }}>
                   {key.replace(/_/g, " ")}
                 </dt>
                 <dd style={{ fontSize: ".88rem", color: "#1a2535", fontWeight: 500, margin: 0 }}>
-                  {Array.isArray(value) ? value.join(", ") : String(value)}
+                  {Array.isArray(value)
+                    ? value.map((v) => (typeof v === "object" ? JSON.stringify(v) : v)).join(", ")
+                    : typeof value === "object"
+                      ? JSON.stringify(value)
+                      : String(value)}
                 </dd>
               </div>
             ))}
         </dl>
       )}
 
-      {rawText && (
+      {rawText && !rejected && (
         <details style={{ marginTop: 8 }}>
           <summary
             style={{
