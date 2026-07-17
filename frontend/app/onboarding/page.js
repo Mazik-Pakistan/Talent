@@ -18,10 +18,16 @@ const STEPS = [
   { id: "personal", label: "Personal" },
   { id: "education", label: "Education" },
   { id: "skills", label: "Skills" },
-  { id: "government_docs", label: "ID docs" },
-  { id: "resume", label: "Resume" },
   { id: "submit", label: "Review" },
 ];
+
+const MISSING_SECTION_LABELS = {
+  personal: "personal information",
+  government_docs: "National ID / Passport",
+  education: "education and transcript",
+  skills: "skills",
+  resume: "Resume / CV",
+};
 
 const NAV_ITEMS = [
   {
@@ -195,18 +201,28 @@ function OnboardingContent() {
         setOnboarding(data.onboarding);
         setProgress(data.progress);
         hydrateForms(data.onboarding);
+        const stepAliases = {
+          government_docs: "personal",
+          resume: "skills",
+          complete: isEditMode ? "personal" : "submit",
+        };
+        const requestedVisibleStep = stepAliases[requestedStep] || requestedStep;
         const allowedSteps = new Set(STEPS.map((item) => item.id));
-        const deepLinkStep = requestedStep && allowedSteps.has(requestedStep) ? requestedStep : null;
+        const deepLinkStep =
+          requestedVisibleStep && allowedSteps.has(requestedVisibleStep) ? requestedVisibleStep : null;
+        const storedStep = stepAliases[data.onboarding?.current_step] || data.onboarding?.current_step;
         const nextStep =
-          data.onboarding?.status === "submitted" ? "submit" : deepLinkStep || data.onboarding?.current_step || "personal";
-        setStep(nextStep === "complete" ? "submit" : nextStep);
+          data.onboarding?.status === "submitted" && !isEditMode
+            ? "submit"
+            : deepLinkStep || storedStep || "personal";
+        setStep(nextStep);
       } catch (error) {
         setMessage(getApiErrorMessage(error, "Unable to load onboarding."));
       } finally {
         setLoading(false);
       }
     });
-  }, [router, requestedStep]);
+  }, [isEditMode, router, requestedStep]);
 
   function hydrateForms(data) {
     if (!data) return;
@@ -513,7 +529,12 @@ function OnboardingContent() {
       if (payload.step === "submit") {
         setStep("submit");
       } else if (data.onboarding?.current_step) {
-        setStep(data.onboarding.current_step === "complete" ? "submit" : data.onboarding.current_step);
+        const nextStep = data.onboarding.current_step;
+        if (isEditMode && nextStep === "submit") {
+          setStep(payload.step);
+        } else {
+          setStep(nextStep === "complete" ? "submit" : nextStep);
+        }
       }
     } catch (error) {
       setMessage(getApiErrorMessage(error, "Could not save this step."));
@@ -545,7 +566,7 @@ function OnboardingContent() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setUploading(true);
-    setMessage("");
+    setMessage("Uploading, validating, and extracting document data…");
     setExtractionPreview(null);
     try {
       const formData = new FormData();
@@ -640,13 +661,37 @@ function OnboardingContent() {
         alternate_phone: personal.alternate_phone || null,
         profile_picture: personal.profile_picture || null,
       };
-      await persist({ step: "personal", personal: payload });
+      const validDocs = govDocs.every(
+        (doc) =>
+          (doc.doc_type === "cnic" || doc.doc_type === "passport") &&
+          doc.document_number &&
+          doc.document_number !== "pending" &&
+          doc.file_url
+      );
+      if (!validDocs) {
+        setMessage("Select National ID or Passport and upload a valid document before continuing.");
+        return;
+      }
+      const sanitizedDocs = govDocs.map((doc) => ({
+        ...doc,
+        doc_type: doc.doc_type === "passport" ? "passport" : "cnic",
+      }));
+      await persist({
+        step: "personal",
+        personal: payload,
+        government_docs: { documents: sanitizedDocs },
+      });
     } else if (step === "education") {
       const valid = educationEntries.every(
-        (entry) => entry.institution && entry.degree && entry.field_of_study && entry.year_completed
+        (entry) =>
+          entry.institution &&
+          entry.degree &&
+          entry.field_of_study &&
+          entry.year_completed &&
+          entry.certificate_file
       );
       if (!valid) {
-        setMessage("Add at least one complete education entry.");
+        setMessage("Upload an academic transcript and complete every education field.");
         return;
       }
       await persist({ step: "education", education: { entries: educationEntries } });
@@ -665,27 +710,15 @@ function OnboardingContent() {
         setMessage("Add at least one skill, language, or certification.");
         return;
       }
+      if (!resume.file_url || !resume.summary || resume.summary.length < 20) {
+        setMessage("Upload a valid Resume/CV and review the extracted professional summary.");
+        return;
+      }
       await persist({
         step: "skills",
         skills: { technical_skills, soft_skills, languages, certifications },
+        resume,
       });
-    } else if (step === "government_docs") {
-      const valid = govDocs.every((doc) => doc.doc_type && doc.document_number && doc.file_url);
-      if (!valid) {
-        setMessage("Add your ID number and upload the document file.");
-        return;
-      }
-      const sanitized = govDocs.map((d) => ({
-        ...d,
-        doc_type: d.doc_type === "passport" ? "passport" : "cnic",
-      }));
-      await persist({ step: "government_docs", government_docs: { documents: sanitized } });
-    } else if (step === "resume") {
-      if (!resume.summary || resume.summary.length < 20 || !resume.file_url) {
-        setMessage("Add a short resume summary and upload your resume file.");
-        return;
-      }
-      await persist({ step: "resume", resume });
     } else if (step === "submit") {
       await persist({ step: "submit" });
     }
@@ -773,7 +806,9 @@ function OnboardingContent() {
                   </div>
                 )}
 
-                <p className={styles.eyebrow}>Step 1 of 3 · Candidate intake</p>
+                <p className={styles.eyebrow}>
+                  {step === "submit" ? "Review" : `Step ${stepIndex + 1} of 3`} · Candidate intake
+                </p>
                 <h1>Welcome, {candidate?.full_name}</h1>
                 <p className={styles.lead}>
                   Role: <strong>{candidate?.job_title}</strong> · {candidate?.department}
@@ -795,7 +830,7 @@ function OnboardingContent() {
                 ) : (
                   <>
                     <ol className={styles.steps} aria-label="Onboarding progress">
-                      {steps.map((item, index) => {
+                      {steps.filter((item) => item.id !== "submit").map((item, index) => {
                         const isActive = index <= stepIndex;
                         const isCurrent = index === stepIndex;
                         return (
@@ -833,7 +868,12 @@ function OnboardingContent() {
 
                     {progress?.missing_fields?.length > 0 && !submitted && (
                       <p className={styles.docHelper}>
-                        Missing sections: <strong>{progress.missing_fields.join(", ")}</strong>
+                        Missing sections:{" "}
+                        <strong>
+                          {progress.missing_fields
+                            .map((section) => MISSING_SECTION_LABELS[section] || section)
+                            .join(", ")}
+                        </strong>
                       </p>
                     )}
 
@@ -841,6 +881,50 @@ function OnboardingContent() {
                       {step === "personal" && (
                         <div className={styles.formGrid}>
                           <h2 className={styles.stepTitle}>Personal &amp; contact information</h2>
+                          <p className={`${styles.docHelper} ${styles.wide}`}>
+                            First upload a National ID (CNIC/NIC) or Passport. We validate the document and auto-fill
+                            matching personal fields below. Every value remains editable.
+                          </p>
+                          {govDocs.map((doc, index) => (
+                            <div key={index} className={`${styles.formGrid} ${styles.govDocEntry} ${styles.wide}`}>
+                              <label className={styles.field}>
+                                <span>Identity document type</span>
+                                <select
+                                  value={doc.doc_type === "passport" ? "passport" : "cnic"}
+                                  onChange={(e) => {
+                                    const next = [...govDocs];
+                                    next[index] = { ...next[index], doc_type: e.target.value };
+                                    setGovDocs(next);
+                                  }}
+                                >
+                                  <option value="cnic">National ID (CNIC / NIC)</option>
+                                  <option value="passport">Passport</option>
+                                </select>
+                              </label>
+                              <label className={styles.field}>
+                                <span>Upload ID (PDF, JPG, or PNG)</span>
+                                <input
+                                  type="file"
+                                  accept=".pdf,.jpg,.jpeg,.png"
+                                  disabled={uploading}
+                                  onChange={(e) => handleFileUpload(e, "government_doc", index)}
+                                />
+                                {doc.file_url && <small>Uploaded: {doc.file_name || doc.file_url}</small>}
+                              </label>
+                              <Field
+                                styles={styles}
+                                label="Document number"
+                                value={doc.document_number === "pending" ? "" : doc.document_number}
+                                onChange={(e) => {
+                                  const next = [...govDocs];
+                                  next[index] = { ...next[index], document_number: e.target.value };
+                                  setGovDocs(next);
+                                }}
+                                wide
+                              />
+                            </div>
+                          ))}
+                          <h3 className={styles.wide}>Review auto-filled personal details</h3>
                           <Field styles={styles} label="First name" value={personal.first_name} onChange={(e) => setPersonal({ ...personal, first_name: e.target.value })} />
                           <Field styles={styles} label="Last name" value={personal.last_name} onChange={(e) => setPersonal({ ...personal, last_name: e.target.value })} />
                           <Field styles={styles} label="Date of birth" type="date" value={personal.date_of_birth} onChange={(e) => setPersonal({ ...personal, date_of_birth: e.target.value })} />
@@ -901,6 +985,15 @@ function OnboardingContent() {
                           <h2 className={styles.stepTitle}>Education history</h2>
                           {educationEntries.map((entry, index) => (
                             <div key={index} className={`${styles.formGrid} ${styles.educationEntry}`}>
+                              <label className={`${styles.field} ${styles.wide}`}>
+                                <span>Upload academic transcript first (PDF, JPG, or PNG)</span>
+                                <input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={uploading} onChange={(e) => handleFileUpload(e, "education_cert", index)} />
+                                {entry.certificate_file && <small>Uploaded: {entry.certificate_file}</small>}
+                              </label>
+                              <p className={`${styles.docHelper} ${styles.wide}`}>
+                                Institute, degree, major, GPA/percentage, and passing year are extracted automatically.
+                                Review and edit them before saving.
+                              </p>
                               <Field styles={styles} label="Institution" value={entry.institution} onChange={(e) => {
                                 const next = [...educationEntries];
                                 next[index] = { ...next[index], institution: e.target.value };
@@ -931,11 +1024,6 @@ function OnboardingContent() {
                                 next[index] = { ...next[index], cgpa_or_percentage: e.target.value };
                                 setEducationEntries(next);
                               }} />
-                              <label className={`${styles.field} ${styles.wide}`}>
-                                <span>Academic transcript (PDF, JPG, or PNG)</span>
-                                <input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={uploading} onChange={(e) => handleFileUpload(e, "education_cert", index)} />
-                                {entry.certificate_file && <small>Uploaded: {entry.certificate_file}</small>}
-                              </label>
                               {educationEntries.length > 1 && (
                                 <button
                                   type="button"
@@ -956,6 +1044,24 @@ function OnboardingContent() {
                       {step === "skills" && (
                         <div className={styles.formGrid}>
                           <h2 className={styles.stepTitle}>Skills &amp; certifications</h2>
+                          <label className={`${styles.field} ${styles.wide}`}>
+                            <span>Upload Resume / CV first (PDF, DOC, or DOCX)</span>
+                            <input type="file" accept=".pdf,.doc,.docx" disabled={uploading} onChange={(e) => handleFileUpload(e, "resume")} />
+                            {resume.file_url && <small>Uploaded: {resume.file_name || resume.file_url}</small>}
+                          </label>
+                          <p className={`${styles.docHelper} ${styles.wide}`}>
+                            Technical skills, soft skills, languages, certifications, and the professional summary are
+                            extracted from the resume. Review all values before saving.
+                          </p>
+                          <label className={`${styles.field} ${styles.wide}`}>
+                            <span>Professional summary</span>
+                            <textarea
+                              rows={4}
+                              value={resume.summary}
+                              onChange={(e) => setResume({ ...resume, summary: e.target.value })}
+                              className={styles.resumeTextarea}
+                            />
+                          </label>
                           <Field styles={styles} label="Technical skills (comma-separated)" value={skills.technical_skills} onChange={(e) => setSkills({ ...skills, technical_skills: e.target.value })} wide />
                           <Field styles={styles} label="Soft skills (comma-separated)" value={skills.soft_skills} onChange={(e) => setSkills({ ...skills, soft_skills: e.target.value })} wide />
                           <Field styles={styles} label="Languages (comma-separated)" value={skills.languages} onChange={(e) => setSkills({ ...skills, languages: e.target.value })} wide />
@@ -993,67 +1099,6 @@ function OnboardingContent() {
                           >
                             Add certification
                           </button>
-                        </div>
-                      )}
-
-                      {step === "government_docs" && (
-                        <div>
-                          <h2 className={styles.stepTitle}>Government identity documents</h2>
-                          <p className={styles.docHelper}>
-                            Upload a National ID (CNIC/NIC) or Passport (for foreigners). Wrong document types are rejected.
-                            Extracted fields auto-fill your profile and stay editable.
-                          </p>
-                          {govDocs.map((doc, index) => (
-                            <div key={index} className={`${styles.formGrid} ${styles.govDocEntry}`}>
-                              <label className={styles.field}>
-                                <span>Document type</span>
-                                <select
-                                  value={doc.doc_type === "other_id" ? "cnic" : doc.doc_type}
-                                  onChange={(e) => {
-                                    const next = [...govDocs];
-                                    next[index] = { ...next[index], doc_type: e.target.value };
-                                    setGovDocs(next);
-                                  }}
-                                >
-                                  <option value="cnic">National ID (CNIC / NIC)</option>
-                                  <option value="passport">Passport</option>
-                                </select>
-                              </label>
-                              <Field styles={styles} label="Document number" value={doc.document_number === "pending" ? "" : doc.document_number} onChange={(e) => {
-                                const next = [...govDocs];
-                                next[index] = { ...next[index], document_number: e.target.value };
-                                setGovDocs(next);
-                              }} />
-                              <label className={`${styles.field} ${styles.wide}`}>
-                                <span>Upload document (PDF, JPG, or PNG — max 10 MB)</span>
-                                <input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={uploading} onChange={(e) => handleFileUpload(e, "government_doc", index)} />
-                                {doc.file_url && <small>Uploaded: {doc.file_name || doc.file_url}</small>}
-                              </label>
-                            </div>
-                          ))}
-                          <button type="button" className={styles.secondaryButton} onClick={() => setGovDocs((c) => [...c, { ...emptyGovDoc }])}>
-                            Add another document
-                          </button>
-                        </div>
-                      )}
-
-                      {step === "resume" && (
-                        <div className={styles.formGrid}>
-                          <h2 className={styles.stepTitle}>Resume</h2>
-                          <label className={`${styles.field} ${styles.wide}`}>
-                            <span>Professional summary</span>
-                            <textarea
-                              rows={4}
-                              value={resume.summary}
-                              onChange={(e) => setResume({ ...resume, summary: e.target.value })}
-                              className={styles.resumeTextarea}
-                            />
-                          </label>
-                          <label className={`${styles.field} ${styles.wide}`}>
-                            <span>Upload resume / CV (PDF/DOC/DOCX)</span>
-                            <input type="file" accept=".pdf,.doc,.docx" disabled={uploading} onChange={(e) => handleFileUpload(e, "resume")} />
-                            {resume.file_url && <small>Uploaded: {resume.file_name || resume.file_url}</small>}
-                          </label>
                         </div>
                       )}
 
