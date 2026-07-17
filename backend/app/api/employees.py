@@ -7,7 +7,6 @@ from app.core.rbac import CurrentUser
 from app.core.security import require_permissions, require_roles
 from app.schemas.career import CareerEventCreateRequest
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
-from app.services import storage_service
 from app.services.candidate_service import CandidateService
 from app.services.document_service import document_service
 from app.services.employee_service import EmployeeService
@@ -27,14 +26,13 @@ PURPOSE_TO_CATEGORY = {
     "resume": "other",
     "government_doc": "identity",
     "education_cert": "education",
-    "certification": "other",
 }
 PURPOSE_TO_DEFAULT_DOC_TYPE = {
     "resume": "resume",
     "government_doc": "cnic",
-    "education_cert": "degree",
-    "certification": "certificate",
+    "education_cert": "transcript",
 }
+IDENTITY_DOC_TYPES = {"cnic", "passport"}
 
 
 @router.post("/generate-id")
@@ -180,7 +178,7 @@ async def get_employee_detail_legacy(employee_id: str, current_user: RequireRecr
 async def upload_onboarding_file(
     current_user: RequireCandidate,
     file: UploadFile = File(...),
-    purpose: Literal["resume", "government_doc", "education_cert", "certification"] = Form(...),
+    purpose: Literal["resume", "government_doc", "education_cert"] = Form(...),
     doc_type: str | None = Form(default=None),
 ):
     if current_user.role not in ("candidate", "employee", "super_admin"):
@@ -199,8 +197,16 @@ async def upload_onboarding_file(
     category = PURPOSE_TO_CATEGORY.get(purpose, "other")
     resolved_doc_type = doc_type or PURPOSE_TO_DEFAULT_DOC_TYPE.get(purpose, "other")
 
-    stored = await storage_service.save_file(current_user.id, category, original, content)
-    file_url = stored["file_url"] or f"/api/documents/{stored['object_path']}/download"
+    if purpose == "government_doc":
+        if resolved_doc_type not in IDENTITY_DOC_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail="Identity document must be a National ID (CNIC/NIC) or Passport.",
+            )
+    if purpose == "education_cert":
+        resolved_doc_type = "transcript"
+    if purpose == "resume":
+        resolved_doc_type = "resume"
 
     class _FakeUpload:
         filename = original
@@ -208,26 +214,58 @@ async def upload_onboarding_file(
         async def read(self_inner):
             return content
 
+    # Single storage write via document_service (avoids duplicate uploads).
     ocr_result = None
+    document = None
     try:
-        doc_res = await document_service.upload(current_user, file=_FakeUpload(), category=category, doc_type=resolved_doc_type)
-        if doc_res and "document" in doc_res:
-            ocr_result = doc_res["document"].get("ocr_result")
+        doc_res = await document_service.upload(
+            current_user,
+            file=_FakeUpload(),
+            category=category,
+            doc_type=resolved_doc_type,
+            purpose=purpose,
+        )
+        document = doc_res.get("document") if doc_res else None
+        if document:
+            ocr_result = document.get("ocr_result")
     except HTTPException:
         raise
-    except Exception:
-        pass
 
-    if current_user.role == "candidate":
-        resp = await candidate_service.attach_uploaded_file(
-            current_user,
-            purpose=purpose if purpose != "certification" else "education_cert",
-            file_name=original,
-            file_url=file_url,
-            doc_type=doc_type,
-        )
+    file_url = (document or {}).get("file_url") or ""
+    file_name = (document or {}).get("file_name") or original
+
+    # Do not attach rejected wrong-type files into onboarding profile slots.
+    rejected_type = ocr_result and ocr_result.get("status") == "rejected_type"
+    if rejected_type:
+        return {
+            "file_name": file_name,
+            "file_url": file_url,
+            "purpose": purpose,
+            "ocr_result": ocr_result,
+            "message": ocr_result.get("rejection_message") or "Document type rejected.",
+        }
+
+    if current_user.role in ("candidate", "employee", "super_admin"):
+        try:
+            resp = await candidate_service.attach_uploaded_file(
+                current_user,
+                purpose=purpose,
+                file_name=file_name,
+                file_url=file_url,
+                doc_type=resolved_doc_type if purpose == "government_doc" else doc_type,
+            )
+        except Exception:
+            resp = {"file_name": file_name, "file_url": file_url, "purpose": purpose}
     else:
-        resp = {"file_name": original, "file_url": file_url, "purpose": purpose}
+        resp = {"file_name": file_name, "file_url": file_url, "purpose": purpose}
+
     if ocr_result:
         resp["ocr_result"] = ocr_result
+    if document and document.get("profile_verification"):
+        resp["document_verification"] = document.get("profile_verification")
+    elif document and document.get("mismatch_reasons"):
+        resp["document_verification"] = {
+            "verification_status": document.get("verification_status"),
+            "mismatches": document.get("mismatch_reasons"),
+        }
     return resp

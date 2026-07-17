@@ -73,6 +73,48 @@ async def get_signed_url(document: dict) -> str | None:
         return None
 
 
+async def materialize_local_file(document: dict) -> str:
+    """Return a readable local path for OCR/re-extraction."""
+    object_path = document.get("object_path") or ""
+    if document.get("storage_backend") != "supabase":
+        local_path = UPLOAD_ROOT / object_path
+        if not local_path.exists():
+            raise FileNotFoundError("Stored document file is unavailable.")
+        return str(local_path)
+
+    bucket = supabase.storage.from_(settings.SUPABASE_BUCKET)
+    downloaded = bucket.download(object_path)
+    content = downloaded
+    if not isinstance(content, (bytes, bytearray)):
+        content = getattr(downloaded, "content", None) or getattr(downloaded, "data", None)
+    if not isinstance(content, (bytes, bytearray)):
+        raise FileNotFoundError("Could not download the stored document.")
+
+    LOCAL_TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+    suffix = Path(object_path).suffix.lower()
+    scratch_path = LOCAL_TEMP_ROOT / f"{uuid.uuid4().hex}{suffix}"
+    scratch_path.write_bytes(bytes(content))
+    return str(scratch_path)
+
+
+async def delete_file(document: dict) -> None:
+    """Best-effort removal from the configured storage backend."""
+    object_path = document.get("object_path") or ""
+    if not object_path:
+        return
+    if document.get("storage_backend") == "supabase":
+        try:
+            supabase.storage.from_(settings.SUPABASE_BUCKET).remove([object_path])
+        except Exception:
+            return
+    else:
+        local_path = UPLOAD_ROOT / object_path
+        try:
+            local_path.unlink(missing_ok=True)
+        except OSError:
+            return
+
+
 def _guess_content_type(filename: str) -> str:
     ext = Path(filename).suffix.lower()
     return {

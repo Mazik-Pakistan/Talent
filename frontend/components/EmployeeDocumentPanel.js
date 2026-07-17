@@ -3,25 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  deleteDocument,
   getApiErrorMessage,
   getDocumentDownloadUrl,
   listMyDocuments,
+  reextractDocument,
   uploadDocument,
 } from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
 
 const DOC_TYPE_OPTIONS = [
-  { value: "cnic", label: "CNIC", category: "identity" },
-  { value: "passport", label: "Passport", category: "identity" },
-  { value: "degree", label: "Degree certificate", category: "education" },
-  { value: "transcript", label: "Transcript", category: "education" },
-  { value: "certificate", label: "Certificate", category: "education" },
-  { value: "experience_letter", label: "Experience letter", category: "employment" },
-  { value: "relieving_letter", label: "Relieving letter", category: "employment" },
-  { value: "salary_certificate", label: "Salary certificate", category: "employment" },
-  { value: "reference_letter", label: "Reference letter", category: "legal" },
-  { value: "resume", label: "Resume", category: "other" },
-  { value: "other", label: "Other document", category: "other" },
+  { value: "cnic", label: "National ID (CNIC / NIC)", category: "identity", purpose: "government_doc" },
+  { value: "passport", label: "Passport", category: "identity", purpose: "government_doc" },
+  { value: "transcript", label: "Academic Transcript", category: "education", purpose: "education_cert" },
+  { value: "resume", label: "Resume / CV", category: "other", purpose: "resume" },
 ];
 
 const DOC_TYPE_LABELS = Object.fromEntries(DOC_TYPE_OPTIONS.map((opt) => [opt.value, opt.label]));
@@ -34,6 +29,7 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
   const [docType, setDocType] = useState(DOC_TYPE_OPTIONS[0].value);
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [actionBusyId, setActionBusyId] = useState(null);
   const [uploadMessage, setUploadMessage] = useState(null); // { type: 'error'|'success', text }
   const fileInputRef = useRef(null);
 
@@ -48,6 +44,7 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDocuments();
   }, [loadDocuments]);
 
@@ -57,20 +54,41 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
       setUploadMessage({ type: "error", text: "Choose a file to upload." });
       return;
     }
+    const existing = documents.find((doc) => doc.doc_type === docType);
+    if (
+      existing &&
+      !window.confirm(
+        "This replaces the active document. Existing profile values will not be overwritten automatically. Continue?"
+      )
+    ) {
+      return;
+    }
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
 
-    const category = DOC_TYPE_OPTIONS.find((opt) => opt.value === docType)?.category || "other";
+    const selected = DOC_TYPE_OPTIONS.find((opt) => opt.value === docType);
+    const category = selected?.category || "other";
     const formData = new FormData();
     formData.append("file", file);
     formData.append("category", category);
     formData.append("doc_type", docType);
+    if (selected?.purpose) {
+      formData.append("purpose", selected.purpose);
+    }
 
     setUploading(true);
     setUploadMessage(null);
     try {
-      await uploadDocument(formData, accessToken);
-      setUploadMessage({ type: "success", text: "Document uploaded — verification is in progress." });
+      const data = await uploadDocument(formData, accessToken);
+      const ocr = data?.document?.ocr_result;
+      if (ocr?.status === "rejected_type") {
+        setUploadMessage({
+          type: "error",
+          text: ocr.rejection_message || "Wrong document type — upload rejected.",
+        });
+      } else {
+        setUploadMessage({ type: "success", text: "Document uploaded — verification is in progress." });
+      }
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       loadDocuments();
@@ -90,6 +108,36 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
       if (data?.url) window.open(data.url, "_blank", "noopener,noreferrer");
     } catch {
       // Silently ignore — the status badge already communicates document state.
+    }
+  }
+
+  async function handleReextract(documentId) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setActionBusyId(documentId);
+    try {
+      await reextractDocument(documentId, accessToken);
+      loadDocuments();
+    } catch (err) {
+      setUploadMessage({ type: "error", text: getApiErrorMessage(err, "Could not re-extract document.") });
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  async function handleDelete(documentId) {
+    if (!window.confirm("Delete this uploaded document? This cannot be undone.")) return;
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setActionBusyId(documentId);
+    try {
+      await deleteDocument(documentId, accessToken);
+      loadDocuments();
+      onChanged?.();
+    } catch (err) {
+      setUploadMessage({ type: "error", text: getApiErrorMessage(err, "Could not delete document.") });
+    } finally {
+      setActionBusyId(null);
     }
   }
 
@@ -136,6 +184,22 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
                 <button type="button" className={styles.docCardLink} onClick={() => handleDownload(doc.id)}>
                   View / download
                 </button>
+                <button
+                  type="button"
+                  className={styles.docCardLink}
+                  disabled={actionBusyId === doc.id}
+                  onClick={() => handleReextract(doc.id)}
+                >
+                  {actionBusyId === doc.id ? "Processing…" : "Re-extract"}
+                </button>
+                <button
+                  type="button"
+                  className={styles.docCardLink}
+                  disabled={actionBusyId === doc.id}
+                  onClick={() => handleDelete(doc.id)}
+                >
+                  Delete
+                </button>
               </div>
             ))}
           </div>
@@ -165,7 +229,7 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
               ref={fileInputRef}
               type="file"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
-              accept=".pdf,.jpg,.jpeg,.png"
+              accept={docType === "resume" ? ".pdf,.doc,.docx" : ".pdf,.jpg,.jpeg,.png"}
             />
           </div>
           {uploadMessage && (
