@@ -2,6 +2,7 @@
 
 import smtplib
 import ssl
+from html import escape
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -307,6 +308,73 @@ class EmailService:
         <tr>
           <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
             <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mazik Global – TalentAI. All rights reserved.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+        self._send(to_email, subject, html)
+
+    def send_document_reupload_request(
+        self,
+        to_email: str,
+        full_name: str,
+        document_label: str,
+        reason: str,
+        note: str | None,
+        dashboard_link: str,
+    ) -> None:
+        """Tell a candidate exactly which document must be replaced."""
+        safe_name = escape(full_name or "Candidate")
+        safe_label = escape(document_label)
+        safe_reason = escape(reason)
+        safe_note = escape(note or "")
+        safe_link = escape(dashboard_link, quote=True)
+        note_html = (
+            f'<p style="margin:12px 0 0;color:#475569;font-size:14px;"><strong>Recruiter note:</strong> {safe_note}</p>'
+            if safe_note
+            else ""
+        )
+        subject = f"Action required: Re-upload your {safe_label} — TalentAI"
+        html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Document Re-upload Required – TalentAI</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#123a63 0%,#32a6ae 100%);padding:32px 40px;">
+            <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;">TalentAI</h1>
+            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">Document verification update</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 8px;color:#b45309;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;">Action required</p>
+            <h2 style="margin:0 0 18px;color:#0f172a;font-size:22px;">Hello, {safe_name}</h2>
+            <p style="margin:0 0 22px;color:#475569;font-size:15px;line-height:1.6;">
+              Your recruiter has requested a new copy of your <strong>{safe_label}</strong>.
+              Only this document needs to be replaced.
+            </p>
+            <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:18px;margin-bottom:26px;">
+              <p style="margin:0;color:#9a3412;font-size:14px;"><strong>Reason:</strong> {safe_reason}</p>
+              {note_html}
+            </div>
+            <div style="text-align:center;margin-bottom:24px;">
+              <a href="{safe_link}" style="display:inline-block;background:#123a63;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-size:15px;font-weight:700;">Open dashboard and re-upload</a>
+            </div>
+            <p style="margin:0;color:#64748b;font-size:13px;line-height:1.5;">
+              The replacement will be validated and sent back to your recruiter automatically.
+            </p>
           </td>
         </tr>
       </table>
