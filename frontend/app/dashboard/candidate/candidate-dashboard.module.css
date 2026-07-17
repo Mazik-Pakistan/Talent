@@ -357,6 +357,8 @@
   .sectionBody { padding: 14px 16px 20px 16px; }
   .fieldGrid { grid-template-columns: 1fr 1fr; gap: 16px 12px; }
   .moduleCard { padding: 16px; }
+  .banner { flex-direction: column; align-items: flex-start; }
+  .banner .btnPrimary { width: 100%; justify-content: center; }
 }
 
 @media (max-width: 400px) {
