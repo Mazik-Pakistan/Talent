@@ -17,12 +17,34 @@ from app.services.invitation_service import InvitationService
 # references, NDA, policies. Internal career history is recruiter-managed.
 # ------------------------------------------------------------------------
 ONBOARDING_TASK_DEFS = [
-    {"id": "personal", "label": "Complete personal & contact information", "step": "personal", "available": True},
-    {"id": "education", "label": "Add education history", "step": "education", "available": True},
-    {"id": "skills", "label": "Add skills & certifications", "step": "skills", "available": True},
-    {"id": "government_docs", "label": "Upload government ID documents", "step": "government_docs", "available": True},
-    {"id": "resume", "label": "Upload resume", "step": "resume", "available": True},
-    {"id": "submit", "label": "Submit profile for HR review", "step": "submit", "available": True},
+    {
+        "id": "personal",
+        "label": "Upload ID and complete personal information",
+        "step": "personal",
+        "requires": ("personal", "government_docs"),
+        "available": True,
+    },
+    {
+        "id": "education",
+        "label": "Upload transcript and add education history",
+        "step": "education",
+        "requires": ("education",),
+        "available": True,
+    },
+    {
+        "id": "skills",
+        "label": "Upload resume and confirm skills",
+        "step": "skills",
+        "requires": ("skills", "resume"),
+        "available": True,
+    },
+    {
+        "id": "submit",
+        "label": "Submit profile for HR review",
+        "step": "submit",
+        "requires": (),
+        "available": True,
+    },
 ]
 
 REQUIRED_ONBOARDING_KEYS = [
@@ -36,7 +58,8 @@ REQUIRED_ONBOARDING_KEYS = [
 STEP_FLOW = {
     "personal": "education",
     "education": "skills",
-    "skills": "government_docs",
+    "skills": "submit",
+    # Backward-compatible hidden steps for older clients.
     "government_docs": "resume",
     "resume": "submit",
 }
@@ -190,21 +213,41 @@ class CandidateService:
         now = datetime.now(UTC)
 
         step_handlers = {
-            "personal": ("personal", request.personal, "Personal information is required."),
-            "education": ("education", request.education, "Education history is required."),
-            "skills": ("skills", request.skills, "Skills & certifications are required."),
-            "government_docs": ("government_docs", request.government_docs, "Government documents are required."),
-            "resume": ("resume", request.resume, "Resume upload is required."),
+            "personal": (
+                ("personal", request.personal, "Personal information is required."),
+                ("government_docs", request.government_docs, "Upload a National ID or Passport before continuing."),
+            ),
+            "education": (
+                ("education", request.education, "Education history is required."),
+            ),
+            "skills": (
+                ("skills", request.skills, "Skills & certifications are required."),
+                ("resume", request.resume, "Upload a Resume/CV before continuing."),
+            ),
+            # Backward-compatible endpoints for older clients.
+            "government_docs": (
+                ("government_docs", request.government_docs, "Government documents are required."),
+            ),
+            "resume": (
+                ("resume", request.resume, "Resume upload is required."),
+            ),
         }
 
         if request.step in step_handlers:
-            field, payload, error = step_handlers[request.step]
-            if not payload:
-                raise HTTPException(status_code=400, detail=error)
-            data = payload.model_dump(mode="json")
-            if request.step in ("nda", "contract") and not data.get("signed_at"):
-                data["signed_at"] = now.isoformat()
-            updates[f"onboarding.{field}"] = data
+            saved_fields = []
+            for field, payload, error in step_handlers[request.step]:
+                if not payload:
+                    raise HTTPException(status_code=400, detail=error)
+                data = payload.model_dump(mode="json")
+                if field == "education":
+                    entries = data.get("entries") or []
+                    if not entries or any(not entry.get("certificate_file") for entry in entries):
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Upload an academic transcript for each education entry.",
+                        )
+                updates[f"onboarding.{field}"] = data
+                saved_fields.append(field)
             updates["onboarding.current_step"] = STEP_FLOW[request.step]
             if onboarding.get("status") != "submitted":
                 updates["onboarding.status"] = "in_progress"
@@ -215,7 +258,7 @@ class CandidateService:
                     "email": candidate["email"],
                     "recruiter_id": candidate.get("recruiter_id"),
                     "module": "onboarding",
-                    "action": f"onboarding_{field}_saved",
+                    "action": f"onboarding_{'_and_'.join(saved_fields)}_saved",
                     "outcome": "success",
                     "actor_email": current_user.email,
                     "created_at": now,
@@ -379,7 +422,8 @@ class CandidateService:
             elif task_def["step"] == "submit":
                 completed = submitted
             else:
-                completed = bool(onboarding.get(task_def["step"]))
+                required_sections = task_def.get("requires") or (task_def["step"],)
+                completed = all(bool(onboarding.get(section)) for section in required_sections)
             tasks.append(
                 {
                     "id": task_def["id"],
