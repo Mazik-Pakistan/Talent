@@ -14,6 +14,7 @@ import {
   markNotificationsRead,
 } from "@/services/authService";
 import DocumentStatusList from "@/components/DocumentStatusList";
+import DocumentManager from "@/components/DocumentManager";
 import styles from "./candidate-dashboard.module.css";
 
 const DASHBOARD_REFRESH_MS = 60000;
@@ -509,12 +510,12 @@ function CandidateDashboardContent() {
                       <div className={`${styles.bar} ${styles.orange}`} />
                       <div>
                         <div className={styles.sectionTitle}>My documents</div>
-                        <div className={styles.sectionDesc}>Identity &amp; education files with live verification status.</div>
+                        <div className={styles.sectionDesc}>Organized by category with upload, download, and update actions.</div>
                       </div>
                     </div>
                   </div>
                   <div className={styles.sectionBody}>
-                    <DocumentStatusList />
+                    <DocumentManager styles={styles} compact />
                   </div>
                 </div>
               </div>

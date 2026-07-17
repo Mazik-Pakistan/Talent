@@ -13,7 +13,7 @@ import {
   logout,
 } from "@/services/authService";
 import { ROLE_HOME, moduleAccess } from "@/services/rbac";
-import EmployeeDocumentPanel from "@/components/EmployeeDocumentPanel";
+import DocumentManager from "@/components/DocumentManager";
 import styles from "./employee-dashboard.module.css";
 
 const NAV_ITEMS = [
@@ -447,18 +447,12 @@ function EmployeeDashboardContent() {
                     <div className={`${styles.bar} ${styles.orange}`} />
                     <div>
                       <div className={styles.sectionTitle}>My documents</div>
-                      <div className={styles.sectionDesc}>Identity &amp; education files with live verification status.</div>
+                        <div className={styles.sectionDesc}>Organized by category with upload, download, and update actions.</div>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className={styles.sectionBody}>
-                  <EmployeeDocumentPanel styles={styles} onChanged={loadDocCount} />
-                </div>
-              </div>
-
-              {/* Onboarding record */}
-              <div className={styles.section} style={{ marginBottom: 0 }} id="onboarding-section">
-                <div className={styles.sectionHead}>
+                  <div className={styles.sectionBody}>
+                    <DocumentManager styles={styles} compact onChanged={loadDocCount} />
                   <div className={styles.sectionHeadLeft}>
                     <div className={`${styles.bar} ${styles.cyan}`} />
                     <div>
