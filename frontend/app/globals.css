@@ -208,13 +208,11 @@ button, input { font: inherit; }
 .status-badge.incomplete { background: var(--warning-bg); color: var(--warning); }
 
 /* Document management */
-.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-.doc-card { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: white; display: grid; gap: 10px; }
+.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; min-width: 0; }
+.doc-card { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: white; display: grid; gap: 10px; min-width: 0; }
 .doc-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .doc-card-head h4 { margin: 0; font-size: .92rem; text-transform: capitalize; }
 .doc-card-meta { color: var(--muted); font-size: .76rem; }
-.doc-uploader { border: 1.5px dashed #bed0dc; border-radius: 12px; padding: 18px; text-align: center; background: #fbfdfe; }
-.doc-uploader input[type="file"] { margin-top: 10px; font-size: .82rem; }
 .ocr-panel { border-top: 1px dashed var(--line); margin-top: 4px; padding-top: 10px; font-size: .78rem; }
 .ocr-panel dt { color: var(--muted); font-weight: 700; display: inline; }
 .ocr-panel dd { display: inline; margin: 0 12px 0 4px; color: var(--ink); }
@@ -225,6 +223,10 @@ button, input { font: inherit; }
 .doc-actions button { border-radius: 7px; border: 1px solid var(--line); background: white; padding: 6px 12px; font-size: .78rem; font-weight: 700; cursor: pointer; }
 .doc-actions button.approve { border-color: #bfe3d2; color: var(--success-deep); }
 .doc-actions button.reject { border-color: #f3c9c3; color: var(--danger); }
+.doc-actions button.submit { border-color: var(--blue); background: var(--blue); color: white; }
+.doc-actions button.submit:disabled { opacity: .7; cursor: wait; }
+.doc-uploader { border: 1.5px dashed #bed0dc; border-radius: 12px; padding: 14px; background: #fbfdfe; display: grid; gap: 10px; min-width: 0; overflow: hidden; }
+.doc-uploader input[type="file"] { display: block; width: 100%; max-width: 100%; font-size: .8rem; }
 
 /* Recruiter dashboard: tabs + pending-review + candidate offer composer */
 .section-tabs { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
