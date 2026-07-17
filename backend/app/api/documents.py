@@ -24,10 +24,10 @@ async def upload_document(
     """US-036/US-037/US-038: upload + classify + validate + OCR for identity/education/resume docs."""
     if category not in DOCUMENT_CATEGORIES:
         category = "other"
-    if doc_type not in PROFILE_DOCUMENT_TYPES:
+    if doc_type not in PROFILE_DOCUMENT_TYPES and not (category in {"employment", "banking", "legal", "other"} and doc_type == "other"):
         raise HTTPException(
             status_code=400,
-            detail="Only National ID (CNIC/NIC), Passport, Academic Transcript, and Resume/CV are accepted.",
+            detail="Only National ID (CNIC/NIC), Passport, Academic Transcript, Resume/CV, or generic supporting files are accepted.",
         )
     # Identity uploads are restricted to CNIC or Passport.
     if category == "identity" and doc_type not in ("cnic", "passport"):

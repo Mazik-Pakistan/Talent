@@ -8,7 +8,7 @@ DOCUMENT_CATEGORIES = ("identity", "education", "employment", "banking", "legal"
 
 # Profile auto-fill allowed document types (identity = CNIC or Passport only).
 PROFILE_IDENTITY_TYPES = ("cnic", "passport")
-PROFILE_DOCUMENT_TYPES = ("cnic", "passport", "resume", "transcript")
+PROFILE_DOCUMENT_TYPES = ("cnic", "passport", "resume", "transcript", "other")
 
 DOCUMENT_TYPES = (
     "cnic",

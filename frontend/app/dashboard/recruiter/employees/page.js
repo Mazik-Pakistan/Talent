@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@/services/authService";
 
 export default function RecruiterEmployeesPage() {
+  const router = useRouter();
   const [employees, setEmployees] = useState([]);
   const [employeeTotal, setEmployeeTotal] = useState(0);
   const [employeePage, setEmployeePage] = useState(1);
@@ -61,6 +63,7 @@ export default function RecruiterEmployeesPage() {
     }
     try {
       const data = await getEmployeeDetail(id, accessToken);
+      console.log("BACKEND DATA:", data);
       setSelectedEmployee(data.employee);
       setCareerForm({
         event_type: "promoted",
@@ -161,7 +164,10 @@ export default function RecruiterEmployeesPage() {
                       <strong>{employee.full_name}</strong>
                       <div className={styles.mutedText}>{employee.employee_id} · {employee.email} · {employee.job_title} · {employee.department}</div>
                     </div>
-                    <button type="button" className={styles.secondaryButton} onClick={() => handleViewProfile(employee)}>View profile</button>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button type="button" className={styles.secondaryButton} onClick={() => handleViewProfile(employee)}>Career timeline</button>
+                      <button type="button" className={styles.primaryButton} onClick={() => router.push(`/dashboard/recruiter/employees/${employee.employee_id || employee.id}`)}>View profile</button>
+                    </div>
                   </li>
                 ))}
               </ul>
