@@ -11,17 +11,16 @@ import {
 import StatusBadge from "@/components/StatusBadge";
 
 const DOC_TYPE_OPTIONS = [
-  { value: "cnic", label: "CNIC", category: "identity" },
-  { value: "passport", label: "Passport", category: "identity" },
-  { value: "degree", label: "Degree certificate", category: "education" },
-  { value: "transcript", label: "Transcript", category: "education" },
-  { value: "certificate", label: "Certificate", category: "education" },
-  { value: "experience_letter", label: "Experience letter", category: "employment" },
-  { value: "relieving_letter", label: "Relieving letter", category: "employment" },
-  { value: "salary_certificate", label: "Salary certificate", category: "employment" },
-  { value: "reference_letter", label: "Reference letter", category: "legal" },
-  { value: "resume", label: "Resume", category: "other" },
-  { value: "other", label: "Other document", category: "other" },
+  { value: "cnic", label: "National ID (CNIC / NIC)", category: "identity", purpose: "government_doc" },
+  { value: "passport", label: "Passport", category: "identity", purpose: "government_doc" },
+  { value: "transcript", label: "Academic Transcript", category: "education", purpose: "education_cert" },
+  { value: "resume", label: "Resume / CV", category: "other", purpose: "resume" },
+  { value: "degree", label: "Degree certificate", category: "education", purpose: null },
+  { value: "experience_letter", label: "Experience letter", category: "employment", purpose: null },
+  { value: "relieving_letter", label: "Relieving letter", category: "employment", purpose: null },
+  { value: "salary_certificate", label: "Salary certificate", category: "employment", purpose: null },
+  { value: "reference_letter", label: "Reference letter", category: "legal", purpose: null },
+  { value: "other", label: "Other document", category: "other", purpose: null },
 ];
 
 const DOC_TYPE_LABELS = Object.fromEntries(DOC_TYPE_OPTIONS.map((opt) => [opt.value, opt.label]));
@@ -60,17 +59,29 @@ export default function EmployeeDocumentPanel({ styles, onChanged }) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
 
-    const category = DOC_TYPE_OPTIONS.find((opt) => opt.value === docType)?.category || "other";
+    const selected = DOC_TYPE_OPTIONS.find((opt) => opt.value === docType);
+    const category = selected?.category || "other";
     const formData = new FormData();
     formData.append("file", file);
     formData.append("category", category);
     formData.append("doc_type", docType);
+    if (selected?.purpose) {
+      formData.append("purpose", selected.purpose);
+    }
 
     setUploading(true);
     setUploadMessage(null);
     try {
-      await uploadDocument(formData, accessToken);
-      setUploadMessage({ type: "success", text: "Document uploaded — verification is in progress." });
+      const data = await uploadDocument(formData, accessToken);
+      const ocr = data?.document?.ocr_result;
+      if (ocr?.status === "rejected_type") {
+        setUploadMessage({
+          type: "error",
+          text: ocr.rejection_message || "Wrong document type — upload rejected.",
+        });
+      } else {
+        setUploadMessage({ type: "success", text: "Document uploaded — verification is in progress." });
+      }
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       loadDocuments();

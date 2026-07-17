@@ -19,11 +19,21 @@ async def upload_document(
     file: UploadFile = File(...),
     category: str = Form(...),
     doc_type: str = Form(...),
+    purpose: str | None = Form(default=None),
 ):
-    """US-036/US-037/US-038: upload + auto-categorize + trigger OCR for identity/education docs."""
+    """US-036/US-037/US-038: upload + classify + validate + OCR for identity/education/resume docs."""
     if category not in DOCUMENT_CATEGORIES:
         category = "other"
-    return await document_service.upload(current_user, file=file, category=category, doc_type=doc_type)
+    # Identity uploads are restricted to CNIC or Passport.
+    if category == "identity" and doc_type not in ("cnic", "passport"):
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=400, detail="Identity document must be a National ID (CNIC/NIC) or Passport.")
+    if doc_type == "transcript":
+        category = "education"
+    return await document_service.upload(
+        current_user, file=file, category=category, doc_type=doc_type, purpose=purpose
+    )
 
 
 @router.get("/me")

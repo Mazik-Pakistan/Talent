@@ -111,6 +111,10 @@ class OnboardingPersonalInfo(BaseModel):
     blood_group: Literal["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "unknown"] = "unknown"
     national_id: str = Field(min_length=5, max_length=40)
     profile_picture: str | None = None
+    # Optional fields populated from CNIC/Passport OCR (editable by candidate)
+    father_name: str | None = Field(default=None, max_length=120)
+    id_issue_date: str | None = Field(default=None, max_length=40)
+    id_expiry_date: str | None = Field(default=None, max_length=40)
     # Contact (US-026)
     alternate_phone: str | None = None
     current_address: str = Field(min_length=3, max_length=300)
@@ -233,7 +237,8 @@ class OnboardingSkillsInfo(BaseModel):
 
 
 class GovernmentDocument(BaseModel):
-    doc_type: Literal["cnic", "passport", "other_id"]
+    # Identity for profile autofill: National ID or Passport only (no other_id / license).
+    doc_type: Literal["cnic", "passport"]
     document_number: str = Field(min_length=5, max_length=60)
     file_name: str | None = None
     file_url: str | None = None
