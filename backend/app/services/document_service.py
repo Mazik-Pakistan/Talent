@@ -84,7 +84,13 @@ class DocumentService:
                 detail="This exact document is already uploaded.",
             )
 
-        stored = await storage_service.save_file(current_user.id, category, original, content)
+        try:
+            stored = await storage_service.save_file(current_user.id, category, original, content)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not store the uploaded document.",
+            ) from exc
         now = datetime.now(UTC)
 
         previous = await database.documents.find_one(
@@ -117,6 +123,7 @@ class DocumentService:
             "file_name": original,
             "storage_backend": stored["backend"],
             "object_path": stored["object_path"],
+            "resource_type": stored.get("resource_type"),
             "file_url": stored["file_url"],
             "document_hash": document_hash,
             "version": version,
@@ -144,10 +151,19 @@ class DocumentService:
         if needs_ocr:
             import asyncio
 
+            temp_local_path: str | None = None
             try:
                 def _run_extraction():
-                    return document_extraction_service.extract_text(stored["local_path"])
+                    return document_extraction_service.extract_text(temp_local_path or "")
 
+                temp_local_path = await storage_service.materialize_local_file(
+                    {
+                        "storage_backend": stored["backend"],
+                        "file_url": stored["file_url"],
+                        "object_path": stored["object_path"],
+                        "resource_type": stored.get("resource_type"),
+                    }
+                )
                 raw_text = await asyncio.to_thread(_run_extraction)
                 parsed = await document_extraction_service.parse_structured_data(raw_text)
                 validation = document_extraction_service.validate_classification(
@@ -244,6 +260,12 @@ class DocumentService:
                 doc_status = "reupload_required"
                 verification_status = "reupload_required"
                 mismatch_reasons = []
+            finally:
+                if temp_local_path:
+                    try:
+                        Path(temp_local_path).unlink(missing_ok=True)
+                    except OSError:
+                        pass
 
             update = {
                 "ocr_result": ocr_result,
@@ -685,7 +707,14 @@ class DocumentService:
 
         import asyncio
 
-        raw_text = await asyncio.to_thread(document_extraction_service.extract_text, local_path)
+        try:
+            raw_text = await asyncio.to_thread(document_extraction_service.extract_text, local_path)
+        finally:
+            if doc.get("storage_backend") in {"cloudinary", "supabase"}:
+                try:
+                    Path(local_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
         parsed = await document_extraction_service.parse_structured_data(raw_text)
         expected = document_extraction_service.resolve_expected_categories(
             purpose=doc.get("purpose"),
@@ -893,8 +922,6 @@ class DocumentService:
         if current_user.role not in ("recruiter", "super_admin") and doc["owner_id"] != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized to view this document.")
         url = await storage_service.get_signed_url(doc)
-        if url and doc.get("storage_backend") != "supabase" and url.startswith("/"):
-            url = str(request.base_url).rstrip("/") + url
         await database.audit_logs.insert_one(
             {
                 "user_id": current_user.id,

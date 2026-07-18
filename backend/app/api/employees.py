@@ -245,9 +245,20 @@ async def upload_onboarding_file(
             "message": ocr_result.get("rejection_message") or "Document type rejected.",
         }
 
-    if current_user.role in ("candidate", "employee", "super_admin"):
+    if current_user.role == "candidate":
         try:
             resp = await candidate_service.attach_uploaded_file(
+                current_user,
+                purpose=purpose,
+                file_name=file_name,
+                file_url=file_url,
+                doc_type=resolved_doc_type if purpose == "government_doc" else doc_type,
+            )
+        except Exception:
+            resp = {"file_name": file_name, "file_url": file_url, "purpose": purpose}
+    elif current_user.role == "employee":
+        try:
+            resp = await service.attach_uploaded_file(
                 current_user,
                 purpose=purpose,
                 file_name=file_name,

@@ -632,6 +632,85 @@ class EmployeeService:
             }
         }
 
+    async def attach_uploaded_file(
+        self,
+        current_user: CurrentUser,
+        *,
+        purpose: str,
+        file_name: str,
+        file_url: str,
+        doc_type: str | None = None,
+    ) -> dict:
+        """Keep the employee profile's denormalized onboarding data in sync."""
+        employee = await self._require_employee(current_user)
+        onboarding = dict(employee.get("onboarding") or {})
+        now = datetime.now(UTC)
+
+        if purpose == "resume":
+            resume = dict(onboarding.get("resume") or {})
+            resume.update({"file_name": file_name, "file_url": file_url})
+            if not resume.get("summary"):
+                resume["summary"] = ""
+            onboarding["resume"] = resume
+        elif purpose == "government_doc":
+            government = dict(onboarding.get("government_docs") or {})
+            documents = list(government.get("documents") or [])
+            target_type = doc_type if doc_type in {"cnic", "passport"} else None
+            updated = False
+            if target_type:
+                for item in documents:
+                    if item.get("doc_type") == target_type and not item.get("file_url"):
+                        item["file_name"] = file_name
+                        item["file_url"] = file_url
+                        updated = True
+                        break
+                if not updated:
+                    for item in documents:
+                        if item.get("doc_type") == target_type:
+                            item["file_name"] = file_name
+                            item["file_url"] = file_url
+                            updated = True
+                            break
+            if not updated:
+                documents.append(
+                    {
+                        "doc_type": target_type or "cnic",
+                        "document_number": "pending",
+                        "file_name": file_name,
+                        "file_url": file_url,
+                    }
+                )
+            government["documents"] = documents
+            onboarding["government_docs"] = government
+        elif purpose == "education_cert":
+            education = dict(onboarding.get("education") or {})
+            entries = list(education.get("entries") or [])
+            if entries:
+                target_entry = next((entry for entry in entries if not entry.get("certificate_file")), entries[0])
+                target_entry["certificate_file"] = file_url
+                education["entries"] = entries
+                onboarding["education"] = education
+        else:
+            return {
+                "message": "File uploaded.",
+                "file_name": file_name,
+                "file_url": file_url,
+                "onboarding": onboarding,
+                "doc_type": doc_type,
+            }
+
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {"$set": {"onboarding": onboarding, "updated_at": now}},
+        )
+        refreshed = await database.employees.find_one({"_id": employee["_id"]})
+        return {
+            "message": "File uploaded.",
+            "file_name": file_name,
+            "file_url": file_url,
+            "onboarding": refreshed.get("onboarding"),
+        }
+
     async def _find_candidate(self, candidate_id: str) -> dict | None:
         query_or = [{"user_id": candidate_id}, {"email": candidate_id}]
         if ObjectId.is_valid(candidate_id):

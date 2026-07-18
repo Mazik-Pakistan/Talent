@@ -40,7 +40,7 @@ const SKIP_KEYS = new Set([
 
 /**
  * Recursively walks `obj` and extracts every file object — defined as any
- * plain object that carries a `file_url` or `file_path` field.
+ * plain object that carries a `file_url` field.
  *
  * Category is set once per top-level onboarding section (the caller's
  * responsibility). Type is inferred from the nearest named parent key so that
@@ -62,13 +62,12 @@ function extractDocuments(obj, category, type, acc) {
   }
 
   // Plain object: check if it is itself a file record.
-  if (obj.file_url || obj.file_path) {
+  if (obj.file_url) {
     // If the object carries an explicit doc_type field, use that as the type
     // (e.g. GovernmentDocument.doc_type === "cnic"). Otherwise keep ancestry.
     const resolvedType = obj.doc_type ? toLabel(obj.doc_type) : (type || "Document");
     acc.push({
       file_url:     obj.file_url      || null,
-      file_path:    obj.file_path     || null,
       file_name:    obj.file_name     || null,
       document_type: resolvedType,
       category,
@@ -209,9 +208,9 @@ function DocumentGroup({ groupName, docs }) {
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
           {/* View File link */}
-          {(current.file_url || current.file_path) && (
+          {current.file_url && (
             <a
-              href={current.file_url || current.file_path}
+              href={current.file_url}
               target="_blank"
               rel="noopener noreferrer"
               className={styles.secondaryButton}
@@ -300,9 +299,9 @@ function DocumentGroup({ groupName, docs }) {
                       {oldDate ? `Uploaded ${oldDate}` : `Archived version ${idx + 1}`}
                     </div>
                   </div>
-                  {(oldDoc.file_url || oldDoc.file_path) && (
+                  {oldDoc.file_url && (
                     <a
-                      href={oldDoc.file_url || oldDoc.file_path}
+                      href={oldDoc.file_url}
                       target="_blank"
                       rel="noopener noreferrer"
                       className={styles.secondaryButton}
@@ -421,10 +420,9 @@ export default function EmployeeProfilePage({ params }) {
   if (Array.isArray(employee.documents)) {
     employee.documents.forEach((doc) => {
       if (!doc || typeof doc !== "object") return;
-      if (!doc.file_url && !doc.file_path) return;
+      if (!doc.file_url) return;
       rawDocuments.push({
         file_url:      doc.file_url     || null,
-        file_path:     doc.file_path    || null,
         file_name:     doc.file_name    || null,
         document_type: doc.document_type
           ? toLabel(doc.document_type)

@@ -346,8 +346,59 @@ class CandidateService:
                 "onboarding": refreshed.get("onboarding"),
             }
 
-        # For government/education certificates the wizard attaches the URL in the
-        # subsequent save step — avoid creating incomplete draft documents here.
+        if purpose == "government_doc":
+            government = dict(onboarding.get("government_docs") or {})
+            documents = list(government.get("documents") or [])
+            target_type = doc_type if doc_type in ("cnic", "passport") else "cnic"
+            updated = False
+            for item in documents:
+                if item.get("doc_type") == target_type:
+                    item["file_name"] = file_name
+                    item["file_url"] = file_url
+                    updated = True
+                    break
+            if not updated:
+                documents.append(
+                    {
+                        "doc_type": target_type,
+                        "document_number": "pending",
+                        "file_name": file_name,
+                        "file_url": file_url,
+                    }
+                )
+            government["documents"] = documents
+            await database.candidates.update_one(
+                {"_id": candidate["_id"]},
+                {"$set": {"onboarding.government_docs": government, "updated_at": now}},
+            )
+            refreshed = await database.candidates.find_one({"_id": candidate["_id"]})
+            return {
+                "message": "File uploaded.",
+                "file_name": file_name,
+                "file_url": file_url,
+                "onboarding": refreshed.get("onboarding"),
+            }
+
+        if purpose == "education_cert":
+            education = dict(onboarding.get("education") or {})
+            entries = list(education.get("entries") or [])
+            if entries:
+                target_entry = next((entry for entry in entries if not entry.get("certificate_file")), entries[0])
+                target_entry["certificate_file"] = file_url
+                education["entries"] = entries
+                await database.candidates.update_one(
+                    {"_id": candidate["_id"]},
+                    {"$set": {"onboarding.education": education, "updated_at": now}},
+                )
+                refreshed = await database.candidates.find_one({"_id": candidate["_id"]})
+                return {
+                    "message": "File uploaded.",
+                    "file_name": file_name,
+                    "file_url": file_url,
+                    "onboarding": refreshed.get("onboarding"),
+                }
+
+        # Preserve the existing return shape for any other wizard attachments.
         return {
             "message": "File uploaded.",
             "file_name": file_name,

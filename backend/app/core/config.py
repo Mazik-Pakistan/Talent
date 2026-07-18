@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     MONGODB_URI: str
     DATABASE_NAME: str
 
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
+    CLOUDINARY_FOLDER: str = "talent"
+
     SUPABASE_URL: str
     SUPABASE_KEY: str
     SUPABASE_BUCKET: str
