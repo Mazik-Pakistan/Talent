@@ -7,6 +7,12 @@ from app.core.rbac import CurrentUser
 from app.core.security import require_permissions, require_roles
 from app.schemas.career import CareerEventCreateRequest
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
+from app.schemas.onboarding_assignment import (
+    AssetAssignRequest,
+    AssetUpdateRequest,
+    CompanyEmailRequest,
+    OrientationScheduleRequest,
+)
 from app.services.candidate_service import CandidateService
 from app.services.document_service import document_service
 from app.services.employee_service import EmployeeService
@@ -151,6 +157,51 @@ async def get_employee_detail(employee_id: str, current_user: RequireRecruiter):
     with static routes such as /me, /upload, or /export.csv.
     """
     return await service.get_employee_profile(current_user, employee_id, reveal_banking=False)
+
+
+@router.put("/detail/{employee_id}/company-email")
+async def set_company_email(
+    employee_id: str,
+    request: CompanyEmailRequest,
+    current_user: RequireRecruiter,
+):
+    """Record the employee's official company email for organizational communications."""
+    return await service.set_company_email(current_user, employee_id, str(request.company_email))
+
+
+@router.post("/detail/{employee_id}/assets", status_code=201)
+async def assign_asset(
+    employee_id: str,
+    request: AssetAssignRequest,
+    current_user: RequireRecruiter,
+):
+    """Assign a company asset to the employee from Day 1."""
+    return await service.assign_asset(current_user, employee_id, request)
+
+
+@router.put("/detail/{employee_id}/assets/{asset_id}")
+async def update_asset(
+    employee_id: str,
+    asset_id: str,
+    request: AssetUpdateRequest,
+    current_user: RequireRecruiter,
+):
+    return await service.update_asset(current_user, employee_id, asset_id, request)
+
+
+@router.delete("/detail/{employee_id}/assets/{asset_id}")
+async def remove_asset(employee_id: str, asset_id: str, current_user: RequireRecruiter):
+    return await service.remove_asset(current_user, employee_id, asset_id)
+
+
+@router.put("/detail/{employee_id}/orientation")
+async def schedule_orientation(
+    employee_id: str,
+    request: OrientationScheduleRequest,
+    current_user: RequireRecruiter,
+):
+    """Schedule or update the employee's orientation session."""
+    return await service.schedule_orientation(current_user, employee_id, request)
 
 
 @router.get("/{employee_id}/career")

@@ -35,6 +35,21 @@ DOCUMENT_LABELS = {
 }
 
 
+def _should_run_ocr(*, doc_type: str, purpose: str | None = None) -> bool:
+    """OCR runs only for CNIC to keep compute costs low.
+
+    Other document types are stored for verification without extraction.
+    """
+    if not settings.ENABLE_OCR:
+        return False
+    normalized = (doc_type or "").strip().lower()
+    if normalized == "cnic":
+        return True
+    # Legacy uploads sometimes omit doc_type but mark purpose as government_doc
+    # with an implicit CNIC — still require explicit cnic to avoid passport OCR.
+    return False
+
+
 def _extensions_for(category: str, doc_type: str) -> set[str]:
     if doc_type == "resume" or category == "other":
         return RESUME_EXTENSIONS
@@ -107,7 +122,7 @@ class DocumentService:
             )
         )
 
-        needs_ocr = settings.ENABLE_OCR
+        needs_ocr = _should_run_ocr(doc_type=doc_type, purpose=purpose)
         expected = document_extraction_service.resolve_expected_categories(
             purpose=purpose, doc_type=doc_type, category=category
         )
@@ -610,11 +625,7 @@ class DocumentService:
             )
 
         document_label = DOCUMENT_LABELS.get(doc["doc_type"], doc["doc_type"].replace("_", " ").title())
-        candidate_link = (
-            f"/dashboard/candidate#document-{doc['_id']}"
-            if doc["owner_role"] == "candidate"
-            else f"/dashboard/employee#document-{doc['_id']}"
-        )
+        candidate_link = "/documents"
         if payload.status == "reupload_required":
             reason_label = (payload.rejection_reason or "other").replace("_", " ")
             notification_title = f"Re-upload required: {document_label}"
@@ -641,20 +652,31 @@ class DocumentService:
 
         email_sent = None
         email_error = None
-        if payload.status == "reupload_required" and doc.get("owner_email"):
+        if doc.get("owner_email"):
             import asyncio
 
             dashboard_link = f"{settings.FRONTEND_URL.rstrip('/')}{candidate_link}"
             try:
-                await asyncio.to_thread(
-                    email_service.send_document_reupload_request,
-                    doc["owner_email"],
-                    doc.get("owner_name") or "Candidate",
-                    document_label,
-                    (payload.rejection_reason or "other").replace("_", " "),
-                    payload.note,
-                    dashboard_link,
-                )
+                if payload.status == "reupload_required":
+                    await asyncio.to_thread(
+                        email_service.send_document_reupload_request,
+                        doc["owner_email"],
+                        doc.get("owner_name") or "Candidate",
+                        document_label,
+                        (payload.rejection_reason or "other").replace("_", " "),
+                        payload.note,
+                        dashboard_link,
+                    )
+                else:
+                    await asyncio.to_thread(
+                        email_service.send_document_status_update,
+                        doc["owner_email"],
+                        doc.get("owner_name") or "Candidate",
+                        document_label,
+                        update["status"].replace("_", " "),
+                        dashboard_link,
+                        payload.note,
+                    )
                 email_sent = True
             except Exception as exc:
                 # The in-app request is authoritative; SMTP failure must not undo it.
@@ -699,6 +721,12 @@ class DocumentService:
         self._assert_document_access(current_user, doc)
         if doc.get("deleted_at"):
             raise HTTPException(status_code=404, detail="Document has been deleted.")
+
+        if not _should_run_ocr(doc_type=doc.get("doc_type") or "", purpose=doc.get("purpose")):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="OCR re-extraction is only available for National ID (CNIC) documents.",
+            )
 
         try:
             local_path = await storage_service.materialize_local_file(doc)

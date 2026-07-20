@@ -385,5 +385,149 @@ class EmailService:
 """
         self._send(to_email, subject, html)
 
+    def _branded_shell(self, eyebrow: str, title: str, body_html: str) -> str:
+        return f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{escape(eyebrow)} – TalentAI</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#123a63 0%,#32a6ae 100%);padding:32px 40px;">
+            <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;">TalentAI</h1>
+            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 8px;color:#64748b;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;">{escape(eyebrow)}</p>
+            <h2 style="margin:0 0 18px;color:#0f172a;font-size:22px;font-weight:700;">{title}</h2>
+            {body_html}
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
+            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mazik Global – TalentAI. All rights reserved.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+
+    def send_document_status_update(
+        self,
+        to_email: str,
+        full_name: str,
+        document_label: str,
+        status_label: str,
+        dashboard_link: str,
+        note: str | None = None,
+    ) -> None:
+        safe_name = escape(full_name or "there")
+        safe_label = escape(document_label)
+        safe_status = escape(status_label)
+        safe_link = escape(dashboard_link, quote=True)
+        note_html = (
+            f'<p style="margin:12px 0 0;color:#475569;font-size:14px;"><strong>Note:</strong> {escape(note)}</p>'
+            if note
+            else ""
+        )
+        subject = f"Document update: {document_label} — TalentAI"
+        body = f"""
+            <p style="margin:0 0 22px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {safe_name}, your <strong>{safe_label}</strong> was marked <strong>{safe_status}</strong>.
+            </p>
+            {note_html}
+            <div style="text-align:center;margin-top:24px;">
+              <a href="{safe_link}" style="display:inline-block;background:#123a63;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-size:15px;font-weight:700;">Open documents</a>
+            </div>
+"""
+        self._send(to_email, subject, self._branded_shell("Document update", "Verification update", body))
+
+    def send_company_email_assigned(self, to_email: str, full_name: str, company_email: str) -> None:
+        subject = "Your company email has been assigned — TalentAI"
+        body = f"""
+            <p style="margin:0 0 22px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {escape(full_name)}, your recruiter has recorded your official company email.
+              Please use this address for workplace communications going forward.
+            </p>
+            <div style="background:#f1f5fe;border:2px solid #32a6ae;border-radius:10px;padding:20px;margin-bottom:8px;">
+              <p style="margin:0 0 4px;color:#64748b;font-size:12px;font-weight:700;text-transform:uppercase;">Company email</p>
+              <p style="margin:0;color:#123a63;font-size:18px;font-weight:800;">{escape(company_email)}</p>
+            </div>
+"""
+        self._send(to_email, subject, self._branded_shell("Company credentials", f"Welcome aboard, {escape(full_name)}", body))
+
+    def send_asset_assigned(
+        self,
+        to_email: str,
+        full_name: str,
+        asset_name: str,
+        asset_type: str,
+        serial_number: str | None = None,
+    ) -> None:
+        subject = f"Asset assigned: {asset_name} — TalentAI"
+        serial_html = (
+            f'<p style="margin:8px 0 0;color:#475569;font-size:14px;"><strong>Serial:</strong> {escape(serial_number)}</p>'
+            if serial_number
+            else ""
+        )
+        body = f"""
+            <p style="margin:0 0 22px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {escape(full_name)}, a company asset has been assigned to you. Please keep it safe and report any issues to HR.
+            </p>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:20px;">
+              <p style="margin:0;color:#123a63;font-size:17px;font-weight:800;">{escape(asset_name)}</p>
+              <p style="margin:6px 0 0;color:#475569;font-size:14px;">Type: {escape(asset_type)}</p>
+              {serial_html}
+            </div>
+"""
+        self._send(to_email, subject, self._branded_shell("Company assets", "New asset assigned", body))
+
+    def send_orientation_scheduled(
+        self,
+        to_email: str,
+        full_name: str,
+        date: str,
+        time: str,
+        trainer: str,
+        agenda: str,
+        meeting_link: str | None = None,
+        is_update: bool = False,
+    ) -> None:
+        subject = (
+            "Orientation session updated — TalentAI"
+            if is_update
+            else "Your orientation session is scheduled — TalentAI"
+        )
+        link_html = (
+            f'<p style="margin:12px 0 0;"><a href="{escape(meeting_link, quote=True)}" style="color:#2d6cdf;font-weight:700;">Join meeting</a></p>'
+            if meeting_link
+            else ""
+        )
+        body = f"""
+            <p style="margin:0 0 22px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {escape(full_name)}, {"your orientation details were updated" if is_update else "your onboarding orientation has been scheduled"}.
+            </p>
+            <div style="background:#f1f5fe;border:2px solid #32a6ae;border-radius:10px;padding:20px;margin-bottom:18px;">
+              <p style="margin:0 0 6px;color:#123a63;font-size:16px;font-weight:800;">{escape(date)} · {escape(time)}</p>
+              <p style="margin:0;color:#475569;font-size:14px;"><strong>Trainer:</strong> {escape(trainer)}</p>
+              {link_html}
+            </div>
+            <p style="margin:0 0 6px;color:#64748b;font-size:12px;font-weight:700;text-transform:uppercase;">Agenda</p>
+            <p style="margin:0;color:#475569;font-size:15px;line-height:1.6;white-space:pre-wrap;">{escape(agenda)}</p>
+"""
+        eyebrow = "Orientation update" if is_update else "Orientation session"
+        self._send(to_email, subject, self._branded_shell(eyebrow, "You're invited", body))
+
 
 email_service = EmailService()

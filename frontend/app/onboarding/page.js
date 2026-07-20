@@ -54,6 +54,18 @@ const NAV_ITEMS = [
     ),
   },
   {
+    key: "documents",
+    label: "Documents",
+    href: "/documents",
+    disabled: false,
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" /><path d="M16 13H8" /><path d="M16 17H8" /><path d="M10 9H8" />
+      </svg>
+    ),
+  },
+  {
     key: "learning",
     label: "Learning",
     href: null,
@@ -89,6 +101,8 @@ const NAV_ITEMS = [
     ),
   },
 ];
+
+const FILL_MODE_KEY = "onboarding_fill_mode";
 
 const emptyPersonal = {
   first_name: "",
@@ -160,11 +174,13 @@ function OnboardingContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadPhase, setUploadPhase] = useState("");
   const [message, setMessage] = useState("");
   const [candidate, setCandidate] = useState(null);
   const [onboarding, setOnboarding] = useState(null);
   const [progress, setProgress] = useState(null);
   const [step, setStep] = useState("personal");
+  const [fillMode, setFillMode] = useState(null);
   const [personal, setPersonal] = useState(emptyPersonal);
   const [educationEntries, setEducationEntries] = useState([{ ...emptyEducationEntry }]);
   const [skills, setSkills] = useState(emptySkills);
@@ -196,6 +212,12 @@ function OnboardingContent() {
 
     Promise.resolve().then(async () => {
       try {
+        const storedMode = sessionStorage.getItem(FILL_MODE_KEY);
+        if (storedMode === "ocr" || storedMode === "manual") {
+          setFillMode(storedMode);
+        } else if (isEditMode) {
+          setFillMode("manual");
+        }
         const data = await getOnboarding(accessToken);
         setCandidate(data.candidate);
         setOnboarding(data.onboarding);
@@ -510,6 +532,15 @@ function OnboardingContent() {
 
   const stepIndex = useMemo(() => steps.findIndex((item) => item.id === step), [step, steps]);
   const submitted = onboarding?.status === "submitted";
+  const isOcrMode = fillMode === "ocr";
+  const isManualMode = fillMode === "manual";
+  const showModeChooser = !loading && !submitted && !isEditMode && !fillMode;
+
+  function chooseFillMode(mode) {
+    setFillMode(mode);
+    sessionStorage.setItem(FILL_MODE_KEY, mode);
+    setMessage("");
+  }
 
   async function persist(payload) {
     const accessToken = localStorage.getItem("access_token");
@@ -566,14 +597,21 @@ function OnboardingContent() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setUploading(true);
-    setMessage("Uploading, validating, and extracting document data…");
+    const willScan = purpose === "government_doc" && (govDocs[index]?.doc_type || "cnic") === "cnic";
+    setUploadPhase(
+      willScan
+        ? "Scanning your National ID with OCR — this may take a moment…"
+        : "Uploading and saving your document…"
+    );
+    setMessage(willScan ? "Scanning document…" : "Uploading document…");
     setExtractionPreview(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("purpose", purpose);
       if (purpose === "government_doc") {
-        formData.append("doc_type", govDocs[index]?.doc_type || "cnic");
+        const chosenType = govDocs[index]?.doc_type || "cnic";
+        formData.append("doc_type", isOcrMode ? "cnic" : chosenType);
       }
       const data = await uploadOnboardingFile(formData, accessToken);
       setOnboarding(data.onboarding);
@@ -596,6 +634,7 @@ function OnboardingContent() {
             file_name: data.file_name,
             file_url: data.file_url,
             document_number: next[index].document_number || "pending",
+            doc_type: isOcrMode ? "cnic" : next[index].doc_type || "cnic",
           };
           return next;
         });
@@ -611,23 +650,23 @@ function OnboardingContent() {
         setDocumentVerification(data.document_verification);
       }
 
-      if (ocr) {
+      if (ocr && ocr.status === "completed") {
         autoFillFromOCR(ocr, purpose, index);
         setExtractionPreview(ocr);
-        const cat = ocr.category;
-        const ok = ocr.status === "completed";
         setMessage(
-          ok
-            ? `File uploaded. Document recognised as "${cat}" — fields auto-filled below. Review and adjust before saving.`
-            : ocr.rejection_message || "File uploaded. Text extraction failed — please fill in the fields manually."
+          `National ID scanned successfully — fields were pre-filled. Review and adjust anything that looks off before saving.`
         );
+      } else if (ocr) {
+        setExtractionPreview(ocr);
+        setMessage(ocr.rejection_message || "Could not extract text — please fill the fields manually.");
       } else {
-        setMessage("File uploaded.");
+        setMessage("Document uploaded and saved. Fill in the form fields below.");
       }
     } catch (error) {
       setMessage(getApiErrorMessage(error, "Upload failed."));
     } finally {
       setUploading(false);
+      setUploadPhase("");
       event.target.value = "";
     }
   }
@@ -661,20 +700,30 @@ function OnboardingContent() {
         alternate_phone: personal.alternate_phone || null,
         profile_picture: personal.profile_picture || null,
       };
-      const validDocs = govDocs.every(
-        (doc) =>
-          (doc.doc_type === "cnic" || doc.doc_type === "passport") &&
-          doc.document_number &&
-          doc.document_number !== "pending" &&
-          doc.file_url
-      );
+      const validDocs = govDocs.every((doc) => {
+        const hasType = doc.doc_type === "cnic" || doc.doc_type === "passport";
+        const hasNumber = doc.document_number && doc.document_number !== "pending";
+        if (isOcrMode) {
+          return hasType && hasNumber && doc.file_url;
+        }
+        // Manual mode: document number is enough; upload is optional
+        return hasType && (hasNumber || personal.national_id);
+      });
       if (!validDocs) {
-        setMessage("Select National ID or Passport and upload a valid document before continuing.");
+        setMessage(
+          isOcrMode
+            ? "Upload your National ID (CNIC) and confirm the document number before continuing."
+            : "Enter your National ID / Passport number (upload is optional) before continuing."
+        );
         return;
       }
       const sanitizedDocs = govDocs.map((doc) => ({
         ...doc,
-        doc_type: doc.doc_type === "passport" ? "passport" : "cnic",
+        doc_type: isOcrMode ? "cnic" : doc.doc_type === "passport" ? "passport" : "cnic",
+        document_number:
+          doc.document_number && doc.document_number !== "pending"
+            ? doc.document_number
+            : personal.national_id || doc.document_number,
       }));
       await persist({
         step: "personal",
@@ -687,11 +736,10 @@ function OnboardingContent() {
           entry.institution &&
           entry.degree &&
           entry.field_of_study &&
-          entry.year_completed &&
-          entry.certificate_file
+          entry.year_completed
       );
       if (!valid) {
-        setMessage("Upload an academic transcript and complete every education field.");
+        setMessage("Complete every education field. Transcript upload is optional.");
         return;
       }
       await persist({ step: "education", education: { entries: educationEntries } });
@@ -710,8 +758,8 @@ function OnboardingContent() {
         setMessage("Add at least one skill, language, or certification.");
         return;
       }
-      if (!resume.file_url || !resume.summary || resume.summary.length < 20) {
-        setMessage("Upload a valid Resume/CV and review the extracted professional summary.");
+      if (!resume.summary || resume.summary.length < 20) {
+        setMessage("Add a professional summary (at least 20 characters).");
         return;
       }
       await persist({
@@ -827,8 +875,58 @@ function OnboardingContent() {
                     onEdit={() => router.push("/onboarding?edit=true")}
                     onDashboard={() => router.push("/dashboard/candidate")}
                   />
+                ) : showModeChooser ? (
+                  <div className={styles.modeChooser}>
+                    <p className={styles.eyebrow}>Get started</p>
+                    <h1>How would you like to fill your profile?</h1>
+                    <p className={styles.lead}>
+                      Choose once — you can always edit every field afterward. OCR only scans your National ID (CNIC)
+                      to save time; other documents are stored without scanning.
+                    </p>
+                    <div className={styles.modeGrid}>
+                      <button type="button" className={styles.modeCard} onClick={() => chooseFillMode("ocr")}>
+                        <span className={styles.modeIcon} aria-hidden>
+                          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path d="M4 7V5a1 1 0 0 1 1-1h2" /><path d="M20 7V5a1 1 0 0 0-1-1h-2" />
+                            <path d="M4 17v2a1 1 0 0 0 1 1h2" /><path d="M20 17v2a1 1 0 0 1-1 1h-2" />
+                            <rect x="7" y="8" width="10" height="8" rx="1" />
+                          </svg>
+                        </span>
+                        <strong>Scan with OCR</strong>
+                        <span>Upload your CNIC and we&apos;ll pre-fill personal details. Continue the rest of the form yourself.</span>
+                      </button>
+                      <button type="button" className={styles.modeCard} onClick={() => chooseFillMode("manual")}>
+                        <span className={styles.modeIcon} aria-hidden>
+                          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                          </svg>
+                        </span>
+                        <strong>Fill manually</strong>
+                        <span>Type your information step by step. You can still attach supporting files later without OCR.</span>
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <>
+                    <div className={styles.modeBanner}>
+                      <span>
+                        {isOcrMode
+                          ? "OCR mode — National ID scan pre-fills personal details"
+                          : "Manual mode — enter details yourself"}
+                      </span>
+                      {!isEditMode && (
+                        <button
+                          type="button"
+                          className={styles.modeSwitch}
+                          onClick={() => {
+                            sessionStorage.removeItem(FILL_MODE_KEY);
+                            setFillMode(null);
+                          }}
+                        >
+                          Change
+                        </button>
+                      )}
+                    </div>
                     <ol className={styles.steps} aria-label="Onboarding progress">
                       {steps.filter((item) => item.id !== "submit").map((item, index) => {
                         const isActive = index <= stepIndex;
@@ -882,15 +980,17 @@ function OnboardingContent() {
                         <div className={styles.formGrid}>
                           <h2 className={styles.stepTitle}>Personal &amp; contact information</h2>
                           <p className={`${styles.docHelper} ${styles.wide}`}>
-                            First upload a National ID (CNIC/NIC) or Passport. We validate the document and auto-fill
-                            matching personal fields below. Every value remains editable.
+                            {isOcrMode
+                              ? "Upload your National ID (CNIC). We scan only this document to pre-fill matching fields. Everything stays editable."
+                              : "Enter your personal details below. Attaching an ID document is optional and will be stored without OCR scanning."}
                           </p>
                           {govDocs.map((doc, index) => (
                             <div key={index} className={`${styles.formGrid} ${styles.govDocEntry} ${styles.wide}`}>
                               <label className={styles.field}>
                                 <span>Identity document type</span>
                                 <select
-                                  value={doc.doc_type === "passport" ? "passport" : "cnic"}
+                                  value={isOcrMode ? "cnic" : doc.doc_type === "passport" ? "passport" : "cnic"}
+                                  disabled={isOcrMode}
                                   onChange={(e) => {
                                     const next = [...govDocs];
                                     next[index] = { ...next[index], doc_type: e.target.value };
@@ -898,11 +998,13 @@ function OnboardingContent() {
                                   }}
                                 >
                                   <option value="cnic">National ID (CNIC / NIC)</option>
-                                  <option value="passport">Passport</option>
+                                  {!isOcrMode && <option value="passport">Passport</option>}
                                 </select>
                               </label>
                               <label className={styles.field}>
-                                <span>Upload ID (PDF, JPG, or PNG)</span>
+                                <span>
+                                  {isOcrMode ? "Upload CNIC for OCR (PDF, JPG, or PNG)" : "Attach ID document (optional)"}
+                                </span>
                                 <input
                                   type="file"
                                   accept=".pdf,.jpg,.jpeg,.png"
@@ -924,7 +1026,7 @@ function OnboardingContent() {
                               />
                             </div>
                           ))}
-                          <h3 className={styles.wide}>Review auto-filled personal details</h3>
+                          <h3 className={styles.wide}>{isOcrMode ? "Review auto-filled personal details" : "Personal details"}</h3>
                           <Field styles={styles} label="First name" value={personal.first_name} onChange={(e) => setPersonal({ ...personal, first_name: e.target.value })} />
                           <Field styles={styles} label="Last name" value={personal.last_name} onChange={(e) => setPersonal({ ...personal, last_name: e.target.value })} />
                           <Field styles={styles} label="Date of birth" type="date" value={personal.date_of_birth} onChange={(e) => setPersonal({ ...personal, date_of_birth: e.target.value })} />
@@ -986,13 +1088,16 @@ function OnboardingContent() {
                           {educationEntries.map((entry, index) => (
                             <div key={index} className={`${styles.formGrid} ${styles.educationEntry}`}>
                               <label className={`${styles.field} ${styles.wide}`}>
-                                <span>Upload academic transcript first (PDF, JPG, or PNG)</span>
+                                <span>
+                                  {isManualMode
+                                    ? "Attach academic transcript (optional — stored without OCR)"
+                                    : "Attach academic transcript (optional — stored without OCR)"}
+                                </span>
                                 <input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={uploading} onChange={(e) => handleFileUpload(e, "education_cert", index)} />
                                 {entry.certificate_file && <small>Uploaded: {entry.certificate_file}</small>}
                               </label>
                               <p className={`${styles.docHelper} ${styles.wide}`}>
-                                Institute, degree, major, GPA/percentage, and passing year are extracted automatically.
-                                Review and edit them before saving.
+                                Enter your education details below. Uploaded transcripts are saved for recruiter review but are not scanned.
                               </p>
                               <Field styles={styles} label="Institution" value={entry.institution} onChange={(e) => {
                                 const next = [...educationEntries];
@@ -1045,13 +1150,12 @@ function OnboardingContent() {
                         <div className={styles.formGrid}>
                           <h2 className={styles.stepTitle}>Skills &amp; certifications</h2>
                           <label className={`${styles.field} ${styles.wide}`}>
-                            <span>Upload Resume / CV first (PDF, DOC, or DOCX)</span>
+                            <span>Attach Resume / CV (optional — stored without OCR)</span>
                             <input type="file" accept=".pdf,.doc,.docx" disabled={uploading} onChange={(e) => handleFileUpload(e, "resume")} />
                             {resume.file_url && <small>Uploaded: {resume.file_name || resume.file_url}</small>}
                           </label>
                           <p className={`${styles.docHelper} ${styles.wide}`}>
-                            Technical skills, soft skills, languages, certifications, and the professional summary are
-                            extracted from the resume. Review all values before saving.
+                            Enter your skills and summary manually. A resume file can be attached for recruiter review.
                           </p>
                           <label className={`${styles.field} ${styles.wide}`}>
                             <span>Professional summary</span>
@@ -1078,9 +1182,6 @@ function OnboardingContent() {
                                 next[index] = { ...next[index], expiry_date: e.target.value };
                                 setSkills({ ...skills, certifications: next });
                               }} />
-                              <p className={`${styles.docHelper} ${styles.wide}`}>
-                                Certification details may be extracted from your resume. Separate certificate documents are not accepted.
-                              </p>
                               {(skills.certifications || []).length > 1 && (
                                 <button
                                   type="button"
@@ -1140,6 +1241,16 @@ function OnboardingContent() {
           </div>
         </main>
       </div>
+
+      {uploading && (
+        <div className={styles.processOverlay} role="status" aria-live="polite">
+          <div className={styles.processCard}>
+            <div className={styles.processSpinner} aria-hidden />
+            <strong>{uploadPhase.includes("OCR") || uploadPhase.includes("Scanning") ? "Scanning document" : "Uploading document"}</strong>
+            <p>{uploadPhase || "Please wait…"}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

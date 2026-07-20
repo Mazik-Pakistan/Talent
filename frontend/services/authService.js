@@ -512,3 +512,41 @@ export async function saveProfileCompletion(payload, accessToken) {
   });
   return data;
 }
+// ─── Recruiter onboarding assignments (company email / assets / orientation) ─
+
+export async function setEmployeeCompanyEmail(employeeId, payload, accessToken) {
+  const { data } = await apiClient.put(`/api/employees/detail/${employeeId}/company-email`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function assignEmployeeAsset(employeeId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/employees/detail/${employeeId}/assets`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function updateEmployeeAsset(employeeId, assetId, payload, accessToken) {
+  const { data } = await apiClient.put(
+    `/api/employees/detail/${employeeId}/assets/${assetId}`,
+    payload,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  return data;
+}
+
+export async function removeEmployeeAsset(employeeId, assetId, accessToken) {
+  const { data } = await apiClient.delete(`/api/employees/detail/${employeeId}/assets/${assetId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function scheduleEmployeeOrientation(employeeId, payload, accessToken) {
+  const { data } = await apiClient.put(`/api/employees/detail/${employeeId}/orientation`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}

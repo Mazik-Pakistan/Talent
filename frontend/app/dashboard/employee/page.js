@@ -8,12 +8,13 @@ import {
   clearLocalSession,
   getApiErrorMessage,
   getMyEmployeeProfile,
+  getNotifications,
   getProfileCompletion,
   listMyDocuments,
   logout,
+  markNotificationsRead,
 } from "@/services/authService";
-import { ROLE_HOME, moduleAccess } from "@/services/rbac";
-import DocumentManager from "@/components/DocumentManager";
+import { moduleAccess } from "@/services/rbac";
 import styles from "./employee-dashboard.module.css";
 
 const NAV_ITEMS = [
@@ -33,10 +34,21 @@ const NAV_ITEMS = [
     key: "onboarding",
     label: "Onboarding",
     module: "onboarding",
-    href: "/onboarding",
+    href: "/dashboard/employee/complete-profile",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" />
+      </svg>
+    ),
+  },
+  {
+    key: "documents",
+    label: "Documents",
+    module: null,
+    href: "/documents",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" />
       </svg>
     ),
   },
@@ -96,6 +108,8 @@ function EmployeeDashboardContent() {
   const [loading, setLoading] = useState(true);
 
   const [docCount, setDocCount] = useState(0);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -110,12 +124,15 @@ function EmployeeDashboardContent() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const [profileData, completionData] = await Promise.all([
+      const [profileData, completionData, notificationData] = await Promise.all([
         getMyEmployeeProfile(accessToken),
         getProfileCompletion(accessToken).catch(() => null),
+        getNotifications(accessToken).catch(() => ({ notifications: [], unread_count: 0 })),
       ]);
       setEmployee(profileData.employee);
       setProgress(completionData?.progress || null);
+      setNotifications(notificationData?.notifications || []);
+      setUnreadNotifications(notificationData?.unread_count || 0);
       setLoadError("");
     } catch (error) {
       setLoadError(getApiErrorMessage(error, "Could not load your employee profile."));
@@ -144,12 +161,31 @@ function EmployeeDashboardContent() {
     router.replace("/login");
   }
 
+  async function handleNotification(notification) {
+    const accessToken = localStorage.getItem("access_token");
+    if (accessToken && !notification.read) {
+      try {
+        await markNotificationsRead({ ids: [notification.id], all: false }, accessToken);
+        setNotifications((current) =>
+          current.map((item) => (item.id === notification.id ? { ...item, read: true } : item))
+        );
+        setUnreadNotifications((current) => Math.max(0, current - 1));
+      } catch {
+        // Navigation remains available if read-state persistence is temporarily unavailable.
+      }
+    }
+    setNotifOpen(false);
+    if (notification.link) router.push(notification.link);
+  }
+
   const modules = useMemo(() => moduleAccess(user?.role), [user?.role]);
 
   const onboarding = useMemo(() => employee?.onboarding || {}, [employee]);
   const profileIncomplete = employee?.profile_status === "incomplete";
   const percentage = progress?.percentage ?? (profileIncomplete ? 0 : 100);
   const documentsSummary = onboarding?.government_docs?.documents?.length ?? null;
+  const assignedAssets = employee?.assets || [];
+  const orientation = employee?.orientation;
 
   // ----- Client-side "Search records" over the data already on this page -----
   const searchIndex = useMemo(() => {
@@ -303,12 +339,31 @@ function EmployeeDashboardContent() {
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" />
                   </svg>
+                  {unreadNotifications > 0 && <span className={styles.dot} />}
                 </div>
                 {notifOpen && (
                   <div className={styles.notifPanel}>
-                    <strong>Notifications</strong>
-                    In-app notifications for employee accounts are landing in a later phase — you&apos;ll see document
-                    and onboarding updates here once that ships.
+                    <div className={styles.notifHeading}>
+                      <strong>Notifications</strong>
+                      {unreadNotifications > 0 && <span>{unreadNotifications} unread</span>}
+                    </div>
+                    <div className={styles.notifList}>
+                      {notifications.length ? (
+                        notifications.slice(0, 8).map((notification) => (
+                          <button
+                            key={notification.id}
+                            type="button"
+                            className={`${styles.notifItem} ${!notification.read ? styles.unread : ""}`}
+                            onClick={() => handleNotification(notification)}
+                          >
+                            <strong>{notification.title}</strong>
+                            <span>{notification.message}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <span>No notifications yet.</span>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -362,6 +417,17 @@ function EmployeeDashboardContent() {
                 <div className={styles.heroChips}>
                   {employee?.start_date && <span className={styles.chip}>Joined {formatDate(employee.start_date)}</span>}
                   {employee?.converted_at && <span className={styles.chip}>Converted {formatDate(employee.converted_at)}</span>}
+                  {employee?.company_email && <span className={styles.chip}>{employee.company_email}</span>}
+                  {orientation?.date && (
+                    <span className={styles.chip}>
+                      Orientation {formatDate(orientation.date)}{orientation.time ? ` · ${orientation.time}` : ""}
+                    </span>
+                  )}
+                  {assignedAssets.length > 0 && (
+                    <span className={styles.chip}>
+                      {assignedAssets.length} asset{assignedAssets.length === 1 ? "" : "s"} assigned
+                    </span>
+                  )}
                   <span className={`${styles.chip} ${profileIncomplete ? styles.incomplete : styles.complete}`}>
                     {profileIncomplete ? "Profile incomplete" : "✓ Profile complete"}
                   </span>
@@ -439,20 +505,73 @@ function EmployeeDashboardContent() {
               </div>
             </div>
 
+            {(employee?.company_email || orientation || assignedAssets.length > 0) && (
+              <div className={styles.section} id="workplace-section">
+                <div className={styles.sectionHead}>
+                  <div className={styles.sectionHeadLeft}>
+                    <div className={`${styles.bar} ${styles.green}`} />
+                    <div>
+                      <div className={styles.sectionTitle}>Workplace setup</div>
+                      <div className={styles.sectionDesc}>Company email, orientation, and assigned assets from HR.</div>
+                    </div>
+                  </div>
+                </div>
+                <div className={styles.sectionBody}>
+                  <div className={styles.fieldGrid}>
+                    {employee?.company_email && <Field label="Company email" value={employee.company_email} styles={styles} />}
+                    {orientation && (
+                      <>
+                        <Field
+                          label="Orientation date"
+                          value={`${formatDate(orientation.date)}${orientation.time ? ` · ${orientation.time}` : ""}`}
+                          styles={styles}
+                        />
+                        <Field label="Trainer" value={orientation.trainer} styles={styles} />
+                        {orientation.meeting_link && <Field label="Meeting link" value={orientation.meeting_link} styles={styles} />}
+                      </>
+                    )}
+                    {assignedAssets.length > 0 && (
+                      <Field
+                        label="Assigned assets"
+                        value={assignedAssets.map((asset) => asset.name).filter(Boolean).join(", ")}
+                        styles={styles}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className={styles.cols2}>
-              {/* My documents */}
               <div className={styles.section} style={{ marginBottom: 0 }} id="documents-section">
                 <div className={styles.sectionHead}>
                   <div className={styles.sectionHeadLeft}>
                     <div className={`${styles.bar} ${styles.orange}`} />
                     <div>
                       <div className={styles.sectionTitle}>My documents</div>
-                        <div className={styles.sectionDesc}>Organized by category with upload, download, and update actions.</div>
-                      </div>
+                      <div className={styles.sectionDesc}>Upload, organize, and download your files in the document centre.</div>
                     </div>
                   </div>
-                  <div className={styles.sectionBody}>
-                    <DocumentManager styles={styles} compact onChanged={loadDocCount} />
+                </div>
+                <div className={styles.sectionBody}>
+                  <div className={styles.banner} style={{ margin: 0 }}>
+                    <div className={styles.bannerCopy}>
+                      <h3>Document centre</h3>
+                      <p>
+                        {docCount
+                          ? `You have ${docCount} document${docCount === 1 ? "" : "s"} on file. Open the centre to upload, replace, or download them.`
+                          : "Manage identity, education, and employment documents with category filters, search, and secure downloads."}
+                      </p>
+                    </div>
+                    <button type="button" className={styles.btnPrimary} onClick={() => router.push("/documents")}>
+                      Open documents
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className={styles.section} style={{ marginBottom: 0 }} id="onboarding-section">
+                <div className={styles.sectionHead}>
                   <div className={styles.sectionHeadLeft}>
                     <div className={`${styles.bar} ${styles.cyan}`} />
                     <div>

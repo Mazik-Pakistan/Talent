@@ -213,3 +213,70 @@
   .actions { flex-wrap: wrap; justify-content: center; }
   .actions.spread { justify-content: center; }
 }
+
+/* ===== Fill mode chooser ===== */
+.modeChooser { display: grid; gap: 8px; }
+.modeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+.modeCard {
+  display: grid;
+  gap: 10px;
+  text-align: left;
+  padding: 22px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, #fff 0%, #f7fbfd 100%);
+  cursor: pointer;
+  color: var(--text);
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.modeCard:hover {
+  border-color: var(--cyan);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+.modeCard strong { font-size: 16px; color: var(--navy); font-family: 'Sora', system-ui, sans-serif; }
+.modeCard span:last-child { font-size: 13.5px; color: var(--text-muted); line-height: 1.5; }
+.modeIcon {
+  width: 48px; height: 48px; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--cyan-light); color: var(--cyan);
+}
+.modeBanner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--cyan-light); color: #056280; border: 1px solid #bfe9f3;
+  border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 600; margin-bottom: 18px;
+}
+.modeSwitch {
+  background: #fff; border: 1px solid #9ad7e4; color: #056280;
+  border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.modeSwitch:hover { background: #eefafd; }
+
+.processOverlay {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(15, 42, 74, 0.45); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.processCard {
+  width: min(420px, 100%);
+  background: #fff; border-radius: 18px; padding: 28px 24px;
+  text-align: center; box-shadow: 0 20px 60px rgba(15, 42, 74, 0.25);
+  display: grid; gap: 10px; justify-items: center;
+}
+.processCard strong { font-size: 17px; color: var(--navy); font-family: 'Sora', system-ui, sans-serif; }
+.processCard p { margin: 0; color: var(--text-muted); font-size: 14px; line-height: 1.5; }
+.processSpinner {
+  width: 42px; height: 42px; border-radius: 50%;
+  border: 3px solid #d7e8f2; border-top-color: var(--cyan);
+  animation: spin 0.85s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 720px) {
+  .modeGrid { grid-template-columns: 1fr; }
+}

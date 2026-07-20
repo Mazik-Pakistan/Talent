@@ -4,7 +4,14 @@ import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
-import { getEmployeeDetail, getApiErrorMessage } from "@/services/authService";
+import {
+  getEmployeeDetail,
+  getApiErrorMessage,
+  setEmployeeCompanyEmail,
+  assignEmployeeAsset,
+  removeEmployeeAsset,
+  scheduleEmployeeOrientation,
+} from "@/services/authService";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -336,6 +343,535 @@ function DocumentGroup({ groupName, docs }) {
 /** Accent color for each category section (cycles through the design palette). */
 const CATEGORY_COLORS = ["cyan", "purple", "orange", "green", "navy"];
 
+const ASSET_TYPES = [
+  { value: "laptop", label: "Laptop" },
+  { value: "monitor", label: "Monitor" },
+  { value: "phone", label: "Phone" },
+  { value: "headset", label: "Headset" },
+  { value: "badge", label: "Badge" },
+  { value: "other", label: "Other" },
+];
+
+const EMPTY_ASSET_FORM = {
+  name: "",
+  asset_type: "laptop",
+  serial_number: "",
+  notes: "",
+};
+
+function orientationDefaults(orientation) {
+  return {
+    date: orientation?.date || "",
+    time: orientation?.time || "",
+    meeting_link: orientation?.meeting_link || "",
+    trainer: orientation?.trainer || "",
+    agenda: orientation?.agenda || "",
+  };
+}
+
+/**
+ * Recruiter Day-1 onboarding assignments: company email, assets, orientation.
+ */
+function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
+  const [companyEmail, setCompanyEmail] = useState(employee.company_email || "");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [emailSaving, setEmailSaving] = useState(false);
+
+  const [assetForm, setAssetForm] = useState(EMPTY_ASSET_FORM);
+  const [assetMessage, setAssetMessage] = useState("");
+  const [assetSaving, setAssetSaving] = useState(false);
+  const [removingAssetId, setRemovingAssetId] = useState(null);
+
+  const [orientationForm, setOrientationForm] = useState(() => orientationDefaults(employee.orientation));
+  const [orientationMessage, setOrientationMessage] = useState("");
+  const [orientationSaving, setOrientationSaving] = useState(false);
+
+  useEffect(() => {
+    setCompanyEmail(employee.company_email || "");
+  }, [employee.company_email]);
+
+  useEffect(() => {
+    setOrientationForm(orientationDefaults(employee.orientation));
+  }, [employee.orientation]);
+
+  const assets = Array.isArray(employee.assets) ? employee.assets : [];
+  const orientation = employee.orientation || null;
+
+  async function handleSaveCompanyEmail(event) {
+    event.preventDefault();
+    setEmailMessage("");
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+
+    const trimmed = companyEmail.trim();
+    if (!trimmed) {
+      setEmailMessage("Enter a valid company email address.");
+      return;
+    }
+
+    setEmailSaving(true);
+    try {
+      const data = await setEmployeeCompanyEmail(employeeId, { company_email: trimmed }, accessToken);
+      if (data.employee) onEmployeeUpdate(data.employee);
+      setEmailMessage(data.message || "Company email saved.");
+    } catch (err) {
+      setEmailMessage(getApiErrorMessage(err, "Could not save company email."));
+    } finally {
+      setEmailSaving(false);
+    }
+  }
+
+  function updateAssetField(event) {
+    const { name, value } = event.target;
+    setAssetForm((current) => ({ ...current, [name]: value }));
+    setAssetMessage("");
+  }
+
+  async function handleAssignAsset(event) {
+    event.preventDefault();
+    setAssetMessage("");
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+
+    const name = assetForm.name.trim();
+    if (!name) {
+      setAssetMessage("Asset name is required.");
+      return;
+    }
+
+    const payload = {
+      name,
+      asset_type: assetForm.asset_type,
+    };
+    const serial = assetForm.serial_number.trim();
+    const notes = assetForm.notes.trim();
+    if (serial) payload.serial_number = serial;
+    if (notes) payload.notes = notes;
+
+    setAssetSaving(true);
+    try {
+      const data = await assignEmployeeAsset(employeeId, payload, accessToken);
+      if (data.employee) onEmployeeUpdate(data.employee);
+      setAssetForm(EMPTY_ASSET_FORM);
+      setAssetMessage(data.message || "Asset assigned.");
+    } catch (err) {
+      setAssetMessage(getApiErrorMessage(err, "Could not assign asset."));
+    } finally {
+      setAssetSaving(false);
+    }
+  }
+
+  async function handleRemoveAsset(assetId) {
+    setAssetMessage("");
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+
+    setRemovingAssetId(assetId);
+    try {
+      const data = await removeEmployeeAsset(employeeId, assetId, accessToken);
+      if (data.employee) onEmployeeUpdate(data.employee);
+      setAssetMessage(data.message || "Asset removed.");
+    } catch (err) {
+      setAssetMessage(getApiErrorMessage(err, "Could not remove asset."));
+    } finally {
+      setRemovingAssetId(null);
+    }
+  }
+
+  function updateOrientationField(event) {
+    const { name, value } = event.target;
+    setOrientationForm((current) => ({ ...current, [name]: value }));
+    setOrientationMessage("");
+  }
+
+  async function handleScheduleOrientation(event) {
+    event.preventDefault();
+    setOrientationMessage("");
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+
+    const payload = {
+      date: orientationForm.date.trim(),
+      time: orientationForm.time.trim(),
+      trainer: orientationForm.trainer.trim(),
+      agenda: orientationForm.agenda.trim(),
+    };
+    const link = orientationForm.meeting_link.trim();
+    if (link) payload.meeting_link = link;
+
+    setOrientationSaving(true);
+    try {
+      const data = await scheduleEmployeeOrientation(employeeId, payload, accessToken);
+      if (data.employee) onEmployeeUpdate(data.employee);
+      setOrientationMessage(data.message || "Orientation scheduled.");
+    } catch (err) {
+      setOrientationMessage(getApiErrorMessage(err, "Could not schedule orientation."));
+    } finally {
+      setOrientationSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: "28px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "10px",
+          marginBottom: "18px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div className={`${styles.bar} ${styles.cyan}`} />
+          <div>
+            <h3 className={styles.sectionTitle} style={{ fontSize: 18, margin: 0 }}>
+              Day-1 onboarding assignment
+            </h3>
+            <p className={styles.sectionDesc} style={{ margin: "2px 0 0" }}>
+              Set up company email, hardware, and orientation before start date.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        {/* ── Company email ─────────────────────────────────────────── */}
+        <div
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: "12px",
+            overflow: "hidden",
+            background: "var(--card)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "14px 18px",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--bg)",
+            }}
+          >
+            <div className={`${styles.bar} ${styles.navy}`} />
+            <div>
+              <div className={styles.sectionTitle} style={{ fontSize: "14px" }}>Company email</div>
+              <div className={styles.sectionDesc}>Official work address for this employee.</div>
+            </div>
+          </div>
+          <div className={styles.sectionBody} style={{ padding: "16px 18px 18px" }}>
+            {employee.company_email && (
+              <p className={styles.instruction} style={{ margin: "0 0 14px" }}>
+                <strong>Current:</strong>{" "}
+                <span style={{ color: "var(--navy)" }}>{employee.company_email}</span>
+              </p>
+            )}
+            <form onSubmit={handleSaveCompanyEmail}>
+              <div className={styles.formGrid} style={{ marginBottom: "12px" }}>
+                <label className={styles.field} style={{ gridColumn: "1 / -1" }}>
+                  <span>{employee.company_email ? "Update company email" : "Company email"}</span>
+                  <input
+                    type="email"
+                    value={companyEmail}
+                    onChange={(e) => {
+                      setCompanyEmail(e.target.value);
+                      setEmailMessage("");
+                    }}
+                    placeholder="name@company.com"
+                    required
+                  />
+                </label>
+              </div>
+              {emailMessage && (
+                <p className={styles.formMessage} role="status" style={{ marginTop: 0 }}>
+                  {emailMessage}
+                </p>
+              )}
+              <button type="submit" className={styles.primaryButton} disabled={emailSaving}>
+                {emailSaving ? "Saving…" : "Save company email"}
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* ── Company assets ────────────────────────────────────────── */}
+        <div
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: "12px",
+            overflow: "hidden",
+            background: "var(--card)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "14px 18px",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--bg)",
+            }}
+          >
+            <div className={`${styles.bar} ${styles.orange}`} />
+            <div style={{ flex: 1 }}>
+              <div className={styles.sectionTitle} style={{ fontSize: "14px" }}>Company assets</div>
+              <div className={styles.sectionDesc}>
+                {assets.length
+                  ? `${assets.length} asset${assets.length !== 1 ? "s" : ""} assigned`
+                  : "No assets assigned yet"}
+              </div>
+            </div>
+          </div>
+          <div className={styles.sectionBody} style={{ padding: "16px 18px 18px" }}>
+            {assets.length > 0 ? (
+              <ul className={styles.miniList} style={{ marginBottom: "16px" }}>
+                {assets.map((asset) => {
+                  const typeLabel =
+                    ASSET_TYPES.find((t) => t.value === asset.asset_type)?.label ||
+                    toLabel(asset.asset_type || "other");
+                  const assignedDate = fmtDate(asset.assigned_at);
+                  return (
+                    <li key={asset.id} className={styles.miniListItem}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                          <strong>{asset.name}</strong>
+                          <span className={styles.typePill}>{typeLabel}</span>
+                          {asset.status && (
+                            <span
+                              style={{
+                                fontSize: "10px",
+                                fontWeight: 600,
+                                textTransform: "capitalize",
+                                color: "var(--green)",
+                                background: "var(--green-light)",
+                                padding: "2px 8px",
+                                borderRadius: "20px",
+                              }}
+                            >
+                              {asset.status}
+                            </span>
+                          )}
+                        </div>
+                        <div className={styles.mutedText}>
+                          {asset.serial_number ? `Serial: ${asset.serial_number}` : "No serial on file"}
+                          {assignedDate ? ` · Assigned ${assignedDate}` : ""}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        style={{ fontSize: "11.5px", padding: "6px 12px", color: "var(--red)", borderColor: "#f0c4c2" }}
+                        disabled={removingAssetId === asset.id}
+                        onClick={() => handleRemoveAsset(asset.id)}
+                      >
+                        {removingAssetId === asset.id ? "Removing…" : "Remove"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className={styles.emptySub} style={{ margin: "0 0 14px" }}>
+                Assign laptops, badges, and other equipment for day one.
+              </p>
+            )}
+
+            <form onSubmit={handleAssignAsset}>
+              <p
+                style={{
+                  fontSize: "10.5px",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                  color: "var(--text-faint)",
+                  margin: "0 0 10px",
+                }}
+              >
+                Add asset
+              </p>
+              <div className={styles.formGrid} style={{ marginBottom: "12px" }}>
+                <label className={styles.field}>
+                  <span>Asset name</span>
+                  <input name="name" value={assetForm.name} onChange={updateAssetField} placeholder="MacBook Pro 14" required />
+                </label>
+                <label className={styles.field}>
+                  <span>Asset type</span>
+                  <select name="asset_type" value={assetForm.asset_type} onChange={updateAssetField}>
+                    {ASSET_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span>Serial number (optional)</span>
+                  <input name="serial_number" value={assetForm.serial_number} onChange={updateAssetField} placeholder="SN-12345" />
+                </label>
+                <label className={styles.field}>
+                  <span>Notes (optional)</span>
+                  <input name="notes" value={assetForm.notes} onChange={updateAssetField} placeholder="Dock included" />
+                </label>
+              </div>
+              {assetMessage && (
+                <p className={styles.formMessage} role="status" style={{ marginTop: 0 }}>
+                  {assetMessage}
+                </p>
+              )}
+              <button type="submit" className={styles.primaryButton} disabled={assetSaving}>
+                {assetSaving ? "Assigning…" : "Assign asset"}
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* ── Orientation session ───────────────────────────────────── */}
+        <div
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: "12px",
+            overflow: "hidden",
+            background: "var(--card)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "14px 18px",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--bg)",
+            }}
+          >
+            <div className={`${styles.bar} ${styles.green}`} />
+            <div style={{ flex: 1 }}>
+              <div className={styles.sectionTitle} style={{ fontSize: "14px" }}>Orientation session</div>
+              <div className={styles.sectionDesc}>
+                {orientation
+                  ? `Scheduled for ${orientation.date} at ${orientation.time}`
+                  : "Schedule the employee's first-day orientation"}
+              </div>
+            </div>
+          </div>
+          <div className={styles.sectionBody} style={{ padding: "16px 18px 18px" }}>
+            {orientation && (
+              <div
+                style={{
+                  border: "1px solid var(--border)",
+                  borderLeft: "4px solid var(--green)",
+                  borderRadius: "10px",
+                  padding: "14px 16px",
+                  background: "var(--green-light)",
+                  marginBottom: "16px",
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: "10.5px",
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                    color: "var(--green)",
+                    margin: "0 0 8px",
+                  }}
+                >
+                  Scheduled session
+                </p>
+                <p className={styles.instruction} style={{ margin: 0, lineHeight: 1.6 }}>
+                  <strong>Date:</strong> {orientation.date} · <strong>Time:</strong> {orientation.time}
+                  <br />
+                  <strong>Trainer:</strong> {orientation.trainer}
+                  {orientation.meeting_link && (
+                    <>
+                      <br />
+                      <strong>Meeting link:</strong>{" "}
+                      <a
+                        href={orientation.meeting_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: "var(--cyan)", wordBreak: "break-all" }}
+                      >
+                        {orientation.meeting_link}
+                      </a>
+                    </>
+                  )}
+                  <br />
+                  <strong>Agenda:</strong> {orientation.agenda}
+                </p>
+              </div>
+            )}
+
+            <form onSubmit={handleScheduleOrientation}>
+              <p
+                style={{
+                  fontSize: "10.5px",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                  color: "var(--text-faint)",
+                  margin: "0 0 10px",
+                }}
+              >
+                {orientation ? "Update session" : "Schedule session"}
+              </p>
+              <div className={styles.formGrid} style={{ marginBottom: "12px" }}>
+                <label className={styles.field}>
+                  <span>Date</span>
+                  <input name="date" type="date" value={orientationForm.date} onChange={updateOrientationField} required />
+                </label>
+                <label className={styles.field}>
+                  <span>Time</span>
+                  <input name="time" type="time" value={orientationForm.time} onChange={updateOrientationField} required />
+                </label>
+                <label className={styles.field}>
+                  <span>Trainer</span>
+                  <input name="trainer" value={orientationForm.trainer} onChange={updateOrientationField} placeholder="Jane Smith" required />
+                </label>
+                <label className={styles.field}>
+                  <span>Meeting link (optional)</span>
+                  <input
+                    name="meeting_link"
+                    type="url"
+                    value={orientationForm.meeting_link}
+                    onChange={updateOrientationField}
+                    placeholder="https://teams.microsoft.com/..."
+                  />
+                </label>
+                <label className={styles.field} style={{ gridColumn: "1 / -1" }}>
+                  <span>Agenda</span>
+                  <textarea
+                    name="agenda"
+                    rows={3}
+                    value={orientationForm.agenda}
+                    onChange={updateOrientationField}
+                    placeholder="Welcome, HR policies, IT setup, team introductions..."
+                    required
+                  />
+                </label>
+              </div>
+              {orientationMessage && (
+                <p className={styles.formMessage} role="status" style={{ marginTop: 0 }}>
+                  {orientationMessage}
+                </p>
+              )}
+              <button type="submit" className={styles.primaryButton} disabled={orientationSaving}>
+                {orientationSaving
+                  ? "Saving…"
+                  : orientation
+                  ? "Update orientation"
+                  : "Schedule orientation"}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Page Component
 // ---------------------------------------------------------------------------
@@ -472,6 +1008,7 @@ export default function EmployeeProfilePage({ params }) {
 
   const categoryEntries = Object.entries(groupedByCategory);
   const hasDocuments    = categoryEntries.length > 0;
+  const employeeId      = employee.employee_id || id;
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
@@ -507,7 +1044,19 @@ export default function EmployeeProfilePage({ params }) {
             <strong>Manager:</strong> {employee.reporting_manager || "—"} <br/>
             <strong>Joined:</strong> {employee.start_date ? new Date(employee.start_date).toLocaleDateString() : "—"} <br/>
             <strong>Status:</strong> <span style={{ textTransform: "capitalize" }}>{employee.status || "—"}</span>
+            {employee.company_email && (
+              <>
+                <br />
+                <strong>Company email:</strong> {employee.company_email}
+              </>
+            )}
           </p>
+
+          <DayOneOnboardingSection
+            employee={employee}
+            employeeId={employeeId}
+            onEmployeeUpdate={setEmployee}
+          />
 
           {/* ── Document Version History ─────────────────────────────── */}
           <div className={`${styles.bar} ${styles.purple}`} style={{ width: "100%", height: "2px", margin: "20px 0" }} />
