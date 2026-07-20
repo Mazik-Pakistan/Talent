@@ -41,6 +41,35 @@ RESUME_HINTS = ("curriculum vitae", " curriculum", "experience", "work history",
 CNIC_HINTS = ("nadra", "cnic", "national identity", "identity card", "father name", "gender")
 PASSPORT_HINTS = ("passport", "nationality", "place of birth", "surname", "given names")
 
+# Header / label noise that must never become a person's name.
+CNIC_NAME_REJECT = frozenset(
+    {
+        "pakistan",
+        "islamic republic of pakistan",
+        "national identity card",
+        "identity card",
+        "govt of pakistan",
+        "government of pakistan",
+        "country of stay",
+        "holder's signature",
+        "holders signature",
+        "holder signature",
+        "name",
+        "father name",
+        "father's name",
+        "gender",
+        "identity number",
+        "date of birth",
+        "date of issue",
+        "date of expiry",
+        "nationality",
+        "nic",
+        "cnic",
+    }
+)
+
+PK_CNIC_DATE_PATTERN = re.compile(r"\b(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{4})\b")
+
 
 class DocumentExtractionService:
     def __init__(self):
@@ -313,11 +342,12 @@ class DocumentExtractionService:
                 "extraction_confidence": 0.0,
             }
 
-        if settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.startswith("YOUR_"):
+        if settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.strip().startswith("YOUR_"):
             try:
+                gemini_key = settings.GEMINI_API_KEY.strip()
                 url = (
                     "https://generativelanguage.googleapis.com/v1beta/models/"
-                    f"gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+                    f"gemini-1.5-flash:generateContent?key={gemini_key}"
                 )
 
                 prompt = f"""
@@ -387,6 +417,8 @@ Document Text:
                         parsed = json.loads(text_response.strip())
                         if "category" in parsed and "fields" in parsed:
                             fields = parsed.get("fields") or {}
+                            if parsed.get("category") == "cnic":
+                                fields = self._sanitize_cnic_fields(fields, raw_text)
                             class_conf = float(parsed.get("classification_confidence") or 0.85)
                             return {
                                 "category": parsed["category"],
@@ -426,21 +458,7 @@ Document Text:
             }
 
         if cnic_match or (has_any(CNIC_HINTS) and not has_any(PASSPORT_HINTS)):
-            name = lines[0] if lines else None
-            first_name, last_name = self._split_name(name)
-            fields = {
-                "name": name,
-                "first_name": first_name,
-                "last_name": last_name,
-                "father_name": None,
-                "cnic_number": cnic_match.group(0) if cnic_match else None,
-                "date_of_birth": dates[0] if dates else None,
-                "gender": "male" if "male" in lower else "female" if "female" in lower else None,
-                "nationality": "Pakistani" if "pakistan" in lower else None,
-                "marital_status": None,
-                "issue_date": dates[1] if len(dates) > 1 else None,
-                "expiry_date": dates[2] if len(dates) > 2 else None,
-            }
+            fields = self._sanitize_cnic_fields(self._parse_pk_cnic_fields(text), text)
             return {
                 "category": "cnic",
                 "fields": fields,
@@ -581,6 +599,192 @@ Document Text:
         if len(parts) == 1:
             return parts[0], None
         return parts[0], " ".join(parts[1:])
+
+    @staticmethod
+    def _is_invalid_person_name(value: str | None) -> bool:
+        if not value:
+            return True
+        cleaned = re.sub(r"\s+", " ", str(value).strip())
+        if len(cleaned) < 2:
+            return True
+        lower = cleaned.lower()
+        if lower in CNIC_NAME_REJECT:
+            return True
+        if lower.startswith("islamic republic") or lower.startswith("national identity"):
+            return True
+        if re.fullmatch(r"[\d\W_]+", cleaned):
+            return True
+        if cleaned.isupper() and cleaned in {"PAKISTAN", "NADRA"}:
+            return True
+        return False
+
+    @staticmethod
+    def _normalize_gender_token(value: str | None) -> str | None:
+        if not value:
+            return None
+        token = str(value).strip().lower()
+        if token in {"m", "male"}:
+            return "male"
+        if token in {"f", "female"}:
+            return "female"
+        return None
+
+    @staticmethod
+    def _parse_pk_date_sort_key(raw: str) -> tuple[int, int, int] | None:
+        match = re.match(r"^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})$", str(raw).strip())
+        if not match:
+            return None
+        day, month, year = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        if not (1 <= month <= 12 and 1 <= day <= 31 and 1900 <= year <= 2100):
+            return None
+        return year, month, day
+
+    def _value_after_label(self, lines: list[str], label: str, *, stop_labels: tuple[str, ...] = ()) -> str | None:
+        """Read CNIC field value on the same line as a label or on the next line."""
+        label_lower = label.lower()
+        stop = {s.lower() for s in stop_labels}
+
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            lower = stripped.lower()
+
+            if label_lower not in lower:
+                continue
+
+            # Same-line value: "Name: Faris Altaf Dosani" or "Name Faris Altaf Dosani"
+            same_line = re.sub(rf"^{re.escape(label)}\s*[:\-]?\s*", "", stripped, flags=re.I).strip()
+            if same_line and same_line.lower() != label_lower and same_line.lower() not in stop:
+                return same_line
+
+            # Next-line value (common on NADRA cards)
+            for next_index in range(index + 1, min(index + 3, len(lines))):
+                candidate = lines[next_index].strip()
+                candidate_lower = candidate.lower()
+                if not candidate:
+                    continue
+                if candidate_lower in stop or any(stop_label in candidate_lower for stop_label in stop):
+                    break
+                if candidate_lower in CNIC_NAME_REJECT and label_lower == "name":
+                    continue
+                return candidate
+        return None
+
+    def _parse_pk_cnic_fields(self, text: str) -> dict:
+        """Label-aware parser for Pakistan CNIC layout (NADRA cards)."""
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        lower_text = text.lower()
+
+        cnic_match = CNIC_PATTERN.search(text)
+        cnic_number = cnic_match.group(0) if cnic_match else None
+
+        name = self._value_after_label(
+            lines,
+            "Name",
+            stop_labels=("Father Name", "Father's Name", "Gender", "Identity Number", "Date of Birth"),
+        )
+        father_name = self._value_after_label(
+            lines,
+            "Father Name",
+            stop_labels=("Gender", "Identity Number", "Date of Birth", "Date of Issue", "Date of Expiry"),
+        )
+        if not father_name:
+            father_name = self._value_after_label(
+                lines,
+                "Father's Name",
+                stop_labels=("Gender", "Identity Number", "Date of Birth", "Date of Issue", "Date of Expiry"),
+            )
+
+        gender_raw = self._value_after_label(lines, "Gender", stop_labels=("Country of Stay", "Identity Number"))
+        gender = self._normalize_gender_token(gender_raw)
+        if not gender:
+            gender_match = re.search(r"\bGender\s*[:\-]?\s*([MF])\b", text, re.I)
+            if gender_match:
+                gender = self._normalize_gender_token(gender_match.group(1))
+
+        # Labelled dates first
+        date_of_birth = self._value_after_label(lines, "Date of Birth", stop_labels=("Date of Issue",))
+        issue_date = self._value_after_label(lines, "Date of Issue", stop_labels=("Date of Expiry",))
+        expiry_date = self._value_after_label(lines, "Date of Expiry")
+
+        # Fallback: assign chronological PK-style dates when labels are missing
+        if not (date_of_birth and issue_date and expiry_date):
+            dated = []
+            for match in PK_CNIC_DATE_PATTERN.finditer(text):
+                raw = match.group(1)
+                sort_key = self._parse_pk_date_sort_key(raw)
+                if sort_key and raw not in {d[1] for d in dated}:
+                    dated.append((sort_key, raw))
+            dated.sort(key=lambda item: item[0])
+            if not date_of_birth and len(dated) >= 1:
+                date_of_birth = dated[0][1]
+            if not issue_date and len(dated) >= 2:
+                issue_date = dated[1][1]
+            if not expiry_date and len(dated) >= 3:
+                expiry_date = dated[2][1]
+
+        if self._is_invalid_person_name(name):
+            # Try line immediately after a standalone "Name" label block in noisy OCR.
+            for index, line in enumerate(lines):
+                if line.strip().lower() == "name" and index + 1 < len(lines):
+                    candidate = lines[index + 1].strip()
+                    if not self._is_invalid_person_name(candidate):
+                        name = candidate
+                        break
+
+        first_name, last_name = self._split_name(name)
+        nationality = "Pakistani" if "pakistan" in lower_text else None
+
+        fields = {
+            "name": name if not self._is_invalid_person_name(name) else None,
+            "first_name": first_name if not self._is_invalid_person_name(first_name) else None,
+            "last_name": last_name,
+            "father_name": father_name if father_name and father_name.lower() not in CNIC_NAME_REJECT else None,
+            "cnic_number": cnic_number,
+            "date_of_birth": date_of_birth,
+            "gender": gender,
+            "nationality": nationality,
+            "marital_status": None,
+            "issue_date": issue_date,
+            "expiry_date": expiry_date,
+        }
+        return fields
+
+    def _sanitize_cnic_fields(self, fields: dict, raw_text: str) -> dict:
+        """Fix common CNIC extraction mistakes and backfill from label parser."""
+        cleaned = dict(fields or {})
+        parsed = self._parse_pk_cnic_fields(raw_text)
+
+        for key in (
+            "name",
+            "first_name",
+            "last_name",
+            "father_name",
+            "cnic_number",
+            "date_of_birth",
+            "gender",
+            "nationality",
+            "issue_date",
+            "expiry_date",
+        ):
+            current = cleaned.get(key)
+            fallback = parsed.get(key)
+            if key in {"name", "first_name"} and self._is_invalid_person_name(current):
+                cleaned[key] = fallback
+            elif not current and fallback:
+                cleaned[key] = fallback
+
+        if self._is_invalid_person_name(cleaned.get("name")) and cleaned.get("first_name"):
+            cleaned["name"] = " ".join(
+                part for part in (cleaned.get("first_name"), cleaned.get("last_name")) if part
+            ).strip() or None
+
+        if cleaned.get("name") and not cleaned.get("first_name"):
+            first_name, last_name = self._split_name(cleaned.get("name"))
+            cleaned["first_name"] = first_name
+            cleaned["last_name"] = last_name
+
+        cleaned["gender"] = self._normalize_gender_token(cleaned.get("gender")) or parsed.get("gender")
+        return cleaned
 
 
 document_extraction_service = DocumentExtractionService()

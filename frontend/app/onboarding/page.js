@@ -23,7 +23,7 @@ const STEPS = [
 
 const MISSING_SECTION_LABELS = {
   personal: "personal information",
-  government_docs: "National ID / Passport",
+  government_docs: "National ID (CNIC / NIC)",
   education: "education and transcript",
   skills: "skills",
   resume: "Resume / CV",
@@ -278,7 +278,7 @@ function OnboardingContent() {
       setGovDocs(
         data.government_docs.documents.map((d) => ({
           ...d,
-          doc_type: d.doc_type === "passport" ? "passport" : "cnic",
+          doc_type: "cnic",
         }))
       );
     }
@@ -332,7 +332,7 @@ function OnboardingContent() {
     if (!fields) return;
     const filled = [];
 
-    if (purpose === "government_doc" && (category === "cnic" || category === "passport")) {
+    if (purpose === "government_doc" && category === "cnic") {
       const first = fields.first_name || (fields.name || fields.full_name || "").toString().split(/\s+/)[0] || "";
       const last =
         fields.last_name ||
@@ -342,7 +342,7 @@ function OnboardingContent() {
           .slice(1)
           .join(" ") ||
         "";
-      const idNumber = category === "cnic" ? fields.cnic_number : fields.passport_number;
+      const idNumber = fields.cnic_number;
 
       setPersonal((prev) => {
         const next = { ...prev };
@@ -397,7 +397,7 @@ function OnboardingContent() {
           const next = [...prev];
           next[index] = {
             ...next[index],
-            doc_type: category === "passport" ? "passport" : "cnic",
+            doc_type: "cnic",
             document_number:
               next[index].document_number && next[index].document_number !== "pending"
                 ? next[index].document_number
@@ -610,8 +610,7 @@ function OnboardingContent() {
       formData.append("file", file);
       formData.append("purpose", purpose);
       if (purpose === "government_doc") {
-        const chosenType = govDocs[index]?.doc_type || "cnic";
-        formData.append("doc_type", isOcrMode ? "cnic" : chosenType);
+        formData.append("doc_type", "cnic");
       }
       const data = await uploadOnboardingFile(formData, accessToken);
       setOnboarding(data.onboarding);
@@ -634,7 +633,7 @@ function OnboardingContent() {
             file_name: data.file_name,
             file_url: data.file_url,
             document_number: next[index].document_number || "pending",
-            doc_type: isOcrMode ? "cnic" : next[index].doc_type || "cnic",
+            doc_type: "cnic",
           };
           return next;
         });
@@ -701,25 +700,24 @@ function OnboardingContent() {
         profile_picture: personal.profile_picture || null,
       };
       const validDocs = govDocs.every((doc) => {
-        const hasType = doc.doc_type === "cnic" || doc.doc_type === "passport";
         const hasNumber = doc.document_number && doc.document_number !== "pending";
         if (isOcrMode) {
-          return hasType && hasNumber && doc.file_url;
+          return hasNumber && doc.file_url;
         }
         // Manual mode: document number is enough; upload is optional
-        return hasType && (hasNumber || personal.national_id);
+        return hasNumber || personal.national_id;
       });
       if (!validDocs) {
         setMessage(
           isOcrMode
             ? "Upload your National ID (CNIC) and confirm the document number before continuing."
-            : "Enter your National ID / Passport number (upload is optional) before continuing."
+            : "Enter your National ID / CNIC number (upload is optional) before continuing."
         );
         return;
       }
       const sanitizedDocs = govDocs.map((doc) => ({
         ...doc,
-        doc_type: isOcrMode ? "cnic" : doc.doc_type === "passport" ? "passport" : "cnic",
+        doc_type: "cnic",
         document_number:
           doc.document_number && doc.document_number !== "pending"
             ? doc.document_number
@@ -987,23 +985,12 @@ function OnboardingContent() {
                           {govDocs.map((doc, index) => (
                             <div key={index} className={`${styles.formGrid} ${styles.govDocEntry} ${styles.wide}`}>
                               <label className={styles.field}>
-                                <span>Identity document type</span>
-                                <select
-                                  value={isOcrMode ? "cnic" : doc.doc_type === "passport" ? "passport" : "cnic"}
-                                  disabled={isOcrMode}
-                                  onChange={(e) => {
-                                    const next = [...govDocs];
-                                    next[index] = { ...next[index], doc_type: e.target.value };
-                                    setGovDocs(next);
-                                  }}
-                                >
-                                  <option value="cnic">National ID (CNIC / NIC)</option>
-                                  {!isOcrMode && <option value="passport">Passport</option>}
-                                </select>
+                                <span>Identity document</span>
+                                <input type="text" value="National ID (CNIC / NIC)" disabled readOnly />
                               </label>
                               <label className={styles.field}>
                                 <span>
-                                  {isOcrMode ? "Upload CNIC for OCR (PDF, JPG, or PNG)" : "Attach ID document (optional)"}
+                                  {isOcrMode ? "Upload CNIC for OCR (PDF, JPG, or PNG)" : "Attach CNIC (optional)"}
                                 </span>
                                 <input
                                   type="file"
@@ -1015,11 +1002,11 @@ function OnboardingContent() {
                               </label>
                               <Field
                                 styles={styles}
-                                label="Document number"
+                                label="CNIC number"
                                 value={doc.document_number === "pending" ? "" : doc.document_number}
                                 onChange={(e) => {
                                   const next = [...govDocs];
-                                  next[index] = { ...next[index], document_number: e.target.value };
+                                  next[index] = { ...next[index], doc_type: "cnic", document_number: e.target.value };
                                   setGovDocs(next);
                                 }}
                                 wide
@@ -1058,7 +1045,7 @@ function OnboardingContent() {
                               ))}
                             </select>
                           </label>
-                          <Field styles={styles} label="National ID / CNIC / Passport" value={personal.national_id} onChange={(e) => setPersonal({ ...personal, national_id: e.target.value })} />
+                          <Field styles={styles} label="National ID / CNIC" value={personal.national_id} onChange={(e) => setPersonal({ ...personal, national_id: e.target.value })} />
                           <Field styles={styles} label="Father's name (optional)" value={personal.father_name || ""} onChange={(e) => setPersonal({ ...personal, father_name: e.target.value })} />
                           <Field styles={styles} label="ID issue date (optional)" value={personal.id_issue_date || ""} onChange={(e) => setPersonal({ ...personal, id_issue_date: e.target.value })} />
                           <Field styles={styles} label="ID expiry date (optional)" value={personal.id_expiry_date || ""} onChange={(e) => setPersonal({ ...personal, id_expiry_date: e.target.value })} />

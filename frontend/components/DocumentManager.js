@@ -25,7 +25,6 @@ const CATEGORY_OPTIONS = [
 const DOC_TYPE_OPTIONS_BY_CATEGORY = {
   identity: [
     { value: "cnic", label: "National ID (CNIC / NIC)" },
-    { value: "passport", label: "Passport" },
   ],
   education: [
     { value: "transcript", label: "Academic Transcript" },

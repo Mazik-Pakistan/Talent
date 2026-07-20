@@ -38,7 +38,7 @@ PURPOSE_TO_DEFAULT_DOC_TYPE = {
     "government_doc": "cnic",
     "education_cert": "transcript",
 }
-IDENTITY_DOC_TYPES = {"cnic", "passport"}
+IDENTITY_DOC_TYPES = {"cnic"}
 
 
 @router.post("/generate-id")
@@ -58,6 +58,11 @@ async def create_from_candidate(request: CreateFromCandidateRequest, current_use
 @router.get("/pending-review")
 async def list_pending_review(current_user: RequireRecruiter):
     return await service.list_pending_review(current_user)
+
+
+@router.get("/onboarding-in-progress")
+async def list_onboarding_in_progress(current_user: RequireRecruiter):
+    return await service.list_onboarding_in_progress(current_user)
 
 
 @router.get("/ready-for-conversion")
@@ -252,7 +257,7 @@ async def upload_onboarding_file(
         if resolved_doc_type not in IDENTITY_DOC_TYPES:
             raise HTTPException(
                 status_code=400,
-                detail="Identity document must be a National ID (CNIC/NIC) or Passport.",
+                detail="Identity document must be a National ID (CNIC/NIC).",
             )
     if purpose == "education_cert":
         resolved_doc_type = "transcript"

@@ -306,6 +306,13 @@ export async function getPendingReview(accessToken) {
   return data;
 }
 
+export async function getOnboardingInProgress(accessToken) {
+  const { data } = await apiClient.get("/api/employees/onboarding-in-progress", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
 export async function listEmployees(accessToken, params = {}) {
   const { data } = await apiClient.get("/api/employees", {
     headers: { Authorization: `Bearer ${accessToken}` },

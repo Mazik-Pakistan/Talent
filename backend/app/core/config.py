@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,6 +56,13 @@ class Settings(BaseSettings):
 
     # US-031: Fernet key (url-safe base64 32-byte). If empty, derived from SECRET_KEY.
     BANKING_ENCRYPTION_KEY: str = ""
+
+    @field_validator("GEMINI_API_KEY", mode="before")
+    @classmethod
+    def strip_gemini_api_key(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

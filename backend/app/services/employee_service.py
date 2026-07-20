@@ -124,6 +124,41 @@ class EmployeeService:
             )
         return {"candidates": pending, "count": len(pending)}
 
+    async def list_onboarding_in_progress(self, current_user: CurrentUser) -> dict:
+        """Newly registered candidates who are active but have not submitted onboarding yet."""
+        query: dict = {
+            "status": "active",
+            "role": "candidate",
+            "onboarding.status": {"$in": ["in_progress", "not_started", None]},
+        }
+        if current_user.role != "super_admin":
+            query["recruiter_id"] = current_user.id
+
+        docs = await database.candidates.find(query).sort("created_at", -1).to_list(length=100)
+        in_progress = []
+        for candidate in docs:
+            if candidate.get("conversion_status") in {"converted", "offer_sent", "offer_declined", "declined"}:
+                continue
+
+            onboarding = candidate.get("onboarding") or {}
+            in_progress.append(
+                {
+                    "id": candidate.get("user_id") or str(candidate["_id"]),
+                    "full_name": candidate.get("full_name"),
+                    "email": candidate.get("email"),
+                    "job_title": candidate.get("job_title"),
+                    "department": candidate.get("department"),
+                    "current_step": onboarding.get("current_step") or "personal",
+                    "onboarding_status": onboarding.get("status") or "not_started",
+                    "created_at": (
+                        candidate.get("created_at").isoformat()
+                        if hasattr(candidate.get("created_at"), "isoformat")
+                        else candidate.get("created_at")
+                    ),
+                }
+            )
+        return {"candidates": in_progress, "count": len(in_progress)}
+
     async def list_ready_for_conversion(self, current_user: CurrentUser) -> dict:
         """Candidates whose offer has been signed and is awaiting HR approval/activation."""
         query: dict = {"status": "signed"}
