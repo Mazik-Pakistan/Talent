@@ -8,7 +8,12 @@ if (!apiBaseUrl) {
 
 const apiClient = axios.create({
   baseURL: apiBaseUrl,
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+    // ngrok's free tunnel can serve an interstitial page to browser requests.
+    // This header makes API requests pass through to the FastAPI application.
+    "ngrok-skip-browser-warning": "true",
+  },
 });
 
 // ─── Registration ────────────────────────────────────────────────────────────
