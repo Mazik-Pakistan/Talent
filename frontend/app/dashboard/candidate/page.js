@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
+import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
+import ProfileAvatar from "@/components/ProfileAvatar";
 import {
   clearLocalSession,
   getApiErrorMessage,
@@ -13,8 +15,6 @@ import {
   logout,
   markNotificationsRead,
 } from "@/services/authService";
-import DocumentStatusList from "@/components/DocumentStatusList";
-import DocumentManager from "@/components/DocumentManager";
 import styles from "./candidate-dashboard.module.css";
 
 const DASHBOARD_REFRESH_MS = 60000;
@@ -40,6 +40,17 @@ const NAV_ITEMS = [
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" />
+      </svg>
+    ),
+  },
+  {
+    key: "documents",
+    label: "Documents",
+    href: "/documents",
+    disabled: false,
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" />
       </svg>
     ),
   },
@@ -90,6 +101,7 @@ export default function CandidateDashboardPage() {
 
 function CandidateDashboardContent() {
   const router = useRouter();
+  const pathname = usePathname();
 
   const [user, setUser] = useState(null);
   const [dashboard, setDashboard] = useState(null);
@@ -103,6 +115,7 @@ function CandidateDashboardContent() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const lastUnreadRef = useRef(null);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -118,10 +131,20 @@ function CandidateDashboardContent() {
         getMyOffer(accessToken).catch(() => null),
         getNotifications(accessToken).catch(() => ({ notifications: [], unread_count: 0 })),
       ]);
+      const nextUnread = notificationData?.unread_count || 0;
+      const nextList = notificationData?.notifications || [];
+      if (
+        lastUnreadRef.current != null &&
+        nextUnread > lastUnreadRef.current &&
+        nextList[0]
+      ) {
+        toast.info(nextList[0].title || "New notification");
+      }
+      lastUnreadRef.current = nextUnread;
       setDashboard(data);
       setOffer(offerData?.offer || null);
-      setNotifications(notificationData?.notifications || []);
-      setUnreadNotifications(notificationData?.unread_count || 0);
+      setNotifications(nextList);
+      setUnreadNotifications(nextUnread);
       setLoadError("");
     } catch (error) {
       setLoadError(getApiErrorMessage(error, "Could not load your dashboard."));
@@ -205,8 +228,6 @@ function CandidateDashboardContent() {
     return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
   }
 
-  const initials = initialsFor(user.full_name);
-
   return (
     <div className={styles.root}>
       <div className={styles.app}>
@@ -227,11 +248,13 @@ function CandidateDashboardContent() {
 
           <div className={styles.navSectionLabel}>Workspace</div>
           <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {NAV_ITEMS.map((item) => (
+            {NAV_ITEMS.map((item) => {
+              const isActive = item.href && pathname === item.href;
+              return (
               <li key={item.key}>
                 <button
                   type="button"
-                  className={`${styles.navItem} ${item.disabled ? styles.disabled : ""}`}
+                  className={`${styles.navItem} ${isActive ? styles.active : ""} ${item.disabled ? styles.disabled : ""}`}
                   onClick={() => item.href && router.push(item.href)}
                   title={item.disabled ? `${item.label} — coming in Phase 3` : item.label}
                   disabled={item.disabled}
@@ -241,11 +264,12 @@ function CandidateDashboardContent() {
                   {item.badge && <span className={styles.navBadge}>{item.badge}</span>}
                 </button>
               </li>
-            ))}
+            );
+            })}
           </ul>
 
           <div className={styles.sidebarFooter}>
-            <div className={styles.avatarSm}>{initials}</div>
+            <ProfileAvatar src={user?.profile_picture} name={user.full_name} size="sm" fallback="CA" />
             <div className={styles.sidebarFooterText}>
               <div className={styles.name}>{user.full_name}</div>
               <div className={styles.role}>{profile?.job_title || "Candidate"}</div>
@@ -452,13 +476,29 @@ function CandidateDashboardContent() {
                 {loading ? (
                   <p className={styles.emptySub}>Loading…</p>
                 ) : (
-                  <div className={styles.fieldGrid}>
-                    <Field label="Designation" value={profile?.job_title} styles={styles} />
-                    <Field label="Department" value={profile?.department} styles={styles} />
-                    <Field label="Office location" value={profile?.office_location} styles={styles} />
-                    <Field label="Joining date" value={formatDate(profile?.start_date)} styles={styles} />
-                    <Field label="Recruiter" value={profile?.recruiter?.full_name} styles={styles} />
-                  </div>
+                  <>
+                    <div className={styles.profileHero}>
+                      <ProfileAvatar
+                        src={user?.profile_picture}
+                        name={profile?.full_name || user.full_name}
+                        size="lg"
+                        fallback="CA"
+                      />
+                      <div>
+                        <div className={styles.profileName}>{profile?.full_name || user.full_name}</div>
+                        <div className={styles.profileSubline}>
+                          {[profile?.job_title, profile?.department].filter(Boolean).join(" · ") || "Candidate profile"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className={styles.profileGrid}>
+                      <Field label="Designation" value={profile?.job_title} styles={styles} />
+                      <Field label="Department" value={profile?.department} styles={styles} />
+                      <Field label="Office location" value={profile?.office_location} styles={styles} />
+                      <Field label="Joining date" value={formatDate(profile?.start_date)} styles={styles} />
+                      <Field label="Recruiter" value={profile?.recruiter?.full_name} styles={styles} wide />
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -510,12 +550,22 @@ function CandidateDashboardContent() {
                       <div className={`${styles.bar} ${styles.orange}`} />
                       <div>
                         <div className={styles.sectionTitle}>My documents</div>
-                        <div className={styles.sectionDesc}>Organized by category with upload, download, and update actions.</div>
+                        <div className={styles.sectionDesc}>Upload, organize, and download your files in the document centre.</div>
                       </div>
                     </div>
                   </div>
                   <div className={styles.sectionBody}>
-                    <DocumentManager styles={styles} compact />
+                    <div className={styles.banner} style={{ margin: 0 }}>
+                      <div className={styles.bannerCopy}>
+                        <h3>Document centre</h3>
+                        <p>
+                          Manage identity, education, and employment documents with category filters, search, and secure downloads.
+                        </p>
+                      </div>
+                      <button type="button" className={styles.btnPrimary} onClick={() => router.push("/documents")}>
+                        Open documents
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -590,9 +640,9 @@ function CandidateDashboardContent() {
   );
 }
 
-function Field({ label, value, styles }) {
+function Field({ label, value, styles, wide }) {
   return (
-    <div>
+    <div className={wide ? styles.profileFieldWide : undefined}>
       <div className={styles.fieldLabel}>{label}</div>
       <div className={`${styles.fieldValue} ${!value ? styles.dim : ""}`}>{value || "Not assigned"}</div>
     </div>
@@ -648,12 +698,4 @@ function formatDate(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-}
-
-function initialsFor(name) {
-  if (!name) return "CA";
-  const parts = name.trim().split(/\s+/);
-  const first = parts[0]?.[0] || "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (first + last).toUpperCase() || "CA";
 }

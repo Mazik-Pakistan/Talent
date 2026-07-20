@@ -6,6 +6,7 @@ import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
   approveOffer,
   getApiErrorMessage,
+  getOnboardingInProgress,
   getPendingReview,
   getReadyForConversion,
 } from "@/services/authService";
@@ -13,6 +14,7 @@ import OfferComposerModal from "@/components/OfferComposerModal";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
 
 export default function RecruiterCandidatesPage() {
+  const [newCandidates, setNewCandidates] = useState([]);
   const [pendingCandidates, setPendingCandidates] = useState([]);
   const [readyCandidates, setReadyCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +28,12 @@ export default function RecruiterCandidatesPage() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const [pendingData, readyData] = await Promise.all([getPendingReview(accessToken), getReadyForConversion(accessToken)]);
+      const [newData, pendingData, readyData] = await Promise.all([
+        getOnboardingInProgress(accessToken),
+        getPendingReview(accessToken),
+        getReadyForConversion(accessToken),
+      ]);
+      setNewCandidates(newData.candidates || []);
       setPendingCandidates(pendingData.candidates || []);
       setReadyCandidates(readyData.candidates || []);
       setError("");
@@ -61,6 +68,35 @@ export default function RecruiterCandidatesPage() {
     <RecruiterShell activeKey="candidates" title="Candidate pipeline" subtitle="Review onboarding, send offers, and activate signed offers">
       {error && <div className={styles.formMessage} role="alert">{error}</div>}
       {conversionMessage && <div className={styles.formMessage} role="status">{conversionMessage}</div>}
+
+      <div className={styles.section}>
+        <div className={styles.sectionHead}>
+          <div className={styles.sectionHeadLeft}>
+            <div className={`${styles.bar} ${styles.orange}`} />
+            <div>
+              <div className={styles.sectionTitle}>New signups</div>
+              <div className={styles.sectionDesc}>Candidates who verified their email and started onboarding but have not submitted for review yet.</div>
+            </div>
+          </div>
+        </div>
+        <div className={styles.sectionBody}>
+          {loading ? <p className={styles.emptySub}>Loading…</p> : newCandidates.length ? (
+            <ul className={styles.miniList}>
+              {newCandidates.map((candidate) => (
+                <li className={styles.miniListItem} key={candidate.id}>
+                  <div>
+                    <strong>{candidate.full_name}</strong>
+                    <div className={styles.mutedText}>
+                      {candidate.email} · {candidate.job_title || "—"} · {candidate.department || "—"} · Step {humanizeStep(candidate.current_step)}
+                    </div>
+                  </div>
+                  <span className={styles.mutedText}>Joined {formatDate(candidate.created_at)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : <p className={styles.emptySub}>No newly registered candidates are currently in progress.</p>}
+        </div>
+      </div>
 
       <div className={styles.section}>
         <div className={styles.sectionHead}>
@@ -150,4 +186,8 @@ function formatDate(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function humanizeStep(value) {
+  return String(value || "personal").replace(/_/g, " ");
 }

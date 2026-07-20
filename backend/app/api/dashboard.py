@@ -1,10 +1,15 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 
 from app.core.rbac import CurrentUser
 from app.core.security import RequireUser, require_permissions, require_roles
-from app.schemas.dashboard import CreateAnnouncementRequest, MarkNotificationsReadRequest
+from app.schemas.dashboard import (
+    CreateAnnouncementRequest,
+    MarkNotificationsReadRequest,
+    UpdateAnnouncementRequest,
+    UpdateRecruiterProfileRequest,
+)
 from app.services.candidate_service import CandidateService
 from app.services.dashboard_service import DashboardService
 
@@ -16,13 +21,11 @@ RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "su
 RequireOnboardingSelf = Annotated[CurrentUser, Depends(require_permissions("onboarding.self"))]
 
 
-# ----- US-013 -----
 @router.get("/api/dashboard/summary")
 async def get_dashboard_summary(current_user: RequireRecruiter):
     return await service.get_summary(current_user)
 
 
-# ----- US-013 / US-016 -----
 @router.get("/api/dashboard/activity")
 async def get_dashboard_activity(
     current_user: RequireRecruiter,
@@ -31,13 +34,11 @@ async def get_dashboard_activity(
     return await service.get_activity(current_user, limit)
 
 
-# ----- US-018 / US-019 / US-021 / US-022 -----
 @router.get("/api/dashboard/candidate")
 async def get_candidate_dashboard(current_user: RequireOnboardingSelf):
     return await candidate_service.get_dashboard(current_user)
 
 
-# ----- US-014 -----
 @router.get("/api/notifications")
 async def get_notifications(current_user: RequireUser, limit: int = Query(default=30, ge=1, le=100)):
     return await service.get_notifications(current_user, limit)
@@ -48,18 +49,57 @@ async def mark_notifications_read(request: MarkNotificationsReadRequest, current
     return await service.mark_notifications_read(current_user, request)
 
 
-# ----- US-017 -----
 @router.get("/api/search")
 async def global_search(current_user: RequireRecruiter, q: str = Query(min_length=1, max_length=120)):
     return await service.search(current_user, q)
 
 
-# ----- US-020 -----
 @router.get("/api/announcements")
-async def list_announcements(_current_user: RequireUser, limit: int = Query(default=20, ge=1, le=50)):
-    return await service.list_announcements(limit)
+async def list_announcements(
+    current_user: RequireUser,
+    limit: int = Query(default=20, ge=1, le=50),
+    audience: str | None = Query(default=None),
+):
+    return await service.list_announcements(current_user, limit, audience)
 
 
 @router.post("/api/announcements", status_code=201)
 async def create_announcement(request: CreateAnnouncementRequest, current_user: RequireRecruiter):
     return await service.create_announcement(current_user, request)
+
+
+@router.put("/api/announcements/{announcement_id}")
+async def update_announcement(
+    announcement_id: str,
+    request: UpdateAnnouncementRequest,
+    current_user: RequireRecruiter,
+):
+    return await service.update_announcement(current_user, announcement_id, request)
+
+
+@router.delete("/api/announcements/{announcement_id}")
+async def delete_announcement(announcement_id: str, current_user: RequireRecruiter):
+    return await service.delete_announcement(current_user, announcement_id)
+
+
+@router.get("/api/recruiters/me")
+async def get_recruiter_me(current_user: RequireRecruiter):
+    return await service.get_recruiter_profile(current_user)
+
+
+@router.put("/api/recruiters/me")
+async def update_recruiter_me(request: UpdateRecruiterProfileRequest, current_user: RequireRecruiter):
+    return await service.update_recruiter_profile(current_user, request)
+
+
+@router.post("/api/recruiters/me/photo")
+async def upload_recruiter_photo(
+    current_user: RequireRecruiter,
+    file: UploadFile = File(...),
+):
+    return await service.upload_recruiter_photo(current_user, file)
+
+
+@router.delete("/api/recruiters/me/photo")
+async def remove_recruiter_photo(current_user: RequireRecruiter):
+    return await service.remove_recruiter_photo(current_user)

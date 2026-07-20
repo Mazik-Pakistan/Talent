@@ -35,6 +35,21 @@ DOCUMENT_LABELS = {
 }
 
 
+def _should_run_ocr(*, doc_type: str, purpose: str | None = None) -> bool:
+    """OCR runs only for CNIC to keep compute costs low.
+
+    Other document types are stored for verification without extraction.
+    """
+    if not settings.ENABLE_OCR:
+        return False
+    normalized = (doc_type or "").strip().lower()
+    if normalized == "cnic":
+        return True
+    # Legacy uploads sometimes omit doc_type but mark purpose as government_doc
+    # with an implicit CNIC — still require explicit cnic to avoid passport OCR.
+    return False
+
+
 def _extensions_for(category: str, doc_type: str) -> set[str]:
     if doc_type == "resume" or category == "other":
         return RESUME_EXTENSIONS
@@ -84,7 +99,13 @@ class DocumentService:
                 detail="This exact document is already uploaded.",
             )
 
-        stored = await storage_service.save_file(current_user.id, category, original, content)
+        try:
+            stored = await storage_service.save_file(current_user.id, category, original, content)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not store the uploaded document.",
+            ) from exc
         now = datetime.now(UTC)
 
         previous = await database.documents.find_one(
@@ -101,7 +122,7 @@ class DocumentService:
             )
         )
 
-        needs_ocr = settings.ENABLE_OCR
+        needs_ocr = _should_run_ocr(doc_type=doc_type, purpose=purpose)
         expected = document_extraction_service.resolve_expected_categories(
             purpose=purpose, doc_type=doc_type, category=category
         )
@@ -117,6 +138,7 @@ class DocumentService:
             "file_name": original,
             "storage_backend": stored["backend"],
             "object_path": stored["object_path"],
+            "resource_type": stored.get("resource_type"),
             "file_url": stored["file_url"],
             "document_hash": document_hash,
             "version": version,
@@ -144,10 +166,19 @@ class DocumentService:
         if needs_ocr:
             import asyncio
 
+            temp_local_path: str | None = None
             try:
                 def _run_extraction():
-                    return document_extraction_service.extract_text(stored["local_path"])
+                    return document_extraction_service.extract_text(temp_local_path or "")
 
+                temp_local_path = await storage_service.materialize_local_file(
+                    {
+                        "storage_backend": stored["backend"],
+                        "file_url": stored["file_url"],
+                        "object_path": stored["object_path"],
+                        "resource_type": stored.get("resource_type"),
+                    }
+                )
                 raw_text = await asyncio.to_thread(_run_extraction)
                 parsed = await document_extraction_service.parse_structured_data(raw_text)
                 validation = document_extraction_service.validate_classification(
@@ -244,6 +275,12 @@ class DocumentService:
                 doc_status = "reupload_required"
                 verification_status = "reupload_required"
                 mismatch_reasons = []
+            finally:
+                if temp_local_path:
+                    try:
+                        Path(temp_local_path).unlink(missing_ok=True)
+                    except OSError:
+                        pass
 
             update = {
                 "ocr_result": ocr_result,
@@ -588,11 +625,7 @@ class DocumentService:
             )
 
         document_label = DOCUMENT_LABELS.get(doc["doc_type"], doc["doc_type"].replace("_", " ").title())
-        candidate_link = (
-            f"/dashboard/candidate#document-{doc['_id']}"
-            if doc["owner_role"] == "candidate"
-            else f"/dashboard/employee#document-{doc['_id']}"
-        )
+        candidate_link = "/documents"
         if payload.status == "reupload_required":
             reason_label = (payload.rejection_reason or "other").replace("_", " ")
             notification_title = f"Re-upload required: {document_label}"
@@ -619,20 +652,31 @@ class DocumentService:
 
         email_sent = None
         email_error = None
-        if payload.status == "reupload_required" and doc.get("owner_email"):
+        if doc.get("owner_email"):
             import asyncio
 
             dashboard_link = f"{settings.FRONTEND_URL.rstrip('/')}{candidate_link}"
             try:
-                await asyncio.to_thread(
-                    email_service.send_document_reupload_request,
-                    doc["owner_email"],
-                    doc.get("owner_name") or "Candidate",
-                    document_label,
-                    (payload.rejection_reason or "other").replace("_", " "),
-                    payload.note,
-                    dashboard_link,
-                )
+                if payload.status == "reupload_required":
+                    await asyncio.to_thread(
+                        email_service.send_document_reupload_request,
+                        doc["owner_email"],
+                        doc.get("owner_name") or "Candidate",
+                        document_label,
+                        (payload.rejection_reason or "other").replace("_", " "),
+                        payload.note,
+                        dashboard_link,
+                    )
+                else:
+                    await asyncio.to_thread(
+                        email_service.send_document_status_update,
+                        doc["owner_email"],
+                        doc.get("owner_name") or "Candidate",
+                        document_label,
+                        update["status"].replace("_", " "),
+                        dashboard_link,
+                        payload.note,
+                    )
                 email_sent = True
             except Exception as exc:
                 # The in-app request is authoritative; SMTP failure must not undo it.
@@ -678,6 +722,12 @@ class DocumentService:
         if doc.get("deleted_at"):
             raise HTTPException(status_code=404, detail="Document has been deleted.")
 
+        if not _should_run_ocr(doc_type=doc.get("doc_type") or "", purpose=doc.get("purpose")):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="OCR re-extraction is only available for National ID (CNIC) documents.",
+            )
+
         try:
             local_path = await storage_service.materialize_local_file(doc)
         except FileNotFoundError as exc:
@@ -685,7 +735,14 @@ class DocumentService:
 
         import asyncio
 
-        raw_text = await asyncio.to_thread(document_extraction_service.extract_text, local_path)
+        try:
+            raw_text = await asyncio.to_thread(document_extraction_service.extract_text, local_path)
+        finally:
+            if doc.get("storage_backend") in {"cloudinary", "supabase"}:
+                try:
+                    Path(local_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
         parsed = await document_extraction_service.parse_structured_data(raw_text)
         expected = document_extraction_service.resolve_expected_categories(
             purpose=doc.get("purpose"),
@@ -893,8 +950,6 @@ class DocumentService:
         if current_user.role not in ("recruiter", "super_admin") and doc["owner_id"] != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized to view this document.")
         url = await storage_service.get_signed_url(doc)
-        if url and doc.get("storage_backend") != "supabase" and url.startswith("/"):
-            url = str(request.base_url).rstrip("/") + url
         await database.audit_logs.insert_one(
             {
                 "user_id": current_user.id,

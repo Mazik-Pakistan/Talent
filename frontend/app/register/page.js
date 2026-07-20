@@ -20,7 +20,7 @@ function validateForm(form) {
   const errors = {};
 
   if (form.full_name.trim().length < 2) errors.full_name = "Enter your full name.";
-  if (!/^\S+@gmail\.com$/i.test(form.email.trim())) errors.email = "Use a valid @gmail.com email address.";
+  if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) errors.email = "Enter a valid email address.";
   if (!/^[+()\-\s\d]{7,20}$/.test(form.phone.trim())) errors.phone = "Enter a valid phone number.";
   if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/.test(form.password)) {
     errors.password = "Use 8+ characters with uppercase, lowercase, number, and special character.";
@@ -85,7 +85,7 @@ export default function RegisterPage() {
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
           <FormField label="Full name" name="full_name" value={form.full_name} error={errors.full_name} onChange={updateField} autoComplete="name" />
-          <FormField label="Company email" name="email" type="email" value={form.email} error={errors.email} onChange={updateField} autoComplete="email" hint="Only @gmail.com addresses are accepted." />
+          <FormField label="Company email" name="email" type="email" value={form.email} error={errors.email} onChange={updateField} autoComplete="email" hint="Use your work email address." />
           <FormField label="Phone number" name="phone" type="tel" value={form.phone} error={errors.phone} onChange={updateField} autoComplete="tel" />
           <PasswordField label="Password" name="password" value={form.password} error={errors.password} onChange={updateField} showPassword={showPassword} onToggle={() => setShowPassword((visible) => !visible)} autoComplete="new-password" />
           <PasswordField label="Confirm password" name="confirm_password" value={form.confirm_password} error={errors.confirm_password} onChange={updateField} showPassword={showPassword} onToggle={() => setShowPassword((visible) => !visible)} autoComplete="new-password" />

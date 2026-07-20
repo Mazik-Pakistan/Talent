@@ -25,7 +25,6 @@ const CATEGORY_OPTIONS = [
 const DOC_TYPE_OPTIONS_BY_CATEGORY = {
   identity: [
     { value: "cnic", label: "National ID (CNIC / NIC)" },
-    { value: "passport", label: "Passport" },
   ],
   education: [
     { value: "transcript", label: "Academic Transcript" },
@@ -53,6 +52,24 @@ const DOC_TYPE_LABELS = {
   other: "Other document",
 };
 
+const STATUS_FILTER_OPTIONS = [
+  { value: "all", label: "All statuses" },
+  { value: "pending", label: "Pending review" },
+  { value: "verified", label: "Verified" },
+  { value: "rejected", label: "Rejected" },
+];
+
+const STATUS_GROUPS = {
+  pending: new Set(["pending", "processing", "uploaded", "sent", "pending_verification", "viewed", "incomplete"]),
+  verified: new Set(["verified", "signed", "approved", "complete"]),
+  rejected: new Set(["rejected", "reupload_required", "declined", "expired"]),
+};
+
+function matchesStatusFilter(status, filter) {
+  if (filter === "all") return true;
+  return STATUS_GROUPS[filter]?.has(status) ?? false;
+}
+
 const CATEGORY_LABELS = {
   identity: "Identity",
   education: "Education",
@@ -67,6 +84,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
+  const [activeStatus, setActiveStatus] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showUploader, setShowUploader] = useState(false);
   const [category, setCategory] = useState("identity");
@@ -103,6 +121,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     const filtered = documents.filter((doc) => {
       const categoryValue = doc.category || inferCategory(doc.doc_type);
       const matchesCategory = activeCategory === "all" || categoryValue === activeCategory;
+      const matchesStatus = matchesStatusFilter(doc.status, activeStatus);
       const query = searchQuery.trim().toLowerCase();
       const matchesSearch =
         !query ||
@@ -110,14 +129,14 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
           .join(" ")
           .toLowerCase()
           .includes(query);
-      return matchesCategory && matchesSearch;
+      return matchesCategory && matchesStatus && matchesSearch;
     });
 
     return CATEGORY_OPTIONS.filter((option) => option.value !== "all").reduce((acc, option) => {
       acc[option.value] = filtered.filter((doc) => (doc.category || inferCategory(doc.doc_type)) === option.value);
       return acc;
     }, {});
-  }, [activeCategory, documents, searchQuery]);
+  }, [activeCategory, activeStatus, documents, searchQuery]);
 
   const totalCount = useMemo(() => documents.length, [documents]);
   const categoryCount = useMemo(
@@ -250,6 +269,11 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     }
   }
 
+  const isCnicUploadBusy = uploading && docType === "cnic";
+  const isCnicReplacementBusy = Boolean(replacementUploadingId) && documents.some(
+    (doc) => doc.id === replacementUploadingId && doc.doc_type === "cnic"
+  );
+
   if (loading) {
     return <p className={compact ? "widget-placeholder" : "form-message"}>Loading documents…</p>;
   }
@@ -260,6 +284,15 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
 
   return (
     <div className="document-manager-shell">
+      {(isCnicUploadBusy || isCnicReplacementBusy) && (
+        <div className="document-upload-overlay" role="status" aria-live="polite">
+          <div className="document-upload-overlay-card">
+            <strong>Scanning CNIC with OCR…</strong>
+            <p>We are extracting identity fields from your national ID. This may take a few seconds.</p>
+          </div>
+        </div>
+      )}
+
       <div className="document-manager-summary">
         <div>
           <div className="document-manager-eyebrow">Document centre</div>
@@ -285,12 +318,26 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
             </button>
           ))}
         </div>
-        <input
-          className="document-search"
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search by file name or document type"
-        />
+        <div className="document-toolbar-controls">
+          <div className="document-filter-group" role="tablist" aria-label="Document status">
+            {STATUS_FILTER_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`document-filter-pill status ${activeStatus === option.value ? "active" : ""}`}
+                onClick={() => setActiveStatus(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <input
+            className="document-search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search by file name or type"
+          />
+        </div>
       </div>
 
       {showUploader && (
@@ -332,7 +379,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
             </p>
           )}
           <button type="submit" className="primary-button" disabled={uploading}>
-            {uploading ? "Uploading…" : "Save document"}
+            {uploading ? (docType === "cnic" ? "Uploading & scanning…" : "Uploading…") : "Save document"}
           </button>
         </form>
       )}
@@ -384,14 +431,16 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
                           <button type="button" className="secondary-button" onClick={() => handleDownload(doc.id)}>
                             View / download
                           </button>
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={actionBusyId === doc.id}
-                            onClick={() => handleReextract(doc.id)}
-                          >
-                            {actionBusyId === doc.id ? "Processing…" : "Re-extract"}
-                          </button>
+                          {doc.doc_type === "cnic" && (
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              disabled={actionBusyId === doc.id}
+                              onClick={() => handleReextract(doc.id)}
+                            >
+                              {actionBusyId === doc.id ? "Processing…" : "Re-extract"}
+                            </button>
+                          )}
                           <button type="button" className="secondary-button" onClick={() => setReplacementDocId(isReplacing ? null : doc.id)}>
                             {isReplacing ? "Cancel" : "Replace"}
                           </button>
@@ -418,7 +467,9 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
                               </p>
                             )}
                             <button type="button" className="primary-button" disabled={replacementUploadingId === doc.id} onClick={() => handleReplacement(doc)}>
-                              {replacementUploadingId === doc.id ? "Uploading…" : "Upload replacement"}
+                              {replacementUploadingId === doc.id
+                                ? (doc.doc_type === "cnic" ? "Uploading & scanning…" : "Uploading…")
+                                : "Upload replacement"}
                             </button>
                           </div>
                         )}

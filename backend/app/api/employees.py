@@ -7,6 +7,12 @@ from app.core.rbac import CurrentUser
 from app.core.security import require_permissions, require_roles
 from app.schemas.career import CareerEventCreateRequest
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
+from app.schemas.onboarding_assignment import (
+    AssetAssignRequest,
+    AssetUpdateRequest,
+    CompanyEmailRequest,
+    OrientationScheduleRequest,
+)
 from app.services.candidate_service import CandidateService
 from app.services.document_service import document_service
 from app.services.employee_service import EmployeeService
@@ -32,7 +38,7 @@ PURPOSE_TO_DEFAULT_DOC_TYPE = {
     "government_doc": "cnic",
     "education_cert": "transcript",
 }
-IDENTITY_DOC_TYPES = {"cnic", "passport"}
+IDENTITY_DOC_TYPES = {"cnic"}
 
 
 @router.post("/generate-id")
@@ -52,6 +58,11 @@ async def create_from_candidate(request: CreateFromCandidateRequest, current_use
 @router.get("/pending-review")
 async def list_pending_review(current_user: RequireRecruiter):
     return await service.list_pending_review(current_user)
+
+
+@router.get("/onboarding-in-progress")
+async def list_onboarding_in_progress(current_user: RequireRecruiter):
+    return await service.list_onboarding_in_progress(current_user)
 
 
 @router.get("/ready-for-conversion")
@@ -125,6 +136,19 @@ async def get_my_employee_profile(current_user: RequireEmployee):
     return await service.get_my_profile(current_user)
 
 
+@router.post("/me/photo")
+async def upload_my_employee_photo(
+    current_user: RequireEmployee,
+    file: UploadFile = File(...),
+):
+    return await service.upload_my_photo(current_user, file)
+
+
+@router.delete("/me/photo")
+async def remove_my_employee_photo(current_user: RequireEmployee):
+    return await service.remove_my_photo(current_user)
+
+
 @router.get("/profile-completion")
 async def get_profile_completion(current_user: RequireEmployee):
     return await service.get_profile_completion(current_user)
@@ -151,6 +175,51 @@ async def get_employee_detail(employee_id: str, current_user: RequireRecruiter):
     with static routes such as /me, /upload, or /export.csv.
     """
     return await service.get_employee_profile(current_user, employee_id, reveal_banking=False)
+
+
+@router.put("/detail/{employee_id}/company-email")
+async def set_company_email(
+    employee_id: str,
+    request: CompanyEmailRequest,
+    current_user: RequireRecruiter,
+):
+    """Record the employee's official company email for organizational communications."""
+    return await service.set_company_email(current_user, employee_id, str(request.company_email))
+
+
+@router.post("/detail/{employee_id}/assets", status_code=201)
+async def assign_asset(
+    employee_id: str,
+    request: AssetAssignRequest,
+    current_user: RequireRecruiter,
+):
+    """Assign a company asset to the employee from Day 1."""
+    return await service.assign_asset(current_user, employee_id, request)
+
+
+@router.put("/detail/{employee_id}/assets/{asset_id}")
+async def update_asset(
+    employee_id: str,
+    asset_id: str,
+    request: AssetUpdateRequest,
+    current_user: RequireRecruiter,
+):
+    return await service.update_asset(current_user, employee_id, asset_id, request)
+
+
+@router.delete("/detail/{employee_id}/assets/{asset_id}")
+async def remove_asset(employee_id: str, asset_id: str, current_user: RequireRecruiter):
+    return await service.remove_asset(current_user, employee_id, asset_id)
+
+
+@router.put("/detail/{employee_id}/orientation")
+async def schedule_orientation(
+    employee_id: str,
+    request: OrientationScheduleRequest,
+    current_user: RequireRecruiter,
+):
+    """Schedule or update the employee's orientation session."""
+    return await service.schedule_orientation(current_user, employee_id, request)
 
 
 @router.get("/{employee_id}/career")
@@ -201,7 +270,7 @@ async def upload_onboarding_file(
         if resolved_doc_type not in IDENTITY_DOC_TYPES:
             raise HTTPException(
                 status_code=400,
-                detail="Identity document must be a National ID (CNIC/NIC) or Passport.",
+                detail="Identity document must be a National ID (CNIC/NIC).",
             )
     if purpose == "education_cert":
         resolved_doc_type = "transcript"
@@ -245,9 +314,20 @@ async def upload_onboarding_file(
             "message": ocr_result.get("rejection_message") or "Document type rejected.",
         }
 
-    if current_user.role in ("candidate", "employee", "super_admin"):
+    if current_user.role == "candidate":
         try:
             resp = await candidate_service.attach_uploaded_file(
+                current_user,
+                purpose=purpose,
+                file_name=file_name,
+                file_url=file_url,
+                doc_type=resolved_doc_type if purpose == "government_doc" else doc_type,
+            )
+        except Exception:
+            resp = {"file_name": file_name, "file_url": file_url, "purpose": purpose}
+    elif current_user.role == "employee":
+        try:
+            resp = await service.attach_uploaded_file(
                 current_user,
                 purpose=purpose,
                 file_name=file_name,

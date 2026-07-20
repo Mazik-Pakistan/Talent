@@ -33,17 +33,18 @@
 
 /* Sidebar */
 .sidebar {
-  width: 250px;
+  width: 256px;
   flex-shrink: 0;
   background: linear-gradient(185deg, var(--navy) 0%, var(--navy-3) 100%);
   color: #fff;
   display: flex;
   flex-direction: column;
-  padding: 26px 18px;
+  padding: 24px 16px;
   position: sticky;
   top: 0;
   height: 100vh;
   transition: width .2s ease, padding .2s ease;
+  box-shadow: 4px 0 24px rgba(10, 31, 56, 0.12);
 }
 .brand {
   display: flex;
@@ -246,6 +247,49 @@
 .sectionBody { padding: 16px 24px 24px 24px; }
 
 .fieldGrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px 16px; }
+.profileHero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(120deg, #f7fbfd 0%, #ffffff 100%);
+}
+.profileAvatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--cyan), #0577a8);
+  font-family: "Sora", system-ui, sans-serif;
+}
+.profileName {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--navy);
+  font-family: "Sora", system-ui, sans-serif;
+  line-height: 1.2;
+}
+.profileSubline {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.profileGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 24px;
+}
+.profileFieldWide { grid-column: 1 / -1; }
 .fieldLabel { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-faint); font-weight: 600; margin-bottom: 5px; }
 .fieldValue { font-size: 14.5px; font-weight: 600; color: var(--navy); }
 .fieldValue.dim { color: var(--text-faint); font-weight: 500; }
@@ -376,4 +420,6 @@
 @media (max-width: 400px) {
   .stats { grid-template-columns: 1fr; }
   .fieldGrid { grid-template-columns: 1fr; }
+  .profileGrid { grid-template-columns: 1fr; }
+  .profileName { font-size: 18px; }
 }

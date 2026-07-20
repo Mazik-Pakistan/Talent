@@ -84,7 +84,7 @@ export default function SuperAdminDashboardPage() {
               <input name="full_name" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required />
             </label>
             <label className="field">
-              <span>Email (@gmail.com)</span>
+              <span>Email</span>
               <input name="email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
             </label>
             <label className="field">

@@ -425,6 +425,7 @@ class AuthService:
                 "job_title": profile.get("job_title"),
                 "department": profile.get("department"),
                 "employee_id": profile.get("employee_id"),
+                "profile_picture": profile.get("profile_picture"),
             },
             "session": {
                 "access_token": access_token,

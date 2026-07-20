@@ -8,7 +8,12 @@ if (!apiBaseUrl) {
 
 const apiClient = axios.create({
   baseURL: apiBaseUrl,
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+    // ngrok's free tunnel can serve an interstitial page to browser requests.
+    // This header makes API requests pass through to the FastAPI application.
+    "ngrok-skip-browser-warning": "true",
+  },
 });
 
 // ─── Registration ────────────────────────────────────────────────────────────
@@ -277,16 +282,63 @@ export async function getAnnouncements(accessToken, limit = 20) {
 }
 
 export async function createAnnouncement(payload, accessToken) {
-  const { data } = await apiClient.post(
-    "/api/announcements",
-    payload,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
+  const { data } = await apiClient.post("/api/announcements", payload, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
 
+  return data;
+}
+
+export async function updateAnnouncement(announcementId, payload, accessToken) {
+  const { data } = await apiClient.put(`/api/announcements/${announcementId}`, payload, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  return data;
+}
+
+export async function deleteAnnouncement(announcementId, accessToken) {
+  const { data } = await apiClient.delete(`/api/announcements/${announcementId}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  return data;
+}
+
+export async function getRecruiterProfile(accessToken) {
+  const { data } = await apiClient.get("/api/recruiters/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function updateRecruiterProfile(payload, accessToken) {
+  const { data } = await apiClient.put("/api/recruiters/me", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function uploadRecruiterPhoto(file, accessToken) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await apiClient.post("/api/recruiters/me/photo", formData, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return data;
+}
+
+export async function removeRecruiterPhoto(accessToken) {
+  const { data } = await apiClient.delete("/api/recruiters/me/photo", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
   return data;
 }
 
@@ -301,6 +353,13 @@ export async function getReadyForConversion(accessToken) {
 
 export async function getPendingReview(accessToken) {
   const { data } = await apiClient.get("/api/employees/pending-review", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getOnboardingInProgress(accessToken) {
+  const { data } = await apiClient.get("/api/employees/onboarding-in-progress", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return data;
@@ -379,6 +438,25 @@ export async function getMyEmployeeProfile(accessToken) {
   return data;
 }
 
+export async function uploadEmployeePhoto(file, accessToken) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await apiClient.post("/api/employees/me/photo", formData, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return data;
+}
+
+export async function removeEmployeePhoto(accessToken) {
+  const { data } = await apiClient.delete("/api/employees/me/photo", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
 export async function uploadOnboardingFile(formData, accessToken) {
   const { data } = await apiClient.post("/api/employees/upload", formData, {
     headers: {
@@ -392,11 +470,58 @@ export async function uploadOnboardingFile(formData, accessToken) {
 // ─── Error Helpers ───────────────────────────────────────────────────────────
 
 export function getApiErrorMessage(error, fallbackMessage) {
-  const detail = error.response?.data?.detail;
-  if (Array.isArray(detail)) {
-    return detail[0]?.msg || fallbackMessage;
+  if (!error) return fallbackMessage;
+
+  if (!error.response) {
+    if (error.code === "ECONNABORTED") {
+      return "The request timed out. Please try again.";
+    }
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      return "You appear to be offline. Check your connection and try again.";
+    }
+    return "Unable to reach the server. Please try again in a moment.";
   }
-  return detail || fallbackMessage;
+
+  const status = error.response?.status;
+  const detail = error.response?.data?.detail;
+
+  if (Array.isArray(detail)) {
+    const first = detail[0];
+    const msg = first?.msg || first?.message;
+    if (msg) {
+      return String(msg).replace(/^Value error,\s*/i, "").replace(/^Assertion failed,\s*/i, "");
+    }
+    return fallbackMessage;
+  }
+
+  if (typeof detail === "string" && detail.trim()) {
+    return detail.trim();
+  }
+
+  if (typeof detail === "object" && detail?.msg) {
+    return String(detail.msg);
+  }
+
+  if (status === 401) return "Your session expired. Please sign in again.";
+  if (status === 403) return "You do not have permission to do that.";
+  if (status === 404) return "We could not find what you were looking for.";
+  if (status === 413) return "That file is too large. Please choose a smaller one.";
+  if (status === 429) return "Too many attempts. Please wait a moment and try again.";
+  if (status >= 500) return "Something went wrong on our side. Please try again shortly.";
+
+  return fallbackMessage;
+}
+
+/** Persist profile_picture (and related fields) onto the local session user. */
+export function patchLocalUser(partial) {
+  try {
+    const stored = JSON.parse(localStorage.getItem("user") || "{}");
+    const next = { ...stored, ...partial };
+    localStorage.setItem("user", JSON.stringify(next));
+    return next;
+  } catch {
+    return null;
+  }
 }
 
 // ─── Offer Letters ───────────────────────────────────────────────────────────
@@ -508,6 +633,44 @@ export async function getProfileCompletion(accessToken) {
 
 export async function saveProfileCompletion(payload, accessToken) {
   const { data } = await apiClient.put("/api/employees/profile-completion", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+// ─── Recruiter onboarding assignments (company email / assets / orientation) ─
+
+export async function setEmployeeCompanyEmail(employeeId, payload, accessToken) {
+  const { data } = await apiClient.put(`/api/employees/detail/${employeeId}/company-email`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function assignEmployeeAsset(employeeId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/employees/detail/${employeeId}/assets`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function updateEmployeeAsset(employeeId, assetId, payload, accessToken) {
+  const { data } = await apiClient.put(
+    `/api/employees/detail/${employeeId}/assets/${assetId}`,
+    payload,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  return data;
+}
+
+export async function removeEmployeeAsset(employeeId, assetId, accessToken) {
+  const { data } = await apiClient.delete(`/api/employees/detail/${employeeId}/assets/${assetId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function scheduleEmployeeOrientation(employeeId, payload, accessToken) {
+  const { data } = await apiClient.put(`/api/employees/detail/${employeeId}/orientation`, payload, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return data;

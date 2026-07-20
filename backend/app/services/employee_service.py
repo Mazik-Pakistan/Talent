@@ -11,6 +11,7 @@ from fastapi import HTTPException, status
 from app.core.crypto import decrypt_banking_payload, encrypt_banking_payload, iban_fingerprint
 from app.core.database import database
 from app.core.rbac import CurrentUser
+from app.schemas.auth import names_match
 from app.services.candidate_service import CandidateService, onboarding_missing_keys
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
@@ -123,6 +124,41 @@ class EmployeeService:
                 }
             )
         return {"candidates": pending, "count": len(pending)}
+
+    async def list_onboarding_in_progress(self, current_user: CurrentUser) -> dict:
+        """Newly registered candidates who are active but have not submitted onboarding yet."""
+        query: dict = {
+            "status": "active",
+            "role": "candidate",
+            "onboarding.status": {"$in": ["in_progress", "not_started", None]},
+        }
+        if current_user.role != "super_admin":
+            query["recruiter_id"] = current_user.id
+
+        docs = await database.candidates.find(query).sort("created_at", -1).to_list(length=100)
+        in_progress = []
+        for candidate in docs:
+            if candidate.get("conversion_status") in {"converted", "offer_sent", "offer_declined", "declined"}:
+                continue
+
+            onboarding = candidate.get("onboarding") or {}
+            in_progress.append(
+                {
+                    "id": candidate.get("user_id") or str(candidate["_id"]),
+                    "full_name": candidate.get("full_name"),
+                    "email": candidate.get("email"),
+                    "job_title": candidate.get("job_title"),
+                    "department": candidate.get("department"),
+                    "current_step": onboarding.get("current_step") or "personal",
+                    "onboarding_status": onboarding.get("status") or "not_started",
+                    "created_at": (
+                        candidate.get("created_at").isoformat()
+                        if hasattr(candidate.get("created_at"), "isoformat")
+                        else candidate.get("created_at")
+                    ),
+                }
+            )
+        return {"candidates": in_progress, "count": len(in_progress)}
 
     async def list_ready_for_conversion(self, current_user: CurrentUser) -> dict:
         """Candidates whose offer has been signed and is awaiting HR approval/activation."""
@@ -607,6 +643,54 @@ class EmployeeService:
             "employee": payload,
         }
 
+    async def upload_my_photo(self, current_user: CurrentUser, file) -> dict:
+        from app.services.profile_photo_service import save_profile_photo
+
+        employee = await database.employees.find_one(
+            {
+                "$or": [
+                    {"user_id": current_user.id},
+                    {"email": current_user.email},
+                ],
+                "status": "active",
+            }
+        )
+        if not employee:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee profile not found.")
+
+        photo_fields = await save_profile_photo(
+            current_user.id,
+            file,
+            previous_meta=employee.get("profile_picture_meta"),
+        )
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {"$set": {**photo_fields, "updated_at": datetime.now(UTC)}},
+        )
+        return await self.get_my_profile(current_user)
+
+    async def remove_my_photo(self, current_user: CurrentUser) -> dict:
+        from app.services.profile_photo_service import remove_profile_photo
+
+        employee = await database.employees.find_one(
+            {
+                "$or": [
+                    {"user_id": current_user.id},
+                    {"email": current_user.email},
+                ],
+                "status": "active",
+            }
+        )
+        if not employee:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee profile not found.")
+
+        photo_fields = await remove_profile_photo(employee.get("profile_picture_meta"))
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {"$set": {**photo_fields, "updated_at": datetime.now(UTC)}},
+        )
+        return await self.get_my_profile(current_user)
+
     async def get_candidate_detail(self, current_user: CurrentUser, candidate_id: str) -> dict:
         candidate = await self._find_candidate(candidate_id)
         if not candidate:
@@ -630,6 +714,85 @@ class EmployeeService:
                 "onboarding": candidate.get("onboarding"),
                 "progress": progress,
             }
+        }
+
+    async def attach_uploaded_file(
+        self,
+        current_user: CurrentUser,
+        *,
+        purpose: str,
+        file_name: str,
+        file_url: str,
+        doc_type: str | None = None,
+    ) -> dict:
+        """Keep the employee profile's denormalized onboarding data in sync."""
+        employee = await self._require_employee(current_user)
+        onboarding = dict(employee.get("onboarding") or {})
+        now = datetime.now(UTC)
+
+        if purpose == "resume":
+            resume = dict(onboarding.get("resume") or {})
+            resume.update({"file_name": file_name, "file_url": file_url})
+            if not resume.get("summary"):
+                resume["summary"] = ""
+            onboarding["resume"] = resume
+        elif purpose == "government_doc":
+            government = dict(onboarding.get("government_docs") or {})
+            documents = list(government.get("documents") or [])
+            target_type = doc_type if doc_type in {"cnic", "passport"} else None
+            updated = False
+            if target_type:
+                for item in documents:
+                    if item.get("doc_type") == target_type and not item.get("file_url"):
+                        item["file_name"] = file_name
+                        item["file_url"] = file_url
+                        updated = True
+                        break
+                if not updated:
+                    for item in documents:
+                        if item.get("doc_type") == target_type:
+                            item["file_name"] = file_name
+                            item["file_url"] = file_url
+                            updated = True
+                            break
+            if not updated:
+                documents.append(
+                    {
+                        "doc_type": target_type or "cnic",
+                        "document_number": "pending",
+                        "file_name": file_name,
+                        "file_url": file_url,
+                    }
+                )
+            government["documents"] = documents
+            onboarding["government_docs"] = government
+        elif purpose == "education_cert":
+            education = dict(onboarding.get("education") or {})
+            entries = list(education.get("entries") or [])
+            if entries:
+                target_entry = next((entry for entry in entries if not entry.get("certificate_file")), entries[0])
+                target_entry["certificate_file"] = file_url
+                education["entries"] = entries
+                onboarding["education"] = education
+        else:
+            return {
+                "message": "File uploaded.",
+                "file_name": file_name,
+                "file_url": file_url,
+                "onboarding": onboarding,
+                "doc_type": doc_type,
+            }
+
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {"$set": {"onboarding": onboarding, "updated_at": now}},
+        )
+        refreshed = await database.employees.find_one({"_id": employee["_id"]})
+        return {
+            "message": "File uploaded.",
+            "file_name": file_name,
+            "file_url": file_url,
+            "onboarding": refreshed.get("onboarding"),
         }
 
     async def _find_candidate(self, candidate_id: str) -> dict | None:
@@ -698,8 +861,16 @@ class EmployeeService:
             if not payload:
                 raise HTTPException(status_code=400, detail=error)
             data = payload.model_dump(mode="json")
-            if request.step == "nda" and not data.get("signed_at"):
-                data["signed_at"] = now.isoformat()
+            if request.step == "nda":
+                expected_name = employee.get("full_name") or current_user.full_name
+                if not names_match(data.get("full_legal_name"), expected_name):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"NDA full legal name must match your registered name: {expected_name}",
+                    )
+                data["full_legal_name"] = " ".join((expected_name or data.get("full_legal_name") or "").split())
+                if not data.get("signed_at"):
+                    data["signed_at"] = now.isoformat()
             if request.step == "employment":
                 iban_hash = iban_fingerprint(data["iban"])
                 duplicate = await database.employees.find_one(
@@ -768,6 +939,7 @@ class EmployeeService:
             "employee_id": doc.get("employee_id"),
             "full_name": doc.get("full_name"),
             "email": doc.get("email"),
+            "company_email": doc.get("company_email"),
             "phone": doc.get("phone"),
             "job_title": doc.get("job_title"),
             "department": doc.get("department"),
@@ -781,7 +953,229 @@ class EmployeeService:
             if hasattr(doc.get("converted_at"), "isoformat")
             else doc.get("converted_at"),
             "candidate_id": doc.get("candidate_id"),
+            "assets": doc.get("assets") or [],
+            "orientation": doc.get("orientation"),
+            "profile_picture": doc.get("profile_picture"),
         }
         if include_onboarding:
             payload["onboarding"] = doc.get("onboarding")
         return payload
+
+    async def _resolve_employee_for_recruiter(self, current_user: CurrentUser, employee_id: str) -> dict:
+        key = (employee_id or "").strip()
+        if not key:
+            raise HTTPException(status_code=404, detail="Employee not found.")
+        query_or: list[dict] = [
+            {"employee_id": key},
+            {"user_id": key},
+            {"email": key.lower()},
+            {"candidate_id": key},
+        ]
+        if ObjectId.is_valid(key):
+            query_or.append({"_id": ObjectId(key)})
+        employee = await database.employees.find_one({"$or": query_or})
+        if not employee:
+            raise HTTPException(status_code=404, detail="Employee not found.")
+        if current_user.role != "super_admin":
+            owner = str(employee.get("recruiter_id") or "")
+            if owner and owner != str(current_user.id):
+                raise HTTPException(status_code=403, detail="Not allowed.")
+        return employee
+
+    async def _notify_employee(
+        self,
+        employee: dict,
+        *,
+        notif_type: str,
+        title: str,
+        message: str,
+        link: str = "/dashboard/employee",
+        related_id: str | None = None,
+    ) -> None:
+        recipient_id = employee.get("user_id") or str(employee.get("_id", ""))
+        if not recipient_id:
+            return
+        await create_notification(
+            recipient_id=recipient_id,
+            recipient_role="employee",
+            notif_type=notif_type,
+            title=title,
+            message=message,
+            link=link,
+            related_id=related_id or employee.get("employee_id"),
+        )
+
+    async def set_company_email(self, current_user: CurrentUser, employee_id: str, company_email: str) -> dict:
+        employee = await self._resolve_employee_for_recruiter(current_user, employee_id)
+        email = company_email.strip().lower()
+        now = datetime.now(UTC)
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {
+                "$set": {
+                    "company_email": email,
+                    "company_email_assigned_at": now,
+                    "company_email_assigned_by": current_user.id,
+                    "updated_at": now,
+                }
+            },
+        )
+        employee["company_email"] = email
+
+        await self._notify_employee(
+            employee,
+            notif_type="company_email_assigned",
+            title="Company email assigned",
+            message=f"Your official company email has been set to {email}.",
+            link="/dashboard/employee",
+        )
+        try:
+            email_service.send_company_email_assigned(
+                to_email=employee.get("email") or email,
+                full_name=employee.get("full_name") or "Team member",
+                company_email=email,
+            )
+        except Exception:
+            pass
+
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "email": current_user.email,
+                "actor_email": current_user.email,
+                "module": "employees",
+                "action": "company_email_assigned",
+                "employee_id": employee.get("employee_id"),
+                "company_email": email,
+                "outcome": "success",
+                "created_at": now,
+            }
+        )
+        return {"message": "Company email saved.", "employee": self._public_employee(employee)}
+
+    async def assign_asset(self, current_user: CurrentUser, employee_id: str, request) -> dict:
+        employee = await self._resolve_employee_for_recruiter(current_user, employee_id)
+        now = datetime.now(UTC)
+        data = request.model_dump(mode="json")
+        asset = {
+            "id": str(ObjectId()),
+            "name": data["name"],
+            "asset_type": data.get("asset_type") or "other",
+            "serial_number": data.get("serial_number"),
+            "notes": data.get("notes"),
+            "status": "assigned",
+            "assigned_at": now.isoformat(),
+            "assigned_by": current_user.id,
+            "assigned_by_email": current_user.email,
+        }
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {"$push": {"assets": asset}, "$set": {"updated_at": now}},
+        )
+        assets = list(employee.get("assets") or [])
+        assets.append(asset)
+        employee["assets"] = assets
+
+        await self._notify_employee(
+            employee,
+            notif_type="asset_assigned",
+            title="Company asset assigned",
+            message=f"You have been assigned: {asset['name']}.",
+            related_id=asset["id"],
+        )
+        try:
+            email_service.send_asset_assigned(
+                to_email=employee.get("company_email") or employee.get("email"),
+                full_name=employee.get("full_name") or "Team member",
+                asset_name=asset["name"],
+                asset_type=asset["asset_type"],
+                serial_number=asset.get("serial_number"),
+            )
+        except Exception:
+            pass
+
+        return {"message": "Asset assigned.", "asset": asset, "employee": self._public_employee(employee)}
+
+    async def update_asset(
+        self, current_user: CurrentUser, employee_id: str, asset_id: str, request
+    ) -> dict:
+        employee = await self._resolve_employee_for_recruiter(current_user, employee_id)
+        assets = list(employee.get("assets") or [])
+        target = next((a for a in assets if a.get("id") == asset_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="Asset not found.")
+        data = {k: v for k, v in request.model_dump(mode="json", exclude_none=True).items()}
+        now = datetime.now(UTC)
+        target.update(data)
+        target["updated_at"] = now.isoformat()
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {"$set": {"assets": assets, "updated_at": now}},
+        )
+        employee["assets"] = assets
+        return {"message": "Asset updated.", "asset": target, "employee": self._public_employee(employee)}
+
+    async def remove_asset(self, current_user: CurrentUser, employee_id: str, asset_id: str) -> dict:
+        employee = await self._resolve_employee_for_recruiter(current_user, employee_id)
+        assets = [a for a in (employee.get("assets") or []) if a.get("id") != asset_id]
+        if len(assets) == len(employee.get("assets") or []):
+            raise HTTPException(status_code=404, detail="Asset not found.")
+        now = datetime.now(UTC)
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {"$set": {"assets": assets, "updated_at": now}},
+        )
+        employee["assets"] = assets
+        return {"message": "Asset removed.", "employee": self._public_employee(employee)}
+
+    async def schedule_orientation(self, current_user: CurrentUser, employee_id: str, request) -> dict:
+        employee = await self._resolve_employee_for_recruiter(current_user, employee_id)
+        now = datetime.now(UTC)
+        data = request.model_dump(mode="json")
+        previous = employee.get("orientation")
+        orientation = {
+            **data,
+            "scheduled_at": now.isoformat(),
+            "scheduled_by": current_user.id,
+            "scheduled_by_email": current_user.email,
+            "status": "scheduled",
+        }
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {"$set": {"orientation": orientation, "updated_at": now}},
+        )
+        employee["orientation"] = orientation
+
+        is_update = bool(previous)
+        notif_type = "orientation_updated" if is_update else "orientation_scheduled"
+        title = "Orientation session updated" if is_update else "Orientation session scheduled"
+        message = (
+            f"Your orientation is on {orientation['date']} at {orientation['time']} "
+            f"with {orientation['trainer']}."
+        )
+        await self._notify_employee(
+            employee,
+            notif_type=notif_type,
+            title=title,
+            message=message,
+            link="/dashboard/employee",
+        )
+        try:
+            email_service.send_orientation_scheduled(
+                to_email=employee.get("company_email") or employee.get("email"),
+                full_name=employee.get("full_name") or "Team member",
+                date=orientation["date"],
+                time=orientation["time"],
+                meeting_link=orientation.get("meeting_link"),
+                trainer=orientation["trainer"],
+                agenda=orientation["agenda"],
+                is_update=is_update,
+            )
+        except Exception:
+            pass
+
+        return {
+            "message": "Orientation updated." if is_update else "Orientation scheduled.",
+            "orientation": orientation,
+            "employee": self._public_employee(employee),
+        }

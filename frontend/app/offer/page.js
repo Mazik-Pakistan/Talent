@@ -20,6 +20,7 @@ export default function OfferLetterPage() {
   const [offer, setOffer] = useState(null);
   const [message, setMessage] = useState("");
   const [fullLegalName, setFullLegalName] = useState("");
+  const [expectedName, setExpectedName] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -41,6 +42,9 @@ export default function OfferLetterPage() {
     try {
       const data = await getMyOffer(accessToken);
       setOffer(data.offer);
+      const name = data.offer?.candidate_name || JSON.parse(localStorage.getItem("user") || "{}")?.full_name || "";
+      setExpectedName(name);
+      setFullLegalName(name);
     } catch (error) {
       setMessage(getApiErrorMessage(error, "Unable to load your offer letter."));
     } finally {
@@ -48,14 +52,26 @@ export default function OfferLetterPage() {
     }
   }
 
+  function namesMatch(a, b) {
+    return String(a || "").trim().toLowerCase().replace(/\s+/g, " ") === String(b || "").trim().toLowerCase().replace(/\s+/g, " ");
+  }
+
   async function handleSign(event) {
     event.preventDefault();
     if (!fullLegalName.trim()) {
-      setMessage("Type your full legal name to sign.");
+      setMessage("Your full legal name is required to sign.");
+      return;
+    }
+    if (expectedName && !namesMatch(fullLegalName, expectedName)) {
+      setMessage(`Full legal name must match your registered name: ${expectedName}`);
       return;
     }
     if (!agreed) {
       setMessage("You must agree to the offer terms before signing.");
+      return;
+    }
+    if (!signatureDataUrl) {
+      setMessage("Please draw your signature on the pad.");
       return;
     }
     const accessToken = localStorage.getItem("access_token");
@@ -64,7 +80,7 @@ export default function OfferLetterPage() {
     try {
       const data = await signOffer(
         offer.id,
-        { full_legal_name: fullLegalName, signature_data_url: signatureDataUrl, agreed },
+        { full_legal_name: expectedName || fullLegalName, signature_data_url: signatureDataUrl, agreed },
         accessToken
       );
       setOffer(data.offer);
@@ -192,11 +208,19 @@ export default function OfferLetterPage() {
             ) : (
               <div className="offer-sign-block">
                 <h3>Digitally sign this offer</h3>
-                <p>Type your full legal name, draw your signature below, and confirm you agree to the terms.</p>
+                <p>
+                  Your full legal name is locked to the name on your account from registration. Draw your signature
+                  and confirm you agree to the terms.
+                </p>
                 <form onSubmit={handleSign} className="auth-form">
                   <label className="field">
                     <span>Full legal name</span>
-                    <input value={fullLegalName} onChange={(e) => setFullLegalName(e.target.value)} placeholder="e.g. Syed Omer Ahmed Shamsi" />
+                    <input
+                      value={expectedName || fullLegalName}
+                      readOnly
+                      aria-readonly="true"
+                    />
+                    <small style={{ color: "#647186" }}>Must match everywhere: {expectedName || "your registered name"}</small>
                   </label>
                   <SignaturePad onChange={setSignatureDataUrl} />
                   <label className="checkbox-field">

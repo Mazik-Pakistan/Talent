@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
+import ProfileAvatar from "@/components/ProfileAvatar";
 import {
   clearLocalSession,
-  getApiErrorMessage,
   getNotifications,
   globalSearch,
   logout,
@@ -17,13 +18,91 @@ import styles from "./recruiter-shell.module.css";
 const SEARCH_DEBOUNCE_MS = 350;
 
 const NAV_ITEMS = [
-  { key: "overview", label: "Overview", href: "/dashboard/recruiter/overview", icon: "◈" },
-  { key: "candidates", label: "Candidates", href: "/dashboard/recruiter/candidates", icon: "◎" },
-  { key: "invite", label: "Invite", href: "/dashboard/recruiter/invite", icon: "+" },
-  { key: "employees", label: "Employees", href: "/dashboard/recruiter/employees", icon: "◌" },
-  { key: "announcements", label: "Announcements", href: "/dashboard/recruiter/announcements", icon: "✦" },
-  { key: "activity", label: "Activity", href: "/dashboard/recruiter/activity", icon: "↺" },
+  {
+    key: "overview",
+    label: "Overview",
+    href: "/dashboard/recruiter/overview",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="3" width="7" height="9" rx="1.5" />
+        <rect x="14" y="3" width="7" height="5" rx="1.5" />
+        <rect x="14" y="12" width="7" height="9" rx="1.5" />
+        <rect x="3" y="16" width="7" height="5" rx="1.5" />
+      </svg>
+    ),
+  },
+  {
+    key: "candidates",
+    label: "Candidates",
+    href: "/dashboard/recruiter/candidates",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    ),
+  },
+  {
+    key: "invite",
+    label: "Invite",
+    href: "/dashboard/recruiter/invite",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="8.5" cy="7" r="4" />
+        <line x1="20" y1="8" x2="20" y2="14" />
+        <line x1="23" y1="11" x2="17" y2="11" />
+      </svg>
+    ),
+  },
+  {
+    key: "employees",
+    label: "Employees",
+    href: "/dashboard/recruiter/employees",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="2" y="7" width="20" height="14" rx="2" />
+        <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+      </svg>
+    ),
+  },
+  {
+    key: "announcements",
+    label: "Announcements",
+    href: "/dashboard/recruiter/announcements",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+        <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+      </svg>
+    ),
+  },
+  {
+    key: "activity",
+    label: "Activity",
+    href: "/dashboard/recruiter/activity",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+      </svg>
+    ),
+  },
+  {
+    key: "profile",
+    label: "Profile",
+    href: "/dashboard/recruiter/profile",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
+      </svg>
+    ),
+  },
 ];
+
+const POLL_MS = 20000;
 
 export default function RecruiterShell({ activeKey, title, subtitle, children }) {
   const router = useRouter();
@@ -40,24 +119,56 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
   const [searching, setSearching] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState(null);
   const searchTimerRef = useRef(null);
+  const lastUnreadRef = useRef(null);
 
-  useEffect(() => {
+  const refreshUser = useCallback(() => {
     const storedUser = localStorage.getItem("user");
     setUser(storedUser ? JSON.parse(storedUser) : null);
   }, []);
 
   useEffect(() => {
+    refreshUser();
+  }, [pathname, refreshUser]);
+
+  useEffect(() => {
+    const onUserUpdated = () => refreshUser();
+    window.addEventListener("talent-user-updated", onUserUpdated);
+    window.addEventListener("storage", onUserUpdated);
+    return () => {
+      window.removeEventListener("talent-user-updated", onUserUpdated);
+      window.removeEventListener("storage", onUserUpdated);
+    };
+  }, [refreshUser]);
+
+  const refreshNotifications = useCallback(async (silent = true) => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
-    getNotifications(accessToken, 12)
-      .then((data) => {
-        setNotifications(data.notifications || []);
-        setUnreadCount(data.unread_count || 0);
-      })
-      .catch(() => {
-        setNotifications([]);
-      });
-  }, [pathname]);
+    try {
+      const data = await getNotifications(accessToken, 20);
+      const nextUnread = data.unread_count || 0;
+      const nextList = data.notifications || [];
+      if (
+        silent &&
+        lastUnreadRef.current != null &&
+        nextUnread > lastUnreadRef.current &&
+        nextList[0]
+      ) {
+        const newest = nextList[0];
+        toast.info(`${newest.title}: ${newest.message?.slice(0, 80) || "New notification"}`);
+      }
+      lastUnreadRef.current = nextUnread;
+      setNotifications(nextList);
+      setUnreadCount(nextUnread);
+    } catch {
+      // Non-critical polling failure
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshNotifications(false);
+    const timer = setInterval(() => refreshNotifications(true), POLL_MS);
+    return () => clearInterval(timer);
+  }, [pathname, refreshNotifications]);
 
   useEffect(() => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -102,8 +213,10 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
       await markNotificationsRead({ all: true }, accessToken);
       setNotifications((current) => current.map((n) => ({ ...n, read: true })));
       setUnreadCount(0);
+      lastUnreadRef.current = 0;
+      toast.success("All notifications marked as read.");
     } catch {
-      // Non-critical
+      toast.error("Could not update notifications.");
     } finally {
       setNotifBusy(false);
     }
@@ -115,7 +228,11 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
     try {
       await markNotificationsRead({ ids: [notificationId] }, accessToken);
       setNotifications((current) => current.map((n) => (n.id === notificationId ? { ...n, read: true } : n)));
-      setUnreadCount((count) => Math.max(0, count - 1));
+      setUnreadCount((count) => {
+        const next = Math.max(0, count - 1);
+        lastUnreadRef.current = next;
+        return next;
+      });
     } catch {
       // Non-critical
     }
@@ -124,19 +241,22 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
   function handleNotificationClick(notification) {
     if (!notification.read) handleMarkOneRead(notification.id);
     setNotifOpen(false);
-    if (notification.link) {
-      if (notification.link.includes("#")) {
-        const hash = notification.link.split("#")[1];
-        document.getElementById(hash)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      } else if (notification.type === "invitation_sent") {
-        router.push("/dashboard/recruiter/invite");
-      } else if (notification.type === "intake_submitted") {
-        router.push("/dashboard/recruiter/candidates");
-      } else if (notification.type === "offer_signed") {
-        router.push("/dashboard/recruiter/candidates");
-      } else {
-        router.push("/dashboard/recruiter/overview");
-      }
+    if (!notification.link) return;
+    if (notification.type === "announcement") {
+      router.push("/dashboard/recruiter/announcements");
+      return;
+    }
+    if (notification.link.includes("#")) {
+      const hash = notification.link.split("#")[1];
+      document.getElementById(hash)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (notification.type === "invitation_sent") {
+      router.push("/dashboard/recruiter/invite");
+    } else if (notification.type === "intake_submitted" || notification.type === "offer_signed") {
+      router.push("/dashboard/recruiter/candidates");
+    } else if (notification.link.startsWith("/dashboard/recruiter/employees")) {
+      router.push(notification.link);
+    } else {
+      router.push("/dashboard/recruiter/overview");
     }
   }
 
@@ -144,10 +264,12 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
     setSelectedPerson(result);
     setSearchOpen(false);
     setSearchQuery(result.full_name || "");
-    router.push("/dashboard/recruiter/employees");
+    if (result.type === "employee") {
+      router.push(`/dashboard/recruiter/employees/${result.id}`);
+    } else {
+      router.push("/dashboard/recruiter/candidates");
+    }
   }
-
-  const initials = useMemo(() => initialsFor(user?.full_name), [user]);
 
   if (!user) {
     return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
@@ -158,7 +280,12 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
       <div className={styles.root}>
         <div className={styles.app}>
           <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.sidebarCollapsed : ""}`}>
-            <button type="button" className={styles.brand} onClick={() => setSidebarCollapsed((value) => !value)}>
+            <button
+              type="button"
+              className={styles.brand}
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
               <div className={styles.brandMark}>MZ</div>
               <div className={styles.brandText}>
                 <div className={styles.p1}>Talent</div>
@@ -174,6 +301,7 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                     type="button"
                     className={`${styles.navItem} ${activeKey === item.key ? styles.navItemActive : ""}`}
                     onClick={() => router.push(item.href)}
+                    title={item.label}
                   >
                     <span className={styles.navIcon}>{item.icon}</span>
                     <span className={styles.navLabel}>{item.label}</span>
@@ -183,11 +311,18 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
             </ul>
 
             <div className={styles.sidebarFooter}>
-              <div className={styles.avatarSm}>{initials}</div>
-              <div className={styles.sidebarFooterText}>
-                <div className={styles.name}>{user.full_name}</div>
-                <div className={styles.role}>{user.role?.replace("_", " ")}</div>
-              </div>
+              <button
+                type="button"
+                className={styles.footerClickable}
+                onClick={() => router.push("/dashboard/recruiter/profile")}
+                title="Open profile"
+              >
+                <ProfileAvatar src={user.profile_picture} name={user.full_name} size="sm" fallback="RC" />
+                <div className={styles.sidebarFooterText}>
+                  <div className={styles.name}>{user.full_name}</div>
+                  <div className={styles.role}>{user.role?.replace("_", " ")}</div>
+                </div>
+              </button>
               <button type="button" className={styles.logoutBtn} title="Log out" onClick={handleLogout}>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -220,7 +355,8 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                       }}
                       onFocus={() => setSearchOpen(true)}
                       onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
-                      placeholder="Search candidates, employees, departments…"
+                      placeholder="Search candidates, employees…"
+                      aria-label="Search"
                     />
                   </div>
                   {searchOpen && searchQuery.trim().length >= 2 && (
@@ -231,10 +367,18 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                       )}
                       {!searching &&
                         searchResults.map((result) => (
-                          <button type="button" className={styles.searchResultItem} key={`${result.type}-${result.id}`} onMouseDown={(event) => event.preventDefault()} onClick={() => handleSearchSelect(result)}>
+                          <button
+                            type="button"
+                            className={styles.searchResultItem}
+                            key={`${result.type}-${result.id}`}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => handleSearchSelect(result)}
+                          >
                             <div>
                               <div className={styles.searchResultLabel}>{result.full_name}</div>
-                              <div className={styles.searchResultMeta}>{result.email || "—"} · {result.department || "—"}</div>
+                              <div className={styles.searchResultMeta}>
+                                {result.email || "—"} · {result.department || "—"}
+                              </div>
                             </div>
                             <span className={styles.typePill}>{result.type}</span>
                           </button>
@@ -244,25 +388,43 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                 </div>
 
                 <div className={styles.dropdownWrap}>
-                  <div className={styles.iconBtn} title="Notifications" role="button" tabIndex={0} onClick={() => setNotifOpen((value) => !value)}>
+                  <button
+                    type="button"
+                    className={styles.iconBtn}
+                    title="Notifications"
+                    aria-label="Notifications"
+                    onClick={() => setNotifOpen((value) => !value)}
+                  >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
                       <path d="M13.7 21a2 2 0 0 1-3.4 0" />
                     </svg>
-                    {unreadCount > 0 && <span className={styles.dot} />}
-                  </div>
+                    {unreadCount > 0 && (
+                      <span className={styles.badgeCount}>{unreadCount > 99 ? "99+" : unreadCount}</span>
+                    )}
+                  </button>
                   {notifOpen && (
                     <div className={styles.notifDropdown}>
                       <div className={styles.notifDropdownHead}>
                         <strong>Notifications{unreadCount > 0 ? ` (${unreadCount})` : ""}</strong>
-                        <button type="button" className={styles.linkButton} onClick={handleMarkAllRead} disabled={notifBusy || unreadCount === 0}>
+                        <button
+                          type="button"
+                          className={styles.linkButton}
+                          onClick={handleMarkAllRead}
+                          disabled={notifBusy || unreadCount === 0}
+                        >
                           Mark all read
                         </button>
                       </div>
                       <div className={styles.notifList}>
                         {notifications.length ? (
                           notifications.map((notification) => (
-                            <button key={notification.id} type="button" className={`${styles.notifItem} ${notification.read ? styles.notifItemRead : ""}`} onClick={() => handleNotificationClick(notification)}>
+                            <button
+                              key={notification.id}
+                              type="button"
+                              className={`${styles.notifItem} ${notification.read ? styles.notifItemRead : ""}`}
+                              onClick={() => handleNotificationClick(notification)}
+                            >
                               <span className={styles.notifItemDot} />
                               <span className={styles.notifItemBody}>
                                 <span className={styles.notifItemTitle}>{notification.title}</span>
@@ -286,7 +448,9 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                 <div className={styles.selectionBox}>
                   <div>
                     <strong>{selectedPerson.full_name}</strong>
-                    <div className={styles.mutedText}>{selectedPerson.type} · {selectedPerson.email || "—"} · {selectedPerson.department || "—"}</div>
+                    <div className={styles.mutedText}>
+                      {selectedPerson.type} · {selectedPerson.email || "—"} · {selectedPerson.department || "—"}
+                    </div>
                   </div>
                   <button type="button" className={styles.secondaryButton} onClick={() => setSelectedPerson(null)}>
                     Clear
@@ -313,12 +477,4 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function initialsFor(name) {
-  if (!name) return "RC";
-  const parts = name.trim().split(/\s+/);
-  const first = parts[0]?.[0] || "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (first + last).toUpperCase() || "RC";
 }
