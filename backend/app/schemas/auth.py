@@ -4,7 +4,41 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$")
+# Accept legacy international-style numbers OR Pakistani mobiles (03XXXXXXXXX / +92…).
 PHONE_PATTERN = re.compile(r"^[+()\-\s\d]{7,20}$")
+PK_MOBILE_DIGITS = re.compile(r"^03\d{9}$")
+
+
+def normalize_pk_mobile(value: str) -> str:
+    """Normalize a Pakistan mobile number to 03XXXXXXXXX (11 digits)."""
+    raw = (value or "").strip()
+    if not raw:
+        raise ValueError("Enter a valid Pakistani mobile number starting with 03 (e.g. 03001234567).")
+    digits = re.sub(r"[^\d]", "", raw)
+    if digits.startswith("92") and len(digits) == 12:
+        digits = "0" + digits[2:]
+    elif digits.startswith("3") and len(digits) == 10:
+        digits = "0" + digits
+    if not PK_MOBILE_DIGITS.fullmatch(digits):
+        raise ValueError("Enter a valid Pakistani mobile number starting with 03 (e.g. 03001234567).")
+    return digits
+
+
+def normalize_optional_pk_mobile(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    return normalize_pk_mobile(cleaned)
+
+
+def names_match(left: str | None, right: str | None) -> bool:
+    def _norm(value: str | None) -> str:
+        return " ".join((value or "").casefold().split())
+
+    a, b = _norm(left), _norm(right)
+    return bool(a) and a == b
 
 
 class RegisterRequest(BaseModel):
@@ -26,10 +60,7 @@ class RegisterRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def validate_company_email(cls, value: EmailStr) -> str:
-        normalized_email = value.lower()
-        if not normalized_email.endswith("@gmail.com"):
-            raise ValueError("Use a valid @gmail.com company email address.")
-        return normalized_email
+        return str(value).lower().strip()
 
     @field_validator("phone")
     @classmethod
@@ -169,10 +200,7 @@ class BootstrapSuperAdminRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def validate_company_email(cls, value: EmailStr) -> str:
-        normalized_email = value.lower()
-        if not normalized_email.endswith("@gmail.com"):
-            raise ValueError("Use a valid @gmail.com email address.")
-        return normalized_email
+        return str(value).lower().strip()
 
     @field_validator("phone")
     @classmethod

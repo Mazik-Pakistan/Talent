@@ -529,5 +529,33 @@ class EmailService:
         eyebrow = "Orientation update" if is_update else "Orientation session"
         self._send(to_email, subject, self._branded_shell(eyebrow, "You're invited", body))
 
+    def send_announcement(
+        self,
+        to_email: str,
+        full_name: str,
+        title: str,
+        body_text: str,
+        dashboard_url: str | None = None,
+    ) -> None:
+        subject = f"Announcement: {title} — TalentAI"
+        link_html = (
+            f'<p style="margin:18px 0 0;"><a href="{escape(dashboard_url, quote=True)}" '
+            f'style="display:inline-block;background:#123a63;color:#fff;text-decoration:none;'
+            f'padding:12px 18px;border-radius:8px;font-weight:700;">Open dashboard</a></p>'
+            if dashboard_url
+            else ""
+        )
+        body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {escape(full_name)}, your recruiting team shared a new announcement.
+            </p>
+            <div style="background:#f1f5fe;border:2px solid #32a6ae;border-radius:10px;padding:20px;margin-bottom:8px;">
+              <p style="margin:0 0 8px;color:#123a63;font-size:18px;font-weight:800;">{escape(title)}</p>
+              <p style="margin:0;color:#475569;font-size:15px;line-height:1.6;white-space:pre-wrap;">{escape(body_text)}</p>
+            </div>
+            {link_html}
+"""
+        self._send(to_email, subject, self._branded_shell("Team announcement", title, body))
+
 
 email_service = EmailService()

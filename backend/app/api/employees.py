@@ -136,6 +136,19 @@ async def get_my_employee_profile(current_user: RequireEmployee):
     return await service.get_my_profile(current_user)
 
 
+@router.post("/me/photo")
+async def upload_my_employee_photo(
+    current_user: RequireEmployee,
+    file: UploadFile = File(...),
+):
+    return await service.upload_my_photo(current_user, file)
+
+
+@router.delete("/me/photo")
+async def remove_my_employee_photo(current_user: RequireEmployee):
+    return await service.remove_my_photo(current_user)
+
+
 @router.get("/profile-completion")
 async def get_profile_completion(current_user: RequireEmployee):
     return await service.get_profile_completion(current_user)

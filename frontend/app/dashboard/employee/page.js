@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
+import ProfileAvatar from "@/components/ProfileAvatar";
 import {
   clearLocalSession,
+  getAnnouncements,
   getApiErrorMessage,
   getMyEmployeeProfile,
   getNotifications,
@@ -13,81 +16,14 @@ import {
   listMyDocuments,
   logout,
   markNotificationsRead,
+  patchLocalUser,
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
+import { getEmployeeNavItems } from "@/utils/employeeNav";
 import styles from "./employee-dashboard.module.css";
 
-const NAV_ITEMS = [
-  {
-    key: "dashboard",
-    label: "Dashboard",
-    module: null,
-    href: "/dashboard/employee",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" />
-        <rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
-      </svg>
-    ),
-  },
-  {
-    key: "onboarding",
-    label: "Onboarding",
-    module: "onboarding",
-    href: "/dashboard/employee/complete-profile",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" />
-      </svg>
-    ),
-  },
-  {
-    key: "documents",
-    label: "Documents",
-    module: null,
-    href: "/documents",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" />
-      </svg>
-    ),
-  },
-  {
-    key: "learning",
-    label: "Learning",
-    module: "learning",
-    href: null,
-    badge: "PHASE 3",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-      </svg>
-    ),
-  },
-  {
-    key: "ai",
-    label: "AI Coach",
-    module: "ai",
-    href: null,
-    badge: "PHASE 3",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" /><path d="M19 11a7 7 0 0 1-14 0M12 18v4" />
-      </svg>
-    ),
-  },
-  {
-    key: "profile",
-    label: "Profile",
-    module: "profile",
-    href: "/dashboard/employee/complete-profile",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
-      </svg>
-    ),
-  },
-];
+const ANNOUNCEMENTS_POLL_MS = 30000;
+const NOTIFICATIONS_POLL_MS = 20000;
 
 export default function EmployeeDashboardPage() {
   return (
@@ -110,34 +46,77 @@ function EmployeeDashboardContent() {
   const [docCount, setDocCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [announcements, setAnnouncements] = useState([]);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const lastUnreadRef = useRef(null);
 
   useEffect(() => {
     setUser(JSON.parse(localStorage.getItem("user")));
+    const onUserUpdated = () => setUser(JSON.parse(localStorage.getItem("user")));
+    window.addEventListener("talent-user-updated", onUserUpdated);
+    return () => window.removeEventListener("talent-user-updated", onUserUpdated);
   }, []);
 
   const loadProfile = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const [profileData, completionData, notificationData] = await Promise.all([
+      const [profileData, completionData] = await Promise.all([
         getMyEmployeeProfile(accessToken),
         getProfileCompletion(accessToken).catch(() => null),
-        getNotifications(accessToken).catch(() => ({ notifications: [], unread_count: 0 })),
       ]);
       setEmployee(profileData.employee);
+      if (profileData.employee?.profile_picture !== undefined) {
+        const nextUser = patchLocalUser({
+          profile_picture: profileData.employee.profile_picture || null,
+          full_name: profileData.employee.full_name,
+        });
+        if (nextUser) setUser(nextUser);
+      }
       setProgress(completionData?.progress || null);
-      setNotifications(notificationData?.notifications || []);
-      setUnreadNotifications(notificationData?.unread_count || 0);
       setLoadError("");
     } catch (error) {
       setLoadError(getApiErrorMessage(error, "Could not load your employee profile."));
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const loadAnnouncements = useCallback(async () => {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    try {
+      const data = await getAnnouncements(accessToken, 20);
+      setAnnouncements(data.announcements || []);
+    } catch {
+      // Non-critical polling failure
+    }
+  }, []);
+
+  const refreshNotifications = useCallback(async (silent = true) => {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    try {
+      const data = await getNotifications(accessToken);
+      const nextUnread = data.unread_count || 0;
+      const nextList = data.notifications || [];
+      if (
+        silent &&
+        lastUnreadRef.current != null &&
+        nextUnread > lastUnreadRef.current &&
+        nextList[0]
+      ) {
+        toast.info(nextList[0].title || "New notification");
+      }
+      lastUnreadRef.current = nextUnread;
+      setNotifications(nextList);
+      setUnreadNotifications(nextUnread);
+    } catch {
+      // Non-critical polling failure
     }
   }, []);
 
@@ -153,6 +132,18 @@ function EmployeeDashboardContent() {
     loadProfile();
     loadDocCount();
   }, [loadProfile, loadDocCount]);
+
+  useEffect(() => {
+    loadAnnouncements();
+    const timer = setInterval(loadAnnouncements, ANNOUNCEMENTS_POLL_MS);
+    return () => clearInterval(timer);
+  }, [loadAnnouncements]);
+
+  useEffect(() => {
+    refreshNotifications(false);
+    const timer = setInterval(() => refreshNotifications(true), NOTIFICATIONS_POLL_MS);
+    return () => clearInterval(timer);
+  }, [refreshNotifications]);
 
   async function handleLogout() {
     const accessToken = localStorage.getItem("access_token");
@@ -182,7 +173,9 @@ function EmployeeDashboardContent() {
 
   const onboarding = useMemo(() => employee?.onboarding || {}, [employee]);
   const profileIncomplete = employee?.profile_status === "incomplete";
+  const profileComplete = employee?.profile_status === "complete";
   const percentage = progress?.percentage ?? (profileIncomplete ? 0 : 100);
+  const navItems = useMemo(() => getEmployeeNavItems({ profileComplete }), [profileComplete]);
   const documentsSummary = onboarding?.government_docs?.documents?.length ?? null;
   const assignedAssets = employee?.assets || [];
   const orientation = employee?.orientation;
@@ -202,9 +195,10 @@ function EmployeeDashboardContent() {
       { label: "Payroll", value: summarize(onboarding.employment), anchor: "onboarding-section" },
       { label: "NDA", value: onboarding.nda?.full_legal_name || "Not on file", anchor: "onboarding-section" },
       { label: "Resume", value: onboarding.resume?.file_name || "Not on file", anchor: "onboarding-section" },
+      ...announcements.map((a) => ({ label: "Announcement", value: a.title, anchor: "announcements-section" })),
     ];
     return rows.filter((row) => row.value);
-  }, [employee, onboarding]);
+  }, [employee, onboarding, announcements]);
 
   const searchResults = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -224,7 +218,8 @@ function EmployeeDashboardContent() {
     return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
   }
 
-  const initials = initialsFor(employee?.full_name || user.full_name);
+  const displayName = employee?.full_name || user.full_name;
+  const photoUrl = employee?.profile_picture || user?.profile_picture || null;
 
   return (
     <div className={styles.root}>
@@ -246,10 +241,10 @@ function EmployeeDashboardContent() {
 
           <div className={styles.navSectionLabel}>Workspace</div>
           <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {NAV_ITEMS.map((item) => {
+            {navItems.map((item) => {
               const enabled = item.module ? modules[item.module] : true;
               if (!enabled) return null;
-              const isActive = item.href && pathname === item.href;
+              const isActive = item.href && (pathname === item.href || (item.href !== "/dashboard/employee" && pathname.startsWith(item.href)));
               const disabled = !item.href;
               return (
                 <li key={item.key}>
@@ -270,9 +265,9 @@ function EmployeeDashboardContent() {
           </ul>
 
           <div className={styles.sidebarFooter}>
-            <div className={styles.avatarSm}>{initials}</div>
+            <ProfileAvatar src={photoUrl} name={displayName} size="sm" fallback="EM" />
             <div className={styles.sidebarFooterText}>
-              <div className={styles.name}>{employee?.full_name || user.full_name}</div>
+              <div className={styles.name}>{displayName}</div>
               <div className={styles.role}>{employee?.job_title || "Employee"}</div>
             </div>
             <button type="button" className={styles.logoutBtn} title="Log out" onClick={handleLogout}>
@@ -339,7 +334,11 @@ function EmployeeDashboardContent() {
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" />
                   </svg>
-                  {unreadNotifications > 0 && <span className={styles.dot} />}
+                  {unreadNotifications > 0 && (
+                    <span className={styles.badgeCount}>
+                      {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                    </span>
+                  )}
                 </div>
                 {notifOpen && (
                   <div className={styles.notifPanel}>
@@ -370,10 +369,10 @@ function EmployeeDashboardContent() {
 
               <div
                 className={styles.iconBtn}
-                title="Edit profile"
+                title="My profile"
                 role="button"
                 tabIndex={0}
-                onClick={() => router.push("/dashboard/employee/complete-profile")}
+                onClick={() => router.push("/dashboard/employee/profile")}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
@@ -541,6 +540,35 @@ function EmployeeDashboardContent() {
                 </div>
               </div>
             )}
+
+            <div className={styles.section} id="announcements-section">
+              <div className={styles.sectionHead}>
+                <div className={styles.sectionHeadLeft}>
+                  <div className={`${styles.bar} ${styles.green}`} />
+                  <div>
+                    <div className={styles.sectionTitle}>Announcements</div>
+                    <div className={styles.sectionDesc}>Updates from the recruiting team.</div>
+                  </div>
+                </div>
+              </div>
+              <div className={styles.sectionBody}>
+                <div className={styles.announcementStack}>
+                  {announcements.length ? (
+                    announcements.map((a) => (
+                      <article className={styles.announcementCard} key={a.id}>
+                        <h4>{a.title}</h4>
+                        <p>{a.body}</p>
+                        <p className={styles.announcementMeta}>
+                          {a.created_by_name || "Recruiting team"} · {formatDate(a.created_at)}
+                        </p>
+                      </article>
+                    ))
+                  ) : (
+                    <p className={styles.emptySub}>No announcements yet.</p>
+                  )}
+                </div>
+              </div>
+            </div>
 
             <div className={styles.cols2}>
               <div className={styles.section} style={{ marginBottom: 0 }} id="documents-section">
@@ -788,12 +816,4 @@ function tenureLabel(startDate) {
   const years = Math.floor(months / 12);
   const rem = months % 12;
   return rem ? `${years} yr ${rem} mo` : `${years} yr`;
-}
-
-function initialsFor(name) {
-  if (!name) return "EM";
-  const parts = name.trim().split(/\s+/);
-  const first = parts[0]?.[0] || "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (first + last).toUpperCase() || "EM";
 }

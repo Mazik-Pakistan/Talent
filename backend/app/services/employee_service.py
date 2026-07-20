@@ -11,6 +11,7 @@ from fastapi import HTTPException, status
 from app.core.crypto import decrypt_banking_payload, encrypt_banking_payload, iban_fingerprint
 from app.core.database import database
 from app.core.rbac import CurrentUser
+from app.schemas.auth import names_match
 from app.services.candidate_service import CandidateService, onboarding_missing_keys
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
@@ -642,6 +643,54 @@ class EmployeeService:
             "employee": payload,
         }
 
+    async def upload_my_photo(self, current_user: CurrentUser, file) -> dict:
+        from app.services.profile_photo_service import save_profile_photo
+
+        employee = await database.employees.find_one(
+            {
+                "$or": [
+                    {"user_id": current_user.id},
+                    {"email": current_user.email},
+                ],
+                "status": "active",
+            }
+        )
+        if not employee:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee profile not found.")
+
+        photo_fields = await save_profile_photo(
+            current_user.id,
+            file,
+            previous_meta=employee.get("profile_picture_meta"),
+        )
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {"$set": {**photo_fields, "updated_at": datetime.now(UTC)}},
+        )
+        return await self.get_my_profile(current_user)
+
+    async def remove_my_photo(self, current_user: CurrentUser) -> dict:
+        from app.services.profile_photo_service import remove_profile_photo
+
+        employee = await database.employees.find_one(
+            {
+                "$or": [
+                    {"user_id": current_user.id},
+                    {"email": current_user.email},
+                ],
+                "status": "active",
+            }
+        )
+        if not employee:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee profile not found.")
+
+        photo_fields = await remove_profile_photo(employee.get("profile_picture_meta"))
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {"$set": {**photo_fields, "updated_at": datetime.now(UTC)}},
+        )
+        return await self.get_my_profile(current_user)
+
     async def get_candidate_detail(self, current_user: CurrentUser, candidate_id: str) -> dict:
         candidate = await self._find_candidate(candidate_id)
         if not candidate:
@@ -812,8 +861,16 @@ class EmployeeService:
             if not payload:
                 raise HTTPException(status_code=400, detail=error)
             data = payload.model_dump(mode="json")
-            if request.step == "nda" and not data.get("signed_at"):
-                data["signed_at"] = now.isoformat()
+            if request.step == "nda":
+                expected_name = employee.get("full_name") or current_user.full_name
+                if not names_match(data.get("full_legal_name"), expected_name):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"NDA full legal name must match your registered name: {expected_name}",
+                    )
+                data["full_legal_name"] = " ".join((expected_name or data.get("full_legal_name") or "").split())
+                if not data.get("signed_at"):
+                    data["signed_at"] = now.isoformat()
             if request.step == "employment":
                 iban_hash = iban_fingerprint(data["iban"])
                 duplicate = await database.employees.find_one(
@@ -898,6 +955,7 @@ class EmployeeService:
             "candidate_id": doc.get("candidate_id"),
             "assets": doc.get("assets") or [],
             "orientation": doc.get("orientation"),
+            "profile_picture": doc.get("profile_picture"),
         }
         if include_onboarding:
             payload["onboarding"] = doc.get("onboarding")

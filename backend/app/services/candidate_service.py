@@ -514,7 +514,19 @@ class CandidateService:
             elif candidate.get("recruiter_email"):
                 recruiter_contact = {"full_name": None, "email": candidate["recruiter_email"], "phone": None}
 
-        announcements = await database.announcements.find({}).sort("created_at", -1).limit(3).to_list(length=3)
+        announcements = (
+            await database.announcements.find(
+                {
+                    "$or": [
+                        {"audience": {"$in": ["candidates", "both"]}},
+                        {"audience": {"$exists": False}},
+                    ]
+                }
+            )
+            .sort("created_at", -1)
+            .limit(3)
+            .to_list(length=3)
+        )
 
         return {
             "profile": {

@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 from app.core.database import database
 from app.core.rbac import CurrentUser
+from app.schemas.auth import names_match
 from app.schemas.offer import OfferApproveRequest, OfferCreateRequest, OfferDeclineRequest, OfferSignRequest
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
@@ -158,8 +159,14 @@ class OfferService:
                 )
 
         now = datetime.now(UTC)
+        expected_name = offer.get("candidate_name") or current_user.full_name
+        if not names_match(request.full_legal_name, expected_name):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Full legal name must match your registered name: {expected_name}",
+            )
         signature = {
-            "full_legal_name": request.full_legal_name,
+            "full_legal_name": " ".join((expected_name or request.full_legal_name).split()),
             "signature_data_url": request.signature_data_url,
             "agreed": request.agreed,
             "signed_at": now.isoformat(),

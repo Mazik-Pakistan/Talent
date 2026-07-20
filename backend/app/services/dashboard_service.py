@@ -7,7 +7,13 @@ from fastapi import HTTPException, status
 
 from app.core.database import database
 from app.core.rbac import CurrentUser
-from app.schemas.dashboard import CreateAnnouncementRequest, MarkNotificationsReadRequest
+from app.schemas.dashboard import (
+    CreateAnnouncementRequest,
+    MarkNotificationsReadRequest,
+    UpdateAnnouncementRequest,
+    UpdateRecruiterProfileRequest,
+)
+from app.services.email_service import email_service
 
 UPCOMING_JOINING_WINDOW_DAYS = 30
 RECENT_ACTIVITY_LIMIT_DEFAULT = 20
@@ -38,6 +44,15 @@ ACTIVITY_LABELS: dict[str, str] = {
     "recruiter_registered": "Recruiter account created",
     "recruiter_email_verified": "Recruiter verified their email",
     "super_admin_email_verified": "Super admin verified their email",
+    "announcement_published": "Announcement published",
+    "announcement_updated": "Announcement updated",
+    "announcement_deleted": "Announcement deleted",
+    "profile_emergency_saved": "Employee emergency contact saved",
+    "profile_employment_saved": "Employee banking details saved",
+    "profile_references_saved": "Employee references saved",
+    "profile_documents_saved": "Employee policies acknowledged",
+    "profile_nda_saved": "Employee NDA signed",
+    "employee_profile_completed": "Employee profile completed",
 }
 
 
@@ -368,52 +383,318 @@ class DashboardService:
         return {"results": results, "count": len(results)}
 
     # ------------------------------------------------------------------
-    # US-020: Announcements
+    # US-020: Announcements (CRUD + notify + email)
     # ------------------------------------------------------------------
-    async def list_announcements(self, limit: int = 20) -> dict:
-        limit = max(1, min(limit, 50))
-        cursor = database.announcements.find({}).sort("created_at", -1).limit(limit)
-        entries = await cursor.to_list(length=limit)
+    def _public_announcement(self, entry: dict) -> dict:
         return {
-            "announcements": [
-                {
-                    "id": str(entry["_id"]),
-                    "title": entry.get("title"),
-                    "body": entry.get("body"),
-                    "created_by_name": entry.get("created_by_name"),
-                    "created_at": _iso(entry.get("created_at")),
-                }
-                for entry in entries
-            ]
+            "id": str(entry["_id"]),
+            "title": entry.get("title"),
+            "body": entry.get("body"),
+            "audience": entry.get("audience") or "both",
+            "created_by": entry.get("created_by"),
+            "created_by_name": entry.get("created_by_name"),
+            "created_at": _iso(entry.get("created_at")),
+            "updated_at": _iso(entry.get("updated_at")),
         }
+
+    async def list_announcements(
+        self,
+        current_user: CurrentUser,
+        limit: int = 20,
+        audience: str | None = None,
+    ) -> dict:
+        limit = max(1, min(limit, 50))
+        query: dict = {}
+        role = current_user.role
+        if role == "candidate":
+            query["$or"] = [
+                {"audience": {"$in": ["candidates", "both"]}},
+                {"audience": {"$exists": False}},
+            ]
+        elif role == "employee":
+            query["$or"] = [
+                {"audience": {"$in": ["employees", "both"]}},
+                {"audience": {"$exists": False}},
+            ]
+        elif audience in ("candidates", "employees", "both"):
+            query["audience"] = audience
+
+        cursor = database.announcements.find(query).sort("created_at", -1).limit(limit)
+        entries = await cursor.to_list(length=limit)
+        return {"announcements": [self._public_announcement(entry) for entry in entries]}
 
     async def create_announcement(self, current_user: CurrentUser, request: CreateAnnouncementRequest) -> dict:
         now = datetime.now(UTC)
         document = {
             "title": request.title,
             "body": request.body,
+            "audience": request.audience,
             "created_by": current_user.id,
             "created_by_name": current_user.full_name,
             "created_at": now,
             "updated_at": now,
         }
         result = await database.announcements.insert_one(document)
+        document["_id"] = result.inserted_id
+        notified, emailed = await self._fanout_announcement(
+            current_user, document, send_email=request.send_email, notify=True
+        )
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "actor_email": current_user.email,
+                "email": current_user.email,
+                "module": "announcements",
+                "action": "announcement_published",
+                "outcome": "success",
+                "related_id": str(result.inserted_id),
+                "created_at": now,
+            }
+        )
+        suffix = f", emailed {emailed}" if request.send_email else ""
         return {
-            "message": "Announcement published.",
-            "announcement": {
-                "id": str(result.inserted_id),
-                "title": document["title"],
-                "body": document["body"],
-                "created_by_name": document["created_by_name"],
-                "created_at": _iso(now),
-            },
+            "message": f"Announcement published. Notified {notified} people{suffix}.",
+            "announcement": self._public_announcement(document),
+            "notified": notified,
+            "emailed": emailed,
         }
+
+    async def update_announcement(
+        self, current_user: CurrentUser, announcement_id: str, request: UpdateAnnouncementRequest
+    ) -> dict:
+        entry = await self._require_announcement(announcement_id, current_user)
+        now = datetime.now(UTC)
+        updates: dict = {"updated_at": now}
+        if request.title is not None:
+            updates["title"] = request.title
+        if request.body is not None:
+            updates["body"] = request.body
+        if request.audience is not None:
+            updates["audience"] = request.audience
+        await database.announcements.update_one({"_id": entry["_id"]}, {"$set": updates})
+        refreshed = await database.announcements.find_one({"_id": entry["_id"]})
+        notified, emailed = 0, 0
+        if request.notify_again or request.send_email:
+            notified, emailed = await self._fanout_announcement(
+                current_user, refreshed, send_email=request.send_email, notify=request.notify_again
+            )
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "actor_email": current_user.email,
+                "email": current_user.email,
+                "module": "announcements",
+                "action": "announcement_updated",
+                "outcome": "success",
+                "related_id": announcement_id,
+                "created_at": now,
+            }
+        )
+        return {
+            "message": "Announcement updated.",
+            "announcement": self._public_announcement(refreshed),
+            "notified": notified,
+            "emailed": emailed,
+        }
+
+    async def delete_announcement(self, current_user: CurrentUser, announcement_id: str) -> dict:
+        entry = await self._require_announcement(announcement_id, current_user)
+        await database.announcements.delete_one({"_id": entry["_id"]})
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "actor_email": current_user.email,
+                "email": current_user.email,
+                "module": "announcements",
+                "action": "announcement_deleted",
+                "outcome": "success",
+                "related_id": announcement_id,
+                "created_at": datetime.now(UTC),
+            }
+        )
+        return {"message": "Announcement deleted.", "id": announcement_id}
+
+    async def _require_announcement(self, announcement_id: str, current_user: CurrentUser) -> dict:
+        try:
+            object_id = ObjectId(announcement_id)
+        except (InvalidId, TypeError) as exc:
+            raise HTTPException(status_code=404, detail="Announcement not found.") from exc
+        entry = await database.announcements.find_one({"_id": object_id})
+        if not entry:
+            raise HTTPException(status_code=404, detail="Announcement not found.")
+        if current_user.role != "super_admin" and entry.get("created_by") != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only manage your own announcements.")
+        return entry
+
+    async def _fanout_announcement(
+        self, current_user: CurrentUser, announcement: dict, *, send_email: bool, notify: bool
+    ) -> tuple[int, int]:
+        audience = announcement.get("audience") or "both"
+        recipients: list[dict] = []
+        scope = self._scope_filter(current_user)
+
+        if audience in ("candidates", "both"):
+            candidates = await database.candidates.find(
+                {**scope, "status": {"$ne": "converted"}},
+                {"user_id": 1, "email": 1, "full_name": 1},
+            ).to_list(length=None)
+            for doc in candidates:
+                if doc.get("user_id") or doc.get("email"):
+                    recipients.append(
+                        {
+                            "id": doc.get("user_id") or str(doc.get("_id")),
+                            "role": "candidate",
+                            "email": doc.get("email"),
+                            "full_name": doc.get("full_name") or "there",
+                            "link": "/dashboard/candidate",
+                        }
+                    )
+
+        if audience in ("employees", "both"):
+            employees = await database.employees.find(
+                {**scope, "status": "active"},
+                {"user_id": 1, "email": 1, "company_email": 1, "full_name": 1},
+            ).to_list(length=None)
+            for doc in employees:
+                recipients.append(
+                    {
+                        "id": doc.get("user_id") or str(doc.get("_id")),
+                        "role": "employee",
+                        "email": doc.get("company_email") or doc.get("email"),
+                        "full_name": doc.get("full_name") or "there",
+                        "link": "/dashboard/employee",
+                    }
+                )
+
+        seen: set[str] = set()
+        unique: list[dict] = []
+        for item in recipients:
+            rid = str(item["id"])
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            unique.append(item)
+
+        notified = 0
+        emailed = 0
+        title = announcement.get("title") or "Announcement"
+        body = announcement.get("body") or ""
+        related_id = str(announcement.get("_id"))
+
+        for person in unique:
+            if notify and person.get("id"):
+                await create_notification(
+                    recipient_id=str(person["id"]),
+                    recipient_role=person["role"],
+                    notif_type="announcement",
+                    title=title,
+                    message=body[:240],
+                    link=person["link"],
+                    related_id=related_id,
+                )
+                notified += 1
+            if send_email and person.get("email"):
+                try:
+                    email_service.send_announcement(
+                        person["email"],
+                        person["full_name"],
+                        title,
+                        body,
+                        dashboard_url=person["link"],
+                    )
+                    emailed += 1
+                except Exception:
+                    continue
+        return notified, emailed
+
+    async def get_recruiter_profile(self, current_user: CurrentUser) -> dict:
+        collection = database.super_admins if current_user.role == "super_admin" else database.recruiters
+        doc = await collection.find_one({"$or": [{"user_id": current_user.id}, {"email": current_user.email}]})
+        if not doc:
+            return {
+                "profile": {
+                    "id": current_user.id,
+                    "full_name": current_user.full_name,
+                    "email": current_user.email,
+                    "phone": getattr(current_user, "phone", None),
+                    "role": current_user.role,
+                    "department": None,
+                    "job_title": None,
+                    "office_location": None,
+                    "profile_picture": None,
+                }
+            }
+        return {
+            "profile": {
+                "id": doc.get("user_id") or str(doc.get("_id")),
+                "full_name": doc.get("full_name") or current_user.full_name,
+                "email": doc.get("email") or current_user.email,
+                "phone": doc.get("phone"),
+                "role": current_user.role,
+                "department": doc.get("department"),
+                "job_title": doc.get("job_title"),
+                "office_location": doc.get("office_location"),
+                "profile_picture": doc.get("profile_picture"),
+                "created_at": _iso(doc.get("created_at")),
+            }
+        }
+
+    async def update_recruiter_profile(self, current_user: CurrentUser, request: UpdateRecruiterProfileRequest) -> dict:
+        collection = database.super_admins if current_user.role == "super_admin" else database.recruiters
+        updates = {
+            "full_name": request.full_name,
+            "phone": request.phone,
+            "department": request.department,
+            "job_title": request.job_title,
+            "office_location": request.office_location,
+            "updated_at": datetime.now(UTC),
+        }
+        result = await collection.update_one(
+            {"$or": [{"user_id": current_user.id}, {"email": current_user.email}]},
+            {"$set": updates},
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Recruiter profile not found.")
+        return await self.get_recruiter_profile(current_user)
+
+    async def upload_recruiter_photo(self, current_user: CurrentUser, file) -> dict:
+        from app.services.profile_photo_service import save_profile_photo
+
+        collection = database.super_admins if current_user.role == "super_admin" else database.recruiters
+        doc = await collection.find_one({"$or": [{"user_id": current_user.id}, {"email": current_user.email}]})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Recruiter profile not found.")
+
+        photo_fields = await save_profile_photo(
+            current_user.id,
+            file,
+            previous_meta=doc.get("profile_picture_meta"),
+        )
+        await collection.update_one(
+            {"_id": doc["_id"]},
+            {"$set": {**photo_fields, "updated_at": datetime.now(UTC)}},
+        )
+        return await self.get_recruiter_profile(current_user)
+
+    async def remove_recruiter_photo(self, current_user: CurrentUser) -> dict:
+        from app.services.profile_photo_service import remove_profile_photo
+
+        collection = database.super_admins if current_user.role == "super_admin" else database.recruiters
+        doc = await collection.find_one({"$or": [{"user_id": current_user.id}, {"email": current_user.email}]})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Recruiter profile not found.")
+
+        photo_fields = await remove_profile_photo(doc.get("profile_picture_meta"))
+        await collection.update_one(
+            {"_id": doc["_id"]},
+            {"$set": {**photo_fields, "updated_at": datetime.now(UTC)}},
+        )
+        return await self.get_recruiter_profile(current_user)
 
     # ------------------------------------------------------------------
     # Scoping helpers
     # ------------------------------------------------------------------
     def _scope_filter(self, current_user: CurrentUser) -> dict:
-        """Recruiters only see their own candidates/employees; Super Admin sees everyone."""
         if current_user.role == "super_admin":
             return {}
         return {"recruiter_id": current_user.id}

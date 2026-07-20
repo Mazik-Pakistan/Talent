@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 
 import RequireAccess from "@/components/RequireAccess";
 import DocumentManager from "@/components/DocumentManager";
+import ProfileAvatar from "@/components/ProfileAvatar";
 import {
   clearLocalSession,
   getApiErrorMessage,
@@ -15,6 +16,7 @@ import {
   markNotificationsRead,
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
+import { getEmployeeNavItems } from "@/utils/employeeNav";
 import candidateStyles from "@/app/dashboard/candidate/candidate-dashboard.module.css";
 import employeeStyles from "@/app/dashboard/employee/employee-dashboard.module.css";
 
@@ -64,50 +66,6 @@ const CANDIDATE_NAV = [
   },
 ];
 
-const EMPLOYEE_NAV = [
-  {
-    key: "dashboard",
-    label: "Dashboard",
-    module: null,
-    href: "/dashboard/employee",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" />
-        <rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
-      </svg>
-    ),
-  },
-  {
-    key: "onboarding",
-    label: "Onboarding",
-    module: "onboarding",
-    href: "/dashboard/employee/complete-profile",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" />
-      </svg>
-    ),
-  },
-  {
-    key: "documents",
-    label: "Documents",
-    module: null,
-    href: "/documents",
-    icon: DOCUMENTS_ICON,
-  },
-  {
-    key: "profile",
-    label: "Profile",
-    module: "profile",
-    href: "/dashboard/employee/complete-profile",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
-      </svg>
-    ),
-  },
-];
-
 export default function DocumentsPage() {
   return (
     <RequireAccess anyOf={["documents.self", "profile.view"]} roles={["candidate", "employee"]}>
@@ -130,7 +88,8 @@ function DocumentsPageContent() {
 
   const isEmployee = user?.role === "employee";
   const styles = isEmployee ? employeeStyles : candidateStyles;
-  const navItems = isEmployee ? EMPLOYEE_NAV : CANDIDATE_NAV;
+  const profileComplete = profileMeta?.profile_status === "complete";
+  const navItems = isEmployee ? getEmployeeNavItems({ profileComplete }) : CANDIDATE_NAV;
   const modules = moduleAccess(user?.role);
 
   useEffect(() => {
@@ -194,7 +153,6 @@ function DocumentsPageContent() {
     return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
   }
 
-  const initials = initialsFor(user.full_name);
   const subtitle = isEmployee
     ? `${profileMeta?.employee_id || "—"} · ${profileMeta?.department || "—"}`
     : `${profileMeta?.job_title || "—"} · ${profileMeta?.department || "—"}`;
@@ -238,7 +196,7 @@ function DocumentsPageContent() {
           </ul>
 
           <div className={styles.sidebarFooter}>
-            <div className={styles.avatarSm}>{initials}</div>
+            <ProfileAvatar src={user?.profile_picture} name={user.full_name} size="sm" fallback="MZ" />
             <div className={styles.sidebarFooterText}>
               <div className={styles.name}>{user.full_name}</div>
               <div className={styles.role}>{profileMeta?.job_title || (isEmployee ? "Employee" : "Candidate")}</div>
@@ -328,12 +286,4 @@ function DocumentsPageContent() {
       </div>
     </div>
   );
-}
-
-function initialsFor(name) {
-  if (!name) return "U";
-  const parts = name.trim().split(/\s+/);
-  const first = parts[0]?.[0] || "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (first + last).toUpperCase() || "U";
 }

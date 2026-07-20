@@ -3,7 +3,12 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
-from app.schemas.auth import PASSWORD_PATTERN, PHONE_PATTERN
+from app.schemas.auth import (
+    PASSWORD_PATTERN,
+    PHONE_PATTERN,
+    normalize_optional_pk_mobile,
+    normalize_pk_mobile,
+)
 
 # Pakistani IBAN: PK + 2 check digits + 4-letter bank code + 16 digits = 24 chars
 IBAN_PATTERN = __import__("re").compile(r"^PK\d{2}[A-Z]{4}\d{16}$", __import__("re").IGNORECASE)
@@ -89,14 +94,7 @@ class CandidateRegisterRequest(BaseModel):
 
 
 def _optional_phone(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = value.strip()
-    if not normalized:
-        return None
-    if not PHONE_PATTERN.fullmatch(normalized):
-        raise ValueError("Enter a valid phone number.")
-    return normalized
+    return normalize_optional_pk_mobile(value)
 
 
 class OnboardingPersonalInfo(BaseModel):
@@ -158,10 +156,7 @@ class OnboardingEmergencyContact(BaseModel):
     @field_validator("phone")
     @classmethod
     def validate_phone(cls, value: str) -> str:
-        normalized = value.strip()
-        if not PHONE_PATTERN.fullmatch(normalized):
-            raise ValueError("Enter a valid phone number.")
-        return normalized
+        return normalize_pk_mobile(value)
 
     @field_validator("alternate_phone")
     @classmethod
@@ -258,14 +253,23 @@ class ReferenceEntry(BaseModel):
     @field_validator("phone")
     @classmethod
     def validate_phone(cls, value: str) -> str:
-        normalized = value.strip()
-        if not PHONE_PATTERN.fullmatch(normalized):
-            raise ValueError("Enter a valid phone number.")
-        return normalized
+        return normalize_pk_mobile(value)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        return str(value).lower()
 
 
 class OnboardingReferences(BaseModel):
     references: list[ReferenceEntry] = Field(min_length=2, max_length=5)
+
+    @model_validator(mode="after")
+    def unique_reference_emails(self):
+        emails = [ref.email.lower() for ref in self.references]
+        if len(emails) != len(set(emails)):
+            raise ValueError("Each reference must use a different email address.")
+        return self
 
 
 class OnboardingDocumentsAck(BaseModel):

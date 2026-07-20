@@ -1,0 +1,248 @@
+:root {
+  --navy: #0f2a4a;
+  --navy-2: #16385c;
+  --cyan: #00a9ce;
+  --cyan-light: #e5f7fb;
+  --border: #e3e9f0;
+  --text-muted: #647186;
+}
+
+.formStack {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 8px;
+}
+
+.sectionCard {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+}
+
+.sectionCardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sectionCardHead h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--navy);
+  font-family: "Sora", system-ui, sans-serif;
+}
+
+.sectionCardHead p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 20px;
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 20px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field span {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--navy-2);
+}
+
+.field input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--navy);
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(0, 169, 206, 0.14);
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.fieldError input {
+  border-color: #f04438 !important;
+  box-shadow: 0 0 0 3px rgba(240, 68, 56, 0.12);
+}
+
+.fieldError span {
+  color: #b42318;
+  font-weight: 700;
+}
+
+.fieldErrorText {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #b42318;
+}
+
+.field small {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.stepTitle {
+  margin: 0 0 4px;
+  font-size: 1.25rem;
+  color: var(--navy);
+  font-family: "Sora", system-ui, sans-serif;
+}
+
+.stepLead {
+  margin: 0 0 18px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.referenceBlock {
+  margin-bottom: 16px;
+}
+
+.referenceBlock:last-of-type {
+  margin-bottom: 12px;
+}
+
+.referenceIndex {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  background: var(--cyan-light);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.checkRow {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fbfdfe;
+  cursor: pointer;
+}
+
+.checkRow input {
+  margin-top: 3px;
+  accent-color: var(--cyan);
+}
+
+.checkRow span {
+  color: var(--navy);
+  font-weight: 500;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.checkRowError {
+  border-color: #f04438;
+  background: #fff5f5;
+}
+
+.checkRowError span {
+  color: #b42318;
+}
+
+.ndaBlock {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+}
+
+.ndaBlock h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: var(--navy);
+  font-family: "Sora", system-ui, sans-serif;
+}
+
+.ndaBlock > p {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.addRefBtn {
+  margin-top: 4px;
+}
+
+.reviewGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.reviewBlock {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  background: #fbfdfe;
+}
+
+.reviewBlock h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--navy);
+  font-family: "Sora", system-ui, sans-serif;
+}
+
+.reviewBlock dl {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.reviewBlock dt {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.reviewBlock dd {
+  margin: 2px 0 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+@media (max-width: 720px) {
+  .fieldRow,
+  .fieldGrid,
+  .reviewGrid {
+    grid-template-columns: 1fr;
+  }
+}

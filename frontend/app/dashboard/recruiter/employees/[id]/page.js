@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
@@ -405,7 +406,9 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
 
     const trimmed = companyEmail.trim();
     if (!trimmed) {
-      setEmailMessage("Enter a valid company email address.");
+      const msg = "Enter a valid company email address.";
+      setEmailMessage(msg);
+      toast.error(msg);
       return;
     }
 
@@ -413,9 +416,13 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
     try {
       const data = await setEmployeeCompanyEmail(employeeId, { company_email: trimmed }, accessToken);
       if (data.employee) onEmployeeUpdate(data.employee);
-      setEmailMessage(data.message || "Company email saved.");
+      const msg = data.message || "Company email saved.";
+      setEmailMessage(msg);
+      toast.success(msg);
     } catch (err) {
-      setEmailMessage(getApiErrorMessage(err, "Could not save company email."));
+      const msg = getApiErrorMessage(err, "Could not save company email.");
+      setEmailMessage(msg);
+      toast.error(msg);
     } finally {
       setEmailSaving(false);
     }
@@ -435,7 +442,9 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
 
     const name = assetForm.name.trim();
     if (!name) {
-      setAssetMessage("Asset name is required.");
+      const msg = "Asset name is required.";
+      setAssetMessage(msg);
+      toast.error(msg);
       return;
     }
 
@@ -453,9 +462,13 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
       const data = await assignEmployeeAsset(employeeId, payload, accessToken);
       if (data.employee) onEmployeeUpdate(data.employee);
       setAssetForm(EMPTY_ASSET_FORM);
-      setAssetMessage(data.message || "Asset assigned.");
+      const msg = data.message || "Asset assigned.";
+      setAssetMessage(msg);
+      toast.success(msg);
     } catch (err) {
-      setAssetMessage(getApiErrorMessage(err, "Could not assign asset."));
+      const msg = getApiErrorMessage(err, "Could not assign asset.");
+      setAssetMessage(msg);
+      toast.error(msg);
     } finally {
       setAssetSaving(false);
     }
@@ -470,9 +483,13 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
     try {
       const data = await removeEmployeeAsset(employeeId, assetId, accessToken);
       if (data.employee) onEmployeeUpdate(data.employee);
-      setAssetMessage(data.message || "Asset removed.");
+      const msg = data.message || "Asset removed.";
+      setAssetMessage(msg);
+      toast.success(msg);
     } catch (err) {
-      setAssetMessage(getApiErrorMessage(err, "Could not remove asset."));
+      const msg = getApiErrorMessage(err, "Could not remove asset.");
+      setAssetMessage(msg);
+      toast.error(msg);
     } finally {
       setRemovingAssetId(null);
     }
@@ -503,9 +520,13 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
     try {
       const data = await scheduleEmployeeOrientation(employeeId, payload, accessToken);
       if (data.employee) onEmployeeUpdate(data.employee);
-      setOrientationMessage(data.message || "Orientation scheduled.");
+      const msg = data.message || "Orientation scheduled.";
+      setOrientationMessage(msg);
+      toast.success(msg);
     } catch (err) {
-      setOrientationMessage(getApiErrorMessage(err, "Could not schedule orientation."));
+      const msg = getApiErrorMessage(err, "Could not schedule orientation.");
+      setOrientationMessage(msg);
+      toast.error(msg);
     } finally {
       setOrientationSaving(false);
     }
@@ -885,6 +906,7 @@ export default function EmployeeProfilePage({ params }) {
   const [employee, setEmployee] = useState(null);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState("");
+  const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
     async function loadProfile() {
@@ -1009,6 +1031,21 @@ export default function EmployeeProfilePage({ params }) {
   const categoryEntries = Object.entries(groupedByCategory);
   const hasDocuments    = categoryEntries.length > 0;
   const employeeId      = employee.employee_id || id;
+  const careerEvents    = Array.isArray(employee.career) ? employee.career : [];
+  const initials = (employee.full_name || "?")
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "?";
+
+  const TABS = [
+    { key: "overview", label: "Overview" },
+    { key: "documents", label: "Documents" },
+    { key: "career", label: "Career" },
+    { key: "day1", label: "Day-1" },
+  ];
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
@@ -1023,144 +1060,233 @@ export default function EmployeeProfilePage({ params }) {
         </button>
       </div>
 
-      {/* ── Employee Info Card ───────────────────────────────────────── */}
-      <div className={styles.section}>
-        <div className={styles.sectionHead}>
-          <div className={styles.sectionHeadLeft}>
-            <div className={`${styles.bar} ${styles.navy}`} />
-            <div>
-              <div className={styles.sectionTitle}>{employee.full_name}</div>
-              <div className={styles.sectionDesc}>{employee.job_title || "No Designation"} · {employee.department || "No Department"}</div>
+      {/* ── Profile hero ─────────────────────────────────────────────── */}
+      <div className={styles.section} style={{ marginBottom: 16 }}>
+        <div className={styles.profileHero}>
+          <div className={styles.profileAvatar}>{initials}</div>
+          <div>
+            <h2 className={styles.profileName}>{employee.full_name}</h2>
+            <p className={styles.mutedText} style={{ margin: 0 }}>
+              {employee.job_title || "No designation"} · {employee.department || "No department"}
+            </p>
+            <div className={styles.chipRow}>
+              {employee.employee_id && <span className={styles.chip}>{employee.employee_id}</span>}
+              {employee.profile_status && (
+                <span className={styles.chip} style={{ textTransform: "capitalize" }}>
+                  {employee.profile_status}
+                </span>
+              )}
+              {employee.company_email && <span className={styles.chip}>{employee.company_email}</span>}
+              {employee.office_location && <span className={styles.chip}>{employee.office_location}</span>}
             </div>
           </div>
-        </div>
-        <div className={styles.sectionBody}>
-          <p className={styles.instruction} style={{ marginBottom: "30px", lineHeight: "1.6" }}>
-            <strong>Email:</strong> {employee.email} <br/>
-            <strong>Phone:</strong> {employee.phone || "—"} <br/>
-            <strong>Employee ID:</strong> {employee.employee_id} <br/>
-            <strong>Employment Type:</strong> {employee.employment_type || "—"} <br/>
-            <strong>Office Location:</strong> {employee.office_location || "—"} <br/>
-            <strong>Manager:</strong> {employee.reporting_manager || "—"} <br/>
-            <strong>Joined:</strong> {employee.start_date ? new Date(employee.start_date).toLocaleDateString() : "—"} <br/>
-            <strong>Status:</strong> <span style={{ textTransform: "capitalize" }}>{employee.status || "—"}</span>
-            {employee.company_email && (
-              <>
-                <br />
-                <strong>Company email:</strong> {employee.company_email}
-              </>
-            )}
-          </p>
-
-          <DayOneOnboardingSection
-            employee={employee}
-            employeeId={employeeId}
-            onEmployeeUpdate={setEmployee}
-          />
-
-          {/* ── Document Version History ─────────────────────────────── */}
-          <div className={`${styles.bar} ${styles.purple}`} style={{ width: "100%", height: "2px", margin: "20px 0" }} />
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: "10px",
-              marginBottom: "16px",
-            }}
-          >
-            <h3 className={styles.sectionTitle} style={{ fontSize: 18, margin: 0 }}>
-              Uploaded Documents
-            </h3>
-            {hasDocuments && (
-              <span
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.4px",
-                  color: "var(--purple)",
-                  background: "var(--purple-light)",
-                  padding: "4px 10px",
-                  borderRadius: "20px",
-                }}
-              >
-                {rawDocuments.length} file{rawDocuments.length !== 1 ? "s" : ""}
-              </span>
-            )}
-          </div>
-
-          {!hasDocuments ? (
-            <p className={styles.emptySub}>No documents found for this employee.</p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              {categoryEntries.map(([category, docGroups], catIdx) => {
-                const colorClass = CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length];
-                const groupEntries = Object.entries(docGroups);
-                const totalFiles  = groupEntries.reduce((sum, [, docs]) => sum + docs.length, 0);
-
-                return (
-                  <div
-                    key={category}
-                    style={{
-                      border: "1px solid var(--border)",
-                      borderRadius: "12px",
-                      overflow: "hidden",
-                      background: "var(--card)",
-                    }}
-                  >
-                    {/* Category header */}
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        padding: "14px 18px",
-                        borderBottom: "1px solid var(--border)",
-                        background: "var(--bg)",
-                      }}
-                    >
-                      <div className={`${styles.bar} ${styles[colorClass]}`} />
-                      <div style={{ flex: 1 }}>
-                        <div className={styles.sectionTitle} style={{ fontSize: "15px" }}>
-                          {category}
-                        </div>
-                        <div className={styles.sectionDesc}>
-                          {groupEntries.length} type{groupEntries.length !== 1 ? "s" : ""} · {totalFiles} file{totalFiles !== 1 ? "s" : ""}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Document groups within this category */}
-                    <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: "16px" }}>
-                      {groupEntries.map(([groupName, docs]) => (
-                        <div key={groupName}>
-                          {/* Type label */}
-                          <p
-                            style={{
-                              fontSize: "10.5px",
-                              fontWeight: 700,
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              color: "var(--text-faint)",
-                              margin: "0 0 6px 0",
-                            }}
-                          >
-                            {groupName}
-                          </p>
-                          <DocumentGroup groupName={groupName} docs={docs} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
       </div>
+
+      <div className={styles.tabRow}>
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            className={`${styles.tabBtn} ${activeTab === tab.key ? styles.tabBtnActive : ""}`}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "overview" && (
+        <div className={styles.section}>
+          <div className={styles.sectionHead}>
+            <div className={styles.sectionHeadLeft}>
+              <div className={`${styles.bar} ${styles.navy}`} />
+              <div>
+                <div className={styles.sectionTitle}>Employee overview</div>
+                <div className={styles.sectionDesc}>Key employment and contact details.</div>
+              </div>
+            </div>
+          </div>
+          <div className={styles.sectionBody}>
+            <dl className={styles.employeeFactGrid}>
+              <div className={styles.employeeFact}>
+                <dt>Full name</dt>
+                <dd>{employee.full_name || "—"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Employee ID</dt>
+                <dd>{employee.employee_id || "—"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Email</dt>
+                <dd>{employee.email || "—"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Company email</dt>
+                <dd>{employee.company_email || "—"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Phone</dt>
+                <dd>{employee.phone || "—"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Job title</dt>
+                <dd>{employee.job_title || "—"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Department</dt>
+                <dd>{employee.department || "—"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Reporting manager</dt>
+                <dd>{employee.reporting_manager || "—"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Office location</dt>
+                <dd>{employee.office_location || "—"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Start date</dt>
+                <dd>{fmtDate(employee.start_date) || "—"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Profile status</dt>
+                <dd style={{ textTransform: "capitalize" }}>{employee.profile_status || "—"}</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "day1" && (
+        <DayOneOnboardingSection
+          employee={employee}
+          employeeId={employeeId}
+          onEmployeeUpdate={setEmployee}
+        />
+      )}
+
+      {activeTab === "career" && (
+        <div className={styles.section}>
+          <div className={styles.sectionHead}>
+            <div className={styles.sectionHeadLeft}>
+              <div className={`${styles.bar} ${styles.cyan}`} />
+              <div>
+                <div className={styles.sectionTitle}>Career timeline</div>
+                <div className={styles.sectionDesc}>Promotions, title changes, and role history.</div>
+              </div>
+            </div>
+          </div>
+          <div className={styles.sectionBody}>
+            {careerEvents.length === 0 ? (
+              <p className={styles.emptySub}>No career events recorded yet.</p>
+            ) : (
+              <ul className={styles.miniList}>
+                {careerEvents.map((event) => (
+                  <li key={event.id} className={styles.miniListItem}>
+                    <div>
+                      <strong style={{ textTransform: "capitalize" }}>
+                        {toLabel(event.event_type || "event")}
+                      </strong>
+                      <div className={styles.sectionDesc}>
+                        {fmtDate(event.effective_date) || "No date"}
+                        {event.to_title ? ` · ${event.to_title}` : ""}
+                        {event.to_department ? ` · ${event.to_department}` : ""}
+                        {event.to_manager ? ` · Manager: ${event.to_manager}` : ""}
+                        {event.note ? ` — ${event.note}` : ""}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "documents" && (
+        <div className={styles.section}>
+          <div className={styles.sectionHead}>
+            <div className={styles.sectionHeadLeft}>
+              <div className={`${styles.bar} ${styles.purple}`} />
+              <div>
+                <div className={styles.sectionTitle}>Uploaded documents</div>
+                <div className={styles.sectionDesc}>
+                  {hasDocuments
+                    ? `${rawDocuments.length} file${rawDocuments.length !== 1 ? "s" : ""} on file`
+                    : "Document version history for this employee"}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className={styles.sectionBody}>
+            {!hasDocuments ? (
+              <p className={styles.emptySub}>No documents found for this employee.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                {categoryEntries.map(([category, docGroups], catIdx) => {
+                  const colorClass = CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length];
+                  const groupEntries = Object.entries(docGroups);
+                  const totalFiles  = groupEntries.reduce((sum, [, docs]) => sum + docs.length, 0);
+
+                  return (
+                    <div
+                      key={category}
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: "12px",
+                        overflow: "hidden",
+                        background: "var(--card)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          padding: "14px 18px",
+                          borderBottom: "1px solid var(--border)",
+                          background: "var(--bg)",
+                        }}
+                      >
+                        <div className={`${styles.bar} ${styles[colorClass]}`} />
+                        <div style={{ flex: 1 }}>
+                          <div className={styles.sectionTitle} style={{ fontSize: "15px" }}>
+                            {category}
+                          </div>
+                          <div className={styles.sectionDesc}>
+                            {groupEntries.length} type{groupEntries.length !== 1 ? "s" : ""} · {totalFiles} file{totalFiles !== 1 ? "s" : ""}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: "16px" }}>
+                        {groupEntries.map(([groupName, docs]) => (
+                          <div key={groupName}>
+                            <p
+                              style={{
+                                fontSize: "10.5px",
+                                fontWeight: 700,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.5px",
+                                color: "var(--text-faint)",
+                                margin: "0 0 6px 0",
+                              }}
+                            >
+                              {groupName}
+                            </p>
+                            <DocumentGroup groupName={groupName} docs={docs} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </RecruiterShell>
   );
 }
