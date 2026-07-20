@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "https://repacking-dancing-antennae.ngrok-free.dev";
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 if (!apiBaseUrl) {
   throw new Error("NEXT_PUBLIC_API_BASE_URL must be configured.");
