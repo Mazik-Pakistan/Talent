@@ -120,6 +120,11 @@
 .steps li.active button span { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-light); }
 .steps li.active button { color: var(--navy); }
 
+/* Current step that is NOT yet complete — shown as "in progress" (navy outline),
+   not blue/cyan. Blue is reserved for steps whose fields are fully filled. */
+.steps li.current:not(.active) button span { border-color: var(--navy); color: var(--navy); background: #fff; }
+.steps li.current:not(.active) button { color: var(--navy); }
+
 /* ===== Form Message ===== */
 .formMessage {
   background: var(--cyan-light); color: #056280; border: 1px solid #bfe9f3;

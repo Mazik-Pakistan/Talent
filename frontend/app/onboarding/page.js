@@ -582,6 +582,47 @@ function OnboardingContent() {
   const isManualMode = fillMode === "manual";
   const showModeChooser = !loading && !submitted && !isEditMode && !fillMode;
 
+  // ── Per-step completion checks (drive the blue progress indicator) ──
+  // A step should only be shown as "complete" once its own required fields
+  // are actually filled — not merely because the user has navigated past it.
+  function isPersonalComplete() {
+    if (isPersonalIncomplete(personal)) return false;
+    return govDocs.every((doc) => {
+      const hasNumber = doc.document_number && doc.document_number !== "pending";
+      if (isOcrMode) {
+        return hasNumber && doc.file_url;
+      }
+      return hasNumber || personal.national_id;
+    });
+  }
+
+  function isEducationComplete() {
+    return (
+      educationEntries.length > 0 &&
+      educationEntries.every(
+        (entry) => entry.institution && entry.degree && entry.field_of_study && entry.year_completed
+      )
+    );
+  }
+
+  function isSkillsComplete() {
+    const technical_skills = splitTags(skills.technical_skills);
+    const soft_skills = splitTags(skills.soft_skills);
+    const languages = splitTags(skills.languages);
+    const certifications = (skills.certifications || []).filter((c) => c.name && c.name.trim());
+    const hasAnySkillData =
+      technical_skills.length > 0 || soft_skills.length > 0 || languages.length > 0 || certifications.length > 0;
+    const hasSummary = !!(resume.summary && resume.summary.length >= 20);
+    return hasAnySkillData && hasSummary;
+  }
+
+  function isStepComplete(stepId) {
+    if (stepId === "personal") return isPersonalComplete();
+    if (stepId === "education") return isEducationComplete();
+    if (stepId === "skills") return isSkillsComplete();
+    return false;
+  }
+
   function showToast(type, messageText) {
     setToast({ id: Date.now(), type, message: messageText });
   }
@@ -675,95 +716,6 @@ function OnboardingContent() {
     setFillMode(mode);
     sessionStorage.setItem(FILL_MODE_KEY, mode);
     setMessage("");
-  }
-
-  function showToast(type, messageText) {
-    setToast({ id: Date.now(), type, message: messageText });
-  }
-
-  function showFormError(messageText, errors = {}) {
-    setFieldErrors(errors);
-    setMessage(messageText);
-    showToast("error", messageText);
-    window.requestAnimationFrame(() => {
-      const firstError = document.querySelector("[data-field-error='true']");
-      if (firstError) {
-        firstError.scrollIntoView({ behavior: "smooth", block: "center" });
-      } else {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      }
-    });
-  }
-
-  function clearIdentityForRescan(index = 0) {
-    setScanPulse(true);
-    setPersonal((prev) => ({
-      ...prev,
-      first_name: "",
-      last_name: "",
-      date_of_birth: "",
-      national_id: "",
-      father_name: "",
-      id_issue_date: "",
-      id_expiry_date: "",
-      gender: "prefer_not_to_say",
-    }));
-    setGovDocs((prev) => {
-      const next = [...prev];
-      next[index] = { ...emptyGovDoc, doc_type: "cnic" };
-      return next;
-    });
-    setAutoFilledKeys([]);
-    setExtractionPreview(null);
-    setFieldErrors({});
-  }
-
-  function writeLocalDraft(nextPersonal, nextGovDocs) {
-    try {
-      localStorage.setItem(
-        draftStorageKey(),
-        JSON.stringify({ personal: nextPersonal, govDocs: nextGovDocs, updatedAt: Date.now() })
-      );
-    } catch {
-      /* ignore quota errors */
-    }
-  }
-
-  async function savePersonalDraft(nextPersonal, nextGovDocs) {
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-    writeLocalDraft(nextPersonal, nextGovDocs);
-    const docsReady = nextGovDocs.every(
-      (doc) => doc.file_url && doc.document_number && doc.document_number !== "pending"
-    );
-    if (!docsReady || !nextPersonal.first_name || !nextPersonal.national_id) return;
-    try {
-      const payload = {
-        step: "personal",
-        personal: {
-          ...nextPersonal,
-          permanent_address: nextPersonal.same_as_current
-            ? nextPersonal.current_address
-            : nextPersonal.permanent_address,
-          alternate_phone: nextPersonal.alternate_phone || null,
-          profile_picture: nextPersonal.profile_picture || null,
-        },
-        government_docs: {
-          documents: nextGovDocs.map((doc) => ({ ...doc, doc_type: "cnic" })),
-        },
-      };
-      const data = await saveOnboarding(payload, accessToken);
-      setOnboarding(data.onboarding);
-      setProgress(data.progress);
-      setCandidate(data.candidate);
-      setStep("personal");
-      if (!isPersonalIncomplete(nextPersonal)) {
-        localStorage.removeItem(draftStorageKey());
-      }
-      showToast("success", "NIC details saved. Finish any remaining fields, then continue.");
-    } catch {
-      showToast("info", "Details filled from NIC. Click Save & continue when the form is complete.");
-    }
   }
 
   async function persist(payload) {
@@ -1188,10 +1140,13 @@ function OnboardingContent() {
                     </div>
                     <ol className={styles.steps} aria-label="Onboarding progress">
                       {steps.filter((item) => item.id !== "submit").map((item, index) => {
-                        const isActive = index <= stepIndex;
                         const isCurrent = index === stepIndex;
+                        const isComplete = isStepComplete(item.id);
+                        const liClassName = [isComplete ? styles.active : "", isCurrent ? styles.current : ""]
+                          .filter(Boolean)
+                          .join(" ");
                         return (
-                          <li key={item.id} className={isActive ? styles.active : ""}>
+                          <li key={item.id} className={liClassName}>
                             <button type="button" disabled={submitted && !isEditMode} onClick={() => setStep(item.id)}>
                               <span>{index + 1}</span>
                               {item.label}
