@@ -1,0 +1,148 @@
+/* Extends recruiter-shell.module.css design tokens via CSS var inheritance. */
+
+.tabBar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 22px;
+  overflow-x: auto;
+}
+.tabBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tabBtn:hover { color: var(--navy); }
+.tabActive { color: var(--navy); border-bottom-color: var(--cyan); }
+
+.pickerLayout { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 20px; align-items: start; }
+@media (max-width: 1100px) { .pickerLayout { grid-template-columns: 1fr; } }
+
+.searchInput {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+  margin-bottom: 12px;
+}
+.searchInput:focus { border-color: var(--cyan); }
+
+.pickerList { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
+.pickerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #FBFDFE;
+}
+.pickerRow.pickerSelected { border-color: var(--cyan); background: var(--cyan-light); }
+.pickerRowTitle { font-size: 12.5px; font-weight: 700; color: var(--navy); }
+.pickerRowMeta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+.selectedCourseCard {
+  border: 1px solid var(--cyan);
+  background: var(--cyan-light);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.selectedCourseTitle { font-size: 13.5px; font-weight: 700; color: var(--navy); }
+.selectedCourseMeta { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+
+.employeeList { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 8px; }
+.employeeCheckRow { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; font-size: 12.5px; }
+.employeeCheckRow:hover { background: #F5F8FB; }
+.employeeCheckRow input { width: 15px; height: 15px; }
+.employeeMeta { color: var(--text-faint); font-size: 11px; }
+
+.assignFormRow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.assignFormRow label { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
+.assignFormRow input, .assignFormRow textarea {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 10px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--text);
+  background: #fff;
+}
+
+.listRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #FBFDFE;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.listInfo { flex: 1; min-width: 220px; }
+.listTitle { font-size: 13px; font-weight: 700; color: var(--navy); }
+.listMeta { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; }
+
+.statusChip { font-size: 10.5px; font-weight: 700; padding: 4px 10px; border-radius: 20px; }
+.statusChip.assigned { background: var(--orange-light); color: var(--orange); }
+.statusChip.in_progress { background: var(--cyan-light); color: var(--cyan); }
+.statusChip.completed { background: var(--green-light); color: var(--green); }
+.statusChip.pending { background: var(--orange-light); color: var(--orange); }
+.statusChip.verified { background: var(--green-light); color: var(--green); }
+.statusChip.rejected { background: #fee9e7; color: #b42318; }
+
+.smallBtn {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 7px 13px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--navy);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.smallBtn:hover { border-color: var(--cyan); color: var(--cyan); }
+.smallBtn:disabled { opacity: .5; cursor: wait; }
+.approveBtn { composes: smallBtn; background: var(--green); color: #fff; border-color: var(--green); }
+.rejectBtn { composes: smallBtn; color: #b42318; border-color: #f3c6c1; }
+
+.filterRow { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.filterSelect {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  color: var(--text);
+  background: #fff;
+}
+
+.analyticsGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+@media (max-width: 900px) { .analyticsGrid { grid-template-columns: repeat(2, 1fr); } }
+
+.barRow { display: grid; grid-template-columns: 160px 1fr 40px; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 12px; }
+.barLabel { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barTrack { height: 10px; border-radius: 6px; background: #E3E9F0; overflow: hidden; }
+.barFill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--cyan), #0577A8); }
+.barValue { color: var(--text-muted); text-align: right; }
+
+.inlineNote { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
+.errorNote { font-size: 12px; color: #b42318; margin-bottom: 14px; }
+.rejectRow { display: flex; gap: 8px; align-items: center; }
+.rejectInput { border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font-size: 11.5px; width: 160px; }
