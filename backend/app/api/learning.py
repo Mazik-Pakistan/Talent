@@ -37,11 +37,20 @@ async def browse_catalog(
     level: str | None = None,
     product: str | None = None,
     type: str | None = Query(default=None, alias="type"),
+    bookmarked_only: bool = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=60),
 ):
     return await learning_service.browse_catalog(
-        current_user, q=q, role=role, level=level, product=product, course_type=type, page=page, page_size=page_size
+        current_user,
+        q=q,
+        role=role,
+        level=level,
+        product=product,
+        course_type=type,
+        page=page,
+        page_size=page_size,
+        bookmarked_only=bookmarked_only,
     )
 
 
@@ -154,6 +163,12 @@ async def list_skills(current_user: RequireEmployee):
     return await learning_service.list_skills(current_user)
 
 
+@router.post("/skills/assess")
+async def assess_skills(current_user: RequireEmployee, refresh: bool = False):
+    """Build / refresh Gemini skill matrix from resume + current designation/department."""
+    return await learning_service.assess_my_skills(current_user, refresh=refresh)
+
+
 @router.post("/skills", status_code=201)
 async def upsert_skill(request: SkillUpsertRequest, current_user: RequireEmployee):
     return await learning_service.upsert_skill(current_user, request)
@@ -213,10 +228,24 @@ async def list_assignments(
 
 
 @router.get("/employees/{employee_id}/profile")
-async def employee_learning_profile(employee_id: str, current_user: RequireRecruiter):
-    return await learning_service.get_employee_learning_profile(current_user, employee_id)
+async def employee_learning_profile(
+    employee_id: str,
+    current_user: RequireRecruiter,
+    refresh: bool = False,
+):
+    return await learning_service.get_employee_learning_profile(
+        current_user, employee_id, refresh_ai=refresh
+    )
 
 
 @router.get("/analytics")
 async def analytics(current_user: RequireRecruiter):
     return await learning_service.get_analytics(current_user)
+
+
+@router.get("/org-taxonomy")
+async def org_taxonomy(current_user: RequireAny):
+    """Selectable designations + departments for invite, role assign, and filters."""
+    from app.services.org_taxonomy_service import get_org_taxonomy
+
+    return await get_org_taxonomy()

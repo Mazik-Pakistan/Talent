@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { createInvitation, getApiErrorMessage } from "@/services/authService";
+import { getOrgTaxonomy } from "@/services/learningService";
 
 const initialInvite = {
   full_name: "",
@@ -21,6 +22,13 @@ export default function RecruiterInvitePage() {
   const [inviteLink, setInviteLink] = useState("");
   const [inviteEmailSent, setInviteEmailSent] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [taxonomy, setTaxonomy] = useState({ departments: [], designations: [] });
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    getOrgTaxonomy(token).then(setTaxonomy).catch(() => {});
+  }, []);
 
   function updateInviteField(event) {
     const { name, value } = event.target;
@@ -74,7 +82,7 @@ export default function RecruiterInvitePage() {
             <div className={`${styles.bar} ${styles.orange}`} />
             <div>
               <div className={styles.sectionTitle}>Create invitation</div>
-              <div className={styles.sectionDesc}>Send a personalized onboarding invitation that can also be shared manually.</div>
+              <div className={styles.sectionDesc}>Pick designation and department from the org lists so learning AI can recommend correctly from day one.</div>
             </div>
           </div>
         </div>
@@ -90,12 +98,22 @@ export default function RecruiterInvitePage() {
                 <input name="email" type="email" value={inviteForm.email} onChange={updateInviteField} required />
               </label>
               <label className={styles.field}>
-                <span>Job title</span>
-                <input name="job_title" value={inviteForm.job_title} onChange={updateInviteField} required />
+                <span>Designation</span>
+                <select name="job_title" value={inviteForm.job_title} onChange={updateInviteField} required>
+                  <option value="">Select designation</option>
+                  {(taxonomy.designations || []).map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
               </label>
               <label className={styles.field}>
                 <span>Department</span>
-                <input name="department" value={inviteForm.department} onChange={updateInviteField} required />
+                <select name="department" value={inviteForm.department} onChange={updateInviteField} required>
+                  <option value="">Select department</option>
+                  {(taxonomy.departments || []).map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
               </label>
               <label className={styles.field}>
                 <span>Office location (optional)</span>
@@ -119,8 +137,8 @@ export default function RecruiterInvitePage() {
                 <button type="button" className={styles.secondaryButton} onClick={copyLink}>Copy link</button>
               </div>
             )}
-            <button className={styles.primaryButton} type="submit" disabled={isCreating}>
-              {isCreating ? "Sending invitation…" : "Send invitation"}
+            <button type="submit" className={styles.primaryButton} disabled={isCreating} style={{ marginTop: 16 }}>
+              {isCreating ? "Creating…" : "Create invitation"}
             </button>
           </form>
         </div>

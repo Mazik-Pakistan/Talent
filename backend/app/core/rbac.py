@@ -43,14 +43,12 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             "profile.view",
         }
     ),
-    # Candidate later transitions to Employee — same personal workspace permissions
+    # Candidate: hiring/onboarding only — Learning & AI Coach are employee features
     "candidate": frozenset(
         {
             "onboarding.self",
             "documents.self",
             "offers.self",
-            "learning.access",
-            "ai.coach",
             "profile.view",
         }
     ),

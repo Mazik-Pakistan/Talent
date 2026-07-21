@@ -11,6 +11,7 @@ from pathlib import Path
 
 from bson import ObjectId
 from fastapi import HTTPException, UploadFile, status
+from loguru import logger
 
 from app.core.config import settings
 from app.core.rbac import CurrentUser
@@ -36,20 +37,20 @@ DOCUMENT_LABELS = {
 
 
 def _should_run_ocr(*, doc_type: str, purpose: str | None = None) -> bool:
-    """OCR runs only for CNIC to keep compute costs low.
+    """Run OCR/LLM extraction for identity, resume, and education docs.
 
-    Other document types are stored for verification without extraction.
+    Cloudinary only stores the file — extraction is a separate step that must
+    be enabled here or fields will never auto-fill.
     """
     if not settings.ENABLE_OCR:
         return False
     normalized = (doc_type or "").strip().lower()
-    if normalized == "cnic":
+    purpose_normalized = (purpose or "").strip().lower()
+    if normalized in {"cnic", "resume", "passport", "transcript", "certificate", "degree"}:
         return True
-    # Legacy uploads sometimes omit doc_type but mark purpose as government_doc
-    # with an implicit CNIC — still require explicit cnic to avoid passport OCR.
+    if purpose_normalized in {"resume", "education_cert", "government_doc"}:
+        return True
     return False
-
-
 def _extensions_for(category: str, doc_type: str) -> set[str]:
     if doc_type == "resume" or category == "other":
         return RESUME_EXTENSIONS
@@ -94,9 +95,24 @@ class DocumentService:
             }
         )
         if duplicate:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This exact document is already uploaded.",
+            # Same file re-uploaded after an incomplete onboarding save — treat as replace.
+            logger.info(
+                "Replacing duplicate document owner={} doc_type={} hash={} previous_id={}",
+                current_user.id,
+                doc_type,
+                document_hash[:12],
+                duplicate.get("_id"),
+            )
+            await database.documents.update_one(
+                {"_id": duplicate["_id"]},
+                {
+                    "$set": {
+                        "is_active": False,
+                        "status": "replaced",
+                        "updated_at": datetime.now(UTC),
+                        "replaced_reason": "candidate_reupload_same_file",
+                    }
+                },
             )
 
         try:
@@ -125,6 +141,15 @@ class DocumentService:
         needs_ocr = _should_run_ocr(doc_type=doc_type, purpose=purpose)
         expected = document_extraction_service.resolve_expected_categories(
             purpose=purpose, doc_type=doc_type, category=category
+        )
+        logger.info(
+            "Document upload owner={} purpose={} doc_type={} category={} needs_ocr={} expected={}",
+            current_user.id,
+            purpose,
+            doc_type,
+            category,
+            needs_ocr,
+            expected,
         )
 
         doc = {
@@ -165,21 +190,33 @@ class DocumentService:
 
         if needs_ocr:
             import asyncio
+            import tempfile
 
             temp_local_path: str | None = None
             try:
-                def _run_extraction():
-                    return document_extraction_service.extract_text(temp_local_path or "")
+                # Prefer the bytes we just received — avoid a second Cloudinary download
+                # (raw PDFs often fail re-fetch / lose file extensions).
+                suffix = Path(original).suffix.lower() or ".bin"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as scratch:
+                    scratch.write(content)
+                    temp_local_path = scratch.name
 
-                temp_local_path = await storage_service.materialize_local_file(
-                    {
-                        "storage_backend": stored["backend"],
-                        "file_url": stored["file_url"],
-                        "object_path": stored["object_path"],
-                        "resource_type": stored.get("resource_type"),
-                    }
+                logger.info(
+                    "OCR local extract path={} purpose={} bytes={} suffix={}",
+                    temp_local_path,
+                    purpose,
+                    len(content),
+                    suffix,
                 )
-                raw_text = await asyncio.to_thread(_run_extraction)
+                raw_text = await asyncio.to_thread(
+                    document_extraction_service.extract_text, temp_local_path
+                )
+                logger.info(
+                    "OCR text extracted purpose={} chars={} preview={}",
+                    purpose,
+                    len(raw_text or ""),
+                    (raw_text or "")[:120].replace("\n", " "),
+                )
                 parsed = await document_extraction_service.parse_structured_data(raw_text)
                 validation = document_extraction_service.validate_classification(
                     parsed,
@@ -257,6 +294,13 @@ class DocumentService:
                     mismatch_reasons = []
 
             except Exception as exc:
+                logger.exception(
+                    "OCR extraction failed purpose={} doc_type={} file={} error={}",
+                    purpose,
+                    doc_type,
+                    original,
+                    exc,
+                )
                 raw_text = ""
                 ocr_result = {
                     "status": "failed",
@@ -725,7 +769,7 @@ class DocumentService:
         if not _should_run_ocr(doc_type=doc.get("doc_type") or "", purpose=doc.get("purpose")):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="OCR re-extraction is only available for National ID (CNIC) documents.",
+                detail="OCR re-extraction is only available for CNIC, passport, resume, and transcript documents.",
             )
 
         try:

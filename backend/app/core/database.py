@@ -65,6 +65,14 @@ async def create_database_indexes() -> None:
     await database.learning_assignments.create_index([("employee_id", 1), ("created_at", -1)])
     await database.learning_assignments.create_index([("user_id", 1), ("status", 1)])
     await database.learning_assignments.create_index([("assigned_by_id", 1), ("created_at", -1)])
+    # Prevent duplicate course assignment to the same employee (future inserts).
+    try:
+        await database.learning_assignments.create_index(
+            [("employee_id", 1), ("course_uid", 1)], unique=True
+        )
+    except Exception:
+        # Existing duplicate rows block unique index — app still enforces in assign_courses.
+        pass
 
     await database.learning_bookmarks.create_index([("user_id", 1), ("course_uid", 1)], unique=True)
 
@@ -76,3 +84,5 @@ async def create_database_indexes() -> None:
 
     await database.learning_career_goals.create_index("user_id", unique=True)
     await database.learning_ai_recommendations.create_index("user_id", unique=True)
+    await database.learning_skill_assessments.create_index("user_id", unique=True)
+    await database.employees.create_index([("job_title", 1), ("status", 1)])

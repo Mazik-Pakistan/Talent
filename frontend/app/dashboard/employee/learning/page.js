@@ -9,6 +9,7 @@ import styles from "./learning.module.css";
 import { getApiErrorMessage } from "@/services/authService";
 import {
   addBookmark,
+  assessSkills,
   browseCatalog,
   deleteSkill,
   getCareerGoal,
@@ -218,6 +219,7 @@ function CatalogTab({ onEnroll }) {
   const [role, setRole] = useState("");
   const [level, setLevel] = useState("");
   const [type, setType] = useState("");
+  const [bookmarkedOnly, setBookmarkedOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [result, setResult] = useState({ courses: [], total: 0, pages: 1 });
   const [loading, setLoading] = useState(true);
@@ -234,14 +236,22 @@ function CatalogTab({ onEnroll }) {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
-    browseCatalog(token, { q: q || undefined, role: role || undefined, level: level || undefined, type: type || undefined, page, page_size: 12 })
+    browseCatalog(token, {
+      q: q || undefined,
+      role: role || undefined,
+      level: level || undefined,
+      type: type || undefined,
+      bookmarked_only: bookmarkedOnly || undefined,
+      page,
+      page_size: 12,
+    })
       .then((data) => {
         setResult(data);
         setError("");
       })
       .catch((err) => setError(getApiErrorMessage(err, "Could not load the course catalog.")))
       .finally(() => setLoading(false));
-  }, [q, role, level, type, page]);
+  }, [q, role, level, type, bookmarkedOnly, page]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -322,6 +332,14 @@ function CatalogTab({ onEnroll }) {
               <option key={r} value={r}>{r.replace(/-/g, " ")}</option>
             ))}
           </select>
+          <label className={styles.bookmarkFilter}>
+            <input
+              type="checkbox"
+              checked={bookmarkedOnly}
+              onChange={(e) => { setPage(1); setBookmarkedOnly(e.target.checked); }}
+            />
+            Bookmarked only
+          </label>
         </div>
 
         {error && <div className={styles.errorNote}>{error}</div>}
@@ -484,7 +502,9 @@ function MyCoursesTab({ onChange }) {
 function SkillsTab() {
   const [skills, setSkills] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [assessment, setAssessment] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [assessing, setAssessing] = useState(false);
   const [form, setForm] = useState({ skill_name: "", category: "Programming", proficiency: "Beginner", years_experience: "" });
   const [saving, setSaving] = useState(false);
 
@@ -502,6 +522,21 @@ function SkillsTab() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleAssess() {
+    const token = localStorage.getItem("access_token");
+    setAssessing(true);
+    try {
+      const data = await assessSkills(token, true);
+      setAssessment(data.assessment);
+      setSkills(data.skills || []);
+      toast.success("AI skill matrix refreshed from your resume and current role.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not run AI skill assessment."));
+    } finally {
+      setAssessing(false);
+    }
+  }
 
   async function handleAdd(e) {
     e.preventDefault();
@@ -535,6 +570,8 @@ function SkillsTab() {
     }
   }
 
+  const proficiencyRank = { Beginner: 25, Intermediate: 50, Advanced: 75, Expert: 100 };
+
   return (
     <div className={dashStyles.section}>
       <div className={dashStyles.sectionHead}>
@@ -542,11 +579,46 @@ function SkillsTab() {
           <span className={`${dashStyles.bar} ${dashStyles.green}`} />
           <div>
             <div className={dashStyles.sectionTitle}>Skill profile</div>
-            <p className={dashStyles.sectionDesc}>Keep this current — it powers your AI recommendations and career path</p>
+            <p className={dashStyles.sectionDesc}>AI judges skills from your resume, designation, and department — certificates close gaps</p>
           </div>
         </div>
+        <button type="button" className={dashStyles.btnPrimary} disabled={assessing} onClick={handleAssess}>
+          {assessing ? "Assessing…" : "Run AI skill assessment"}
+        </button>
       </div>
       <div className={dashStyles.sectionBody}>
+        {assessment && (
+          <div className={styles.assessmentBanner}>
+            <div>
+              <strong>Role fit: {assessment.role_fit_percentage ?? "—"}%</strong>
+              <p>{assessment.summary}</p>
+            </div>
+            {(assessment.gaps || []).length > 0 && (
+              <div className={styles.gapChips}>
+                {assessment.gaps.map((g) => (
+                  <span key={g.skill} className={`${styles.priorityChip} ${styles[g.priority] || ""}`}>
+                    {g.priority}: {g.skill}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {skills.length > 0 && (
+          <div className={styles.matrixBars}>
+            {skills.slice(0, 12).map((s) => (
+              <div key={s.id} className={styles.matrixRow}>
+                <span className={styles.matrixLabel}>{s.skill_name}</span>
+                <div className={styles.matrixTrack}>
+                  <div className={styles.matrixFill} style={{ width: `${proficiencyRank[s.proficiency] || 25}%` }} />
+                </div>
+                <span className={styles.matrixPct}>{s.proficiency}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <form className={styles.addSkillForm} onSubmit={handleAdd}>
           <label>
             Skill name
@@ -575,7 +647,7 @@ function SkillsTab() {
         {!loading && skills.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>No skills recorded yet</div>
-            <div className={dashStyles.emptySub}>Add skills above, or complete courses and upload certificates to build your matrix automatically.</div>
+            <div className={dashStyles.emptySub}>Run AI assessment from your onboarding resume, or add skills manually.</div>
           </div>
         )}
         <div className={styles.skillGrid}>
@@ -584,7 +656,11 @@ function SkillsTab() {
               <div className={styles.skillCardHead}>
                 <div>
                   <div className={styles.skillName}>{s.skill_name}</div>
-                  <div className={styles.skillCategory}>{s.category}{s.years_experience ? ` · ${s.years_experience} yrs` : ""}</div>
+                  <div className={styles.skillCategory}>
+                    {s.category}
+                    {s.years_experience ? ` · ${s.years_experience} yrs` : ""}
+                    {s.source ? ` · ${s.source}` : ""}
+                  </div>
                 </div>
                 <button type="button" className={styles.deleteSkillBtn} title="Remove" onClick={() => handleDelete(s.id)}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
@@ -718,11 +794,15 @@ function CareerTab() {
                   </div>
                 </>
               )}
-              {gap.missing_skills?.length > 0 && (
+              {(gap.skill_gaps?.length > 0 || gap.missing_skills?.length > 0) && (
                 <>
-                  <div className={dashStyles.fieldLabel} style={{ marginBottom: 6 }}>Skills to build</div>
+                  <div className={dashStyles.fieldLabel} style={{ marginBottom: 6 }}>Skills to build (priority order)</div>
                   <div className={styles.missingSkillsRow}>
-                    {gap.missing_skills.map((s) => <span key={s} className={styles.missingSkillTag}>{s}</span>)}
+                    {(gap.skill_gaps || gap.missing_skills.map((s) => ({ skill: s, priority: "medium" }))).map((g) => (
+                      <span key={g.skill || g} className={`${styles.priorityChip} ${styles[g.priority] || styles.medium}`} title={g.reason || ""}>
+                        {(g.priority || "medium").toUpperCase()}: {g.skill || g}
+                      </span>
+                    ))}
                   </div>
                 </>
               )}
@@ -803,9 +883,16 @@ function CareerTab() {
           <div className={styles.aiGrid}>
             {(recs?.recommendations || []).map((course) => (
               <div key={course.uid} className={styles.aiCard}>
-                <span className={`${styles.courseType} ${course.type === "certification" ? styles.certification : ""}`}>
-                  {course.type === "learningPath" ? "Learning Path" : course.type === "certification" ? "Certification" : "Module"}
-                </span>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <span className={`${styles.courseType} ${course.type === "certification" ? styles.certification : ""}`}>
+                    {course.type === "learningPath" ? "Learning Path" : course.type === "certification" ? "Certification" : "Module"}
+                  </span>
+                  {course.priority && (
+                    <span className={`${styles.priorityChip} ${styles[course.priority] || ""}`}>
+                      {course.priority}
+                    </span>
+                  )}
+                </div>
                 <div className={styles.courseTitle} style={{ marginTop: 8 }}>{course.title}</div>
                 <div className={styles.courseMeta} style={{ marginTop: 6 }}>
                   {(course.levels || [])[0] && <span className={styles.levelBadge}>{course.levels[0]}</span>}

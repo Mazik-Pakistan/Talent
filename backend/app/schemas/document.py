@@ -61,11 +61,12 @@ EXTRACTION_CATEGORIES = (
 PURPOSE_EXPECTED_CATEGORIES = {
     "resume": ("resume",),
     "government_doc": ("cnic", "passport"),
-    "education_cert": ("academic_transcript",),
+    # Degree certificates and mark sheets are both valid education uploads.
+    "education_cert": ("academic_transcript", "certificate"),
     "identity": ("cnic", "passport"),
     "cnic": ("cnic",),
     "passport": ("passport",),
-    "transcript": ("academic_transcript",),
+    "transcript": ("academic_transcript", "certificate"),
 }
 
 PURPOSE_REJECT_MESSAGES = {
@@ -73,8 +74,8 @@ PURPOSE_REJECT_MESSAGES = {
     "government_doc": "This is not a valid National ID or Passport.",
     "cnic": "This is not a valid National ID.",
     "passport": "This is not a valid passport.",
-    "education_cert": "Uploaded document is not a valid academic transcript.",
-    "transcript": "Uploaded document is not a valid academic transcript.",
+    "education_cert": "Uploaded document is not a valid transcript or education certificate.",
+    "transcript": "Uploaded document is not a valid transcript or education certificate.",
     "identity": "This is not a valid National ID or Passport.",
 }
 

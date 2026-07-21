@@ -114,6 +114,11 @@ export async function upsertSkill(accessToken, payload) {
   return data;
 }
 
+export async function assessSkills(accessToken, refresh = false) {
+  const { data } = await client.post(`/api/learning/skills/assess?refresh=${refresh ? "true" : "false"}`, {}, auth(accessToken));
+  return data;
+}
+
 export async function deleteSkill(accessToken, skillId) {
   const { data } = await client.delete(`/api/learning/skills/${skillId}`, auth(accessToken));
   return data;
@@ -163,12 +168,20 @@ export async function listAssignments(accessToken, params = {}) {
   return data;
 }
 
-export async function getEmployeeLearningProfile(accessToken, employeeId) {
-  const { data } = await client.get(`/api/learning/employees/${encodeURIComponent(employeeId)}/profile`, auth(accessToken));
+export async function getEmployeeLearningProfile(accessToken, employeeId, refresh = false) {
+  const { data } = await client.get(`/api/learning/employees/${encodeURIComponent(employeeId)}/profile`, {
+    ...auth(accessToken),
+    params: refresh ? { refresh: true } : {},
+  });
   return data;
 }
 
 export async function getLearningAnalytics(accessToken) {
   const { data } = await client.get("/api/learning/analytics", auth(accessToken));
+  return data;
+}
+
+export async function getOrgTaxonomy(accessToken) {
+  const { data } = await client.get("/api/learning/org-taxonomy", auth(accessToken));
   return data;
 }

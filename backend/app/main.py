@@ -15,12 +15,14 @@ from app.api.rbac import router as rbac_router
 from app.core.config import settings
 from app.core.database import create_database_indexes, mongo_client
 from app.core.rbac_seed import seed_rbac_collections
+from app.services.org_taxonomy_service import seed_org_taxonomy
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await create_database_indexes()
     await seed_rbac_collections()
+    await seed_org_taxonomy()
     yield
     mongo_client.close()
 

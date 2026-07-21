@@ -22,7 +22,7 @@ export const ROLE_PERMISSIONS = {
     "reporting.view",
     "profile.view",
   ],
-  candidate: ["onboarding.self", "learning.access", "ai.coach", "profile.view"],
+  candidate: ["onboarding.self", "profile.view"],
   employee: ["onboarding.self", "learning.access", "ai.coach", "profile.view"],
 };
 

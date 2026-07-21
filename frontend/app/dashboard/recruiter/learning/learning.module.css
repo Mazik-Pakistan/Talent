@@ -146,3 +146,46 @@
 .errorNote { font-size: 12px; color: #b42318; margin-bottom: 14px; }
 .rejectRow { display: flex; gap: 8px; align-items: center; }
 .rejectInput { border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font-size: 11.5px; width: 160px; }
+
+.modeRow { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.modeBtn {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--navy);
+  cursor: pointer;
+}
+.modeActive { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+.filterBar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.courseGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.courseCard {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  background: #FBFDFE;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.courseTitle { font-size: 13px; font-weight: 700; color: var(--navy); }
+.courseMeta { font-size: 11.5px; color: var(--text-muted); }
+.courseSummary { font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.45; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 16px; font-size: 12.5px; }
+.pageBtn {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  cursor: pointer;
+}
+.pageBtn:disabled { opacity: 0.45; cursor: not-allowed; }

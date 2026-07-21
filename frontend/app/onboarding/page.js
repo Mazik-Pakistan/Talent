@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import {
   clearLocalSession,
+  clearOnboardingFile,
   getApiErrorMessage,
   getOnboarding,
   logout,
@@ -65,30 +66,6 @@ const NAV_ITEMS = [
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
         <path d="M14 2v6h6" /><path d="M16 13H8" /><path d="M16 17H8" /><path d="M10 9H8" />
-      </svg>
-    ),
-  },
-  {
-    key: "learning",
-    label: "Learning",
-    href: null,
-    disabled: true,
-    badge: "PHASE 3",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-      </svg>
-    ),
-  },
-  {
-    key: "ai",
-    label: "AI Coach",
-    href: null,
-    disabled: true,
-    badge: "PHASE 3",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" /><path d="M19 11a7 7 0 0 1-14 0M12 18v4" />
       </svg>
     ),
   },
@@ -558,15 +535,21 @@ function OnboardingContent() {
       setEducationEntries((prev) => {
         const next = [...prev];
         const cur = next[index] || { ...emptyEducationEntry };
+        const yearRaw = fields.passing_year || fields.year || fields.issue_date || "";
+        const year = String(yearRaw).match(/(19|20)\d{2}/)?.[0] || String(yearRaw).slice(0, 4);
         next[index] = {
           ...cur,
-          institution: cur.institution || fields.institute || "",
-          board_university: cur.board_university || fields.institute || "",
-          degree: cur.degree || fields.degree || fields.program || "",
-          field_of_study: cur.field_of_study || fields.major || fields.program || "",
-          year_completed: cur.year_completed || String(fields.passing_year || "").slice(0, 4) || "",
+          institution: cur.institution || fields.institute || fields.institution || fields.university || "",
+          board_university: cur.board_university || fields.board_university || fields.institute || fields.university || "",
+          degree: cur.degree || fields.degree || fields.program || fields.qualification || "",
+          field_of_study: cur.field_of_study || fields.major || fields.program || fields.field_of_study || "",
+          year_completed: cur.year_completed || year || "",
           cgpa_or_percentage:
-            cur.cgpa_or_percentage || fields.cgpa || fields.gpa || fields.percentage || "",
+            cur.cgpa_or_percentage ||
+            (fields.cgpa != null ? String(fields.cgpa) : "") ||
+            (fields.gpa != null ? String(fields.gpa) : "") ||
+            (fields.percentage != null ? String(fields.percentage) : "") ||
+            "",
         };
         filled.push("education_transcript");
         return next;
@@ -682,7 +665,15 @@ function OnboardingContent() {
     const docsReady = nextGovDocs.every(
       (doc) => doc.file_url && doc.document_number && doc.document_number !== "pending"
     );
-    if (!docsReady || !nextPersonal.first_name || !nextPersonal.national_id) return;
+    if (!docsReady || !nextPersonal.first_name || !nextPersonal.national_id) {
+      showToast("info", "NIC details filled. Complete the remaining fields, then Save & continue.");
+      return;
+    }
+    // Backend rejects incomplete personal payloads (address/city/DOB required) — keep local draft only.
+    if (isPersonalIncomplete(nextPersonal)) {
+      showToast("info", "NIC details filled. Add your address fields, then Save & continue.");
+      return;
+    }
     try {
       const payload = {
         step: "personal",
@@ -695,7 +686,7 @@ function OnboardingContent() {
           profile_picture: nextPersonal.profile_picture || null,
         },
         government_docs: {
-          documents: nextGovDocs.map((doc) => ({ ...doc, doc_type: "cnic" })),
+          documents: nextGovDocs.map((doc) => ({ ...doc, doc_type: doc.doc_type || "cnic" })),
         },
       };
       const data = await saveOnboarding(payload, accessToken);
@@ -707,8 +698,11 @@ function OnboardingContent() {
         localStorage.removeItem(draftStorageKey());
       }
       showToast("success", "NIC details saved. Finish any remaining fields, then continue.");
-    } catch {
-      showToast("info", "Details filled from NIC. Click Save & continue when the form is complete.");
+    } catch (err) {
+      showToast(
+        "info",
+        getApiErrorMessage(err, "Details filled from NIC. Click Save & continue when the form is complete.")
+      );
     }
   }
 
@@ -771,11 +765,60 @@ function OnboardingContent() {
     await runFileUpload(file, purpose, index, event.target);
   }
 
+  async function handleFileRemove(purpose, index = 0) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setUploading(true);
+    setUploadPhase("Removing document…");
+    setMessage("Removing document…");
+    try {
+      const data = await clearOnboardingFile(purpose, accessToken, index);
+      if (data.onboarding) {
+        setOnboarding(data.onboarding);
+        hydrateForms(data.onboarding);
+      }
+      if (purpose === "resume") {
+        setResume((current) => ({ ...current, file_name: null, file_url: null }));
+      } else if (purpose === "government_doc") {
+        setGovDocs((current) => {
+          const next = [...current];
+          if (next[index]) {
+            next[index] = {
+              ...next[index],
+              file_name: null,
+              file_url: null,
+              document_number: next[index].document_number === "pending" ? "pending" : next[index].document_number,
+            };
+          }
+          return next;
+        });
+        clearIdentityForRescan(index);
+      } else if (purpose === "education_cert") {
+        setEducationEntries((current) => {
+          const next = [...current];
+          if (next[index]) next[index] = { ...next[index], certificate_file: null };
+          return next;
+        });
+      }
+      setExtractionPreview(null);
+      setMessage("Document removed. You can upload a new file.");
+      showToast("success", "Document removed.");
+    } catch (error) {
+      const err = getApiErrorMessage(error, "Could not remove document.");
+      setMessage(err);
+      showToast("error", err);
+    } finally {
+      setUploading(false);
+      setUploadPhase("");
+    }
+  }
+
   async function runFileUpload(file, purpose, index = 0, inputEl = null) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
 
     const willScan = purpose === "government_doc";
+    const softOcr = purpose === "education_cert" || purpose === "resume";
     if (willScan) {
       clearIdentityForRescan(index);
     }
@@ -784,7 +827,9 @@ function OnboardingContent() {
     setUploadPhase(
       willScan
         ? "Clearing previous NIC details, then scanning with OCR…"
-        : "Uploading and saving your document…"
+        : softOcr
+          ? "Uploading document and extracting details when possible…"
+          : "Uploading and saving your document…"
     );
     setMessage(willScan ? "Scanning document…" : "Uploading document…");
     setExtractionPreview(null);
@@ -792,6 +837,7 @@ function OnboardingContent() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("purpose", purpose);
+      formData.append("index", String(index));
       if (purpose === "government_doc") {
         formData.append("doc_type", "cnic");
       }
@@ -801,12 +847,15 @@ function OnboardingContent() {
       const ocr = data.ocr_result;
       const willAutofillCnic =
         purpose === "government_doc" && ocr?.status === "completed" && ocr?.accepted !== false;
+      const ocrHardRejected =
+        purpose === "government_doc" && (ocr?.status === "rejected_type" || ocr?.accepted === false);
 
       if (data.onboarding && !willAutofillCnic) {
         hydrateForms(data.onboarding);
       }
 
-      if (ocr?.status === "rejected_type" || ocr?.accepted === false) {
+      // Only National ID uploads block on wrong document type.
+      if (ocrHardRejected) {
         setScanPulse(false);
         const err = ocr.rejection_message || data.message || "Document type rejected.";
         setMessage(err);
@@ -854,14 +903,28 @@ function OnboardingContent() {
         setDocumentVerification(data.document_verification);
       }
 
-      if (ocr) {
+      if (ocr && ocr.status === "completed" && ocr.accepted !== false) {
         autoFillFromOCR(ocr, purpose, index);
         setExtractionPreview(ocr);
-        setMessage(
-          ocr.status === "completed"
-            ? "File uploaded and fields updated where available."
-            : ocr.rejection_message || "File uploaded. Fill fields manually if needed."
+        setMessage("File uploaded and fields updated where available.");
+        showToast("success", "Document uploaded.");
+      } else if (ocr && softOcr) {
+        if (ocr.fields && Object.keys(ocr.fields).length) {
+          autoFillFromOCR({ ...ocr, accepted: true, status: "completed", category: ocr.category || "academic_transcript" }, purpose, index);
+        }
+        const failHint =
+          ocr.rejection_message ||
+          ocr.error ||
+          "Could not auto-read every field — please enter any missing details manually.";
+        setExtractionPreview(ocr.status === "completed" ? ocr : null);
+        setMessage(ocr.status === "completed" ? "Document saved and details extracted where possible." : `Document saved. ${failHint}`);
+        showToast(
+          ocr.status === "completed" ? "success" : "info",
+          ocr.status === "completed" ? "Document uploaded and scanned." : failHint
         );
+      } else if (ocr) {
+        setExtractionPreview(ocr);
+        setMessage(ocr.rejection_message || "File uploaded. Fill fields manually if needed.");
       } else {
         setMessage("Document uploaded and saved.");
       }
@@ -1147,7 +1210,15 @@ function OnboardingContent() {
                           .join(" ");
                         return (
                           <li key={item.id} className={liClassName}>
-                            <button type="button" disabled={submitted && !isEditMode} onClick={() => setStep(item.id)}>
+                            <button
+                              type="button"
+                              disabled={submitted && !isEditMode}
+                              onClick={() => {
+                                setStep(item.id);
+                                setExtractionPreview(null);
+                                setMessage("");
+                              }}
+                            >
                               <span>
                                 {isComplete && !isCurrent ? (
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
@@ -1178,7 +1249,12 @@ function OnboardingContent() {
                       </p>
                     )}
 
-            {extractionPreview && <ExtractionPreview result={extractionPreview} onDismiss={() => setExtractionPreview(null)} />}
+            {extractionPreview && step === "personal" && (
+              <ExtractionPreview result={extractionPreview} onDismiss={() => setExtractionPreview(null)} />
+            )}
+            {extractionPreview && step !== "personal" && extractionPreview.accepted !== false && extractionPreview.status === "completed" && (
+              <ExtractionPreview result={extractionPreview} onDismiss={() => setExtractionPreview(null)} />
+            )}
 
                     {autoFilledKeys.length > 0 && (
                       <p className={styles.docHelper} style={{ background: "#ecfdf5", color: "#166534", padding: "8px 10px", borderRadius: 6 }}>
@@ -1227,6 +1303,7 @@ function OnboardingContent() {
                                   accept=".pdf,.jpg,.jpeg,.png"
                                   disabled={uploading}
                                   onChange={(e) => handleFileUpload(e, "government_doc", index)}
+                                  onRemove={() => handleFileRemove("government_doc", index)}
                                   fileUrl={doc.file_url}
                                   fileName={doc.file_name}
                                   hint="PDF, JPG, or PNG"
@@ -1403,7 +1480,8 @@ function OnboardingContent() {
                         <div className={styles.formStack}>
                           <h2 className={styles.stepTitle}>Education history</h2>
                           <p className={styles.docHelper}>
-                            Enter each qualification below. Transcripts are optional and stored for recruiter review without OCR scanning.
+                            Enter each qualification below. Transcripts and degree certificates are optional —
+                            when uploaded, AI will try to pre-fill fields; you can always edit them.
                           </p>
                           {educationEntries.map((entry, index) => (
                             <section key={index} className={styles.sectionCard}>
@@ -1417,10 +1495,11 @@ function OnboardingContent() {
                               <div className={styles.formGrid}>
                                 <FileUploadField
                                   styles={styles}
-                                  label="Academic transcript (optional)"
+                                  label="Academic transcript / certificate (optional)"
                                   accept=".pdf,.jpg,.jpeg,.png"
                                   disabled={uploading}
                                   onChange={(e) => handleFileUpload(e, "education_cert", index)}
+                                  onRemove={() => handleFileRemove("education_cert", index)}
                                   fileUrl={entry.certificate_file}
                                   hint="PDF, JPG, or PNG"
                                   wide
@@ -1499,6 +1578,7 @@ function OnboardingContent() {
                                 accept=".pdf,.doc,.docx"
                                 disabled={uploading}
                                 onChange={(e) => handleFileUpload(e, "resume")}
+                                onRemove={() => handleFileRemove("resume")}
                                 fileUrl={resume.file_url}
                                 fileName={resume.file_name}
                                 hint="PDF, DOC, or DOCX"
@@ -1729,8 +1809,14 @@ function OnboardingContent() {
       <ConfirmDialog
         open={!!pendingReplace}
         title="Replace this document?"
-        message="Previous NIC values will be cleared first, then the new document will be scanned and the form will be refilled."
-        confirmLabel="Replace & scan"
+        message={
+          pendingReplace?.purpose === "government_doc"
+            ? "Previous NIC values will be cleared first, then the new document will be scanned and the form will be refilled."
+            : pendingReplace?.purpose === "education_cert"
+              ? "The current transcript will be replaced with the new file. Extracted education fields stay editable."
+              : "The current resume will be replaced with the new file."
+        }
+        confirmLabel={pendingReplace?.purpose === "government_doc" ? "Replace & scan" : "Replace file"}
         cancelLabel="Cancel"
         danger
         onCancel={() => {
@@ -1795,7 +1881,7 @@ function formatReviewValue(value) {
   return String(value).replace(/_/g, " ");
 }
 
-function FileUploadField({ styles, label, accept, disabled, onChange, fileUrl, fileName, hint, wide }) {
+function FileUploadField({ styles, label, accept, disabled, onChange, onRemove, fileUrl, fileName, hint, wide }) {
   const display = fileName || fileDisplayName(fileUrl);
   const isLink = typeof fileUrl === "string" && (fileUrl.startsWith("http") || fileUrl.startsWith("/"));
 
@@ -1845,6 +1931,16 @@ function FileUploadField({ styles, label, accept, disabled, onChange, fileUrl, f
         ) : (
           <span className={styles.fileUploadHint}>{hint || "No file selected"}</span>
         )}
+        {fileUrl && onRemove ? (
+          <button
+            type="button"
+            className={styles.fileRemoveBtn}
+            disabled={disabled}
+            onClick={onRemove}
+          >
+            Remove
+          </button>
+        ) : null}
       </div>
     </div>
   );

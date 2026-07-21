@@ -8,7 +8,6 @@ const candidateSidebarItems = [
   { id: "overview", label: "Overview", hint: "Progress snapshot" },
   { id: "tasks", label: "Tasks", hint: "Pending checklist" },
   { id: "announcements", label: "Announcements", hint: "Company updates" },
-  { id: "learning", label: "Learning", hint: "Assigned modules" },
   { id: "assistant", label: "Assistant", hint: "Helpful shortcuts" },
   { id: "profile", label: "Profile", hint: "Joining details" },
 ];
@@ -62,7 +61,6 @@ export default function CandidateDashboard({ user, onLogout, data = {} }) {
   const metrics = data.metrics || [];
   const tasks = data.tasks || [];
   const announcements = data.announcements || [];
-  const learning = data.learning || [];
   const assistantShortcuts = data.assistantShortcuts || [];
   const profile = data.profile || {};
   const completedTasks = typeof data.completedTasks === "number" ? data.completedTasks : tasks.filter((task) => task.status === "completed").length;
@@ -84,7 +82,7 @@ export default function CandidateDashboard({ user, onLogout, data = {} }) {
             <p className="eyebrow">Candidate workspace</p>
             <h1>Welcome, {user?.full_name}</h1>
             <p className="dashboard-lead">
-              A focused personal workspace for onboarding progress, assigned tasks, learning, and company updates.
+              A focused personal workspace for onboarding progress, assigned tasks, and company updates.
             </p>
           </div>
           <div className="dashboard-header-actions">
@@ -191,30 +189,6 @@ export default function CandidateDashboard({ user, onLogout, data = {} }) {
                 <EmptyState title="Add announcements" body="Use this block for onboarding updates, policy reminders, or company notices." />
               )}
             </div>
-          </div>
-
-          <div className="dashboard-card" id="learning">
-            <div className="section-heading-row">
-              <div>
-                <p className="eyebrow">Learning</p>
-                <h2>Assigned modules</h2>
-              </div>
-            </div>
-            {learning.length ? (
-              <ul className="mini-list">
-                {learning.map((module) => (
-                  <li key={module.title}>
-                    <div>
-                      <strong>{module.title}</strong>
-                      <div className="muted-text">{module.length}</div>
-                    </div>
-                    <TaskPill status={module.status === "In progress" ? "in-progress" : module.status === "Completed" ? "completed" : "pending"} />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <EmptyState title="Add learning modules" body="Show the onboarding curriculum or assigned learning modules here." />
-            )}
           </div>
         </section>
       </div>

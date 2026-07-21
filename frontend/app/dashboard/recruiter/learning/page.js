@@ -10,13 +10,16 @@ import { getApiErrorMessage, listEmployees } from "@/services/authService";
 import {
   assignCourses,
   browseCatalog,
+  getCatalogFacets,
   getLearningAnalytics,
+  getOrgTaxonomy,
   listAssignments,
   listPendingCertificates,
   verifyCertificate,
 } from "@/services/learningService";
 
 const TABS = [
+  { key: "catalog", label: "Course Catalog" },
   { key: "assign", label: "Assign Courses" },
   { key: "assignments", label: "Assignments" },
   { key: "certificates", label: "Certificate Verification" },
@@ -24,10 +27,10 @@ const TABS = [
 ];
 
 export default function RecruiterLearningPage() {
-  const [tab, setTab] = useState("assign");
+  const [tab, setTab] = useState("catalog");
 
   return (
-    <RecruiterShell activeKey="learning" title="Learning Management" subtitle="Assign Microsoft Learn courses, verify certificates, and track development">
+    <RecruiterShell activeKey="learning" title="Learning Management" subtitle="Catalog, assign by employee / designation / department, verify certificates, track performance">
       <div className={styles.tabBar}>
         {TABS.map((t) => (
           <button
@@ -41,6 +44,7 @@ export default function RecruiterLearningPage() {
         ))}
       </div>
 
+      {tab === "catalog" && <CatalogTab />}
       {tab === "assign" && <AssignTab />}
       {tab === "assignments" && <AssignmentsTab />}
       {tab === "certificates" && <CertificatesTab />}
@@ -49,9 +53,96 @@ export default function RecruiterLearningPage() {
   );
 }
 
-// ------------------------------------------------------------------------ //
-// Assign courses (US-068)
-// ------------------------------------------------------------------------ //
+function CatalogTab() {
+  const [q, setQ] = useState("");
+  const [facets, setFacets] = useState({ roles: [], levels: [], products: [] });
+  const [role, setRole] = useState("");
+  const [level, setLevel] = useState("");
+  const [type, setType] = useState("");
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState({ courses: [], total: 0, pages: 1 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    getCatalogFacets(token).then(setFacets).catch(() => {});
+  }, []);
+
+  const load = useCallback(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    setLoading(true);
+    browseCatalog(token, {
+      q: q || undefined,
+      role: role || undefined,
+      level: level || undefined,
+      type: type || undefined,
+      page,
+      page_size: 12,
+    })
+      .then(setResult)
+      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load catalog.")))
+      .finally(() => setLoading(false));
+  }, [q, role, level, type, page]);
+
+  useEffect(() => {
+    const timer = setTimeout(load, 300);
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  return (
+    <div className={shellStyles.section}>
+      <div className={shellStyles.sectionHead}>
+        <div className={shellStyles.sectionHeadLeft}>
+          <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
+          <div>
+            <div className={shellStyles.sectionTitle}>Microsoft Learn catalog</div>
+            <p className={shellStyles.sectionDesc}>{result.total} courses · same live catalog employees use</p>
+          </div>
+        </div>
+      </div>
+      <div className={shellStyles.sectionBody}>
+        <div className={styles.filterBar}>
+          <input className={styles.searchInput} placeholder="Search courses…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
+          <select className={styles.filterSelect} value={type} onChange={(e) => { setPage(1); setType(e.target.value); }}>
+            <option value="">All types</option>
+            <option value="learningPath">Learning paths</option>
+            <option value="module">Modules</option>
+            <option value="certification">Certifications</option>
+          </select>
+          <select className={styles.filterSelect} value={level} onChange={(e) => { setPage(1); setLevel(e.target.value); }}>
+            <option value="">All levels</option>
+            {(facets.levels || []).map((lv) => <option key={lv} value={lv}>{lv}</option>)}
+          </select>
+          <select className={styles.filterSelect} value={role} onChange={(e) => { setPage(1); setRole(e.target.value); }}>
+            <option value="">All MS Learn roles</option>
+            {(facets.roles || []).map((r) => <option key={r} value={r}>{r.replace(/-/g, " ")}</option>)}
+          </select>
+        </div>
+        {loading && <p className={styles.inlineNote}>Loading…</p>}
+        <div className={styles.courseGrid}>
+          {(result.courses || []).map((c) => (
+            <div key={c.uid} className={styles.courseCard}>
+              <div className={styles.courseTitle}>{c.title}</div>
+              <div className={styles.courseMeta}>{c.type} · {c.duration_minutes || "—"} min · {(c.levels || [])[0] || "—"}</div>
+              <p className={styles.courseSummary}>{(c.summary || "").slice(0, 140)}</p>
+              <a href={c.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open on Microsoft Learn</a>
+            </div>
+          ))}
+        </div>
+        {result.pages > 1 && (
+          <div className={styles.pagination}>
+            <button type="button" className={styles.pageBtn} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
+            <span>Page {result.page} of {result.pages}</span>
+            <button type="button" className={styles.pageBtn} disabled={page >= result.pages} onClick={() => setPage((p) => p + 1)}>Next</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AssignTab() {
   const [q, setQ] = useState("");
   const [courses, setCourses] = useState([]);
@@ -59,9 +150,19 @@ function AssignTab() {
   const [employees, setEmployees] = useState([]);
   const [empQuery, setEmpQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
+  const [taxonomy, setTaxonomy] = useState({ departments: [], designations: [] });
+  const [filterDept, setFilterDept] = useState("");
+  const [filterTitle, setFilterTitle] = useState("");
+  const [assignMode, setAssignMode] = useState("employees"); // employees | department | designation
   const [dueDate, setDueDate] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    getOrgTaxonomy(token).then(setTaxonomy).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -77,12 +178,20 @@ function AssignTab() {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     const timer = setTimeout(() => {
-      listEmployees(token, { q: empQuery || undefined, status: "active", page: 1, page_size: 20, sort: "full_name" })
+      listEmployees(token, {
+        q: empQuery || undefined,
+        department: filterDept || undefined,
+        job_title: filterTitle || undefined,
+        status: "active",
+        page: 1,
+        page_size: 40,
+        sort: "full_name",
+      })
         .then((data) => setEmployees(data.employees || []))
         .catch(() => {});
     }, 300);
     return () => clearTimeout(timer);
-  }, [empQuery]);
+  }, [empQuery, filterDept, filterTitle]);
 
   function toggleEmployee(id) {
     setSelectedIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
@@ -90,21 +199,35 @@ function AssignTab() {
 
   async function handleAssign() {
     if (!selectedCourse) { toast.error("Search for and select a course first."); return; }
-    if (selectedIds.length === 0) { toast.error("Select at least one employee."); return; }
     const token = localStorage.getItem("access_token");
+    const payload = {
+      course_uid: selectedCourse.uid,
+      course_title: selectedCourse.title,
+      course_url: selectedCourse.url,
+      course_type: selectedCourse.type,
+      duration_minutes: selectedCourse.duration_minutes,
+      due_date: dueDate || undefined,
+      note: note || undefined,
+    };
+
+    if (assignMode === "department") {
+      if (!filterDept) { toast.error("Select a department to assign to."); return; }
+      payload.department = filterDept;
+    } else if (assignMode === "designation") {
+      if (!filterTitle) { toast.error("Select a designation to assign to."); return; }
+      payload.job_title = filterTitle;
+    } else {
+      if (selectedIds.length === 0) { toast.error("Select at least one employee."); return; }
+      payload.employee_ids = selectedIds;
+    }
+
     setSubmitting(true);
     try {
-      const result = await assignCourses(token, {
-        employee_ids: selectedIds,
-        course_uid: selectedCourse.uid,
-        course_title: selectedCourse.title,
-        course_url: selectedCourse.url,
-        course_type: selectedCourse.type,
-        duration_minutes: selectedCourse.duration_minutes,
-        due_date: dueDate || undefined,
-        note: note || undefined,
-      });
-      toast.success(`Assigned to ${result.assigned.length} employee(s).`);
+      const result = await assignCourses(token, payload);
+      const assignedCount = result.assigned?.length || 0;
+      const skippedCount = result.skipped?.length || 0;
+      toast.success(`Assigned to ${assignedCount} employee(s).`);
+      if (skippedCount) toast.warn(`${skippedCount} skipped (already assigned).`);
       if (result.errors?.length) toast.warn(`${result.errors.length} could not be assigned.`);
       setSelectedIds([]);
       setNote("");
@@ -123,11 +246,28 @@ function AssignTab() {
           <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
           <div>
             <div className={shellStyles.sectionTitle}>Assign a Microsoft Learn course</div>
-            <p className={shellStyles.sectionDesc}>Search the live catalog, pick employees, and set a due date</p>
+            <p className={shellStyles.sectionDesc}>Assign to individuals, an entire department, or everyone with a designation. Duplicates are blocked.</p>
           </div>
         </div>
       </div>
       <div className={shellStyles.sectionBody}>
+        <div className={styles.modeRow}>
+          {[
+            { key: "employees", label: "By employee" },
+            { key: "department", label: "By department" },
+            { key: "designation", label: "By designation" },
+          ].map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              className={`${styles.modeBtn} ${assignMode === m.key ? styles.modeActive : ""}`}
+              onClick={() => setAssignMode(m.key)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
         <div className={styles.pickerLayout}>
           <div>
             <input className={styles.searchInput} placeholder="Search Microsoft Learn catalog…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -150,9 +290,6 @@ function AssignTab() {
                     <div className={styles.pickerRowTitle}>{c.title}</div>
                     <div className={styles.pickerRowMeta}>{c.type} · {c.duration_minutes} min · {(c.levels || [])[0]}</div>
                   </div>
-                  <button type="button" className={styles.smallBtn} onClick={(e) => { e.stopPropagation(); setSelectedCourse(c); }}>
-                    Select
-                  </button>
                 </div>
               ))}
               {q.trim() && courses.length === 0 && <p className={styles.inlineNote}>No matches — try a different search term.</p>}
@@ -160,23 +297,51 @@ function AssignTab() {
           </div>
 
           <div>
-            <input className={styles.searchInput} placeholder="Filter employees…" value={empQuery} onChange={(e) => setEmpQuery(e.target.value)} />
-            <div className={styles.employeeList}>
-              {employees.map((emp) => (
-                <label key={emp.employee_id} className={styles.employeeCheckRow}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(emp.employee_id)}
-                    onChange={() => toggleEmployee(emp.employee_id)}
-                  />
-                  <div>
-                    {emp.full_name}
-                    <div className={styles.employeeMeta}>{emp.job_title || "—"} · {emp.department || "—"}</div>
-                  </div>
-                </label>
-              ))}
-              {employees.length === 0 && <p className={styles.inlineNote}>No employees found.</p>}
+            <div className={styles.filterBar}>
+              <select className={styles.filterSelect} value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
+                <option value="">All departments</option>
+                {(taxonomy.departments || []).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+              <select className={styles.filterSelect} value={filterTitle} onChange={(e) => setFilterTitle(e.target.value)}>
+                <option value="">All designations</option>
+                {(taxonomy.designations || []).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
             </div>
+
+            {assignMode === "employees" && (
+              <>
+                <input className={styles.searchInput} placeholder="Filter employees…" value={empQuery} onChange={(e) => setEmpQuery(e.target.value)} />
+                <div className={styles.employeeList}>
+                  {employees.map((emp) => (
+                    <label key={emp.employee_id} className={styles.employeeCheckRow}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(emp.employee_id)}
+                        onChange={() => toggleEmployee(emp.employee_id)}
+                      />
+                      <div>
+                        {emp.full_name}
+                        <div className={styles.employeeMeta}>{emp.job_title || "—"} · {emp.department || "—"}</div>
+                      </div>
+                    </label>
+                  ))}
+                  {employees.length === 0 && <p className={styles.inlineNote}>No employees found for these filters.</p>}
+                </div>
+              </>
+            )}
+
+            {assignMode === "department" && (
+              <p className={styles.inlineNote}>
+                Will assign to all active employees in <b>{filterDept || "—"}</b>
+                {filterTitle ? ` with designation ${filterTitle}` : ""} ({employees.length} currently matching).
+              </p>
+            )}
+            {assignMode === "designation" && (
+              <p className={styles.inlineNote}>
+                Will assign to all active employees with designation <b>{filterTitle || "—"}</b>
+                {filterDept ? ` in ${filterDept}` : ""} ({employees.length} currently matching).
+              </p>
+            )}
 
             <div className={styles.assignFormRow}>
               <label>
@@ -189,7 +354,11 @@ function AssignTab() {
               </label>
             </div>
             <button type="button" className={shellStyles.primaryButton} disabled={submitting} onClick={handleAssign}>
-              {submitting ? "Assigning…" : `Assign to ${selectedIds.length || 0} employee(s)`}
+              {submitting
+                ? "Assigning…"
+                : assignMode === "employees"
+                ? `Assign to ${selectedIds.length || 0} employee(s)`
+                : "Assign to matching employees"}
             </button>
           </div>
         </div>
@@ -198,9 +367,6 @@ function AssignTab() {
   );
 }
 
-// ------------------------------------------------------------------------ //
-// Assignments oversight
-// ------------------------------------------------------------------------ //
 function AssignmentsTab() {
   const [assignments, setAssignments] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
@@ -243,7 +409,7 @@ function AssignmentsTab() {
             <div className={styles.listInfo}>
               <div className={styles.listTitle}>{a.course_title}</div>
               <div className={styles.listMeta}>
-                {a.employee_name} ({a.employee_id}) · {a.department || "—"}
+                {a.employee_name} ({a.employee_id}) · {a.job_title || "—"} · {a.department || "—"}
                 {a.due_date ? ` · Due ${a.due_date}` : ""}
               </div>
             </div>
@@ -255,9 +421,6 @@ function AssignmentsTab() {
   );
 }
 
-// ------------------------------------------------------------------------ //
-// Certificate verification
-// ------------------------------------------------------------------------ //
 function CertificatesTab() {
   const [certificates, setCertificates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -280,7 +443,7 @@ function CertificatesTab() {
     const token = localStorage.getItem("access_token");
     try {
       await verifyCertificate(token, id, { approve: true });
-      toast.success("Certificate verified — skill matrix updated.");
+      toast.success("Certificate verified — skill matrix updated via AI.");
       load();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not verify certificate."));
@@ -307,7 +470,7 @@ function CertificatesTab() {
           <span className={`${shellStyles.bar} ${shellStyles.orange}`} />
           <div>
             <div className={shellStyles.sectionTitle}>Pending certificate verification</div>
-            <p className={shellStyles.sectionDesc}>Approve to update the employee&apos;s skill matrix, or reject with a note</p>
+            <p className={shellStyles.sectionDesc}>Approve to OCR/analyze the certificate and update the skill matrix</p>
           </div>
         </div>
       </div>
@@ -344,9 +507,6 @@ function CertificatesTab() {
   );
 }
 
-// ------------------------------------------------------------------------ //
-// Analytics (US-076)
-// ------------------------------------------------------------------------ //
 function AnalyticsTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -370,7 +530,7 @@ function AnalyticsTab() {
     { label: "Pending Reviews", value: data.pending_certificates, color: "navy" },
   ];
 
-  const maxPopular = Math.max(1, ...data.popular_courses.map((c) => c.enrollments));
+  const maxPopular = Math.max(1, ...(data.popular_courses || []).map((c) => c.enrollments));
 
   return (
     <>
@@ -397,12 +557,13 @@ function AnalyticsTab() {
           </div>
         </div>
         <div className={shellStyles.sectionBody}>
-          {data.popular_courses.length === 0 && <p className={shellStyles.emptySub}>No enrollments yet.</p>}
-          {data.popular_courses.map((c) => (
+          {(data.popular_courses || []).map((c) => (
             <div key={c.title} className={styles.barRow}>
-              <span className={styles.barLabel} title={c.title}>{c.title}</span>
-              <div className={styles.barTrack}><div className={styles.barFill} style={{ width: `${(c.enrollments / maxPopular) * 100}%` }} /></div>
-              <span className={styles.barValue}>{c.enrollments}</span>
+              <div className={styles.barLabel}>{c.title}</div>
+              <div className={styles.barTrack}>
+                <div className={styles.barFill} style={{ width: `${(c.enrollments / maxPopular) * 100}%` }} />
+              </div>
+              <div className={styles.barValue}>{c.enrollments}</div>
             </div>
           ))}
         </div>
@@ -413,20 +574,24 @@ function AnalyticsTab() {
           <div className={shellStyles.sectionHeadLeft}>
             <span className={`${shellStyles.bar} ${shellStyles.green}`} />
             <div>
-              <div className={shellStyles.sectionTitle}>Department comparison</div>
-              <p className={shellStyles.sectionDesc}>Assignment completion rate by department</p>
+              <div className={shellStyles.sectionTitle}>Department performance</div>
+              <p className={shellStyles.sectionDesc}>Assignment completion by department</p>
             </div>
           </div>
         </div>
         <div className={shellStyles.sectionBody}>
-          {data.department_comparison.length === 0 && <p className={shellStyles.emptySub}>No department data yet.</p>}
-          {data.department_comparison.map((d) => (
-            <div key={d.department} className={styles.barRow}>
-              <span className={styles.barLabel} title={d.department}>{d.department}</span>
-              <div className={styles.barTrack}><div className={styles.barFill} style={{ width: `${d.completion_rate}%` }} /></div>
-              <span className={styles.barValue}>{d.completion_rate}%</span>
+          {(data.department_comparison || []).map((d) => (
+            <div key={d.department} className={styles.listRow}>
+              <div className={styles.listInfo}>
+                <div className={styles.listTitle}>{d.department}</div>
+                <div className={styles.listMeta}>{d.completed}/{d.assigned} completed</div>
+              </div>
+              <span className={styles.statusChip}>{d.completion_rate}%</span>
             </div>
           ))}
+          {!(data.department_comparison || []).length && (
+            <p className={styles.inlineNote}>No department data yet — assign courses to start tracking.</p>
+          )}
         </div>
       </div>
     </>
