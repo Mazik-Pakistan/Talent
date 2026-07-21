@@ -1142,13 +1142,21 @@ function OnboardingContent() {
                       {steps.filter((item) => item.id !== "submit").map((item, index) => {
                         const isCurrent = index === stepIndex;
                         const isComplete = isStepComplete(item.id);
-                        const liClassName = [isComplete ? styles.active : "", isCurrent ? styles.current : ""]
+                        const liClassName = [isComplete && !isCurrent ? styles.active : "", isCurrent ? styles.current : ""]
                           .filter(Boolean)
                           .join(" ");
                         return (
                           <li key={item.id} className={liClassName}>
                             <button type="button" disabled={submitted && !isEditMode} onClick={() => setStep(item.id)}>
-                              <span>{index + 1}</span>
+                              <span>
+                                {isComplete && !isCurrent ? (
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
+                                    <path d="M20 6L9 17l-5-5" />
+                                  </svg>
+                                ) : (
+                                  index + 1
+                                )}
+                              </span>
                               {item.label}
                               {isEditMode && isCurrent && " (editing)"}
                             </button>
