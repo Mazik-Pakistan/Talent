@@ -8,6 +8,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.documents import router as documents_router
 from app.api.employees import router as employees_router
 from app.api.invitations import router as invitations_router
+from app.api.learning import router as learning_router
 from app.api.offers import router as offers_router
 from app.api.onboarding import router as onboarding_router
 from app.api.rbac import router as rbac_router
@@ -42,3 +43,4 @@ app.include_router(dashboard_router)
 app.include_router(employees_router)
 app.include_router(offers_router)
 app.include_router(documents_router)
+app.include_router(learning_router)

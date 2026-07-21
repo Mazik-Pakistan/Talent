@@ -77,8 +77,7 @@ export function getEmployeeNavItems({ profileComplete = false } = {}) {
       key: "learning",
       label: "Learning",
       module: "learning",
-      href: null,
-      badge: "PHASE 3",
+      href: "/dashboard/employee/learning",
       icon: EMPLOYEE_NAV_ICONS.learning,
     },
     {

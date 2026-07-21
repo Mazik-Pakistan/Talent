@@ -56,3 +56,23 @@ async def create_database_indexes() -> None:
     await database.documents.create_index([("owner_id", 1), ("is_active", 1)])
     await database.documents.create_index([("owner_id", 1), ("doc_type", 1)])
     await database.documents.create_index([("status", 1)])
+
+    # ── Phase 3: Learning Management (Epic 6) + skill/career slice (Epic 8) ──
+    await database.learning_enrollments.create_index([("user_id", 1), ("course_uid", 1)], unique=True)
+    await database.learning_enrollments.create_index([("employee_id", 1), ("status", 1)])
+    await database.learning_enrollments.create_index([("user_id", 1), ("status", 1)])
+
+    await database.learning_assignments.create_index([("employee_id", 1), ("created_at", -1)])
+    await database.learning_assignments.create_index([("user_id", 1), ("status", 1)])
+    await database.learning_assignments.create_index([("assigned_by_id", 1), ("created_at", -1)])
+
+    await database.learning_bookmarks.create_index([("user_id", 1), ("course_uid", 1)], unique=True)
+
+    await database.learning_certificates.create_index([("user_id", 1), ("created_at", -1)])
+    await database.learning_certificates.create_index([("recruiter_id", 1), ("verification_status", 1)])
+
+    await database.employee_skills.create_index([("user_id", 1), ("skill_name", 1)], unique=True)
+    await database.employee_skills.create_index([("employee_id", 1)])
+
+    await database.learning_career_goals.create_index("user_id", unique=True)
+    await database.learning_ai_recommendations.create_index("user_id", unique=True)
