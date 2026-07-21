@@ -12,7 +12,7 @@ import {
   saveProfileCompletion,
 } from "@/services/authService";
 import SignaturePad from "@/components/SignaturePad";
-import ProgressRing from "@/components/ProgressRing";
+import ProfileAvatar from "@/components/ProfileAvatar";
 import Toast from "@/components/Toast";
 import {
   formatPkMobileInput,
@@ -21,6 +21,72 @@ import {
   PK_MOBILE_HINT,
 } from "@/utils/phone";
 import styles from "./complete-profile.module.css";
+
+const NAV_ITEMS = [
+  {
+    key: "dashboard",
+    label: "Dashboard",
+    href: "/dashboard/employee",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" />
+        <rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
+      </svg>
+    ),
+  },
+  {
+    key: "onboarding",
+    label: "Onboarding",
+    href: "/dashboard/employee/complete-profile",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" />
+      </svg>
+    ),
+  },
+  {
+    key: "documents",
+    label: "Documents",
+    href: "/documents",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" />
+      </svg>
+    ),
+  },
+  {
+    key: "learning",
+    label: "Learning",
+    href: "/dashboard/employee/learning",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      </svg>
+    ),
+  },
+  {
+    key: "ai",
+    label: "AI Coach",
+    href: null,
+    disabled: true,
+    badge: "PHASE 3",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" /><path d="M19 11a7 7 0 0 1-14 0M12 18v4" />
+      </svg>
+    ),
+  },
+  {
+    key: "profile",
+    label: "Profile",
+    href: "/dashboard/employee/profile",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
+      </svg>
+    ),
+  },
+];
 
 const STEPS = [
   { id: "emergency", label: "Emergency contact" },
@@ -33,14 +99,7 @@ const STEPS = [
 
 const emptyEmergency = { name: "", relationship: "", phone: "", alternate_phone: "", address: "" };
 const emptyEmployment = {
-  bank_name: "",
-  account_holder_name: "",
-  account_number: "",
-  tax_id: "",
-  iban: "",
-  branch: "",
-  branch_code: "",
-  swift_code: "",
+  bank_name: "", account_holder_name: "", account_number: "", tax_id: "", iban: "", branch: "", branch_code: "", swift_code: "",
 };
 const emptyReference = { full_name: "", relationship: "", email: "", phone: "", company: "" };
 const emptyDocuments = { accepted_code_of_conduct: false, accepted_privacy_policy: false, accepted_employee_handbook: false };
@@ -54,6 +113,8 @@ export default function CompleteProfilePage() {
   const [employee, setEmployee] = useState(null);
   const [progress, setProgress] = useState(null);
   const [step, setStep] = useState("emergency");
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [emergency, setEmergency] = useState(emptyEmergency);
   const [employment, setEmployment] = useState(emptyEmployment);
@@ -252,10 +313,7 @@ export default function CompleteProfilePage() {
   }
 
   function normalizeName(value) {
-    return String(value || "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, " ");
+    return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
   }
 
   function validateDocuments() {
@@ -329,482 +387,326 @@ export default function CompleteProfilePage() {
 
   if (loading) {
     return (
-      <main className="onboarding-shell">
-        <p style={{ textAlign: "center" }}>Loading your profile…</p>
-      </main>
+      <div className={styles.root}>
+        <div className={styles.app} style={{ alignItems: "center", justifyContent: "center" }}>
+          <p className={styles.emptySub}>Loading your profile…</p>
+        </div>
+      </div>
     );
   }
 
   return (
-    <main className="onboarding-shell">
-      <Toast toast={toast} onDismiss={() => setToast(null)} />
-
-      <header className="onboarding-header">
-        <div className="brand-row">
-          <Image src="/mazikglobal-logo.png" alt="Mazik Global" width={160} height={44} priority />
-          <span className="brand-divider" aria-hidden="true" />
-          <span className="product-name">Talent</span>
-        </div>
-        <button type="button" onClick={handleLogout} className="secondary-button" style={{ borderColor: "#f3c9c3", color: "#b42318" }}>
-          Sign out
-        </button>
-      </header>
-
-      <section className="onboarding-card">
-        <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 8 }}>
-          <ProgressRing percentage={progress?.percentage ?? 0} size={64} />
-          <div>
-            <p className="eyebrow">Welcome aboard</p>
-            <h1 style={{ marginBottom: 2 }}>Complete your profile</h1>
-            <p className="onboarding-lead" style={{ margin: 0 }}>
-              {employee?.employee_id} · {employee?.job_title}
-              <br />
-              <span style={{ fontSize: 13 }}>
-                Only post-hire details are collected here — personal, education, and skills from candidate
-                onboarding are already on file and will not be asked again.
-              </span>
-            </p>
-          </div>
-        </div>
-
-        {complete && step === "submit" ? (
-          <div className="onboarding-complete">
-            <div className="verification-icon success" style={{ margin: "0 auto 18px" }}>✓</div>
-            <h2>Your profile is complete, {employee?.full_name?.split(" ")[0]}!</h2>
-            <p className="onboarding-lead" style={{ maxWidth: 420, margin: "0 auto 24px" }}>
-              Emergency contact, banking, references, policies, and your NDA are all on file. Welcome to the team.
-            </p>
-            <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-              <button type="button" className="secondary-button" onClick={() => router.push("/dashboard/employee/profile")}>
-                View my profile
-              </button>
-              <button type="button" className="primary-button" onClick={() => router.push("/dashboard/employee")}>
-                Go to my dashboard
-              </button>
+    <div className={styles.root}>
+      <div className={styles.app}>
+        {/* Sidebar */}
+        <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.collapsed : ""}`}>
+          <button type="button" className={styles.brand} onClick={() => setSidebarCollapsed((v) => !v)} title="Click to collapse">
+            <div className={styles.brandMark}>MZ</div>
+            <div className={styles.brandText}>
+              <div className={styles.p1}>Talent</div>
+              <div className={styles.p2}>Mazik Global Pakistan</div>
             </div>
-          </div>
-        ) : (
-          <>
-            <ol className="onboarding-steps" aria-label="Profile completion">
-              {STEPS.map((item, index) => (
-                <li key={item.id} className={index <= stepIndex ? "active" : ""}>
-                  <button type="button" onClick={() => goToStep(item.id)}>
-                    <span>{index + 1}</span>
-                    {item.label}
-                  </button>
-                </li>
-              ))}
-            </ol>
-
-            <form className="auth-form" onSubmit={handleNext}>
-              {step === "emergency" && (
-                <div className={styles.formStack}>
-                  <div>
-                    <h2 className={styles.stepTitle}>Emergency contact</h2>
-                    <p className={styles.stepLead}>Who should we reach if we cannot contact you at work?</p>
-                  </div>
-                  <div className={styles.sectionCard}>
-                    <div className={styles.sectionCardHead}>
-                      <div>
-                        <h3>Contact person</h3>
-                        <p>Name and relationship to you.</p>
-                      </div>
-                    </div>
-                    <div className={styles.fieldRow}>
-                      <Field
-                        label="Full name"
-                        value={emergency.name}
-                        error={fieldErrors.emergency_name}
-                        onChange={(e) => {
-                          setEmergency({ ...emergency, name: e.target.value });
-                          clearFieldError("emergency_name");
-                        }}
-                      />
-                      <Field
-                        label="Relationship"
-                        value={emergency.relationship}
-                        error={fieldErrors.emergency_relationship}
-                        onChange={(e) => {
-                          setEmergency({ ...emergency, relationship: e.target.value });
-                          clearFieldError("emergency_relationship");
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className={styles.sectionCard}>
-                    <div className={styles.sectionCardHead}>
-                      <div>
-                        <h3>Phone numbers</h3>
-                        <p>Primary number is required; alternate is optional.</p>
-                      </div>
-                    </div>
-                    <div className={styles.fieldRow}>
-                      <Field
-                        label="Phone"
-                        value={emergency.phone}
-                        error={fieldErrors.emergency_phone}
-                        hint={PK_MOBILE_HINT}
-                        onChange={(e) => {
-                          setEmergency({ ...emergency, phone: formatPkMobileInput(e.target.value) });
-                          clearFieldError("emergency_phone");
-                        }}
-                      />
-                      <Field
-                        label="Alternate phone (optional)"
-                        value={emergency.alternate_phone || ""}
-                        error={fieldErrors.emergency_alternate_phone}
-                        hint={PK_MOBILE_HINT}
-                        onChange={(e) => {
-                          setEmergency({ ...emergency, alternate_phone: formatPkMobileInput(e.target.value) });
-                          clearFieldError("emergency_alternate_phone");
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className={styles.sectionCard}>
-                    <div className={styles.sectionCardHead}>
-                      <div>
-                        <h3>Address</h3>
-                        <p>Optional mailing address for your emergency contact.</p>
-                      </div>
-                    </div>
-                    <Field
-                      wide
-                      label="Street address"
-                      value={emergency.address || ""}
-                      onChange={(e) => setEmergency({ ...emergency, address: e.target.value })}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {step === "employment" && (
-                <div className={styles.formStack}>
-                  <div>
-                    <h2 className={styles.stepTitle}>Banking details</h2>
-                    <p className={styles.stepLead}>Salary will be deposited to this account. Double-check account numbers carefully.</p>
-                  </div>
-                  <div className={styles.sectionCard}>
-                    <div className={styles.sectionCardHead}>
-                      <div>
-                        <h3>Account information</h3>
-                        <p>Bank name, account holder, and account number.</p>
-                      </div>
-                    </div>
-                    <div className={styles.fieldGrid}>
-                      <Field
-                        label="Bank name"
-                        value={employment.bank_name}
-                        error={fieldErrors.employment_bank_name}
-                        onChange={(e) => {
-                          setEmployment({ ...employment, bank_name: e.target.value });
-                          clearFieldError("employment_bank_name");
-                        }}
-                      />
-                      <Field
-                        label="Account title"
-                        value={employment.account_holder_name}
-                        error={fieldErrors.employment_account_holder_name}
-                        onChange={(e) => {
-                          setEmployment({ ...employment, account_holder_name: e.target.value });
-                          clearFieldError("employment_account_holder_name");
-                        }}
-                      />
-                      <Field
-                        label="Account number"
-                        value={employment.account_number}
-                        error={fieldErrors.employment_account_number}
-                        onChange={(e) => {
-                          setEmployment({ ...employment, account_number: e.target.value });
-                          clearFieldError("employment_account_number");
-                        }}
-                      />
-                      <Field
-                        label="IBAN"
-                        value={employment.iban || ""}
-                        error={fieldErrors.employment_iban}
-                        onChange={(e) => {
-                          setEmployment({ ...employment, iban: e.target.value });
-                          clearFieldError("employment_iban");
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className={styles.sectionCard}>
-                    <div className={styles.sectionCardHead}>
-                      <div>
-                        <h3>Branch &amp; tax</h3>
-                        <p>Branch location and tax identification.</p>
-                      </div>
-                    </div>
-                    <div className={styles.fieldGrid}>
-                      <Field
-                        label="Branch"
-                        value={employment.branch || ""}
-                        error={fieldErrors.employment_branch}
-                        onChange={(e) => {
-                          setEmployment({ ...employment, branch: e.target.value });
-                          clearFieldError("employment_branch");
-                        }}
-                      />
-                      <Field
-                        label="Branch code"
-                        value={employment.branch_code || ""}
-                        error={fieldErrors.employment_branch_code}
-                        onChange={(e) => {
-                          setEmployment({ ...employment, branch_code: e.target.value });
-                          clearFieldError("employment_branch_code");
-                        }}
-                      />
-                      <Field
-                        label="Swift code (optional)"
-                        value={employment.swift_code || ""}
-                        onChange={(e) => setEmployment({ ...employment, swift_code: e.target.value })}
-                      />
-                      <Field
-                        label="Tax ID"
-                        value={employment.tax_id}
-                        error={fieldErrors.employment_tax_id}
-                        onChange={(e) => {
-                          setEmployment({ ...employment, tax_id: e.target.value });
-                          clearFieldError("employment_tax_id");
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {step === "references" && (
-                <div className={styles.formStack}>
-                  <div>
-                    <h2 className={styles.stepTitle}>Professional references</h2>
-                    <p className={styles.stepLead}>Provide at least two people who can speak to your work. Names may be the same, but each email must be unique. Phones use Pakistan format ({PK_MOBILE_HINT}).</p>
-                  </div>
-                  {references.map((ref, index) => (
-                    <div key={index} className={`${styles.sectionCard} ${styles.referenceBlock}`}>
-                      <div className={styles.sectionCardHead}>
-                        <div>
-                          <h3>Reference {index + 1}</h3>
-                          <p>Former manager, colleague, or professional contact.</p>
-                        </div>
-                        <span className={styles.referenceIndex}>Ref {index + 1}</span>
-                      </div>
-                      <div className={styles.fieldRow}>
-                        <Field
-                          label="Full name"
-                          value={ref.full_name}
-                          error={fieldErrors[`ref_${index}_full_name`]}
-                          onChange={(e) => {
-                            const next = [...references];
-                            next[index] = { ...next[index], full_name: e.target.value };
-                            setReferences(next);
-                            clearFieldError(`ref_${index}_full_name`);
-                          }}
-                        />
-                        <Field
-                          label="Relationship"
-                          value={ref.relationship}
-                          error={fieldErrors[`ref_${index}_relationship`]}
-                          onChange={(e) => {
-                            const next = [...references];
-                            next[index] = { ...next[index], relationship: e.target.value };
-                            setReferences(next);
-                            clearFieldError(`ref_${index}_relationship`);
-                          }}
-                        />
-                      </div>
-                      <div className={styles.fieldRow} style={{ marginTop: 16 }}>
-                        <Field
-                          label="Email"
-                          type="email"
-                          value={ref.email}
-                          error={fieldErrors[`ref_${index}_email`]}
-                          onChange={(e) => {
-                            const next = [...references];
-                            next[index] = { ...next[index], email: e.target.value };
-                            setReferences(next);
-                            clearFieldError(`ref_${index}_email`);
-                          }}
-                        />
-                        <Field
-                          label="Phone"
-                          value={ref.phone}
-                          error={fieldErrors[`ref_${index}_phone`]}
-                          hint={PK_MOBILE_HINT}
-                          onChange={(e) => {
-                            const next = [...references];
-                            next[index] = { ...next[index], phone: formatPkMobileInput(e.target.value) };
-                            setReferences(next);
-                            clearFieldError(`ref_${index}_phone`);
-                          }}
-                        />
-                      </div>
-                      <div style={{ marginTop: 16 }}>
-                        <Field
-                          wide
-                          label="Company"
-                          value={ref.company}
-                          error={fieldErrors[`ref_${index}_company`]}
-                          onChange={(e) => {
-                            const next = [...references];
-                            next[index] = { ...next[index], company: e.target.value };
-                            setReferences(next);
-                            clearFieldError(`ref_${index}_company`);
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
+          </button>
+          
+          <div className={styles.navSectionLabel}>Workspace</div>
+          <ul className={styles.nav}>
+            {(NAV_ITEMS || []).map((item) => {
+              const isActive = item.href === "/dashboard/employee/complete-profile";
+              return (
+                <li key={item.key || item.label}>
                   <button
                     type="button"
-                    className={`secondary-button ${styles.addRefBtn}`}
-                    onClick={() => setReferences((c) => [...c, { ...emptyReference }])}
+                    className={`${styles.navItem} ${isActive ? styles.active : ""} ${item.disabled ? styles.disabled : ""}`}
+                    onClick={() => !item.disabled && item.href && router.push(item.href)}
+                    disabled={item.disabled}
+                    title={item.disabled ? `${item.label} — coming in Phase 3` : item.label}
                   >
-                    Add another reference
+                    {item.icon}
+                    <span className={styles.navLabel}>{item.label}</span>
+                    {item.badge && <span className={styles.navBadge}>{item.badge}</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className={styles.sidebarFooter}>
+            <ProfileAvatar src={employee?.profile_picture} name={employee?.full_name} size="sm" fallback="EM" />
+            <div className={styles.sidebarFooterText}>
+              <div className={styles.name}>{employee?.full_name}</div>
+              <div className={styles.role}>{employee?.job_title || "Employee"}</div>
+            </div>
+            <button type="button" className={styles.logoutBtn} title="Log out" onClick={handleLogout}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" />
+              </svg>
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Content */}
+        <main className={styles.main}>
+          <div className={styles.topbar}>
+            <div>
+              <div className={styles.topbarTitle}>Complete Profile</div>
+              <div className={styles.topbarSub}>Employee Onboarding Workflow</div>
+            </div>
+          </div>
+
+          <div className={styles.content}>
+            <Toast toast={toast} onDismiss={() => setToast(null)} />
+
+            {/* Hero */}
+            <div className={styles.hero}>
+              <div>
+                <div className={styles.heroEyebrow}>Welcome Aboard</div>
+                <h1>Complete your profile</h1>
+                <div className={styles.heroMeta}>
+                  {employee?.employee_id} · {employee?.job_title}<br />
+                  Only post-hire details are collected here — personal, education, and skills from candidate onboarding are already on file.
+                </div>
+              </div>
+              <div className={styles.ringWrap}>
+                <HeroRing percentage={progress?.percentage ?? 0} />
+                <div className={styles.ringLabel}>Completion<br />progress</div>
+              </div>
+            </div>
+
+            {/* Main Form/Success Area */}
+            {complete && step === "submit" ? (
+              <div className={styles.emptyState}>
+                <div className={styles.verificationIcon}>✓</div>
+                <h2>Your profile is complete, {employee?.full_name?.split(" ")[0]}!</h2>
+                <p className={styles.emptySub} style={{ maxWidth: 420, margin: "12px auto 24px" }}>
+                  Emergency contact, banking, references, policies, and your NDA are all on file. Welcome to the team.
+                </p>
+                <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+                  <button type="button" className={styles.btnSecondary} onClick={() => router.push("/dashboard/employee/profile")}>
+                    View my profile
+                  </button>
+                  <button type="button" className={styles.btnPrimary} onClick={() => router.push("/dashboard/employee")}>
+                    Go to my dashboard
                   </button>
                 </div>
-              )}
-
-              {step === "documents" && (
-                <div className={styles.formStack}>
-                  <div>
-                    <h2 className={styles.stepTitle}>Company policies</h2>
-                    <p className={styles.stepLead}>Review and acknowledge each policy below to continue.</p>
-                  </div>
-                  <div className={styles.sectionCard}>
-                    <PolicyCheck
-                      checked={documents.accepted_code_of_conduct}
-                      error={fieldErrors.doc_code_of_conduct}
-                      onChange={(e) => {
-                        setDocuments({ ...documents, accepted_code_of_conduct: e.target.checked });
-                        clearFieldError("doc_code_of_conduct");
-                      }}
-                    >
-                      I have read and agree to the Code of Conduct.
-                    </PolicyCheck>
-                    <PolicyCheck
-                      checked={documents.accepted_privacy_policy}
-                      error={fieldErrors.doc_privacy_policy}
-                      onChange={(e) => {
-                        setDocuments({ ...documents, accepted_privacy_policy: e.target.checked });
-                        clearFieldError("doc_privacy_policy");
-                      }}
-                    >
-                      I have read and agree to the Privacy &amp; IT Security Policy.
-                    </PolicyCheck>
-                    <PolicyCheck
-                      checked={documents.accepted_employee_handbook}
-                      error={fieldErrors.doc_employee_handbook}
-                      onChange={(e) => {
-                        setDocuments({ ...documents, accepted_employee_handbook: e.target.checked });
-                        clearFieldError("doc_employee_handbook");
-                      }}
-                    >
-                      I have read and agree to the Employee Handbook (Leave &amp; Remote Work Policy).
-                    </PolicyCheck>
-                  </div>
-                </div>
-              )}
-
-              {step === "nda" && (
-                <div className={styles.formStack}>
-                  <div className={styles.ndaBlock}>
-                    <h3>Non-Disclosure Agreement</h3>
-                    <p>
-                      Your full legal name is locked to your registered name from first registration and must match
-                      your offer letter signature.
-                    </p>
-                    <label className={`${styles.field} ${styles.wide} ${fieldErrors.nda_name ? styles.fieldError : ""}`} data-field-error={fieldErrors.nda_name ? "true" : undefined}>
-                      <span>Full legal name</span>
-                      <input type="text" value={employee?.full_name || ndaName} readOnly />
-                      <small>Must match: {employee?.full_name}</small>
-                    </label>
-                    <div style={{ marginTop: 16 }} className={fieldErrors.nda_signature ? styles.fieldError : ""} data-field-error={fieldErrors.nda_signature ? "true" : undefined}>
-                      <SignaturePad onChange={setNdaSignature} />
-                      {fieldErrors.nda_signature && <em className={styles.fieldErrorText}>Signature required</em>}
-                    </div>
-                    <label
-                      className={`${styles.checkRow} ${fieldErrors.nda_agreed ? styles.checkRowError : ""}`}
-                      data-field-error={fieldErrors.nda_agreed ? "true" : undefined}
-                      style={{ marginTop: 16 }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={ndaAgreed}
-                        onChange={(e) => {
-                          setNdaAgreed(e.target.checked);
-                          clearFieldError("nda_agreed");
-                        }}
-                      />
-                      <span>I agree to the terms of the Non-Disclosure Agreement.</span>
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {step === "submit" && (
-                <div className={styles.formStack}>
-                  <div>
-                    <h2 className={styles.stepTitle}>Review &amp; finish</h2>
-                    <p className={styles.stepLead}>Confirm post-hire sections below, then submit to complete your profile.</p>
-                  </div>
-                  <div className={styles.reviewGrid}>
-                    <ReviewBlock
-                      title="Emergency contact"
-                      items={[
-                        ["Name", emergency.name],
-                        ["Relationship", emergency.relationship],
-                        ["Phone", emergency.phone],
-                        ["Alternate", emergency.alternate_phone],
-                      ]}
-                    />
-                    <ReviewBlock
-                      title="Banking"
-                      items={[
-                        ["Bank", employment.bank_name],
-                        ["Account title", employment.account_holder_name],
-                        ["IBAN", employment.iban],
-                        ["Branch", employment.branch],
-                      ]}
-                    />
-                    <ReviewBlock
-                      title="References"
-                      items={references.map((ref, i) => [`Ref ${i + 1}`, `${ref.full_name || "—"} · ${ref.email || ""}`])}
-                    />
-                    <ReviewBlock
-                      title="NDA"
-                      items={[
-                        ["Signed by", employee?.full_name || ndaName || "—"],
-                        ["Policies", documents.accepted_code_of_conduct && documents.accepted_privacy_policy && documents.accepted_employee_handbook ? "Acknowledged" : "Incomplete"],
-                      ]}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="onboarding-actions" style={{ justifyContent: "space-between" }}>
-                <button type="button" className="secondary-button" onClick={() => router.push("/dashboard/employee")}>
-                  Save &amp; exit
-                </button>
-                <button className="primary-button" type="submit" disabled={saving}>
-                  {saving ? "Saving…" : step === "submit" ? "Finish profile" : "Save & continue"}
-                </button>
               </div>
-            </form>
-          </>
-        )}
-      </section>
-    </main>
+            ) : (
+              <div className={styles.section}>
+                <div className={styles.sectionHead}>
+                  <div className={styles.sectionHeadLeft}>
+                    <div className={`${styles.bar} ${styles.cyan}`} />
+                    <div>
+                      <div className={styles.sectionTitle}>Required Information</div>
+                      <div className={styles.sectionDesc}>Navigate through the steps below to finalize your records.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={styles.sectionBody}>
+                  <ol className={styles.stepsList} aria-label="Profile completion">
+                    {STEPS.map((item, index) => {
+                      // Determine if data for this specific step has actually been provided
+                      let hasData = false;
+                      if (item.id === "emergency") hasData = Boolean(emergency.name && emergency.phone);
+                      if (item.id === "employment") hasData = Boolean(employment.bank_name && employment.account_number);
+                      if (item.id === "references") hasData = Boolean(references[0]?.full_name && references[1]?.full_name);
+                      if (item.id === "documents") hasData = Boolean(documents.accepted_code_of_conduct && documents.accepted_privacy_policy && documents.accepted_employee_handbook);
+                      if (item.id === "nda") hasData = Boolean(ndaAgreed && ndaSignature);
+                      if (item.id === "submit") hasData = Boolean(complete);
+
+                      const isCurrent = index === stepIndex;
+
+                      let statusClass = styles.upcoming;
+                      if (hasData && !isCurrent) statusClass = styles.completed;
+                      if (isCurrent) statusClass = styles.current;
+
+                      return (
+                        <li key={item.id} className={statusClass}>
+                          <button type="button" onClick={() => goToStep(item.id)}>
+                            <span className={styles.stepNum}>
+                              {hasData && !isCurrent ? (
+                                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                              ) : (
+                                index + 1
+                              )}
+                            </span>
+                            {item.label}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ol>
+
+                  <form onSubmit={handleNext}>
+                    {step === "emergency" && (
+                      <div className={styles.formStack}>
+                        <div>
+                          <h2 className={styles.stepTitle}>Emergency contact</h2>
+                          <p className={styles.stepLead}>Who should we reach if we cannot contact you at work?</p>
+                        </div>
+                        <div className={styles.fieldRow}>
+                          <Field label="Full name" value={emergency.name} error={fieldErrors.emergency_name}
+                            onChange={(e) => { setEmergency({ ...emergency, name: e.target.value }); clearFieldError("emergency_name"); }} />
+                          <Field label="Relationship" value={emergency.relationship} error={fieldErrors.emergency_relationship}
+                            onChange={(e) => { setEmergency({ ...emergency, relationship: e.target.value }); clearFieldError("emergency_relationship"); }} />
+                        </div>
+                        <div className={styles.fieldRow}>
+                          <Field label="Phone" hint={PK_MOBILE_HINT} value={emergency.phone} error={fieldErrors.emergency_phone}
+                            onChange={(e) => { setEmergency({ ...emergency, phone: formatPkMobileInput(e.target.value) }); clearFieldError("emergency_phone"); }} />
+                          <Field label="Alternate phone (optional)" hint={PK_MOBILE_HINT} value={emergency.alternate_phone || ""} error={fieldErrors.emergency_alternate_phone}
+                            onChange={(e) => { setEmergency({ ...emergency, alternate_phone: formatPkMobileInput(e.target.value) }); clearFieldError("emergency_alternate_phone"); }} />
+                        </div>
+                        <Field wide label="Mailing address (Optional)" value={emergency.address || ""}
+                          onChange={(e) => setEmergency({ ...emergency, address: e.target.value })} />
+                      </div>
+                    )}
+
+                    {step === "employment" && (
+                      <div className={styles.formStack}>
+                        <div>
+                          <h2 className={styles.stepTitle}>Banking details</h2>
+                          <p className={styles.stepLead}>Salary will be deposited to this account. Double-check account numbers carefully.</p>
+                        </div>
+                        <div className={styles.fieldGrid}>
+                          <Field label="Bank name" value={employment.bank_name} error={fieldErrors.employment_bank_name}
+                            onChange={(e) => { setEmployment({ ...employment, bank_name: e.target.value }); clearFieldError("employment_bank_name"); }} />
+                          <Field label="Account title" value={employment.account_holder_name} error={fieldErrors.employment_account_holder_name}
+                            onChange={(e) => { setEmployment({ ...employment, account_holder_name: e.target.value }); clearFieldError("employment_account_holder_name"); }} />
+                          <Field label="Account number" value={employment.account_number} error={fieldErrors.employment_account_number}
+                            onChange={(e) => { setEmployment({ ...employment, account_number: e.target.value }); clearFieldError("employment_account_number"); }} />
+                          <Field label="IBAN" value={employment.iban || ""} error={fieldErrors.employment_iban}
+                            onChange={(e) => { setEmployment({ ...employment, iban: e.target.value }); clearFieldError("employment_iban"); }} />
+                          <Field label="Branch" value={employment.branch || ""} error={fieldErrors.employment_branch}
+                            onChange={(e) => { setEmployment({ ...employment, branch: e.target.value }); clearFieldError("employment_branch"); }} />
+                          <Field label="Branch code" value={employment.branch_code || ""} error={fieldErrors.employment_branch_code}
+                            onChange={(e) => { setEmployment({ ...employment, branch_code: e.target.value }); clearFieldError("employment_branch_code"); }} />
+                          <Field label="Swift code (optional)" value={employment.swift_code || ""}
+                            onChange={(e) => setEmployment({ ...employment, swift_code: e.target.value })} />
+                          <Field label="Tax ID" value={employment.tax_id} error={fieldErrors.employment_tax_id}
+                            onChange={(e) => { setEmployment({ ...employment, tax_id: e.target.value }); clearFieldError("employment_tax_id"); }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {step === "references" && (
+                      <div className={styles.formStack}>
+                        <div>
+                          <h2 className={styles.stepTitle}>Professional references</h2>
+                          <p className={styles.stepLead}>Provide at least two people who can speak to your work. Names may be the same, but each email must be unique. Phones use Pakistan format ({PK_MOBILE_HINT}).</p>
+                        </div>
+                        {references.map((ref, index) => (
+                          <div key={index} className={styles.referenceBlock}>
+                            <h3>Reference {index + 1}</h3>
+                            <p>Former manager, colleague, or professional contact.</p>
+                            <div className={styles.fieldRow}>
+                              <Field label="Full name" value={ref.full_name} error={fieldErrors[`ref_${index}_full_name`]}
+                                onChange={(e) => { const next = [...references]; next[index] = { ...next[index], full_name: e.target.value }; setReferences(next); clearFieldError(`ref_${index}_full_name`); }} />
+                              <Field label="Relationship" value={ref.relationship} error={fieldErrors[`ref_${index}_relationship`]}
+                                onChange={(e) => { const next = [...references]; next[index] = { ...next[index], relationship: e.target.value }; setReferences(next); clearFieldError(`ref_${index}_relationship`); }} />
+                            </div>
+                            <div className={styles.fieldRow} style={{ marginTop: 16 }}>
+                              <Field label="Email" type="email" value={ref.email} error={fieldErrors[`ref_${index}_email`]}
+                                onChange={(e) => { const next = [...references]; next[index] = { ...next[index], email: e.target.value }; setReferences(next); clearFieldError(`ref_${index}_email`); }} />
+                              <Field label="Phone" hint={PK_MOBILE_HINT} value={ref.phone} error={fieldErrors[`ref_${index}_phone`]}
+                                onChange={(e) => { const next = [...references]; next[index] = { ...next[index], phone: formatPkMobileInput(e.target.value) }; setReferences(next); clearFieldError(`ref_${index}_phone`); }} />
+                            </div>
+                            <div style={{ marginTop: 16 }}>
+                              <Field wide label="Company" value={ref.company} error={fieldErrors[`ref_${index}_company`]}
+                                onChange={(e) => { const next = [...references]; next[index] = { ...next[index], company: e.target.value }; setReferences(next); clearFieldError(`ref_${index}_company`); }} />
+                            </div>
+                          </div>
+                        ))}
+                        <div>
+                          <button type="button" className={styles.btnSecondary} onClick={() => setReferences((c) => [...c, { ...emptyReference }])}>
+                            + Add another reference
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {step === "documents" && (
+                      <div className={styles.formStack}>
+                        <div>
+                          <h2 className={styles.stepTitle}>Company policies</h2>
+                          <p className={styles.stepLead}>Review and acknowledge each policy below to continue.</p>
+                        </div>
+                        <div>
+                          <PolicyCheck checked={documents.accepted_code_of_conduct} error={fieldErrors.doc_code_of_conduct}
+                            onChange={(e) => { setDocuments({ ...documents, accepted_code_of_conduct: e.target.checked }); clearFieldError("doc_code_of_conduct"); }}>
+                            I have read and agree to the Code of Conduct.
+                          </PolicyCheck>
+                          <PolicyCheck checked={documents.accepted_privacy_policy} error={fieldErrors.doc_privacy_policy}
+                            onChange={(e) => { setDocuments({ ...documents, accepted_privacy_policy: e.target.checked }); clearFieldError("doc_privacy_policy"); }}>
+                            I have read and agree to the Privacy &amp; IT Security Policy.
+                          </PolicyCheck>
+                          <PolicyCheck checked={documents.accepted_employee_handbook} error={fieldErrors.doc_employee_handbook}
+                            onChange={(e) => { setDocuments({ ...documents, accepted_employee_handbook: e.target.checked }); clearFieldError("doc_employee_handbook"); }}>
+                            I have read and agree to the Employee Handbook (Leave &amp; Remote Work Policy).
+                          </PolicyCheck>
+                        </div>
+                      </div>
+                    )}
+
+                    {step === "nda" && (
+                      <div className={styles.formStack}>
+                        <div className={styles.ndaBlock}>
+                          <h3>Non-Disclosure Agreement</h3>
+                          <p>Your full legal name is locked to your registered name from first registration and must match your offer letter signature.</p>
+                          <label className={`${styles.field} ${styles.wide} ${fieldErrors.nda_name ? styles.fieldError : ""}`} data-field-error={fieldErrors.nda_name ? "true" : undefined}>
+                            <span>Full legal name</span>
+                            <input type="text" value={employee?.full_name || ndaName} readOnly />
+                            <small>Must match: {employee?.full_name}</small>
+                          </label>
+                          <div style={{ marginTop: 16 }} className={fieldErrors.nda_signature ? styles.fieldError : ""} data-field-error={fieldErrors.nda_signature ? "true" : undefined}>
+                            <SignaturePad onChange={setNdaSignature} />
+                            {fieldErrors.nda_signature && <em className={styles.fieldErrorText}>Signature required</em>}
+                          </div>
+                          <label className={`${styles.checkRow} ${fieldErrors.nda_agreed ? styles.checkRowError : ""}`} data-field-error={fieldErrors.nda_agreed ? "true" : undefined} style={{ marginTop: 16 }}>
+                            <input type="checkbox" checked={ndaAgreed} onChange={(e) => { setNdaAgreed(e.target.checked); clearFieldError("nda_agreed"); }} />
+                            <span>I agree to the terms of the Non-Disclosure Agreement.</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+
+                    {step === "submit" && (
+                      <div className={styles.formStack}>
+                        <div>
+                          <h2 className={styles.stepTitle}>Review &amp; finish</h2>
+                          <p className={styles.stepLead}>Confirm post-hire sections below, then submit to complete your profile.</p>
+                        </div>
+                        <div className={styles.reviewGrid}>
+                          <ReviewBlock title="Emergency contact" items={[["Name", emergency.name], ["Relationship", emergency.relationship], ["Phone", emergency.phone], ["Alternate", emergency.alternate_phone]]} />
+                          <ReviewBlock title="Banking" items={[["Bank", employment.bank_name], ["Account title", employment.account_holder_name], ["IBAN", employment.iban], ["Branch", employment.branch]]} />
+                          <ReviewBlock title="References" items={references.map((ref, i) => [`Ref ${i + 1}`, `${ref.full_name || "—"} · ${ref.email || ""}`])} />
+                          <ReviewBlock title="NDA" items={[["Signed by", employee?.full_name || ndaName || "—"], ["Policies", documents.accepted_code_of_conduct && documents.accepted_privacy_policy && documents.accepted_employee_handbook ? "Acknowledged" : "Incomplete"]]} />
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+                     <button type="button" className={styles.btnSecondary} onClick={() => router.push("/dashboard/employee")}>
+                        Save &amp; exit
+                     </button>
+                      <button className={styles.btnPrimary} type="submit" disabled={saving}>
+                        {saving ? "Saving…" : step === "submit" ? "Finish profile" : "Save & continue"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    </div>
   );
 }
 
 function Field({ label, value, onChange, type = "text", wide, error, hint }) {
   return (
-    <label
-      className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""}`}
-      data-field-error={error ? "true" : undefined}
-    >
+    <label className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""}`} data-field-error={error ? "true" : undefined}>
       <span>{label}</span>
       <input type={type} value={value} onChange={onChange} aria-invalid={!!error} />
       {error && <em className={styles.fieldErrorText}>{hint || "Required"}</em>}
@@ -815,11 +717,7 @@ function Field({ label, value, onChange, type = "text", wide, error, hint }) {
 
 function PolicyCheck({ checked, onChange, error, children }) {
   return (
-    <label
-      className={`${styles.checkRow} ${error ? styles.checkRowError : ""}`}
-      data-field-error={error ? "true" : undefined}
-      style={{ marginBottom: 10 }}
-    >
+    <label className={`${styles.checkRow} ${error ? styles.checkRowError : ""}`} data-field-error={error ? "true" : undefined}>
       <input type="checkbox" checked={checked} onChange={onChange} />
       <span>{children}</span>
     </label>
@@ -839,5 +737,21 @@ function ReviewBlock({ title, items }) {
         ))}
       </dl>
     </div>
+  );
+}
+
+function HeroRing({ percentage = 0 }) {
+  const r = 42;
+  const circumference = 2 * Math.PI * r;
+  const offset = circumference - (Math.min(100, Math.max(0, percentage)) / 100) * circumference;
+  return (
+    <svg className={styles.ring} viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="9" />
+      <circle
+        cx="50" cy="50" r={r} fill="none" stroke="#1FAE7A" strokeWidth="9" strokeLinecap="round"
+        strokeDasharray={circumference} strokeDashoffset={offset} transform="rotate(-90 50 50)"
+      />
+      <text x="50" y="55" textAnchor="middle" className={styles.ringValue}>{percentage}%</text>
+    </svg>
   );
 }
