@@ -476,7 +476,7 @@ export default function CompleteProfilePage() {
           </div>
         </aside>
 
-        {/* Main Content */}
+
         <main className={styles.main}>
           <div className={styles.topbar}>
             <div>
