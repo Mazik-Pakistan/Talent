@@ -144,6 +144,7 @@ function CatalogTab() {
 }
 
 function AssignTab() {
+  const [source, setSource] = useState("microsoft_learn");
   const [q, setQ] = useState("");
   const [courses, setCourses] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState(null);
@@ -169,10 +170,10 @@ function AssignTab() {
     if (!token) return;
     const timer = setTimeout(() => {
       if (!q.trim()) { setCourses([]); return; }
-      browseCatalog(token, { q, page_size: 10 }).then((data) => setCourses(data.courses || [])).catch(() => {});
+      browseCatalog(token, { q, source, page_size: 10 }).then((data) => setCourses(data.courses || [])).catch(() => {});
     }, 300);
     return () => clearTimeout(timer);
-  }, [q]);
+  }, [q, source]);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -245,8 +246,8 @@ function AssignTab() {
         <div className={shellStyles.sectionHeadLeft}>
           <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
           <div>
-            <div className={shellStyles.sectionTitle}>Assign a Microsoft Learn course</div>
-            <p className={shellStyles.sectionDesc}>Assign to individuals, an entire department, or everyone with a designation. Duplicates are blocked.</p>
+            <div className={shellStyles.sectionTitle}>Assign a course</div>
+            <p className={shellStyles.sectionDesc}>Technical (Microsoft Learn) or industry soft skills (Coursera). Assign to individuals, an entire department, or everyone with a designation. Duplicates are blocked.</p>
           </div>
         </div>
       </div>
@@ -270,11 +271,30 @@ function AssignTab() {
 
         <div className={styles.pickerLayout}>
           <div>
-            <input className={styles.searchInput} placeholder="Search Microsoft Learn catalog…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className={styles.sourceToggle}>
+              {[{ key: "microsoft_learn", label: "Microsoft Learn" }, { key: "coursera", label: "Industry Soft Skills" }].map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  className={`${styles.sourceBtn} ${source === s.key ? styles.sourceBtnActive : ""}`}
+                  onClick={() => { setSource(s.key); setQ(""); setCourses([]); }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <input
+              className={styles.searchInput}
+              placeholder={source === "coursera" ? "Search soft skills, e.g. negotiation, leadership…" : "Search Microsoft Learn catalog…"}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
             {selectedCourse && (
               <div className={styles.selectedCourseCard}>
                 <div className={styles.selectedCourseTitle}>Selected: {selectedCourse.title}</div>
-                <div className={styles.selectedCourseMeta}>{selectedCourse.type} · {selectedCourse.duration_minutes} min</div>
+                <div className={styles.selectedCourseMeta}>
+                  {selectedCourse.source === "coursera" ? "Coursera" : "Microsoft Learn"} · {selectedCourse.type} · {selectedCourse.duration_minutes} min
+                </div>
               </div>
             )}
             <div className={styles.pickerList}>
@@ -288,7 +308,9 @@ function AssignTab() {
                 >
                   <div>
                     <div className={styles.pickerRowTitle}>{c.title}</div>
-                    <div className={styles.pickerRowMeta}>{c.type} · {c.duration_minutes} min · {(c.levels || [])[0]}</div>
+                    <div className={styles.pickerRowMeta}>
+                      {c.source === "coursera" ? "Coursera" : "Microsoft Learn"} · {c.type} · {c.duration_minutes} min · {(c.levels || [])[0] || c.category}
+                    </div>
                   </div>
                 </div>
               ))}

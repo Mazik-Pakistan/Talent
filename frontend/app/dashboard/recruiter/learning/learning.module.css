@@ -24,6 +24,20 @@
 .tabBtn:hover { color: var(--navy); }
 .tabActive { color: var(--navy); border-bottom-color: var(--cyan); }
 
+.sourceToggle { display: inline-flex; gap: 4px; padding: 4px; background: #EEF2F6; border-radius: 12px; margin-bottom: 12px; }
+.sourceBtn {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 16px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.sourceBtn:hover { color: var(--navy); }
+.sourceBtnActive { background: #fff; color: var(--navy); box-shadow: 0 1px 3px rgba(15, 42, 74, 0.12); }
+
 .pickerLayout { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 20px; align-items: start; }
 @media (max-width: 1100px) { .pickerLayout { grid-template-columns: 1fr; } }
 

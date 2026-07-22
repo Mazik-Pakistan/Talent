@@ -37,6 +37,8 @@ async def browse_catalog(
     level: str | None = None,
     product: str | None = None,
     type: str | None = Query(default=None, alias="type"),
+    source: str = Query(default="microsoft_learn", description="'microsoft_learn' or 'coursera'"),
+    category: str | None = Query(default=None, description="Soft-skill category (source=coursera only)"),
     bookmarked_only: bool = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=60),
@@ -51,12 +53,21 @@ async def browse_catalog(
         page=page,
         page_size=page_size,
         bookmarked_only=bookmarked_only,
+        source=source,
+        category=category,
     )
 
 
 @router.get("/catalog/facets")
-async def catalog_facets(current_user: RequireAny):
-    return await learning_service.get_facets()
+async def catalog_facets(current_user: RequireAny, source: str = Query(default="microsoft_learn")):
+    return await learning_service.get_facets(source)
+
+
+@router.get("/catalog/soft-skills/categories")
+async def soft_skill_categories(current_user: RequireAny):
+    """Industry soft-skill categories, sourced live from Coursera — used to
+    power the 'Soft Skills' tab's category filter."""
+    return await learning_service.get_soft_skill_categories()
 
 
 @router.get("/catalog/{uid}")

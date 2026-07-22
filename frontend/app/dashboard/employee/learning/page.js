@@ -19,6 +19,7 @@ import {
   getRecommendations,
   getSkillCategories,
   getSkillGap,
+  getSoftSkillCategories,
   listBookmarks,
   listMyCertificates,
   listMyCourses,
@@ -213,12 +214,20 @@ function OverviewTab({ dashboard, onGo }) {
 // ------------------------------------------------------------------------ //
 // Catalog (US-065 / US-066 / US-072 / US-073)
 // ------------------------------------------------------------------------ //
+const CATALOG_SOURCES = [
+  { key: "microsoft_learn", label: "Microsoft Learn" },
+  { key: "coursera", label: "Industry Soft Skills" },
+];
+
 function CatalogTab({ onEnroll }) {
+  const [source, setSource] = useState("microsoft_learn");
   const [q, setQ] = useState("");
   const [facets, setFacets] = useState({ roles: [], levels: [], products: [] });
+  const [softSkillCategories, setSoftSkillCategories] = useState([]);
   const [role, setRole] = useState("");
   const [level, setLevel] = useState("");
   const [type, setType] = useState("");
+  const [category, setCategory] = useState("");
   const [bookmarkedOnly, setBookmarkedOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [result, setResult] = useState({ courses: [], total: 0, pages: 1 });
@@ -226,11 +235,26 @@ function CatalogTab({ onEnroll }) {
   const [error, setError] = useState("");
   const [busyUid, setBusyUid] = useState("");
 
+  function switchSource(nextSource) {
+    if (nextSource === source) return;
+    setSource(nextSource);
+    setRole("");
+    setLevel("");
+    setType("");
+    setCategory("");
+    setQ("");
+    setPage(1);
+  }
+
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
-    getCatalogFacets(token).then(setFacets).catch(() => {});
-  }, []);
+    if (source === "coursera") {
+      getSoftSkillCategories(token).then((data) => setSoftSkillCategories(data.categories || [])).catch(() => {});
+    } else {
+      getCatalogFacets(token, source).then(setFacets).catch(() => {});
+    }
+  }, [source]);
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
@@ -238,9 +262,11 @@ function CatalogTab({ onEnroll }) {
     setLoading(true);
     browseCatalog(token, {
       q: q || undefined,
-      role: role || undefined,
-      level: level || undefined,
-      type: type || undefined,
+      role: source === "microsoft_learn" ? role || undefined : undefined,
+      level: source === "microsoft_learn" ? level || undefined : undefined,
+      type: source === "microsoft_learn" ? type || undefined : undefined,
+      category: source === "coursera" ? category || undefined : undefined,
+      source,
       bookmarked_only: bookmarkedOnly || undefined,
       page,
       page_size: 12,
@@ -251,7 +277,7 @@ function CatalogTab({ onEnroll }) {
       })
       .catch((err) => setError(getApiErrorMessage(err, "Could not load the course catalog.")))
       .finally(() => setLoading(false));
-  }, [q, role, level, type, bookmarkedOnly, page]);
+  }, [q, role, level, type, category, source, bookmarkedOnly, page]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -264,7 +290,7 @@ function CatalogTab({ onEnroll }) {
     try {
       const data = await startCourse(token, course.uid);
       window.open(data.redirect_url || course.url, "_blank", "noopener,noreferrer");
-      toast.success("Course started — tracking your progress. Complete it on Microsoft Learn, then upload your certificate here.");
+      toast.success("Course started — tracking your progress. Complete it on the provider's site, then upload your certificate here.");
       onEnroll?.();
       load();
     } catch (err) {
@@ -295,43 +321,71 @@ function CatalogTab({ onEnroll }) {
     }
   }
 
+  const isSoftSkills = source === "coursera";
+
   return (
     <div className={dashStyles.section}>
       <div className={dashStyles.sectionHead}>
         <div className={dashStyles.sectionHeadLeft}>
           <span className={`${dashStyles.bar} ${dashStyles.cyan}`} />
           <div>
-            <div className={dashStyles.sectionTitle}>Microsoft Learn catalog</div>
-            <p className={dashStyles.sectionDesc}>{result.total} results · powered by Microsoft Learn (free, live catalog)</p>
+            <div className={dashStyles.sectionTitle}>{isSoftSkills ? "Industry soft skills catalog" : "Microsoft Learn catalog"}</div>
+            <p className={dashStyles.sectionDesc}>
+              {result.total} results · {isSoftSkills ? "powered by Coursera (free, live catalog)" : "powered by Microsoft Learn (free, live catalog)"}
+            </p>
           </div>
         </div>
       </div>
       <div className={dashStyles.sectionBody}>
+        <div className={styles.sourceToggle}>
+          {CATALOG_SOURCES.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className={`${styles.sourceBtn} ${source === s.key ? styles.sourceBtnActive : ""}`}
+              onClick={() => switchSource(s.key)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
         <div className={styles.filterBar}>
           <input
             className={styles.searchInput}
-            placeholder="Search by title, skill, product…"
+            placeholder={isSoftSkills ? "Search soft skills, e.g. negotiation, leadership…" : "Search by title, skill, product…"}
             value={q}
             onChange={(e) => { setPage(1); setQ(e.target.value); }}
           />
-          <select className={styles.filterSelect} value={type} onChange={(e) => { setPage(1); setType(e.target.value); }}>
-            <option value="">All types</option>
-            <option value="learningPath">Learning paths</option>
-            <option value="module">Modules</option>
-            <option value="certification">Certifications</option>
-          </select>
-          <select className={styles.filterSelect} value={level} onChange={(e) => { setPage(1); setLevel(e.target.value); }}>
-            <option value="">All levels</option>
-            {facets.levels.map((lv) => (
-              <option key={lv} value={lv}>{lv[0].toUpperCase() + lv.slice(1)}</option>
-            ))}
-          </select>
-          <select className={styles.filterSelect} value={role} onChange={(e) => { setPage(1); setRole(e.target.value); }}>
-            <option value="">All roles</option>
-            {facets.roles.map((r) => (
-              <option key={r} value={r}>{r.replace(/-/g, " ")}</option>
-            ))}
-          </select>
+          {isSoftSkills ? (
+            <select className={styles.filterSelect} value={category} onChange={(e) => { setPage(1); setCategory(e.target.value); }}>
+              <option value="">All categories</option>
+              {softSkillCategories.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          ) : (
+            <>
+              <select className={styles.filterSelect} value={type} onChange={(e) => { setPage(1); setType(e.target.value); }}>
+                <option value="">All types</option>
+                <option value="learningPath">Learning paths</option>
+                <option value="module">Modules</option>
+                <option value="certification">Certifications</option>
+              </select>
+              <select className={styles.filterSelect} value={level} onChange={(e) => { setPage(1); setLevel(e.target.value); }}>
+                <option value="">All levels</option>
+                {facets.levels.map((lv) => (
+                  <option key={lv} value={lv}>{lv[0].toUpperCase() + lv.slice(1)}</option>
+                ))}
+              </select>
+              <select className={styles.filterSelect} value={role} onChange={(e) => { setPage(1); setRole(e.target.value); }}>
+                <option value="">All roles</option>
+                {facets.roles.map((r) => (
+                  <option key={r} value={r}>{r.replace(/-/g, " ")}</option>
+                ))}
+              </select>
+            </>
+          )}
           <label className={styles.bookmarkFilter}>
             <input
               type="checkbox"
@@ -349,9 +403,14 @@ function CatalogTab({ onEnroll }) {
           {result.courses.map((course) => (
             <div key={course.uid} className={styles.courseCard}>
               <div className={styles.courseCardHead}>
-                <span className={`${styles.courseType} ${course.type === "certification" ? styles.certification : ""}`}>
-                  {course.type === "learningPath" ? "Learning Path" : course.type === "certification" ? "Certification" : "Module"}
-                </span>
+                <div className={styles.badgeRow}>
+                  <span className={`${styles.sourceBadge} ${course.source === "coursera" ? styles.sourceBadgeCoursera : ""}`}>
+                    {course.source === "coursera" ? "Coursera" : "Microsoft Learn"}
+                  </span>
+                  <span className={`${styles.courseType} ${course.type === "certification" ? styles.certification : ""}`}>
+                    {course.type === "learningPath" ? "Learning Path" : course.type === "certification" ? "Certification" : course.type === "course" ? "Course" : "Module"}
+                  </span>
+                </div>
                 <button
                   type="button"
                   className={`${styles.bookmarkBtn} ${course.bookmarked ? styles.bookmarked : ""}`}
@@ -366,8 +425,9 @@ function CatalogTab({ onEnroll }) {
               <div className={styles.courseTitle}>{course.title}</div>
               <div className={styles.courseSummary}>{(course.summary || "").slice(0, 130)}{(course.summary || "").length > 130 ? "…" : ""}</div>
               <div className={styles.courseMeta}>
+                {course.category && <span className={styles.levelBadge}>{course.category}</span>}
                 {(course.levels || [])[0] && <span className={styles.levelBadge}>{course.levels[0]}</span>}
-                <span>{Math.round((course.duration_minutes || 0) / 5) * 5 || course.duration_minutes} min</span>
+                {course.duration_minutes ? <span>{Math.round((course.duration_minutes || 0) / 5) * 5 || course.duration_minutes} min</span> : null}
               </div>
               <div className={styles.tagRow}>
                 {(course.products || []).slice(0, 3).map((p) => (

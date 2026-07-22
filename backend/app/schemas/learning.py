@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-CourseType = Literal["learningPath", "module", "certification"]
+CourseType = Literal["learningPath", "module", "certification", "course"]
 ProficiencyLevel = Literal["Beginner", "Intermediate", "Advanced", "Expert"]
 
 SKILL_CATEGORIES: list[str] = [

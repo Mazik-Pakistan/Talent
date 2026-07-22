@@ -21,8 +21,13 @@ export async function browseCatalog(accessToken, params = {}) {
   return data;
 }
 
-export async function getCatalogFacets(accessToken) {
-  const { data } = await client.get("/api/learning/catalog/facets", auth(accessToken));
+export async function getCatalogFacets(accessToken, source = "microsoft_learn") {
+  const { data } = await client.get("/api/learning/catalog/facets", { ...auth(accessToken), params: { source } });
+  return data;
+}
+
+export async function getSoftSkillCategories(accessToken) {
+  const { data } = await client.get("/api/learning/catalog/soft-skills/categories", auth(accessToken));
   return data;
 }
 

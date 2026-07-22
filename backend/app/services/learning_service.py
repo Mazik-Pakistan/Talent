@@ -1,13 +1,15 @@
 """Phase 3 — Epic 6 Learning Management + Epic 8 skill/career slice.
 
 Flow implemented end-to-end:
-  Learning Page -> Course Catalog (Microsoft Learn, live + cached) -> employee
-  clicks a course -> redirected to learn.microsoft.com -> completes course ->
+  Learning Page -> Course Catalog (Microsoft Learn technical courses + Coursera
+  industry soft-skills courses, both live + cached, never stored) -> employee
+  clicks a course -> redirected to the provider's site -> completes course ->
   returns -> uploads certificate -> recruiter verifies -> skill matrix updates.
 
 AI (Gemini) is used for course recommendations and skill-gap/career-path
-analysis, always grounded in the real Microsoft Learn catalog (see
-learning_ai_service.py for the no-hallucination design).
+analysis, always grounded in real, live catalog data merged from every
+connected provider (see catalog_service.py) — never invented course titles or
+URLs (see learning_ai_service.py for the no-hallucination design).
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from app.schemas.learning import (
     EnrollmentProgressRequest,
     SkillUpsertRequest,
 )
-from app.services import learning_ai_service, ms_learn_service, storage_service
+from app.services import catalog_service, coursera_service, learning_ai_service, storage_service
 from app.services.dashboard_service import create_notification
 
 AI_RECOMMENDATIONS_TTL_HOURS = 24
@@ -120,6 +122,8 @@ class LearningService:
         return {
             "uid": item.get("uid"),
             "type": item.get("type"),
+            "source": item.get("source", "microsoft_learn"),
+            "category": item.get("category"),
             "title": item.get("title"),
             "summary": item.get("summary"),
             "url": item.get("url"),
@@ -147,6 +151,8 @@ class LearningService:
         page: int,
         page_size: int,
         bookmarked_only: bool = False,
+        source: str = "microsoft_learn",
+        category: str | None = None,
     ) -> dict:
         if bookmarked_only:
             bookmarks = await database.learning_bookmarks.find({"user_id": current_user.id}).sort(
@@ -154,13 +160,15 @@ class LearningService:
             ).to_list(length=500)
             courses = []
             for b in bookmarks:
-                item = await ms_learn_service.get_course_by_uid(b["course_uid"])
+                item = await catalog_service.get_course_by_uid(b["course_uid"])
                 if item:
                     public = self._public_course(item)
                 else:
                     public = {
                         "uid": b.get("course_uid"),
                         "type": b.get("course_type"),
+                        "source": catalog_service.source_of(b.get("course_uid") or ""),
+                        "category": None,
                         "title": b.get("course_title"),
                         "summary": None,
                         "url": b.get("course_url"),
@@ -181,6 +189,8 @@ class LearningService:
                     continue
                 if role and role.lower() not in [str(x).lower() for x in (public.get("roles") or [])]:
                     continue
+                if source and public.get("source") != source:
+                    continue
                 courses.append(public)
             total = len(courses)
             start = (page - 1) * page_size
@@ -196,8 +206,16 @@ class LearningService:
             pages = max(1, (total + page_size - 1) // page_size) if total else 1
             return {"courses": enriched, "total": total, "page": page, "page_size": page_size, "pages": pages}
 
-        result = await ms_learn_service.search_catalog(
-            q=q, role=role, level=level, product=product, course_type=course_type, page=page, page_size=page_size
+        result = await catalog_service.search_catalog(
+            source=source,
+            q=q,
+            role=role,
+            level=level,
+            product=product,
+            course_type=course_type,
+            category=category,
+            page=page,
+            page_size=page_size,
         )
         uids = [c["uid"] for c in result["courses"]]
         status_map = await self._status_map(current_user.id, uids)
@@ -209,13 +227,16 @@ class LearningService:
         result["courses"] = courses
         return result
 
-    async def get_facets(self) -> dict:
-        return await ms_learn_service.get_facets()
+    async def get_facets(self, source: str = "microsoft_learn") -> dict:
+        return await catalog_service.get_facets(source)
+
+    async def get_soft_skill_categories(self) -> dict:
+        return {"categories": coursera_service.get_categories()}
 
     async def get_course_detail(self, current_user: CurrentUser, uid: str) -> dict:
-        item = await ms_learn_service.get_course_by_uid(uid)
+        item = await catalog_service.get_course_by_uid(uid)
         if not item:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found in Microsoft Learn catalog.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found in the catalog.")
         public = self._public_course(item)
         status_map = await self._status_map(current_user.id, [uid])
         public.update(status_map.get(uid, {"enrolled": False, "bookmarked": False, "assigned": False}))
@@ -267,9 +288,9 @@ class LearningService:
         }
 
     async def start_course(self, current_user: CurrentUser, uid: str) -> dict:
-        item = await ms_learn_service.get_course_by_uid(uid)
+        item = await catalog_service.get_course_by_uid(uid)
         if not item:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found in Microsoft Learn catalog.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found in the catalog.")
         employee = await self._get_employee(current_user)
         now = _now()
         existing = await database.learning_enrollments.find_one({"user_id": current_user.id, "course_uid": uid})
@@ -543,7 +564,7 @@ class LearningService:
         if request.approve and cert.get("course_title"):
             course_summary = None
             if cert.get("course_uid"):
-                course = await ms_learn_service.get_course_by_uid(cert["course_uid"])
+                course = await catalog_service.get_course_by_uid(cert["course_uid"])
                 course_summary = (course or {}).get("summary")
 
             cert_text = await self._extract_certificate_text(cert)
@@ -787,8 +808,8 @@ class LearningService:
 
         recommended_courses = []
         if missing_names:
-            candidates = await ms_learn_service.find_courses_for_keywords(
-                missing_names, per_keyword=2, limit=len(missing_names) * 2
+            candidates = await catalog_service.find_courses_for_keywords(
+                missing_names, per_keyword=3, limit=len(missing_names) * 3
             )
             for gap in missing_objs:
                 skill = gap["skill"]
@@ -841,7 +862,7 @@ class LearningService:
 
         # Suggest a matching certification as the path's capstone, if one exists.
         certification = None
-        certs = await ms_learn_service.find_courses_for_keywords([goal["target_role"]], per_keyword=3, limit=3)
+        certs = await catalog_service.find_courses_for_keywords([goal["target_role"]], per_keyword=3, limit=3)
         certs = [c for c in certs if c.get("type") == "certification"]
         if certs:
             certification = self._public_course(certs[0])
@@ -902,8 +923,8 @@ class LearningService:
         gap_skills = sorted(skill_gaps, key=lambda g: priority_order.get(g.get("priority"), 2))
         search_keywords = [g["skill"] for g in gap_skills if g.get("skill")] + keywords
 
-        candidates = await ms_learn_service.find_courses_for_keywords(
-            list(dict.fromkeys(search_keywords))[:20], per_keyword=5, limit=40
+        candidates = await catalog_service.find_courses_for_keywords(
+            list(dict.fromkeys(search_keywords))[:20], per_keyword=5, limit=48
         )
 
         # Never recommend a course already assigned or completed.
@@ -1122,8 +1143,8 @@ class LearningService:
             keywords = [k for k in keywords if k]
             if not keywords:
                 keywords = ["fundamentals"]
-            candidates = await ms_learn_service.find_courses_for_keywords(
-                list(dict.fromkeys(keywords))[:20], per_keyword=4, limit=30
+            candidates = await catalog_service.find_courses_for_keywords(
+                list(dict.fromkeys(keywords))[:20], per_keyword=4, limit=36
             )
             existing_uids = {
                 a["course_uid"] for a in assignments if a.get("course_uid")
