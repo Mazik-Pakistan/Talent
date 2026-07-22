@@ -962,6 +962,8 @@ class EmployeeService:
         updates: dict = {"updated_at": now}
 
         step_handlers = {
+            "personal": ("personal", request.personal, "Personal information is required."),
+            "education": ("education", request.education, "Education history is required."),
             "emergency": ("emergency", request.emergency, "Emergency contact is required."),
             "employment": ("employment", request.employment, "Banking information is required."),
             "references": ("references", request.references, "At least two references are required."),
@@ -998,6 +1000,10 @@ class EmployeeService:
                         detail="This IBAN is already registered to another employee.",
                     )
                 data = encrypt_banking_payload(data)
+            if request.step == "personal":
+                updates["full_name"] = " ".join(
+                    part for part in (data.get("first_name"), data.get("last_name")) if part
+                )
             updates[f"onboarding.{field}"] = data
             await database.audit_logs.insert_one(
                 {

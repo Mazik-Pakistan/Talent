@@ -5,11 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import {
-  clearLocalSession,
   declineOffer,
   getApiErrorMessage,
   getMyOffer,
-  logout,
   signOffer,
 } from "@/services/authService";
 import SignaturePad from "@/components/SignaturePad";
@@ -140,13 +138,6 @@ export default function OfferLetterPage() {
     }
   }
 
-  async function handleLogout() {
-    const accessToken = localStorage.getItem("access_token");
-    await logout(accessToken);
-    clearLocalSession();
-    router.replace("/login");
-  }
-
   function handleBack() {
     if (searchParams.get("from") === "candidate-dashboard") {
       router.back();
@@ -163,8 +154,8 @@ export default function OfferLetterPage() {
           <span className="brand-divider" aria-hidden="true" />
           <span className="product-name">Talent</span>
         </div>
-        <button type="button" onClick={handleLogout} className="secondary-button" style={{ borderColor: "#f3c9c3", color: "#b42318" }}>
-          Sign out
+        <button type="button" onClick={() => router.push("/dashboard/candidate")} className="secondary-button">
+          Go to Dashboard
         </button>
       </header>
 

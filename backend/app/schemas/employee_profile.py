@@ -11,17 +11,21 @@ from pydantic import BaseModel
 
 from app.schemas.invitation import (
     OnboardingDocumentsAck,
+    OnboardingEducationInfo,
     OnboardingEmergencyContact,
     OnboardingEmploymentInfo,
+    OnboardingPersonalInfo,
     OnboardingReferences,
     OnboardingSignature,
 )
 
-EMPLOYEE_PROFILE_STEPS = Literal["emergency", "employment", "references", "documents", "nda", "submit"]
+EMPLOYEE_PROFILE_STEPS = Literal["personal", "education", "emergency", "employment", "references", "documents", "nda", "submit"]
 
 
 class EmployeeProfileSaveRequest(BaseModel):
     step: EMPLOYEE_PROFILE_STEPS
+    personal: OnboardingPersonalInfo | None = None
+    education: OnboardingEducationInfo | None = None
     emergency: OnboardingEmergencyContact | None = None
     employment: OnboardingEmploymentInfo | None = None
     references: OnboardingReferences | None = None
