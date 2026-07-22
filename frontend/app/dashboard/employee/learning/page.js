@@ -108,7 +108,7 @@ function EmployeeLearningPageInner() {
         ))}
       </div>
 
-      {tab === "overview" && <OverviewTab dashboard={dashboard} onGo={setTab} />}
+      {tab === "overview" && <OverviewTab dashboard={dashboard} onGo={setTab} onRefresh={loadDashboard} />}
       {tab === "catalog" && <CatalogTab onEnroll={loadDashboard} />}
       {tab === "my-courses" && <MyCoursesTab onChange={loadDashboard} />}
       {tab === "skills" && <SkillsTab />}
@@ -121,16 +121,33 @@ function EmployeeLearningPageInner() {
 // ------------------------------------------------------------------------ //
 // Overview (US-069)
 // ------------------------------------------------------------------------ //
-function OverviewTab({ dashboard, onGo }) {
+function OverviewTab({ dashboard, onGo, onRefresh }) {
+  const [startingUid, setStartingUid] = useState("");
   if (!dashboard) return <p className={styles.inlineNote}>Loading your learning summary…</p>;
   const s = dashboard.summary || {};
 
   const stats = [
-    { label: "Assigned", value: s.assigned_count ?? 0, color: "orange" },
+    { label: "To start", value: s.assigned_count ?? 0, color: "orange" },
     { label: "In Progress", value: s.in_progress_count ?? 0, color: "cyan" },
     { label: "Completed", value: s.completed_count ?? 0, color: "green" },
     { label: "Certificates Earned", value: s.certificates_earned ?? 0, color: "navy" },
   ];
+
+  async function startAssigned(uid) {
+    const token = localStorage.getItem("access_token");
+    if (!token || !uid) return;
+    setStartingUid(uid);
+    try {
+      const data = await startCourse(token, uid);
+      if (data.redirect_url) window.open(data.redirect_url, "_blank", "noopener,noreferrer");
+      onRefresh?.();
+      onGo("my-courses");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not start this course."));
+    } finally {
+      setStartingUid("");
+    }
+  }
 
   return (
     <>
@@ -209,19 +226,31 @@ function OverviewTab({ dashboard, onGo }) {
             <div className={dashStyles.sectionHeadLeft}>
               <span className={`${dashStyles.bar} ${dashStyles.orange}`} />
               <div>
-                <div className={dashStyles.sectionTitle}>Upcoming due dates</div>
-                <p className={dashStyles.sectionDesc}>Courses assigned by your recruiter</p>
+                <div className={dashStyles.sectionTitle}>Assigned by recruiter</div>
+                <p className={dashStyles.sectionDesc}>Courses waiting for you to start</p>
               </div>
             </div>
           </div>
           <div className={dashStyles.sectionBody}>
-            {(dashboard.upcoming_due || []).length === 0 && <p className={styles.inlineNote}>Nothing due right now.</p>}
+            {(dashboard.upcoming_due || []).length === 0 && (
+              <p className={styles.inlineNote}>No pending assignments — you&apos;re caught up.</p>
+            )}
             {(dashboard.upcoming_due || []).map((a, index) => (
               <div key={a.id || `${a.course_uid}-${a.due_date || index}`} className={styles.courseListRow}>
                 <div className={styles.courseListInfo}>
                   <div className={styles.courseListTitle}>{a.course_title}</div>
-                  <div className={styles.courseListMeta}>Due {a.due_date || "—"} · {a.status}</div>
+                  <div className={styles.courseListMeta}>
+                    {a.due_date ? `Due ${String(a.due_date).slice(0, 10)}` : "No due date"} · {a.status}
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  className={styles.smallBtn}
+                  disabled={startingUid === a.course_uid}
+                  onClick={() => startAssigned(a.course_uid)}
+                >
+                  {startingUid === a.course_uid ? "Starting…" : "Start"}
+                </button>
               </div>
             ))}
           </div>
@@ -508,6 +537,7 @@ function MyCoursesTab({ onChange }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [enrollments, setEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [startingUid, setStartingUid] = useState("");
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
@@ -533,6 +563,22 @@ function MyCoursesTab({ onChange }) {
     }
   }
 
+  async function startAssigned(uid) {
+    const token = localStorage.getItem("access_token");
+    if (!token || !uid) return;
+    setStartingUid(uid);
+    try {
+      const data = await startCourse(token, uid);
+      if (data.redirect_url) window.open(data.redirect_url, "_blank", "noopener,noreferrer");
+      load();
+      onChange?.();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not start this course."));
+    } finally {
+      setStartingUid("");
+    }
+  }
+
   return (
     <div className={dashStyles.section}>
       <div className={dashStyles.sectionHead}>
@@ -545,6 +591,7 @@ function MyCoursesTab({ onChange }) {
         </div>
         <select className={styles.filterSelect} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
+          <option value="assigned">Assigned</option>
           <option value="in_progress">In progress</option>
           <option value="completed">Completed</option>
         </select>
@@ -554,35 +601,55 @@ function MyCoursesTab({ onChange }) {
         {!loading && enrollments.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>Nothing here yet</div>
-            <div className={dashStyles.emptySub}>Start a course from the catalog to see it here.</div>
+            <div className={dashStyles.emptySub}>Start a course from the catalog, or wait for your recruiter to assign one.</div>
           </div>
         )}
-        {enrollments.map((e) => (
-          <div key={e.id} className={styles.courseListRow}>
-            <div className={styles.courseListInfo}>
-              <div className={styles.courseListTitle}>{e.course_title}</div>
-              <div className={styles.courseListMeta}>
-                {e.assigned && "Assigned · "}
-                {e.due_date ? `Due ${e.due_date} · ` : ""}
-                Started {e.started_at ? new Date(e.started_at).toLocaleDateString() : "—"}
+        {enrollments.map((e) => {
+          const isAssignedOnly = e.status === "assigned";
+          return (
+            <div key={e.id} className={styles.courseListRow}>
+              <div className={styles.courseListInfo}>
+                <div className={styles.courseListTitle}>{e.course_title}</div>
+                <div className={styles.courseListMeta}>
+                  {e.assigned || isAssignedOnly ? "Assigned by recruiter · " : ""}
+                  {e.due_date ? `Due ${String(e.due_date).slice(0, 10)} · ` : ""}
+                  {isAssignedOnly
+                    ? "Not started yet"
+                    : `Started ${e.started_at ? new Date(e.started_at).toLocaleDateString() : "—"}`}
+                </div>
+              </div>
+              <div className={styles.courseListProgress}>
+                <div className={styles.progressLabel}>{isAssignedOnly ? "—" : `${e.progress_percent}%`}</div>
+                {!isAssignedOnly && (
+                  <div className={styles.progressTrackSm}>
+                    <div className={styles.progressFillSm} style={{ width: `${e.progress_percent}%` }} />
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {isAssignedOnly ? (
+                  <button
+                    type="button"
+                    className={styles.smallBtn}
+                    disabled={startingUid === e.course_uid}
+                    onClick={() => startAssigned(e.course_uid)}
+                  >
+                    {startingUid === e.course_uid ? "Starting…" : "Start"}
+                  </button>
+                ) : (
+                  <>
+                    <a href={e.course_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open</a>
+                    {e.status !== "completed" && (
+                      <button type="button" className={styles.smallBtn} onClick={() => bump(e.course_uid, e.progress_percent)}>
+                        +25%
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
-            <div className={styles.courseListProgress}>
-              <div className={styles.progressLabel}>{e.progress_percent}%</div>
-              <div className={styles.progressTrackSm}>
-                <div className={styles.progressFillSm} style={{ width: `${e.progress_percent}%` }} />
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <a href={e.course_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open</a>
-              {e.status !== "completed" && (
-                <button type="button" className={styles.smallBtn} onClick={() => bump(e.course_uid, e.progress_percent)}>
-                  +25%
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -814,6 +881,7 @@ function CareerTab() {
   const [recs, setRecs] = useState(null);
   const [recsLoading, setRecsLoading] = useState(true);
   const [roleMatches, setRoleMatches] = useState([]);
+  const [startingStep, setStartingStep] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -831,10 +899,10 @@ function CareerTab() {
       .catch(() => {});
   }, []);
 
-  function loadGapAndPath(role) {
+  function loadGapAndPath(role, refresh = false) {
     const token = localStorage.getItem("access_token");
     setGapLoading(true);
-    Promise.all([getCareerPath(token, false), getSkillGap(token, role, false)])
+    Promise.all([getCareerPath(token, refresh), getSkillGap(token, role, refresh)])
       .then(([pathData, gapData]) => {
         setPath(pathData);
         setGap(gapData);
@@ -853,8 +921,9 @@ function CareerTab() {
       const pathData = await setCareerGoal(token, target.trim());
       setSavedGoal(target.trim());
       setPath(pathData);
-      const gapData = await getSkillGap(token, target.trim(), false);
+      const gapData = await getSkillGap(token, target.trim(), true);
       setGap(gapData);
+      loadRecommendations(true);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not set your career goal."));
     } finally {
@@ -872,6 +941,34 @@ function CareerTab() {
       .finally(() => setRecsLoading(false));
   }
 
+  async function startPathStep(step) {
+    const token = localStorage.getItem("access_token");
+    const uid = step?.course?.uid;
+    const url = step?.course?.url;
+    if (!token) return;
+
+    // KB cert placeholders — open official URL / send to certificates tab
+    if (!uid || String(uid).startsWith("kb-cert:")) {
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      else toast.info("Upload this certification under Certificates when you earn it.");
+      return;
+    }
+
+    setStartingStep(uid);
+    try {
+      const data = await startCourse(token, uid);
+      if (data.redirect_url || url) {
+        window.open(data.redirect_url || url, "_blank", "noopener,noreferrer");
+      }
+      toast.success("Course started — mark progress in My Learning when done.");
+      if (savedGoal) loadGapAndPath(savedGoal, true);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not start this path step."));
+    } finally {
+      setStartingStep("");
+    }
+  }
+
   return (
     <>
       <div className={dashStyles.section}>
@@ -880,7 +977,10 @@ function CareerTab() {
             <span className={`${dashStyles.bar} ${dashStyles.orange}`} />
             <div>
               <div className={dashStyles.sectionTitle}>Career goal &amp; skill gap</div>
-              <p className={dashStyles.sectionDesc}>Compare your profile against organization roles — cached until inputs change</p>
+              <p className={dashStyles.sectionDesc}>
+                Recruiter Knowledge Base defines required skills &amp; certs for roles like Software Engineer.
+                Close the gaps below to raise readiness.
+              </p>
             </div>
           </div>
         </div>
@@ -913,7 +1013,7 @@ function CareerTab() {
                 <ReadinessRing percentage={gap.readiness_percentage ?? 0} />
                 <div className={styles.readinessSummary}>
                   {gap.summary}
-                  {gap.cached ? <div className={styles.inlineNote}>Cached analysis</div> : null}
+                  {gap.cached ? <div className={styles.inlineNote}>Cached analysis — click Analyze after completing path steps</div> : null}
                   {(gap.skill_match_percent != null || gap.certification_match_percent != null) && (
                     <div className={styles.inlineNote}>
                       Skills {gap.skill_match_percent ?? "—"}% · Certs {gap.certification_match_percent ?? "—"}%
@@ -969,9 +1069,18 @@ function CareerTab() {
                   Toward: {path.target_role}
                   {path.progress_percent != null ? ` · ${path.progress_percent}% complete` : ""}
                   {path.estimated_total_hours ? ` · ~${path.estimated_total_hours}h` : ""}
+                  {" · "}Start each step, finish in My Learning (or upload certs), then Analyze again
                 </p>
               </div>
             </div>
+            <button
+              type="button"
+              className={styles.smallBtn}
+              disabled={gapLoading || !savedGoal}
+              onClick={() => savedGoal && loadGapAndPath(savedGoal, true)}
+            >
+              Refresh path
+            </button>
           </div>
           <div className={dashStyles.sectionBody}>
             {path.progress_percent != null && (
@@ -980,25 +1089,49 @@ function CareerTab() {
               </div>
             )}
             <div className={styles.pathTimeline}>
-              {path.path.map((step) => (
-                <div key={step.step} className={styles.pathStep}>
-                  <div className={styles.pathStepMarker}>
-                    <div className={styles.pathStepNum}>{step.step}</div>
-                    <div className={styles.pathStepLine} />
-                  </div>
-                  <div className={styles.pathStepBody}>
-                    <div className={styles.pathSkillLabel}>Step {step.step}: {step.skill}{step.completed ? " ✓" : ""}</div>
-                    <div className={styles.pathCourseTitle}>{step.course?.title}</div>
-                    <div className={styles.pathCourseMeta}>
-                      {step.course?.source || step.course?.provider || "Catalog"}
-                      {step.course?.duration_minutes ? ` · ${step.course.duration_minutes} min` : ""}
-                      {step.course?.url ? (
-                        <> · <a href={step.course.url} target="_blank" rel="noopener noreferrer">Open resource</a></>
-                      ) : null}
+              {path.path.map((step) => {
+                const uid = step.course?.uid;
+                const busy = startingStep && startingStep === uid;
+                return (
+                  <div key={step.step} className={`${styles.pathStep} ${step.completed ? styles.pathStepDone : ""}`}>
+                    <div className={styles.pathStepMarker}>
+                      <div className={`${styles.pathStepNum} ${step.completed ? styles.pathStepNumDone : ""}`}>
+                        {step.completed ? "✓" : step.step}
+                      </div>
+                      <div className={styles.pathStepLine} />
+                    </div>
+                    <div className={styles.pathStepBody}>
+                      <div className={styles.pathSkillLabel}>
+                        Step {step.step}: {step.skill}
+                        {step.completed ? " · Done" : ""}
+                        {step.kind === "certification" ? " · Certification" : ""}
+                      </div>
+                      <div className={styles.pathCourseTitle}>{step.course?.title}</div>
+                      <div className={styles.pathCourseMeta}>
+                        {step.course?.source || step.course?.provider || "Catalog"}
+                        {step.course?.duration_minutes ? ` · ${step.course.duration_minutes} min` : ""}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                        {!step.completed && (
+                          <button
+                            type="button"
+                            className={styles.smallBtnPrimary}
+                            disabled={busy}
+                            onClick={() => startPathStep(step)}
+                          >
+                            {busy ? "Starting…" : step.kind === "certification" ? "Open / earn cert" : "Start step"}
+                          </button>
+                        )}
+                        {step.course?.url ? (
+                          <a href={step.course.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
+                            Open resource
+                          </a>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1010,7 +1143,9 @@ function CareerTab() {
             <span className={`${dashStyles.bar} ${dashStyles.cyan}`} />
             <div>
               <div className={dashStyles.sectionTitle}>Course recommendations</div>
-              <p className={dashStyles.sectionDesc}>Personalized picks from Microsoft Learn, Coursera &amp; recruiter courses</p>
+              <p className={dashStyles.sectionDesc}>
+                Extra picks ranked from your skill gaps and learning-path steps (not random catalog popularity)
+              </p>
             </div>
           </div>
           <button type="button" className={styles.smallBtn} onClick={() => loadRecommendations(true)} disabled={recsLoading}>
@@ -1022,7 +1157,7 @@ function CareerTab() {
           {!recsLoading && (!recs?.recommendations || recs.recommendations.length === 0) && (
             <div className={dashStyles.emptyState}>
               <div className={dashStyles.emptyTitle}>No recommendations yet</div>
-              <div className={dashStyles.emptySub}>Add a few skills to your profile for better matches.</div>
+              <div className={dashStyles.emptySub}>Set a career goal and add skills, or refresh after Analyze.</div>
             </div>
           )}
           <div className={styles.aiGrid}>
