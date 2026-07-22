@@ -163,37 +163,69 @@ async def _fetch_page(client: httpx.AsyncClient, start: int, limit: int = 100) -
             await asyncio.sleep(delay)
 
 
+MAX_CONCURRENT_PAGE_FETCHES = 8
+
+
 async def _fetch_all_courses() -> list[dict]:
     """Fetch the entire Coursera catalog using pagination. Returns a list of
-    normalized course dicts."""
-    all_raw = []
-    start = 0
+    normalized course dicts.
+
+    Performance note: the first page is fetched alone so we can read the
+    catalog's reported `total` from the paging metadata. Once we know the
+    total, every remaining page is fetched concurrently (bounded by
+    MAX_CONCURRENT_PAGE_FETCHES) instead of one request at a time, which is
+    the main thing that made a cold cache fetch slow. If the API doesn't
+    report a `total` for some reason, we transparently fall back to the
+    original sequential walk so no pages are ever missed."""
     limit = 100  # sensible page size
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        while True:
-            elements, paging = await _fetch_page(client, start, limit)
-            if not elements:
-                break
-            all_raw.extend(elements)
-            # If pagination metadata provides a 'next' URL, use it; otherwise increment start.
-            if paging and "next" in paging:
-                # The 'next' URL may be absolute; we could follow it, but it's simpler to
-                # increment start by limit. The API also provides 'total' and 'start' but
-                # we rely on empty elements to stop.
-                # To be safe, if 'next' exists but we can't parse it, we fall back to start+limit.
-                try:
-                    # Parse the 'start' parameter from the next URL (if relative)
-                    # The next URL often looks like: /api/courses.v1?start=100&limit=100
-                    import urllib.parse
-                    parsed = urllib.parse.urlparse(paging["next"])
-                    qs = urllib.parse.parse_qs(parsed.query)
-                    if "start" in qs:
-                        start = int(qs["start"][0])
-                        continue
-                except Exception:
-                    pass
-            start += limit
+        first_elements, first_paging = await _fetch_page(client, 0, limit)
+        all_raw: list[dict] = list(first_elements)
+
+        total: int | None = None
+        if first_paging and "total" in first_paging:
+            try:
+                total = int(first_paging["total"])
+            except (TypeError, ValueError):
+                total = None
+
+        if not first_elements:
+            pass  # empty catalog / nothing to fetch
+        elif total is not None:
+            # Fast path: we know exactly how many more pages exist, so fetch
+            # them all concurrently instead of awaiting one page at a time.
+            remaining_starts = list(range(limit, total, limit))
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT_PAGE_FETCHES)
+
+            async def _bounded_fetch(page_start: int) -> list[dict]:
+                async with semaphore:
+                    elements, _ = await _fetch_page(client, page_start, limit)
+                    return elements
+
+            if remaining_starts:
+                pages = await asyncio.gather(*(_bounded_fetch(s) for s in remaining_starts))
+                for page_elements in pages:
+                    all_raw.extend(page_elements)
+        else:
+            # Fallback path: identical to the original implementation.
+            start = limit
+            while True:
+                elements, paging = await _fetch_page(client, start, limit)
+                if not elements:
+                    break
+                all_raw.extend(elements)
+                if paging and "next" in paging:
+                    try:
+                        import urllib.parse
+                        parsed = urllib.parse.urlparse(paging["next"])
+                        qs = urllib.parse.parse_qs(parsed.query)
+                        if "start" in qs:
+                            start = int(qs["start"][0])
+                            continue
+                    except Exception:
+                        pass
+                start += limit
 
     # Deduplicate by slug (in case the API returns duplicates)
     seen_slugs = set()
@@ -213,30 +245,114 @@ async def _fetch_all_courses() -> list[dict]:
     return normalized
 
 
+_refresh_in_progress = False
+_background_refresh_task: asyncio.Task | None = None
+
+
 async def _get_cached_catalog(force_refresh: bool = False) -> tuple[list[dict], dict[str, dict]]:
-    """Return the cached catalog (items and by_uid dict), fetching fresh if
-    expired or force_refresh is True. Thread‑safe."""
-    global _cache
+    """Return the cached catalog (items and by_uid dict).
+
+    Behavior:
+      - Fresh cache -> return immediately (unchanged, fast path).
+      - Stale cache but we HAVE data -> return the stale data immediately
+        (stale-while-revalidate) and kick off a background refresh instead of
+        making the caller wait. This is what used to make a random employee's
+        click block on a full catalog fetch.
+      - No data yet (true cold start) or force_refresh=True -> fetch inline,
+        exactly like before. In practice this should now only happen if the
+        app-startup warm-up (see warm_cache()) itself failed.
+    """
+    global _cache, _refresh_in_progress
     now = time.monotonic()
+
     async with _cache_lock:
-        if not force_refresh and _cache["items"] and (now - _cache["fetched_at"]) < CACHE_TTL_SECONDS:
+        has_data = bool(_cache["items"])
+        is_expired = (now - _cache["fetched_at"]) >= CACHE_TTL_SECONDS
+
+        if not force_refresh and has_data and not is_expired:
             return _cache["items"], _cache["by_uid"]
 
-        logger.info("Coursera catalog cache expired or empty, fetching fresh...")
-        try:
-            items = await _fetch_all_courses()
-            by_uid = {item["uid"]: item for item in items}
+        if not force_refresh and has_data and is_expired:
+            if not _refresh_in_progress:
+                _refresh_in_progress = True
+                asyncio.create_task(_refresh_cache_in_background())
+            return _cache["items"], _cache["by_uid"]
+
+    # Cold start or explicit force_refresh: no stale data to fall back to
+    # (or caller explicitly wants to wait), so fetch inline like before.
+    logger.info("Coursera catalog cache expired or empty, fetching fresh...")
+    try:
+        items = await _fetch_all_courses()
+        by_uid = {item["uid"]: item for item in items}
+        async with _cache_lock:
             _cache["items"] = items
             _cache["by_uid"] = by_uid
-            _cache["fetched_at"] = now
-            logger.info(f"Coursera catalog refreshed: {len(items)} courses")
-        except Exception as exc:
-            logger.error(f"Failed to refresh Coursera catalog: {exc}")
-            # If we have stale cache, keep it; otherwise re-raise.
-            if not _cache["items"]:
-                raise
-            # Still return whatever we have
-        return _cache["items"], _cache["by_uid"]
+            _cache["fetched_at"] = time.monotonic()
+        logger.info(f"Coursera catalog refreshed: {len(items)} courses")
+    except Exception as exc:
+        logger.error(f"Failed to refresh Coursera catalog: {exc}")
+        if not _cache["items"]:
+            raise
+    return _cache["items"], _cache["by_uid"]
+
+
+async def _refresh_cache_in_background() -> None:
+    """Refresh the cache without blocking any in-flight request. Used both by
+    the stale-while-revalidate path above and by the periodic loop below."""
+    global _cache, _refresh_in_progress
+    try:
+        items = await _fetch_all_courses()
+        by_uid = {item["uid"]: item for item in items}
+        async with _cache_lock:
+            _cache["items"] = items
+            _cache["by_uid"] = by_uid
+            _cache["fetched_at"] = time.monotonic()
+        logger.info(f"Coursera catalog refreshed in background: {len(items)} courses")
+    except Exception as exc:
+        logger.error(f"Background Coursera catalog refresh failed, keeping stale cache: {exc}")
+    finally:
+        _refresh_in_progress = False
+
+
+async def _periodic_refresh_loop() -> None:
+    """Runs for the lifetime of the app process, refreshing the catalog every
+    CACHE_TTL_SECONDS proactively so the cache practically never goes stale
+    and no user request ever pays for a live Coursera fetch."""
+    while True:
+        await asyncio.sleep(CACHE_TTL_SECONDS)
+        try:
+            await _refresh_cache_in_background()
+        except Exception as exc:  # pragma: no cover - safety net
+            logger.error(f"Periodic Coursera refresh loop error: {exc}")
+
+
+async def warm_cache() -> None:
+    """Eagerly populate the cache once. Intended to be called during app
+    startup (see main.py) so the first employee to open the 'Industry Soft
+    Skills' tab never waits on a live Coursera fetch — it's already loaded.
+    Failures are swallowed and logged; the existing lazy-fetch-on-request
+    behavior remains as a safety net."""
+    try:
+        await _get_cached_catalog(force_refresh=False)
+    except Exception as exc:
+        logger.error(f"Coursera catalog warm-up failed (will retry lazily on first request): {exc}")
+
+
+def start_background_refresh() -> None:
+    """Start the periodic background refresh task. Safe to call once at
+    startup; a no-op if a refresh loop is already running."""
+    global _background_refresh_task
+    if _background_refresh_task is None or _background_refresh_task.done():
+        _background_refresh_task = asyncio.create_task(_periodic_refresh_loop())
+
+
+def stop_background_refresh() -> None:
+    """Cancel the periodic background refresh task. Intended for graceful
+    app shutdown."""
+    global _background_refresh_task
+    if _background_refresh_task is not None:
+        _background_refresh_task.cancel()
+        _background_refresh_task = None
 
 
 async def get_catalog(categories: tuple[str, ...] | None = None) -> list[dict]:
