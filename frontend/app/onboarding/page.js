@@ -1299,7 +1299,7 @@ function OnboardingContent() {
                                 </label>
                                 <FileUploadField
                                   styles={styles}
-                                  label={isOcrMode ? "Upload CNIC for OCR" : "Attach CNIC (optional)"}
+                                  label={isOcrMode ? "Upload CNIC for OCR" : "Attach CNIC"}
                                   accept=".pdf,.jpg,.jpeg,.png"
                                   disabled={uploading}
                                   onChange={(e) => handleFileUpload(e, "government_doc", index)}
