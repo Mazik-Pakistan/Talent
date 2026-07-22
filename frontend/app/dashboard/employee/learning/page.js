@@ -209,19 +209,26 @@ function OverviewTab({ dashboard, onGo }) {
             <div className={dashStyles.sectionHeadLeft}>
               <span className={`${dashStyles.bar} ${dashStyles.orange}`} />
               <div>
-                <div className={dashStyles.sectionTitle}>Upcoming due dates</div>
-                <p className={dashStyles.sectionDesc}>Courses assigned by your recruiter</p>
+                <div className={dashStyles.sectionTitle}>Assigned by recruiter</div>
+                <p className={dashStyles.sectionDesc}>Courses waiting for you to start</p>
               </div>
             </div>
           </div>
           <div className={dashStyles.sectionBody}>
-            {(dashboard.upcoming_due || []).length === 0 && <p className={styles.inlineNote}>Nothing due right now.</p>}
+            {(dashboard.upcoming_due || []).length === 0 && (
+              <p className={styles.inlineNote}>No pending assignments — you&apos;re caught up.</p>
+            )}
             {(dashboard.upcoming_due || []).map((a, index) => (
               <div key={a.id || `${a.course_uid}-${a.due_date || index}`} className={styles.courseListRow}>
                 <div className={styles.courseListInfo}>
                   <div className={styles.courseListTitle}>{a.course_title}</div>
-                  <div className={styles.courseListMeta}>Due {a.due_date || "—"} · {a.status}</div>
+                  <div className={styles.courseListMeta}>
+                    {a.due_date ? `Due ${String(a.due_date).slice(0, 10)}` : "No due date"} · {a.status}
+                  </div>
                 </div>
+                <button type="button" className={styles.smallBtn} onClick={() => onGo("my-courses")}>
+                  View
+                </button>
               </div>
             ))}
           </div>
@@ -508,6 +515,7 @@ function MyCoursesTab({ onChange }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [enrollments, setEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [startingUid, setStartingUid] = useState("");
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
@@ -533,6 +541,22 @@ function MyCoursesTab({ onChange }) {
     }
   }
 
+  async function startAssigned(uid) {
+    const token = localStorage.getItem("access_token");
+    if (!token || !uid) return;
+    setStartingUid(uid);
+    try {
+      const data = await startCourse(token, uid);
+      if (data.redirect_url) window.open(data.redirect_url, "_blank", "noopener,noreferrer");
+      load();
+      onChange?.();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not start this course."));
+    } finally {
+      setStartingUid("");
+    }
+  }
+
   return (
     <div className={dashStyles.section}>
       <div className={dashStyles.sectionHead}>
@@ -545,6 +569,7 @@ function MyCoursesTab({ onChange }) {
         </div>
         <select className={styles.filterSelect} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
+          <option value="assigned">Assigned</option>
           <option value="in_progress">In progress</option>
           <option value="completed">Completed</option>
         </select>
@@ -554,35 +579,55 @@ function MyCoursesTab({ onChange }) {
         {!loading && enrollments.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>Nothing here yet</div>
-            <div className={dashStyles.emptySub}>Start a course from the catalog to see it here.</div>
+            <div className={dashStyles.emptySub}>Start a course from the catalog, or wait for your recruiter to assign one.</div>
           </div>
         )}
-        {enrollments.map((e) => (
-          <div key={e.id} className={styles.courseListRow}>
-            <div className={styles.courseListInfo}>
-              <div className={styles.courseListTitle}>{e.course_title}</div>
-              <div className={styles.courseListMeta}>
-                {e.assigned && "Assigned · "}
-                {e.due_date ? `Due ${e.due_date} · ` : ""}
-                Started {e.started_at ? new Date(e.started_at).toLocaleDateString() : "—"}
+        {enrollments.map((e) => {
+          const isAssignedOnly = e.status === "assigned";
+          return (
+            <div key={e.id} className={styles.courseListRow}>
+              <div className={styles.courseListInfo}>
+                <div className={styles.courseListTitle}>{e.course_title}</div>
+                <div className={styles.courseListMeta}>
+                  {e.assigned || isAssignedOnly ? "Assigned by recruiter · " : ""}
+                  {e.due_date ? `Due ${String(e.due_date).slice(0, 10)} · ` : ""}
+                  {isAssignedOnly
+                    ? "Not started yet"
+                    : `Started ${e.started_at ? new Date(e.started_at).toLocaleDateString() : "—"}`}
+                </div>
+              </div>
+              <div className={styles.courseListProgress}>
+                <div className={styles.progressLabel}>{isAssignedOnly ? "—" : `${e.progress_percent}%`}</div>
+                {!isAssignedOnly && (
+                  <div className={styles.progressTrackSm}>
+                    <div className={styles.progressFillSm} style={{ width: `${e.progress_percent}%` }} />
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {isAssignedOnly ? (
+                  <button
+                    type="button"
+                    className={styles.smallBtn}
+                    disabled={startingUid === e.course_uid}
+                    onClick={() => startAssigned(e.course_uid)}
+                  >
+                    {startingUid === e.course_uid ? "Starting…" : "Start"}
+                  </button>
+                ) : (
+                  <>
+                    <a href={e.course_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open</a>
+                    {e.status !== "completed" && (
+                      <button type="button" className={styles.smallBtn} onClick={() => bump(e.course_uid, e.progress_percent)}>
+                        +25%
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
-            <div className={styles.courseListProgress}>
-              <div className={styles.progressLabel}>{e.progress_percent}%</div>
-              <div className={styles.progressTrackSm}>
-                <div className={styles.progressFillSm} style={{ width: `${e.progress_percent}%` }} />
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <a href={e.course_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open</a>
-              {e.status !== "completed" && (
-                <button type="button" className={styles.smallBtn} onClick={() => bump(e.course_uid, e.progress_percent)}>
-                  +25%
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

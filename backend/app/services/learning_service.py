@@ -410,12 +410,67 @@ class LearningService:
         updated = await database.learning_enrollments.find_one({"_id": enrollment["_id"]})
         return {"enrollment": self._public_enrollment(updated)}
 
+    def _assignment_as_my_course(self, doc: dict) -> dict:
+        """Pending recruiter assignment shown in My Learning before the employee starts it."""
+        return {
+            "id": f"assignment:{doc['_id']}",
+            "course_uid": doc.get("course_uid"),
+            "course_title": doc.get("course_title"),
+            "course_url": doc.get("course_url"),
+            "course_type": doc.get("course_type"),
+            "status": "assigned",
+            "progress_percent": 0,
+            "started_at": None,
+            "completed_at": None,
+            "assigned": True,
+            "due_date": _iso(doc.get("due_date")),
+        }
+
     async def list_my_courses(self, current_user: CurrentUser, status_filter: str | None) -> dict:
-        query: dict[str, Any] = {"user_id": current_user.id}
-        if status_filter:
-            query["status"] = status_filter
-        docs = await database.learning_enrollments.find(query).sort("updated_at", -1).to_list(length=300)
-        return {"enrollments": [self._public_enrollment(d) for d in docs]}
+        """Return started enrollments plus open recruiter assignments not yet started.
+
+        UI copy promises “started or been assigned”; previously only enrollments
+        were returned, so assigned courses were invisible until the employee
+        started them from the catalog.
+        """
+        status_filter = (status_filter or "").strip().lower() or None
+
+        enrollment_query: dict[str, Any] = {"user_id": current_user.id}
+        if status_filter in ("in_progress", "completed"):
+            enrollment_query["status"] = status_filter
+        enroll_docs = await database.learning_enrollments.find(enrollment_query).sort(
+            "updated_at", -1
+        ).to_list(length=300)
+        enrollments = [self._public_enrollment(d) for d in enroll_docs]
+
+        # Exclude any enrollment for this user so we don't duplicate an assignment
+        # that was already started (even if the status filter hides that enrollment).
+        all_enrolled_uids = {
+            d["course_uid"]
+            for d in await database.learning_enrollments.find(
+                {"user_id": current_user.id}, {"course_uid": 1}
+            ).to_list(length=500)
+            if d.get("course_uid")
+        }
+
+        pending: list[dict] = []
+        if status_filter in (None, "assigned"):
+            assignments = await database.learning_assignments.find(
+                {"user_id": current_user.id, "status": {"$nin": ["completed"]}}
+            ).sort("created_at", -1).to_list(length=300)
+            seen_uids: set[str] = set()
+            for assignment in assignments:
+                uid = assignment.get("course_uid")
+                if not uid or uid in all_enrolled_uids or uid in seen_uids:
+                    continue
+                seen_uids.add(uid)
+                pending.append(self._assignment_as_my_course(assignment))
+
+        if status_filter == "assigned":
+            return {"enrollments": pending}
+        if status_filter in ("in_progress", "completed"):
+            return {"enrollments": enrollments}
+        return {"enrollments": pending + enrollments}
 
     # ------------------------------------------------------------------ #
     # US-069: My Learning dashboard
@@ -441,21 +496,30 @@ class LearningService:
         if enrollments:
             overall_progress = round(sum(e.get("progress_percent", 0) for e in enrollments) / len(enrollments))
 
-        upcoming_due = sorted(
-            [a for a in assigned_open if a.get("due_date")],
-            key=lambda a: a["due_date"],
-        )
-        # One row per course (legacy data may contain duplicate assignments).
+        # Prefer not-yet-started assignments; include ones without a due date
+        # (previously only due-dated rows appeared, so Assigned: N looked wrong).
+        enrolled_uids = {e.get("course_uid") for e in enrollments if e.get("course_uid")}
+        pending_assigned = [
+            a for a in assigned_open if a.get("course_uid") and a.get("course_uid") not in enrolled_uids
+        ]
+
+        def _due_sort_key(assignment: dict):
+            due = assignment.get("due_date")
+            return (due is None, due or "")
+
+        pending_sorted = sorted(pending_assigned, key=_due_sort_key)
         deduped_due: list[dict] = []
         seen_uids: set[str] = set()
-        for assignment in upcoming_due:
+        for assignment in pending_sorted:
             uid = assignment.get("course_uid")
             if not uid or uid in seen_uids:
                 continue
             seen_uids.add(uid)
             deduped_due.append(assignment)
-            if len(deduped_due) >= 5:
+            if len(deduped_due) >= 8:
                 break
+
+        unique_assigned = len({a.get("course_uid") for a in assignments if a.get("course_uid")})
 
         return {
             "employee": {
@@ -465,7 +529,7 @@ class LearningService:
                 "department": employee.get("department"),
             },
             "summary": {
-                "assigned_count": len(assignments),
+                "assigned_count": unique_assigned,
                 "enrolled_count": len(enrollments),
                 "in_progress_count": len(in_progress),
                 "completed_count": len(completed),
@@ -482,6 +546,7 @@ class LearningService:
                     "id": str(a["_id"]),
                     "course_title": a.get("course_title"),
                     "course_uid": a.get("course_uid"),
+                    "course_url": a.get("course_url"),
                     "due_date": _iso(a.get("due_date")),
                     "status": a.get("status"),
                 }
