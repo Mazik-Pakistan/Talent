@@ -50,7 +50,6 @@ export function ModuleNav({ role }) {
     { key: "recruitment", label: "Recruitment", href: "/dashboard/recruiter", show: modules.recruitment },
     { key: "onboarding", label: "Onboarding", href: role === "candidate" || role === "employee" ? "/onboarding" : "/dashboard/recruiter", show: modules.onboarding },
     { key: "learning", label: "Learning", href: "/dashboard/employee/learning", show: modules.learning && role === "employee" },
-    { key: "ai", label: "AI", href: "/dashboard/employee/learning", show: modules.ai && role === "employee" },
     { key: "reporting", label: "Reporting", href: "#", show: modules.reporting },
     { key: "profile", label: "Profile", href: ROLE_HOME[role] || "/dashboard", show: modules.profile },
     { key: "admin", label: "Admin", href: "/dashboard/super-admin", show: modules.admin },

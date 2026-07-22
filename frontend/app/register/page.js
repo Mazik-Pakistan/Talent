@@ -8,6 +8,13 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 import { getApiErrorMessage, register } from "@/services/authService";
+import {
+  formatPkMobileInput,
+  isValidPkMobile,
+  normalizePkMobile,
+  PK_MOBILE_HINT,
+  preservePkMobileCaret,
+} from "@/utils/phone";
 import styles from "@/app/styles/auth.module.css";
 
 const initialForm = {
@@ -36,8 +43,8 @@ function validateForm(form) {
 
   if (!form.phone.trim()) {
     errors.phone = "Phone number is required.";
-  } else if (!/^[+()\-\s\d]{7,20}$/.test(form.phone.trim())) {
-    errors.phone = "Enter a valid phone number.";
+  } else if (!isValidPkMobile(form.phone)) {
+    errors.phone = `Enter a valid Pakistani mobile number (${PK_MOBILE_HINT}).`;
   }
 
   if (!form.password) {
@@ -83,8 +90,13 @@ export default function RegisterPage() {
 
   function updateField(event) {
     const { checked, name, type, value } = event.target;
-    const nextForm = { ...form, [name]: type === "checkbox" ? checked : value };
+    const phoneValue = name === "phone" ? formatPkMobileInput(value) : value;
+    const nextForm = { ...form, [name]: type === "checkbox" ? checked : phoneValue };
     setForm(nextForm);
+    if (name === "phone") {
+      const digitsBeforeCaret = value.slice(0, event.target.selectionStart ?? value.length).replace(/\D/g, "").length;
+      preservePkMobileCaret(event.target, digitsBeforeCaret);
+    }
     if (touched[name]) {
       setErrors((current) => ({ ...current, ...validateForm(nextForm) }));
     }
@@ -116,7 +128,7 @@ export default function RegisterPage() {
 
     setIsSubmitting(true);
     try {
-      const response = await register({ ...form, full_name: form.full_name.trim(), email: form.email.trim() });
+      const response = await register({ ...form, full_name: form.full_name.trim(), email: form.email.trim(), phone: normalizePkMobile(form.phone) });
       // Store email so the verification page can offer a resend
       sessionStorage.setItem("pendingEmail", form.email.trim());
       toast.success(response.message || "Account created. Check your email to verify.");
@@ -183,7 +195,8 @@ export default function RegisterPage() {
               onChange={updateField}
               onBlur={handleBlur}
               autoComplete="tel"
-              placeholder="+92 300 1234567"
+              hint={PK_MOBILE_HINT}
+              placeholder="0300-1234567"
             />
 
             <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: "180ms" }}>

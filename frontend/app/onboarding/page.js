@@ -1299,7 +1299,7 @@ function OnboardingContent() {
                                 </label>
                                 <FileUploadField
                                   styles={styles}
-                                  label={isOcrMode ? "Upload CNIC for OCR" : "Attach CNIC (optional)"}
+                                  label={isOcrMode ? "Upload CNIC for OCR" : "Attach CNIC"}
                                   accept=".pdf,.jpg,.jpeg,.png"
                                   disabled={uploading}
                                   onChange={(e) => handleFileUpload(e, "government_doc", index)}
@@ -1479,23 +1479,20 @@ function OnboardingContent() {
                       {step === "education" && (
                         <div className={styles.formStack}>
                           <h2 className={styles.stepTitle}>Education history</h2>
-                          <p className={styles.docHelper}>
-                            Enter each qualification below. Transcripts and degree certificates are optional —
-                            when uploaded, AI will try to pre-fill fields; you can always edit them.
-                          </p>
+                          
                           {educationEntries.map((entry, index) => (
                             <section key={index} className={styles.sectionCard}>
                               <div className={styles.sectionCardHead}>
                                 <div>
                                   <h3>Education {educationEntries.length > 1 ? `#${index + 1}` : "entry"}</h3>
-                                  <p>Institution, degree, and optional transcript</p>
+                                  <p>Institution, degree, and transcript</p>
                                 </div>
                                 {entry.certificate_file && <span className={styles.pillOk}>Transcript uploaded</span>}
                               </div>
                               <div className={styles.formGrid}>
                                 <FileUploadField
                                   styles={styles}
-                                  label="Academic transcript / certificate (optional)"
+                                  label="Academic transcript / certificate"
                                   accept=".pdf,.jpg,.jpeg,.png"
                                   disabled={uploading}
                                   onChange={(e) => handleFileUpload(e, "education_cert", index)}
@@ -1504,12 +1501,12 @@ function OnboardingContent() {
                                   hint="PDF, JPG, or PNG"
                                   wide
                                 />
-                                <Field styles={styles} label="Institution" value={entry.institution} onChange={(e) => {
+                                <Field styles={styles} label="Institute / University" value={entry.institution} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], institution: e.target.value };
                                   setEducationEntries(next);
                                 }} />
-                                <Field styles={styles} label="Board / University" value={entry.board_university || ""} onChange={(e) => {
+                                <Field styles={styles} label="Board" value={entry.board_university || ""} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], board_university: e.target.value };
                                   setEducationEntries(next);
@@ -1567,14 +1564,13 @@ function OnboardingContent() {
                             <div className={styles.sectionCardHead}>
                               <div>
                                 <h3>Resume &amp; summary</h3>
-                                <p>Optional CV file plus a short professional overview</p>
                               </div>
                               {resume.file_url && <span className={styles.pillOk}>Resume uploaded</span>}
                             </div>
                             <div className={styles.formGrid}>
                               <FileUploadField
                                 styles={styles}
-                                label="Resume / CV (optional)"
+                                label="Resume / CV"
                                 accept=".pdf,.doc,.docx"
                                 disabled={uploading}
                                 onChange={(e) => handleFileUpload(e, "resume")}

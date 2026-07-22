@@ -119,8 +119,12 @@ export async function upsertSkill(accessToken, payload) {
   return data;
 }
 
-export async function assessSkills(accessToken, refresh = false) {
-  const { data } = await client.post(`/api/learning/skills/assess?refresh=${refresh ? "true" : "false"}`, {}, auth(accessToken));
+export async function assessSkills(accessToken, refresh = false, lazy = false) {
+  const { data } = await client.post(
+    `/api/learning/skills/assess?refresh=${refresh ? "true" : "false"}&lazy=${lazy ? "true" : "false"}`,
+    {},
+    auth(accessToken)
+  );
   return data;
 }
 
@@ -131,10 +135,13 @@ export async function deleteSkill(accessToken, skillId) {
 
 // ─── Skill gap + career path (US-075 / US-095 / US-099 / US-100) ────────────
 
-export async function getSkillGap(accessToken, targetRole) {
+export async function getSkillGap(accessToken, targetRole, refresh = false) {
   const { data } = await client.get("/api/learning/skill-gap", {
     ...auth(accessToken),
-    params: targetRole ? { target_role: targetRole } : {},
+    params: {
+      ...(targetRole ? { target_role: targetRole } : {}),
+      ...(refresh ? { refresh: true } : {}),
+    },
   });
   return data;
 }
@@ -154,10 +161,57 @@ export async function getCareerPath(accessToken, refresh = false) {
   return data;
 }
 
+export async function getRoleMatches(accessToken, refresh = false) {
+  const { data } = await client.get("/api/learning/role-matches", { ...auth(accessToken), params: { refresh } });
+  return data;
+}
+
 // ─── AI recommendations (US-074) ─────────────────────────────────────────────
 
 export async function getRecommendations(accessToken, refresh = false) {
   const { data } = await client.get("/api/learning/recommendations", { ...auth(accessToken), params: { refresh } });
+  return data;
+}
+
+// ─── Recruiter Knowledge Base ────────────────────────────────────────────────
+
+export async function listKbRoles(accessToken) {
+  const { data } = await client.get("/api/learning/knowledge-base/roles", auth(accessToken));
+  return data;
+}
+
+export async function createKbRole(accessToken, payload) {
+  const { data } = await client.post("/api/learning/knowledge-base/roles", payload, auth(accessToken));
+  return data;
+}
+
+export async function updateKbRole(accessToken, roleId, payload) {
+  const { data } = await client.put(`/api/learning/knowledge-base/roles/${roleId}`, payload, auth(accessToken));
+  return data;
+}
+
+export async function deleteKbRole(accessToken, roleId) {
+  const { data } = await client.delete(`/api/learning/knowledge-base/roles/${roleId}`, auth(accessToken));
+  return data;
+}
+
+export async function listKbCertifications(accessToken) {
+  const { data } = await client.get("/api/learning/knowledge-base/certifications", auth(accessToken));
+  return data;
+}
+
+export async function createKbCertification(accessToken, payload) {
+  const { data } = await client.post("/api/learning/knowledge-base/certifications", payload, auth(accessToken));
+  return data;
+}
+
+export async function updateKbCertification(accessToken, certId, payload) {
+  const { data } = await client.put(`/api/learning/knowledge-base/certifications/${certId}`, payload, auth(accessToken));
+  return data;
+}
+
+export async function deleteKbCertification(accessToken, certId) {
+  const { data } = await client.delete(`/api/learning/knowledge-base/certifications/${certId}`, auth(accessToken));
   return data;
 }
 

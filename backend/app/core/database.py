@@ -85,9 +85,17 @@ async def create_database_indexes() -> None:
     await database.learning_career_goals.create_index("user_id", unique=True)
     await database.learning_ai_recommendations.create_index("user_id", unique=True)
     await database.learning_skill_assessments.create_index("user_id", unique=True)
+    await database.learning_skill_gaps.create_index([("user_id", 1), ("target_role", 1)], unique=True)
+    await database.learning_role_matches.create_index("user_id", unique=True)
+    await database.learning_recruiter_profile_cache.create_index("user_id", unique=True)
     await database.employees.create_index([("job_title", 1), ("status", 1)])
 
-    # ── Phase 4: AI Coach / AI Assistant (RAG knowledge base + chat log) ──
+    # Recruiter Learning Knowledge Base
+    await database.recruiter_kb_roles.create_index([("recruiter_id", 1), ("title", 1)])
+    await database.recruiter_kb_certifications.create_index([("recruiter_id", 1), ("title", 1)])
+    await database.recruiter_kb_meta.create_index("recruiter_id", unique=True)
+
+    # Legacy AI Coach collections kept for historical data only (router removed).
     await database.kb_chunks.create_index([("namespace", 1), ("role_scope", 1)])
     await database.kb_chunks.create_index([("namespace", 1), ("owner_id", 1), ("title", 1)])
     try:

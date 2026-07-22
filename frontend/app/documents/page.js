@@ -189,6 +189,7 @@ function DocumentsPageContent() {
                   >
                     {item.icon}
                     <span className={styles.navLabel}>{item.label}</span>
+                    {item.badge ? <span className={styles.navBadge}>{item.badge}</span> : null}
                   </button>
                 </li>
               );

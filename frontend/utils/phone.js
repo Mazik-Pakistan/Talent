@@ -1,4 +1,5 @@
 /** Pakistan mobile: normalize to 03XXXXXXXXX (11 digits). */
+export const PK_MOBILE_REGEX = /^03\d{9}$/;
 
 export function digitsOnly(value) {
   return String(value || "").replace(/\D/g, "");
@@ -15,7 +16,7 @@ export function normalizePkMobile(value) {
 }
 
 export function isValidPkMobile(value) {
-  return /^03\d{9}$/.test(normalizePkMobile(value));
+  return PK_MOBILE_REGEX.test(normalizePkMobile(value));
 }
 
 /** Format as 03XX-XXXXXXX while typing / for display. */
@@ -36,6 +37,22 @@ export function formatPkMobileInput(value) {
   normalized = normalized.slice(0, 11);
   if (normalized.length <= 4) return normalized;
   return `${normalized.slice(0, 4)}-${normalized.slice(4)}`;
+}
+
+/** Keeps a controlled tel input's caret after the same number of digits. */
+export function preservePkMobileCaret(input, digitsBeforeCaret) {
+  requestAnimationFrame(() => {
+    let seenDigits = 0;
+    let caret = input.value.length;
+    for (let index = 0; index < input.value.length; index += 1) {
+      if (/\d/.test(input.value[index])) seenDigits += 1;
+      if (seenDigits >= digitsBeforeCaret) {
+        caret = index + 1;
+        break;
+      }
+    }
+    input.setSelectionRange(caret, caret);
+  });
 }
 
 export const PK_MOBILE_HINT = "Format: 03XX-XXXXXXX";

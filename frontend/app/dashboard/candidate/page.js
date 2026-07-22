@@ -403,7 +403,7 @@ function CandidateDashboardContent() {
                   <h3>Offer letter ready to review</h3>
                   <p>Your recruiter has sent an offer letter. Open it here to review the terms and sign digitally.</p>
                 </div>
-                <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer")}>
+                <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer?from=candidate-dashboard")}>
                   Review and sign offer
                 </button>
               </div>
