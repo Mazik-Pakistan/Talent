@@ -185,6 +185,15 @@ button, input { font: inherit; }
 .offer-sign-block > p { margin: 0 0 18px; color: var(--muted); font-size: .88rem; }
 .offer-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; flex-wrap: wrap; }
 .offer-actions .danger-link-button { border: 0; background: transparent; color: var(--danger); font-weight: 700; cursor: pointer; margin-right: auto; font-size: .85rem; }
+.offer-sign-actions { align-items: center; border-top: 1px solid #eadfbc; padding-top: 20px; }
+.offer-submit-actions { display: flex; gap: 10px; align-items: center; }
+.offer-back-button { min-height: 50px; padding-inline: 18px; }
+.offer-submit-button { display: inline-flex; min-width: 228px; min-height: 58px; align-items: center; justify-content: center; gap: 10px; border: 1px solid #0a5c8a; border-radius: 10px; padding: 8px 20px; background: linear-gradient(135deg, #0e6d9f, #165f90); box-shadow: 0 9px 18px rgb(23 104 150 / .24); font-size: .95rem; letter-spacing: .01em; }
+.offer-submit-button span { display: grid; gap: 2px; text-align: left; line-height: 1.1; }
+.offer-submit-button strong { font-size: .95rem; }
+.offer-submit-button small { color: rgb(255 255 255 / .78); font-size: .68rem; font-weight: 500; }
+.offer-submit-icon { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2.4; }
+.offer-submit-button:hover:not(:disabled) { background: linear-gradient(135deg, #0b618f, #124f79); box-shadow: 0 12px 24px rgb(23 104 150 / .32); transform: translateY(-1px); }
 .offer-signed-confirmation { display: grid; gap: 6px; border-radius: 12px; border: 1px solid #bfe3d2; background: #f3faf7; padding: 20px; text-align: center; }
 .offer-signed-confirmation strong { font-size: 1.05rem; color: var(--success-deep); }
 .offer-empty { text-align: center; padding: 60px 24px; color: var(--muted); }

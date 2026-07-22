@@ -203,24 +203,56 @@ export default function CompleteProfilePage() {
   function validateReferences() {
     const errors = {};
     const emails = [];
+    const phones = [];
+
     references.forEach((ref, index) => {
       if (!ref.full_name?.trim()) errors[`ref_${index}_full_name`] = true;
       if (!ref.relationship?.trim()) errors[`ref_${index}_relationship`] = true;
       if (!ref.email?.trim()) errors[`ref_${index}_email`] = true;
       if (!isValidPkMobile(ref.phone)) errors[`ref_${index}_phone`] = true;
       if (!ref.company?.trim()) errors[`ref_${index}_company`] = true;
-      if (ref.email?.trim()) emails.push(ref.email.trim().toLowerCase());
+
+      if (ref.email?.trim()) {
+        emails.push(ref.email.trim().toLowerCase());
+      }
+      if (ref.phone?.trim() && isValidPkMobile(ref.phone)) {
+        phones.push(normalizePkMobile(ref.phone.trim()));
+      }
     });
-    if (emails.length !== new Set(emails).size) {
-      references.forEach((ref, index) => {
-        const email = ref.email?.trim().toLowerCase();
-        if (email && emails.filter((e) => e === email).length > 1) {
-          errors[`ref_${index}_email`] = true;
-        }
-      });
-      showFormError("Each reference must use a different email address. Names may be the same.", errors);
+
+    let duplicateEmail = false;
+    emails.forEach((email) => {
+      if (email && emails.filter(e => e === email).length > 1) {
+        duplicateEmail = true;
+        references.forEach((ref, idx) => {
+          if (ref.email?.trim().toLowerCase() === email) {
+            errors[`ref_${idx}_email`] = "Duplicate email address.";
+          }
+        });
+      }
+    });
+
+    let duplicatePhone = false;
+    phones.forEach((phone) => {
+      if (phone && phones.filter(p => p === phone).length > 1) {
+        duplicatePhone = true;
+        references.forEach((ref, idx) => {
+          if (ref.phone?.trim() && isValidPkMobile(ref.phone) && normalizePkMobile(ref.phone.trim()) === phone) {
+            errors[`ref_${idx}_phone`] = "Duplicate phone number.";
+          }
+        });
+      }
+    });
+
+    if (duplicateEmail || duplicatePhone) {
+      let msg = "Each reference must have a unique ";
+      if (duplicateEmail && duplicatePhone) msg += "email and phone number.";
+      else if (duplicateEmail) msg += "email address.";
+      else msg += "phone number.";
+      showFormError(msg, errors);
       return false;
     }
+
     const valid = references.length >= 2 && Object.keys(errors).length === 0;
     if (!valid) {
       showFormError(`Provide at least two complete references. Phones: ${PK_MOBILE_HINT}.`, errors);
@@ -383,7 +415,7 @@ export default function CompleteProfilePage() {
           </div>
         </aside>
 
-        {/* Main Content */}
+
         <main className={styles.main}>
           <div className={styles.topbar}>
             <div>
@@ -589,7 +621,6 @@ export default function CompleteProfilePage() {
                       <div className={styles.formStack}>
                         <div>
                           <h2 className={styles.stepTitle}>Professional references</h2>
-                          <p className={styles.stepLead}>Provide at least two people who can speak to your work. Names may be the same, but each email must be unique. Phones use Pakistan format ({PK_MOBILE_HINT}).</p>
                         </div>
                         {references.map((ref, index) => (
                           <div key={index} className={styles.referenceBlock}>
@@ -700,12 +731,15 @@ export default function CompleteProfilePage() {
   );
 }
 
+// ================== UPDATED Field component ==================
 function Field({ label, value, onChange, type = "text", wide, error, hint }) {
+  // If error is a string, use it as the error message; otherwise treat as boolean and use hint or default
+  const errorText = typeof error === 'string' ? error : (error ? (hint || "Required") : null);
   return (
     <label className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""}`} data-field-error={error ? "true" : undefined}>
       <span>{label}</span>
       <input type={type} value={value} onChange={onChange} aria-invalid={!!error} />
-      {error && <em className={styles.fieldErrorText}>{hint || "Required"}</em>}
+      {errorText && <em className={styles.fieldErrorText}>{errorText}</em>}
       {!error && hint ? <small>{hint}</small> : null}
     </label>
   );

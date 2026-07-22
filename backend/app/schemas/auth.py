@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 
 PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$")
 # Accept legacy international-style numbers OR Pakistani mobiles (03XXXXXXXXX / +92…).
-PHONE_PATTERN = re.compile(r"^[+()\-\s\d]{7,20}$")
+PHONE_PATTERN = re.compile(r"^03\d{9}$")
 PK_MOBILE_DIGITS = re.compile(r"^03\d{9}$")
 
 
@@ -65,10 +65,7 @@ class RegisterRequest(BaseModel):
     @field_validator("phone")
     @classmethod
     def validate_phone(cls, value: str) -> str:
-        normalized_value = value.strip()
-        if not PHONE_PATTERN.fullmatch(normalized_value):
-            raise ValueError("Enter a valid phone number.")
-        return normalized_value
+        return normalize_pk_mobile(value)
 
     @field_validator("password")
     @classmethod
@@ -205,10 +202,7 @@ class BootstrapSuperAdminRequest(BaseModel):
     @field_validator("phone")
     @classmethod
     def validate_phone(cls, value: str) -> str:
-        normalized_value = value.strip()
-        if not PHONE_PATTERN.fullmatch(normalized_value):
-            raise ValueError("Enter a valid phone number.")
-        return normalized_value
+        return normalize_pk_mobile(value)
 
     @field_validator("password")
     @classmethod

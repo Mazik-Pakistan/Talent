@@ -1564,14 +1564,13 @@ function OnboardingContent() {
                             <div className={styles.sectionCardHead}>
                               <div>
                                 <h3>Resume &amp; summary</h3>
-                                <p>Optional CV file plus a short professional overview</p>
                               </div>
                               {resume.file_url && <span className={styles.pillOk}>Resume uploaded</span>}
                             </div>
                             <div className={styles.formGrid}>
                               <FileUploadField
                                 styles={styles}
-                                label="Resume / CV (optional)"
+                                label="Resume / CV"
                                 accept=".pdf,.doc,.docx"
                                 disabled={uploading}
                                 onChange={(e) => handleFileUpload(e, "resume")}
