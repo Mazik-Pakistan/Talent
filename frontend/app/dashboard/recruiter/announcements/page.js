@@ -10,13 +10,18 @@ import {
   deleteAnnouncement,
   getAnnouncements,
   getApiErrorMessage,
+  listEmployees,
   updateAnnouncement,
 } from "@/services/authService";
+import { getOrgTaxonomy } from "@/services/learningService";
 
 const EMPTY_FORM = {
   title: "",
   body: "",
   audience: "both",
+  target_departments: [],
+  target_designations: [],
+  target_employee_ids: [],
   send_email: true,
   notify_again: false,
 };
@@ -29,6 +34,9 @@ export default function RecruiterAnnouncementsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [employees, setEmployees] = useState([]);
+  const [taxonomy, setTaxonomy] = useState({ departments: [], designations: [] });
+  const [employeeSearch, setEmployeeSearch] = useState("");
 
   const loadAnnouncements = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
@@ -52,12 +60,27 @@ export default function RecruiterAnnouncementsPage() {
     return () => clearInterval(timer);
   }, [loadAnnouncements]);
 
+  useEffect(() => {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    Promise.all([
+      listEmployees(accessToken, { status: "active", page: 1, page_size: 100, sort: "full_name" }),
+      getOrgTaxonomy(accessToken),
+    ]).then(([employeeData, taxonomyData]) => {
+      setEmployees(employeeData.employees || []);
+      setTaxonomy(taxonomyData || { departments: [], designations: [] });
+    }).catch((err) => toast.error(getApiErrorMessage(err, "Could not load employee recipients.")));
+  }, []);
+
   function startEdit(item) {
     setEditingId(item.id);
     setForm({
       title: item.title || "",
       body: item.body || "",
       audience: item.audience || "both",
+      target_departments: item.target_departments || [],
+      target_designations: item.target_designations || [],
+      target_employee_ids: item.target_employee_ids || [],
       send_email: false,
       notify_again: false,
     });
@@ -82,6 +105,9 @@ export default function RecruiterAnnouncementsPage() {
             title: form.title.trim(),
             body: form.body.trim(),
             audience: form.audience,
+            target_departments: form.target_departments,
+            target_designations: form.target_designations,
+            target_employee_ids: form.target_employee_ids,
             send_email: form.send_email,
             notify_again: form.notify_again,
           },
@@ -97,6 +123,9 @@ export default function RecruiterAnnouncementsPage() {
             title: form.title.trim(),
             body: form.body.trim(),
             audience: form.audience,
+            target_departments: form.target_departments,
+            target_designations: form.target_designations,
+            target_employee_ids: form.target_employee_ids,
             send_email: form.send_email,
           },
           accessToken
@@ -181,7 +210,7 @@ export default function RecruiterAnnouncementsPage() {
             <div className={styles.announceOptions}>
               <label className={styles.field}>
                 <span>Audience</span>
-                <select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value })}>
+                <select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value, ...(e.target.value !== "employees" ? { target_departments: [], target_designations: [], target_employee_ids: [] } : {}) })}>
                   <option value="both">Candidates &amp; employees</option>
                   <option value="candidates">Candidates only</option>
                   <option value="employees">Employees only</option>
@@ -206,6 +235,47 @@ export default function RecruiterAnnouncementsPage() {
                 </label>
               )}
             </div>
+            {form.audience === "employees" && (
+              <section className={styles.recipientPicker}>
+                <div className={styles.recipientPickerHead}>
+                  <div>
+                    <span className={styles.recipientEyebrow}>Targeted delivery</span>
+                    <h3>Choose employee recipients</h3>
+                    <p>Leave everything unselected to reach all active employees. Selections are combined, so anyone matching a chosen department, designation, or name receives the announcement.</p>
+                  </div>
+                  <span className={styles.recipientCount}>{form.target_departments.length + form.target_designations.length + form.target_employee_ids.length} selected</span>
+                </div>
+                <div className={styles.recipientGrid}>
+                  <MultiSelectGroup
+                    label="Departments"
+                    options={taxonomy.departments || []}
+                    selected={form.target_departments}
+                    onChange={(values) => setForm({ ...form, target_departments: values })}
+                  />
+                  <MultiSelectGroup
+                    label="Designations"
+                    options={taxonomy.designations || []}
+                    selected={form.target_designations}
+                    onChange={(values) => setForm({ ...form, target_designations: values })}
+                  />
+                </div>
+                <div className={styles.employeeSelect}>
+                  <div className={styles.employeeSelectHead}>
+                    <span>Individual employees</span>
+                    <input value={employeeSearch} onChange={(e) => setEmployeeSearch(e.target.value)} placeholder="Search by name, department, or designation" />
+                  </div>
+                  <div className={styles.employeeOptions}>
+                    {employees.filter((employee) => `${employee.full_name} ${employee.department} ${employee.job_title}`.toLowerCase().includes(employeeSearch.toLowerCase())).map((employee) => (
+                      <label className={styles.employeeOption} key={employee.id}>
+                        <input type="checkbox" checked={form.target_employee_ids.includes(employee.id)} onChange={() => setForm({ ...form, target_employee_ids: toggleValue(form.target_employee_ids, employee.id) })} />
+                        <span className={styles.employeeAvatar}>{initials(employee.full_name)}</span>
+                        <span><strong>{employee.full_name}</strong><small>{employee.job_title || "No designation"} · {employee.department || "No department"}</small></span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
             <div className={styles.announceActions}>
               {editingId && (
                 <button type="button" className={styles.secondaryButton} onClick={resetForm} disabled={saving}>
@@ -252,6 +322,7 @@ export default function RecruiterAnnouncementsPage() {
                     <span className={styles.audiencePill}>{audienceLabel(item.audience)}</span>
                   </div>
                   <p className={styles.announcementBody}>{item.body}</p>
+                  {targetSummary(item) && <p className={styles.targetSummary}>{targetSummary(item)}</p>}
                   <div className={styles.announcementCardActions}>
                     <button type="button" className={styles.secondaryButton} onClick={() => startEdit(item)}>
                       Edit
@@ -291,6 +362,38 @@ function audienceLabel(value) {
   if (value === "candidates") return "Candidates";
   if (value === "employees") return "Employees";
   return "Everyone";
+}
+
+function MultiSelectGroup({ label, options, selected, onChange }) {
+  return (
+    <div className={styles.multiSelectGroup}>
+      <span>{label}</span>
+      <div className={styles.multiSelectOptions}>
+        {options.map((option) => (
+          <label className={`${styles.choiceChip} ${selected.includes(option) ? styles.choiceChipSelected : ""}`} key={option}>
+            <input type="checkbox" checked={selected.includes(option)} onChange={() => onChange(toggleValue(selected, option))} />
+            {option}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function toggleValue(values, value) {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}
+
+function initials(name = "") {
+  return name.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?";
+}
+
+function targetSummary(item) {
+  const parts = [];
+  if (item.target_departments?.length) parts.push(`${item.target_departments.length} department${item.target_departments.length === 1 ? "" : "s"}`);
+  if (item.target_designations?.length) parts.push(`${item.target_designations.length} designation${item.target_designations.length === 1 ? "" : "s"}`);
+  if (item.target_employee_ids?.length) parts.push(`${item.target_employee_ids.length} employee${item.target_employee_ids.length === 1 ? "" : "s"}`);
+  return parts.length ? `Targeted to ${parts.join(", ")}` : "";
 }
 
 function formatDate(value) {

@@ -143,6 +143,16 @@ const emptyEducationEntry = {
   cgpa_or_percentage: "",
   certificate_file: null,
 };
+const COUNTRY_OPTIONS = ["Pakistan", "United Arab Emirates", "Saudi Arabia"];
+const PAKISTANI_CITIES = ["Karachi", "Lahore", "Islamabad", "Rawalpindi", "Faisalabad"];
+const PAKISTANI_PROVINCES = ["Punjab", "Sindh", "Khyber Pakhtunkhwa", "Balochistan", "Islamabad Capital Territory", "Gilgit-Baltistan", "Azad Kashmir"];
+const UNIVERSITIES_BY_CITY = {
+  Karachi: ["University of Karachi", "NED University of Engineering & Technology", "IBA Karachi"],
+  Lahore: ["University of the Punjab", "LUMS", "University of Engineering and Technology, Lahore"],
+  Islamabad: ["Quaid-i-Azam University", "NUST", "COMSATS University Islamabad"],
+  Rawalpindi: ["Fatima Jinnah Women University", "Pir Mehr Ali Shah Arid Agriculture University"],
+  Faisalabad: ["University of Agriculture, Faisalabad", "Government College University Faisalabad"],
+};
 const emptySkills = {
   technical_skills: "",
   soft_skills: "",
@@ -201,7 +211,9 @@ function OnboardingContent() {
   const [toast, setToast] = useState(null);
   const [pendingReplace, setPendingReplace] = useState(null);
   const [scanPulse, setScanPulse] = useState(false);
+  const [otherSelections, setOtherSelections] = useState({ country: false, city: false, state: false, institutions: {} });
 
+  const universityOptions = useMemo(() => UNIVERSITIES_BY_CITY[personal.city] || [], [personal.city]);
   const steps = useMemo(() => (isEditMode ? STEPS.filter((s) => s.id !== "submit") : STEPS), [isEditMode]);
 
   useEffect(() => {
@@ -1467,10 +1479,85 @@ function OnboardingContent() {
                                   wide
                                 />
                               )}
-                              <Field styles={styles} label="City" value={personal.city} error={fieldErrors.city} onChange={(e) => { setPersonal({ ...personal, city: e.target.value }); setFieldErrors((prev) => ({ ...prev, city: false })); }} />
-                              <Field styles={styles} label="State / Province" value={personal.state} error={fieldErrors.state} onChange={(e) => { setPersonal({ ...personal, state: e.target.value }); setFieldErrors((prev) => ({ ...prev, state: false })); }} />
+                              <label className={`${styles.field} ${fieldErrors.country ? styles.fieldError : ""}`} data-field-error={fieldErrors.country ? "true" : undefined}>
+                                <span>Country</span>
+                                <select
+                                  value={otherSelections.country || (personal.country && !COUNTRY_OPTIONS.includes(personal.country)) ? "other" : personal.country}
+                                  onChange={(e) => {
+                                    const isOther = e.target.value === "other";
+                                    setOtherSelections((prev) => ({ ...prev, country: isOther, city: false, state: false }));
+                                    setPersonal({ ...personal, country: isOther ? "" : e.target.value, city: "", state: "" });
+                                    setEducationEntries((items) => items.map((item) => ({ ...item, institution: "" })));
+                                    setFieldErrors((prev) => ({ ...prev, country: false, city: false }));
+                                  }}
+                                >
+                                  {COUNTRY_OPTIONS.map((country) => <option key={country} value={country}>{country}</option>)}
+                                  <option value="other">Other</option>
+                                </select>
+                                {(otherSelections.country || (personal.country && !COUNTRY_OPTIONS.includes(personal.country))) && (
+                                  <input
+                                    value={personal.country}
+                                    onChange={(e) => setPersonal({ ...personal, country: e.target.value, city: "", state: "" })}
+                                    placeholder="Enter country"
+                                  />
+                                )}
+                                {fieldErrors.country && <em className={styles.fieldErrorText}>Required</em>}
+                              </label>
+                              {personal.country === "Pakistan" && (
+                                <label className={`${styles.field} ${fieldErrors.city ? styles.fieldError : ""}`} data-field-error={fieldErrors.city ? "true" : undefined}>
+                                  <span>City</span>
+                                  <select
+                                    value={otherSelections.city || (personal.city && !PAKISTANI_CITIES.includes(personal.city)) ? "other" : personal.city}
+                                    onChange={(e) => {
+                                      const isOther = e.target.value === "other";
+                                      setOtherSelections((prev) => ({ ...prev, city: isOther }));
+                                      setPersonal({ ...personal, city: isOther ? personal.city : e.target.value });
+                                      setEducationEntries((items) => items.map((item) => ({ ...item, institution: "" })));
+                                      setFieldErrors((prev) => ({ ...prev, city: false }));
+                                    }}
+                                  >
+                                    <option value="">Select a city</option>
+                                    {PAKISTANI_CITIES.map((city) => <option key={city} value={city}>{city}</option>)}
+                                    <option value="other">Other</option>
+                                  </select>
+                                  {(otherSelections.city || (personal.city && !PAKISTANI_CITIES.includes(personal.city))) && (
+                                    <input
+                                      value={personal.city}
+                                      onChange={(e) => {
+                                        setPersonal({ ...personal, city: e.target.value });
+                                        setEducationEntries((items) => items.map((item) => ({ ...item, institution: "" })));
+                                      }}
+                                      placeholder="Enter city"
+                                    />
+                                  )}
+                                  {fieldErrors.city && <em className={styles.fieldErrorText}>Required</em>}
+                                </label>
+                              )}
+                              {personal.country === "Pakistan" ? (
+                                <label className={`${styles.field} ${fieldErrors.state ? styles.fieldError : ""}`} data-field-error={fieldErrors.state ? "true" : undefined}>
+                                  <span>State / Province</span>
+                                  <select
+                                    value={otherSelections.state || (personal.state && !PAKISTANI_PROVINCES.includes(personal.state)) ? "other" : personal.state}
+                                    onChange={(e) => {
+                                      const isOther = e.target.value === "other";
+                                      setOtherSelections((prev) => ({ ...prev, state: isOther }));
+                                      setPersonal({ ...personal, state: isOther ? personal.state : e.target.value });
+                                      setFieldErrors((prev) => ({ ...prev, state: false }));
+                                    }}
+                                  >
+                                    <option value="">Select a province</option>
+                                    {PAKISTANI_PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}
+                                    <option value="other">Other</option>
+                                  </select>
+                                  {(otherSelections.state || (personal.state && !PAKISTANI_PROVINCES.includes(personal.state))) && (
+                                    <input value={personal.state} onChange={(e) => setPersonal({ ...personal, state: e.target.value })} placeholder="Enter province" />
+                                  )}
+                                  {fieldErrors.state && <em className={styles.fieldErrorText}>Required</em>}
+                                </label>
+                              ) : (
+                                <Field styles={styles} label="State / Province" value={personal.state} error={fieldErrors.state} onChange={(e) => { setPersonal({ ...personal, state: e.target.value }); setFieldErrors((prev) => ({ ...prev, state: false })); }} />
+                              )}
                               <Field styles={styles} label="Postal code" value={personal.postal_code} error={fieldErrors.postal_code} onChange={(e) => { setPersonal({ ...personal, postal_code: e.target.value }); setFieldErrors((prev) => ({ ...prev, postal_code: false })); }} />
-                              <Field styles={styles} label="Country" value={personal.country} error={fieldErrors.country} onChange={(e) => { setPersonal({ ...personal, country: e.target.value }); setFieldErrors((prev) => ({ ...prev, country: false })); }} />
                             </div>
                           </section>
                         </div>
@@ -1501,11 +1588,38 @@ function OnboardingContent() {
                                   hint="PDF, JPG, or PNG"
                                   wide
                                 />
-                                <Field styles={styles} label="Institute / University" value={entry.institution} onChange={(e) => {
-                                  const next = [...educationEntries];
-                                  next[index] = { ...next[index], institution: e.target.value };
-                                  setEducationEntries(next);
-                                }} />
+                                <label className={styles.field}>
+                                  <span>Institute / University</span>
+                                  <select
+                                    value={otherSelections.institutions[index] || (entry.institution && !universityOptions.includes(entry.institution)) ? "other" : entry.institution}
+                                    onChange={(e) => {
+                                      const isOther = e.target.value === "other";
+                                      setOtherSelections((prev) => ({
+                                        ...prev,
+                                        institutions: { ...prev.institutions, [index]: isOther },
+                                      }));
+                                      const next = [...educationEntries];
+                                      next[index] = { ...next[index], institution: isOther ? entry.institution : e.target.value };
+                                      setEducationEntries(next);
+                                    }}
+                                    disabled={!personal.city}
+                                  >
+                                    <option value="">{personal.city ? "Select a university" : "Select a city first"}</option>
+                                    {universityOptions.map((university) => <option key={university} value={university}>{university}</option>)}
+                                    <option value="other">Other</option>
+                                  </select>
+                                  {(otherSelections.institutions[index] || (entry.institution && !universityOptions.includes(entry.institution))) && (
+                                    <input
+                                      value={entry.institution}
+                                      onChange={(e) => {
+                                        const next = [...educationEntries];
+                                        next[index] = { ...next[index], institution: e.target.value };
+                                        setEducationEntries(next);
+                                      }}
+                                      placeholder="Enter university"
+                                    />
+                                  )}
+                                </label>
                                 <Field styles={styles} label="Board" value={entry.board_university || ""} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], board_university: e.target.value };

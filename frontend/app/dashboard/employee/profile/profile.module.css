@@ -246,7 +246,8 @@
   color: #647186;
 }
 
-.field input {
+.field input,
+.field select {
   border: 1px solid #e3e9f0;
   border-radius: 9px;
   padding: 11px 14px;
@@ -257,7 +258,8 @@
   outline: none;
 }
 
-.field input:focus {
+.field input:focus,
+.field select:focus {
   border-color: #00a9ce;
   box-shadow: 0 0 0 3px rgba(0, 169, 206, 0.1);
 }

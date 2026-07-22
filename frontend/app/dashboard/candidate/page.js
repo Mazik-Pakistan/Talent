@@ -409,6 +409,12 @@ function CandidateDashboardContent() {
               </div>
             )}
 
+            {offer && ["signed", "approved"].includes(offer.status) && (
+              <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer?from=candidate-dashboard")}>
+                View Offer Letter
+              </button>
+            )}
+
             {/* Stats */}
             <div className={styles.stats}>
               <StatCard

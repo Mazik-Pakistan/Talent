@@ -391,6 +391,9 @@ class DashboardService:
             "title": entry.get("title"),
             "body": entry.get("body"),
             "audience": entry.get("audience") or "both",
+            "target_departments": entry.get("target_departments") or [],
+            "target_designations": entry.get("target_designations") or [],
+            "target_employee_ids": entry.get("target_employee_ids") or [],
             "created_by": entry.get("created_by"),
             "created_by_name": entry.get("created_by_name"),
             "created_at": _iso(entry.get("created_at")),
@@ -412,9 +415,29 @@ class DashboardService:
                 {"audience": {"$exists": False}},
             ]
         elif role == "employee":
-            query["$or"] = [
-                {"audience": {"$in": ["employees", "both"]}},
-                {"audience": {"$exists": False}},
+            employee = await database.employees.find_one(
+                {**self._scope_filter(current_user), "user_id": current_user.id},
+                {"department": 1, "job_title": 1},
+            ) or {}
+            recipient_filters = [{"target_employee_ids": current_user.id}]
+            if employee.get("department"):
+                recipient_filters.append({"target_departments": employee["department"]})
+            if employee.get("job_title"):
+                recipient_filters.append({"target_designations": employee["job_title"]})
+            query["$and"] = [
+                {"$or": [{"audience": {"$in": ["employees", "both"]}}, {"audience": {"$exists": False}}]},
+                {
+                    "$or": [
+                        {
+                            "$and": [
+                                {"$or": [{"target_departments": {"$exists": False}}, {"target_departments": {"$size": 0}}]},
+                                {"$or": [{"target_designations": {"$exists": False}}, {"target_designations": {"$size": 0}}]},
+                                {"$or": [{"target_employee_ids": {"$exists": False}}, {"target_employee_ids": {"$size": 0}}]},
+                            ]
+                        },
+                        {"$or": recipient_filters},
+                    ]
+                },
             ]
         elif audience in ("candidates", "employees", "both"):
             query["audience"] = audience
@@ -429,6 +452,9 @@ class DashboardService:
             "title": request.title,
             "body": request.body,
             "audience": request.audience,
+            "target_departments": request.target_departments,
+            "target_designations": request.target_designations,
+            "target_employee_ids": request.target_employee_ids,
             "created_by": current_user.id,
             "created_by_name": current_user.full_name,
             "created_at": now,
@@ -471,6 +497,14 @@ class DashboardService:
             updates["body"] = request.body
         if request.audience is not None:
             updates["audience"] = request.audience
+        for field_name in ("target_departments", "target_designations", "target_employee_ids"):
+            value = getattr(request, field_name)
+            if value is not None:
+                updates[field_name] = value
+        effective_audience = updates.get("audience", entry.get("audience") or "both")
+        has_targets = any(updates.get(field_name, entry.get(field_name) or []) for field_name in ("target_departments", "target_designations", "target_employee_ids"))
+        if has_targets and effective_audience != "employees":
+            raise HTTPException(status_code=422, detail="Targeted announcements must use the employees audience.")
         await database.announcements.update_one({"_id": entry["_id"]}, {"$set": updates})
         refreshed = await database.announcements.find_one({"_id": entry["_id"]})
         notified, emailed = 0, 0
@@ -551,8 +585,15 @@ class DashboardService:
                     )
 
         if audience in ("employees", "both"):
+            employee_filters: list[dict] = []
+            if announcement.get("target_departments"):
+                employee_filters.append({"department": {"$in": announcement["target_departments"]}})
+            if announcement.get("target_designations"):
+                employee_filters.append({"job_title": {"$in": announcement["target_designations"]}})
+            if announcement.get("target_employee_ids"):
+                employee_filters.append({"user_id": {"$in": announcement["target_employee_ids"]}})
             employees = await database.employees.find(
-                {**scope, "status": "active"},
+                {**scope, "status": "active", **({"$or": employee_filters} if employee_filters else {})},
                 {"user_id": 1, "email": 1, "company_email": 1, "full_name": 1},
             ).to_list(length=None)
             for doc in employees:

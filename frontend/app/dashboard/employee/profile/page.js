@@ -40,6 +40,41 @@ const emptyEmergency = {
   address: "",
 };
 
+const emptyPersonal = {
+  first_name: "",
+  last_name: "",
+  date_of_birth: "",
+  gender: "prefer_not_to_say",
+  nationality: "Pakistani",
+  marital_status: "single",
+  blood_group: "unknown",
+  national_id: "",
+  profile_picture: null,
+  father_name: "",
+  id_issue_date: "",
+  id_expiry_date: "",
+  alternate_phone: "",
+  current_address: "",
+  permanent_address: "",
+  same_as_current: false,
+  city: "",
+  state: "",
+  postal_code: "",
+  country: "Pakistan",
+  address_line1: "",
+  address_line2: "",
+};
+
+const emptyEducationEntry = {
+  institution: "",
+  board_university: "",
+  degree: "",
+  field_of_study: "",
+  year_completed: "",
+  cgpa_or_percentage: "",
+  certificate_file: null,
+};
+
 const emptyEmployment = {
   bank_name: "",
   account_holder_name: "",
@@ -88,6 +123,8 @@ function EmployeeProfileContent() {
   const [emergency, setEmergency] = useState(emptyEmergency);
   const [employment, setEmployment] = useState(emptyEmployment);
   const [references, setReferences] = useState([{ ...emptyReference }, { ...emptyReference }]);
+  const [personalDraft, setPersonalDraft] = useState(emptyPersonal);
+  const [educationDrafts, setEducationDrafts] = useState([]);
 
   useEffect(() => {
     setUser(JSON.parse(localStorage.getItem("user") || "null"));
@@ -95,6 +132,8 @@ function EmployeeProfileContent() {
 
   const hydrateEditable = useCallback((data) => {
     if (!data) return;
+    setPersonalDraft({ ...emptyPersonal, ...(data.personal || {}) });
+    setEducationDrafts((data.education?.entries || []).map((entry) => ({ ...emptyEducationEntry, ...entry })));
     if (data.emergency) {
       setEmergency({
         ...emptyEmergency,
@@ -247,6 +286,11 @@ function EmployeeProfileContent() {
     try {
       const data = await saveProfileCompletion({ step, ...payload }, accessToken);
       setEmployee(data.employee);
+      if (step === "personal" && data.employee?.full_name) {
+        patchLocalUser({ full_name: data.employee.full_name });
+        setUser((current) => current ? { ...current, full_name: data.employee.full_name } : current);
+        window.dispatchEvent(new Event("talent-user-updated"));
+      }
       setProgress(data.progress);
       setOnboarding(data.onboarding || {});
       hydrateEditable(data.onboarding);
@@ -332,6 +376,35 @@ function EmployeeProfileContent() {
           ? normalizePkMobile(emergency.alternate_phone)
           : null,
         address: emergency.address?.trim() || null,
+      },
+    });
+  }
+
+  async function savePersonal() {
+    await persistSection("personal", {
+      personal: {
+        ...personalDraft,
+        alternate_phone: personalDraft.alternate_phone?.trim()
+          ? normalizePkMobile(personalDraft.alternate_phone)
+          : null,
+        current_address: personalDraft.current_address.trim(),
+        permanent_address: personalDraft.permanent_address.trim(),
+      },
+    });
+  }
+
+  async function saveEducation() {
+    await persistSection("education", {
+      education: {
+        entries: educationDrafts.map((entry) => ({
+          ...entry,
+          institution: entry.institution.trim(),
+          board_university: entry.board_university?.trim() || null,
+          degree: entry.degree.trim(),
+          field_of_study: entry.field_of_study.trim(),
+          year_completed: entry.year_completed.trim(),
+          cgpa_or_percentage: entry.cgpa_or_percentage?.trim() || null,
+        })),
       },
     });
   }
@@ -524,7 +597,42 @@ function EmployeeProfileContent() {
                   </dl>
                 </ProfileSection>
 
-                <ProfileSection title="Personal" subtitle={INTAKE_SUBTITLE}>
+                <ProfileSection
+                  title="Personal"
+                  subtitle="Keep your personal details current."
+                  editable
+                  editing={editingSection === "personal"}
+                  onEdit={() => startEdit("personal")}
+                  onCancel={cancelEdit}
+                  editForm={
+                    <div className={styles.editForm}>
+                      <div className={styles.formGrid}>
+                        <Field label="First name" value={personalDraft.first_name} onChange={(e) => setPersonalDraft({ ...personalDraft, first_name: e.target.value })} />
+                        <Field label="Last name" value={personalDraft.last_name} onChange={(e) => setPersonalDraft({ ...personalDraft, last_name: e.target.value })} />
+                        <Field label="Date of birth" type="date" value={personalDraft.date_of_birth} onChange={(e) => setPersonalDraft({ ...personalDraft, date_of_birth: e.target.value })} />
+                        <SelectField label="Gender" value={personalDraft.gender} options={["male", "female", "other", "prefer_not_to_say"]} onChange={(e) => setPersonalDraft({ ...personalDraft, gender: e.target.value })} />
+                        <Field label="Nationality" value={personalDraft.nationality} onChange={(e) => setPersonalDraft({ ...personalDraft, nationality: e.target.value })} />
+                        <SelectField label="Marital status" value={personalDraft.marital_status} options={["single", "married", "divorced", "widowed", "other"]} onChange={(e) => setPersonalDraft({ ...personalDraft, marital_status: e.target.value })} />
+                        <SelectField label="Blood group" value={personalDraft.blood_group} options={["unknown", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]} onChange={(e) => setPersonalDraft({ ...personalDraft, blood_group: e.target.value })} />
+                        <Field label="National ID" value={personalDraft.national_id} onChange={(e) => setPersonalDraft({ ...personalDraft, national_id: e.target.value })} />
+                        <Field label="Father's name" value={personalDraft.father_name || ""} onChange={(e) => setPersonalDraft({ ...personalDraft, father_name: e.target.value })} />
+                        <Field label="Alternate phone" value={formatPkMobileInput(personalDraft.alternate_phone)} hint={PK_MOBILE_HINT} onChange={(e) => setPersonalDraft({ ...personalDraft, alternate_phone: formatPkMobileInput(e.target.value) })} />
+                        <Field label="ID issue date" type="date" value={personalDraft.id_issue_date || ""} onChange={(e) => setPersonalDraft({ ...personalDraft, id_issue_date: e.target.value })} />
+                        <Field label="ID expiry date" type="date" value={personalDraft.id_expiry_date || ""} onChange={(e) => setPersonalDraft({ ...personalDraft, id_expiry_date: e.target.value })} />
+                        <Field label="City" value={personalDraft.city} onChange={(e) => setPersonalDraft({ ...personalDraft, city: e.target.value })} />
+                        <Field label="State / province" value={personalDraft.state} onChange={(e) => setPersonalDraft({ ...personalDraft, state: e.target.value })} />
+                        <Field label="Postal code" value={personalDraft.postal_code} onChange={(e) => setPersonalDraft({ ...personalDraft, postal_code: e.target.value })} />
+                        <Field label="Country" value={personalDraft.country} onChange={(e) => setPersonalDraft({ ...personalDraft, country: e.target.value })} />
+                        <Field wide label="Current address" value={personalDraft.current_address} onChange={(e) => setPersonalDraft({ ...personalDraft, current_address: e.target.value })} />
+                        <Field wide label="Permanent address" value={personalDraft.permanent_address} onChange={(e) => setPersonalDraft({ ...personalDraft, permanent_address: e.target.value })} />
+                      </div>
+                      <div className={styles.editActions}>
+                        <button type="button" className={styles.secondaryBtn} onClick={cancelEdit} disabled={saving}>Cancel</button>
+                        <button type="button" className={styles.primaryBtn} onClick={savePersonal} disabled={saving}>{saving ? "Saving…" : "Save personal information"}</button>
+                      </div>
+                    </div>
+                  }
+                >
                   {personal.first_name || personal.last_name ? (
                     <>
                       <dl className={styles.grid}>
@@ -572,7 +680,36 @@ function EmployeeProfileContent() {
                   )}
                 </ProfileSection>
 
-                <ProfileSection title="Education" subtitle={INTAKE_SUBTITLE}>
+                <ProfileSection
+                  title="Education"
+                  subtitle="Keep your education history current."
+                  editable
+                  editing={editingSection === "education"}
+                  onEdit={() => startEdit("education")}
+                  onCancel={cancelEdit}
+                  editForm={
+                    <div className={styles.editForm}>
+                      {educationDrafts.map((entry, index) => (
+                        <div key={index} className={styles.eduCard}>
+                          <strong>Education {index + 1}</strong>
+                          <div className={styles.formGrid}>
+                            <Field label="Institution" value={entry.institution} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, institution: e.target.value } : item))} />
+                            <Field label="Board / university" value={entry.board_university || ""} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, board_university: e.target.value } : item))} />
+                            <Field label="Degree" value={entry.degree} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, degree: e.target.value } : item))} />
+                            <Field label="Field of study" value={entry.field_of_study} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, field_of_study: e.target.value } : item))} />
+                            <Field label="Year completed" value={entry.year_completed} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, year_completed: e.target.value } : item))} />
+                            <Field label="CGPA / percentage" value={entry.cgpa_or_percentage || ""} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, cgpa_or_percentage: e.target.value } : item))} />
+                          </div>
+                        </div>
+                      ))}
+                      <button type="button" className={`${styles.secondaryBtn} ${styles.addRefBtn}`} onClick={() => setEducationDrafts((items) => [...items, { ...emptyEducationEntry }])}>Add education</button>
+                      <div className={styles.editActions}>
+                        <button type="button" className={styles.secondaryBtn} onClick={cancelEdit} disabled={saving}>Cancel</button>
+                        <button type="button" className={styles.primaryBtn} onClick={saveEducation} disabled={saving}>{saving ? "Saving…" : "Save education"}</button>
+                      </div>
+                    </div>
+                  }
+                >
                   {educationEntries.length ? (
                     educationEntries.map((entry, index) => (
                       <div key={index} className={styles.eduCard}>
@@ -1035,6 +1172,19 @@ function Field({ label, value, onChange, type = "text", wide, error, hint }) {
       <input type={type} value={value} onChange={onChange} aria-invalid={!!error} />
       {hint && <small>{hint}</small>}
       {error && <em className={styles.fieldErrorText}>{error === true ? "Required" : error}</em>}
+    </label>
+  );
+}
+
+function SelectField({ label, value, options, onChange }) {
+  return (
+    <label className={styles.field}>
+      <span>{label}</span>
+      <select value={value} onChange={onChange}>
+        {options.map((option) => (
+          <option key={option} value={option}>{titleCase(option)}</option>
+        ))}
+      </select>
     </label>
   );
 }

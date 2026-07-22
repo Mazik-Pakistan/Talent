@@ -25,12 +25,20 @@ class CreateAnnouncementRequest(BaseModel):
     title: str = Field(min_length=3, max_length=150)
     body: str = Field(min_length=3, max_length=4000)
     audience: AudienceLiteral = "both"
+    target_departments: list[str] = Field(default_factory=list, max_length=50)
+    target_designations: list[str] = Field(default_factory=list, max_length=50)
+    target_employee_ids: list[str] = Field(default_factory=list, max_length=500)
     send_email: bool = True
 
     @model_validator(mode="after")
     def normalize(self):
         self.title = " ".join(self.title.split())
         self.body = self.body.strip()
+        self.target_departments = list(dict.fromkeys(" ".join(value.split()) for value in self.target_departments if value.strip()))
+        self.target_designations = list(dict.fromkeys(" ".join(value.split()) for value in self.target_designations if value.strip()))
+        self.target_employee_ids = list(dict.fromkeys(value.strip() for value in self.target_employee_ids if value.strip()))
+        if (self.target_departments or self.target_designations or self.target_employee_ids) and self.audience != "employees":
+            raise ValueError("Targeted announcements must use the employees audience.")
         return self
 
 
@@ -38,17 +46,24 @@ class UpdateAnnouncementRequest(BaseModel):
     title: str | None = Field(default=None, min_length=3, max_length=150)
     body: str | None = Field(default=None, min_length=3, max_length=4000)
     audience: AudienceLiteral | None = None
+    target_departments: list[str] | None = Field(default=None, max_length=50)
+    target_designations: list[str] | None = Field(default=None, max_length=50)
+    target_employee_ids: list[str] | None = Field(default=None, max_length=500)
     send_email: bool = False
     notify_again: bool = False
 
     @model_validator(mode="after")
     def require_some_field(self):
-        if self.title is None and self.body is None and self.audience is None:
+        if self.title is None and self.body is None and self.audience is None and self.target_departments is None and self.target_designations is None and self.target_employee_ids is None:
             raise ValueError("Provide at least one field to update.")
         if self.title is not None:
             self.title = " ".join(self.title.split())
         if self.body is not None:
             self.body = self.body.strip()
+        for field_name in ("target_departments", "target_designations", "target_employee_ids"):
+            values = getattr(self, field_name)
+            if values is not None:
+                setattr(self, field_name, list(dict.fromkeys(" ".join(value.split()) for value in values if value.strip())))
         return self
 
 
