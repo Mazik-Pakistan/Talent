@@ -10,13 +10,23 @@ import { getApiErrorMessage, listEmployees } from "@/services/authService";
 import {
   assignCourses,
   browseCatalog,
+  createKbCertification,
+  createKbRole,
+  deleteKbCertification,
+  deleteKbRole,
+  getCatalogFacets,
   getLearningAnalytics,
+  getOrgTaxonomy,
   listAssignments,
+  listKbCertifications,
+  listKbRoles,
   listPendingCertificates,
   verifyCertificate,
 } from "@/services/learningService";
 
 const TABS = [
+  { key: "catalog", label: "Course Catalog" },
+  { key: "knowledge", label: "Knowledge Base" },
   { key: "assign", label: "Assign Courses" },
   { key: "assignments", label: "Assignments" },
   { key: "certificates", label: "Certificate Verification" },
@@ -24,10 +34,10 @@ const TABS = [
 ];
 
 export default function RecruiterLearningPage() {
-  const [tab, setTab] = useState("assign");
+  const [tab, setTab] = useState("catalog");
 
   return (
-    <RecruiterShell activeKey="learning" title="Learning Management" subtitle="Assign Microsoft Learn courses, verify certificates, and track development">
+    <RecruiterShell activeKey="learning" title="Learning Management" subtitle="Catalog, knowledge base, assign by employee / designation / department, verify certificates, track performance">
       <div className={styles.tabBar}>
         {TABS.map((t) => (
           <button
@@ -41,6 +51,8 @@ export default function RecruiterLearningPage() {
         ))}
       </div>
 
+      {tab === "catalog" && <CatalogTab />}
+      {tab === "knowledge" && <KnowledgeBaseTab />}
       {tab === "assign" && <AssignTab />}
       {tab === "assignments" && <AssignmentsTab />}
       {tab === "certificates" && <CertificatesTab />}
@@ -49,16 +61,318 @@ export default function RecruiterLearningPage() {
   );
 }
 
-// ------------------------------------------------------------------------ //
-// Assign courses (US-068)
-// ------------------------------------------------------------------------ //
+function CatalogTab() {
+  const [source, setSource] = useState("microsoft_learn");
+  const [q, setQ] = useState("");
+  const [facets, setFacets] = useState({ roles: [], levels: [], products: [] });
+  const [role, setRole] = useState("");
+  const [level, setLevel] = useState("");
+  const [type, setType] = useState("");
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState({ courses: [], total: 0, pages: 1 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token || source === "recruiter_kb") return;
+    getCatalogFacets(token, source).then(setFacets).catch(() => {});
+  }, [source]);
+
+  const load = useCallback(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    setLoading(true);
+    browseCatalog(token, {
+      q: q || undefined,
+      role: source === "microsoft_learn" ? role || undefined : undefined,
+      level: source === "microsoft_learn" ? level || undefined : undefined,
+      type: source === "microsoft_learn" ? type || undefined : undefined,
+      source,
+      page,
+      page_size: 12,
+    })
+      .then(setResult)
+      .catch((err) => {
+        setResult({ courses: [], total: 0, pages: 1, page: 1 });
+        toast.error(getApiErrorMessage(err, "Could not load catalog."));
+      })
+      .finally(() => setLoading(false));
+  }, [q, role, level, type, page, source]);
+
+  useEffect(() => {
+    const timer = setTimeout(load, 300);
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  return (
+    <div className={shellStyles.section}>
+      <div className={shellStyles.sectionHead}>
+        <div className={shellStyles.sectionHeadLeft}>
+          <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
+          <div>
+            <div className={shellStyles.sectionTitle}>Course catalog</div>
+            <p className={shellStyles.sectionDesc}>{result.total} courses · Microsoft Learn, Coursera &amp; recruiter KB</p>
+          </div>
+        </div>
+      </div>
+      <div className={shellStyles.sectionBody}>
+        <div className={styles.filterBar}>
+          <select className={styles.filterSelect} value={source} onChange={(e) => { setPage(1); setSource(e.target.value); }}>
+            <option value="microsoft_learn">Microsoft Learn</option>
+            <option value="coursera">Coursera Soft Skills</option>
+            <option value="recruiter_kb">Recruiter Courses</option>
+          </select>
+          <input className={styles.searchInput} placeholder="Search courses…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
+          {source === "microsoft_learn" && (
+            <>
+              <select className={styles.filterSelect} value={type} onChange={(e) => { setPage(1); setType(e.target.value); }}>
+                <option value="">All types</option>
+                <option value="learningPath">Learning paths</option>
+                <option value="module">Modules</option>
+                <option value="certification">Certifications</option>
+              </select>
+              <select className={styles.filterSelect} value={level} onChange={(e) => { setPage(1); setLevel(e.target.value); }}>
+                <option value="">All levels</option>
+                {(facets.levels || []).map((lv) => <option key={lv} value={lv}>{lv}</option>)}
+              </select>
+              <select className={styles.filterSelect} value={role} onChange={(e) => { setPage(1); setRole(e.target.value); }}>
+                <option value="">All MS Learn roles</option>
+                {(facets.roles || []).map((r) => <option key={r} value={r}>{r.replace(/-/g, " ")}</option>)}
+              </select>
+            </>
+          )}
+        </div>
+        {loading && <p className={styles.inlineNote}>Loading…</p>}
+        <div className={styles.courseGrid}>
+          {(result.courses || []).map((c) => (
+            <div key={c.uid} className={styles.courseCard}>
+              <div className={styles.courseTitle}>{c.title}</div>
+              <div className={styles.courseMeta}>{c.source || source} · {c.type} · {c.duration_minutes || "—"} min · {(c.levels || [])[0] || "—"}</div>
+              <p className={styles.courseSummary}>{(c.summary || "").slice(0, 140)}</p>
+              {c.url && <a href={c.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open resource</a>}
+            </div>
+          ))}
+        </div>
+        {result.pages > 1 && (
+          <div className={styles.pagination}>
+            <button type="button" className={styles.pageBtn} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
+            <span>Page {result.page} of {result.pages}</span>
+            <button type="button" className={styles.pageBtn} disabled={page >= result.pages} onClick={() => setPage((p) => p + 1)}>Next</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KnowledgeBaseTab() {
+  const [roles, setRoles] = useState([]);
+  const [certs, setCerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [roleForm, setRoleForm] = useState({ title: "", description: "", required_skills: "", required_certifications: "" });
+  const [certForm, setCertForm] = useState({
+    title: "",
+    provider: "",
+    official_url: "",
+    description: "",
+    skills_covered: "",
+    estimated_hours: "",
+    difficulty: "Intermediate",
+    priority: "medium",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    setLoading(true);
+    Promise.all([listKbRoles(token), listKbCertifications(token)])
+      .then(([roleData, certData]) => {
+        setRoles(roleData.roles || []);
+        setCerts(certData.certifications || []);
+      })
+      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load knowledge base.")))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleCreateRole(e) {
+    e.preventDefault();
+    const token = localStorage.getItem("access_token");
+    setSaving(true);
+    try {
+      await createKbRole(token, {
+        title: roleForm.title.trim(),
+        description: roleForm.description.trim(),
+        required_skills: roleForm.required_skills.split(",").map((s) => s.trim()).filter(Boolean),
+        required_certifications: roleForm.required_certifications.split(",").map((s) => s.trim()).filter(Boolean),
+      });
+      setRoleForm({ title: "", description: "", required_skills: "", required_certifications: "" });
+      toast.success("Role added to knowledge base.");
+      load();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not create role."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCreateCert(e) {
+    e.preventDefault();
+    const token = localStorage.getItem("access_token");
+    setSaving(true);
+    try {
+      await createKbCertification(token, {
+        title: certForm.title.trim(),
+        provider: certForm.provider.trim(),
+        official_url: certForm.official_url.trim(),
+        description: certForm.description.trim(),
+        skills_covered: certForm.skills_covered.split(",").map((s) => s.trim()).filter(Boolean),
+        estimated_hours: certForm.estimated_hours ? Number(certForm.estimated_hours) : null,
+        difficulty: certForm.difficulty,
+        priority: certForm.priority,
+      });
+      setCertForm({
+        title: "",
+        provider: "",
+        official_url: "",
+        description: "",
+        skills_covered: "",
+        estimated_hours: "",
+        difficulty: "Intermediate",
+        priority: "medium",
+      });
+      toast.success("Certification added — it will appear in the course catalog.");
+      load();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not create certification."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <div className={shellStyles.section}>
+        <div className={shellStyles.sectionHead}>
+          <div className={shellStyles.sectionHeadLeft}>
+            <span className={`${shellStyles.bar} ${shellStyles.navy}`} />
+            <div>
+              <div className={shellStyles.sectionTitle}>Organization roles</div>
+              <p className={shellStyles.sectionDesc}>Required skills &amp; certifications drive employee career matching</p>
+            </div>
+          </div>
+        </div>
+        <div className={shellStyles.sectionBody}>
+          <form className={styles.filterBar} onSubmit={handleCreateRole} style={{ flexWrap: "wrap" }}>
+            <input className={styles.searchInput} placeholder="Role title (e.g. Software Architect)" value={roleForm.title} onChange={(e) => setRoleForm((f) => ({ ...f, title: e.target.value }))} required />
+            <input className={styles.searchInput} placeholder="Required skills (comma-separated)" value={roleForm.required_skills} onChange={(e) => setRoleForm((f) => ({ ...f, required_skills: e.target.value }))} />
+            <input className={styles.searchInput} placeholder="Required certs (comma-separated)" value={roleForm.required_certifications} onChange={(e) => setRoleForm((f) => ({ ...f, required_certifications: e.target.value }))} />
+            <input className={styles.searchInput} placeholder="Description" value={roleForm.description} onChange={(e) => setRoleForm((f) => ({ ...f, description: e.target.value }))} />
+            <button type="submit" className={styles.smallBtn} disabled={saving}>Add role</button>
+          </form>
+          {loading && <p className={styles.inlineNote}>Loading…</p>}
+          <div className={styles.courseGrid}>
+            {roles.map((r) => (
+              <div key={r.id} className={styles.courseCard}>
+                <div className={styles.courseTitle}>{r.title}</div>
+                <div className={styles.courseMeta}>{(r.required_skills || []).length} skills · {(r.required_certifications || []).length} certs</div>
+                <p className={styles.courseSummary}>{(r.description || "").slice(0, 160)}</p>
+                <div className={styles.courseMeta}>Skills: {(r.required_skills || []).join(", ") || "—"}</div>
+                <div className={styles.courseMeta}>Certs: {(r.required_certifications || []).join(", ") || "—"}</div>
+                <button
+                  type="button"
+                  className={styles.smallBtn}
+                  onClick={async () => {
+                    const token = localStorage.getItem("access_token");
+                    try {
+                      await deleteKbRole(token, r.id);
+                      toast.success("Role removed.");
+                      load();
+                    } catch (err) {
+                      toast.error(getApiErrorMessage(err, "Could not delete role."));
+                    }
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className={shellStyles.section}>
+        <div className={shellStyles.sectionHead}>
+          <div className={shellStyles.sectionHeadLeft}>
+            <span className={`${shellStyles.bar} ${shellStyles.green}`} />
+            <div>
+              <div className={shellStyles.sectionTitle}>Certifications &amp; courses</div>
+              <p className={shellStyles.sectionDesc}>Shown in employee catalog as Recruiter Courses</p>
+            </div>
+          </div>
+        </div>
+        <div className={shellStyles.sectionBody}>
+          <form className={styles.filterBar} onSubmit={handleCreateCert} style={{ flexWrap: "wrap" }}>
+            <input className={styles.searchInput} placeholder="Title (e.g. AZ-305)" value={certForm.title} onChange={(e) => setCertForm((f) => ({ ...f, title: e.target.value }))} required />
+            <input className={styles.searchInput} placeholder="Provider" value={certForm.provider} onChange={(e) => setCertForm((f) => ({ ...f, provider: e.target.value }))} />
+            <input className={styles.searchInput} placeholder="Official URL" value={certForm.official_url} onChange={(e) => setCertForm((f) => ({ ...f, official_url: e.target.value }))} />
+            <input className={styles.searchInput} placeholder="Skills covered (comma-separated)" value={certForm.skills_covered} onChange={(e) => setCertForm((f) => ({ ...f, skills_covered: e.target.value }))} />
+            <input className={styles.searchInput} placeholder="Estimated hours" type="number" min="0" value={certForm.estimated_hours} onChange={(e) => setCertForm((f) => ({ ...f, estimated_hours: e.target.value }))} />
+            <select className={styles.filterSelect} value={certForm.difficulty} onChange={(e) => setCertForm((f) => ({ ...f, difficulty: e.target.value }))}>
+              {["Beginner", "Intermediate", "Advanced", "Expert"].map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <select className={styles.filterSelect} value={certForm.priority} onChange={(e) => setCertForm((f) => ({ ...f, priority: e.target.value }))}>
+              {["critical", "immediate", "medium", "low"].map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <input className={styles.searchInput} placeholder="Description" value={certForm.description} onChange={(e) => setCertForm((f) => ({ ...f, description: e.target.value }))} />
+            <button type="submit" className={styles.smallBtn} disabled={saving}>Add certification</button>
+          </form>
+          <div className={styles.courseGrid}>
+            {certs.map((c) => (
+              <div key={c.id} className={styles.courseCard}>
+                <div className={styles.courseTitle}>{c.title}</div>
+                <div className={styles.courseMeta}>{c.provider || "—"} · {c.difficulty} · {c.estimated_hours || "—"}h · {c.priority}</div>
+                <p className={styles.courseSummary}>{(c.description || "").slice(0, 140)}</p>
+                {c.official_url && <a href={c.official_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Official link</a>}
+                <button
+                  type="button"
+                  className={styles.smallBtn}
+                  onClick={async () => {
+                    const token = localStorage.getItem("access_token");
+                    try {
+                      await deleteKbCertification(token, c.id);
+                      toast.success("Certification removed.");
+                      load();
+                    } catch (err) {
+                      toast.error(getApiErrorMessage(err, "Could not delete certification."));
+                    }
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function AssignTab() {
+  const [source, setSource] = useState("microsoft_learn");
   const [q, setQ] = useState("");
   const [courses, setCourses] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [empQuery, setEmpQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
+  const [taxonomy, setTaxonomy] = useState({ departments: [], designations: [] });
+  const [filterDept, setFilterDept] = useState("");
+  const [filterTitle, setFilterTitle] = useState("");
+  const [assignMode, setAssignMode] = useState("employees"); // employees | department | designation
   const [dueDate, setDueDate] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -66,23 +380,37 @@ function AssignTab() {
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
-    const timer = setTimeout(() => {
-      if (!q.trim()) { setCourses([]); return; }
-      browseCatalog(token, { q, page_size: 10 }).then((data) => setCourses(data.courses || [])).catch(() => {});
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [q]);
+    getOrgTaxonomy(token).then(setTaxonomy).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     const timer = setTimeout(() => {
-      listEmployees(token, { q: empQuery || undefined, status: "active", page: 1, page_size: 20, sort: "full_name" })
+      if (!q.trim()) { setCourses([]); return; }
+      browseCatalog(token, { q, source, page_size: 10 }).then((data) => setCourses(data.courses || [])).catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [q, source]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    const timer = setTimeout(() => {
+      listEmployees(token, {
+        q: empQuery || undefined,
+        department: filterDept || undefined,
+        job_title: filterTitle || undefined,
+        status: "active",
+        page: 1,
+        page_size: 40,
+        sort: "full_name",
+      })
         .then((data) => setEmployees(data.employees || []))
         .catch(() => {});
     }, 300);
     return () => clearTimeout(timer);
-  }, [empQuery]);
+  }, [empQuery, filterDept, filterTitle]);
 
   function toggleEmployee(id) {
     setSelectedIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
@@ -90,21 +418,35 @@ function AssignTab() {
 
   async function handleAssign() {
     if (!selectedCourse) { toast.error("Search for and select a course first."); return; }
-    if (selectedIds.length === 0) { toast.error("Select at least one employee."); return; }
     const token = localStorage.getItem("access_token");
+    const payload = {
+      course_uid: selectedCourse.uid,
+      course_title: selectedCourse.title,
+      course_url: selectedCourse.url,
+      course_type: selectedCourse.type,
+      duration_minutes: selectedCourse.duration_minutes,
+      due_date: dueDate || undefined,
+      note: note || undefined,
+    };
+
+    if (assignMode === "department") {
+      if (!filterDept) { toast.error("Select a department to assign to."); return; }
+      payload.department = filterDept;
+    } else if (assignMode === "designation") {
+      if (!filterTitle) { toast.error("Select a designation to assign to."); return; }
+      payload.job_title = filterTitle;
+    } else {
+      if (selectedIds.length === 0) { toast.error("Select at least one employee."); return; }
+      payload.employee_ids = selectedIds;
+    }
+
     setSubmitting(true);
     try {
-      const result = await assignCourses(token, {
-        employee_ids: selectedIds,
-        course_uid: selectedCourse.uid,
-        course_title: selectedCourse.title,
-        course_url: selectedCourse.url,
-        course_type: selectedCourse.type,
-        duration_minutes: selectedCourse.duration_minutes,
-        due_date: dueDate || undefined,
-        note: note || undefined,
-      });
-      toast.success(`Assigned to ${result.assigned.length} employee(s).`);
+      const result = await assignCourses(token, payload);
+      const assignedCount = result.assigned?.length || 0;
+      const skippedCount = result.skipped?.length || 0;
+      toast.success(`Assigned to ${assignedCount} employee(s).`);
+      if (skippedCount) toast.warn(`${skippedCount} skipped (already assigned).`);
       if (result.errors?.length) toast.warn(`${result.errors.length} could not be assigned.`);
       setSelectedIds([]);
       setNote("");
@@ -122,19 +464,55 @@ function AssignTab() {
         <div className={shellStyles.sectionHeadLeft}>
           <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
           <div>
-            <div className={shellStyles.sectionTitle}>Assign a Microsoft Learn course</div>
-            <p className={shellStyles.sectionDesc}>Search the live catalog, pick employees, and set a due date</p>
+            <div className={shellStyles.sectionTitle}>Assign a course</div>
+            <p className={shellStyles.sectionDesc}>Technical (Microsoft Learn) or industry soft skills (Coursera). Assign to individuals, an entire department, or everyone with a designation. Duplicates are blocked.</p>
           </div>
         </div>
       </div>
       <div className={shellStyles.sectionBody}>
+        <div className={styles.modeRow}>
+          {[
+            { key: "employees", label: "By employee" },
+            { key: "department", label: "By department" },
+            { key: "designation", label: "By designation" },
+          ].map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              className={`${styles.modeBtn} ${assignMode === m.key ? styles.modeActive : ""}`}
+              onClick={() => setAssignMode(m.key)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
         <div className={styles.pickerLayout}>
           <div>
-            <input className={styles.searchInput} placeholder="Search Microsoft Learn catalog…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className={styles.sourceToggle}>
+              {[{ key: "microsoft_learn", label: "Microsoft Learn" }, { key: "coursera", label: "Industry Soft Skills" }].map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  className={`${styles.sourceBtn} ${source === s.key ? styles.sourceBtnActive : ""}`}
+                  onClick={() => { setSource(s.key); setQ(""); setCourses([]); }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <input
+              className={styles.searchInput}
+              placeholder={source === "coursera" ? "Search soft skills, e.g. negotiation, leadership…" : "Search Microsoft Learn catalog…"}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
             {selectedCourse && (
               <div className={styles.selectedCourseCard}>
                 <div className={styles.selectedCourseTitle}>Selected: {selectedCourse.title}</div>
-                <div className={styles.selectedCourseMeta}>{selectedCourse.type} · {selectedCourse.duration_minutes} min</div>
+                <div className={styles.selectedCourseMeta}>
+                  {selectedCourse.source === "coursera" ? "Coursera" : "Microsoft Learn"} · {selectedCourse.type} · {selectedCourse.duration_minutes} min
+                </div>
               </div>
             )}
             <div className={styles.pickerList}>
@@ -148,11 +526,10 @@ function AssignTab() {
                 >
                   <div>
                     <div className={styles.pickerRowTitle}>{c.title}</div>
-                    <div className={styles.pickerRowMeta}>{c.type} · {c.duration_minutes} min · {(c.levels || [])[0]}</div>
+                    <div className={styles.pickerRowMeta}>
+                      {c.source === "coursera" ? "Coursera" : "Microsoft Learn"} · {c.type} · {c.duration_minutes} min · {(c.levels || [])[0] || c.category}
+                    </div>
                   </div>
-                  <button type="button" className={styles.smallBtn} onClick={(e) => { e.stopPropagation(); setSelectedCourse(c); }}>
-                    Select
-                  </button>
                 </div>
               ))}
               {q.trim() && courses.length === 0 && <p className={styles.inlineNote}>No matches — try a different search term.</p>}
@@ -160,23 +537,51 @@ function AssignTab() {
           </div>
 
           <div>
-            <input className={styles.searchInput} placeholder="Filter employees…" value={empQuery} onChange={(e) => setEmpQuery(e.target.value)} />
-            <div className={styles.employeeList}>
-              {employees.map((emp) => (
-                <label key={emp.employee_id} className={styles.employeeCheckRow}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(emp.employee_id)}
-                    onChange={() => toggleEmployee(emp.employee_id)}
-                  />
-                  <div>
-                    {emp.full_name}
-                    <div className={styles.employeeMeta}>{emp.job_title || "—"} · {emp.department || "—"}</div>
-                  </div>
-                </label>
-              ))}
-              {employees.length === 0 && <p className={styles.inlineNote}>No employees found.</p>}
+            <div className={styles.filterBar}>
+              <select className={styles.filterSelect} value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
+                <option value="">All departments</option>
+                {(taxonomy.departments || []).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+              <select className={styles.filterSelect} value={filterTitle} onChange={(e) => setFilterTitle(e.target.value)}>
+                <option value="">All designations</option>
+                {(taxonomy.designations || []).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
             </div>
+
+            {assignMode === "employees" && (
+              <>
+                <input className={styles.searchInput} placeholder="Filter employees…" value={empQuery} onChange={(e) => setEmpQuery(e.target.value)} />
+                <div className={styles.employeeList}>
+                  {employees.map((emp) => (
+                    <label key={emp.employee_id} className={styles.employeeCheckRow}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(emp.employee_id)}
+                        onChange={() => toggleEmployee(emp.employee_id)}
+                      />
+                      <div>
+                        {emp.full_name}
+                        <div className={styles.employeeMeta}>{emp.job_title || "—"} · {emp.department || "—"}</div>
+                      </div>
+                    </label>
+                  ))}
+                  {employees.length === 0 && <p className={styles.inlineNote}>No employees found for these filters.</p>}
+                </div>
+              </>
+            )}
+
+            {assignMode === "department" && (
+              <p className={styles.inlineNote}>
+                Will assign to all active employees in <b>{filterDept || "—"}</b>
+                {filterTitle ? ` with designation ${filterTitle}` : ""} ({employees.length} currently matching).
+              </p>
+            )}
+            {assignMode === "designation" && (
+              <p className={styles.inlineNote}>
+                Will assign to all active employees with designation <b>{filterTitle || "—"}</b>
+                {filterDept ? ` in ${filterDept}` : ""} ({employees.length} currently matching).
+              </p>
+            )}
 
             <div className={styles.assignFormRow}>
               <label>
@@ -189,7 +594,11 @@ function AssignTab() {
               </label>
             </div>
             <button type="button" className={shellStyles.primaryButton} disabled={submitting} onClick={handleAssign}>
-              {submitting ? "Assigning…" : `Assign to ${selectedIds.length || 0} employee(s)`}
+              {submitting
+                ? "Assigning…"
+                : assignMode === "employees"
+                ? `Assign to ${selectedIds.length || 0} employee(s)`
+                : "Assign to matching employees"}
             </button>
           </div>
         </div>
@@ -198,9 +607,6 @@ function AssignTab() {
   );
 }
 
-// ------------------------------------------------------------------------ //
-// Assignments oversight
-// ------------------------------------------------------------------------ //
 function AssignmentsTab() {
   const [assignments, setAssignments] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
@@ -243,7 +649,7 @@ function AssignmentsTab() {
             <div className={styles.listInfo}>
               <div className={styles.listTitle}>{a.course_title}</div>
               <div className={styles.listMeta}>
-                {a.employee_name} ({a.employee_id}) · {a.department || "—"}
+                {a.employee_name} ({a.employee_id}) · {a.job_title || "—"} · {a.department || "—"}
                 {a.due_date ? ` · Due ${a.due_date}` : ""}
               </div>
             </div>
@@ -255,9 +661,6 @@ function AssignmentsTab() {
   );
 }
 
-// ------------------------------------------------------------------------ //
-// Certificate verification
-// ------------------------------------------------------------------------ //
 function CertificatesTab() {
   const [certificates, setCertificates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -280,7 +683,7 @@ function CertificatesTab() {
     const token = localStorage.getItem("access_token");
     try {
       await verifyCertificate(token, id, { approve: true });
-      toast.success("Certificate verified — skill matrix updated.");
+      toast.success("Certificate verified — skill matrix updated via AI.");
       load();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not verify certificate."));
@@ -307,7 +710,7 @@ function CertificatesTab() {
           <span className={`${shellStyles.bar} ${shellStyles.orange}`} />
           <div>
             <div className={shellStyles.sectionTitle}>Pending certificate verification</div>
-            <p className={shellStyles.sectionDesc}>Approve to update the employee&apos;s skill matrix, or reject with a note</p>
+            <p className={shellStyles.sectionDesc}>Approve to OCR/analyze the certificate and update the skill matrix</p>
           </div>
         </div>
       </div>
@@ -344,9 +747,6 @@ function CertificatesTab() {
   );
 }
 
-// ------------------------------------------------------------------------ //
-// Analytics (US-076)
-// ------------------------------------------------------------------------ //
 function AnalyticsTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -370,7 +770,7 @@ function AnalyticsTab() {
     { label: "Pending Reviews", value: data.pending_certificates, color: "navy" },
   ];
 
-  const maxPopular = Math.max(1, ...data.popular_courses.map((c) => c.enrollments));
+  const maxPopular = Math.max(1, ...(data.popular_courses || []).map((c) => c.enrollments));
 
   return (
     <>
@@ -397,12 +797,13 @@ function AnalyticsTab() {
           </div>
         </div>
         <div className={shellStyles.sectionBody}>
-          {data.popular_courses.length === 0 && <p className={shellStyles.emptySub}>No enrollments yet.</p>}
-          {data.popular_courses.map((c) => (
+          {(data.popular_courses || []).map((c) => (
             <div key={c.title} className={styles.barRow}>
-              <span className={styles.barLabel} title={c.title}>{c.title}</span>
-              <div className={styles.barTrack}><div className={styles.barFill} style={{ width: `${(c.enrollments / maxPopular) * 100}%` }} /></div>
-              <span className={styles.barValue}>{c.enrollments}</span>
+              <div className={styles.barLabel}>{c.title}</div>
+              <div className={styles.barTrack}>
+                <div className={styles.barFill} style={{ width: `${(c.enrollments / maxPopular) * 100}%` }} />
+              </div>
+              <div className={styles.barValue}>{c.enrollments}</div>
             </div>
           ))}
         </div>
@@ -413,20 +814,24 @@ function AnalyticsTab() {
           <div className={shellStyles.sectionHeadLeft}>
             <span className={`${shellStyles.bar} ${shellStyles.green}`} />
             <div>
-              <div className={shellStyles.sectionTitle}>Department comparison</div>
-              <p className={shellStyles.sectionDesc}>Assignment completion rate by department</p>
+              <div className={shellStyles.sectionTitle}>Department performance</div>
+              <p className={shellStyles.sectionDesc}>Assignment completion by department</p>
             </div>
           </div>
         </div>
         <div className={shellStyles.sectionBody}>
-          {data.department_comparison.length === 0 && <p className={shellStyles.emptySub}>No department data yet.</p>}
-          {data.department_comparison.map((d) => (
-            <div key={d.department} className={styles.barRow}>
-              <span className={styles.barLabel} title={d.department}>{d.department}</span>
-              <div className={styles.barTrack}><div className={styles.barFill} style={{ width: `${d.completion_rate}%` }} /></div>
-              <span className={styles.barValue}>{d.completion_rate}%</span>
+          {(data.department_comparison || []).map((d) => (
+            <div key={d.department} className={styles.listRow}>
+              <div className={styles.listInfo}>
+                <div className={styles.listTitle}>{d.department}</div>
+                <div className={styles.listMeta}>{d.completed}/{d.assigned} completed</div>
+              </div>
+              <span className={styles.statusChip}>{d.completion_rate}%</span>
             </div>
           ))}
+          {!(data.department_comparison || []).length && (
+            <p className={styles.inlineNote}>No department data yet — assign courses to start tracking.</p>
+          )}
         </div>
       </div>
     </>

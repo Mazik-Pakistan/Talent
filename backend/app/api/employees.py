@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 
 from app.core.rbac import CurrentUser
 from app.core.security import require_permissions, require_roles
-from app.schemas.career import CareerEventCreateRequest
+from app.schemas.career import CareerEventCreateRequest, RoleAssignRequest
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
 from app.schemas.onboarding_assignment import (
     AssetAssignRequest,
@@ -237,6 +237,16 @@ async def add_career(
     return await service.add_career_event(current_user, employee_id, request)
 
 
+@router.put("/detail/{employee_id}/role")
+async def assign_employee_role(
+    employee_id: str,
+    request: RoleAssignRequest,
+    current_user: RequireRecruiter,
+):
+    """Assign or change designation + department (from org taxonomy lists)."""
+    return await service.assign_role(current_user, employee_id, request)
+
+
 @router.get("/{employee_id}")
 async def get_employee_detail_legacy(employee_id: str, current_user: RequireRecruiter):
     """Backward-compatible alias for /detail/{employee_id}."""
@@ -249,6 +259,7 @@ async def upload_onboarding_file(
     file: UploadFile = File(...),
     purpose: Literal["resume", "government_doc", "education_cert"] = Form(...),
     doc_type: str | None = Form(default=None),
+    index: int = Form(default=0),
 ):
     if current_user.role not in ("candidate", "employee", "super_admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only candidates/employees can upload files.")
@@ -303,9 +314,11 @@ async def upload_onboarding_file(
     file_url = (document or {}).get("file_url") or ""
     file_name = (document or {}).get("file_name") or original
 
-    # Do not attach rejected wrong-type files into onboarding profile slots.
+    # Identity docs must match type. Education/resume uploads are still attached
+    # even when OCR is uncertain — candidates can fill fields manually.
     rejected_type = ocr_result and ocr_result.get("status") == "rejected_type"
-    if rejected_type:
+    hard_reject = rejected_type and purpose == "government_doc"
+    if hard_reject:
         return {
             "file_name": file_name,
             "file_url": file_url,
@@ -314,6 +327,7 @@ async def upload_onboarding_file(
             "message": ocr_result.get("rejection_message") or "Document type rejected.",
         }
 
+    slot = max(0, index)
     if current_user.role == "candidate":
         try:
             resp = await candidate_service.attach_uploaded_file(
@@ -322,6 +336,7 @@ async def upload_onboarding_file(
                 file_name=file_name,
                 file_url=file_url,
                 doc_type=resolved_doc_type if purpose == "government_doc" else doc_type,
+                index=slot,
             )
         except Exception:
             resp = {"file_name": file_name, "file_url": file_url, "purpose": purpose}
@@ -333,6 +348,7 @@ async def upload_onboarding_file(
                 file_name=file_name,
                 file_url=file_url,
                 doc_type=resolved_doc_type if purpose == "government_doc" else doc_type,
+                index=slot,
             )
         except Exception:
             resp = {"file_name": file_name, "file_url": file_url, "purpose": purpose}
@@ -349,3 +365,17 @@ async def upload_onboarding_file(
             "mismatches": document.get("mismatch_reasons"),
         }
     return resp
+
+
+@router.delete("/upload")
+async def clear_onboarding_file(
+    current_user: RequireCandidate,
+    purpose: Literal["resume", "government_doc", "education_cert"] = Query(...),
+    index: int = Query(default=0, ge=0),
+):
+    """Remove an onboarding file (transcript / resume / CNIC) so the candidate can replace it."""
+    if current_user.role == "candidate":
+        return await candidate_service.clear_uploaded_file(current_user, purpose=purpose, index=index)
+    if current_user.role == "employee":
+        return await service.clear_uploaded_file(current_user, purpose=purpose, index=index)
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only candidates/employees can remove uploads.")

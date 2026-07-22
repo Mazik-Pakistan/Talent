@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-CourseType = Literal["learningPath", "module", "certification"]
+CourseType = Literal["learningPath", "module", "certification", "course"]
 ProficiencyLevel = Literal["Beginner", "Intermediate", "Advanced", "Expert"]
 
 SKILL_CATEGORIES: list[str] = [
@@ -32,9 +32,16 @@ SKILL_CATEGORIES: list[str] = [
 
 
 class CourseAssignRequest(BaseModel):
-    """US-068: Recruiter assigns a Microsoft Learn course/path to one or more employees."""
+    """US-068: Assign a course to employees, optionally filtered by department/designation.
 
-    employee_ids: list[str] = Field(min_length=1)
+    Provide employee_ids and/or department and/or job_title (designation).
+    When department/job_title is set without employee_ids, all matching active
+    employees under the recruiter are targeted.
+    """
+
+    employee_ids: list[str] = Field(default_factory=list)
+    department: str | None = Field(default=None, max_length=120)
+    job_title: str | None = Field(default=None, max_length=120)
     course_uid: str = Field(min_length=1, max_length=300)
     course_title: str = Field(min_length=1, max_length=300)
     course_url: str = Field(min_length=1, max_length=1000)
@@ -46,10 +53,21 @@ class CourseAssignRequest(BaseModel):
     @field_validator("employee_ids")
     @classmethod
     def dedupe_ids(cls, value: list[str]) -> list[str]:
-        cleaned = [v.strip() for v in value if v and v.strip()]
-        if not cleaned:
-            raise ValueError("At least one employee is required.")
-        return list(dict.fromkeys(cleaned))
+        return list(dict.fromkeys(v.strip() for v in value if v and v.strip()))
+
+    @field_validator("department", "job_title")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def require_targets(self):
+        if not self.employee_ids and not self.department and not self.job_title:
+            raise ValueError("Provide employee_ids and/or department and/or job_title.")
+        return self
 
 
 class BookmarkRequest(BaseModel):

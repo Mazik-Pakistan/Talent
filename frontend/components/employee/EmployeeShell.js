@@ -116,9 +116,7 @@ function EmployeeShellInner({ activeKey, title, subtitle, children }) {
 
   const modules = moduleAccess(user?.role);
   const profileComplete = employee?.profile_status === "complete";
-  const navItems = getEmployeeNavItems({ profileComplete: profileComplete || true }).map((item) =>
-    item.key === activeKey ? { ...item } : item
-  );
+  const navItems = getEmployeeNavItems({ profileComplete });
   const displayName = employee?.full_name || user.full_name;
   const photoUrl = employee?.profile_picture || user?.profile_picture || null;
 
@@ -157,7 +155,7 @@ function EmployeeShellInner({ activeKey, title, subtitle, children }) {
                   >
                     {item.icon}
                     <span className={styles.navLabel}>{item.label}</span>
-                    {item.badge && !disabled ? null : item.badge ? <span className={styles.navBadge}>{item.badge}</span> : null}
+                    {item.badge ? <span className={styles.navBadge}>{item.badge}</span> : null}
                   </button>
                 </li>
               );

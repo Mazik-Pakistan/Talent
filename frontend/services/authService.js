@@ -406,6 +406,14 @@ export async function addCareerEvent(employeeId, payload, accessToken) {
   return data;
 }
 
+export async function assignEmployeeRole(employeeId, payload, accessToken) {
+  const id = encodeURIComponent(String(employeeId || "").trim());
+  const { data } = await apiClient.put(`/api/employees/detail/${id}/role`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
 export async function generateEmployeeId(accessToken, year) {
   const { data } = await apiClient.post(
     "/api/employees/generate-id",
@@ -463,6 +471,14 @@ export async function uploadOnboardingFile(formData, accessToken) {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "multipart/form-data",
     },
+  });
+  return data;
+}
+
+export async function clearOnboardingFile(purpose, accessToken, index = 0) {
+  const { data } = await apiClient.delete("/api/employees/upload", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: { purpose, index },
   });
   return data;
 }

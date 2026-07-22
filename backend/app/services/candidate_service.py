@@ -191,11 +191,100 @@ class CandidateService:
 
     async def get_onboarding(self, current_user: CurrentUser) -> dict:
         candidate = await self._require_active_candidate(current_user)
+        onboarding = await self._backfill_onboarding_files(current_user, candidate)
         return {
             "candidate": self._public_user(candidate),
-            "onboarding": candidate.get("onboarding") or dict(EMPTY_ONBOARDING),
-            "progress": self._progress_payload(candidate),
+            "onboarding": onboarding,
+            "progress": self._progress_payload(
+                {**candidate, "onboarding": onboarding}
+            ),
         }
+
+    async def _backfill_onboarding_files(self, current_user: CurrentUser, candidate: dict) -> dict:
+        """Restore file URLs from active documents when onboarding form slots are blank.
+
+        Happens when a candidate uploaded a transcript/resume/CNIC then logged out
+        without saving the step — the file lives in `documents` but the form looked empty.
+        """
+        onboarding = dict(candidate.get("onboarding") or EMPTY_ONBOARDING)
+        docs = (
+            await database.documents.find(
+                {
+                    "owner_id": current_user.id,
+                    "is_active": True,
+                    "doc_type": {"$in": ["transcript", "certificate", "degree", "resume", "cnic", "passport"]},
+                }
+            )
+            .sort("created_at", -1)
+            .to_list(40)
+        )
+        if not docs:
+            return onboarding
+
+        changed = False
+        now = datetime.now(UTC)
+
+        edu_docs = [d for d in docs if d.get("doc_type") in ("transcript", "certificate", "degree")]
+        if edu_docs:
+            education = dict(onboarding.get("education") or {})
+            entries = list(education.get("entries") or [])
+            if not entries:
+                entries = [
+                    {
+                        "institution": "",
+                        "board_university": "",
+                        "degree": "",
+                        "field_of_study": "",
+                        "year_completed": "",
+                        "cgpa_or_percentage": "",
+                        "certificate_file": edu_docs[0].get("file_url"),
+                    }
+                ]
+                changed = True
+            elif not entries[0].get("certificate_file"):
+                entries[0]["certificate_file"] = edu_docs[0].get("file_url")
+                changed = True
+            education["entries"] = entries
+            onboarding["education"] = education
+
+        resume_doc = next((d for d in docs if d.get("doc_type") == "resume"), None)
+        if resume_doc:
+            resume = dict(onboarding.get("resume") or {})
+            if not resume.get("file_url"):
+                resume["file_url"] = resume_doc.get("file_url")
+                resume["file_name"] = resume_doc.get("file_name") or resume.get("file_name")
+                if resume.get("summary") is None:
+                    resume["summary"] = ""
+                onboarding["resume"] = resume
+                changed = True
+
+        id_doc = next((d for d in docs if d.get("doc_type") in ("cnic", "passport")), None)
+        if id_doc:
+            government = dict(onboarding.get("government_docs") or {})
+            documents = list(government.get("documents") or [])
+            if not documents:
+                documents = [
+                    {
+                        "doc_type": id_doc.get("doc_type") or "cnic",
+                        "document_number": "pending",
+                        "file_name": id_doc.get("file_name"),
+                        "file_url": id_doc.get("file_url"),
+                    }
+                ]
+                changed = True
+            elif not documents[0].get("file_url"):
+                documents[0]["file_url"] = id_doc.get("file_url")
+                documents[0]["file_name"] = id_doc.get("file_name") or documents[0].get("file_name")
+                changed = True
+            government["documents"] = documents
+            onboarding["government_docs"] = government
+
+        if changed:
+            await database.candidates.update_one(
+                {"_id": candidate["_id"]},
+                {"$set": {"onboarding": onboarding, "updated_at": now}},
+            )
+        return onboarding
 
     async def save_onboarding(self, current_user: CurrentUser, request: OnboardingSaveRequest) -> dict:
         candidate = await self._require_active_candidate(current_user)
@@ -241,11 +330,9 @@ class CandidateService:
                 data = payload.model_dump(mode="json")
                 if field == "education":
                     entries = data.get("entries") or []
-                    if not entries or any(not entry.get("certificate_file") for entry in entries):
-                        raise HTTPException(
-                            status_code=400,
-                            detail="Upload an academic transcript for each education entry.",
-                        )
+                    if not entries:
+                        raise HTTPException(status_code=400, detail="Add at least one education entry.")
+                    # Transcripts are optional — file can be uploaded later or replaced anytime.
                 updates[f"onboarding.{field}"] = data
                 saved_fields.append(field)
             updates["onboarding.current_step"] = STEP_FLOW[request.step]
@@ -323,6 +410,7 @@ class CandidateService:
         file_name: str,
         file_url: str,
         doc_type: str | None = None,
+        index: int = 0,
     ) -> dict:
         """Store uploaded file path on the candidate draft (or return URL for the wizard)."""
         candidate = await self._require_active_candidate(current_user)
@@ -382,21 +470,31 @@ class CandidateService:
         if purpose == "education_cert":
             education = dict(onboarding.get("education") or {})
             entries = list(education.get("entries") or [])
-            if entries:
-                target_entry = next((entry for entry in entries if not entry.get("certificate_file")), entries[0])
-                target_entry["certificate_file"] = file_url
-                education["entries"] = entries
-                await database.candidates.update_one(
-                    {"_id": candidate["_id"]},
-                    {"$set": {"onboarding.education": education, "updated_at": now}},
+            while len(entries) <= index:
+                entries.append(
+                    {
+                        "institution": "",
+                        "board_university": "",
+                        "degree": "",
+                        "field_of_study": "",
+                        "year_completed": "",
+                        "cgpa_or_percentage": "",
+                        "certificate_file": None,
+                    }
                 )
-                refreshed = await database.candidates.find_one({"_id": candidate["_id"]})
-                return {
-                    "message": "File uploaded.",
-                    "file_name": file_name,
-                    "file_url": file_url,
-                    "onboarding": refreshed.get("onboarding"),
-                }
+            entries[index]["certificate_file"] = file_url
+            education["entries"] = entries
+            await database.candidates.update_one(
+                {"_id": candidate["_id"]},
+                {"$set": {"onboarding.education": education, "updated_at": now}},
+            )
+            refreshed = await database.candidates.find_one({"_id": candidate["_id"]})
+            return {
+                "message": "File uploaded.",
+                "file_name": file_name,
+                "file_url": file_url,
+                "onboarding": refreshed.get("onboarding"),
+            }
 
         # Preserve the existing return shape for any other wizard attachments.
         return {
@@ -406,6 +504,69 @@ class CandidateService:
             "onboarding": onboarding,
             "doc_type": doc_type,
         }
+
+    async def clear_uploaded_file(
+        self,
+        current_user: CurrentUser,
+        *,
+        purpose: str,
+        index: int = 0,
+    ) -> dict:
+        """Remove an onboarding file slot and deactivate matching active documents."""
+        candidate = await self._require_active_candidate(current_user)
+        onboarding = dict(candidate.get("onboarding") or {})
+        now = datetime.now(UTC)
+        doc_types: list[str] = []
+
+        if purpose == "resume":
+            resume = dict(onboarding.get("resume") or {})
+            resume["file_name"] = None
+            resume["file_url"] = None
+            onboarding["resume"] = resume
+            doc_types = ["resume"]
+        elif purpose == "government_doc":
+            government = dict(onboarding.get("government_docs") or {})
+            documents = list(government.get("documents") or [])
+            if 0 <= index < len(documents):
+                documents[index]["file_name"] = None
+                documents[index]["file_url"] = None
+                documents[index]["document_number"] = documents[index].get("document_number") or "pending"
+            government["documents"] = documents
+            onboarding["government_docs"] = government
+            doc_types = ["cnic", "passport"]
+        elif purpose == "education_cert":
+            education = dict(onboarding.get("education") or {})
+            entries = list(education.get("entries") or [])
+            if 0 <= index < len(entries):
+                entries[index]["certificate_file"] = None
+            education["entries"] = entries
+            onboarding["education"] = education
+            doc_types = ["transcript", "certificate", "degree"]
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported upload purpose.")
+
+        if doc_types:
+            await database.documents.update_many(
+                {
+                    "owner_id": current_user.id,
+                    "doc_type": {"$in": doc_types},
+                    "is_active": True,
+                },
+                {
+                    "$set": {
+                        "is_active": False,
+                        "status": "removed_by_candidate",
+                        "updated_at": now,
+                    }
+                },
+            )
+
+        await database.candidates.update_one(
+            {"_id": candidate["_id"]},
+            {"$set": {"onboarding": onboarding, "updated_at": now}},
+        )
+        refreshed = await database.candidates.find_one({"_id": candidate["_id"]})
+        return {"message": "Document removed.", "onboarding": refreshed.get("onboarding")}
 
     async def _require_active_candidate(self, current_user: CurrentUser) -> dict:
         candidate = await database.candidates.find_one(

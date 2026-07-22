@@ -19,8 +19,6 @@ import re
 import tempfile
 from pathlib import Path
 
-import httpx
-
 from app.core.config import settings
 from app.schemas.document import PURPOSE_EXPECTED_CATEGORIES, PURPOSE_REJECT_MESSAGES
 
@@ -87,7 +85,7 @@ class DocumentExtractionService:
 
     def detect_file_type(self, file_path: str) -> str:
         ext = Path(file_path).suffix.lower()
-        if ext in (".png", ".jpg", ".jpeg"):
+        if ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"):
             return "image"
         if ext == ".pdf":
             return "pdf"
@@ -95,6 +93,18 @@ class DocumentExtractionService:
             return "docx"
         if ext in (".txt", ".log", ".json", ".csv"):
             return "txt"
+        # Cloudinary raw URLs sometimes strip extensions — sniff magic bytes.
+        try:
+            with open(file_path, "rb") as handle:
+                header = handle.read(8)
+            if header.startswith(b"%PDF"):
+                return "pdf"
+            if header.startswith(b"\x89PNG") or header[:2] == b"\xff\xd8":
+                return "image"
+            if header[:2] == b"PK":
+                return "docx"
+        except OSError:
+            pass
         return "unknown"
 
     def extract_text_from_txt(self, file_path: str) -> str:
@@ -300,7 +310,6 @@ class DocumentExtractionService:
                 ),
             }
 
-        # A degree certificate is not an academic transcript.
         if category not in expected:
             return {
                 "accepted": False,
@@ -342,13 +351,11 @@ class DocumentExtractionService:
                 "extraction_confidence": 0.0,
             }
 
-        if settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.strip().startswith("YOUR_"):
+        if settings.OPENROUTER_API_KEY or (
+            settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.strip().startswith("YOUR_")
+        ):
             try:
-                gemini_key = settings.GEMINI_API_KEY.strip()
-                url = (
-                    "https://generativelanguage.googleapis.com/v1beta/models/"
-                    f"gemini-1.5-flash:generateContent?key={gemini_key}"
-                )
+                from app.services.llm_service import call_llm_json
 
                 prompt = f"""
 You are an expert document classifier and information extractor.
@@ -391,7 +398,11 @@ Then extract fields for that category only. Missing fields = null.
    candidate_name, institute, degree, program, major,
    cgpa, gpa, percentage, passing_year, subjects (list of strings or objects)
 
-5. Other categories: extract whatever identity-like fields are obvious.
+5. "certificate" (degree / education certificate — still extract academic fields):
+   candidate_name, institute, degree, program, major,
+   cgpa, gpa, percentage, passing_year, issue_date
+
+6. Other categories: extract whatever identity-like fields are obvious.
 
 Return JSON only:
 {{
@@ -404,31 +415,21 @@ Document Text:
 {raw_text[:12000]}
 """
 
-                payload = {
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"responseMimeType": "application/json"},
-                }
-
-                async with httpx.AsyncClient(timeout=45.0) as client:
-                    response = await client.post(url, json=payload)
-                    if response.status_code == 200:
-                        res_json = response.json()
-                        text_response = res_json["candidates"][0]["content"]["parts"][0]["text"]
-                        parsed = json.loads(text_response.strip())
-                        if "category" in parsed and "fields" in parsed:
-                            fields = parsed.get("fields") or {}
-                            if parsed.get("category") == "cnic":
-                                fields = self._sanitize_cnic_fields(fields, raw_text)
-                            class_conf = float(parsed.get("classification_confidence") or 0.85)
-                            return {
-                                "category": parsed["category"],
-                                "fields": fields,
-                                "classification_confidence": class_conf,
-                                "extraction_confidence": self._field_completeness(fields),
-                            }
+                parsed = await call_llm_json(prompt, timeout=45.0)
+                if parsed and "category" in parsed and "fields" in parsed:
+                    fields = parsed.get("fields") or {}
+                    if parsed.get("category") == "cnic":
+                        fields = self._sanitize_cnic_fields(fields, raw_text)
+                    class_conf = float(parsed.get("classification_confidence") or 0.85)
+                    return {
+                        "category": parsed["category"],
+                        "fields": fields,
+                        "classification_confidence": class_conf,
+                        "extraction_confidence": self._field_completeness(fields),
+                    }
 
             except Exception as e:
-                logger.error(f"Gemini API parse failed: {e}. Falling back to heuristics.")
+                logger.error(f"LLM document parse failed: {e}. Falling back to heuristics.")
 
         return self._heuristic_fallback_parse(raw_text)
 

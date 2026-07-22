@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import {
   clearLocalSession,
@@ -14,8 +14,12 @@ import {
 } from "@/services/authService";
 import SignaturePad from "@/components/SignaturePad";
 
+const OFFER_DRAFT_KEY = "offer_letter_draft";
+
 export default function OfferLetterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const draftRestored = useRef(false);
   const [loading, setLoading] = useState(true);
   const [offer, setOffer] = useState(null);
   const [message, setMessage] = useState("");
@@ -36,6 +40,34 @@ export default function OfferLetterPage() {
     }
     load(accessToken);
   }, [router]);
+
+  // Keep an unfinished signature/confirmation safe when the candidate goes back
+  // to the dashboard or uses the browser navigation controls.
+  useEffect(() => {
+    if (!offer?.id || offer.status !== "sent") return;
+    Promise.resolve().then(() => {
+      try {
+        const draft = JSON.parse(sessionStorage.getItem(`${OFFER_DRAFT_KEY}_${offer.id}`) || "null");
+        if (draft) {
+          setAgreed(Boolean(draft.agreed));
+          setSignatureDataUrl(draft.signatureDataUrl || null);
+          setShowDeclineForm(Boolean(draft.showDeclineForm));
+          setDeclineReason(draft.declineReason || "");
+        }
+      } catch {
+        // A malformed browser draft should never block the offer letter.
+      }
+      draftRestored.current = true;
+    });
+  }, [offer?.id, offer?.status]);
+
+  useEffect(() => {
+    if (!offer?.id || offer.status !== "sent" || !draftRestored.current) return;
+    sessionStorage.setItem(
+      `${OFFER_DRAFT_KEY}_${offer.id}`,
+      JSON.stringify({ agreed, signatureDataUrl, showDeclineForm, declineReason })
+    );
+  }, [offer?.id, offer?.status, agreed, signatureDataUrl, showDeclineForm, declineReason]);
 
   async function load(accessToken) {
     setLoading(true);
@@ -84,6 +116,7 @@ export default function OfferLetterPage() {
         accessToken
       );
       setOffer(data.offer);
+      sessionStorage.removeItem(`${OFFER_DRAFT_KEY}_${offer.id}`);
       setMessage(data.message);
     } catch (error) {
       setMessage(getApiErrorMessage(error, "Could not sign the offer."));
@@ -112,6 +145,14 @@ export default function OfferLetterPage() {
     await logout(accessToken);
     clearLocalSession();
     router.replace("/login");
+  }
+
+  function handleBack() {
+    if (searchParams.get("from") === "candidate-dashboard") {
+      router.back();
+      return;
+    }
+    router.push("/dashboard/candidate");
   }
 
   return (
@@ -227,15 +268,32 @@ export default function OfferLetterPage() {
                     <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
                     <span>I have read and agree to the compensation, terms, and conditions described above.</span>
                   </label>
-                  <div className="offer-actions">
+                  <div className="offer-actions offer-sign-actions">
                     {!showDeclineForm && (
                       <button type="button" className="danger-link-button" onClick={() => setShowDeclineForm(true)}>
                         Decline this offer
                       </button>
                     )}
-                    <button type="submit" className="primary-button" disabled={submitting}>
-                      {submitting ? "Signing…" : "Sign & submit"}
-                    </button>
+                    <div className="offer-submit-actions">
+                      <button type="button" className="secondary-button offer-back-button" onClick={handleBack}>
+                        ← Back
+                      </button>
+                      <button type="submit" className="primary-button offer-submit-button" disabled={submitting}>
+                        {submitting ? (
+                          "Signing…"
+                        ) : (
+                          <>
+                            <svg className="offer-submit-icon" viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="m5 12 4.2 4.2L19.5 6" />
+                            </svg>
+                            <span>
+                              <strong>Sign &amp; submit</strong>
+                              <small>Finalize your acceptance</small>
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </form>
 

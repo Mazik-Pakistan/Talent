@@ -107,7 +107,7 @@
   content: ""; position: absolute; top: 15px; left: 50%; width: 100%; height: 2px; background: var(--border); z-index: 0;
 }
 .steps li:last-child::after { display: none; }
-.steps li.active::after { background: var(--cyan); }
+.steps li.active::after { background: var(--green); }
 .steps button {
   position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
   background: transparent; border: none; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-faint); width: 100%;
@@ -117,8 +117,14 @@
   width: 32px; height: 32px; border-radius: 50%; background: #fff; border: 2px solid var(--border);
   display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--text-faint);
 }
-.steps li.active button span { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-light); }
+.steps li.active button span { border-color: var(--green); color: #fff; background: var(--green); }
+.steps li.active button span svg { width: 14px; height: 14px; }
 .steps li.active button { color: var(--navy); }
+
+/* Current step that is NOT yet complete — shown as "in progress" (navy outline),
+   not blue/cyan. Blue is reserved for steps whose fields are fully filled. */
+.steps li.current button span { border-color: var(--cyan); color: #fff; background: var(--cyan); }
+.steps li.current button { color: var(--cyan); }
 
 /* ===== Form Message ===== */
 .formMessage {
@@ -235,6 +241,25 @@
 a.fileChip:hover {
   border-color: #6ee7b7;
   background: #d1fae5;
+}
+.fileRemoveBtn {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #b91c1c;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fileRemoveBtn:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+.fileRemoveBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .entryActions {
   display: flex;

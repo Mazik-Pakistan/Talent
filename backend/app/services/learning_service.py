@@ -1,13 +1,15 @@
 """Phase 3 — Epic 6 Learning Management + Epic 8 skill/career slice.
 
 Flow implemented end-to-end:
-  Learning Page -> Course Catalog (Microsoft Learn, live + cached) -> employee
-  clicks a course -> redirected to learn.microsoft.com -> completes course ->
+  Learning Page -> Course Catalog (Microsoft Learn technical courses + Coursera
+  industry soft-skills courses, both live + cached, never stored) -> employee
+  clicks a course -> redirected to the provider's site -> completes course ->
   returns -> uploads certificate -> recruiter verifies -> skill matrix updates.
 
 AI (Gemini) is used for course recommendations and skill-gap/career-path
-analysis, always grounded in the real Microsoft Learn catalog (see
-learning_ai_service.py for the no-hallucination design).
+analysis, always grounded in real, live catalog data merged from every
+connected provider (see catalog_service.py) — never invented course titles or
+URLs (see learning_ai_service.py for the no-hallucination design).
 """
 
 from __future__ import annotations
@@ -29,8 +31,18 @@ from app.schemas.learning import (
     EnrollmentProgressRequest,
     SkillUpsertRequest,
 )
-from app.services import learning_ai_service, ms_learn_service, storage_service
+from app.services import (
+    catalog_service,
+    coursera_service,
+    learning_ai_service,
+    learning_cache_service,
+    learning_path_service,
+    resume_analysis_service,
+    role_matching_service,
+    storage_service,
+)
 from app.services.dashboard_service import create_notification
+from app.services.recruiter_kb_service import recruiter_kb_service
 
 AI_RECOMMENDATIONS_TTL_HOURS = 24
 
@@ -68,15 +80,44 @@ class LearningService:
         if owner and owner != str(current_user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
 
-    async def _get_resume_fields(self, user_id: str) -> dict:
-        doc = await database.documents.find_one(
+    async def _get_resume_doc(self, user_id: str) -> dict | None:
+        return await database.documents.find_one(
             {"owner_id": user_id, "doc_type": "resume", "is_active": True},
             sort=[("created_at", -1)],
         )
+
+    async def _get_resume_fields(self, user_id: str) -> dict:
+        doc = await self._get_resume_doc(user_id)
         if not doc:
             return {}
         ocr = doc.get("ocr_result") or {}
         return ocr.get("fields") or {}
+
+    async def _get_resume_text(self, user_id: str) -> str:
+        doc = await self._get_resume_doc(user_id)
+        if not doc:
+            return ""
+        return (doc.get("raw_extracted_text") or (doc.get("ocr_result") or {}).get("raw_text") or "")[:8000]
+
+    async def _invalidate_ai_caches(self, user_id: str) -> None:
+        await learning_cache_service.invalidate_user_ai_caches(user_id)
+
+    def _employee_recruiter_id(self, employee: dict) -> str | None:
+        rid = employee.get("recruiter_id")
+        return str(rid) if rid else None
+
+    async def _merged_skills_for_user(self, user_id: str, resume_fields: dict | None = None) -> list[dict]:
+        manual = await database.employee_skills.find({"user_id": user_id}).to_list(length=300)
+        resume_fields = resume_fields if resume_fields is not None else await self._get_resume_fields(user_id)
+        certs = await database.learning_certificates.find(
+            {"user_id": user_id, "verification_status": "verified"}
+        ).to_list(length=300)
+        cert_skills = resume_analysis_service.extract_certificate_skill_list(certs)
+        return resume_analysis_service.merge_skill_sources(
+            manual_skills=manual,
+            resume_fields=resume_fields,
+            certificate_skills=cert_skills,
+        )
 
     def _public_skill(self, doc: dict) -> dict:
         return {
@@ -91,19 +132,25 @@ class LearningService:
         }
 
     async def _current_skill_names(self, user_id: str, resume_fields: dict | None = None) -> list[str]:
-        manual = await database.employee_skills.find({"user_id": user_id}).to_list(length=300)
-        names = {d["skill_name"].strip() for d in manual if d.get("skill_name")}
-        resume_fields = resume_fields if resume_fields is not None else await self._get_resume_fields(user_id)
-        for key in ("technical_skills", "soft_skills", "skills"):
-            for value in resume_fields.get(key) or []:
-                if isinstance(value, str) and value.strip():
-                    names.add(value.strip())
-        return sorted(names, key=str.lower)
+        merged = await self._merged_skills_for_user(user_id, resume_fields)
+        return resume_analysis_service.skill_name_set(merged)
+
+    async def _employee_cert_titles(self, user_id: str) -> list[str]:
+        certs = await database.learning_certificates.find(
+            {"user_id": user_id, "verification_status": "verified"}
+        ).to_list(length=300)
+        titles = []
+        for c in certs:
+            if c.get("course_title"):
+                titles.append(c["course_title"])
+        return titles
 
     def _public_course(self, item: dict) -> dict:
         return {
             "uid": item.get("uid"),
             "type": item.get("type"),
+            "source": item.get("source", "microsoft_learn"),
+            "category": item.get("category"),
             "title": item.get("title"),
             "summary": item.get("summary"),
             "url": item.get("url"),
@@ -130,9 +177,104 @@ class LearningService:
         course_type: str | None,
         page: int,
         page_size: int,
+        bookmarked_only: bool = False,
+        source: str = "microsoft_learn",
+        category: str | None = None,
     ) -> dict:
-        result = await ms_learn_service.search_catalog(
-            q=q, role=role, level=level, product=product, course_type=course_type, page=page, page_size=page_size
+        if bookmarked_only:
+            bookmarks = await database.learning_bookmarks.find({"user_id": current_user.id}).sort(
+                "created_at", -1
+            ).to_list(length=500)
+            courses = []
+            for b in bookmarks:
+                item = await catalog_service.get_course_by_uid(b["course_uid"])
+                if item:
+                    public = self._public_course(item)
+                else:
+                    public = {
+                        "uid": b.get("course_uid"),
+                        "type": b.get("course_type"),
+                        "source": catalog_service.source_of(b.get("course_uid") or ""),
+                        "category": None,
+                        "title": b.get("course_title"),
+                        "summary": None,
+                        "url": b.get("course_url"),
+                        "duration_minutes": b.get("duration_minutes"),
+                        "levels": [b["level"]] if b.get("level") else [],
+                        "roles": [],
+                        "products": [],
+                        "subjects": [],
+                        "icon_url": None,
+                        "last_modified": None,
+                    }
+                # Apply lightweight client-side filters when browsing bookmarks.
+                if q and q.lower() not in (public.get("title") or "").lower():
+                    continue
+                if course_type and public.get("type") != course_type:
+                    continue
+                if level and level.lower() not in [str(x).lower() for x in (public.get("levels") or [])]:
+                    continue
+                if role and role.lower() not in [str(x).lower() for x in (public.get("roles") or [])]:
+                    continue
+                if source and public.get("source") != source:
+                    continue
+                courses.append(public)
+            total = len(courses)
+            start = (page - 1) * page_size
+            page_items = courses[start : start + page_size]
+            uids = [c["uid"] for c in page_items if c.get("uid")]
+            status_map = await self._status_map(current_user.id, uids)
+            enriched = []
+            for item in page_items:
+                public = dict(item)
+                public.update(status_map.get(item["uid"], {"enrolled": False, "bookmarked": True, "assigned": False}))
+                public["bookmarked"] = True
+                enriched.append(public)
+            pages = max(1, (total + page_size - 1) // page_size) if total else 1
+            return {"courses": enriched, "total": total, "page": page, "page_size": page_size, "pages": pages}
+
+        if source == "recruiter_kb":
+            employee = None
+            try:
+                employee = await self._get_employee(current_user)
+            except HTTPException:
+                employee = None
+            recruiter_id = None
+            if current_user.role in ("recruiter", "super_admin"):
+                recruiter_id = current_user.id if current_user.role == "recruiter" else None
+            elif employee:
+                recruiter_id = self._employee_recruiter_id(employee)
+            kb_courses = await recruiter_kb_service.list_as_catalog_courses(recruiter_id)
+            if q:
+                ql = q.lower()
+                kb_courses = [c for c in kb_courses if ql in (c.get("title") or "").lower() or ql in (c.get("summary") or "").lower()]
+            if course_type:
+                kb_courses = [c for c in kb_courses if c.get("type") == course_type]
+            total = len(kb_courses)
+            start = (page - 1) * page_size
+            page_items = kb_courses[start : start + page_size]
+            uids = [c["uid"] for c in page_items]
+            status_map = await self._status_map(current_user.id, uids)
+            courses = []
+            for item in page_items:
+                public = self._public_course(item)
+                public["provider"] = item.get("provider")
+                public["estimated_hours"] = item.get("estimated_hours")
+                public.update(status_map.get(item["uid"], {"enrolled": False, "bookmarked": False, "assigned": False}))
+                courses.append(public)
+            pages = max(1, (total + page_size - 1) // page_size) if total else 1
+            return {"courses": courses, "total": total, "page": page, "page_size": page_size, "pages": pages}
+
+        result = await catalog_service.search_catalog(
+            source=source,
+            q=q,
+            role=role,
+            level=level,
+            product=product,
+            course_type=course_type,
+            category=category,
+            page=page,
+            page_size=page_size,
         )
         uids = [c["uid"] for c in result["courses"]]
         status_map = await self._status_map(current_user.id, uids)
@@ -144,13 +286,23 @@ class LearningService:
         result["courses"] = courses
         return result
 
-    async def get_facets(self) -> dict:
-        return await ms_learn_service.get_facets()
+    async def get_facets(self, source: str = "microsoft_learn") -> dict:
+        return await catalog_service.get_facets(source)
+
+    async def get_soft_skill_categories(self) -> dict:
+        return {"categories": coursera_service.get_categories()}
 
     async def get_course_detail(self, current_user: CurrentUser, uid: str) -> dict:
-        item = await ms_learn_service.get_course_by_uid(uid)
+        item = await catalog_service.get_course_by_uid(uid)
+        if not item and uid.startswith("recruiter_kb:"):
+            cert_id = uid.split(":", 1)[1]
+            if ObjectId.is_valid(cert_id):
+                doc = await database.recruiter_kb_certifications.find_one({"_id": ObjectId(cert_id)})
+                if doc:
+                    courses = await recruiter_kb_service.list_as_catalog_courses(doc.get("recruiter_id"))
+                    item = next((c for c in courses if c["uid"] == uid), None)
         if not item:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found in Microsoft Learn catalog.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found in the catalog.")
         public = self._public_course(item)
         status_map = await self._status_map(current_user.id, [uid])
         public.update(status_map.get(uid, {"enrolled": False, "bookmarked": False, "assigned": False}))
@@ -202,9 +354,9 @@ class LearningService:
         }
 
     async def start_course(self, current_user: CurrentUser, uid: str) -> dict:
-        item = await ms_learn_service.get_course_by_uid(uid)
+        item = await catalog_service.get_course_by_uid(uid)
         if not item:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found in Microsoft Learn catalog.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found in the catalog.")
         employee = await self._get_employee(current_user)
         now = _now()
         existing = await database.learning_enrollments.find_one({"user_id": current_user.id, "course_uid": uid})
@@ -476,22 +628,31 @@ class LearningService:
         await database.learning_certificates.update_one({"_id": cert["_id"]}, {"$set": updates})
 
         if request.approve and cert.get("course_title"):
-            # Verified completion promotes the skill matrix — the whole point of the loop.
-            await database.employee_skills.update_one(
-                {"user_id": cert["user_id"], "skill_name": cert["course_title"]},
-                {
-                    "$set": {"updated_at": now, "source": "course", "verification_status": "verified"},
-                    "$setOnInsert": {
-                        "user_id": cert["user_id"],
-                        "employee_id": cert.get("employee_id"),
-                        "skill_name": cert["course_title"],
-                        "category": "Other",
-                        "proficiency": "Intermediate",
-                        "years_experience": None,
-                        "created_at": now,
-                    },
-                },
-                upsert=True,
+            course_summary = None
+            if cert.get("course_uid"):
+                course = await catalog_service.get_course_by_uid(cert["course_uid"])
+                course_summary = (course or {}).get("summary")
+
+            cert_text = await self._extract_certificate_text(cert)
+            skills = await learning_ai_service.extract_skills_from_certificate(
+                course_title=cert["course_title"],
+                certificate_text=cert_text,
+                course_summary=course_summary,
+            )
+            for skill in skills:
+                await self._upsert_verified_skill(
+                    user_id=cert["user_id"],
+                    employee_id=cert.get("employee_id"),
+                    skill_name=skill["skill_name"],
+                    category=skill.get("category") or "Other",
+                    proficiency=skill.get("proficiency") or "Intermediate",
+                    source="course",
+                )
+            await self._invalidate_ai_caches(cert["user_id"])
+            updates["skills_awarded"] = [s["skill_name"] for s in skills]
+            await database.learning_certificates.update_one(
+                {"_id": cert["_id"]},
+                {"$set": {"skills_awarded": updates["skills_awarded"]}},
             )
 
         await create_notification(
@@ -510,6 +671,84 @@ class LearningService:
         updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
         return {"certificate": self._public_certificate(updated)}
 
+    async def _extract_certificate_text(self, cert: dict) -> str | None:
+        """Best-effort OCR of an uploaded certificate for skill extraction."""
+        file_url = cert.get("file_url")
+        if not file_url:
+            return None
+        try:
+            import tempfile
+            from pathlib import Path
+
+            import httpx
+
+            from app.services.document_extraction_service import document_extraction_service
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(file_url)
+                if response.status_code != 200:
+                    return None
+                content = response.content
+            suffix = Path(cert.get("file_name") or "certificate.pdf").suffix or ".pdf"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+            try:
+                text = await __import__("asyncio").to_thread(
+                    document_extraction_service.extract_text, tmp_path
+                )
+                return (text or "")[:4000]
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
+        except Exception:
+            return None
+
+    async def _upsert_verified_skill(
+        self,
+        *,
+        user_id: str,
+        employee_id: str | None,
+        skill_name: str,
+        category: str,
+        proficiency: str,
+        source: str,
+    ) -> None:
+        now = _now()
+        rank = {"Beginner": 1, "Intermediate": 2, "Advanced": 3, "Expert": 4}
+        existing = await database.employee_skills.find_one(
+            {"user_id": user_id, "skill_name": {"$regex": f"^{_escape_regex(skill_name)}$", "$options": "i"}}
+        )
+        if existing:
+            current = existing.get("proficiency") or "Beginner"
+            new_prof = proficiency if rank.get(proficiency, 0) >= rank.get(current, 0) else current
+            await database.employee_skills.update_one(
+                {"_id": existing["_id"]},
+                {
+                    "$set": {
+                        "proficiency": new_prof,
+                        "category": category if category in SKILL_CATEGORIES else existing.get("category") or "Other",
+                        "source": source,
+                        "verification_status": "verified",
+                        "updated_at": now,
+                    }
+                },
+            )
+            return
+        await database.employee_skills.insert_one(
+            {
+                "user_id": user_id,
+                "employee_id": employee_id,
+                "skill_name": skill_name,
+                "category": category if category in SKILL_CATEGORIES else "Other",
+                "proficiency": proficiency,
+                "years_experience": None,
+                "source": source,
+                "verification_status": "verified",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
     # ------------------------------------------------------------------ #
     # US-092 / US-093 / US-094: Skill matrix
     # ------------------------------------------------------------------ #
@@ -517,8 +756,23 @@ class LearningService:
         return {"categories": SKILL_CATEGORIES}
 
     async def list_skills(self, current_user: CurrentUser) -> dict:
-        docs = await database.employee_skills.find({"user_id": current_user.id}).sort("skill_name", 1).to_list(length=300)
-        return {"skills": [self._public_skill(d) for d in docs]}
+        merged = await self._merged_skills_for_user(current_user.id)
+        skills = []
+        for s in merged:
+            skills.append(
+                {
+                    "id": s.get("id"),
+                    "skill_name": s.get("skill_name"),
+                    "category": s.get("category"),
+                    "proficiency": s.get("proficiency"),
+                    "years_experience": s.get("years_experience"),
+                    "source": s.get("source", "manual"),
+                    "verification_status": s.get("verification_status", "unverified"),
+                    "confidence": s.get("confidence"),
+                    "updated_at": s.get("updated_at"),
+                }
+            )
+        return {"skills": skills}
 
     async def upsert_skill(self, current_user: CurrentUser, request: SkillUpsertRequest) -> dict:
         employee = await self._get_employee(current_user)
@@ -554,6 +808,7 @@ class LearningService:
             }
             result = await database.employee_skills.insert_one(doc)
             doc["_id"] = result.inserted_id
+        await self._invalidate_ai_caches(current_user.id)
         return {"skill": self._public_skill(doc)}
 
     async def delete_skill(self, current_user: CurrentUser, skill_id: str) -> dict:
@@ -562,7 +817,8 @@ class LearningService:
         result = await database.employee_skills.delete_one({"_id": ObjectId(skill_id), "user_id": current_user.id})
         if result.deleted_count == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found.")
-        return {"deleted": True}
+        await self._invalidate_ai_caches(current_user.id)
+        return {"deleted": True, "cache_invalidated": True}
 
     # ------------------------------------------------------------------ #
     # US-095 / US-099 (lite): Career goal + AI path
@@ -592,8 +848,10 @@ class LearningService:
             return {"target_role": None}
         return {"target_role": doc.get("target_role")}
 
-    async def get_skill_gap(self, current_user: CurrentUser, target_role: str | None) -> dict:
-        """US-075 / US-100: skill gap dashboard, grounded with real MS Learn courses."""
+    async def get_skill_gap(
+        self, current_user: CurrentUser, target_role: str | None, *, refresh: bool = False
+    ) -> dict:
+        """Skill gap dashboard — deterministic when KB role exists; AI summary only when needed."""
         employee = await self._get_employee(current_user)
         resolved_role = target_role
         if not resolved_role:
@@ -605,51 +863,135 @@ class LearningService:
                 detail="Set a career goal or target role first.",
             )
 
+        recruiter_id = self._employee_recruiter_id(employee)
+        hashes = await learning_cache_service.compute_input_hashes(current_user.id, recruiter_id)
+        # Include target role in effective cache identity via collection key
+        if not refresh:
+            cached = await learning_cache_service.get_cached_skill_gap(current_user.id, resolved_role, hashes)
+            if cached:
+                return cached
+
         resume_fields = await self._get_resume_fields(current_user.id)
         current_skills = await self._current_skill_names(current_user.id, resume_fields)
+        employee_certs = await self._employee_cert_titles(current_user.id)
 
-        analysis = await learning_ai_service.analyze_skill_gap(
-            job_title=employee.get("job_title"),
-            target_role=resolved_role,
-            current_skills=current_skills,
-            professional_summary=resume_fields.get("professional_summary"),
-        )
-        if not analysis:
-            return {
-                "target_role": resolved_role,
-                "current_skills": current_skills,
-                "missing_skills": [],
-                "matched_skills": [],
-                "readiness_percentage": None,
-                "summary": "AI analysis is temporarily unavailable. Please try again shortly.",
-                "recommended_courses": [],
-            }
+        role_def = await recruiter_kb_service.find_role_by_title(resolved_role, recruiter_id)
+        analysis: dict | None = None
 
-        missing = analysis["missing_skills"]
+        if role_def:
+            analysis = role_matching_service.deterministic_skill_gap(
+                current_skills=current_skills,
+                target_role=resolved_role,
+                role_def=role_def,
+            )
+            # Cert matching with employee certs
+            cert_match = role_matching_service.match_employee_to_role(
+                employee_skills=current_skills,
+                employee_certifications=employee_certs,
+                role=role_def,
+            )
+            analysis["missing_certifications"] = cert_match["missing_certifications"]
+            analysis["certification_match_percent"] = cert_match["certification_match_percent"]
+            analysis["skill_match_percent"] = cert_match["skill_match_percent"]
+            analysis["readiness_percentage"] = int(round(cert_match["readiness_score"]))
+            analysis["learning_priority"] = cert_match["learning_priority"]
+            analysis["summary"] = (
+                f"You match {analysis.get('skill_match_percent', 0)}% of required skills "
+                f"and {analysis.get('certification_match_percent', 0)}% of certifications "
+                f"for {resolved_role}. Priority: {analysis.get('learning_priority')}."
+            )
+        else:
+            # No KB role — fall back to AI gap analysis (cached by hashes)
+            ai = await learning_ai_service.analyze_skill_gap(
+                job_title=employee.get("job_title"),
+                department=employee.get("department"),
+                target_role=resolved_role,
+                current_skills=current_skills,
+                professional_summary=resume_fields.get("professional_summary"),
+            )
+            if not ai:
+                analysis = {
+                    "target_role": resolved_role,
+                    "current_skills": current_skills,
+                    "missing_skills": [],
+                    "skill_gaps": [],
+                    "matched_skills": [],
+                    "readiness_percentage": None,
+                    "summary": "AI analysis is temporarily unavailable. Please try again shortly.",
+                    "recommended_courses": [],
+                    "missing_certifications": [],
+                }
+            else:
+                analysis = {
+                    "target_role": resolved_role,
+                    "current_skills": current_skills,
+                    "missing_skills": [m["skill"] for m in ai["missing_skills"]],
+                    "skill_gaps": ai["missing_skills"],
+                    "matched_skills": ai["matched_skills"],
+                    "readiness_percentage": ai["readiness_percentage"],
+                    "summary": ai["summary"],
+                    "missing_certifications": [],
+                    "deterministic": False,
+                }
+
+        missing_objs = analysis.get("skill_gaps") or []
+        priority_order = {"critical": 0, "immediate": 1, "medium": 2, "low": 3}
+        missing_objs = sorted(missing_objs, key=lambda m: priority_order.get(m.get("priority"), 2))
+        missing_names = [m["skill"] for m in missing_objs] if missing_objs else (analysis.get("missing_skills") or [])
+
         recommended_courses = []
-        if missing:
-            candidates = await ms_learn_service.find_courses_for_keywords(missing, per_keyword=2, limit=len(missing) * 2)
-            for skill in missing:
+        if missing_names:
+            candidates = await catalog_service.find_courses_for_keywords(
+                missing_names, per_keyword=3, limit=len(missing_names) * 3
+            )
+            # Include recruiter KB certs in candidates
+            kb_courses = await recruiter_kb_service.list_as_catalog_courses(recruiter_id)
+            candidates = candidates + kb_courses
+            for gap in missing_objs or [{"skill": n, "priority": "medium", "reason": ""} for n in missing_names]:
+                skill = gap["skill"] if isinstance(gap, dict) else gap
+                priority = gap.get("priority", "medium") if isinstance(gap, dict) else "medium"
+                reason = gap.get("reason", "") if isinstance(gap, dict) else ""
                 match = next(
-                    (c for c in candidates if skill.lower() in (c.get("title") or "").lower()
-                     or skill.lower() in " ".join(c.get("products") or []).lower()),
+                    (
+                        c
+                        for c in candidates
+                        if skill.lower() in (c.get("title") or "").lower()
+                        or skill.lower() in " ".join(c.get("products") or []).lower()
+                    ),
                     None,
                 )
                 if not match and candidates:
                     match = candidates[0]
                 if match:
-                    recommended_courses.append({"skill": skill, "course": self._public_course(match)})
+                    recommended_courses.append(
+                        {
+                            "skill": skill,
+                            "priority": priority,
+                            "reason": reason,
+                            "course": self._public_course(match),
+                        }
+                    )
                     candidates = [c for c in candidates if c["uid"] != match["uid"]]
 
-        return {
+        payload = {
             "target_role": resolved_role,
             "current_skills": current_skills,
-            "missing_skills": missing,
-            "matched_skills": analysis["matched_skills"],
-            "readiness_percentage": analysis["readiness_percentage"],
-            "summary": analysis["summary"],
+            "missing_skills": missing_names,
+            "skill_gaps": missing_objs,
+            "matched_skills": analysis.get("matched_skills") or [],
+            "readiness_percentage": analysis.get("readiness_percentage"),
+            "summary": analysis.get("summary"),
             "recommended_courses": recommended_courses,
+            "missing_certifications": analysis.get("missing_certifications") or [],
+            "skill_match_percent": analysis.get("skill_match_percent"),
+            "certification_match_percent": analysis.get("certification_match_percent"),
+            "learning_priority": analysis.get("learning_priority"),
+            "cached": False,
+            "lastAnalyzedAt": _now().isoformat(),
+            **{k: hashes[k] for k in hashes},
         }
+        await learning_cache_service.store_skill_gap(current_user.id, resolved_role, payload, hashes)
+        return payload
 
     async def get_career_path(self, current_user: CurrentUser, *, refresh: bool = False) -> dict:
         goal = await database.learning_career_goals.find_one({"user_id": current_user.id})
@@ -658,30 +1000,120 @@ class LearningService:
 
         cached = goal.get("ai_path")
         if cached and not refresh:
-            return cached
+            # Still validate input hashes — if inputs changed, rebuild
+            employee = await self._get_employee(current_user)
+            hashes = await learning_cache_service.compute_input_hashes(
+                current_user.id, self._employee_recruiter_id(employee)
+            )
+            if learning_cache_service.hashes_match(cached.get("cache_meta") or {}, hashes):
+                return cached
 
-        gap = await self.get_skill_gap(current_user, goal["target_role"])
-        path = []
-        for idx, item in enumerate(gap.get("recommended_courses") or [], start=1):
-            path.append({"step": idx, "skill": item["skill"], "course": item["course"]})
+        gap = await self.get_skill_gap(current_user, goal["target_role"], refresh=refresh)
+        employee = await self._get_employee(current_user)
+        recruiter_id = self._employee_recruiter_id(employee)
 
-        # Suggest a matching certification as the path's capstone, if one exists.
-        certification = None
-        certs = await ms_learn_service.find_courses_for_keywords([goal["target_role"]], per_keyword=3, limit=3)
-        certs = [c for c in certs if c.get("type") == "certification"]
-        if certs:
-            certification = self._public_course(certs[0])
+        keywords = list(gap.get("missing_skills") or []) + [goal["target_role"]]
+        catalog_courses = await catalog_service.find_courses_for_keywords(keywords, per_keyword=4, limit=40)
+        kb_certs = []
+        role_def = await recruiter_kb_service.find_role_by_title(goal["target_role"], recruiter_id)
+        if role_def:
+            kb_certs = role_def.get("certifications") or []
+        else:
+            all_kb = await recruiter_kb_service.list_as_catalog_courses(recruiter_id)
+            kb_certs = [
+                {
+                    "title": c.get("title"),
+                    "provider": c.get("provider"),
+                    "official_url": c.get("url"),
+                    "estimated_hours": c.get("estimated_hours"),
+                    "difficulty": (c.get("levels") or [None])[0],
+                    "description": c.get("summary"),
+                    "skills_covered": c.get("products") or [],
+                    "id": c.get("uid"),
+                }
+                for c in all_kb
+            ]
 
+        existing_certs = await self._employee_cert_titles(current_user.id)
+        enrollments = await database.learning_enrollments.find(
+            {"user_id": current_user.id, "status": "completed"}
+        ).to_list(length=300)
+        completed_uids = {e["course_uid"] for e in enrollments if e.get("course_uid")}
+
+        path_payload = learning_path_service.build_learning_path(
+            target_role=goal["target_role"],
+            missing_skills=gap.get("missing_skills") or [],
+            missing_certifications=gap.get("missing_certifications") or [],
+            catalog_courses=catalog_courses,
+            kb_certifications=kb_certs,
+            existing_certifications=existing_certs,
+            completed_uids=completed_uids,
+        )
+
+        hashes = await learning_cache_service.compute_input_hashes(current_user.id, recruiter_id)
         payload = {
-            "target_role": goal["target_role"],
-            "path": path,
-            "certification": certification,
+            **path_payload,
+            "certification": path_payload["path"][-1] if path_payload["path"] and path_payload["path"][-1].get("kind") == "certification" else None,
             "readiness_percentage": gap.get("readiness_percentage"),
             "summary": gap.get("summary"),
+            "skill_match_percent": gap.get("skill_match_percent"),
+            "certification_match_percent": gap.get("certification_match_percent"),
             "generated_at": _now().isoformat(),
+            "cache_meta": hashes,
         }
+        # Normalize path steps for existing UI (course nested object)
+        ui_path = []
+        for step in path_payload.get("path") or []:
+            ui_path.append(
+                {
+                    "step": step["step"],
+                    "skill": step.get("skill"),
+                    "course": {
+                        "uid": step.get("uid"),
+                        "title": step.get("title"),
+                        "url": step.get("url"),
+                        "type": step.get("type"),
+                        "source": step.get("source"),
+                        "duration_minutes": step.get("duration_minutes"),
+                        "provider": step.get("provider"),
+                    },
+                    "kind": step.get("kind"),
+                    "completed": step.get("completed"),
+                    "estimated_hours": step.get("estimated_hours"),
+                    "difficulty": step.get("difficulty"),
+                }
+            )
+        payload["path"] = ui_path
+
         await database.learning_career_goals.update_one({"_id": goal["_id"]}, {"$set": {"ai_path": payload}})
         return payload
+
+    async def get_role_matches(self, current_user: CurrentUser, *, refresh: bool = False) -> dict:
+        """Compare employee profile against all recruiter KB roles (deterministic)."""
+        employee = await self._get_employee(current_user)
+        recruiter_id = self._employee_recruiter_id(employee)
+        hashes = await learning_cache_service.compute_input_hashes(current_user.id, recruiter_id)
+        if not refresh:
+            cached = await learning_cache_service.get_cached_role_matches(current_user.id, hashes)
+            if cached:
+                return cached
+
+        resume_fields = await self._get_resume_fields(current_user.id)
+        skills = await self._current_skill_names(current_user.id, resume_fields)
+        certs = await self._employee_cert_titles(current_user.id)
+        roles = await recruiter_kb_service.get_roles_for_matching(recruiter_id)
+        matches = role_matching_service.match_employee_to_roles(
+            employee_skills=skills,
+            employee_certifications=certs,
+            roles=roles,
+        )
+        await learning_cache_service.store_role_matches(current_user.id, matches, hashes)
+        return {
+            "roles": matches,
+            "generated_at": _now().isoformat(),
+            "cached": False,
+            "cache_meta": hashes,
+        }
 
     # ------------------------------------------------------------------ #
     # US-074: AI course recommendations
@@ -703,20 +1135,48 @@ class LearningService:
         goal_doc = await database.learning_career_goals.find_one({"user_id": current_user.id})
         career_goal = (goal_doc or {}).get("target_role")
 
+        skill_gaps: list[dict] = []
+        try:
+            gap = await self.get_skill_gap(current_user, career_goal or employee.get("job_title"))
+            skill_gaps = gap.get("skill_gaps") or []
+        except HTTPException:
+            skill_gaps = []
+
         keywords = list(current_skills)
+        for gap_item in skill_gaps:
+            if gap_item.get("skill"):
+                keywords.append(gap_item["skill"])
         if employee.get("job_title"):
             keywords.append(employee["job_title"])
+        if employee.get("department"):
+            keywords.append(employee["department"])
         if career_goal:
             keywords.append(career_goal)
         if not keywords:
             keywords = ["fundamentals"]
 
-        candidates = await ms_learn_service.find_courses_for_keywords(keywords, per_keyword=5, limit=40)
+        # Prefer keywords from critical/immediate gaps first in search ordering.
+        priority_order = {"critical": 0, "immediate": 1, "medium": 2, "low": 3}
+        gap_skills = sorted(skill_gaps, key=lambda g: priority_order.get(g.get("priority"), 2))
+        search_keywords = [g["skill"] for g in gap_skills if g.get("skill")] + keywords
+
+        candidates = await catalog_service.find_courses_for_keywords(
+            list(dict.fromkeys(search_keywords))[:20], per_keyword=5, limit=48
+        )
+
+        # Never recommend a course already assigned or completed.
+        existing_uids = set()
+        for coll in (database.learning_assignments, database.learning_enrollments):
+            docs = await coll.find({"user_id": current_user.id}, {"course_uid": 1}).to_list(length=1000)
+            existing_uids.update(d["course_uid"] for d in docs if d.get("course_uid"))
+        candidates = [c for c in candidates if c.get("uid") not in existing_uids]
+
         picks = await learning_ai_service.rank_recommended_courses(
             job_title=employee.get("job_title"),
             department=employee.get("department"),
             current_skills=current_skills,
             career_goal=career_goal,
+            skill_gaps=skill_gaps,
             candidates=candidates,
             top_n=8,
         )
@@ -728,13 +1188,14 @@ class LearningService:
             if course:
                 entry = self._public_course(course)
                 entry["reason"] = pick["reason"]
+                entry["priority"] = pick.get("priority") or "medium"
                 recommendations.append(entry)
 
         if not recommendations and candidates:
-            # AI unavailable — fall back to top popular real courses so the page is never empty.
             for course in sorted(candidates, key=lambda c: -(c.get("popularity") or 0))[:6]:
                 entry = self._public_course(course)
                 entry["reason"] = "Popular course matching your current skills and role."
+                entry["priority"] = "medium"
                 recommendations.append(entry)
 
         now = _now()
@@ -750,14 +1211,53 @@ class LearningService:
     # ------------------------------------------------------------------ #
     async def assign_courses(self, current_user: CurrentUser, request: CourseAssignRequest) -> dict:
         assigned = []
+        skipped = []
         errors = []
         now = _now()
-        for employee_id in request.employee_ids:
+
+        target_ids = list(request.employee_ids)
+        if request.department or request.job_title or not target_ids:
+            query: dict[str, Any] = {"status": "active"}
+            if current_user.role != "super_admin":
+                query["recruiter_id"] = current_user.id
+            if request.department:
+                query["department"] = {"$regex": f"^{_escape_regex(request.department)}$", "$options": "i"}
+            if request.job_title:
+                query["job_title"] = {"$regex": f"^{_escape_regex(request.job_title)}$", "$options": "i"}
+            if request.department or request.job_title:
+                matches = await database.employees.find(query, {"employee_id": 1}).to_list(length=2000)
+                matched_ids = [m["employee_id"] for m in matches if m.get("employee_id")]
+                if target_ids:
+                    target_ids = [eid for eid in target_ids if eid in set(matched_ids)]
+                else:
+                    target_ids = matched_ids
+
+        if not target_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No matching employees found for the selected filters.",
+            )
+
+        for employee_id in target_ids:
             employee = await database.employees.find_one({"employee_id": employee_id, "status": "active"})
             if not employee:
                 errors.append({"employee_id": employee_id, "error": "Employee not found."})
                 continue
             await self._assert_recruiter_owns(current_user, employee)
+
+            existing = await database.learning_assignments.find_one(
+                {"employee_id": employee_id, "course_uid": request.course_uid}
+            )
+            if existing:
+                skipped.append(
+                    {
+                        "employee_id": employee_id,
+                        "employee_name": employee.get("full_name"),
+                        "reason": "Course already assigned to this employee.",
+                    }
+                )
+                continue
+
             doc = {
                 "employee_id": employee_id,
                 "user_id": employee.get("user_id"),
@@ -792,7 +1292,7 @@ class LearningService:
                     link="/dashboard/employee/learning",
                     related_id=str(doc["_id"]),
                 )
-        return {"assigned": assigned, "errors": errors}
+        return {"assigned": assigned, "skipped": skipped, "errors": errors}
 
     def _public_assignment(self, doc: dict) -> dict:
         return {
@@ -823,7 +1323,9 @@ class LearningService:
         docs = await database.learning_assignments.find(query).sort("created_at", -1).to_list(length=500)
         return {"assignments": [self._public_assignment(d) for d in docs]}
 
-    async def get_employee_learning_profile(self, current_user: CurrentUser, employee_id: str) -> dict:
+    async def get_employee_learning_profile(
+        self, current_user: CurrentUser, employee_id: str, *, refresh_ai: bool = False
+    ) -> dict:
         employee = await self._get_employee_by_id(employee_id)
         await self._assert_recruiter_owns(current_user, employee)
         user_id = employee.get("user_id")
@@ -831,6 +1333,151 @@ class LearningService:
         assignments = await database.learning_assignments.find({"employee_id": employee_id}).sort("created_at", -1).to_list(length=300)
         certificates = await database.learning_certificates.find({"user_id": user_id}).sort("created_at", -1).to_list(length=300)
         skills = await database.employee_skills.find({"user_id": user_id}).sort("skill_name", 1).to_list(length=300)
+
+        completed = [e for e in enrollments if e.get("status") == "completed"]
+        certs_earned = [c for c in certificates if c.get("verification_status") == "verified"]
+        learning_summary = {
+            "assigned_count": len(assignments),
+            "enrolled_count": len(enrollments),
+            "completed_count": len(completed),
+            "certificates_earned": len(certs_earned),
+            "overall_progress_percent": (
+                round(sum(e.get("progress_percent", 0) for e in enrollments) / len(enrollments)) if enrollments else 0
+            ),
+            "total_learning_hours": round(
+                sum((c.get("learning_hours") or 0) for c in certs_earned)
+                + sum((e.get("duration_minutes") or 0) for e in completed) / 60,
+                1,
+            ),
+        }
+
+        resume_fields = await self._get_resume_fields(user_id) if user_id else {}
+        current_skills = await self._current_skill_names(user_id, resume_fields) if user_id else []
+        goal = await database.learning_career_goals.find_one({"user_id": user_id}) if user_id else None
+        target_role = (goal or {}).get("target_role")
+
+        assessment = None
+        recommendations = []
+        promotion = None
+        skill_gaps: list[dict] = []
+        role_matches: list[dict] = []
+
+        if user_id:
+            recruiter_id = self._employee_recruiter_id(employee) or current_user.id
+            hashes = await learning_cache_service.compute_input_hashes(user_id, recruiter_id)
+
+            assessment = await self._get_or_build_skill_assessment(
+                employee=employee,
+                user_id=user_id,
+                resume_fields=resume_fields,
+                existing_skills=skills,
+                refresh=refresh_ai,
+            )
+            skill_gaps = (assessment or {}).get("gaps") or []
+
+            # Deterministic role matches from recruiter KB
+            kb_roles = await recruiter_kb_service.get_roles_for_matching(recruiter_id)
+            emp_certs = [c.get("course_title") for c in certs_earned if c.get("course_title")]
+            role_matches = role_matching_service.match_employee_to_roles(
+                employee_skills=current_skills,
+                employee_certifications=emp_certs,
+                roles=kb_roles,
+            )
+
+            # Cache recruiter AI extras (recs + promotion) on the assessment doc side-car
+            profile_cache = await database.learning_recruiter_profile_cache.find_one({"user_id": user_id})
+            cache_ok = (
+                profile_cache
+                and not refresh_ai
+                and learning_cache_service.hashes_match(profile_cache.get("cache_meta") or {}, hashes)
+            )
+            if cache_ok:
+                recommendations = profile_cache.get("recommendations") or []
+                promotion = profile_cache.get("promotion")
+            else:
+                keywords = list(current_skills) + [g.get("skill") for g in skill_gaps if g.get("skill")]
+                if employee.get("job_title"):
+                    keywords.append(employee["job_title"])
+                if employee.get("department"):
+                    keywords.append(employee["department"])
+                keywords = [k for k in keywords if k] or ["fundamentals"]
+                candidates = await catalog_service.find_courses_for_keywords(
+                    list(dict.fromkeys(keywords))[:20], per_keyword=4, limit=36
+                )
+                kb_courses = await recruiter_kb_service.list_as_catalog_courses(recruiter_id)
+                candidates = candidates + kb_courses
+                existing_uids = {
+                    a["course_uid"] for a in assignments if a.get("course_uid")
+                } | {e["course_uid"] for e in enrollments if e.get("course_uid")}
+                candidates = [c for c in candidates if c.get("uid") not in existing_uids]
+                picks = await learning_ai_service.rank_recommended_courses(
+                    job_title=employee.get("job_title"),
+                    department=employee.get("department"),
+                    current_skills=current_skills,
+                    career_goal=target_role,
+                    skill_gaps=skill_gaps,
+                    candidates=candidates,
+                    top_n=6,
+                )
+                by_uid = {c["uid"]: c for c in candidates}
+                for pick in picks:
+                    course = by_uid.get(pick["uid"])
+                    if course:
+                        entry = self._public_course(course)
+                        entry["reason"] = pick["reason"]
+                        entry["priority"] = pick.get("priority") or "medium"
+                        recommendations.append(entry)
+
+                # Prefer deterministic readiness from top role match; AI for NL only
+                top = role_matches[0] if role_matches else None
+                if top:
+                    promotion = {
+                        "promotion_ready": top["readiness_score"] >= 80,
+                        "readiness_score": int(round(top["readiness_score"])),
+                        "recommended_next_title": top.get("role") or target_role,
+                        "reasons": [
+                            f"Skill match {top['skill_match_percent']}%",
+                            f"Certification match {top['certification_match_percent']}%",
+                        ],
+                        "recommended_actions": [
+                            f"Close gap: {s}" for s in (top.get("missing_skills") or [])[:3]
+                        ],
+                        "timeline": "Ready now" if top["readiness_score"] >= 80 else "3-6 months",
+                        "summary": (
+                            f"Deterministic readiness for {top.get('role')}: "
+                            f"{top['readiness_score']}% (priority: {top.get('learning_priority')})."
+                        ),
+                        "deterministic": True,
+                    }
+                else:
+                    promotion = await learning_ai_service.predict_promotion_readiness(
+                        job_title=employee.get("job_title"),
+                        department=employee.get("department"),
+                        target_role=target_role,
+                        current_skills=current_skills,
+                        skill_gaps=skill_gaps,
+                        learning_summary=learning_summary,
+                        professional_summary=resume_fields.get("professional_summary"),
+                    )
+
+                await database.learning_recruiter_profile_cache.update_one(
+                    {"user_id": user_id},
+                    {
+                        "$set": {
+                            "user_id": user_id,
+                            "recommendations": recommendations,
+                            "promotion": promotion,
+                            "generated_at": _now(),
+                            "cache_meta": hashes,
+                        }
+                    },
+                    upsert=True,
+                )
+
+        merged_skills = (
+            await self._merged_skills_for_user(user_id, resume_fields) if user_id else []
+        )
+
         return {
             "employee": {
                 "employee_id": employee.get("employee_id"),
@@ -838,10 +1485,204 @@ class LearningService:
                 "job_title": employee.get("job_title"),
                 "department": employee.get("department"),
             },
+            "summary": learning_summary,
             "enrollments": [self._public_enrollment(e) for e in enrollments],
             "assignments": [self._public_assignment(a) for a in assignments],
             "certificates": [self._public_certificate(c) for c in certificates],
-            "skills": [self._public_skill(s) for s in skills],
+            "skills": [
+                {
+                    "id": s.get("id"),
+                    "skill_name": s.get("skill_name"),
+                    "category": s.get("category"),
+                    "proficiency": s.get("proficiency"),
+                    "years_experience": s.get("years_experience"),
+                    "source": s.get("source", "manual"),
+                    "verification_status": s.get("verification_status", "unverified"),
+                    "confidence": s.get("confidence"),
+                }
+                for s in merged_skills
+            ]
+            or [self._public_skill(s) for s in skills],
+            "skill_assessment": assessment,
+            "skill_gaps": skill_gaps,
+            "recommendations": recommendations,
+            "promotion": promotion,
+            "career_goal": target_role,
+            "role_matches": role_matches,
+        }
+
+    async def _get_or_build_skill_assessment(
+        self,
+        *,
+        employee: dict,
+        user_id: str,
+        resume_fields: dict,
+        existing_skills: list[dict],
+        refresh: bool = False,
+    ) -> dict | None:
+        recruiter_id = self._employee_recruiter_id(employee)
+        hashes = await learning_cache_service.compute_input_hashes(user_id, recruiter_id)
+
+        if not refresh:
+            cached = await learning_cache_service.get_cached_assessment(user_id, hashes)
+            if cached:
+                return cached.get("assessment")
+
+        # Also try legacy TTL cache document if hashes missing (migration)
+        legacy = await database.learning_skill_assessments.find_one({"user_id": user_id})
+        if legacy and not refresh and legacy.get("cache_meta") and learning_cache_service.hashes_match(
+            legacy.get("cache_meta") or {}, hashes
+        ):
+            return legacy.get("assessment")
+
+        resume_text = await self._get_resume_text(user_id)
+        # Merge resume + cert skills into the assessment input
+        merged = resume_analysis_service.merge_skill_sources(
+            manual_skills=existing_skills,
+            resume_fields=resume_fields,
+            certificate_skills=resume_analysis_service.extract_certificate_skill_list(
+                await database.learning_certificates.find(
+                    {"user_id": user_id, "verification_status": "verified"}
+                ).to_list(length=300)
+            ),
+        )
+        existing_public = [
+            {
+                "skill_name": s.get("skill_name"),
+                "category": s.get("category"),
+                "proficiency": s.get("proficiency"),
+                "confidence": s.get("confidence"),
+                "source": s.get("source"),
+            }
+            for s in merged
+        ]
+        assessment = await learning_ai_service.build_skill_matrix(
+            job_title=employee.get("job_title"),
+            department=employee.get("department"),
+            resume_fields=resume_fields,
+            resume_text=resume_text,
+            existing_skills=existing_public,
+        )
+        if not assessment:
+            return legacy.get("assessment") if legacy else None
+
+        # Persist AI skills into the matrix (resume source) without wiping manual entries.
+        for skill in assessment.get("skills") or []:
+            await self._upsert_ai_skill(
+                user_id=user_id,
+                employee_id=employee.get("employee_id"),
+                skill_name=skill["skill_name"],
+                category=skill.get("category") or "Other",
+                proficiency=skill.get("proficiency") or "Beginner",
+                years_experience=skill.get("years_experience"),
+            )
+
+        # Recompute hashes after skill upserts (skillsHash may change)
+        hashes = await learning_cache_service.compute_input_hashes(user_id, recruiter_id)
+        await learning_cache_service.store_assessment(user_id, assessment, hashes)
+        return assessment
+
+    async def _upsert_ai_skill(
+        self,
+        *,
+        user_id: str,
+        employee_id: str | None,
+        skill_name: str,
+        category: str,
+        proficiency: str,
+        years_experience: float | None,
+    ) -> None:
+        now = _now()
+        existing = await database.employee_skills.find_one(
+            {"user_id": user_id, "skill_name": {"$regex": f"^{_escape_regex(skill_name)}$", "$options": "i"}}
+        )
+        if existing and existing.get("source") in ("manual", "course"):
+            return
+        if existing:
+            await database.employee_skills.update_one(
+                {"_id": existing["_id"]},
+                {
+                    "$set": {
+                        "category": category if category in SKILL_CATEGORIES else "Other",
+                        "proficiency": proficiency,
+                        "years_experience": years_experience,
+                        "source": "ai_resume",
+                        "updated_at": now,
+                    }
+                },
+            )
+            return
+        await database.employee_skills.insert_one(
+            {
+                "user_id": user_id,
+                "employee_id": employee_id,
+                "skill_name": skill_name,
+                "category": category if category in SKILL_CATEGORIES else "Other",
+                "proficiency": proficiency,
+                "years_experience": years_experience,
+                "source": "ai_resume",
+                "verification_status": "unverified",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
+    async def assess_my_skills(
+        self, current_user: CurrentUser, *, refresh: bool = False, lazy: bool = False
+    ) -> dict:
+        employee = await self._get_employee(current_user)
+        resume_fields = await self._get_resume_fields(current_user.id)
+        skills = await database.employee_skills.find({"user_id": current_user.id}).to_list(length=300)
+        recruiter_id = self._employee_recruiter_id(employee)
+        hashes = await learning_cache_service.compute_input_hashes(current_user.id, recruiter_id)
+
+        cached_hit = False
+        assessment = None
+        if not refresh:
+            cached = await learning_cache_service.get_cached_assessment(current_user.id, hashes)
+            if cached:
+                cached_hit = True
+                assessment = cached.get("assessment")
+            elif not lazy:
+                assessment = await self._get_or_build_skill_assessment(
+                    employee=employee,
+                    user_id=current_user.id,
+                    resume_fields=resume_fields,
+                    existing_skills=skills,
+                    refresh=False,
+                )
+        else:
+            assessment = await self._get_or_build_skill_assessment(
+                employee=employee,
+                user_id=current_user.id,
+                resume_fields=resume_fields,
+                existing_skills=skills,
+                refresh=True,
+            )
+
+        updated_skills = await self._merged_skills_for_user(current_user.id, resume_fields)
+        hashes = await learning_cache_service.compute_input_hashes(current_user.id, recruiter_id)
+        meta_doc = await database.learning_skill_assessments.find_one({"user_id": current_user.id})
+        return {
+            "assessment": assessment,
+            "skills": [
+                {
+                    "id": s.get("id"),
+                    "skill_name": s.get("skill_name"),
+                    "category": s.get("category"),
+                    "proficiency": s.get("proficiency"),
+                    "years_experience": s.get("years_experience"),
+                    "source": s.get("source", "manual"),
+                    "verification_status": s.get("verification_status", "unverified"),
+                    "confidence": s.get("confidence"),
+                }
+                for s in updated_skills
+            ],
+            "cached": cached_hit,
+            "cache_meta": {
+                **hashes,
+                "lastAnalyzedAt": _iso((meta_doc or {}).get("generated_at")),
+            },
         }
 
     async def get_analytics(self, current_user: CurrentUser) -> dict:

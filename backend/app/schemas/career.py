@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 CareerEventType = Literal[
     "joined",
@@ -15,6 +15,34 @@ CareerEventType = Literal[
     "manager_change",
     "status_change",
 ]
+
+
+class RoleAssignRequest(BaseModel):
+    """Recruiter assigns or changes designation + department (from org taxonomy lists)."""
+
+    job_title: str = Field(min_length=2, max_length=120)
+    department: str = Field(min_length=2, max_length=120)
+    event_type: Literal["promoted", "title_change", "department_change"] = "title_change"
+    effective_date: date | None = None
+    note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("job_title", "department")
+    @classmethod
+    def normalize_required(cls, value: str) -> str:
+        return " ".join(value.split())
+
+    @field_validator("note")
+    @classmethod
+    def strip_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def infer_event_type(self):
+        # Keep explicit event_type from client; default stays title_change.
+        return self
 
 
 class CareerEventCreateRequest(BaseModel):

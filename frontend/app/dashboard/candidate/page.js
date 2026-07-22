@@ -55,30 +55,6 @@ const NAV_ITEMS = [
     ),
   },
   {
-    key: "learning",
-    label: "Learning",
-    href: null,
-    disabled: true,
-    badge: "PHASE 3",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-      </svg>
-    ),
-  },
-  {
-    key: "ai",
-    label: "AI Coach",
-    href: null,
-    disabled: true,
-    badge: "PHASE 3",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" /><path d="M19 11a7 7 0 0 1-14 0M12 18v4" />
-      </svg>
-    ),
-  },
-  {
     key: "profile",
     label: "Profile",
     href: "/onboarding?edit=true",
@@ -427,7 +403,7 @@ function CandidateDashboardContent() {
                   <h3>Offer letter ready to review</h3>
                   <p>Your recruiter has sent an offer letter. Open it here to review the terms and sign digitally.</p>
                 </div>
-                <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer")}>
+                <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer?from=candidate-dashboard")}>
                   Review and sign offer
                 </button>
               </div>
@@ -454,10 +430,10 @@ function CandidateDashboardContent() {
                 label="Offer status"
               />
               <StatCard
-                icon={<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>}
+                icon={<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></>}
                 tone="purple"
-                value="Phase 3"
-                label="Learning modules unlock"
+                value={Math.max(0, tasks.length - completedCount)}
+                label="Remaining tasks"
               />
             </div>
 
@@ -603,35 +579,6 @@ function CandidateDashboardContent() {
               </div>
             </div>
 
-            {/* Workplace modules */}
-            <div className={styles.section} style={{ marginTop: 24, marginBottom: 0 }}>
-              <div className={styles.sectionHead}>
-                <div className={styles.sectionHeadLeft}>
-                  <div className={`${styles.bar} ${styles.purple}`} />
-                  <div>
-                    <div className={styles.sectionTitle}>Workplace modules</div>
-                    <div className={styles.sectionDesc}>Learning &amp; AI coaching unlock after onboarding.</div>
-                  </div>
-                </div>
-              </div>
-              <div className={styles.sectionBody}>
-                <div className={styles.modulesGrid}>
-                  <ModuleCard
-                    styles={styles}
-                    title="Learning modules"
-                    desc="Assigned courses and skill paths will appear here once Learning launches."
-                    icon={<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>}
-                  />
-                  <ModuleCard
-                    styles={styles}
-                    title="AI Coach"
-                    desc="Your personal AI coaching sessions and progress will appear here."
-                    icon={<><path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" /><path d="M19 11a7 7 0 0 1-14 0M12 18v4" /></>}
-                  />
-                </div>
-              </div>
-            </div>
-
             <div className={styles.footerNote}>Talent by Mazik Global Pakistan · Candidate Dashboard</div>
           </div>
         </main>
@@ -645,20 +592,6 @@ function Field({ label, value, styles, wide }) {
     <div className={wide ? styles.profileFieldWide : undefined}>
       <div className={styles.fieldLabel}>{label}</div>
       <div className={`${styles.fieldValue} ${!value ? styles.dim : ""}`}>{value || "Not assigned"}</div>
-    </div>
-  );
-}
-
-function ModuleCard({ title, desc, icon, styles }) {
-  return (
-    <div className={styles.moduleCard}>
-      <div className={styles.phaseBadge}>PHASE 3</div>
-      <div className={styles.moduleIcon}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{icon}</svg>
-      </div>
-      <div className={styles.moduleTitle}>{title}</div>
-      <div className={styles.moduleDesc}>{desc}</div>
-      <div className={styles.progressTrack}><div className={styles.progressFill} style={{ width: "0%" }} /></div>
     </div>
   );
 }

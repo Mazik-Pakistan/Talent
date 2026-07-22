@@ -621,7 +621,46 @@ class EmployeeService:
                 "created_at": now,
             }
         )
+        # Role changes invalidate AI learning caches for this employee.
+        if employee.get("user_id") and (data.get("to_title") or data.get("to_department")):
+            from app.services.learning_service import learning_service
+
+            await learning_service._invalidate_ai_caches(employee["user_id"])
         return await self.list_career_events(employee_id)
+
+    async def assign_role(self, current_user: CurrentUser, employee_id: str, request) -> dict:
+        """Assign designation + department via a career event (promotion / title / dept change)."""
+        from datetime import date as date_cls
+
+        from app.schemas.career import CareerEventCreateRequest
+
+        employee = await database.employees.find_one({"employee_id": employee_id})
+        if not employee:
+            raise HTTPException(status_code=404, detail="Employee not found.")
+        if current_user.role != "super_admin" and employee.get("recruiter_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="Not allowed.")
+
+        event_type = request.event_type
+        if request.job_title != employee.get("job_title") and request.department != employee.get("department"):
+            # Prefer explicit type; default to promoted when both change and client said so.
+            pass
+        elif request.job_title != employee.get("job_title") and event_type == "department_change":
+            event_type = "title_change"
+        elif request.department != employee.get("department") and event_type == "title_change":
+            event_type = "department_change"
+
+        career_req = CareerEventCreateRequest(
+            event_type=event_type,
+            effective_date=request.effective_date or date_cls.today(),
+            from_title=employee.get("job_title"),
+            to_title=request.job_title,
+            from_department=employee.get("department"),
+            to_department=request.department,
+            note=request.note or "Role assigned by recruiter",
+        )
+        events = await self.add_career_event(current_user, employee_id, career_req)
+        profile = await self.get_employee_profile(current_user, employee_id, reveal_banking=False)
+        return {"employee": profile["employee"], "events": events.get("events") if isinstance(events, dict) else events}
 
     async def get_my_profile(self, current_user: CurrentUser) -> dict:
         employee = await database.employees.find_one(
@@ -724,6 +763,7 @@ class EmployeeService:
         file_name: str,
         file_url: str,
         doc_type: str | None = None,
+        index: int = 0,
     ) -> dict:
         """Keep the employee profile's denormalized onboarding data in sync."""
         employee = await self._require_employee(current_user)
@@ -769,11 +809,21 @@ class EmployeeService:
         elif purpose == "education_cert":
             education = dict(onboarding.get("education") or {})
             entries = list(education.get("entries") or [])
-            if entries:
-                target_entry = next((entry for entry in entries if not entry.get("certificate_file")), entries[0])
-                target_entry["certificate_file"] = file_url
-                education["entries"] = entries
-                onboarding["education"] = education
+            while len(entries) <= index:
+                entries.append(
+                    {
+                        "institution": "",
+                        "board_university": "",
+                        "degree": "",
+                        "field_of_study": "",
+                        "year_completed": "",
+                        "cgpa_or_percentage": "",
+                        "certificate_file": None,
+                    }
+                )
+            entries[index]["certificate_file"] = file_url
+            education["entries"] = entries
+            onboarding["education"] = education
         else:
             return {
                 "message": "File uploaded.",
@@ -794,6 +844,69 @@ class EmployeeService:
             "file_url": file_url,
             "onboarding": refreshed.get("onboarding"),
         }
+
+    async def clear_uploaded_file(
+        self,
+        current_user: CurrentUser,
+        *,
+        purpose: str,
+        index: int = 0,
+    ) -> dict:
+        """Remove an onboarding file slot and deactivate matching active documents."""
+        employee = await self._require_employee(current_user)
+        onboarding = dict(employee.get("onboarding") or {})
+        now = datetime.now(UTC)
+        doc_types: list[str] = []
+
+        if purpose == "resume":
+            resume = dict(onboarding.get("resume") or {})
+            resume["file_name"] = None
+            resume["file_url"] = None
+            onboarding["resume"] = resume
+            doc_types = ["resume"]
+        elif purpose == "government_doc":
+            government = dict(onboarding.get("government_docs") or {})
+            documents = list(government.get("documents") or [])
+            if 0 <= index < len(documents):
+                documents[index]["file_name"] = None
+                documents[index]["file_url"] = None
+                documents[index]["document_number"] = documents[index].get("document_number") or "pending"
+            government["documents"] = documents
+            onboarding["government_docs"] = government
+            doc_types = ["cnic", "passport"]
+        elif purpose == "education_cert":
+            education = dict(onboarding.get("education") or {})
+            entries = list(education.get("entries") or [])
+            if 0 <= index < len(entries):
+                entries[index]["certificate_file"] = None
+            education["entries"] = entries
+            onboarding["education"] = education
+            doc_types = ["transcript", "certificate", "degree"]
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported upload purpose.")
+
+        if doc_types:
+            await database.documents.update_many(
+                {
+                    "owner_id": current_user.id,
+                    "doc_type": {"$in": doc_types},
+                    "is_active": True,
+                },
+                {
+                    "$set": {
+                        "is_active": False,
+                        "status": "removed_by_candidate",
+                        "updated_at": now,
+                    }
+                },
+            )
+
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {"$set": {"onboarding": onboarding, "updated_at": now}},
+        )
+        refreshed = await database.employees.find_one({"_id": employee["_id"]})
+        return {"message": "Document removed.", "onboarding": refreshed.get("onboarding")}
 
     async def _find_candidate(self, candidate_id: str) -> dict | None:
         query_or = [{"user_id": candidate_id}, {"email": candidate_id}]

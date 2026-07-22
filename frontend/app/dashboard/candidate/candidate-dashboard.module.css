@@ -351,7 +351,7 @@
 }
 .taskItem.completed .taskCheck { border-color: var(--green); background: #fff; }
 .taskLabel { flex: 1; font-size: 13.5px; font-weight: 600; color: var(--navy); }
-.taskItem.completed .taskLabel { color: var(--text-muted); text-decoration: line-through; text-decoration-color: rgba(31,174,122,.4); }
+.taskItem.completed .taskLabel { color: var(--text-muted); }
 .taskTag { font-size: 10px; font-weight: 700; letter-spacing: .3px; color: var(--orange); background: var(--orange-light); padding: 3px 8px; border-radius: 20px; }
 
 .announcementStack { display: flex; flex-direction: column; gap: 10px; }
