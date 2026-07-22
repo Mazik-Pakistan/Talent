@@ -1501,12 +1501,12 @@ function OnboardingContent() {
                                   hint="PDF, JPG, or PNG"
                                   wide
                                 />
-                                <Field styles={styles} label="Institution" value={entry.institution} onChange={(e) => {
+                                <Field styles={styles} label="Institute / University" value={entry.institution} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], institution: e.target.value };
                                   setEducationEntries(next);
                                 }} />
-                                <Field styles={styles} label="Board / University" value={entry.board_university || ""} onChange={(e) => {
+                                <Field styles={styles} label="Board" value={entry.board_university || ""} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], board_university: e.target.value };
                                   setEducationEntries(next);
