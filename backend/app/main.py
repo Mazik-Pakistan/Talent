@@ -31,6 +31,7 @@ async def lifespan(_: FastAPI):
     # process never starts "cold" — the first employee to open the Coursera
     # tab gets an instant response instead of waiting on a full live fetch.
     await coursera_service.load_persisted_cache()
+
     coursera_service.start_background_refresh()
 
     yield
