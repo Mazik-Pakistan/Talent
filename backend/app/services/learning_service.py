@@ -509,6 +509,7 @@ class LearningService:
     # US-069: My Learning dashboard
     # ------------------------------------------------------------------ #
     async def get_learning_dashboard(self, current_user: CurrentUser) -> dict:
+        coursera_service.start_post_login_course_loading()
         employee = await self._get_employee(current_user)
         enrollments = await database.learning_enrollments.find({"user_id": current_user.id}).to_list(length=500)
         assignments = await database.learning_assignments.find({"user_id": current_user.id}).to_list(length=500)

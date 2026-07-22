@@ -25,12 +25,6 @@ async def lifespan(_: FastAPI):
     await seed_rbac_collections()
     await seed_org_taxonomy()
 
-    # Pre-load the Coursera "Industry Soft Skills" catalog so it's already
-    # in memory before any employee opens the Learning tab, instead of the
-    # first click after a deploy/restart paying for a live catalog fetch.
-    await coursera_service.warm_cache()
-    coursera_service.start_background_refresh()
-
     yield
 
     coursera_service.stop_background_refresh()

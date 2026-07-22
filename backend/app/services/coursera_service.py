@@ -247,6 +247,7 @@ async def _fetch_all_courses() -> list[dict]:
 
 _refresh_in_progress = False
 _background_refresh_task: asyncio.Task | None = None
+_warm_cache_task: asyncio.Task | None = None
 
 
 async def _get_cached_catalog(force_refresh: bool = False) -> tuple[list[dict], dict[str, dict]]:
@@ -327,15 +328,37 @@ async def _periodic_refresh_loop() -> None:
 
 
 async def warm_cache() -> None:
-    """Eagerly populate the cache once. Intended to be called during app
-    startup (see main.py) so the first employee to open the 'Industry Soft
-    Skills' tab never waits on a live Coursera fetch — it's already loaded.
-    Failures are swallowed and logged; the existing lazy-fetch-on-request
-    behavior remains as a safety net."""
+    """Eagerly populate the cache once.
+
+    This is intentionally triggered after authentication, from the first
+    authenticated learning-dashboard request, so login is not delayed by the
+    Coursera catalog fetch. Failures are swallowed and logged; the existing
+    lazy-fetch-on-request behavior remains as a safety net.
+    """
     try:
         await _get_cached_catalog(force_refresh=False)
     except Exception as exc:
         logger.error(f"Coursera catalog warm-up failed (will retry lazily on first request): {exc}")
+
+
+def start_post_login_course_loading() -> None:
+    """Start the Coursera warm-up after a successful login.
+
+    The first authenticated learning-dashboard request calls this so the
+    catalog begins loading only once the user has already entered the app.
+    Subsequent calls are ignored while the warm-up task is in flight.
+    """
+    global _warm_cache_task
+
+    start_background_refresh()
+
+    if _cache["items"]:
+        return
+
+    if _warm_cache_task is not None and not _warm_cache_task.done():
+        return
+
+    _warm_cache_task = asyncio.create_task(warm_cache())
 
 
 def start_background_refresh() -> None:
