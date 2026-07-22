@@ -259,10 +259,6 @@ export default function RegisterPage() {
         </section>
 
         <aside className={styles.aside} aria-label="Talent platform introduction">
-          <span className={`${styles.blob} ${styles.blob1}`} aria-hidden="true" />
-          <span className={`${styles.blob} ${styles.blob2}`} aria-hidden="true" />
-          <span className={`${styles.blob} ${styles.blob3}`} aria-hidden="true" />
-
           <div>
             <p className={styles.asideEyebrow}>Mazik Global</p>
             <h2 className={styles.asideHeading}>People operations, made more connected.</h2>

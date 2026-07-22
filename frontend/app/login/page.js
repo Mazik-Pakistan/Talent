@@ -233,10 +233,6 @@ function LoginForm() {
         </section>
 
         <aside className={styles.aside} aria-label="Talent platform introduction">
-          <span className={`${styles.blob} ${styles.blob1}`} aria-hidden="true" />
-          <span className={`${styles.blob} ${styles.blob2}`} aria-hidden="true" />
-          <span className={`${styles.blob} ${styles.blob3}`} aria-hidden="true" />
-
           <div>
             <p className={styles.asideEyebrow}>Mazik Global</p>
             <h2 className={styles.asideHeading}>One platform. Four role-based workspaces.</h2>
