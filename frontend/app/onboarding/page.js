@@ -1479,23 +1479,20 @@ function OnboardingContent() {
                       {step === "education" && (
                         <div className={styles.formStack}>
                           <h2 className={styles.stepTitle}>Education history</h2>
-                          <p className={styles.docHelper}>
-                            Enter each qualification below. Transcripts and degree certificates are optional —
-                            when uploaded, AI will try to pre-fill fields; you can always edit them.
-                          </p>
+                          
                           {educationEntries.map((entry, index) => (
                             <section key={index} className={styles.sectionCard}>
                               <div className={styles.sectionCardHead}>
                                 <div>
                                   <h3>Education {educationEntries.length > 1 ? `#${index + 1}` : "entry"}</h3>
-                                  <p>Institution, degree, and optional transcript</p>
+                                  <p>Institution, degree, and transcript</p>
                                 </div>
                                 {entry.certificate_file && <span className={styles.pillOk}>Transcript uploaded</span>}
                               </div>
                               <div className={styles.formGrid}>
                                 <FileUploadField
                                   styles={styles}
-                                  label="Academic transcript / certificate (optional)"
+                                  label="Academic transcript / certificate"
                                   accept=".pdf,.jpg,.jpeg,.png"
                                   disabled={uploading}
                                   onChange={(e) => handleFileUpload(e, "education_cert", index)}
