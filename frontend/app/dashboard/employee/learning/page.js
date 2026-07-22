@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 
 import EmployeeShell from "@/components/employee/EmployeeShell";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import dashStyles from "@/app/dashboard/employee/employee-dashboard.module.css";
 import styles from "./learning.module.css";
 import { getApiErrorMessage } from "@/services/authService";
@@ -17,6 +19,7 @@ import {
   getCatalogFacets,
   getLearningDashboard,
   getRecommendations,
+  getRoleMatches,
   getSkillCategories,
   getSkillGap,
   getSoftSkillCategories,
@@ -37,7 +40,7 @@ const TABS = [
   { key: "catalog", label: "Course Catalog" },
   { key: "my-courses", label: "My Learning" },
   { key: "skills", label: "Skill Profile" },
-  { key: "career", label: "Career & AI Coach" },
+  { key: "career", label: "Career Path" },
   { key: "certificates", label: "Certificates" },
 ];
 
@@ -51,7 +54,19 @@ const CAREER_SUGGESTIONS = [
 ];
 
 export default function EmployeeLearningPage() {
-  const [tab, setTab] = useState("overview");
+  return (
+    <Suspense fallback={<p style={{ textAlign: "center", marginTop: "2rem" }}>Loading learning…</p>}>
+      <EmployeeLearningPageInner />
+    </Suspense>
+  );
+}
+
+function EmployeeLearningPageInner() {
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab");
+  const [tab, setTab] = useState(
+    TABS.some((t) => t.key === initialTab) ? initialTab : "overview"
+  );
   const [dashboard, setDashboard] = useState(null);
   const [loadError, setLoadError] = useState("");
 
@@ -66,6 +81,11 @@ export default function EmployeeLearningPage() {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    const next = searchParams.get("tab");
+    if (next && TABS.some((t) => t.key === next)) setTab(next);
+  }, [searchParams]);
 
   return (
     <EmployeeShell
@@ -217,6 +237,7 @@ function OverviewTab({ dashboard, onGo }) {
 const CATALOG_SOURCES = [
   { key: "microsoft_learn", label: "Microsoft Learn" },
   { key: "coursera", label: "Industry Soft Skills" },
+  { key: "recruiter_kb", label: "Recruiter Courses" },
 ];
 
 function CatalogTab({ onEnroll }) {
@@ -329,9 +350,16 @@ function CatalogTab({ onEnroll }) {
         <div className={dashStyles.sectionHeadLeft}>
           <span className={`${dashStyles.bar} ${dashStyles.cyan}`} />
           <div>
-            <div className={dashStyles.sectionTitle}>{isSoftSkills ? "Industry soft skills catalog" : "Microsoft Learn catalog"}</div>
+            <div className={dashStyles.sectionTitle}>
+              {source === "coursera" ? "Industry soft skills catalog" : source === "recruiter_kb" ? "Recruiter course catalog" : "Microsoft Learn catalog"}
+            </div>
             <p className={dashStyles.sectionDesc}>
-              {result.total} results · {isSoftSkills ? "powered by Coursera (free, live catalog)" : "powered by Microsoft Learn (free, live catalog)"}
+              {result.total} results ·{" "}
+              {source === "coursera"
+                ? "powered by Coursera (free, live catalog)"
+                : source === "recruiter_kb"
+                  ? "certifications & courses from your recruiter knowledge base"
+                  : "powered by Microsoft Learn (free, live catalog)"}
             </p>
           </div>
         </div>
@@ -405,7 +433,11 @@ function CatalogTab({ onEnroll }) {
               <div className={styles.courseCardHead}>
                 <div className={styles.badgeRow}>
                   <span className={`${styles.sourceBadge} ${course.source === "coursera" ? styles.sourceBadgeCoursera : ""}`}>
-                    {course.source === "coursera" ? "Coursera" : "Microsoft Learn"}
+                    {course.source === "coursera"
+                      ? "Coursera"
+                      : course.source === "recruiter_kb"
+                        ? "Recruiter"
+                        : "Microsoft Learn"}
                   </span>
                   <span className={`${styles.courseType} ${course.type === "certification" ? styles.certification : ""}`}>
                     {course.type === "learningPath" ? "Learning Path" : course.type === "certification" ? "Certification" : course.type === "course" ? "Course" : "Module"}
@@ -563,19 +595,23 @@ function SkillsTab() {
   const [skills, setSkills] = useState([]);
   const [categories, setCategories] = useState([]);
   const [assessment, setAssessment] = useState(null);
+  const [cacheMeta, setCacheMeta] = useState(null);
   const [loading, setLoading] = useState(true);
   const [assessing, setAssessing] = useState(false);
   const [form, setForm] = useState({ skill_name: "", category: "Programming", proficiency: "Beginner", years_experience: "" });
   const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
-    Promise.all([listSkills(token), getSkillCategories(token)])
-      .then(([skillData, catData]) => {
-        setSkills(skillData.skills || []);
+    Promise.all([listSkills(token), getSkillCategories(token), assessSkills(token, false, true)])
+      .then(([skillData, catData, assessData]) => {
+        setSkills(assessData.skills || skillData.skills || []);
         setCategories(catData.categories || []);
+        if (assessData.assessment) setAssessment(assessData.assessment);
+        if (assessData.cache_meta) setCacheMeta(assessData.cache_meta);
       })
       .catch((err) => toast.error(getApiErrorMessage(err, "Could not load your skills.")))
       .finally(() => setLoading(false));
@@ -590,7 +626,8 @@ function SkillsTab() {
       const data = await assessSkills(token, true);
       setAssessment(data.assessment);
       setSkills(data.skills || []);
-      toast.success("AI skill matrix refreshed from your resume and current role.");
+      setCacheMeta(data.cache_meta || null);
+      toast.success(data.cached ? "Loaded cached skill assessment." : "AI skill matrix refreshed from your resume and current role.");
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not run AI skill assessment."));
     } finally {
@@ -620,11 +657,18 @@ function SkillsTab() {
     }
   }
 
-  async function handleDelete(id) {
+  async function confirmDelete() {
+    if (!pendingDelete?.id) {
+      setPendingDelete(null);
+      return;
+    }
     const token = localStorage.getItem("access_token");
     try {
-      await deleteSkill(token, id);
+      await deleteSkill(token, pendingDelete.id);
+      setPendingDelete(null);
+      setAssessment(null);
       load();
+      toast.success("Skill removed. AI analysis cache cleared.");
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not remove skill."));
     }
@@ -634,12 +678,25 @@ function SkillsTab() {
 
   return (
     <div className={dashStyles.section}>
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Remove skill?"
+        message="Removing this skill will affect AI analysis and career recommendations. Are you sure?"
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        danger
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
       <div className={dashStyles.sectionHead}>
         <div className={dashStyles.sectionHeadLeft}>
           <span className={`${dashStyles.bar} ${dashStyles.green}`} />
           <div>
             <div className={dashStyles.sectionTitle}>Skill profile</div>
-            <p className={dashStyles.sectionDesc}>AI judges skills from your resume, designation, and department — certificates close gaps</p>
+            <p className={dashStyles.sectionDesc}>
+              Merged from resume, certifications, and manual skills
+              {cacheMeta?.lastAnalyzedAt ? ` · Last analyzed ${new Date(cacheMeta.lastAnalyzedAt).toLocaleString()}` : ""}
+            </p>
           </div>
         </div>
         <button type="button" className={dashStyles.btnPrimary} disabled={assessing} onClick={handleAssess}>
@@ -668,7 +725,7 @@ function SkillsTab() {
         {skills.length > 0 && (
           <div className={styles.matrixBars}>
             {skills.slice(0, 12).map((s) => (
-              <div key={s.id} className={styles.matrixRow}>
+              <div key={s.id || s.skill_name} className={styles.matrixRow}>
                 <span className={styles.matrixLabel}>{s.skill_name}</span>
                 <div className={styles.matrixTrack}>
                   <div className={styles.matrixFill} style={{ width: `${proficiencyRank[s.proficiency] || 25}%` }} />
@@ -712,7 +769,7 @@ function SkillsTab() {
         )}
         <div className={styles.skillGrid}>
           {skills.map((s) => (
-            <div key={s.id} className={styles.skillCard}>
+            <div key={s.id || `${s.source}-${s.skill_name}`} className={styles.skillCard}>
               <div className={styles.skillCardHead}>
                 <div>
                   <div className={styles.skillName}>{s.skill_name}</div>
@@ -720,11 +777,14 @@ function SkillsTab() {
                     {s.category}
                     {s.years_experience ? ` · ${s.years_experience} yrs` : ""}
                     {s.source ? ` · ${s.source}` : ""}
+                    {s.confidence != null ? ` · ${s.confidence}% conf.` : ""}
                   </div>
                 </div>
-                <button type="button" className={styles.deleteSkillBtn} title="Remove" onClick={() => handleDelete(s.id)}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                </button>
+                {s.id && (
+                  <button type="button" className={styles.deleteSkillBtn} title="Remove" onClick={() => setPendingDelete(s)}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                  </button>
+                )}
               </div>
               <span className={`${styles.proficiencyBadge} ${styles[s.proficiency] || ""}`}>{s.proficiency}</span>
               {s.verification_status === "verified" && (
@@ -753,6 +813,7 @@ function CareerTab() {
   const [gapLoading, setGapLoading] = useState(false);
   const [recs, setRecs] = useState(null);
   const [recsLoading, setRecsLoading] = useState(true);
+  const [roleMatches, setRoleMatches] = useState([]);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -765,15 +826,18 @@ function CareerTab() {
       }
     });
     loadRecommendations(false);
+    getRoleMatches(token, false)
+      .then((data) => setRoleMatches(data.roles || []))
+      .catch(() => {});
   }, []);
 
   function loadGapAndPath(role) {
     const token = localStorage.getItem("access_token");
     setGapLoading(true);
-    Promise.all([getSkillGap(token, role), getCareerPath(token)])
-      .then(([gapData, pathData]) => {
-        setGap(gapData);
+    Promise.all([getCareerPath(token, false), getSkillGap(token, role, false)])
+      .then(([pathData, gapData]) => {
         setPath(pathData);
+        setGap(gapData);
       })
       .catch((err) => toast.error(getApiErrorMessage(err, "Could not analyze your skill gap.")))
       .finally(() => setGapLoading(false));
@@ -789,7 +853,7 @@ function CareerTab() {
       const pathData = await setCareerGoal(token, target.trim());
       setSavedGoal(target.trim());
       setPath(pathData);
-      const gapData = await getSkillGap(token, target.trim());
+      const gapData = await getSkillGap(token, target.trim(), false);
       setGap(gapData);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not set your career goal."));
@@ -816,7 +880,7 @@ function CareerTab() {
             <span className={`${dashStyles.bar} ${dashStyles.orange}`} />
             <div>
               <div className={dashStyles.sectionTitle}>Career goal &amp; skill gap</div>
-              <p className={dashStyles.sectionDesc}>Tell the AI coach where you want to go — it compares your resume &amp; skills against the role</p>
+              <p className={dashStyles.sectionDesc}>Compare your profile against organization roles — cached until inputs change</p>
             </div>
           </div>
         </div>
@@ -833,8 +897,11 @@ function CareerTab() {
             </button>
           </div>
           <div className={styles.chipSuggestions}>
-            {CAREER_SUGGESTIONS.map((s) => (
-              <button key={s} type="button" className={styles.chipSuggestion} onClick={() => handleSetGoal(s)}>{s}</button>
+            {(roleMatches.length > 0 ? roleMatches.map((r) => r.role) : CAREER_SUGGESTIONS).map((s) => (
+              <button key={s} type="button" className={styles.chipSuggestion} onClick={() => handleSetGoal(s)}>
+                {s}
+                {roleMatches.find((r) => r.role === s) ? ` · ${Math.round(roleMatches.find((r) => r.role === s).readiness_score)}%` : ""}
+              </button>
             ))}
           </div>
 
@@ -844,7 +911,16 @@ function CareerTab() {
             <>
               <div className={styles.readinessWrap}>
                 <ReadinessRing percentage={gap.readiness_percentage ?? 0} />
-                <div className={styles.readinessSummary}>{gap.summary}</div>
+                <div className={styles.readinessSummary}>
+                  {gap.summary}
+                  {gap.cached ? <div className={styles.inlineNote}>Cached analysis</div> : null}
+                  {(gap.skill_match_percent != null || gap.certification_match_percent != null) && (
+                    <div className={styles.inlineNote}>
+                      Skills {gap.skill_match_percent ?? "—"}% · Certs {gap.certification_match_percent ?? "—"}%
+                      {gap.learning_priority ? ` · Priority: ${gap.learning_priority}` : ""}
+                    </div>
+                  )}
+                </div>
               </div>
               {gap.matched_skills?.length > 0 && (
                 <>
@@ -866,6 +942,17 @@ function CareerTab() {
                   </div>
                 </>
               )}
+              {(gap.missing_certifications || []).length > 0 && (
+                <>
+                  <div className={dashStyles.fieldLabel} style={{ marginBottom: 6, marginTop: 12 }}>Missing certifications</div>
+                  <div className={styles.missingSkillsRow}>
+                    {gap.missing_certifications.map((c) => {
+                      const label = typeof c === "string" ? c : c.title || c.name;
+                      return <span key={label} className={`${styles.priorityChip} ${styles.immediate}`}>{label}</span>;
+                    })}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -877,12 +964,21 @@ function CareerTab() {
             <div className={dashStyles.sectionHeadLeft}>
               <span className={`${dashStyles.bar} ${dashStyles.navy}`} />
               <div>
-                <div className={dashStyles.sectionTitle}>Your AI-suggested learning path</div>
-                <p className={dashStyles.sectionDesc}>Toward: {path.target_role}</p>
+                <div className={dashStyles.sectionTitle}>Your learning path</div>
+                <p className={dashStyles.sectionDesc}>
+                  Toward: {path.target_role}
+                  {path.progress_percent != null ? ` · ${path.progress_percent}% complete` : ""}
+                  {path.estimated_total_hours ? ` · ~${path.estimated_total_hours}h` : ""}
+                </p>
               </div>
             </div>
           </div>
           <div className={dashStyles.sectionBody}>
+            {path.progress_percent != null && (
+              <div className={styles.matrixTrack} style={{ marginBottom: 16, height: 8 }}>
+                <div className={styles.matrixFill} style={{ width: `${path.progress_percent}%` }} />
+              </div>
+            )}
             <div className={styles.pathTimeline}>
               {path.path.map((step) => (
                 <div key={step.step} className={styles.pathStep}>
@@ -891,29 +987,18 @@ function CareerTab() {
                     <div className={styles.pathStepLine} />
                   </div>
                   <div className={styles.pathStepBody}>
-                    <div className={styles.pathSkillLabel}>{step.skill}</div>
+                    <div className={styles.pathSkillLabel}>Step {step.step}: {step.skill}{step.completed ? " ✓" : ""}</div>
                     <div className={styles.pathCourseTitle}>{step.course?.title}</div>
                     <div className={styles.pathCourseMeta}>
-                      {step.course?.duration_minutes} min ·{" "}
-                      <a href={step.course?.url} target="_blank" rel="noopener noreferrer">Open on Microsoft Learn</a>
+                      {step.course?.source || step.course?.provider || "Catalog"}
+                      {step.course?.duration_minutes ? ` · ${step.course.duration_minutes} min` : ""}
+                      {step.course?.url ? (
+                        <> · <a href={step.course.url} target="_blank" rel="noopener noreferrer">Open resource</a></>
+                      ) : null}
                     </div>
                   </div>
                 </div>
               ))}
-              {path.certification && (
-                <div className={`${styles.pathStep} ${styles.pathCapstone}`}>
-                  <div className={styles.pathStepMarker}>
-                    <div className={styles.pathStepNum}>★</div>
-                  </div>
-                  <div className={styles.pathStepBody}>
-                    <div className={styles.pathSkillLabel}>Capstone certification</div>
-                    <div className={styles.pathCourseTitle}>{path.certification.title}</div>
-                    <div className={styles.pathCourseMeta}>
-                      <a href={path.certification.url} target="_blank" rel="noopener noreferrer">View on Microsoft Learn</a>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -924,8 +1009,8 @@ function CareerTab() {
           <div className={dashStyles.sectionHeadLeft}>
             <span className={`${dashStyles.bar} ${dashStyles.cyan}`} />
             <div>
-              <div className={dashStyles.sectionTitle}>AI course recommendations</div>
-              <p className={dashStyles.sectionDesc}>Personalized picks from Microsoft Learn based on your role, skills &amp; goals</p>
+              <div className={dashStyles.sectionTitle}>Course recommendations</div>
+              <p className={dashStyles.sectionDesc}>Personalized picks from Microsoft Learn, Coursera &amp; recruiter courses</p>
             </div>
           </div>
           <button type="button" className={styles.smallBtn} onClick={() => loadRecommendations(true)} disabled={recsLoading}>

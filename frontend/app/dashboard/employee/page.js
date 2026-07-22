@@ -678,15 +678,9 @@ function EmployeeDashboardContent() {
                 <div className={styles.modulesGrid}>
                   <ModuleCard
                     styles={styles}
-                    title="Learning modules"
-                    desc="Assigned courses and skill paths will appear here once Learning launches."
+                    title="Learning & Career Path"
+                    desc="Skill profile, role matching, and personalized learning paths."
                     icon={<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>}
-                  />
-                  <ModuleCard
-                    styles={styles}
-                    title="AI Coach"
-                    desc="Your personal AI coaching sessions and progress will appear here."
-                    icon={<><path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" /><path d="M19 11a7 7 0 0 1-14 0M12 18v4" /></>}
                   />
                 </div>
               </div>

@@ -20,73 +20,8 @@ import {
   normalizePkMobile,
   PK_MOBILE_HINT,
 } from "@/utils/phone";
+import { getEmployeeNavItems } from "@/utils/employeeNav";
 import styles from "./complete-profile.module.css";
-
-const NAV_ITEMS = [
-  {
-    key: "dashboard",
-    label: "Dashboard",
-    href: "/dashboard/employee",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" />
-        <rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
-      </svg>
-    ),
-  },
-  {
-    key: "onboarding",
-    label: "Onboarding",
-    href: "/dashboard/employee/complete-profile",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" />
-      </svg>
-    ),
-  },
-  {
-    key: "documents",
-    label: "Documents",
-    href: "/documents",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" />
-      </svg>
-    ),
-  },
-  {
-    key: "learning",
-    label: "Learning",
-    href: "/dashboard/employee/learning",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-      </svg>
-    ),
-  },
-  {
-    key: "ai",
-    label: "AI Coach",
-    href: null,
-    disabled: true,
-    badge: "PHASE 3",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" /><path d="M19 11a7 7 0 0 1-14 0M12 18v4" />
-      </svg>
-    ),
-  },
-  {
-    key: "profile",
-    label: "Profile",
-    href: "/dashboard/employee/profile",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
-      </svg>
-    ),
-  },
-];
 
 const STEPS = [
   { id: "emergency", label: "Emergency contact" },
@@ -126,6 +61,10 @@ export default function CompleteProfilePage() {
 
   const stepIndex = useMemo(() => STEPS.findIndex((s) => s.id === step), [step]);
   const complete = progress?.profile_status === "complete";
+  const navItems = useMemo(
+    () => getEmployeeNavItems({ profileComplete: complete }),
+    [complete]
+  );
 
   useEffect(() => {
     const accessToken = localStorage.getItem("access_token");
@@ -410,8 +349,8 @@ export default function CompleteProfilePage() {
           
           <div className={styles.navSectionLabel}>Workspace</div>
           <ul className={styles.nav}>
-            {(NAV_ITEMS || []).map((item) => {
-              const isActive = item.href === "/dashboard/employee/complete-profile";
+            {(navItems || []).map((item) => {
+              const isActive = item.key === "onboarding";
               return (
                 <li key={item.key || item.label}>
                   <button
@@ -419,7 +358,7 @@ export default function CompleteProfilePage() {
                     className={`${styles.navItem} ${isActive ? styles.active : ""} ${item.disabled ? styles.disabled : ""}`}
                     onClick={() => !item.disabled && item.href && router.push(item.href)}
                     disabled={item.disabled}
-                    title={item.disabled ? `${item.label} — coming in Phase 3` : item.label}
+                    title={item.disabled ? `${item.label} — coming soon` : item.label}
                   >
                     {item.icon}
                     <span className={styles.navLabel}>{item.label}</span>
@@ -448,8 +387,10 @@ export default function CompleteProfilePage() {
         <main className={styles.main}>
           <div className={styles.topbar}>
             <div>
-              <div className={styles.topbarTitle}>Complete Profile</div>
-              <div className={styles.topbarSub}>Employee Onboarding Workflow</div>
+              <div className={styles.topbarTitle}>{complete ? "Onboarding" : "Complete Profile"}</div>
+              <div className={styles.topbarSub}>
+                {complete ? "Completed onboarding record" : "Employee Onboarding Workflow"}
+              </div>
             </div>
           </div>
 
@@ -459,34 +400,89 @@ export default function CompleteProfilePage() {
             {/* Hero */}
             <div className={styles.hero}>
               <div>
-                <div className={styles.heroEyebrow}>Welcome Aboard</div>
-                <h1>Complete your profile</h1>
+                <div className={styles.heroEyebrow}>{complete ? "Status · Completed" : "Welcome Aboard"}</div>
+                <h1>{complete ? "Your onboarding history" : "Complete your profile"}</h1>
                 <div className={styles.heroMeta}>
                   {employee?.employee_id} · {employee?.job_title}<br />
-                  Only post-hire details are collected here — personal, education, and skills from candidate onboarding are already on file.
+                  {complete
+                    ? "Review the post-hire details you submitted. Editable fields remain available on your Profile page where allowed."
+                    : "Only post-hire details are collected here — personal, education, and skills from candidate onboarding are already on file."}
                 </div>
               </div>
               <div className={styles.ringWrap}>
-                <HeroRing percentage={progress?.percentage ?? 0} />
-                <div className={styles.ringLabel}>Completion<br />progress</div>
+                <HeroRing percentage={progress?.percentage ?? (complete ? 100 : 0)} />
+                <div className={styles.ringLabel}>{complete ? "Completed" : <>Completion<br />progress</>}</div>
               </div>
             </div>
 
             {/* Main Form/Success Area */}
             {complete && step === "submit" ? (
-              <div className={styles.emptyState}>
-                <div className={styles.verificationIcon}>✓</div>
-                <h2>Your profile is complete, {employee?.full_name?.split(" ")[0]}!</h2>
-                <p className={styles.emptySub} style={{ maxWidth: 420, margin: "12px auto 24px" }}>
-                  Emergency contact, banking, references, policies, and your NDA are all on file. Welcome to the team.
-                </p>
-                <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-                  <button type="button" className={styles.btnSecondary} onClick={() => router.push("/dashboard/employee/profile")}>
-                    View my profile
-                  </button>
-                  <button type="button" className={styles.btnPrimary} onClick={() => router.push("/dashboard/employee")}>
-                    Go to my dashboard
-                  </button>
+              <div className={styles.section}>
+                <div className={styles.sectionHead}>
+                  <div className={styles.sectionHeadLeft}>
+                    <div className={`${styles.bar} ${styles.green}`} />
+                    <div>
+                      <div className={styles.sectionTitle}>Onboarding completed</div>
+                      <div className={styles.sectionDesc}>
+                        All required post-hire steps are on file for {employee?.full_name}.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className={styles.sectionBody}>
+                  <div className={styles.historyList}>
+                    <HistoryBlock title="Emergency contact">
+                      <HistoryRow label="Name" value={emergency.name} />
+                      <HistoryRow label="Relationship" value={emergency.relationship} />
+                      <HistoryRow label="Phone" value={emergency.phone} />
+                      <HistoryRow label="Alternate phone" value={emergency.alternate_phone} />
+                      <HistoryRow label="Address" value={emergency.address} />
+                    </HistoryBlock>
+
+                    <HistoryBlock title="Banking">
+                      <HistoryRow label="Bank" value={employment.bank_name} />
+                      <HistoryRow label="Account title" value={employment.account_holder_name} />
+                      <HistoryRow label="Account number" value={employment.account_number} />
+                      <HistoryRow label="IBAN" value={employment.iban} />
+                      <HistoryRow label="Branch" value={employment.branch} />
+                      <HistoryRow label="Branch code" value={employment.branch_code} />
+                      <HistoryRow label="Swift code" value={employment.swift_code} />
+                      <HistoryRow label="Tax ID" value={employment.tax_id} />
+                    </HistoryBlock>
+
+                    <HistoryBlock title="References">
+                      {(references || []).map((ref, index) => (
+                        <div key={`${ref.email || ref.full_name}-${index}`} className={styles.historyRef}>
+                          <div className={styles.historyRefTitle}>Reference {index + 1}</div>
+                          <HistoryRow label="Name" value={ref.full_name} />
+                          <HistoryRow label="Relationship" value={ref.relationship} />
+                          <HistoryRow label="Email" value={ref.email} />
+                          <HistoryRow label="Phone" value={ref.phone} />
+                          <HistoryRow label="Company" value={ref.company} />
+                        </div>
+                      ))}
+                    </HistoryBlock>
+
+                    <HistoryBlock title="Policies">
+                      <HistoryRow label="Code of conduct" value={documents.accepted_code_of_conduct ? "Accepted" : "—"} />
+                      <HistoryRow label="Privacy policy" value={documents.accepted_privacy_policy ? "Accepted" : "—"} />
+                      <HistoryRow label="Employee handbook" value={documents.accepted_employee_handbook ? "Accepted" : "—"} />
+                    </HistoryBlock>
+
+                    <HistoryBlock title="NDA">
+                      <HistoryRow label="Signed name" value={ndaName} />
+                      <HistoryRow label="Agreed" value={ndaAgreed ? "Yes" : "—"} />
+                    </HistoryBlock>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 24 }}>
+                    <button type="button" className={styles.btnSecondary} onClick={() => router.push("/dashboard/employee/profile")}>
+                      View my profile
+                    </button>
+                    <button type="button" className={styles.btnPrimary} onClick={() => router.push("/dashboard/employee")}>
+                      Go to my dashboard
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -736,6 +732,24 @@ function ReviewBlock({ title, items }) {
           </div>
         ))}
       </dl>
+    </div>
+  );
+}
+
+function HistoryBlock({ title, children }) {
+  return (
+    <div className={styles.historyBlock}>
+      <h3>{title}</h3>
+      <dl className={styles.historyDl}>{children}</dl>
+    </div>
+  );
+}
+
+function HistoryRow({ label, value }) {
+  return (
+    <div className={styles.historyRow}>
+      <dt>{label}</dt>
+      <dd>{value || "—"}</dd>
     </div>
   );
 }

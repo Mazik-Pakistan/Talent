@@ -42,10 +42,11 @@ export const EMPLOYEE_NAV_ICONS = {
 };
 
 /**
- * Employee sidebar items. Onboarding is hidden once post-hire profile is complete.
+ * Employee sidebar items. Onboarding stays visible after completion so
+ * employees can reopen their completed onboarding record.
  */
 export function getEmployeeNavItems({ profileComplete = false } = {}) {
-  const items = [
+  return [
     {
       key: "dashboard",
       label: "Dashboard",
@@ -53,19 +54,14 @@ export function getEmployeeNavItems({ profileComplete = false } = {}) {
       href: "/dashboard/employee",
       icon: EMPLOYEE_NAV_ICONS.dashboard,
     },
-  ];
-
-  if (!profileComplete) {
-    items.push({
+    {
       key: "onboarding",
       label: "Onboarding",
       module: "onboarding",
       href: "/dashboard/employee/complete-profile",
       icon: EMPLOYEE_NAV_ICONS.onboarding,
-    });
-  }
-
-  items.push(
+      badge: profileComplete ? "Completed" : null,
+    },
     {
       key: "documents",
       label: "Documents",
@@ -81,20 +77,11 @@ export function getEmployeeNavItems({ profileComplete = false } = {}) {
       icon: EMPLOYEE_NAV_ICONS.learning,
     },
     {
-      key: "ai",
-      label: "AI Coach",
-      module: "ai",
-      href: "/dashboard/employee/ai-coach",
-      icon: EMPLOYEE_NAV_ICONS.ai,
-    },
-    {
       key: "profile",
       label: "Profile",
       module: "profile",
       href: "/dashboard/employee/profile",
       icon: EMPLOYEE_NAV_ICONS.profile,
-    }
-  );
-
-  return items;
+    },
+  ];
 }

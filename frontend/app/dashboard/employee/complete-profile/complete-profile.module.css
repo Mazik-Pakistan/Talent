@@ -236,3 +236,27 @@
 .navItem.disabled { cursor: default; opacity: .55; }
 .navItem.disabled:hover { background: transparent; color: rgba(255, 255, 255, .72); }
 .navBadge { margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: .3px; background: rgba(255, 255, 255, .12); padding: 2px 6px; border-radius: 20px; }
+
+.historyList { display: grid; gap: 16px; }
+.historyBlock {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  background: #FAFCFE;
+}
+.historyBlock h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy, #0F2A4A);
+}
+.historyDl { margin: 0; display: grid; gap: 8px; }
+.historyRow { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: start; }
+.historyRow dt { margin: 0; font-size: 12px; color: #6B7C93; font-weight: 600; }
+.historyRow dd { margin: 0; font-size: 13px; color: #0F2A4A; word-break: break-word; }
+.historyRef + .historyRef { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.historyRefTitle { font-size: 12px; font-weight: 700; color: #00A9CE; margin-bottom: 8px; }
+
+@media (max-width: 600px) {
+  .historyRow { grid-template-columns: 1fr; gap: 2px; }
+}
