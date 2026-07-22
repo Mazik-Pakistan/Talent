@@ -444,7 +444,18 @@ class LearningService:
         upcoming_due = sorted(
             [a for a in assigned_open if a.get("due_date")],
             key=lambda a: a["due_date"],
-        )[:5]
+        )
+        # One row per course (legacy data may contain duplicate assignments).
+        deduped_due: list[dict] = []
+        seen_uids: set[str] = set()
+        for assignment in upcoming_due:
+            uid = assignment.get("course_uid")
+            if not uid or uid in seen_uids:
+                continue
+            seen_uids.add(uid)
+            deduped_due.append(assignment)
+            if len(deduped_due) >= 5:
+                break
 
         return {
             "employee": {
@@ -468,12 +479,13 @@ class LearningService:
             )[:6]],
             "upcoming_due": [
                 {
+                    "id": str(a["_id"]),
                     "course_title": a.get("course_title"),
                     "course_uid": a.get("course_uid"),
                     "due_date": _iso(a.get("due_date")),
                     "status": a.get("status"),
                 }
-                for a in upcoming_due
+                for a in deduped_due
             ],
         }
 
