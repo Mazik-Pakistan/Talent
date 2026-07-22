@@ -216,8 +216,8 @@ function OverviewTab({ dashboard, onGo }) {
           </div>
           <div className={dashStyles.sectionBody}>
             {(dashboard.upcoming_due || []).length === 0 && <p className={styles.inlineNote}>Nothing due right now.</p>}
-            {(dashboard.upcoming_due || []).map((a) => (
-              <div key={a.course_uid} className={styles.courseListRow}>
+            {(dashboard.upcoming_due || []).map((a, index) => (
+              <div key={a.id || `${a.course_uid}-${a.due_date || index}`} className={styles.courseListRow}>
                 <div className={styles.courseListInfo}>
                   <div className={styles.courseListTitle}>{a.course_title}</div>
                   <div className={styles.courseListMeta}>Due {a.due_date || "—"} · {a.status}</div>
