@@ -129,7 +129,10 @@ def build_learning_path(
                 "provider": meta.get("provider"),
                 "description": meta.get("description"),
                 "skills_covered": meta.get("skills_covered") or [],
-                "completed": False,
+                "completed": (
+                    ((course or {}).get("uid") in completed_uids)
+                    or title.lower() in existing
+                ),
                 "kind": "certification",
             }
         )

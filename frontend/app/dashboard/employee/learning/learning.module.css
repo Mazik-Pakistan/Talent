@@ -289,6 +289,8 @@
   align-items: center;
   justify-content: center;
 }
+.pathStepNumDone { background: var(--green); }
+.pathStepDone .pathCourseTitle { opacity: 0.75; }
 .pathStepLine { width: 2px; flex: 1; background: var(--border); min-height: 30px; margin: 4px 0; }
 .pathStepBody { padding-bottom: 22px; flex: 1; }
 .pathSkillLabel { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); font-weight: 700; margin-bottom: 4px; }
