@@ -5,7 +5,6 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 
 from app.schemas.auth import (
     PASSWORD_PATTERN,
-    PHONE_PATTERN,
     normalize_optional_pk_mobile,
     normalize_pk_mobile,
 )
@@ -70,10 +69,7 @@ class CandidateRegisterRequest(BaseModel):
     @field_validator("phone")
     @classmethod
     def validate_phone(cls, value: str) -> str:
-        normalized = value.strip()
-        if not PHONE_PATTERN.fullmatch(normalized):
-            raise ValueError("Enter a valid phone number.")
-        return normalized
+        return normalize_pk_mobile(value)
 
     @field_validator("password")
     @classmethod

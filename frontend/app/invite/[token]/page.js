@@ -6,6 +6,13 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { candidateRegister, getApiErrorMessage, getInvitation } from "@/services/authService";
+import {
+  formatPkMobileInput,
+  isValidPkMobile,
+  normalizePkMobile,
+  PK_MOBILE_HINT,
+  preservePkMobileCaret,
+} from "@/utils/phone";
 
 const initialForm = {
   full_name: "",
@@ -20,7 +27,7 @@ function validateForm(form) {
   const errors = {};
   if (form.full_name.trim().length < 2) errors.full_name = "Enter your full name.";
   if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) errors.email = "Enter a valid email address.";
-  if (!/^[+()\-\s\d]{7,20}$/.test(form.phone.trim())) errors.phone = "Enter a valid phone number.";
+  if (!isValidPkMobile(form.phone)) errors.phone = `Enter a valid Pakistani mobile number (${PK_MOBILE_HINT}).`;
   if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/.test(form.password)) {
     errors.password = "Use 8+ characters with uppercase, lowercase, number, and special character.";
   }
@@ -64,7 +71,12 @@ export default function InviteRegisterPage() {
 
   function updateField(event) {
     const { checked, name, type, value } = event.target;
-    setForm((currentForm) => ({ ...currentForm, [name]: type === "checkbox" ? checked : value }));
+    const phoneValue = name === "phone" ? formatPkMobileInput(value) : value;
+    setForm((currentForm) => ({ ...currentForm, [name]: type === "checkbox" ? checked : phoneValue }));
+    if (name === "phone") {
+      const digitsBeforeCaret = value.slice(0, event.target.selectionStart ?? value.length).replace(/\D/g, "").length;
+      preservePkMobileCaret(event.target, digitsBeforeCaret);
+    }
     setErrors((currentErrors) => ({ ...currentErrors, [name]: undefined }));
     setFormMessage("");
   }
@@ -82,7 +94,7 @@ export default function InviteRegisterPage() {
         invitation_token: token,
         full_name: form.full_name.trim(),
         email: form.email.trim(),
-        phone: form.phone.trim(),
+        phone: normalizePkMobile(form.phone),
         password: form.password,
         confirm_password: form.confirm_password,
         terms_accepted: form.terms_accepted,
@@ -158,7 +170,7 @@ export default function InviteRegisterPage() {
             hint="Must match the email on your invitation."
             readOnly
           />
-          <FormField label="Phone number" name="phone" type="tel" value={form.phone} error={errors.phone} onChange={updateField} autoComplete="tel" />
+          <FormField label="Phone number" name="phone" type="tel" value={form.phone} error={errors.phone} onChange={updateField} autoComplete="tel" hint={PK_MOBILE_HINT} placeholder="0300-1234567" />
           <PasswordField label="Password" name="password" value={form.password} error={errors.password} onChange={updateField} showPassword={showPassword} onToggle={() => setShowPassword((visible) => !visible)} autoComplete="new-password" />
           <PasswordField label="Confirm password" name="confirm_password" value={form.confirm_password} error={errors.confirm_password} onChange={updateField} showPassword={showPassword} onToggle={() => setShowPassword((visible) => !visible)} autoComplete="new-password" />
 
@@ -192,7 +204,7 @@ export default function InviteRegisterPage() {
   );
 }
 
-function FormField({ label, name, type = "text", value, error, hint, onChange, autoComplete, readOnly }) {
+function FormField({ label, name, type = "text", value, error, hint, onChange, autoComplete, readOnly, placeholder }) {
   return (
     <label className="field">
       <span>{label}</span>
@@ -205,6 +217,7 @@ function FormField({ label, name, type = "text", value, error, hint, onChange, a
         onChange={onChange}
         autoComplete={autoComplete}
         readOnly={readOnly}
+        placeholder={placeholder}
       />
       {hint && <small>{hint}</small>}
       {error && <small className="field-error" id={`${name}-error`}>{error}</small>}
