@@ -84,8 +84,7 @@ export function getEmployeeNavItems({ profileComplete = false } = {}) {
       key: "ai",
       label: "AI Coach",
       module: "ai",
-      href: null,
-      badge: "PHASE 3",
+      href: "/dashboard/employee/ai-coach",
       icon: EMPLOYEE_NAV_ICONS.ai,
     },
     {

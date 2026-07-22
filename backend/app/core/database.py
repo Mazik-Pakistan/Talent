@@ -86,3 +86,14 @@ async def create_database_indexes() -> None:
     await database.learning_ai_recommendations.create_index("user_id", unique=True)
     await database.learning_skill_assessments.create_index("user_id", unique=True)
     await database.employees.create_index([("job_title", 1), ("status", 1)])
+
+    # ── Phase 4: AI Coach / AI Assistant (RAG knowledge base + chat log) ──
+    await database.kb_chunks.create_index([("namespace", 1), ("role_scope", 1)])
+    await database.kb_chunks.create_index([("namespace", 1), ("owner_id", 1), ("title", 1)])
+    try:
+        await database.kb_chunks.create_index([("title", "text"), ("text", "text")], name="kb_text_search")
+    except Exception:
+        pass
+
+    await database.ai_coach_messages.create_index([("user_id", 1), ("created_at", 1)])
+    await database.ai_coach_knowledge_docs.create_index("title", unique=True)

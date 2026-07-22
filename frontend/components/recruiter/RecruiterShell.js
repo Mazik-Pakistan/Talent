@@ -101,6 +101,17 @@ const NAV_ITEMS = [
     ),
   },
   {
+    key: "ai-assistant",
+    label: "AI Assistant",
+    href: "/dashboard/recruiter/ai-assistant",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" />
+        <path d="M19 11a7 7 0 0 1-14 0M12 18v4" />
+      </svg>
+    ),
+  },
+  {
     key: "profile",
     label: "Profile",
     href: "/dashboard/recruiter/profile",

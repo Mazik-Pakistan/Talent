@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.ai_coach import router as ai_coach_router
 from app.api.auth import router as auth_router
 from app.api.dashboard import router as dashboard_router
 from app.api.documents import router as documents_router
@@ -15,6 +16,7 @@ from app.api.rbac import router as rbac_router
 from app.core.config import settings
 from app.core.database import create_database_indexes, mongo_client
 from app.core.rbac_seed import seed_rbac_collections
+from app.services.knowledge_service import ensure_seed_policy
 from app.services.org_taxonomy_service import seed_org_taxonomy
 
 
@@ -23,6 +25,7 @@ async def lifespan(_: FastAPI):
     await create_database_indexes()
     await seed_rbac_collections()
     await seed_org_taxonomy()
+    await ensure_seed_policy()
     yield
     mongo_client.close()
 
@@ -46,3 +49,4 @@ app.include_router(employees_router)
 app.include_router(offers_router)
 app.include_router(documents_router)
 app.include_router(learning_router)
+app.include_router(ai_coach_router)

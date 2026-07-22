@@ -63,6 +63,16 @@ class Settings(BaseSettings):
     # US-031: Fernet key (url-safe base64 32-byte). If empty, derived from SECRET_KEY.
     BANKING_ENCRYPTION_KEY: str = ""
 
+    # ── Phase 4: AI Coach / AI Assistant (RAG) ────────────────────────────
+    ENABLE_AI_COACH: bool = True
+    RAG_TOP_K: int = 6
+    RAG_CANDIDATE_LIMIT: int = 400
+    RAG_CHUNK_CHARS: int = 1000
+    RAG_CHUNK_OVERLAP: int = 150
+    RAG_MAX_CONTEXT_CHARS: int = 6000
+    AI_COACH_HISTORY_TURNS: int = 6
+    AI_COACH_MAX_MESSAGE_CHARS: int = 2000
+
     @field_validator("GEMINI_API_KEY", "OPENROUTER_API_KEY", mode="before")
     @classmethod
     def strip_api_keys(cls, value: object) -> object:
