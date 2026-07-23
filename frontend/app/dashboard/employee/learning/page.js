@@ -265,9 +265,21 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
 // Catalog (US-065 / US-066 / US-072 / US-073)
 // ------------------------------------------------------------------------ //
 const CATALOG_SOURCES = [
-  { key: "microsoft_learn", label: "Microsoft Learn" },
-  { key: "coursera", label: "Industry Soft Skills" },
-  { key: "recruiter_kb", label: "Recruiter Courses" },
+  {
+    key: "microsoft_learn",
+    label: "Microsoft Courses",
+    hint: "Technical learning paths, modules, and certifications from Microsoft Learn.",
+  },
+  {
+    key: "coursera",
+    label: "Coursera Courses",
+    hint: "Industry soft-skills courses from Coursera (English) — communication, leadership, and more.",
+  },
+  {
+    key: "recruiter_kb",
+    label: "Recruiter Courses",
+    hint: "Courses and certifications added by your recruiter for your organization.",
+  },
 ];
 
 function CatalogTab({ onEnroll }) {
@@ -373,6 +385,7 @@ function CatalogTab({ onEnroll }) {
   }
 
   const isSoftSkills = source === "coursera";
+  const activeSource = CATALOG_SOURCES.find((s) => s.key === source) || CATALOG_SOURCES[0];
 
   return (
     <div className={dashStyles.section}>
@@ -380,26 +393,21 @@ function CatalogTab({ onEnroll }) {
         <div className={dashStyles.sectionHeadLeft}>
           <span className={`${dashStyles.bar} ${dashStyles.cyan}`} />
           <div>
-            <div className={dashStyles.sectionTitle}>
-              {source === "coursera" ? "Industry soft skills catalog" : source === "recruiter_kb" ? "Recruiter course catalog" : "Microsoft Learn catalog"}
-            </div>
+            <div className={dashStyles.sectionTitle}>{activeSource.label}</div>
             <p className={dashStyles.sectionDesc}>
-              {result.total} results ·{" "}
-              {source === "coursera"
-                ? "powered by Coursera (free, live catalog)"
-                : source === "recruiter_kb"
-                  ? "certifications & courses from your recruiter knowledge base"
-                  : "powered by Microsoft Learn (free, live catalog)"}
+              {result.total} results · pick a source below to browse
             </p>
           </div>
         </div>
       </div>
       <div className={dashStyles.sectionBody}>
-        <div className={styles.sourceToggle}>
+        <div className={styles.sourceToggle} role="tablist" aria-label="Course source">
           {CATALOG_SOURCES.map((s) => (
             <button
               key={s.key}
               type="button"
+              role="tab"
+              aria-selected={source === s.key}
               className={`${styles.sourceBtn} ${source === s.key ? styles.sourceBtnActive : ""}`}
               onClick={() => switchSource(s.key)}
             >
@@ -407,11 +415,18 @@ function CatalogTab({ onEnroll }) {
             </button>
           ))}
         </div>
+        <p className={styles.sourceHint}>{activeSource.hint}</p>
 
         <div className={styles.filterBar}>
           <input
             className={styles.searchInput}
-            placeholder={isSoftSkills ? "Search soft skills, e.g. negotiation, leadership…" : "Search by title, skill, product…"}
+            placeholder={
+              isSoftSkills
+                ? "Search soft skills, e.g. negotiation, leadership…"
+                : source === "recruiter_kb"
+                  ? "Search recruiter / company courses…"
+                  : "Search by title, skill, product…"
+            }
             value={q}
             onChange={(e) => { setPage(1); setQ(e.target.value); }}
           />
@@ -422,7 +437,7 @@ function CatalogTab({ onEnroll }) {
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-          ) : (
+          ) : source === "microsoft_learn" ? (
             <>
               <select className={styles.filterSelect} value={type} onChange={(e) => { setPage(1); setType(e.target.value); }}>
                 <option value="">All types</option>
@@ -443,7 +458,7 @@ function CatalogTab({ onEnroll }) {
                 ))}
               </select>
             </>
-          )}
+          ) : null}
           <label className={styles.bookmarkFilter}>
             <input
               type="checkbox"
@@ -452,7 +467,7 @@ function CatalogTab({ onEnroll }) {
             />
             Bookmarked only
           </label>
-          {!isSoftSkills && (
+          {source === "microsoft_learn" && (
             <button
               type="button"
               className={`${styles.filterSelect} ${type === "certification" ? styles.sourceBtnActive : ""}`}
@@ -481,12 +496,20 @@ function CatalogTab({ onEnroll }) {
             <div key={course.uid} className={styles.courseCard}>
               <div className={styles.courseCardHead}>
                 <div className={styles.badgeRow}>
-                  <span className={`${styles.sourceBadge} ${course.source === "coursera" ? styles.sourceBadgeCoursera : ""}`}>
+                  <span
+                    className={`${styles.sourceBadge} ${
+                      course.source === "coursera"
+                        ? styles.sourceBadgeCoursera
+                        : course.source === "recruiter_kb"
+                          ? styles.sourceBadgeRecruiter
+                          : ""
+                    }`}
+                  >
                     {course.source === "coursera"
                       ? "Coursera"
                       : course.source === "recruiter_kb"
                         ? "Recruiter"
-                        : "Microsoft Learn"}
+                        : "Microsoft"}
                   </span>
                   <span className={`${styles.courseType} ${course.type === "certification" ? styles.certification : ""}`}>
                     {course.type === "learningPath" ? "Learning Path" : course.type === "certification" ? "Certification" : course.type === "course" ? "Course" : "Module"}

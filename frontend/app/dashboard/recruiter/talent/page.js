@@ -8,6 +8,8 @@ import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./talent.module.css";
 import { getApiErrorMessage } from "@/services/authService";
+import { getOrgTaxonomy } from "@/services/learningService";
+import { downloadCsv } from "@/utils/downloadCsv";
 import {
   browseOpportunities,
   createOpportunity,
@@ -54,25 +56,77 @@ export default function RecruiterTalentPage() {
 function MetricsTab() {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [department, setDepartment] = useState("");
+  const [taxonomy, setTaxonomy] = useState({ departments: [] });
   const router = useRouter();
+
+  const load = useCallback((force = false) => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    setLoading(true);
+    getTalentMetrics(token, department || undefined, { force })
+      .then(setMetrics)
+      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load talent metrics.")))
+      .finally(() => setLoading(false));
+  }, [department]);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
-    setLoading(true);
-    getTalentMetrics(token)
-      .then(setMetrics)
-      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load talent metrics.")))
-      .finally(() => setLoading(false));
+    getOrgTaxonomy(token).then(setTaxonomy).catch(() => {});
   }, []);
+
+  useEffect(() => { load(false); }, [load]);
+
+  function handleExport() {
+    if (!metrics) return;
+    downloadCsv(
+      `talent-skill-distribution${department ? `-${department}` : ""}.csv`,
+      ["category", "count"],
+      (metrics.skill_distribution || []).map((s) => ({ category: s.category, count: s.count }))
+    );
+    downloadCsv(
+      `talent-department-analysis${department ? `-${department}` : ""}.csv`,
+      ["department", "headcount", "skills_tracked"],
+      (metrics.department_skill_analysis || []).map((d) => ({
+        department: d.department,
+        headcount: d.headcount,
+        skills_tracked: d.skills_tracked,
+      }))
+    );
+    downloadCsv(
+      `talent-high-potential${department ? `-${department}` : ""}.csv`,
+      ["employee_id", "full_name", "job_title", "department", "skill_count", "verified_certifications"],
+      (metrics.high_potential_employees || []).map((e) => ({
+        employee_id: e.employee_id,
+        full_name: e.full_name,
+        job_title: e.job_title,
+        department: e.department,
+        skill_count: e.skill_count,
+        verified_certifications: e.verified_certifications,
+      }))
+    );
+    toast.success("Talent metrics exported.");
+  }
 
   if (loading) return <p className={styles.inlineNote}>Loading talent metrics…</p>;
   if (!metrics) return null;
 
-  const maxSkillCount = Math.max(1, ...metrics.skill_distribution.map((s) => s.count));
+  const maxSkillCount = Math.max(1, ...(metrics.skill_distribution.length ? metrics.skill_distribution.map((s) => s.count) : [1]));
 
   return (
     <>
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+        <select className={styles.filterSelect} value={department} onChange={(e) => setDepartment(e.target.value)}>
+          <option value="">All departments</option>
+          {(taxonomy.departments || []).map((d) => (
+            <option key={d} value={d}>{d}</option>
+          ))}
+        </select>
+        <button type="button" className={styles.smallBtn} onClick={() => load(true)}>Refresh</button>
+        <button type="button" className={styles.smallBtn} onClick={handleExport}>Export CSV</button>
+      </div>
+
       <div className={styles.metricGrid}>
         <div className={styles.metricCard}>
           <div className={styles.metricValue}>{metrics.headcount}</div>
@@ -175,7 +229,11 @@ function SearchTab() {
   const [q, setQ] = useState("");
   const [department, setDepartment] = useState("");
   const [skillsInput, setSkillsInput] = useState("");
+  const [certsInput, setCertsInput] = useState("");
   const [minProgress, setMinProgress] = useState("");
+  const [minExperience, setMinExperience] = useState("");
+  const [minCompetency, setMinCompetency] = useState("");
+  const [semantic, setSemantic] = useState(false);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -187,14 +245,18 @@ function SearchTab() {
       q: q || null,
       department: department || null,
       skills: skillsInput ? skillsInput.split(",").map((s) => s.trim()).filter(Boolean) : [],
+      certifications: certsInput ? certsInput.split(",").map((s) => s.trim()).filter(Boolean) : [],
       min_learning_progress: minProgress ? Number(minProgress) : null,
+      min_experience_years: minExperience ? Number(minExperience) : null,
+      min_competency_score: minCompetency ? Number(minCompetency) : null,
+      semantic,
       page: 1,
       page_size: 30,
     })
       .then(setResults)
       .catch((err) => toast.error(getApiErrorMessage(err, "Search failed.")))
       .finally(() => setLoading(false));
-  }, [q, department, skillsInput, minProgress]);
+  }, [q, department, skillsInput, certsInput, minProgress, minExperience, minCompetency, semantic]);
 
   useEffect(() => { runSearch(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -205,7 +267,7 @@ function SearchTab() {
           <span className={`${shellStyles.bar} ${shellStyles.navy}`} />
           <div>
             <div className={shellStyles.sectionTitle}>Search employees</div>
-            <p className={shellStyles.sectionDesc}>By skills, certifications, department, experience, and learning progress</p>
+            <p className={shellStyles.sectionDesc}>By skills, certifications, department, experience, competency, and learning progress</p>
           </div>
         </div>
       </div>
@@ -220,28 +282,59 @@ function SearchTab() {
           />
           <input
             className={styles.filterSelect}
-            style={{ width: 160 }}
+            style={{ width: 140 }}
             placeholder="Department"
             value={department}
             onChange={(e) => setDepartment(e.target.value)}
           />
           <input
             className={styles.filterSelect}
-            style={{ width: 220 }}
+            style={{ width: 180 }}
             placeholder="Skills (comma-separated)"
             value={skillsInput}
             onChange={(e) => setSkillsInput(e.target.value)}
           />
           <input
             className={styles.filterSelect}
-            style={{ width: 130 }}
+            style={{ width: 180 }}
+            placeholder="Certs (comma-separated)"
+            value={certsInput}
+            onChange={(e) => setCertsInput(e.target.value)}
+          />
+          <input
+            className={styles.filterSelect}
+            style={{ width: 110 }}
             type="number"
             min="0"
             max="100"
-            placeholder="Min. progress %"
+            placeholder="Min progress %"
             value={minProgress}
             onChange={(e) => setMinProgress(e.target.value)}
           />
+          <input
+            className={styles.filterSelect}
+            style={{ width: 100 }}
+            type="number"
+            min="0"
+            placeholder="Min years"
+            value={minExperience}
+            onChange={(e) => setMinExperience(e.target.value)}
+          />
+          <input
+            className={styles.filterSelect}
+            style={{ width: 120 }}
+            type="number"
+            min="1"
+            max="5"
+            step="0.1"
+            placeholder="Min competency"
+            value={minCompetency}
+            onChange={(e) => setMinCompetency(e.target.value)}
+          />
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, whiteSpace: "nowrap" }}>
+            <input type="checkbox" checked={semantic} onChange={(e) => setSemantic(e.target.checked)} />
+            Semantic
+          </label>
           <button type="button" className={styles.smallBtnPrimary} onClick={runSearch} disabled={loading}>
             {loading ? "Searching…" : "Search"}
           </button>
@@ -263,12 +356,17 @@ function SearchTab() {
                 <div className={styles.resultStats}>
                   Learning progress: {e.learning_progress}%
                   {e.years_experience != null ? ` · ${e.years_experience} yrs exp.` : ""}
+                  {e.competency_score != null ? ` · Competency ${e.competency_score}` : ""}
                 </div>
               </div>
             ))}
           </div>
         )}
-        {results && <p className={styles.inlineNote} style={{ marginTop: 12 }}>{results.total} matching employees (keyword search)</p>}
+        {results && (
+          <p className={styles.inlineNote} style={{ marginTop: 12 }}>
+            {results.total} matching employees ({results.search_mode || "keyword"} search)
+          </p>
+        )}
       </div>
     </div>
   );
@@ -299,17 +397,17 @@ function OpportunitiesMgmtTab() {
     commitment: "",
   });
 
-  const load = useCallback(() => {
+  const load = useCallback((force = false) => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
-    browseOpportunities(token, { status: "all", page_size: 60 })
+    browseOpportunities(token, { status: "all", page_size: 60 }, { force })
       .then((data) => setItems(data.opportunities || []))
       .catch((err) => toast.error(getApiErrorMessage(err, "Could not load opportunities.")))
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(false); }, [load]);
 
   async function handleCreate(e) {
     e.preventDefault();
@@ -370,6 +468,7 @@ function OpportunitiesMgmtTab() {
             <p className={shellStyles.sectionDesc}>Post projects, cross-functional work, temporary assignments, and open positions</p>
           </div>
         </div>
+        <button type="button" className={styles.smallBtn} onClick={() => load(true)}>Refresh</button>
       </div>
       <div className={shellStyles.sectionBody}>
         <form className={styles.oppForm} onSubmit={handleCreate}>

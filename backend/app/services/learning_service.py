@@ -1428,7 +1428,6 @@ class LearningService:
             skill_gaps=skill_gaps,
             candidates=candidates,
             top_n=8,
-            use_llm=False,
         )
 
         by_uid = {c["uid"]: c for c in candidates}
@@ -1464,14 +1463,30 @@ class LearningService:
     # ------------------------------------------------------------------ #
     # Recruiter: assign courses (US-068), analytics (US-076), oversight
     # ------------------------------------------------------------------ #
+    @staticmethod
+    def _auto_due_date(*, duration_minutes: int | None) -> date:
+        """Generate a due date when the recruiter does not supply one.
+
+        Uses course duration when available (roughly 2 calendar days per learning
+        hour, floored at 14 days), otherwise a 30-day default.
+        """
+        if duration_minutes and duration_minutes > 0:
+            hours = max(1, duration_minutes / 60)
+            days = max(14, min(90, int(round(hours * 2))))
+        else:
+            days = 30
+        return (datetime.now(UTC) + timedelta(days=days)).date()
+
     async def assign_courses(self, current_user: CurrentUser, request: CourseAssignRequest) -> dict:
         assigned = []
         skipped = []
         errors = []
         now = _now()
+        due_date = request.due_date or self._auto_due_date(duration_minutes=request.duration_minutes)
 
         target_ids = list(request.employee_ids)
-        if request.department or request.job_title or not target_ids:
+        needs_filter = bool(request.department or request.job_title or request.required_skills or not target_ids)
+        if needs_filter:
             query: dict[str, Any] = {"status": "active"}
             if current_user.role != "super_admin":
                 query["recruiter_id"] = current_user.id
@@ -1479,13 +1494,34 @@ class LearningService:
                 query["department"] = {"$regex": f"^{_escape_regex(request.department)}$", "$options": "i"}
             if request.job_title:
                 query["job_title"] = {"$regex": f"^{_escape_regex(request.job_title)}$", "$options": "i"}
-            if request.department or request.job_title:
-                matches = await database.employees.find(query, {"employee_id": 1}).to_list(length=2000)
-                matched_ids = [m["employee_id"] for m in matches if m.get("employee_id")]
-                if target_ids:
-                    target_ids = [eid for eid in target_ids if eid in set(matched_ids)]
-                else:
-                    target_ids = matched_ids
+            matches = await database.employees.find(
+                query, {"employee_id": 1, "user_id": 1}
+            ).to_list(length=2000)
+
+            if request.required_skills:
+                wanted = {s.lower() for s in request.required_skills}
+                user_ids = [m.get("user_id") for m in matches if m.get("user_id")]
+                skilled_users: set[str] = set()
+                if user_ids:
+                    skill_docs = await database.employee_skills.find(
+                        {"user_id": {"$in": user_ids}},
+                        {"user_id": 1, "skill_name": 1},
+                    ).to_list(length=20000)
+                    by_user: dict[str, set[str]] = {}
+                    for s in skill_docs:
+                        name = (s.get("skill_name") or "").lower()
+                        if name:
+                            by_user.setdefault(s["user_id"], set()).add(name)
+                    for uid, names in by_user.items():
+                        if wanted & names:
+                            skilled_users.add(uid)
+                matches = [m for m in matches if m.get("user_id") in skilled_users]
+
+            matched_ids = [m["employee_id"] for m in matches if m.get("employee_id")]
+            if target_ids and (request.department or request.job_title or request.required_skills):
+                target_ids = [eid for eid in target_ids if eid in set(matched_ids)]
+            elif not target_ids:
+                target_ids = matched_ids
 
         if not target_ids:
             raise HTTPException(
@@ -1501,7 +1537,18 @@ class LearningService:
             await self._assert_recruiter_owns(current_user, employee)
 
             existing = await database.learning_assignments.find_one(
-                {"employee_id": employee_id, "course_uid": request.course_uid}
+                {
+                    "employee_id": employee_id,
+                    "$or": [
+                        {"course_uid": request.course_uid},
+                        {
+                            "course_title": {
+                                "$regex": f"^{_escape_regex(request.course_title.strip())}$",
+                                "$options": "i",
+                            }
+                        },
+                    ],
+                }
             )
             if existing:
                 skipped.append(
@@ -1526,28 +1573,42 @@ class LearningService:
                 "duration_minutes": request.duration_minutes,
                 "assigned_by": current_user.full_name,
                 "assigned_by_id": current_user.id,
-                "due_date": request.due_date.isoformat() if request.due_date else None,
+                "due_date": due_date.isoformat(),
+                "mandatory": bool(request.mandatory),
                 "note": request.note,
                 "status": "assigned",
                 "created_at": now,
                 "updated_at": now,
             }
-            result = await database.learning_assignments.insert_one(doc)
+            try:
+                result = await database.learning_assignments.insert_one(doc)
+            except Exception as exc:
+                # Race / unique index: treat as already assigned.
+                if "duplicate" in str(exc).lower() or getattr(exc, "code", None) == 11000:
+                    skipped.append(
+                        {
+                            "employee_id": employee_id,
+                            "employee_name": employee.get("full_name"),
+                            "reason": "Course already assigned to this employee.",
+                        }
+                    )
+                    continue
+                raise
             doc["_id"] = result.inserted_id
             assigned.append(self._public_assignment(doc))
 
             if employee.get("user_id"):
+                kind = "mandatory course" if request.mandatory else "course"
                 await create_notification(
                     recipient_id=employee["user_id"],
                     recipient_role="employee",
                     notif_type="course_assigned",
                     title="New course assigned",
-                    message=f"\"{request.course_title}\" was assigned to you"
-                    + (f", due {request.due_date}." if request.due_date else "."),
+                    message=f"\"{request.course_title}\" ({kind}) was assigned to you, due {due_date}.",
                     link="/dashboard/employee/learning",
                     related_id=str(doc["_id"]),
                 )
-        return {"assigned": assigned, "skipped": skipped, "errors": errors}
+        return {"assigned": assigned, "skipped": skipped, "errors": errors, "due_date": due_date.isoformat()}
 
     def _public_assignment(self, doc: dict) -> dict:
         return {
@@ -1561,13 +1622,84 @@ class LearningService:
             "course_url": doc.get("course_url"),
             "course_type": doc.get("course_type"),
             "due_date": _iso(doc.get("due_date")),
+            "mandatory": bool(doc.get("mandatory")),
             "note": doc.get("note"),
             "status": doc.get("status"),
             "assigned_by": doc.get("assigned_by"),
             "created_at": _iso(doc.get("created_at")),
         }
 
-    async def list_assignments(self, current_user: CurrentUser, *, employee_id: str | None, status_filter: str | None) -> dict:
+    @staticmethod
+    def _assignment_keep_score(doc: dict) -> tuple:
+        """Prefer progressed assignments, then newer ones, when collapsing duplicates."""
+        status_rank = {"completed": 3, "in_progress": 2, "assigned": 1}.get(doc.get("status") or "", 0)
+        created = doc.get("created_at") or datetime.min.replace(tzinfo=UTC)
+        return (status_rank, created)
+
+    @staticmethod
+    def _normalize_course_title(title: str | None) -> str:
+        return " ".join(str(title or "").lower().split())
+
+    def _dedupe_assignment_docs(self, docs: list[dict]) -> list[dict]:
+        """One assignment per employee+course_uid (and per normalized title).
+
+        Older data may contain duplicates from before the unique index existed,
+        or two near-identical Generative AI catalog rows assigned separately.
+        """
+        by_uid: dict[tuple[str, str], dict] = {}
+        for doc in docs:
+            eid = str(doc.get("employee_id") or "")
+            uid = str(doc.get("course_uid") or "")
+            if not eid or not uid:
+                continue
+            key = (eid, uid)
+            prev = by_uid.get(key)
+            if prev is None or self._assignment_keep_score(doc) > self._assignment_keep_score(prev):
+                by_uid[key] = doc
+
+        by_title: dict[tuple[str, str], dict] = {}
+        for doc in by_uid.values():
+            eid = str(doc.get("employee_id") or "")
+            title_key = self._normalize_course_title(doc.get("course_title"))
+            key = (eid, title_key or str(doc.get("course_uid") or ""))
+            prev = by_title.get(key)
+            if prev is None or self._assignment_keep_score(doc) > self._assignment_keep_score(prev):
+                by_title[key] = doc
+
+        deduped = list(by_title.values())
+        deduped.sort(key=lambda d: d.get("created_at") or datetime.min.replace(tzinfo=UTC), reverse=True)
+        return deduped
+
+    async def _purge_duplicate_assignments(self, docs: list[dict]) -> None:
+        """Delete older duplicate rows for the same employee + course_uid."""
+        winners: dict[tuple[str, str], dict] = {}
+        losers: list[Any] = []
+        for doc in docs:
+            eid = str(doc.get("employee_id") or "")
+            uid = str(doc.get("course_uid") or "")
+            if not eid or not uid or not doc.get("_id"):
+                continue
+            key = (eid, uid)
+            prev = winners.get(key)
+            if prev is None:
+                winners[key] = doc
+                continue
+            if self._assignment_keep_score(doc) > self._assignment_keep_score(prev):
+                losers.append(prev["_id"])
+                winners[key] = doc
+            else:
+                losers.append(doc["_id"])
+        if losers:
+            await database.learning_assignments.delete_many({"_id": {"$in": losers}})
+
+    async def list_assignments(
+        self,
+        current_user: CurrentUser,
+        *,
+        employee_id: str | None,
+        status_filter: str | None,
+        mandatory_only: bool | None = None,
+    ) -> dict:
         query: dict[str, Any] = {}
         if current_user.role != "super_admin":
             query["assigned_by_id"] = current_user.id
@@ -1575,8 +1707,15 @@ class LearningService:
             query["employee_id"] = employee_id
         if status_filter:
             query["status"] = status_filter
+        if mandatory_only is True:
+            query["mandatory"] = True
         docs = await database.learning_assignments.find(query).sort("created_at", -1).to_list(length=500)
-        return {"assignments": [self._public_assignment(d) for d in docs]}
+        # Clean true UID duplicates in the background of this request, then
+        # collapse any remaining same-title duplicates for display.
+        await self._purge_duplicate_assignments(docs)
+        docs = await database.learning_assignments.find(query).sort("created_at", -1).to_list(length=500)
+        deduped = self._dedupe_assignment_docs(docs)
+        return {"assignments": [self._public_assignment(d) for d in deduped]}
 
     async def get_employee_learning_profile(
         self, current_user: CurrentUser, employee_id: str, *, refresh_ai: bool = False
@@ -1585,7 +1724,10 @@ class LearningService:
         await self._assert_recruiter_owns(current_user, employee)
         user_id = employee.get("user_id")
         enrollments = await database.learning_enrollments.find({"user_id": user_id}).sort("updated_at", -1).to_list(length=300)
-        assignments = await database.learning_assignments.find({"employee_id": employee_id}).sort("created_at", -1).to_list(length=300)
+        assignment_docs = await database.learning_assignments.find({"employee_id": employee_id}).sort("created_at", -1).to_list(length=300)
+        await self._purge_duplicate_assignments(assignment_docs)
+        assignment_docs = await database.learning_assignments.find({"employee_id": employee_id}).sort("created_at", -1).to_list(length=300)
+        assignments = self._dedupe_assignment_docs(assignment_docs)
         certificates = await database.learning_certificates.find({"user_id": user_id}).sort("created_at", -1).to_list(length=300)
         skills = await database.employee_skills.find({"user_id": user_id}).sort("skill_name", 1).to_list(length=300)
 
@@ -1940,13 +2082,19 @@ class LearningService:
             },
         }
 
-    async def get_analytics(self, current_user: CurrentUser) -> dict:
-        """US-076: recruiter learning analytics."""
+    async def get_analytics(self, current_user: CurrentUser, *, department: str | None = None) -> dict:
+        """US-073: recruiter learning analytics."""
         query: dict[str, Any] = {}
         assignment_query: dict[str, Any] = {}
         if current_user.role != "super_admin":
             query["recruiter_id"] = current_user.id
             assignment_query["assigned_by_id"] = current_user.id
+        if department:
+            assignment_query["department"] = {
+                "$regex": f"^{_escape_regex(department)}$",
+                "$options": "i",
+            }
+            query["department"] = {"$regex": f"^{_escape_regex(department)}$", "$options": "i"}
 
         assignments = await database.learning_assignments.find(assignment_query).to_list(length=5000)
         certificates = await database.learning_certificates.find(query).to_list(length=5000)
@@ -1961,6 +2109,10 @@ class LearningService:
         total_assigned = len(assignments)
         completed_assigned = len([a for a in assignments if a.get("status") == "completed"])
         completion_rate = round((completed_assigned / total_assigned) * 100, 1) if total_assigned else 0.0
+        mandatory_assigned = len([a for a in assignments if a.get("mandatory")])
+        mandatory_completed = len(
+            [a for a in assignments if a.get("mandatory") and a.get("status") == "completed"]
+        )
 
         verified_certs = [c for c in certificates if c.get("verification_status") == "verified"]
         certification_rate = round((len(verified_certs) / len(certificates)) * 100, 1) if certificates else 0.0
@@ -1994,10 +2146,15 @@ class LearningService:
             "certification_rate": certification_rate,
             "total_learning_hours": total_learning_hours,
             "total_assignments": total_assigned,
+            "mandatory_assignments": mandatory_assigned,
+            "mandatory_completion_rate": (
+                round((mandatory_completed / mandatory_assigned) * 100, 1) if mandatory_assigned else 0.0
+            ),
             "total_certificates": len(certificates),
             "pending_certificates": len([c for c in certificates if c.get("verification_status") == "pending"]),
             "popular_courses": [{"title": t, "enrollments": n} for t, n in popular_courses],
             "department_comparison": department_comparison,
+            "department_filter": department,
         }
 
 

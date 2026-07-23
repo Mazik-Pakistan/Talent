@@ -319,8 +319,14 @@ async def list_assignments(
     current_user: RequireRecruiter,
     employee_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
+    mandatory: bool | None = None,
 ):
-    return await learning_service.list_assignments(current_user, employee_id=employee_id, status_filter=status_filter)
+    return await learning_service.list_assignments(
+        current_user,
+        employee_id=employee_id,
+        status_filter=status_filter,
+        mandatory_only=mandatory,
+    )
 
 
 @router.get("/employees/{employee_id}/profile")
@@ -335,8 +341,8 @@ async def employee_learning_profile(
 
 
 @router.get("/analytics")
-async def analytics(current_user: RequireRecruiter):
-    return await learning_service.get_analytics(current_user)
+async def analytics(current_user: RequireRecruiter, department: str | None = None):
+    return await learning_service.get_analytics(current_user, department=department)
 
 
 @router.get("/org-taxonomy")

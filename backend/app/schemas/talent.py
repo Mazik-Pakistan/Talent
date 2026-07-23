@@ -110,5 +110,7 @@ class TalentSearchRequest(BaseModel):
     min_experience_years: float | None = Field(default=None, ge=0)
     min_performance_rating: float | None = Field(default=None, ge=0, le=5)
     min_learning_progress: float | None = Field(default=None, ge=0, le=100)
+    min_competency_score: float | None = Field(default=None, ge=1, le=5)
+    semantic: bool = False
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=20, ge=1, le=60)

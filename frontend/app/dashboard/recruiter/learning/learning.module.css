@@ -24,19 +24,58 @@
 .tabBtn:hover { color: var(--navy); }
 .tabActive { color: var(--navy); border-bottom-color: var(--cyan); }
 
-.sourceToggle { display: inline-flex; gap: 4px; padding: 4px; background: #EEF2F6; border-radius: 12px; margin-bottom: 12px; }
-.sourceBtn {
-  font-size: 12px;
-  font-weight: 700;
-  padding: 8px 16px;
-  border-radius: 9px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
+.sourceToggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
 }
-.sourceBtn:hover { color: var(--navy); }
-.sourceBtnActive { background: #fff; color: var(--navy); box-shadow: 0 1px 3px rgba(15, 42, 74, 0.12); }
+.sourceBtn {
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--navy);
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s, box-shadow .15s;
+}
+.sourceBtn:hover { border-color: var(--cyan); color: var(--cyan); }
+.sourceBtnActive {
+  background: var(--navy);
+  color: #fff;
+  border-color: var(--navy);
+  box-shadow: 0 2px 8px rgba(15, 42, 74, 0.18);
+}
+
+.sourceHint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+  line-height: 1.45;
+}
+
+.sourceBadge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: #0B5CAB;
+  background: #E8F3FF;
+  width: fit-content;
+}
+.sourceBadgeCoursera { color: #6A2FB0; background: #F1E9FB; }
+.sourceBadgeRecruiter { color: #0E7C66; background: #E6F7F2; }
+
+.courseCardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 
 .pickerLayout { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 20px; align-items: start; }
 @media (max-width: 1100px) { .pickerLayout { grid-template-columns: 1fr; } }

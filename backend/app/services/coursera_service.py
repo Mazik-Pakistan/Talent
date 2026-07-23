@@ -101,12 +101,31 @@ def _assign_category(course: dict) -> str | None:
     return None
 
 
+def _is_english_course(raw: dict) -> bool:
+    """Keep only courses that list English as a primary language.
+
+    Coursera returns codes like ``en``, ``en-us``, etc. in ``primaryLanguages``.
+    Courses without language metadata are excluded so non-English catalogs do
+    not leak through.
+    """
+    langs = raw.get("primaryLanguages") or []
+    if not isinstance(langs, list) or not langs:
+        return False
+    for lang in langs:
+        code = str(lang or "").strip().lower().replace("_", "-")
+        if code == "en" or code.startswith("en-") or code == "english":
+            return True
+    return False
+
+
 def _normalize(raw: dict) -> dict | None:
     """Convert a raw Coursera course object into our internal normalized format,
-    including category assignment."""
+    including category assignment. English-primary courses only."""
     slug = raw.get("slug")
     name = raw.get("name")
     if not slug or not name:
+        return None
+    if not _is_english_course(raw):
         return None
 
     category = _assign_category(raw)
@@ -262,7 +281,8 @@ _warm_cache_task: asyncio.Task | None = None
 # FastAPI lifespan), and no request ever has to fetch Coursera live unless
 # both the in-memory cache AND the DB snapshot are empty/unreachable.
 # ---------------------------------------------------------------------- #
-_CACHE_DOC_ID = "coursera_catalog"
+# Bump suffix when normalize rules change so stale multilingual snapshots are ignored.
+_CACHE_DOC_ID = "coursera_catalog_en_v1"
 
 
 async def _persist_cache_to_db(items: list[dict]) -> None:
