@@ -66,6 +66,17 @@ function sourceBadgeClass(source) {
 
 export default function RecruiterLearningPage() {
   const [tab, setTab] = useState("catalog");
+  const [pendingAssign, setPendingAssign] = useState(null);
+
+  function handleAssignFromCatalog(course, source) {
+    setPendingAssign({ course, source: course?.source || source || "microsoft_learn" });
+    setTab("assign");
+    toast.info(`Selected “${course.title}” — choose who should take it.`);
+  }
+
+  const clearPendingAssign = useCallback(() => {
+    setPendingAssign(null);
+  }, []);
 
   return (
     <RecruiterShell
@@ -86,9 +97,15 @@ export default function RecruiterLearningPage() {
         ))}
       </div>
 
-      {tab === "catalog" && <CatalogTab />}
+      {tab === "catalog" && <CatalogTab onAssignCourse={handleAssignFromCatalog} />}
       {tab === "knowledge" && <KnowledgeBaseTab />}
-      {tab === "assign" && <AssignTab />}
+      {tab === "assign" && (
+        <AssignTab
+          initialCourse={pendingAssign?.course || null}
+          initialSource={pendingAssign?.source || null}
+          onConsumedInitial={clearPendingAssign}
+        />
+      )}
       {tab === "assignments" && <AssignmentsTab />}
       {tab === "certificates" && <CertificatesTab />}
       {tab === "analytics" && <AnalyticsTab />}
@@ -96,7 +113,7 @@ export default function RecruiterLearningPage() {
   );
 }
 
-function CatalogTab() {
+function CatalogTab({ onAssignCourse }) {
   const [source, setSource] = useState("microsoft_learn");
   const [q, setQ] = useState("");
   const [facets, setFacets] = useState({ roles: [], levels: [], products: [] });
@@ -159,7 +176,7 @@ function CatalogTab() {
           <div>
             <div className={shellStyles.sectionTitle}>Course catalog</div>
             <p className={shellStyles.sectionDesc}>
-              {result.total} courses found · pick a source below to browse
+              {result.total} courses found · browse, then click Assign to send it to employees
             </p>
           </div>
         </div>
@@ -230,11 +247,20 @@ function CatalogTab() {
                 {c.type || "course"} · {c.duration_minutes || "—"} min · {(c.levels || [])[0] || c.category || "—"}
               </div>
               <p className={styles.courseSummary}>{(c.summary || "").slice(0, 140)}</p>
-              {c.url && (
-                <a href={c.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
-                  Open course
-                </a>
-              )}
+              <div className={styles.courseActions}>
+                {c.url && (
+                  <a href={c.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
+                    Preview
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className={styles.assignCourseBtn}
+                  onClick={() => onAssignCourse?.(c, source)}
+                >
+                  Assign to employees
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -446,11 +472,11 @@ function KnowledgeBaseTab() {
   );
 }
 
-function AssignTab() {
-  const [source, setSource] = useState("microsoft_learn");
+function AssignTab({ initialCourse = null, initialSource = null, onConsumedInitial }) {
+  const [source, setSource] = useState(initialSource || "microsoft_learn");
   const [q, setQ] = useState("");
   const [courses, setCourses] = useState([]);
-  const [selectedCourse, setSelectedCourse] = useState(null);
+  const [selectedCourse, setSelectedCourse] = useState(initialCourse || null);
   const [employees, setEmployees] = useState([]);
   const [empQuery, setEmpQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
@@ -463,6 +489,15 @@ function AssignTab() {
   const [requiredSkills, setRequiredSkills] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!initialCourse) return;
+    setSelectedCourse(initialCourse);
+    if (initialSource) setSource(initialSource);
+    setQ("");
+    setCourses([]);
+    onConsumedInitial?.();
+  }, [initialCourse, initialSource, onConsumedInitial]);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -503,8 +538,14 @@ function AssignTab() {
     setSelectedIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
   }
 
+  function clearSelectedCourse() {
+    setSelectedCourse(null);
+    setQ("");
+    setCourses([]);
+  }
+
   async function handleAssign() {
-    if (!selectedCourse) { toast.error("Search for and select a course first."); return; }
+    if (!selectedCourse) { toast.error("Select a course first (from Catalog or search below)."); return; }
     const token = localStorage.getItem("access_token");
     const payload = {
       course_uid: selectedCourse.uid,
@@ -554,6 +595,14 @@ function AssignTab() {
     }
   }
 
+  const courseSource = selectedCourse?.source || source;
+  const audienceReady = Boolean(selectedCourse);
+  const assignLabel = submitting
+    ? "Assigning…"
+    : assignMode === "employees"
+      ? `Assign to ${selectedIds.length} employee${selectedIds.length === 1 ? "" : "s"}`
+      : `Assign to ${employees.length} matching employee${employees.length === 1 ? "" : "s"}`;
+
   return (
     <div className={shellStyles.section}>
       <div className={shellStyles.sectionHead}>
@@ -562,32 +611,76 @@ function AssignTab() {
           <div>
             <div className={shellStyles.sectionTitle}>Assign a course</div>
             <p className={shellStyles.sectionDesc}>
-              1) Pick a source pill · 2) Search &amp; select a course · 3) Choose who gets it (employees, department, joining role, or skills)
+              Choose a course, pick who should take it, then set due date and send.
             </p>
           </div>
         </div>
       </div>
+
       <div className={shellStyles.sectionBody}>
-        <div className={styles.modeRow}>
-          {[
-            { key: "employees", label: "By employee" },
-            { key: "department", label: "By department" },
-            { key: "designation", label: "By joining role" },
-            { key: "skills", label: "By skills" },
-          ].map((m) => (
-            <button
-              key={m.key}
-              type="button"
-              className={`${styles.modeBtn} ${assignMode === m.key ? styles.modeActive : ""}`}
-              onClick={() => setAssignMode(m.key)}
-            >
-              {m.label}
-            </button>
-          ))}
+        <div className={styles.assignSteps}>
+          <div className={`${styles.assignStep} ${selectedCourse ? styles.assignStepDone : styles.assignStepActive}`}>
+            <span className={styles.assignStepNum}>{selectedCourse ? "✓" : "1"}</span>
+            <span>Course</span>
+          </div>
+          <div className={styles.assignStepLine} />
+          <div className={`${styles.assignStep} ${selectedCourse ? styles.assignStepActive : ""}`}>
+            <span className={styles.assignStepNum}>2</span>
+            <span>Audience</span>
+          </div>
+          <div className={styles.assignStepLine} />
+          <div className={`${styles.assignStep} ${selectedCourse ? styles.assignStepActive : ""}`}>
+            <span className={styles.assignStepNum}>3</span>
+            <span>Send</span>
+          </div>
         </div>
 
-        <div className={styles.pickerLayout}>
-          <div>
+        {selectedCourse ? (
+          <div className={styles.assignCourseHero}>
+            <div className={styles.assignCourseHeroMain}>
+              <span className={`${styles.sourceBadge} ${sourceBadgeClass(courseSource)}`}>
+                {sourceLabel(courseSource)}
+              </span>
+              <h3 className={styles.assignCourseHeroTitle}>{selectedCourse.title}</h3>
+              <div className={styles.assignCourseHeroMeta}>
+                <span>{selectedCourse.type || "course"}</span>
+                <span>·</span>
+                <span>{selectedCourse.duration_minutes || "—"} min</span>
+                {(selectedCourse.levels || [])[0] || selectedCourse.category ? (
+                  <>
+                    <span>·</span>
+                    <span>{(selectedCourse.levels || [])[0] || selectedCourse.category}</span>
+                  </>
+                ) : null}
+              </div>
+              {selectedCourse.summary && (
+                <p className={styles.assignCourseHeroSummary}>
+                  {String(selectedCourse.summary).slice(0, 180)}
+                  {String(selectedCourse.summary).length > 180 ? "…" : ""}
+                </p>
+              )}
+            </div>
+            <div className={styles.assignCourseHeroActions}>
+              {selectedCourse.url && (
+                <a href={selectedCourse.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
+                  Preview
+                </a>
+              )}
+              <button type="button" className={styles.smallBtn} onClick={clearSelectedCourse}>
+                Change course
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className={styles.assignPanel}>
+            <div className={styles.assignPanelHead}>
+              <div>
+                <div className={styles.assignPanelTitle}>1 · Select a course</div>
+                <p className={styles.assignPanelDesc}>
+                  Search below, or use Course Catalog → Assign to employees.
+                </p>
+              </div>
+            </div>
             <div className={styles.sourceToggle} role="tablist" aria-label="Course source">
               {CATALOG_SOURCES.map((s) => (
                 <button
@@ -596,7 +689,7 @@ function AssignTab() {
                   role="tab"
                   aria-selected={source === s.key}
                   className={`${styles.sourceBtn} ${source === s.key ? styles.sourceBtnActive : ""}`}
-                  onClick={() => { setSource(s.key); setQ(""); setCourses([]); setSelectedCourse(null); }}
+                  onClick={() => { setSource(s.key); setQ(""); setCourses([]); }}
                 >
                   {s.label}
                 </button>
@@ -617,23 +710,13 @@ function AssignTab() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
-            {selectedCourse && (
-              <div className={styles.selectedCourseCard}>
-                <div className={styles.selectedCourseTitle}>Selected: {selectedCourse.title}</div>
-                <div className={styles.selectedCourseMeta}>
-                  {sourceLabel(selectedCourse.source || source)} · {selectedCourse.type} · {selectedCourse.duration_minutes || "—"} min
-                </div>
-              </div>
-            )}
             <div className={styles.pickerList}>
               {courses.map((c) => (
-                <div
+                <button
                   key={c.uid}
-                  className={`${styles.pickerRow} ${selectedCourse?.uid === c.uid ? styles.pickerSelected : ""}`}
-                  role="button"
-                  tabIndex={0}
+                  type="button"
+                  className={styles.pickerRow}
                   onClick={() => setSelectedCourse(c)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedCourse(c); }}
                 >
                   <div>
                     <div className={styles.pickerRowTitle}>{c.title}</div>
@@ -641,97 +724,188 @@ function AssignTab() {
                       {sourceLabel(c.source || source)} · {c.type} · {c.duration_minutes || "—"} min · {(c.levels || [])[0] || c.category || "—"}
                     </div>
                   </div>
-                </div>
+                  <span className={styles.pickerSelectHint}>Select</span>
+                </button>
               ))}
-              {q.trim() && courses.length === 0 && <p className={styles.inlineNote}>No matches — try a different search term.</p>}
+              {q.trim() && courses.length === 0 && (
+                <div className={styles.assignEmpty}>
+                  No matches — try a different search term.
+                </div>
+              )}
+              {!q.trim() && (
+                <div className={styles.assignEmpty}>
+                  Start typing to find a course, or pick one from the Course Catalog tab.
+                </div>
+              )}
             </div>
           </div>
+        )}
 
-          <div>
-            <div className={styles.filterBar}>
-              <select className={styles.filterSelect} value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
-                <option value="">All departments</option>
-                {(taxonomy.departments || []).map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
-              <select className={styles.filterSelect} value={filterTitle} onChange={(e) => setFilterTitle(e.target.value)}>
-                <option value="">All designations</option>
-                {(taxonomy.designations || []).map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
+        <div className={`${styles.assignGrid} ${!audienceReady ? styles.assignGridLocked : ""}`}>
+          <div className={styles.assignPanel}>
+            <div className={styles.assignPanelHead}>
+              <div>
+                <div className={styles.assignPanelTitle}>2 · Choose audience</div>
+                <p className={styles.assignPanelDesc}>Employees, department, joining role, or skills.</p>
+              </div>
+              {assignMode === "employees" && selectedIds.length > 0 && (
+                <span className={styles.assignCountPill}>{selectedIds.length} selected</span>
+              )}
             </div>
 
-            {assignMode === "employees" && (
+            {!audienceReady ? (
+              <div className={styles.assignLockedNote}>Select a course first to choose who gets it.</div>
+            ) : (
               <>
-                <input className={styles.searchInput} placeholder="Filter employees…" value={empQuery} onChange={(e) => setEmpQuery(e.target.value)} />
-                <div className={styles.employeeList}>
-                  {employees.map((emp) => (
-                    <label key={emp.employee_id} className={styles.employeeCheckRow}>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(emp.employee_id)}
-                        onChange={() => toggleEmployee(emp.employee_id)}
-                      />
-                      <div>
-                        {emp.full_name}
-                        <div className={styles.employeeMeta}>{emp.job_title || "—"} · {emp.department || "—"}</div>
-                      </div>
-                    </label>
+                <div className={styles.modeRow}>
+                  {[
+                    { key: "employees", label: "By employee" },
+                    { key: "department", label: "By department" },
+                    { key: "designation", label: "By joining role" },
+                    { key: "skills", label: "By skills" },
+                  ].map((m) => (
+                    <button
+                      key={m.key}
+                      type="button"
+                      className={`${styles.modeBtn} ${assignMode === m.key ? styles.modeActive : ""}`}
+                      onClick={() => setAssignMode(m.key)}
+                    >
+                      {m.label}
+                    </button>
                   ))}
-                  {employees.length === 0 && <p className={styles.inlineNote}>No employees found for these filters.</p>}
                 </div>
+
+                <div className={styles.filterBar}>
+                  <select className={styles.filterSelect} value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
+                    <option value="">All departments</option>
+                    {(taxonomy.departments || []).map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <select className={styles.filterSelect} value={filterTitle} onChange={(e) => setFilterTitle(e.target.value)}>
+                    <option value="">All designations</option>
+                    {(taxonomy.designations || []).map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+
+                {assignMode === "employees" && (
+                  <>
+                    <input
+                      className={styles.searchInput}
+                      placeholder="Filter employees by name…"
+                      value={empQuery}
+                      onChange={(e) => setEmpQuery(e.target.value)}
+                    />
+                    <div className={styles.employeeList}>
+                      {employees.map((emp) => {
+                        const checked = selectedIds.includes(emp.employee_id);
+                        return (
+                          <label
+                            key={emp.employee_id}
+                            className={`${styles.employeeCheckRow} ${checked ? styles.employeeCheckRowActive : ""}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleEmployee(emp.employee_id)}
+                            />
+                            <div className={styles.employeeAvatar}>
+                              {(emp.full_name || "?").slice(0, 1).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className={styles.employeeName}>{emp.full_name}</div>
+                              <div className={styles.employeeMeta}>{emp.job_title || "—"} · {emp.department || "—"}</div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                      {employees.length === 0 && (
+                        <div className={styles.assignEmpty}>No employees match these filters.</div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {assignMode === "department" && (
+                  <div className={styles.audienceSummary}>
+                    <div className={styles.audienceSummaryLabel}>Bulk assign by department</div>
+                    <p>
+                      All active employees in <strong>{filterDept || "a selected department"}</strong>
+                      {filterTitle ? <> with designation <strong>{filterTitle}</strong></> : null}
+                      {" "}({employees.length} currently matching).
+                    </p>
+                  </div>
+                )}
+                {assignMode === "designation" && (
+                  <div className={styles.audienceSummary}>
+                    <div className={styles.audienceSummaryLabel}>Bulk assign by joining role</div>
+                    <p>
+                      All active employees with designation <strong>{filterTitle || "a selected role"}</strong>
+                      {filterDept ? <> in <strong>{filterDept}</strong></> : null}
+                      {" "}({employees.length} currently matching).
+                    </p>
+                  </div>
+                )}
+                {assignMode === "skills" && (
+                  <div className={styles.skillsBlock}>
+                    <label className={styles.fieldLabel}>
+                      Required skills
+                      <span>Employees need at least one of these</span>
+                    </label>
+                    <input
+                      className={styles.searchInput}
+                      value={requiredSkills}
+                      onChange={(e) => setRequiredSkills(e.target.value)}
+                      placeholder="e.g. Python, Azure, Communication"
+                    />
+                    <p className={styles.inlineNote}>Department and designation filters above still apply.</p>
+                  </div>
+                )}
               </>
             )}
+          </div>
 
-            {assignMode === "department" && (
-              <p className={styles.inlineNote}>
-                Will assign to all active employees in <b>{filterDept || "—"}</b>
-                {filterTitle ? ` with designation ${filterTitle}` : ""} ({employees.length} currently matching).
-              </p>
-            )}
-            {assignMode === "designation" && (
-              <p className={styles.inlineNote}>
-                Will assign to all active employees with designation <b>{filterTitle || "—"}</b>
-                {filterDept ? ` in ${filterDept}` : ""} ({employees.length} currently matching).
-              </p>
-            )}
-            {assignMode === "skills" && (
-              <>
-                <label className={styles.inlineNote} style={{ display: "block", marginBottom: 8 }}>
-                  Required skills (comma-separated) — employees must have at least one
-                  <input
-                    className={styles.searchInput}
-                    style={{ marginTop: 6 }}
-                    value={requiredSkills}
-                    onChange={(e) => setRequiredSkills(e.target.value)}
-                    placeholder="e.g. Python, Azure, Communication"
-                  />
-                </label>
-                <p className={styles.inlineNote}>
-                  Optional department/designation filters still apply above.
-                </p>
-              </>
-            )}
-
-            <div className={styles.assignFormRow}>
-              <label>
-                Due date (auto if blank)
-                <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </label>
-              <label>
-                Note (optional)
-                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Required for onboarding" />
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 18 }}>
-                <input type="checkbox" checked={mandatory} onChange={(e) => setMandatory(e.target.checked)} />
-                Mandatory
-              </label>
+          <div className={styles.assignPanel}>
+            <div className={styles.assignPanelHead}>
+              <div>
+                <div className={styles.assignPanelTitle}>3 · Details &amp; send</div>
+                <p className={styles.assignPanelDesc}>Due date, note, and mandatory flag.</p>
+              </div>
             </div>
-            <button type="button" className={shellStyles.primaryButton} disabled={submitting} onClick={handleAssign}>
-              {submitting
-                ? "Assigning…"
-                : assignMode === "employees"
-                ? `Assign to ${selectedIds.length || 0} employee(s)`
-                : "Assign to matching employees"}
-            </button>
+
+            {!audienceReady ? (
+              <div className={styles.assignLockedNote}>Select a course to finish assignment details.</div>
+            ) : (
+              <>
+                <div className={styles.assignDetails}>
+                  <label className={styles.fieldLabel}>
+                    Due date
+                    <span>Auto-set if left blank</span>
+                    <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                  </label>
+                  <label className={styles.fieldLabel}>
+                    Note
+                    <span>Optional context for employees</span>
+                    <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Required for onboarding" />
+                  </label>
+                </div>
+
+                <label className={`${styles.mandatoryToggle} ${mandatory ? styles.mandatoryOn : ""}`}>
+                  <input type="checkbox" checked={mandatory} onChange={(e) => setMandatory(e.target.checked)} />
+                  <div>
+                    <strong>Mandatory assignment</strong>
+                    <span>Employees must complete this course</span>
+                  </div>
+                </label>
+
+                <button
+                  type="button"
+                  className={styles.assignSubmitBtn}
+                  disabled={submitting}
+                  onClick={handleAssign}
+                >
+                  {assignLabel}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
