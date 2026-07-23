@@ -116,3 +116,7 @@ async def create_database_indexes() -> None:
 
     await database.ai_coach_messages.create_index([("user_id", 1), ("created_at", 1)])
     await database.ai_coach_knowledge_docs.create_index("title", unique=True)
+
+    # AI Agent (hiring/onboarding automation) conversations
+    await database.agent_conversations.create_index("session_id", unique=True)
+    await database.agent_conversations.create_index([("user_id", 1), ("updated_at", -1)])

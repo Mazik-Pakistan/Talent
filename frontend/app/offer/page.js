@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -14,7 +14,7 @@ import SignaturePad from "@/components/SignaturePad";
 
 const OFFER_DRAFT_KEY = "offer_letter_draft";
 
-export default function OfferLetterPage() {
+function OfferLetterPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const draftRestored = useRef(false);
@@ -312,5 +312,13 @@ export default function OfferLetterPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function OfferLetterPage() {
+  return (
+    <Suspense fallback={<main className="offer-shell"><p style={{ textAlign: "center" }}>Loading your offer letter…</p></main>}>
+      <OfferLetterPageContent />
+    </Suspense>
   );
 }
