@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import AgentChatWidget from "@/components/ai/Agentchatwidget";
 import {
   clearLocalSession,
   getNotifications,
@@ -107,6 +108,18 @@ const NAV_ITEMS = [
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+      </svg>
+    ),
+  },
+  {
+    key: "assistant",
+    label: "AI Assistant",
+    href: "/dashboard/recruiter/ai-assistant",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" />
+        <path d="M19 11a7 7 0 0 1-14 0" />
+        <path d="M12 18v4" />
       </svg>
     ),
   },
@@ -465,6 +478,7 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
             </div>
 
             <div className={styles.content}>
+              <AgentChatWidget />
               {selectedPerson && (
                 <div className={styles.selectionBox}>
                   <div>

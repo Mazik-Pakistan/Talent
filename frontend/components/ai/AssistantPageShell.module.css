@@ -1,0 +1,76 @@
+.page {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+}
+
+.hero {
+  display: grid;
+  gap: 10px;
+  padding: 24px;
+  border: 1px solid rgba(23, 104, 150, 0.16);
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(23, 104, 150, 0.1), rgba(50, 166, 174, 0.08));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);
+}
+
+.eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(23, 104, 150, 0.12);
+  color: var(--blue, #176896);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0;
+  color: var(--ink, #123a63);
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+}
+
+.hero p {
+  margin: 0;
+  color: var(--muted, #5c7086);
+  line-height: 1.6;
+  max-width: 760px;
+}
+
+.highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.highlightPill {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid rgba(23, 104, 150, 0.14);
+  color: var(--blue, #176896);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.content {
+  border: 1px solid rgba(23, 104, 150, 0.14);
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 20px 40px rgba(18, 58, 99, 0.08);
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 16px;
+  }
+
+  .hero {
+    padding: 18px;
+  }
+}

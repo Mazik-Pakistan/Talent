@@ -1,14 +1,17 @@
 "use client";
 
 import AgentChatWidget from "@/components/ai/Agentchatwidget";
+import AssistantPageShell from "@/components/ai/AssistantPageShell";
 
 export default function RecruiterAIAssistantPage() {
   return (
-    <div style={{ padding: "24px" }}>
-      <h1>AI Assistant</h1>
-      <p>Use the AI Assistant to automate hiring tasks and answer HR questions.</p>
-
+    <AssistantPageShell
+      eyebrow="Recruiter workspace"
+      title="Your hiring copilot"
+      description="Run hiring workflows, review candidates, and ask for support without leaving your recruiting dashboard."
+      highlights={["Invite candidates", "Offer workflows", "Pipeline support"]}
+    >
       <AgentChatWidget />
-    </div>
+    </AssistantPageShell>
   );
 }

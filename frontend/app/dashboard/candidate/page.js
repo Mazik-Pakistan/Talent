@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import AgentChatWidget from "@/components/ai/Agentchatwidget";
 import {
   clearLocalSession,
   getApiErrorMessage,
@@ -62,6 +63,19 @@ const NAV_ITEMS = [
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
+      </svg>
+    ),
+  },
+  {
+    key: "assistant",
+    label: "AI Assistant",
+    href: "/dashboard/candidate/ai-assistant",
+    disabled: false,
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" />
+        <path d="M19 11a7 7 0 0 1-14 0" />
+        <path d="M12 18v4" />
       </svg>
     ),
   },
@@ -260,6 +274,7 @@ function CandidateDashboardContent() {
 
         {/* Main */}
         <main className={styles.main}>
+          <AgentChatWidget />
           <div className={styles.topbar}>
             <div>
               <div className={styles.topbarTitle}>Candidate Dashboard</div>

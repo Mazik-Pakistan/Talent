@@ -20,6 +20,7 @@ import {
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
 import { getEmployeeNavItems } from "@/utils/employeeNav";
+import AgentChatWidget from "@/components/ai/Agentchatwidget";
 import styles from "./employee-dashboard.module.css";
 
 const ANNOUNCEMENTS_POLL_MS = 30000;
@@ -280,6 +281,7 @@ function EmployeeDashboardContent() {
 
         {/* Main */}
         <main className={styles.main}>
+          <AgentChatWidget />
           <div className={styles.topbar}>
             <div>
               <div className={styles.topbarTitle}>Employee Dashboard</div>

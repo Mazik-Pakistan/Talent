@@ -1,14 +1,17 @@
 "use client";
 
 import AgentChatWidget from "@/components/ai/Agentchatwidget";
+import AssistantPageShell from "@/components/ai/AssistantPageShell";
 
 export default function EmployeeAIAssistantPage() {
   return (
-    <div style={{ padding: "24px" }}>
-      <h1>Employee AI Assistant</h1>
-      <p>Get help with HR tasks, documents, and onboarding.</p>
-
+    <AssistantPageShell
+      eyebrow="Employee workspace"
+      title="Your workday assistant"
+      description="Ask for help with employee tasks, onboarding follow-ups, profile completion, and document questions in one polished workspace."
+      highlights={["HR help", "Onboarding support", "Fast answers"]}
+    >
       <AgentChatWidget />
-    </div>
+    </AssistantPageShell>
   );
 }
