@@ -84,9 +84,188 @@ async def _find_employee_by_email(email: str) -> dict | None:
     return await database.employees.find_one({"email": email.lower().strip()})
 
 
-# ─────────────────────────────────────────────────────────────────────────
-# Recruiter tools
-# ─────────────────────────────────────────────────────────────────────────
+async def _find_employee_by_query(q: str) -> dict | None:
+    term = (q or "").strip()
+    if not term:
+        return None
+    if "@" in term:
+        return await _find_employee_by_email(term)
+    return await database.employees.find_one(
+        {
+            "$or": [
+                {"full_name": {"$regex": term, "$options": "i"}},
+                {"employee_id": {"$regex": term, "$options": "i"}},
+                {"email": {"$regex": term, "$options": "i"}},
+            ]
+        }
+    )
+
+
+async def _find_candidate_by_query(q: str) -> dict | None:
+    term = (q or "").strip()
+    if not term:
+        return None
+    if "@" in term:
+        return await _find_candidate_by_email(term)
+    return await database.candidates.find_one(
+        {
+            "$or": [
+                {"full_name": {"$regex": term, "$options": "i"}},
+                {"email": {"$regex": term, "$options": "i"}},
+            ]
+        }
+    )
+
+
+POST_HIRE_PROFILE_KEYS = ("emergency", "employment", "references", "documents", "nda")
+PRE_HIRE_ONBOARDING_KEYS = ("personal", "education", "skills", "government_docs", "resume")
+
+
+def _employee_status_payload(employee: dict) -> dict:
+    onboarding = employee.get("onboarding") or {}
+    missing = [k for k in POST_HIRE_PROFILE_KEYS if not onboarding.get(k)]
+    profile_status = employee.get("profile_status") or ("incomplete" if missing else "complete")
+    return {
+        "found_as": "employee",
+        "employee_id": employee.get("employee_id"),
+        "full_name": employee.get("full_name"),
+        "email": employee.get("email"),
+        "job_title": employee.get("job_title"),
+        "department": employee.get("department"),
+        # Post-hire Complete Profile (emergency, banking, references, policies, NDA)
+        "profile_status": profile_status,
+        "post_hire_profile_complete": profile_status == "complete" and not missing,
+        "post_hire_missing": missing,
+        "post_hire_completed": [k for k in POST_HIRE_PROFILE_KEYS if onboarding.get(k)],
+        # Candidate-phase fields that already carried over (not the post-hire checklist)
+        "pre_hire_on_file": [k for k in PRE_HIRE_ONBOARDING_KEYS if onboarding.get(k)],
+    }
+
+
+async def _tool_list_candidates(user: CurrentUser, args: dict) -> ToolResult:
+    query: dict = {}
+    if user.role != "super_admin":
+        query["recruiter_id"] = user.id
+    status_filter = args.get("status")
+    if status_filter:
+        query["conversion_status"] = status_filter
+    docs = await database.candidates.find(query).sort("created_at", -1).to_list(length=50)
+    items = [
+        {
+            "email": d.get("email"),
+            "full_name": d.get("full_name"),
+            "job_title": d.get("job_title"),
+            "conversion_status": d.get("conversion_status"),
+            "onboarding_status": (d.get("onboarding") or {}).get("status", "not_started"),
+            "note": (
+                "Converted to employee — use get_candidate_status for post-hire profile progress."
+                if d.get("conversion_status") == "converted" or d.get("status") == "converted"
+                else None
+            ),
+        }
+        for d in docs
+    ]
+    return ToolResult(ok=True, data={"candidates": items, "count": len(items)})
+
+
+async def _tool_list_employees(user: CurrentUser, args: dict) -> ToolResult:
+    query: dict = {"status": {"$in": ["active", "inactive", "on_leave"]}}
+    if user.role != "super_admin":
+        query["recruiter_id"] = user.id
+    profile_status = (args.get("profile_status") or "").strip().lower()
+    if profile_status in ("incomplete", "complete"):
+        query["profile_status"] = profile_status
+    docs = await database.employees.find(query).sort("converted_at", -1).to_list(length=50)
+    items = []
+    for d in docs:
+        onboarding = d.get("onboarding") or {}
+        missing = [k for k in POST_HIRE_PROFILE_KEYS if not onboarding.get(k)]
+        status = d.get("profile_status") or ("incomplete" if missing else "complete")
+        items.append(
+            {
+                "email": d.get("email"),
+                "full_name": d.get("full_name"),
+                "employee_id": d.get("employee_id"),
+                "job_title": d.get("job_title"),
+                "profile_status": status,
+                "post_hire_profile_complete": status == "complete" and not missing,
+                "post_hire_missing": missing,
+            }
+        )
+    return ToolResult(ok=True, data={"employees": items, "count": len(items)})
+
+
+async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResult:
+    """Prefer the employee record when someone has already been converted.
+
+    Converted people still have a candidate row whose pre-hire onboarding looks
+    complete — that must not be reported as post-hire profile completion.
+    """
+    email = (args.get("email") or "").strip()
+    name = (args.get("name") or args.get("full_name") or "").strip()
+    query = email or name
+    if not query:
+        return ToolResult(ok=False, error="An email or name is required.")
+
+    employee = await _find_employee_by_query(query)
+    candidate = await _find_candidate_by_query(query)
+
+    if employee:
+        payload = _employee_status_payload(employee)
+        if candidate:
+            cand_onboarding = candidate.get("onboarding") or {}
+            payload["also_found_as"] = "converted_candidate"
+            payload["pre_hire_onboarding_status"] = cand_onboarding.get("status", "not_started")
+            payload["conversion_status"] = candidate.get("conversion_status")
+        return ToolResult(ok=True, data=payload)
+
+    if candidate:
+        onboarding = candidate.get("onboarding") or {}
+        conversion = candidate.get("conversion_status")
+        missing = [k for k in PRE_HIRE_ONBOARDING_KEYS if not onboarding.get(k)]
+        # Converted but employee row somehow missing — still warn clearly.
+        if conversion == "converted" or candidate.get("status") == "converted":
+            return ToolResult(
+                ok=True,
+                data={
+                    "found_as": "converted_candidate_without_employee_row",
+                    "full_name": candidate.get("full_name"),
+                    "email": candidate.get("email"),
+                    "conversion_status": conversion,
+                    "pre_hire_onboarding_status": onboarding.get("status", "not_started"),
+                    "pre_hire_missing": missing,
+                    "post_hire_profile_complete": False,
+                    "warning": (
+                        "This person was converted, but no employee profile row was found. "
+                        "Do not treat pre-hire onboarding as post-hire profile completion."
+                    ),
+                },
+            )
+        offer = await database.offer_letters.find_one(
+            {"candidate_email": (candidate.get("email") or "").lower()},
+            sort=[("created_at", -1)],
+        )
+        return ToolResult(
+            ok=True,
+            data={
+                "found_as": "candidate",
+                "full_name": candidate.get("full_name"),
+                "email": candidate.get("email"),
+                "conversion_status": conversion,
+                "onboarding_status": onboarding.get("status", "not_started"),
+                "pre_hire_missing": missing,
+                "pre_hire_complete": not missing,
+                "offer_status": (offer or {}).get("status"),
+                "offer_id": str(offer["_id"]) if offer else None,
+                "note": (
+                    "This is pre-hire candidate onboarding only "
+                    "(personal/education/skills/docs/resume). "
+                    "Post-hire Complete Profile applies after conversion to employee."
+                ),
+            },
+        )
+
+    return ToolResult(ok=False, error=f"No candidate or employee found for {query}.")
 
 
 async def _tool_send_invitation(user: CurrentUser, args: dict) -> ToolResult:
@@ -128,65 +307,6 @@ async def _tool_bulk_invite(user: CurrentUser, args: dict) -> ToolResult:
             detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
             failed.append({"email": row.get("email"), "error": str(detail)})
     return ToolResult(ok=True, data={"sent": sent, "failed": failed, "total": len(rows)})
-
-
-async def _tool_list_candidates(user: CurrentUser, args: dict) -> ToolResult:
-    query: dict = {}
-    if user.role != "super_admin":
-        query["recruiter_id"] = user.id
-    status_filter = args.get("status")
-    if status_filter:
-        query["conversion_status"] = status_filter
-    docs = await database.candidates.find(query).sort("created_at", -1).to_list(length=50)
-    items = [
-        {
-            "email": d.get("email"),
-            "full_name": d.get("full_name"),
-            "job_title": d.get("job_title"),
-            "conversion_status": d.get("conversion_status"),
-            "onboarding_status": (d.get("onboarding") or {}).get("status", "not_started"),
-        }
-        for d in docs
-    ]
-    return ToolResult(ok=True, data={"candidates": items, "count": len(items)})
-
-
-async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResult:
-    email = (args.get("email") or "").lower().strip()
-    if not email:
-        return ToolResult(ok=False, error="An email address is required.")
-    candidate = await _find_candidate_by_email(email)
-    if candidate:
-        onboarding = candidate.get("onboarding") or {}
-        offer = await database.offer_letters.find_one(
-            {"candidate_email": email}, sort=[("created_at", -1)]
-        )
-        return ToolResult(
-            ok=True,
-            data={
-                "found_as": "candidate",
-                "full_name": candidate.get("full_name"),
-                "conversion_status": candidate.get("conversion_status"),
-                "onboarding_status": onboarding.get("status", "not_started"),
-                "onboarding_missing": [k for k in ("personal", "education", "skills", "government_docs", "resume") if not onboarding.get(k)],
-                "offer_status": (offer or {}).get("status"),
-                "offer_id": str(offer["_id"]) if offer else None,
-            },
-        )
-    employee = await _find_employee_by_email(email)
-    if employee:
-        onboarding = employee.get("onboarding") or {}
-        return ToolResult(
-            ok=True,
-            data={
-                "found_as": "employee",
-                "employee_id": employee.get("employee_id"),
-                "full_name": employee.get("full_name"),
-                "profile_status": employee.get("profile_status", "in_progress"),
-                "profile_missing": [k for k in ("emergency", "employment", "references", "documents", "nda") if not onboarding.get(k)],
-            },
-        )
-    return ToolResult(ok=False, error=f"No candidate or employee found for {email}.")
 
 
 async def _tool_create_offer(user: CurrentUser, args: dict) -> ToolResult:
@@ -268,6 +388,53 @@ async def _tool_send_joining_letter(user: CurrentUser, args: dict) -> ToolResult
     )
 
 
+async def _tool_remind_employee_profile(user: CurrentUser, args: dict) -> ToolResult:
+    """Send post-hire Complete Profile reminder email + in-app notification."""
+    email = (args.get("email") or "").strip()
+    name = (args.get("name") or args.get("full_name") or "").strip()
+    employee_id = (args.get("employee_id") or "").strip()
+    note = args.get("note")
+    force = bool(args.get("force") or args.get("resend"))
+
+    employee = None
+    if employee_id:
+        try:
+            employee = await employee_service._resolve_employee_for_recruiter(user, employee_id)
+        except Exception as exc:  # noqa: BLE001
+            return _err(exc)
+    else:
+        query = email or name
+        if not query:
+            return ToolResult(ok=False, error="Provide email, name, or employee_id.")
+        employee = await _find_employee_by_query(query)
+        if not employee:
+            return ToolResult(ok=False, error=f"No employee found for {query}.")
+
+    try:
+        result = await employee_service.remind_profile_completion(
+            user,
+            employee.get("employee_id") or str(employee.get("_id")),
+            note,
+            force=force,
+        )
+        return ToolResult(
+            ok=True,
+            data={
+                "message": result.get("message"),
+                "email_sent": result.get("email_sent"),
+                "notification_sent": result.get("notification_sent", False),
+                "notification_id": result.get("notification_id"),
+                "email_to": result.get("email_to"),
+                "email_error": result.get("email_error"),
+                "missing_steps": result.get("missing_steps"),
+                "employee_id": employee.get("employee_id"),
+                "full_name": employee.get("full_name"),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 RECRUITER_TOOLS: list[Tool] = [
     Tool(
         name="send_invitation",
@@ -293,16 +460,55 @@ RECRUITER_TOOLS: list[Tool] = [
     ),
     Tool(
         name="list_candidates",
-        description="List the recruiter's own candidates and their onboarding/conversion status.",
+        description=(
+            "List candidates and their pre-hire onboarding/conversion status. "
+            "For converted people, use list_employees or get_candidate_status to see post-hire Complete Profile progress."
+        ),
         parameters={"status": "optional conversion_status filter"},
         handler=_tool_list_candidates,
         roles=("recruiter", "super_admin"),
     ),
     Tool(
+        name="list_employees",
+        description=(
+            "List employees and their post-hire Complete Profile status "
+            "(emergency, banking, references, policies, NDA). "
+            "Use profile_status=incomplete to find people who still need to finish."
+        ),
+        parameters={"profile_status": "optional: incomplete|complete"},
+        handler=_tool_list_employees,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
         name="get_candidate_status",
-        description="Look up a single candidate or employee's current status by email.",
-        parameters={"email": "string, required"},
+        description=(
+            "Look up one person by email or name. If they are an employee (converted), returns "
+            "post_hire_profile_complete / post_hire_missing — NOT pre-hire candidate onboarding. "
+            "Pre-hire fields on file (personal/education/resume) do not mean the post-hire profile is done."
+        ),
+        parameters={
+            "email": "string, preferred when known",
+            "name": "string, optional alternative to email (full or partial name)",
+        },
         handler=_tool_get_candidate_status,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="remind_employee_profile",
+        description=(
+            "Actually send a post-hire Complete Profile reminder: real SMTP email + in-app dashboard "
+            "notification. Use when the recruiter asks to remind/nudge/resend. "
+            "Set force=true if they ask to resend within an hour. "
+            "ONLY claim email was sent when the tool result has email_sent=true."
+        ),
+        parameters={
+            "email": "string, preferred",
+            "name": "string, optional",
+            "employee_id": "string, optional e.g. MZK-2026-000022",
+            "note": "string, optional message for the employee",
+            "force": "boolean, optional — set true to resend even if a reminder was sent recently",
+        },
+        handler=_tool_remind_employee_profile,
         roles=("recruiter", "super_admin"),
     ),
     Tool(

@@ -691,3 +691,13 @@ export async function scheduleEmployeeOrientation(employeeId, payload, accessTok
   });
   return data;
 }
+
+export async function remindEmployeeProfile(employeeId, payload, accessToken) {
+  const id = encodeURIComponent(String(employeeId || "").trim());
+  const { data } = await apiClient.post(
+    `/api/employees/detail/${id}/remind-profile`,
+    payload || {},
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  return data;
+}

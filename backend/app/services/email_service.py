@@ -244,8 +244,11 @@ class EmailService:
               <p style="margin:0;color:#1e3a5f;font-size:28px;font-weight:800;letter-spacing:2px;">{employee_id}</p>
               <p style="margin:12px 0 0;color:#475569;font-size:14px;">{job_title} · {department}</p>
             </div>
-            <p style="margin:0;color:#475569;font-size:15px;line-height:1.6;">
+            <p style="margin:0 0 16px;color:#475569;font-size:15px;line-height:1.6;">
               Sign in to TalentAI and choose the <strong>Employee</strong> role to open your employee dashboard.
+            </p>
+            <p style="margin:0;color:#475569;font-size:15px;line-height:1.6;">
+              Please complete your post-hire profile (emergency contact, banking, references, policies, and NDA) so HR can finish your onboarding.
             </p>
           </td>
         </tr>
@@ -528,6 +531,45 @@ class EmailService:
 """
         eyebrow = "Orientation update" if is_update else "Orientation session"
         self._send(to_email, subject, self._branded_shell(eyebrow, "You're invited", body))
+
+    def send_profile_completion_reminder(
+        self,
+        to_email: str,
+        full_name: str,
+        employee_id: str,
+        missing_labels: list[str],
+        dashboard_link: str,
+        recruiter_note: str | None = None,
+    ) -> None:
+        """Nudge an employee to finish post-hire Complete Profile steps."""
+        safe_name = escape(full_name or "there")
+        safe_id = escape(employee_id or "")
+        safe_link = escape(dashboard_link, quote=True)
+        missing_html = "".join(
+            f'<li style="margin:0 0 6px;color:#475569;font-size:14px;">{escape(label)}</li>'
+            for label in (missing_labels or ["Complete remaining profile steps"])
+        )
+        note_html = (
+            f'<p style="margin:16px 0 0;color:#475569;font-size:14px;"><strong>Note from your recruiter:</strong> {escape(recruiter_note)}</p>'
+            if recruiter_note
+            else ""
+        )
+        subject = "Reminder: Complete your employee profile — TalentAI"
+        body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {safe_name}, your recruiter is waiting on a few post-hire details before your onboarding is finished.
+              Employee ID <strong>{safe_id}</strong>.
+            </p>
+            <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:18px;margin-bottom:22px;">
+              <p style="margin:0 0 10px;color:#9a3412;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;">Still needed</p>
+              <ul style="margin:0;padding-left:18px;">{missing_html}</ul>
+              {note_html}
+            </div>
+            <div style="text-align:center;">
+              <a href="{safe_link}" style="display:inline-block;background:#123a63;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-size:15px;font-weight:700;">Complete your profile</a>
+            </div>
+"""
+        self._send(to_email, subject, self._branded_shell("Action required", "Complete your profile", body))
 
     def send_announcement(
         self,

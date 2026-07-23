@@ -187,13 +187,33 @@ async def process_document(file_path: str, doc_type: str, category: str) -> dict
 
 def compare_with_profile(ocr_fields: dict, profile_fields: dict) -> list[dict]:
     """US-042: Flag mismatches between OCR-extracted data and profile data."""
+    from app.services.document_matching_service import _norm_date, names_roughly_match
+
+    date_keys = {
+        "date_of_birth",
+        "issue_date",
+        "expiry_date",
+        "date_of_issue",
+        "date_of_expiry",
+        "passing_year",
+    }
+    name_keys = {"name", "full_name", "candidate_name", "father_name"}
+
     mismatches = []
     for key, ocr_value in (ocr_fields or {}).items():
         profile_value = profile_fields.get(key)
         if not ocr_value or not profile_value:
             continue
-        norm_ocr = re.sub(r"[\s-]", "", str(ocr_value)).lower()
-        norm_profile = re.sub(r"[\s-]", "", str(profile_value)).lower()
-        if norm_ocr != norm_profile:
-            mismatches.append({"field": key, "ocr_value": ocr_value, "profile_value": profile_value})
+        if key in date_keys:
+            if _norm_date(ocr_value) == _norm_date(profile_value):
+                continue
+        elif key in name_keys:
+            if names_roughly_match(str(ocr_value), str(profile_value)):
+                continue
+        else:
+            norm_ocr = re.sub(r"[\s\-_.,/]", "", str(ocr_value)).lower()
+            norm_profile = re.sub(r"[\s\-_.,/]", "", str(profile_value)).lower()
+            if norm_ocr == norm_profile:
+                continue
+        mismatches.append({"field": key, "ocr_value": ocr_value, "profile_value": profile_value})
     return mismatches

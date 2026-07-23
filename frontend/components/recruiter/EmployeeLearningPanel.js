@@ -260,9 +260,9 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
               <p className={styles.sectionDesc} style={{ marginTop: 6 }}>{assessment.summary}</p>
               {gaps.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-                  {gaps.map((g) => (
+                  {gaps.map((g, i) => (
                     <span
-                      key={g.skill}
+                      key={`${g.skill || "gap"}-${g.priority || "medium"}-${i}`}
                       style={{
                         fontSize: 11,
                         fontWeight: 700,
@@ -295,8 +295,8 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
               )}
               {(promotion.reasons || []).length > 0 && (
                 <ul className={styles.miniList} style={{ marginTop: 8 }}>
-                  {promotion.reasons.map((r) => (
-                    <li key={r} className={styles.miniListItem}>{r}</li>
+                  {promotion.reasons.map((r, i) => (
+                    <li key={`reason-${i}-${r}`} className={styles.miniListItem}>{r}</li>
                   ))}
                 </ul>
               )}
@@ -304,8 +304,8 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
                 <>
                   <div className={styles.sectionDesc} style={{ marginTop: 8, fontWeight: 700 }}>Recommended actions</div>
                   <ul className={styles.miniList}>
-                    {promotion.recommended_actions.map((r) => (
-                      <li key={r} className={styles.miniListItem}>{r}</li>
+                    {promotion.recommended_actions.map((r, i) => (
+                      <li key={`action-${i}-${r}`} className={styles.miniListItem}>{r}</li>
                     ))}
                   </ul>
                 </>
@@ -328,8 +328,11 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
         </div>
         <div className={styles.sectionBody}>
           {skills.length === 0 && <p className={styles.emptySub}>No skills yet — run Refresh AI after a resume is on file.</p>}
-          {skills.slice(0, 14).map((s) => (
-            <div key={s.id} style={{ display: "grid", gridTemplateColumns: "140px 1fr 90px", gap: 10, alignItems: "center", marginBottom: 8 }}>
+          {skills.slice(0, 14).map((s, i) => (
+            <div
+              key={s.id || `${s.skill_name || "skill"}-${s.source || "resume"}-${i}`}
+              style={{ display: "grid", gridTemplateColumns: "140px 1fr 90px", gap: 10, alignItems: "center", marginBottom: 8 }}
+            >
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--navy)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.skill_name}</span>
               <div style={{ height: 8, borderRadius: 99, background: "#E8EEF5", overflow: "hidden" }}>
                 <div style={{ width: `${PROF[s.proficiency] || 25}%`, height: "100%", background: "linear-gradient(90deg, #00A9CE, #0F2A4A)" }} />
@@ -353,8 +356,12 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
         </div>
         <div className={styles.sectionBody}>
           {recommendations.length === 0 && <p className={styles.emptySub}>No recommendations yet.</p>}
-          {recommendations.map((c) => (
-            <div key={c.uid} className={styles.miniListItem} style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+          {recommendations.map((c, i) => (
+            <div
+              key={c.uid || `${c.title || "course"}-${i}`}
+              className={styles.miniListItem}
+              style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}
+            >
               <div>
                 <strong>{c.title}</strong>
                 <div className={styles.sectionDesc}>
@@ -387,9 +394,9 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
               <p className={styles.sectionDesc}>Selected: <b>{selectedCourse.title}</b></p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflow: "auto", marginBottom: 10 }}>
-              {assignCoursesList.map((c) => (
+              {assignCoursesList.map((c, i) => (
                 <button
-                  key={c.uid}
+                  key={c.uid || `${c.title || "assign"}-${i}`}
                   type="button"
                   className={styles.secondaryButton}
                   style={{ textAlign: "left" }}

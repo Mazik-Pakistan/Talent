@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import {
   clearLocalSession,
   getApiErrorMessage,
+  getNotifications,
   getProfileCompletion,
   logout,
   saveProfileCompletion,
@@ -58,6 +59,7 @@ export default function CompleteProfilePage() {
   const [ndaName, setNdaName] = useState("");
   const [ndaAgreed, setNdaAgreed] = useState(false);
   const [ndaSignature, setNdaSignature] = useState(null);
+  const [recruiterNudge, setRecruiterNudge] = useState(null);
 
   const stepIndex = useMemo(() => STEPS.findIndex((s) => s.id === step), [step]);
   const complete = progress?.profile_status === "complete";
@@ -65,6 +67,40 @@ export default function CompleteProfilePage() {
     () => getEmployeeNavItems({ profileComplete: complete }),
     [complete]
   );
+
+  useEffect(() => {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken || complete) return;
+
+    let cancelled = false;
+    let announced = false;
+
+    async function loadNudge() {
+      try {
+        const data = await getNotifications(accessToken);
+        if (cancelled) return;
+        const reminder = (data.notifications || []).find(
+          (n) => n.type === "profile_completion_reminder" && !n.read
+        );
+        if (reminder) {
+          setRecruiterNudge(reminder);
+          if (!announced) {
+            announced = true;
+            setToast({ type: "info", message: reminder.title || "Your recruiter sent a reminder." });
+          }
+        }
+      } catch {
+        // Non-critical
+      }
+    }
+
+    loadNudge();
+    const timer = setInterval(loadNudge, 20000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [complete]);
 
   useEffect(() => {
     const accessToken = localStorage.getItem("access_token");
@@ -428,6 +464,25 @@ export default function CompleteProfilePage() {
 
           <div className={styles.content}>
             <Toast toast={toast} onDismiss={() => setToast(null)} />
+
+            {!complete && recruiterNudge && (
+              <div
+                role="status"
+                style={{
+                  marginBottom: 16,
+                  padding: "12px 16px",
+                  borderRadius: 10,
+                  border: "1px solid #fdba74",
+                  background: "#fff7ed",
+                  color: "#9a3412",
+                  fontSize: 13.5,
+                  lineHeight: 1.45,
+                }}
+              >
+                <strong style={{ display: "block", marginBottom: 4 }}>Reminder from your recruiter</strong>
+                {recruiterNudge.message || "Please finish your post-hire profile checklist."}
+              </div>
+            )}
 
             {/* Hero */}
             <div className={styles.hero}>

@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 
 from app.core.rbac import CurrentUser
 from app.core.security import require_permissions, require_roles
@@ -78,6 +78,7 @@ async def export_employees_csv(
     department: str | None = None,
     job_title: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
+    profile_status: str | None = None,
     joining_from: str | None = None,
     joining_to: str | None = None,
     sort: str = "created_at",
@@ -90,6 +91,7 @@ async def export_employees_csv(
         department=department,
         job_title=job_title,
         status=status_filter,
+        profile_status=profile_status,
         joining_from=joining_from,
         joining_to=joining_to,
         sort=sort,
@@ -109,6 +111,7 @@ async def list_employees(
     department: str | None = None,
     job_title: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
+    profile_status: str | None = None,
     joining_from: str | None = None,
     joining_to: str | None = None,
     sort: str = "created_at",
@@ -123,6 +126,7 @@ async def list_employees(
         department=department,
         job_title=job_title,
         status=status_filter,
+        profile_status=profile_status,
         joining_from=joining_from,
         joining_to=joining_to,
         sort=sort,
@@ -220,6 +224,19 @@ async def schedule_orientation(
 ):
     """Schedule or update the employee's orientation session."""
     return await service.schedule_orientation(current_user, employee_id, request)
+
+
+@router.post("/detail/{employee_id}/remind-profile")
+async def remind_profile_completion(
+    employee_id: str,
+    current_user: RequireRecruiter,
+    payload: dict | None = Body(default=None),
+):
+    """Send an in-app + email reminder to finish Complete Profile."""
+    body = payload if isinstance(payload, dict) else {}
+    note = body.get("note")
+    force = bool(body.get("force") or body.get("resend"))
+    return await service.remind_profile_completion(current_user, employee_id, note, force=force)
 
 
 @router.get("/{employee_id}/career")

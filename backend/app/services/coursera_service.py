@@ -269,6 +269,8 @@ async def _fetch_all_courses() -> list[dict]:
 _refresh_in_progress = False
 _background_refresh_task: asyncio.Task | None = None
 _warm_cache_task: asyncio.Task | None = None
+_cold_fetch_lock = asyncio.Lock()
+_cold_fetch_task: asyncio.Task | None = None
 
 # ---------------------------------------------------------------------- #
 # Mongo-backed persistence layer.
@@ -283,13 +285,83 @@ _warm_cache_task: asyncio.Task | None = None
 # ---------------------------------------------------------------------- #
 # Bump suffix when normalize rules change so stale multilingual snapshots are ignored.
 _CACHE_DOC_ID = "coursera_catalog_en_v1"
+_CACHE_CHUNK_SIZE = 400  # keep each Mongo doc well under the 16MB BSON limit
+_SUMMARY_PERSIST_CHARS = 280
+
+
+def _slim_item_for_persist(item: dict) -> dict:
+    """Drop bulky fields so a full-catalog snapshot fits in Mongo."""
+    summary = item.get("summary") or ""
+    if len(summary) > _SUMMARY_PERSIST_CHARS:
+        summary = summary[: _SUMMARY_PERSIST_CHARS - 3] + "..."
+    return {
+        "uid": item.get("uid"),
+        "type": item.get("type") or "course",
+        "source": item.get("source") or "coursera",
+        "title": item.get("title"),
+        "summary": summary,
+        "url": item.get("url"),
+        "duration_minutes": item.get("duration_minutes"),
+        "levels": item.get("levels") or [],
+        "roles": item.get("roles") or [],
+        "products": item.get("products") or [],
+        "subjects": item.get("subjects") or [],
+        "category": item.get("category"),
+        "last_modified": item.get("last_modified"),
+        "icon_url": item.get("icon_url"),
+        "popularity": item.get("popularity") or 0,
+        "number_of_children": item.get("number_of_children"),
+        "certification_type": item.get("certification_type"),
+    }
 
 
 async def _persist_cache_to_db(items: list[dict]) -> None:
+    """Persist catalog in chunked docs — a single update with full descriptions
+    routinely exceeds Mongo's 16MB document limit."""
     try:
+        slim = [_slim_item_for_persist(item) for item in items]
+        now = time.time()
+        chunk_count = max(1, (len(slim) + _CACHE_CHUNK_SIZE - 1) // _CACHE_CHUNK_SIZE) if slim else 0
+
+        # Remove obsolete chunks from prior larger snapshots.
+        await database.learning_catalog_cache.delete_many(
+            {"_id": {"$regex": f"^{re.escape(_CACHE_DOC_ID)}:"}}
+        )
+
+        if not slim:
+            await database.learning_catalog_cache.update_one(
+                {"_id": _CACHE_DOC_ID},
+                {"$set": {"items": [], "chunk_count": 0, "updated_at": now}},
+                upsert=True,
+            )
+            return
+
+        for idx in range(chunk_count):
+            start = idx * _CACHE_CHUNK_SIZE
+            chunk = slim[start : start + _CACHE_CHUNK_SIZE]
+            await database.learning_catalog_cache.update_one(
+                {"_id": f"{_CACHE_DOC_ID}:{idx}"},
+                {
+                    "$set": {
+                        "parent_id": _CACHE_DOC_ID,
+                        "chunk_index": idx,
+                        "items": chunk,
+                        "updated_at": now,
+                    }
+                },
+                upsert=True,
+            )
+
         await database.learning_catalog_cache.update_one(
             {"_id": _CACHE_DOC_ID},
-            {"$set": {"items": items, "updated_at": time.time()}},
+            {
+                "$set": {
+                    "items": [],  # meta only; payload lives in chunk docs
+                    "chunk_count": chunk_count,
+                    "item_count": len(slim),
+                    "updated_at": now,
+                }
+            },
             upsert=True,
         )
     except Exception as exc:  # pragma: no cover - persistence is best-effort
@@ -305,21 +377,44 @@ async def load_persisted_cache() -> None:
     if _cache["items"]:
         return
     try:
-        doc = await database.learning_catalog_cache.find_one({"_id": _CACHE_DOC_ID})
+        meta = await database.learning_catalog_cache.find_one({"_id": _CACHE_DOC_ID})
     except Exception as exc:  # pragma: no cover - DB may not be reachable yet
         logger.warning(f"Could not load persisted Coursera catalog snapshot: {exc}")
         return
-    if not doc or not doc.get("items"):
+    if not meta:
+        return
+
+    items: list[dict] = []
+    # Legacy single-document snapshots kept the full list on the meta doc.
+    if meta.get("items"):
+        items = list(meta["items"])
+    else:
+        chunk_count = int(meta.get("chunk_count") or 0)
+        if chunk_count <= 0:
+            return
+        try:
+            chunk_ids = [f"{_CACHE_DOC_ID}:{i}" for i in range(chunk_count)]
+            cursor = database.learning_catalog_cache.find({"_id": {"$in": chunk_ids}}).sort(
+                "chunk_index", 1
+            )
+            chunks = await cursor.to_list(length=chunk_count)
+        except Exception as exc:  # pragma: no cover
+            logger.warning(f"Could not load Coursera catalog chunks: {exc}")
+            return
+        for chunk in chunks:
+            items.extend(chunk.get("items") or [])
+
+    if not items:
         return
     async with _cache_lock:
-        _cache["items"] = doc["items"]
-        _cache["by_uid"] = {item["uid"]: item for item in doc["items"]}
+        _cache["items"] = items
+        _cache["by_uid"] = {item["uid"]: item for item in items if item.get("uid")}
         # Treat the persisted snapshot as already "fetched_at" load time so it
         # is served immediately, but still counts toward the TTL for a
         # background refresh rather than being trusted forever.
-        age_seconds = max(0.0, time.time() - (doc.get("updated_at") or 0))
+        age_seconds = max(0.0, time.time() - (meta.get("updated_at") or 0))
         _cache["fetched_at"] = time.monotonic() - min(age_seconds, CACHE_TTL_SECONDS)
-    logger.info(f"Coursera catalog hydrated from Mongo snapshot: {len(doc['items'])} courses")
+    logger.info(f"Coursera catalog hydrated from Mongo snapshot: {len(items)} courses")
 
 
 async def _get_cached_catalog(force_refresh: bool = False) -> tuple[list[dict], dict[str, dict]]:
@@ -351,10 +446,12 @@ async def _get_cached_catalog(force_refresh: bool = False) -> tuple[list[dict], 
                 asyncio.create_task(_refresh_cache_in_background())
             return _cache["items"], _cache["by_uid"]
 
-    # Cold start or explicit force_refresh: no stale data to fall back to
-    # (or caller explicitly wants to wait), so fetch inline like before.
+    # Cold start or explicit force_refresh: single-flight so concurrent callers
+    # do not each pull ~20k Coursera courses in parallel.
     logger.info("Coursera catalog cache expired or empty, fetching fresh...")
-    try:
+    global _cold_fetch_task
+
+    async def _do_cold_fetch() -> tuple[list[dict], dict[str, dict]]:
         items = await _fetch_all_courses()
         by_uid = {item["uid"]: item for item in items}
         async with _cache_lock:
@@ -363,11 +460,22 @@ async def _get_cached_catalog(force_refresh: bool = False) -> tuple[list[dict], 
             _cache["fetched_at"] = time.monotonic()
         logger.info(f"Coursera catalog refreshed: {len(items)} courses")
         await _persist_cache_to_db(items)
+        return _cache["items"], _cache["by_uid"]
+
+    async with _cold_fetch_lock:
+        if _cache["items"] and not force_refresh:
+            return _cache["items"], _cache["by_uid"]
+        if _cold_fetch_task is None or _cold_fetch_task.done():
+            _cold_fetch_task = asyncio.create_task(_do_cold_fetch())
+        task = _cold_fetch_task
+
+    try:
+        return await task
     except Exception as exc:
         logger.error(f"Failed to refresh Coursera catalog: {exc}")
         if not _cache["items"]:
             raise
-    return _cache["items"], _cache["by_uid"]
+        return _cache["items"], _cache["by_uid"]
 
 
 async def _refresh_cache_in_background() -> None:

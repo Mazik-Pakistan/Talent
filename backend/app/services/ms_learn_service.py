@@ -209,14 +209,26 @@ async def get_facets() -> dict:
     }
 
 
-async def find_courses_for_keywords(keywords: list[str], *, per_keyword: int = 6, limit: int = 40) -> list[dict]:
-    """Used by the AI services to build a real, non-hallucinated candidate pool."""
+async def find_courses_for_keywords(
+    keywords: list[str],
+    *,
+    per_keyword: int = 6,
+    limit: int = 40,
+    use_ai: bool = False,
+) -> list[dict]:
+    """Used by the AI services to build a real, non-hallucinated candidate pool.
+
+    Default use_ai=False: bulk keyword scans (profile load / gap matching) must stay
+    fast. Interactive catalog search can still pass use_ai=True.
+    """
     catalog = await get_catalog()
     seen: dict[str, dict] = {}
     for keyword in keywords:
         if not keyword or not keyword.strip():
             continue
-        matches = await search_and_rank_items_async(catalog, keyword.strip())
+        matches = await search_and_rank_items_async(
+            catalog, keyword.strip(), use_ai=use_ai
+        )
         for item in matches[:per_keyword]:
             seen[item["uid"]] = item
         if len(seen) >= limit:

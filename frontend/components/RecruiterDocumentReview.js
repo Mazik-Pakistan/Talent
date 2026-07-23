@@ -16,55 +16,63 @@ const ACTION_REASONS = [
 
 const DOCUMENT_CONFIG = {
   cnic: {
-    label: "National ID (CNIC/NIC)",
-    fields: ["name", "father_name", "cnic_number", "date_of_birth", "gender", "nationality", "issue_date", "expiry_date"],
+    label: "National ID (CNIC)",
+    previewFields: ["name", "cnic_number", "date_of_birth"],
   },
   passport: {
     label: "Passport",
-    fields: ["name", "passport_number", "nationality", "date_of_birth", "gender", "place_of_birth", "issue_date", "expiry_date"],
+    previewFields: ["name", "passport_number", "date_of_birth"],
   },
   resume: {
     label: "Resume / CV",
-    fields: ["full_name", "email", "phone_number", "professional_summary", "technical_skills", "soft_skills", "languages", "linkedin", "github", "portfolio"],
+    previewFields: ["full_name", "email", "phone_number"],
   },
   transcript: {
     label: "Academic Transcript",
-    fields: ["candidate_name", "institute", "degree", "program", "major", "cgpa", "gpa", "percentage", "passing_year"],
+    previewFields: ["candidate_name", "institute", "degree", "cgpa"],
   },
   degree: {
     label: "Academic Transcript",
-    fields: ["candidate_name", "institute", "degree", "program", "major", "cgpa", "gpa", "percentage", "passing_year"],
+    previewFields: ["candidate_name", "institute", "degree", "cgpa"],
   },
 };
 
 function documentConfig(doc) {
   if (doc.ocr_result?.category === "academic_transcript") return DOCUMENT_CONFIG.transcript;
   return DOCUMENT_CONFIG[doc.doc_type] || {
-    label: doc.doc_type.replace(/_/g, " "),
-    fields: [],
+    label: String(doc.doc_type || "Document").replace(/_/g, " "),
+    previewFields: [],
   };
 }
 
 function formatFieldValue(value) {
   if (Array.isArray(value)) {
     return value
-      .slice(0, 8)
+      .slice(0, 4)
       .map((item) => (typeof item === "object" ? item.name || item.title || JSON.stringify(item) : item))
       .join(", ");
   }
   if (typeof value === "object" && value !== null) return JSON.stringify(value);
   const text = String(value);
-  return text.length > 180 ? `${text.slice(0, 180)}…` : text;
+  return text.length > 90 ? `${text.slice(0, 90)}…` : text;
 }
 
 function uniqueFlags(flags) {
   const seen = new Set();
   return flags.filter((flag) => {
-    const key = `${flag.field || ""}|${flag.reason || ""}|${JSON.stringify(flag.values || {})}`;
+    const key = `${flag.field || ""}|${flag.reason || ""}|${JSON.stringify(flag.values || {})}|${flag.ocr_value || ""}|${flag.profile_value || ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+function displayStatus(doc, liveFlagCount) {
+  if (["verified", "rejected", "reupload_required"].includes(doc.status)) return doc.status;
+  if ((doc.status === "mismatch" || doc.verification_status === "mismatch") && liveFlagCount === 0) {
+    return "pending_verification";
+  }
+  return doc.status;
 }
 
 export default function RecruiterDocumentReview({ ownerId }) {
@@ -78,6 +86,7 @@ export default function RecruiterDocumentReview({ ownerId }) {
   const [actionReason, setActionReason] = useState("blurry_or_unreadable");
   const [actionNote, setActionNote] = useState("");
   const [openingDocId, setOpeningDocId] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
 
   const load = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
@@ -107,15 +116,12 @@ export default function RecruiterDocumentReview({ ownerId }) {
         ...documents.flatMap((doc) => [
           ...(doc.mismatches || []),
           ...(doc.cross_document_mismatches || []),
-          ...(doc.mismatch_reasons || []),
         ]),
       ]),
     [documentVerification, documents]
   );
 
-  const hasMismatch =
-    documentVerification?.verification_status === "mismatch" ||
-    documents.some((doc) => doc.verification_status === "mismatch" || doc.status === "mismatch");
+  const hasMismatch = allFlags.length > 0;
 
   function openActionForm(documentId, mode) {
     setActionForm({ documentId, mode });
@@ -132,7 +138,7 @@ export default function RecruiterDocumentReview({ ownerId }) {
       const result = await verifyDocument(documentId, { status, ...extra }, accessToken);
       setFeedback(
         status === "reupload_required" && result.email_sent === false
-          ? "The in-app re-upload request was created, but the email could not be sent. Check SMTP settings."
+          ? "Re-upload request created, but the email could not be sent."
           : result.message || "Document status updated."
       );
       await load();
@@ -170,161 +176,141 @@ export default function RecruiterDocumentReview({ ownerId }) {
 
       {hasMismatch && (
         <section className="document-warning-summary" role="alert">
-          <div>
-            <strong>Document Verification Warning</strong>
-            <p>
-              {documentVerification?.summary ||
-                "Some uploaded documents contain inconsistent information. Review the flags before making a decision."}
-            </p>
-          </div>
-          {allFlags.length > 0 && (
-            <div className="verification-flag-grid">
-              {allFlags.map((flag, index) => (
-                <article key={`${flag.field || "flag"}-${index}`} className="verification-flag">
-                  <strong>{flag.reason || `${String(flag.field || "Field").replace(/_/g, " ")} differs`}</strong>
-                  {flag.values && (
-                    <div>
-                      {Object.entries(flag.values).map(([source, value]) => (
-                        <span key={source}>
-                          <b>{source}:</b> {formatFieldValue(value)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {!flag.values && flag.ocr_value && (
-                    <span>
-                      Extracted: {flag.ocr_value} · Profile: {flag.profile_value}
-                    </span>
-                  )}
-                </article>
-              ))}
-            </div>
-          )}
+          <strong>Needs review</strong>
+          <p>{documentVerification?.summary || "A few fields need a quick check before verification."}</p>
+          <ul className="verification-flag-list">
+            {allFlags.slice(0, 4).map((flag, index) => (
+              <li key={`${flag.field || "flag"}-${index}`}>
+                {flag.reason || `${String(flag.field || "Field").replace(/_/g, " ")} differs`}
+                {flag.values
+                  ? ` — ${Object.values(flag.values).filter(Boolean).join(" / ")}`
+                  : flag.ocr_value
+                  ? ` — ${flag.ocr_value} vs ${flag.profile_value}`
+                  : ""}
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
-      <div className="review-document-grid">
+      <div className="review-document-list">
         {documents.map((doc) => {
           const config = documentConfig(doc);
           const fields = doc.ocr_result?.fields || {};
-          const importantFields = config.fields
-            .filter((key) => fields[key] !== null && fields[key] !== undefined && fields[key] !== "" && (!Array.isArray(fields[key]) || fields[key].length))
+          const preview = (config.previewFields || [])
+            .filter((key) => fields[key] !== null && fields[key] !== undefined && fields[key] !== "")
             .map((key) => [key, fields[key]]);
           const docFlags = uniqueFlags([
             ...(doc.mismatches || []),
-            ...(doc.cross_document_mismatches || doc.mismatch_reasons || []),
+            ...(doc.cross_document_mismatches || []),
           ]);
+          const status = displayStatus(doc, docFlags.length);
           const isFinal = ["verified", "rejected", "reupload_required"].includes(doc.status);
           const formOpen = actionForm?.documentId === doc.id;
+          const expanded = expandedId === doc.id;
 
           return (
-            <article key={doc.id} className={`review-document-card ${doc.status === "reupload_required" ? "needs-reupload" : ""}`}>
-              <header className="review-document-head">
-                <div>
-                  <span className="document-kind">Candidate document</span>
-                  <h4>{config.label}</h4>
-                  <p>{doc.file_name} · Version {doc.version}</p>
+            <article key={doc.id} className={`review-document-row ${doc.status === "reupload_required" ? "needs-reupload" : ""}`}>
+              <div className="review-document-row-main">
+                <div className="review-document-row-info">
+                  <div className="review-document-row-title">
+                    <h4>{config.label}</h4>
+                    <StatusBadge status={status} />
+                  </div>
+                  <p className="review-document-meta">{doc.file_name}</p>
+                  {preview.length > 0 && (
+                    <p className="review-document-preview">
+                      {preview.map(([key, value]) => (
+                        <span key={key}>
+                          <b>{key.replace(/_/g, " ")}:</b> {formatFieldValue(value)}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                  {docFlags.length > 0 && (
+                    <p className="review-document-flag-hint">{docFlags.length} flag{docFlags.length !== 1 ? "s" : ""} to review</p>
+                  )}
                 </div>
-                <StatusBadge status={doc.status} />
-              </header>
 
-              {importantFields.length > 0 ? (
-                <dl className="important-document-fields">
-                  {importantFields.map(([key, value]) => (
-                    <div key={key}>
-                      <dt>{key.replace(/_/g, " ")}</dt>
-                      <dd>{formatFieldValue(value)}</dd>
+                <div className="review-document-row-actions">
+                  <button type="button" disabled={openingDocId === doc.id} onClick={() => handleOpenDocument(doc)}>
+                    {openingDocId === doc.id ? "Opening…" : "Open"}
+                  </button>
+                  {!isFinal && (
+                    <>
+                      <button
+                        type="button"
+                        className="approve"
+                        disabled={busyId === doc.id}
+                        onClick={() =>
+                          handleVerify(doc.id, "verified", {
+                            approve_despite_mismatch: docFlags.length > 0 || hasMismatch,
+                          })
+                        }
+                      >
+                        {docFlags.length > 0 ? "Approve" : "Verify"}
+                      </button>
+                      <button
+                        type="button"
+                        className="request"
+                        disabled={busyId === doc.id}
+                        onClick={() => openActionForm(doc.id, "reupload")}
+                      >
+                        Re-upload
+                      </button>
+                      <button
+                        type="button"
+                        className="reject"
+                        disabled={busyId === doc.id}
+                        onClick={() => openActionForm(doc.id, "reject")}
+                      >
+                        Reject
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => setExpandedId(expanded ? null : doc.id)}
+                    aria-expanded={expanded}
+                  >
+                    {expanded ? "Less" : "Details"}
+                  </button>
+                </div>
+              </div>
+
+              {expanded && (
+                <div className="review-document-details">
+                  {Object.keys(fields).length > 0 ? (
+                    <dl className="important-document-fields">
+                      {Object.entries(fields)
+                        .filter(([, value]) => value !== null && value !== undefined && value !== "")
+                        .slice(0, 10)
+                        .map(([key, value]) => (
+                          <div key={key}>
+                            <dt>{key.replace(/_/g, " ")}</dt>
+                            <dd>{formatFieldValue(value)}</dd>
+                          </div>
+                        ))}
+                    </dl>
+                  ) : (
+                    <p className="document-empty-fields">
+                      {doc.ocr_result?.status === "failed"
+                        ? "Text extraction failed. Open the file to review manually."
+                        : "No extracted fields yet."}
+                    </p>
+                  )}
+                  {docFlags.length > 0 && (
+                    <div className="document-card-flags">
+                      {docFlags.slice(0, 3).map((flag, index) => (
+                        <p key={`${flag.field || "flag"}-${index}`}>
+                          {flag.reason || `${flag.field?.replace(/_/g, " ")} differs.`}
+                        </p>
+                      ))}
                     </div>
-                  ))}
-                </dl>
-              ) : (
-                <p className="document-empty-fields">
-                  {doc.ocr_result?.status === "failed"
-                    ? "Text extraction failed. Review the uploaded file manually."
-                    : "No important structured fields were extracted."}
-                </p>
-              )}
-
-              {doc.ocr_result?.status === "completed" && (
-                <div className="document-confidence-row">
-                  <span>Classification {Math.round((doc.ocr_result.classification_confidence || 0) * 100)}%</span>
-                  <span>Extraction {Math.round((doc.ocr_result.extraction_confidence || doc.ocr_result.confidence || 0) * 100)}%</span>
-                  {doc.ocr_result.matching_confidence != null && (
-                    <span>Matching {Math.round(doc.ocr_result.matching_confidence * 100)}%</span>
                   )}
                 </div>
               )}
-
-              {docFlags.length > 0 && (
-                <div className="document-card-flags">
-                  <strong>Flags requiring review</strong>
-                  {docFlags.slice(0, 4).map((flag, index) => (
-                    <p key={`${flag.field || "flag"}-${index}`}>{flag.reason || `${flag.field?.replace(/_/g, " ")} differs from profile.`}</p>
-                  ))}
-                </div>
-              )}
-
-              {doc.status === "reupload_required" && (
-                <div className="reupload-requested-summary">
-                  <strong>Re-upload requested</strong>
-                  <span>
-                    {(doc.reupload_request_reason || doc.rejection_reason || "other").replace(/_/g, " ")}
-                    {(doc.reupload_request_note || doc.rejection_note)
-                      ? ` — ${doc.reupload_request_note || doc.rejection_note}`
-                      : ""}
-                  </span>
-                </div>
-              )}
-
-              {doc.raw_extracted_text && (
-                <details className="raw-extraction-details">
-                  <summary>Show raw extracted text</summary>
-                  <pre>{doc.raw_extracted_text}</pre>
-                </details>
-              )}
-
-              <div className="doc-actions review-document-actions">
-                <button
-                  type="button"
-                  disabled={openingDocId === doc.id}
-                  onClick={() => handleOpenDocument(doc)}
-                >
-                  {openingDocId === doc.id ? "Opening…" : "Open document"}
-                </button>
-
-                {!isFinal && (
-                  <>
-                    <button
-                      type="button"
-                      className="approve"
-                      disabled={busyId === doc.id}
-                      onClick={() =>
-                        handleVerify(doc.id, "verified", {
-                          approve_despite_mismatch: docFlags.length > 0 || hasMismatch,
-                        })
-                      }
-                    >
-                      {docFlags.length > 0 || hasMismatch ? "Approve anyway" : "Verify"}
-                    </button>
-                    <button
-                      type="button"
-                      className="request"
-                      disabled={busyId === doc.id}
-                      onClick={() => openActionForm(doc.id, "reupload")}
-                    >
-                      Request re-upload
-                    </button>
-                    <button
-                      type="button"
-                      className="reject"
-                      disabled={busyId === doc.id}
-                      onClick={() => openActionForm(doc.id, "reject")}
-                    >
-                      Reject
-                    </button>
-                  </>
-                )}
-              </div>
 
               {formOpen && (
                 <div className="doc-reject-form document-action-form">
@@ -335,8 +321,8 @@ export default function RecruiterDocumentReview({ ownerId }) {
                     ))}
                   </select>
                   <textarea
-                    rows={3}
-                    placeholder="Add a helpful note for the candidate (optional)"
+                    rows={2}
+                    placeholder="Optional note for the employee"
                     value={actionNote}
                     onChange={(event) => setActionNote(event.target.value)}
                   />
@@ -357,8 +343,8 @@ export default function RecruiterDocumentReview({ ownerId }) {
                       {busyId === doc.id
                         ? "Sending…"
                         : actionForm.mode === "reupload"
-                          ? "Send re-upload request"
-                          : "Confirm rejection"}
+                        ? "Send request"
+                        : "Confirm rejection"}
                     </button>
                   </div>
                 </div>

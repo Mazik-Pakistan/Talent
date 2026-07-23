@@ -307,7 +307,9 @@ function OpportunitiesTab() {
               <p className={styles.oppDesc}>{opp.description}</p>
               {opp.required_skills?.length > 0 && (
                 <div className={styles.oppSkills}>
-                  {opp.required_skills.map((s) => <span key={s} className={styles.oppSkillTag}>{s}</span>)}
+                  {opp.required_skills.map((s, i) => (
+                    <span key={`${s}-${i}`} className={styles.oppSkillTag}>{s}</span>
+                  ))}
                 </div>
               )}
               <div className={styles.oppFooter}>

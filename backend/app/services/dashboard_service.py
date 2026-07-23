@@ -53,6 +53,7 @@ ACTIVITY_LABELS: dict[str, str] = {
     "profile_documents_saved": "Employee policies acknowledged",
     "profile_nda_saved": "Employee NDA signed",
     "employee_profile_completed": "Employee profile completed",
+    "profile_completion_reminder": "Profile completion reminder sent",
 }
 
 
@@ -65,11 +66,16 @@ async def create_notification(
     message: str,
     link: str | None = None,
     related_id: str | None = None,
-) -> None:
-    """Shared helper — other services call this when a notify-worthy event happens (US-014)."""
-    await database.notifications.insert_one(
+) -> str | None:
+    """Shared helper — other services call this when a notify-worthy event happens (US-014).
+
+    Returns the inserted notification id as a string, or None if skipped.
+    """
+    if not recipient_id:
+        return None
+    result = await database.notifications.insert_one(
         {
-            "recipient_id": recipient_id,
+            "recipient_id": str(recipient_id),
             "recipient_role": recipient_role,
             "type": notif_type,
             "title": title,
@@ -80,6 +86,7 @@ async def create_notification(
             "created_at": datetime.now(UTC),
         }
     )
+    return str(result.inserted_id)
 
 
 def _parse_start_date(value) -> date | None:
