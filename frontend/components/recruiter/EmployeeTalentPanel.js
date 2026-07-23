@@ -9,6 +9,7 @@ import {
   submitCompetencyEvaluation,
   updateDevelopmentPlan,
 } from "@/services/talentService";
+import { downloadCsv } from "@/utils/downloadCsv";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 
 const COMPETENCY_DIMENSIONS = [
@@ -95,15 +96,238 @@ export default function EmployeeTalentPanel({ employee }) {
     }
   }
 
+  function exportCompetencyReport() {
+    const evaluations = profile?.competency_evaluations?.evaluations || [];
+    if (!evaluations.length) {
+      toast.warn("No competency evaluations to export.");
+      return;
+    }
+    downloadCsv(
+      `competency-${employeeId}.csv`,
+      ["evaluated_at", "overall_score", ...COMPETENCY_DIMENSIONS.map((d) => d.key), "comments"],
+      evaluations.map((ev) => ({
+        evaluated_at: ev.evaluated_at,
+        overall_score: ev.overall_score,
+        ...Object.fromEntries(COMPETENCY_DIMENSIONS.map((d) => [d.key, ev.scores?.[d.key] ?? ""])),
+        comments: ev.comments || "",
+      }))
+    );
+    toast.success("Competency report exported.");
+  }
+
+  function exportProfileCsv() {
+    if (!profile) return;
+    const p = profile.personal_profile || {};
+    const learning = profile.learning_history || {};
+    downloadCsv(
+      `talent-profile-${employeeId}.csv`,
+      ["field", "value"],
+      [
+        { field: "employee_id", value: p.employee_id },
+        { field: "full_name", value: p.full_name },
+        { field: "email", value: p.email },
+        { field: "job_title", value: p.job_title },
+        { field: "department", value: p.department },
+        { field: "target_role", value: profile.goals?.target_role || "" },
+        { field: "certificates_earned", value: learning.certificates_earned },
+        { field: "assignments_completed", value: learning.assignments_completed },
+        { field: "assignments_total", value: learning.assignments_total },
+        { field: "mandatory_outstanding", value: learning.mandatory_outstanding },
+        { field: "career_path_readiness", value: profile.ai_insights?.career_path_readiness ?? "" },
+        { field: "latest_competency", value: profile.competency_evaluations?.latest?.overall_score ?? "" },
+      ]
+    );
+    toast.success("360 profile summary exported.");
+  }
+
+  function printProfile() {
+    window.print();
+  }
+
   if (loading) return <p className={styles.emptySub}>Loading talent profile…</p>;
   if (!profile) return <p className={styles.emptySub}>No talent profile available.</p>;
 
   const ladder = profile.career_progression?.ladder || [];
   const evaluations = profile.competency_evaluations?.evaluations || [];
   const plan = profile.development_plan;
+  const personal = profile.personal_profile || {};
+  const learning = profile.learning_history || {};
+  const skillCategories = profile.skills?.categories || [];
+  const skillList = skillCategories.flatMap((c) => c.skills || []);
+  const certs = profile.certifications || [];
+  const timelineEvents = profile.career_timeline?.timeline || [];
+  const achievementList = profile.achievements?.achievements || [];
+  const recommendations = profile.ai_insights?.recommendations || [];
+  const nextStep = profile.promotion_readiness;
 
   return (
     <>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <button type="button" className={styles.secondaryButton} onClick={load}>Refresh</button>
+        <button type="button" className={styles.secondaryButton} onClick={exportProfileCsv}>Export profile CSV</button>
+        <button type="button" className={styles.secondaryButton} onClick={exportCompetencyReport}>Export competency report</button>
+        <button type="button" className={styles.secondaryButton} onClick={printProfile}>Print / Save PDF</button>
+      </div>
+
+      {/* Personal + summary */}
+      <div className={styles.section}>
+        <div className={styles.sectionHead}>
+          <div className={styles.sectionHeadLeft}>
+            <span className={`${styles.bar} ${styles.navy}`} />
+            <div>
+              <div className={styles.sectionTitle}>360° talent profile</div>
+              <p className={styles.sectionDesc}>Unified view of personal, skills, learning, competency, and career data</p>
+            </div>
+          </div>
+        </div>
+        <div className={styles.sectionBody}>
+          <div className={styles.miniListItem}>
+            <strong>{personal.full_name}</strong>
+            <div className={styles.sectionDesc}>
+              {personal.job_title || "—"} · {personal.department || "—"} · {personal.email || "—"}
+              {personal.start_date ? ` · Started ${String(personal.start_date).slice(0, 10)}` : ""}
+            </div>
+          </div>
+          <div className={styles.sectionDesc} style={{ marginTop: 8 }}>
+            Target role: <b>{profile.goals?.target_role || "Not set"}</b>
+            {profile.ai_insights?.career_path_readiness != null
+              ? ` · Path readiness ${profile.ai_insights.career_path_readiness}%`
+              : ""}
+            {nextStep?.title
+              ? ` · Next step: ${nextStep.title}`
+              : ""}
+          </div>
+          {profile.performance_ratings?.note && (
+            <p className={styles.emptySub} style={{ marginTop: 8 }}>{profile.performance_ratings.note}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Skills */}
+      <div className={styles.section}>
+        <div className={styles.sectionHead}>
+          <div className={styles.sectionHeadLeft}>
+            <span className={`${styles.bar} ${styles.cyan}`} />
+            <div>
+              <div className={styles.sectionTitle}>Skills</div>
+              <p className={styles.sectionDesc}>{skillList.length} tracked skills</p>
+            </div>
+          </div>
+        </div>
+        <div className={styles.sectionBody}>
+          {skillList.length === 0 && <p className={styles.emptySub}>No skills recorded yet.</p>}
+          {skillList.slice(0, 16).map((s) => (
+            <div key={s.skill_name || s.name || s.id} className={styles.miniListItem} style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{s.skill_name || s.name}</span>
+              <span>{s.proficiency || s.category || ""}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Learning history */}
+      <div className={styles.section}>
+        <div className={styles.sectionHead}>
+          <div className={styles.sectionHeadLeft}>
+            <span className={`${styles.bar} ${styles.green}`} />
+            <div>
+              <div className={styles.sectionTitle}>Learning history</div>
+              <p className={styles.sectionDesc}>
+                {learning.assignments_completed || 0}/{learning.assignments_total || 0} assignments completed
+                {learning.mandatory_outstanding ? ` · ${learning.mandatory_outstanding} mandatory outstanding` : ""}
+                {` · ${learning.certificates_earned || 0} certificates`}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className={styles.sectionBody}>
+          {(learning.recent_assignments || []).length === 0 && <p className={styles.emptySub}>No assignments yet.</p>}
+          {(learning.recent_assignments || []).map((a, idx) => (
+            <div key={`${a.course_title}-${idx}`} className={styles.miniListItem} style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{a.course_title}{a.mandatory ? " · Mandatory" : ""}</span>
+              <span>{a.status}{a.due_date ? ` · due ${String(a.due_date).slice(0, 10)}` : ""}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Certifications */}
+      <div className={styles.section}>
+        <div className={styles.sectionHead}>
+          <div className={styles.sectionHeadLeft}>
+            <span className={`${styles.bar} ${styles.orange}`} />
+            <div>
+              <div className={styles.sectionTitle}>Certifications</div>
+              <p className={styles.sectionDesc}>Verified and recorded certificates</p>
+            </div>
+          </div>
+        </div>
+        <div className={styles.sectionBody}>
+          {certs.length === 0 && <p className={styles.emptySub}>No certifications yet.</p>}
+          {certs.map((c, idx) => (
+            <div key={`${c.title}-${idx}`} className={styles.miniListItem}>
+              <strong>{c.title}</strong>
+              <div className={styles.sectionDesc}>{c.issuer || "—"}{c.date ? ` · ${String(c.date).slice(0, 10)}` : ""}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* AI insights */}
+      <div className={styles.section}>
+        <div className={styles.sectionHead}>
+          <div className={styles.sectionHeadLeft}>
+            <span className={`${styles.bar} ${styles.navy}`} />
+            <div>
+              <div className={styles.sectionTitle}>AI insights</div>
+              <p className={styles.sectionDesc}>Cached course recommendations for this employee</p>
+            </div>
+          </div>
+        </div>
+        <div className={styles.sectionBody}>
+          {recommendations.length === 0 && <p className={styles.emptySub}>No AI recommendations cached yet.</p>}
+          {recommendations.slice(0, 6).map((r) => (
+            <div key={r.uid || r.title} className={styles.miniListItem}>
+              <strong>{r.title}</strong>
+              <div className={styles.sectionDesc}>{r.reason || r.priority || ""}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Career timeline + achievements */}
+      <div className={styles.section}>
+        <div className={styles.sectionHead}>
+          <div className={styles.sectionHeadLeft}>
+            <span className={`${styles.bar} ${styles.cyan}`} />
+            <div>
+              <div className={styles.sectionTitle}>Career timeline &amp; achievements</div>
+              <p className={styles.sectionDesc}>Events and milestones</p>
+            </div>
+          </div>
+        </div>
+        <div className={styles.sectionBody}>
+          {timelineEvents.slice(0, 8).map((ev, idx) => (
+            <div key={ev.id || idx} className={styles.miniListItem}>
+              <strong>{ev.title || ev.type || "Event"}</strong>
+              <div className={styles.sectionDesc}>
+                {ev.date || ""}
+                {ev.detail ? ` · ${ev.detail}` : ""}
+              </div>
+            </div>
+          ))}
+          {achievementList.slice(0, 6).map((a, idx) => (
+            <div key={a.id || idx} className={styles.miniListItem}>
+              <strong>{a.title || a.name}</strong>
+              <div className={styles.sectionDesc}>{a.type || "Achievement"}{a.date ? ` · ${String(a.date).slice(0, 10)}` : ""}</div>
+            </div>
+          ))}
+          {!timelineEvents.length && !achievementList.length && (
+            <p className={styles.emptySub}>No timeline events or achievements yet.</p>
+          )}
+        </div>
+      </div>
+
       {/* Career progression (read-only, US-093) */}
       <div className={styles.section}>
         <div className={styles.sectionHead}>
@@ -163,9 +387,14 @@ export default function EmployeeTalentPanel({ employee }) {
               onChange={(e) => setEvalComments(e.target.value)}
               style={{ width: "100%", minHeight: 60, border: "1px solid var(--border)", borderRadius: 9, padding: 10, fontFamily: "inherit", fontSize: 12.5, marginBottom: 10 }}
             />
-            <button type="submit" className={styles.tabBtn} disabled={submittingEval} style={{ background: "var(--navy)", color: "#fff", padding: "8px 16px", borderRadius: 8 }}>
-              {submittingEval ? "Submitting…" : "Submit evaluation"}
-            </button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="submit" className={styles.tabBtn} disabled={submittingEval} style={{ background: "var(--navy)", color: "#fff", padding: "8px 16px", borderRadius: 8 }}>
+                {submittingEval ? "Submitting…" : "Submit evaluation"}
+              </button>
+              <button type="button" className={styles.secondaryButton} onClick={exportCompetencyReport}>
+                Export report
+              </button>
+            </div>
           </form>
 
           {evaluations.length > 0 && (

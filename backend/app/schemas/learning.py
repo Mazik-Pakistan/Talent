@@ -32,22 +32,38 @@ SKILL_CATEGORIES: list[str] = [
 
 
 class CourseAssignRequest(BaseModel):
-    """US-068: Assign a course to employees, optionally filtered by department/designation.
+    """US-067 / US-068: Assign a course to employees, optionally filtered by
+    department, designation (job_title), or required skills.
 
-    Provide employee_ids and/or department and/or job_title (designation).
-    When department/job_title is set without employee_ids, all matching active
-    employees under the recruiter are targeted.
+    Provide employee_ids and/or department and/or job_title and/or required_skills.
+    When filters are set without employee_ids, matching active employees under
+    the recruiter are targeted. Due dates are auto-generated when omitted.
     """
 
     employee_ids: list[str] = Field(default_factory=list)
     department: str | None = Field(default=None, max_length=120)
-    job_title: str | None = Field(default=None, max_length=120)
+    job_title: str | None = Field(
+        default=None,
+        max_length=120,
+        description="Designation / joining role filter.",
+    )
+    joining_role: str | None = Field(
+        default=None,
+        max_length=120,
+        description="Alias for job_title (joining role).",
+    )
+    required_skills: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        description="When set, only employees who have at least one of these skills are targeted.",
+    )
     course_uid: str = Field(min_length=1, max_length=300)
     course_title: str = Field(min_length=1, max_length=300)
     course_url: str = Field(min_length=1, max_length=1000)
     course_type: CourseType = "learningPath"
     duration_minutes: int | None = None
     due_date: date | None = None
+    mandatory: bool = False
     note: str | None = Field(default=None, max_length=1000)
 
     @field_validator("employee_ids")
@@ -55,7 +71,7 @@ class CourseAssignRequest(BaseModel):
     def dedupe_ids(cls, value: list[str]) -> list[str]:
         return list(dict.fromkeys(v.strip() for v in value if v and v.strip()))
 
-    @field_validator("department", "job_title")
+    @field_validator("department", "job_title", "joining_role")
     @classmethod
     def strip_optional(cls, value: str | None) -> str | None:
         if value is None:
@@ -63,10 +79,25 @@ class CourseAssignRequest(BaseModel):
         cleaned = value.strip()
         return cleaned or None
 
+    @field_validator("required_skills")
+    @classmethod
+    def clean_skills(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(s.strip() for s in value if s and s.strip()))
+
     @model_validator(mode="after")
     def require_targets(self):
-        if not self.employee_ids and not self.department and not self.job_title:
-            raise ValueError("Provide employee_ids and/or department and/or job_title.")
+        # joining_role is an alias for designation / job_title
+        if self.joining_role and not self.job_title:
+            self.job_title = self.joining_role
+        if (
+            not self.employee_ids
+            and not self.department
+            and not self.job_title
+            and not self.required_skills
+        ):
+            raise ValueError(
+                "Provide employee_ids and/or department and/or job_title/joining_role and/or required_skills."
+            )
         return self
 
 

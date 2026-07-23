@@ -1,4 +1,5 @@
 import axios from "axios";
+import { CacheKeys, cachedFetch, invalidateCachePrefix } from "@/utils/recruiterCache";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
@@ -12,6 +13,10 @@ const client = axios.create({
 
 function auth(accessToken) {
   return { headers: { Authorization: `Bearer ${accessToken}` } };
+}
+
+function invalidateTalentCaches() {
+  invalidateCachePrefix("talent-");
 }
 
 // ─── Employee self-service (US-090/091/093/094/101) ──────────────────────────
@@ -41,13 +46,28 @@ export async function getAchievements(accessToken) {
 
 // ─── Internal opportunities (US-095) ──────────────────────────────────────────
 
-export async function browseOpportunities(accessToken, params = {}) {
-  const { data } = await client.get("/api/talent/opportunities", { ...auth(accessToken), params });
+export async function browseOpportunities(accessToken, params = {}, { force = false } = {}) {
+  const key = CacheKeys.opportunities;
+  // Only cache the default recruiter list; filtered/search queries bypass cache.
+  const useCache = !params.q && (params.status === "all" || params.status === "open" || !params.status);
+  if (!useCache) {
+    const { data } = await client.get("/api/talent/opportunities", { ...auth(accessToken), params });
+    return data;
+  }
+  const { data } = await cachedFetch(
+    `${key}:${params.status || "open"}`,
+    async () => {
+      const res = await client.get("/api/talent/opportunities", { ...auth(accessToken), params });
+      return res.data;
+    },
+    { force }
+  );
   return data;
 }
 
 export async function createOpportunity(accessToken, payload) {
   const { data } = await client.post("/api/talent/opportunities", payload, auth(accessToken));
+  invalidateTalentCaches();
   return data;
 }
 
@@ -57,6 +77,7 @@ export async function updateOpportunity(accessToken, opportunityId, payload) {
     payload,
     auth(accessToken)
   );
+  invalidateTalentCaches();
   return data;
 }
 
@@ -85,6 +106,7 @@ export async function submitCompetencyEvaluation(accessToken, employeeId, payloa
     payload,
     auth(accessToken)
   );
+  invalidateTalentCaches();
   return data;
 }
 
@@ -102,11 +124,18 @@ export async function searchTalent(accessToken, payload) {
 
 // ─── Recruiter talent metrics dashboard (US-102) ──────────────────────────────
 
-export async function getTalentMetrics(accessToken, department) {
-  const { data } = await client.get("/api/talent/metrics", {
-    ...auth(accessToken),
-    params: department ? { department } : {},
-  });
+export async function getTalentMetrics(accessToken, department, { force = false } = {}) {
+  const { data } = await cachedFetch(
+    CacheKeys.talentMetrics(department || ""),
+    async () => {
+      const res = await client.get("/api/talent/metrics", {
+        ...auth(accessToken),
+        params: department ? { department } : {},
+      });
+      return res.data;
+    },
+    { force }
+  );
   return data;
 }
 
@@ -123,6 +152,7 @@ export async function updateDevelopmentPlan(accessToken, employeeId, payload) {
     payload,
     auth(accessToken)
   );
+  invalidateTalentCaches();
   return data;
 }
 

@@ -1,4 +1,5 @@
 import axios from "axios";
+import { CacheKeys, cachedFetch, invalidateCache, invalidateCachePrefix } from "@/utils/recruiterCache";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
@@ -12,6 +13,13 @@ const client = axios.create({
 
 function auth(accessToken) {
   return { headers: { Authorization: `Bearer ${accessToken}` } };
+}
+
+/** Invalidate learning caches after cert verification / KB edits / assignments. */
+export function invalidateLearningCaches() {
+  invalidateCachePrefix("learning-");
+  invalidateCache(CacheKeys.taxonomy);
+  invalidateCachePrefix("talent-metrics");
 }
 
 // ─── Catalog (US-065 / US-066 / US-072) ──────────────────────────────────────
@@ -99,6 +107,7 @@ export async function listPendingCertificates(accessToken) {
 
 export async function verifyCertificate(accessToken, certificateId, payload) {
   const { data } = await client.put(`/api/learning/certificates/${certificateId}/verify`, payload, auth(accessToken));
+  invalidateLearningCaches();
   return data;
 }
 
@@ -182,16 +191,19 @@ export async function listKbRoles(accessToken) {
 
 export async function createKbRole(accessToken, payload) {
   const { data } = await client.post("/api/learning/knowledge-base/roles", payload, auth(accessToken));
+  invalidateLearningCaches();
   return data;
 }
 
 export async function updateKbRole(accessToken, roleId, payload) {
   const { data } = await client.put(`/api/learning/knowledge-base/roles/${roleId}`, payload, auth(accessToken));
+  invalidateLearningCaches();
   return data;
 }
 
 export async function deleteKbRole(accessToken, roleId) {
   const { data } = await client.delete(`/api/learning/knowledge-base/roles/${roleId}`, auth(accessToken));
+  invalidateLearningCaches();
   return data;
 }
 
@@ -202,28 +214,44 @@ export async function listKbCertifications(accessToken) {
 
 export async function createKbCertification(accessToken, payload) {
   const { data } = await client.post("/api/learning/knowledge-base/certifications", payload, auth(accessToken));
+  invalidateLearningCaches();
   return data;
 }
 
 export async function updateKbCertification(accessToken, certId, payload) {
   const { data } = await client.put(`/api/learning/knowledge-base/certifications/${certId}`, payload, auth(accessToken));
+  invalidateLearningCaches();
   return data;
 }
 
 export async function deleteKbCertification(accessToken, certId) {
   const { data } = await client.delete(`/api/learning/knowledge-base/certifications/${certId}`, auth(accessToken));
+  invalidateLearningCaches();
   return data;
 }
 
-// ─── Recruiter: assign, oversight, analytics (US-068 / US-076) ─────────────
+// ─── Recruiter: assign, oversight, analytics (US-067 / US-073) ─────────────
 
 export async function assignCourses(accessToken, payload) {
   const { data } = await client.post("/api/learning/assignments", payload, auth(accessToken));
+  invalidateCachePrefix("learning-assignments");
+  invalidateCachePrefix("learning-analytics");
+  invalidateCachePrefix("talent-metrics");
   return data;
 }
 
-export async function listAssignments(accessToken, params = {}) {
-  const { data } = await client.get("/api/learning/assignments", { ...auth(accessToken), params });
+export async function listAssignments(accessToken, params = {}, { force = false } = {}) {
+  const status = params.status || "";
+  const mandatory = Boolean(params.mandatory);
+  const key = CacheKeys.assignments(status, mandatory);
+  const { data } = await cachedFetch(
+    key,
+    async () => {
+      const res = await client.get("/api/learning/assignments", { ...auth(accessToken), params });
+      return res.data;
+    },
+    { force }
+  );
   return data;
 }
 
@@ -235,12 +263,30 @@ export async function getEmployeeLearningProfile(accessToken, employeeId, refres
   return data;
 }
 
-export async function getLearningAnalytics(accessToken) {
-  const { data } = await client.get("/api/learning/analytics", auth(accessToken));
+export async function getLearningAnalytics(accessToken, department, { force = false } = {}) {
+  const key = CacheKeys.analytics(department || "");
+  const { data } = await cachedFetch(
+    key,
+    async () => {
+      const res = await client.get("/api/learning/analytics", {
+        ...auth(accessToken),
+        params: department ? { department } : {},
+      });
+      return res.data;
+    },
+    { force }
+  );
   return data;
 }
 
-export async function getOrgTaxonomy(accessToken) {
-  const { data } = await client.get("/api/learning/org-taxonomy", auth(accessToken));
+export async function getOrgTaxonomy(accessToken, { force = false } = {}) {
+  const { data } = await cachedFetch(
+    CacheKeys.taxonomy,
+    async () => {
+      const res = await client.get("/api/learning/org-taxonomy", auth(accessToken));
+      return res.data;
+    },
+    { force }
+  );
   return data;
 }

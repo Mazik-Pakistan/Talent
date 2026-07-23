@@ -28,6 +28,17 @@ from fastapi import HTTPException, status
 from app.core.database import database
 from app.core.rbac import CurrentUser
 from app.services import role_matching_service
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    if not na or not nb:
+        return 0.0
+    return dot / (na * nb)
 from app.services.recruiter_kb_service import recruiter_kb_service
 
 SENIORITY_KEYWORDS: list[tuple[int, tuple[str, ...]]] = [
@@ -552,7 +563,45 @@ class TalentService:
                 done = len([i for i in items if i.get("status") == "completed"])
                 progress_by_emp[eid] = round(100 * done / len(items), 1) if items else 0.0
 
+        competency_by_emp: dict[str, float] = {}
+        if emp_ids:
+            eval_docs = await database.talent_competency_evaluations.find(
+                {"employee_id": {"$in": emp_ids}}
+            ).sort("evaluated_at", -1).to_list(length=5000)
+            for ev in eval_docs:
+                eid = ev.get("employee_id")
+                if eid and eid not in competency_by_emp:
+                    competency_by_emp[eid] = float(ev.get("overall_score") or 0)
+
+        # Optional semantic boost via BGE-M3 resume embeddings (candidates collection).
+        semantic_scores: dict[str, float] = {}
+        search_mode = "keyword"
         q_lower = (request.q or "").strip().lower()
+        use_semantic = bool(getattr(request, "semantic", False) and q_lower)
+        if use_semantic:
+            try:
+                from app.services.embedding_service import embeddings_available, generate_embedding
+
+                if embeddings_available():
+                    query_emb = await generate_embedding(request.q.strip())
+                    if query_emb and query_emb.get("vector"):
+                        emb_docs = await database.candidates.find(
+                            {
+                                "user_id": {"$in": user_ids},
+                                "resume_embedding.vector": {"$exists": True},
+                            },
+                            {"user_id": 1, "resume_embedding": 1},
+                        ).to_list(length=2000)
+                        for doc in emb_docs:
+                            vec = (doc.get("resume_embedding") or {}).get("vector")
+                            uid = doc.get("user_id")
+                            if uid and vec:
+                                semantic_scores[uid] = _cosine(query_emb["vector"], vec)
+                        if semantic_scores:
+                            search_mode = "hybrid"
+            except Exception:
+                search_mode = "keyword"
+
         wanted_skills = {s.lower() for s in request.skills}
         wanted_certs = {c.lower() for c in request.certifications}
 
@@ -563,8 +612,9 @@ class TalentService:
             emp_skills = [s for s in skills_by_user.get(uid, []) if s]
             emp_certs = [s for s in certs_by_user.get(uid, []) if s]
             learning_progress = progress_by_emp.get(eid, 0.0)
-            performance_rating = c.get("performance_rating")  # populated once US-081 ships
+            performance_rating = c.get("performance_rating")  # populated once KPI ships
             years_experience = c.get("years_experience")
+            competency_score = competency_by_emp.get(eid)
 
             if wanted_skills and not (wanted_skills & {s.lower() for s in emp_skills}):
                 continue
@@ -580,16 +630,34 @@ class TalentService:
                 and performance_rating < request.min_performance_rating
             ):
                 continue
+            if (
+                request.min_competency_score is not None
+                and (competency_score is None or competency_score < request.min_competency_score)
+            ):
+                continue
 
             haystack = " ".join(
-                [c.get("full_name") or "", c.get("job_title") or "", c.get("department") or "", " ".join(emp_skills), " ".join(emp_certs)]
+                [
+                    c.get("full_name") or "",
+                    c.get("job_title") or "",
+                    c.get("department") or "",
+                    " ".join(emp_skills),
+                    " ".join(emp_certs),
+                ]
             ).lower()
             score = 1.0
+            keyword_hit = True
             if q_lower:
-                if q_lower not in haystack:
+                keyword_hit = q_lower in haystack
+                if keyword_hit:
+                    score = 2.0 if q_lower in (c.get("full_name") or "").lower() else 1.0
+                elif search_mode != "hybrid" or uid not in semantic_scores:
                     continue
-                score = 2.0 if q_lower in (c.get("full_name") or "").lower() else 1.0
+                else:
+                    score = 0.5
             score += 0.1 * len(wanted_skills & {s.lower() for s in emp_skills})
+            if uid in semantic_scores:
+                score += max(0.0, semantic_scores[uid]) * 3.0
 
             results.append(
                 {
@@ -602,6 +670,7 @@ class TalentService:
                     "years_experience": years_experience,
                     "performance_rating": performance_rating,
                     "learning_progress": learning_progress,
+                    "competency_score": competency_score,
                     "_score": score,
                 }
             )
@@ -620,7 +689,7 @@ class TalentService:
             "page": request.page,
             "page_size": request.page_size,
             "pages": pages,
-            "search_mode": "keyword",
+            "search_mode": search_mode,
         }
 
     # ------------------------------------------------------------------ #
@@ -813,6 +882,23 @@ class TalentService:
         goal = await database.learning_career_goals.find_one({"user_id": employee.get("user_id")})
         recommendations = await database.learning_ai_recommendations.find_one({"user_id": employee.get("user_id")})
 
+        emp_id = employee.get("employee_id")
+        user_id = employee.get("user_id")
+        assignments = (
+            await database.learning_assignments.find({"employee_id": emp_id}).sort("created_at", -1).to_list(length=100)
+            if emp_id
+            else []
+        )
+        enrollments = (
+            await database.learning_enrollments.find({"user_id": user_id}).sort("updated_at", -1).to_list(length=100)
+            if user_id
+            else []
+        )
+        completed_assignments = [a for a in assignments if a.get("status") == "completed"]
+        mandatory_open = [
+            a for a in assignments if a.get("mandatory") and a.get("status") != "completed"
+        ]
+
         return {
             "personal_profile": {
                 "employee_id": employee.get("employee_id"),
@@ -826,13 +912,34 @@ class TalentService:
             "skills": skill_matrix,
             "learning_history": {
                 "certificates_earned": len(certs),
+                "assignments_total": len(assignments),
+                "assignments_completed": len(completed_assignments),
+                "enrollments_total": len(enrollments),
+                "mandatory_outstanding": len(mandatory_open),
+                "recent_assignments": [
+                    {
+                        "course_title": a.get("course_title"),
+                        "status": a.get("status"),
+                        "due_date": _iso(a.get("due_date")),
+                        "mandatory": bool(a.get("mandatory")),
+                    }
+                    for a in assignments[:8]
+                ],
+                "recent_enrollments": [
+                    {
+                        "course_title": e.get("course_title"),
+                        "progress_percent": e.get("progress_percent"),
+                        "status": e.get("status"),
+                    }
+                    for e in enrollments[:8]
+                ],
             },
             "certifications": [
                 {"title": c.get("course_title"), "issuer": c.get("issuing_organization"), "date": _iso(c.get("created_at"))}
                 for c in certs
             ],
             "performance_ratings": {
-                "note": "Populated once Performance Management (US-081) is implemented.",
+                "note": "Populated once Performance Management / KPI evaluation is implemented.",
             },
             "goals": {"target_role": (goal or {}).get("target_role")},
             "promotion_readiness": progression.get("next_step"),

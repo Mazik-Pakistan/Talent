@@ -112,19 +112,37 @@
   flex-direction: column;
   gap: 10px;
 }
-.sourceToggle { display: inline-flex; gap: 4px; padding: 4px; background: #EEF2F6; border-radius: 12px; margin-bottom: 16px; }
-.sourceBtn {
-  font-size: 12px;
-  font-weight: 700;
-  padding: 8px 16px;
-  border-radius: 9px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
+.sourceToggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
 }
-.sourceBtn:hover { color: var(--navy); }
-.sourceBtnActive { background: #fff; color: var(--navy); box-shadow: 0 1px 3px rgba(15, 42, 74, 0.12); }
+.sourceBtn {
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #D5DEE8);
+  background: #fff;
+  color: var(--navy, #0F2A4A);
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s, box-shadow .15s;
+}
+.sourceBtn:hover { border-color: var(--cyan, #0EA5C9); color: var(--cyan, #0EA5C9); }
+.sourceBtnActive {
+  background: var(--navy, #0F2A4A);
+  color: #fff;
+  border-color: var(--navy, #0F2A4A);
+  box-shadow: 0 2px 8px rgba(15, 42, 74, 0.18);
+}
+
+.sourceHint {
+  font-size: 12px;
+  color: var(--text-muted, #64748B);
+  margin: 0 0 14px;
+  line-height: 1.45;
+}
 
 .badgeRow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .sourceBadge {
@@ -132,13 +150,14 @@
   font-weight: 800;
   letter-spacing: .3px;
   text-transform: uppercase;
-  color: var(--navy-2);
-  background: #E7ECF3;
+  color: #0B5CAB;
+  background: #E8F3FF;
   padding: 3px 8px;
   border-radius: 20px;
   flex-shrink: 0;
 }
 .sourceBadgeCoursera { color: #6A2FB0; background: #F1E9FB; }
+.sourceBadgeRecruiter { color: #0E7C66; background: #E6F7F2; }
 
 .courseCardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .courseType {

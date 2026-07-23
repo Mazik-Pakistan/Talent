@@ -7,6 +7,7 @@ import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./learning.module.css";
 import { getApiErrorMessage, listEmployees } from "@/services/authService";
+import { downloadCsv } from "@/utils/downloadCsv";
 import {
   assignCourses,
   browseCatalog,
@@ -28,16 +29,50 @@ const TABS = [
   { key: "catalog", label: "Course Catalog" },
   { key: "knowledge", label: "Knowledge Base" },
   { key: "assign", label: "Assign Courses" },
-  { key: "assignments", label: "Assignments" },
-  { key: "certificates", label: "Certificate Verification" },
-  { key: "analytics", label: "Analytics" },
+  { key: "assignments", label: "Track Progress" },
+  { key: "certificates", label: "Verify Certificates" },
+  { key: "analytics", label: "Learning Analytics" },
 ];
+
+const CATALOG_SOURCES = [
+  {
+    key: "microsoft_learn",
+    label: "Microsoft Courses",
+    hint: "Technical learning paths, modules, and certifications from Microsoft Learn (English).",
+  },
+  {
+    key: "coursera",
+    label: "Coursera Courses",
+    hint: "Industry soft-skills courses from Coursera (English only) — communication, leadership, and more.",
+  },
+  {
+    key: "recruiter_kb",
+    label: "Recruiter Courses",
+    hint: "Courses and certifications you added in the Knowledge Base for your organization.",
+  },
+];
+
+function sourceLabel(source) {
+  if (source === "coursera") return "Coursera";
+  if (source === "recruiter_kb") return "Recruiter";
+  return "Microsoft";
+}
+
+function sourceBadgeClass(source) {
+  if (source === "coursera") return styles.sourceBadgeCoursera;
+  if (source === "recruiter_kb") return styles.sourceBadgeRecruiter;
+  return "";
+}
 
 export default function RecruiterLearningPage() {
   const [tab, setTab] = useState("catalog");
 
   return (
-    <RecruiterShell activeKey="learning" title="Learning Management" subtitle="Catalog, knowledge base, assign by employee / designation / department, verify certificates, track performance">
+    <RecruiterShell
+      activeKey="learning"
+      title="Learning Management"
+      subtitle="Browse courses, assign learning, verify certificates, and track completion"
+    >
       <div className={styles.tabBar}>
         {TABS.map((t) => (
           <button
@@ -72,6 +107,16 @@ function CatalogTab() {
   const [result, setResult] = useState({ courses: [], total: 0, pages: 1 });
   const [loading, setLoading] = useState(true);
 
+  function switchSource(nextSource) {
+    if (nextSource === source) return;
+    setSource(nextSource);
+    setRole("");
+    setLevel("");
+    setType("");
+    setQ("");
+    setPage(1);
+  }
+
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (!token || source === "recruiter_kb") return;
@@ -104,6 +149,8 @@ function CatalogTab() {
     return () => clearTimeout(timer);
   }, [load]);
 
+  const activeSource = CATALOG_SOURCES.find((s) => s.key === source) || CATALOG_SOURCES[0];
+
   return (
     <div className={shellStyles.section}>
       <div className={shellStyles.sectionHead}>
@@ -111,18 +158,42 @@ function CatalogTab() {
           <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
           <div>
             <div className={shellStyles.sectionTitle}>Course catalog</div>
-            <p className={shellStyles.sectionDesc}>{result.total} courses · Microsoft Learn, Coursera &amp; recruiter KB</p>
+            <p className={shellStyles.sectionDesc}>
+              {result.total} courses found · pick a source below to browse
+            </p>
           </div>
         </div>
       </div>
       <div className={shellStyles.sectionBody}>
+        <div className={styles.sourceToggle} role="tablist" aria-label="Course source">
+          {CATALOG_SOURCES.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              role="tab"
+              aria-selected={source === s.key}
+              className={`${styles.sourceBtn} ${source === s.key ? styles.sourceBtnActive : ""}`}
+              onClick={() => switchSource(s.key)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <p className={styles.sourceHint}>{activeSource.hint}</p>
+
         <div className={styles.filterBar}>
-          <select className={styles.filterSelect} value={source} onChange={(e) => { setPage(1); setSource(e.target.value); }}>
-            <option value="microsoft_learn">Microsoft Learn</option>
-            <option value="coursera">Coursera Soft Skills</option>
-            <option value="recruiter_kb">Recruiter Courses</option>
-          </select>
-          <input className={styles.searchInput} placeholder="Search courses…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
+          <input
+            className={styles.searchInput}
+            placeholder={
+              source === "coursera"
+                ? "Search soft skills, e.g. negotiation, leadership…"
+                : source === "recruiter_kb"
+                  ? "Search company / recruiter courses…"
+                  : "Search Microsoft courses by title or skill…"
+            }
+            value={q}
+            onChange={(e) => { setPage(1); setQ(e.target.value); }}
+          />
           {source === "microsoft_learn" && (
             <>
               <select className={styles.filterSelect} value={type} onChange={(e) => { setPage(1); setType(e.target.value); }}>
@@ -143,13 +214,27 @@ function CatalogTab() {
           )}
         </div>
         {loading && <p className={styles.inlineNote}>Loading…</p>}
+        {!loading && !(result.courses || []).length && (
+          <p className={styles.inlineNote}>No courses found for this source. Try another pill or clear your search.</p>
+        )}
         <div className={styles.courseGrid}>
           {(result.courses || []).map((c) => (
             <div key={c.uid} className={styles.courseCard}>
+              <div className={styles.courseCardHead}>
+                <span className={`${styles.sourceBadge} ${sourceBadgeClass(c.source || source)}`}>
+                  {sourceLabel(c.source || source)}
+                </span>
+              </div>
               <div className={styles.courseTitle}>{c.title}</div>
-              <div className={styles.courseMeta}>{c.source || source} · {c.type} · {c.duration_minutes || "—"} min · {(c.levels || [])[0] || "—"}</div>
+              <div className={styles.courseMeta}>
+                {c.type || "course"} · {c.duration_minutes || "—"} min · {(c.levels || [])[0] || c.category || "—"}
+              </div>
               <p className={styles.courseSummary}>{(c.summary || "").slice(0, 140)}</p>
-              {c.url && <a href={c.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open resource</a>}
+              {c.url && (
+                <a href={c.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
+                  Open course
+                </a>
+              )}
             </div>
           ))}
         </div>
@@ -372,8 +457,10 @@ function AssignTab() {
   const [taxonomy, setTaxonomy] = useState({ departments: [], designations: [] });
   const [filterDept, setFilterDept] = useState("");
   const [filterTitle, setFilterTitle] = useState("");
-  const [assignMode, setAssignMode] = useState("employees"); // employees | department | designation
+  const [assignMode, setAssignMode] = useState("employees"); // employees | department | designation | skills
   const [dueDate, setDueDate] = useState("");
+  const [mandatory, setMandatory] = useState(true);
+  const [requiredSkills, setRequiredSkills] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -426,6 +513,7 @@ function AssignTab() {
       course_type: selectedCourse.type,
       duration_minutes: selectedCourse.duration_minutes,
       due_date: dueDate || undefined,
+      mandatory,
       note: note || undefined,
     };
 
@@ -433,8 +521,14 @@ function AssignTab() {
       if (!filterDept) { toast.error("Select a department to assign to."); return; }
       payload.department = filterDept;
     } else if (assignMode === "designation") {
-      if (!filterTitle) { toast.error("Select a designation to assign to."); return; }
+      if (!filterTitle) { toast.error("Select a joining role / designation to assign to."); return; }
       payload.job_title = filterTitle;
+    } else if (assignMode === "skills") {
+      const skills = requiredSkills.split(",").map((s) => s.trim()).filter(Boolean);
+      if (!skills.length) { toast.error("Enter at least one required skill."); return; }
+      payload.required_skills = skills;
+      if (filterDept) payload.department = filterDept;
+      if (filterTitle) payload.job_title = filterTitle;
     } else {
       if (selectedIds.length === 0) { toast.error("Select at least one employee."); return; }
       payload.employee_ids = selectedIds;
@@ -445,7 +539,9 @@ function AssignTab() {
       const result = await assignCourses(token, payload);
       const assignedCount = result.assigned?.length || 0;
       const skippedCount = result.skipped?.length || 0;
-      toast.success(`Assigned to ${assignedCount} employee(s).`);
+      toast.success(
+        `Assigned to ${assignedCount} employee(s)${result.due_date ? ` · due ${result.due_date}` : ""}.`
+      );
       if (skippedCount) toast.warn(`${skippedCount} skipped (already assigned).`);
       if (result.errors?.length) toast.warn(`${result.errors.length} could not be assigned.`);
       setSelectedIds([]);
@@ -465,7 +561,9 @@ function AssignTab() {
           <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
           <div>
             <div className={shellStyles.sectionTitle}>Assign a course</div>
-            <p className={shellStyles.sectionDesc}>Technical (Microsoft Learn) or industry soft skills (Coursera). Assign to individuals, an entire department, or everyone with a designation. Duplicates are blocked.</p>
+            <p className={shellStyles.sectionDesc}>
+              1) Pick a source pill · 2) Search &amp; select a course · 3) Choose who gets it (employees, department, joining role, or skills)
+            </p>
           </div>
         </div>
       </div>
@@ -474,7 +572,8 @@ function AssignTab() {
           {[
             { key: "employees", label: "By employee" },
             { key: "department", label: "By department" },
-            { key: "designation", label: "By designation" },
+            { key: "designation", label: "By joining role" },
+            { key: "skills", label: "By skills" },
           ].map((m) => (
             <button
               key={m.key}
@@ -489,21 +588,32 @@ function AssignTab() {
 
         <div className={styles.pickerLayout}>
           <div>
-            <div className={styles.sourceToggle}>
-              {[{ key: "microsoft_learn", label: "Microsoft Learn" }, { key: "coursera", label: "Industry Soft Skills" }].map((s) => (
+            <div className={styles.sourceToggle} role="tablist" aria-label="Course source">
+              {CATALOG_SOURCES.map((s) => (
                 <button
                   key={s.key}
                   type="button"
+                  role="tab"
+                  aria-selected={source === s.key}
                   className={`${styles.sourceBtn} ${source === s.key ? styles.sourceBtnActive : ""}`}
-                  onClick={() => { setSource(s.key); setQ(""); setCourses([]); }}
+                  onClick={() => { setSource(s.key); setQ(""); setCourses([]); setSelectedCourse(null); }}
                 >
                   {s.label}
                 </button>
               ))}
             </div>
+            <p className={styles.sourceHint}>
+              {(CATALOG_SOURCES.find((s) => s.key === source) || CATALOG_SOURCES[0]).hint}
+            </p>
             <input
               className={styles.searchInput}
-              placeholder={source === "coursera" ? "Search soft skills, e.g. negotiation, leadership…" : "Search Microsoft Learn catalog…"}
+              placeholder={
+                source === "coursera"
+                  ? "Search soft skills, e.g. negotiation, leadership…"
+                  : source === "recruiter_kb"
+                    ? "Search recruiter / company courses…"
+                    : "Search Microsoft courses…"
+              }
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -511,7 +621,7 @@ function AssignTab() {
               <div className={styles.selectedCourseCard}>
                 <div className={styles.selectedCourseTitle}>Selected: {selectedCourse.title}</div>
                 <div className={styles.selectedCourseMeta}>
-                  {selectedCourse.source === "coursera" ? "Coursera" : "Microsoft Learn"} · {selectedCourse.type} · {selectedCourse.duration_minutes} min
+                  {sourceLabel(selectedCourse.source || source)} · {selectedCourse.type} · {selectedCourse.duration_minutes || "—"} min
                 </div>
               </div>
             )}
@@ -523,11 +633,12 @@ function AssignTab() {
                   role="button"
                   tabIndex={0}
                   onClick={() => setSelectedCourse(c)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedCourse(c); }}
                 >
                   <div>
                     <div className={styles.pickerRowTitle}>{c.title}</div>
                     <div className={styles.pickerRowMeta}>
-                      {c.source === "coursera" ? "Coursera" : "Microsoft Learn"} · {c.type} · {c.duration_minutes} min · {(c.levels || [])[0] || c.category}
+                      {sourceLabel(c.source || source)} · {c.type} · {c.duration_minutes || "—"} min · {(c.levels || [])[0] || c.category || "—"}
                     </div>
                   </div>
                 </div>
@@ -582,15 +693,36 @@ function AssignTab() {
                 {filterDept ? ` in ${filterDept}` : ""} ({employees.length} currently matching).
               </p>
             )}
+            {assignMode === "skills" && (
+              <>
+                <label className={styles.inlineNote} style={{ display: "block", marginBottom: 8 }}>
+                  Required skills (comma-separated) — employees must have at least one
+                  <input
+                    className={styles.searchInput}
+                    style={{ marginTop: 6 }}
+                    value={requiredSkills}
+                    onChange={(e) => setRequiredSkills(e.target.value)}
+                    placeholder="e.g. Python, Azure, Communication"
+                  />
+                </label>
+                <p className={styles.inlineNote}>
+                  Optional department/designation filters still apply above.
+                </p>
+              </>
+            )}
 
             <div className={styles.assignFormRow}>
               <label>
-                Due date (optional)
+                Due date (auto if blank)
                 <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
               </label>
               <label>
                 Note (optional)
                 <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Required for onboarding" />
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 18 }}>
+                <input type="checkbox" checked={mandatory} onChange={(e) => setMandatory(e.target.checked)} />
+                Mandatory
               </label>
             </div>
             <button type="button" className={shellStyles.primaryButton} disabled={submitting} onClick={handleAssign}>
@@ -610,19 +742,27 @@ function AssignTab() {
 function AssignmentsTab() {
   const [assignments, setAssignments] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
+  const [mandatoryOnly, setMandatoryOnly] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(() => {
+  const load = useCallback((force = false) => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
-    listAssignments(token, { status: statusFilter || undefined })
+    listAssignments(
+      token,
+      {
+        status: statusFilter || undefined,
+        mandatory: mandatoryOnly || undefined,
+      },
+      { force: true }
+    )
       .then((data) => setAssignments(data.assignments || []))
       .catch((err) => toast.error(getApiErrorMessage(err, "Could not load assignments.")))
       .finally(() => setLoading(false));
-  }, [statusFilter]);
+  }, [statusFilter, mandatoryOnly]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(false); }, [load]);
 
   return (
     <div className={shellStyles.section}>
@@ -634,12 +774,19 @@ function AssignmentsTab() {
             <p className={shellStyles.sectionDesc}>Track completion of courses you&apos;ve assigned</p>
           </div>
         </div>
-        <select className={styles.filterSelect} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="">All statuses</option>
-          <option value="assigned">Assigned</option>
-          <option value="in_progress">In progress</option>
-          <option value="completed">Completed</option>
-        </select>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+            <input type="checkbox" checked={mandatoryOnly} onChange={(e) => setMandatoryOnly(e.target.checked)} />
+            Mandatory only
+          </label>
+          <select className={styles.filterSelect} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">All statuses</option>
+            <option value="assigned">Assigned</option>
+            <option value="in_progress">In progress</option>
+            <option value="completed">Completed</option>
+          </select>
+          <button type="button" className={styles.modeBtn} onClick={() => load(true)}>Refresh</button>
+        </div>
       </div>
       <div className={shellStyles.sectionBody}>
         {loading && <p className={styles.inlineNote}>Loading…</p>}
@@ -647,7 +794,10 @@ function AssignmentsTab() {
         {assignments.map((a) => (
           <div key={a.id} className={styles.listRow}>
             <div className={styles.listInfo}>
-              <div className={styles.listTitle}>{a.course_title}</div>
+              <div className={styles.listTitle}>
+                {a.course_title}
+                {a.mandatory ? " · Mandatory" : ""}
+              </div>
               <div className={styles.listMeta}>
                 {a.employee_name} ({a.employee_id}) · {a.job_title || "—"} · {a.department || "—"}
                 {a.due_date ? ` · Due ${a.due_date}` : ""}
@@ -750,15 +900,56 @@ function CertificatesTab() {
 function AnalyticsTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [department, setDepartment] = useState("");
+  const [taxonomy, setTaxonomy] = useState({ departments: [] });
+
+  const load = useCallback((force = false) => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    setLoading(true);
+    getLearningAnalytics(token, department || undefined, { force })
+      .then(setData)
+      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load learning analytics.")))
+      .finally(() => setLoading(false));
+  }, [department]);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
-    getLearningAnalytics(token)
-      .then(setData)
-      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load learning analytics.")))
-      .finally(() => setLoading(false));
+    getOrgTaxonomy(token).then(setTaxonomy).catch(() => {});
   }, []);
+
+  useEffect(() => { load(false); }, [load]);
+
+  function handleExport() {
+    if (!data) return;
+    const rows = (data.department_comparison || []).map((d) => ({
+      department: d.department,
+      assigned: d.assigned,
+      completed: d.completed,
+      completion_rate: d.completion_rate,
+    }));
+    downloadCsv(
+      `learning-analytics${department ? `-${department}` : ""}.csv`,
+      ["department", "assigned", "completed", "completion_rate"],
+      rows.length
+        ? rows
+        : [{
+            department: department || "All",
+            assigned: data.total_assignments,
+            completed: "",
+            completion_rate: data.completion_rate,
+          }]
+    );
+    const popularRows = (data.popular_courses || []).map((c) => ({
+      title: c.title,
+      enrollments: c.enrollments,
+    }));
+    if (popularRows.length) {
+      downloadCsv("learning-popular-courses.csv", ["title", "enrollments"], popularRows);
+    }
+    toast.success("Analytics exported.");
+  }
 
   if (loading) return <p className={styles.inlineNote}>Loading analytics…</p>;
   if (!data) return null;
@@ -767,13 +958,24 @@ function AnalyticsTab() {
     { label: "Completion Rate", value: `${data.completion_rate}%`, color: "cyan" },
     { label: "Certification Rate", value: `${data.certification_rate}%`, color: "green" },
     { label: "Learning Hours", value: data.total_learning_hours, color: "orange" },
-    { label: "Pending Reviews", value: data.pending_certificates, color: "navy" },
+    { label: "Mandatory completion", value: `${data.mandatory_completion_rate ?? 0}%`, color: "navy" },
   ];
 
   const maxPopular = Math.max(1, ...(data.popular_courses || []).map((c) => c.enrollments));
 
   return (
     <>
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+        <select className={styles.filterSelect} value={department} onChange={(e) => setDepartment(e.target.value)}>
+          <option value="">All departments</option>
+          {(taxonomy.departments || []).map((d) => (
+            <option key={d} value={d}>{d}</option>
+          ))}
+        </select>
+        <button type="button" className={styles.modeBtn} onClick={() => load(true)}>Refresh</button>
+        <button type="button" className={styles.modeBtn} onClick={handleExport}>Export CSV</button>
+      </div>
+
       <div className={styles.analyticsGrid}>
         {stats.map((s) => (
           <div key={s.label} className={shellStyles.statCard}>
