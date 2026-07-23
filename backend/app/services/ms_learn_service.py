@@ -114,6 +114,9 @@ async def refresh_catalog() -> dict[str, int]:
     return counts
 
 
+from app.services.search_taxonomy import search_and_rank_items
+
+
 def _matches_query(item: dict, q: str) -> bool:
     q = q.lower()
     haystacks = [
@@ -142,7 +145,8 @@ async def search_catalog(
 
     filtered = catalog
     if q and q.strip():
-        filtered = [item for item in filtered if _matches_query(item, q.strip())]
+        filtered = search_and_rank_items(filtered, q.strip())
+
     if role and role.strip():
         role_lower = role.strip().lower()
         filtered = [item for item in filtered if role_lower in [r.lower() for r in item.get("roles") or []]]
@@ -153,7 +157,8 @@ async def search_catalog(
         product_lower = product.strip().lower()
         filtered = [item for item in filtered if product_lower in [p.lower() for p in item.get("products") or []]]
 
-    filtered = sorted(filtered, key=lambda item: (-(item.get("popularity") or 0), item.get("title") or ""))
+    if not (q and q.strip()):
+        filtered = sorted(filtered, key=lambda item: (-(item.get("popularity") or 0), item.get("title") or ""))
 
     total = len(filtered)
     start = max(0, (page - 1) * page_size)
@@ -211,8 +216,7 @@ async def find_courses_for_keywords(keywords: list[str], *, per_keyword: int = 6
     for keyword in keywords:
         if not keyword or not keyword.strip():
             continue
-        matches = [item for item in catalog if _matches_query(item, keyword.strip())]
-        matches.sort(key=lambda item: -(item.get("popularity") or 0))
+        matches = search_and_rank_items(catalog, keyword.strip())
         for item in matches[:per_keyword]:
             seen[item["uid"]] = item
         if len(seen) >= limit:
