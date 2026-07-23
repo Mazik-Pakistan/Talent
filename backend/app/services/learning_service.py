@@ -1749,7 +1749,10 @@ class LearningService:
         }
 
         resume_fields = await self._get_resume_fields(user_id) if user_id else {}
-        current_skills = await self._current_skill_names(user_id, resume_fields) if user_id else []
+        merged_skills = (
+            await self._merged_skills_for_user(user_id, resume_fields) if user_id else []
+        )
+        current_skills = resume_analysis_service.skill_name_set(merged_skills) if merged_skills else []
         goal = await database.learning_career_goals.find_one({"user_id": user_id}) if user_id else None
         target_role = (goal or {}).get("target_role")
 
@@ -1763,13 +1766,29 @@ class LearningService:
             recruiter_id = self._employee_recruiter_id(employee) or current_user.id
             hashes = await learning_cache_service.compute_input_hashes(user_id, recruiter_id)
 
-            assessment = await self._get_or_build_skill_assessment(
-                employee=employee,
-                user_id=user_id,
-                resume_fields=resume_fields,
-                existing_skills=skills,
-                refresh=refresh_ai,
-            )
+            # Fast path: never block the Learning tab on OpenRouter/Gemini unless
+            # the recruiter explicitly clicks Refresh AI.
+            if refresh_ai:
+                assessment = await self._get_or_build_skill_assessment(
+                    employee=employee,
+                    user_id=user_id,
+                    resume_fields=resume_fields,
+                    existing_skills=skills,
+                    refresh=True,
+                )
+            else:
+                cached_assessment = await learning_cache_service.get_cached_assessment(user_id, hashes)
+                if cached_assessment:
+                    assessment = cached_assessment.get("assessment")
+                else:
+                    legacy = await database.learning_skill_assessments.find_one({"user_id": user_id})
+                    assessment = (legacy or {}).get("assessment")
+                    if not assessment:
+                        assessment = self._deterministic_assessment_from_skills(
+                            employee=employee,
+                            merged_skills=merged_skills,
+                        )
+
             skill_gaps = (assessment or {}).get("gaps") or []
 
             # Deterministic role matches from recruiter KB
@@ -1792,14 +1811,24 @@ class LearningService:
                 recommendations = profile_cache.get("recommendations") or []
                 promotion = profile_cache.get("promotion")
             else:
-                keywords = list(current_skills) + [g.get("skill") for g in skill_gaps if g.get("skill")]
+                # Cap keywords — each one previously could trigger an LLM expand.
+                keywords = list(current_skills)[:8] + [g.get("skill") for g in skill_gaps if g.get("skill")][:4]
                 if employee.get("job_title"):
                     keywords.append(employee["job_title"])
                 if employee.get("department"):
                     keywords.append(employee["department"])
                 keywords = [k for k in keywords if k] or ["fundamentals"]
+                keywords = list(dict.fromkeys(keywords))[:10]
                 candidates = await catalog_service.find_courses_for_keywords(
-                    list(dict.fromkeys(keywords))[:20], per_keyword=4, limit=36
+                    keywords,
+                    per_keyword=3,
+                    limit=24,
+                    use_ai=False,
+                    # Skip Coursera on tab open — cold fetch of ~20k courses blocks the UI.
+                    # Refresh AI includes Coursera again.
+                    sources=("microsoft_learn", "recruiter_kb")
+                    if not refresh_ai
+                    else catalog_service.SOURCES,
                 )
                 kb_courses = await recruiter_kb_service.list_as_catalog_courses(recruiter_id)
                 candidates = candidates + kb_courses
@@ -1807,25 +1836,34 @@ class LearningService:
                     a["course_uid"] for a in assignments if a.get("course_uid")
                 } | {e["course_uid"] for e in enrollments if e.get("course_uid")}
                 candidates = [c for c in candidates if c.get("uid") not in existing_uids]
-                picks = await learning_ai_service.rank_recommended_courses(
-                    job_title=employee.get("job_title"),
-                    department=employee.get("department"),
-                    current_skills=current_skills,
-                    career_goal=target_role,
-                    skill_gaps=skill_gaps,
-                    candidates=candidates,
-                    top_n=6,
-                )
-                by_uid = {c["uid"]: c for c in candidates}
-                for pick in picks:
-                    course = by_uid.get(pick["uid"])
-                    if course:
+
+                if refresh_ai:
+                    picks = await learning_ai_service.rank_recommended_courses(
+                        job_title=employee.get("job_title"),
+                        department=employee.get("department"),
+                        current_skills=current_skills,
+                        career_goal=target_role,
+                        skill_gaps=skill_gaps,
+                        candidates=candidates,
+                        top_n=6,
+                    )
+                    by_uid = {c["uid"]: c for c in candidates}
+                    for pick in picks:
+                        course = by_uid.get(pick["uid"])
+                        if course:
+                            entry = self._public_course(course)
+                            entry["reason"] = pick["reason"]
+                            entry["priority"] = pick.get("priority") or "medium"
+                            recommendations.append(entry)
+                else:
+                    # Fast deterministic recommendations — no LLM ranking on tab open.
+                    for course in candidates[:6]:
                         entry = self._public_course(course)
-                        entry["reason"] = pick["reason"]
-                        entry["priority"] = pick.get("priority") or "medium"
+                        entry["reason"] = "Matched to current skills / role"
+                        entry["priority"] = "medium"
                         recommendations.append(entry)
 
-                # Prefer deterministic readiness from top role match; AI for NL only
+                # Prefer deterministic readiness from top role match; AI only on Refresh.
                 top = role_matches[0] if role_matches else None
                 if top:
                     promotion = {
@@ -1846,7 +1884,7 @@ class LearningService:
                         ),
                         "deterministic": True,
                     }
-                else:
+                elif refresh_ai:
                     promotion = await learning_ai_service.predict_promotion_readiness(
                         job_title=employee.get("job_title"),
                         department=employee.get("department"),
@@ -1856,6 +1894,17 @@ class LearningService:
                         learning_summary=learning_summary,
                         professional_summary=resume_fields.get("professional_summary"),
                     )
+                else:
+                    promotion = {
+                        "promotion_ready": False,
+                        "readiness_score": 0,
+                        "recommended_next_title": target_role,
+                        "reasons": ["No matching org role yet — configure roles in Knowledge Base."],
+                        "recommended_actions": [],
+                        "timeline": None,
+                        "summary": "Open Refresh AI after org roles are configured for a fuller readiness score.",
+                        "deterministic": True,
+                    }
 
                 await database.learning_recruiter_profile_cache.update_one(
                     {"user_id": user_id},
@@ -1870,10 +1919,6 @@ class LearningService:
                     },
                     upsert=True,
                 )
-
-        merged_skills = (
-            await self._merged_skills_for_user(user_id, resume_fields) if user_id else []
-        )
 
         return {
             "employee": {
@@ -1906,6 +1951,37 @@ class LearningService:
             "promotion": promotion,
             "career_goal": target_role,
             "role_matches": role_matches,
+        }
+
+    def _deterministic_assessment_from_skills(
+        self, *, employee: dict, merged_skills: list[dict]
+    ) -> dict:
+        """Build a lightweight skill matrix without calling an LLM (fast tab open)."""
+        skills_out = []
+        for s in merged_skills[:24]:
+            name = (s.get("skill_name") or "").strip()
+            if not name:
+                continue
+            skills_out.append(
+                {
+                    "skill_name": name,
+                    "category": s.get("category") or "Other",
+                    "proficiency": s.get("proficiency") or "Intermediate",
+                    "confidence": s.get("confidence") or 70,
+                    "years_experience": s.get("years_experience"),
+                    "source": s.get("source") or "resume",
+                }
+            )
+        return {
+            "skills": skills_out,
+            "gaps": [],
+            "role_fit_percentage": None,
+            "summary": (
+                f"Showing {len(skills_out)} skills from resume/profile for "
+                f"{employee.get('job_title') or 'this role'}. "
+                "Click Refresh AI for a full Gemini assessment and gap analysis."
+            ),
+            "deterministic": True,
         }
 
     async def _get_or_build_skill_assessment(

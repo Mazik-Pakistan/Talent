@@ -306,11 +306,20 @@ def search_and_rank_items(
 async def search_and_rank_items_async(
     items: list[dict[str, Any]],
     query: str | None,
+    *,
+    use_ai: bool = True,
 ) -> list[dict[str, Any]]:
-    """Async wrapper that resolves AI/taxonomy expanded keywords and ranks items."""
+    """Async wrapper that resolves AI/taxonomy expanded keywords and ranks items.
+
+    use_ai=False skips OpenRouter expansion (static taxonomy only) — required for
+    bulk keyword catalog scans so a profile load does not fire dozens of LLM calls.
+    """
     if not query or not query.strip():
         return items
 
     q_clean = query.strip()
-    expanded_kws = await expand_query_keywords_async(q_clean)
+    if use_ai:
+        expanded_kws = await expand_query_keywords_async(q_clean)
+    else:
+        expanded_kws = get_related_keywords(q_clean)
     return search_and_rank_items(items, q_clean, expanded_keywords=expanded_kws)

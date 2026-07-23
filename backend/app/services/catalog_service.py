@@ -93,6 +93,7 @@ async def find_courses_for_keywords(
     per_keyword: int = 4,
     limit: int = 40,
     sources: tuple[str, ...] = SOURCES,
+    use_ai: bool = False,
 ) -> list[dict]:
     """Merges real, live candidates from every requested source. This is what
     lets AI recommendations and skill-gap course matching surface an industry
@@ -100,7 +101,9 @@ async def find_courses_for_keywords(
     course for the same employee — whichever is the better real match."""
     results: list[dict] = []
     if "microsoft_learn" in sources:
-        results += await ms_learn_service.find_courses_for_keywords(keywords, per_keyword=per_keyword, limit=limit)
+        results += await ms_learn_service.find_courses_for_keywords(
+            keywords, per_keyword=per_keyword, limit=limit, use_ai=use_ai
+        )
     if "coursera" in sources:
         results += await coursera_service.find_courses_for_keywords(
             keywords, per_keyword=max(2, per_keyword // 2), limit=limit

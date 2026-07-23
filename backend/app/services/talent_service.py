@@ -19,6 +19,7 @@ always cheap to compute from what's already in Mongo.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -216,10 +217,12 @@ class TalentService:
     # ------------------------------------------------------------------ #
     # US-090 / US-091: Skill matrix (view over existing skills + categories)
     # ------------------------------------------------------------------ #
-    async def skill_matrix(self, employee: dict) -> dict:
+    async def skill_matrix(
+        self, employee: dict, *, merged_skills: list[dict] | None = None
+    ) -> dict:
         from app.schemas.learning import SKILL_CATEGORIES
 
-        skills = await self._merged_skills_for_employee(employee)
+        skills = merged_skills if merged_skills is not None else await self._merged_skills_for_employee(employee)
         by_category: dict[str, list[dict]] = {c: [] for c in SKILL_CATEGORIES}
         for s in skills:
             entry = {
@@ -246,16 +249,22 @@ class TalentService:
     # ------------------------------------------------------------------ #
     # US-093: Career progression roadmap
     # ------------------------------------------------------------------ #
-    async def career_progression(self, employee: dict) -> dict:
+    async def career_progression(
+        self,
+        employee: dict,
+        *,
+        merged_skills: list[dict] | None = None,
+        certs: list[dict] | None = None,
+    ) -> dict:
         recruiter_id = self._recruiter_id(employee)
         roles = await recruiter_kb_service.get_roles_for_matching(recruiter_id)
         if not roles:
             return {"current_title": employee.get("job_title"), "ladder": [], "message": "No org roles configured yet."}
 
-        skills = await self._merged_skills_for_employee(employee)
+        skills = merged_skills if merged_skills is not None else await self._merged_skills_for_employee(employee)
         skill_names = [s.get("skill_name") for s in skills if s.get("skill_name")]
-        certs = await self._employee_cert_docs(employee.get("user_id") or "")
-        cert_titles = [c.get("course_title") for c in certs if c.get("course_title")]
+        cert_docs = certs if certs is not None else await self._employee_cert_docs(employee.get("user_id") or "")
+        cert_titles = [c.get("course_title") for c in cert_docs if c.get("course_title")]
 
         current_rank = _seniority_rank(employee.get("job_title"))
 
@@ -963,29 +972,47 @@ class TalentService:
         elif current_user.role == "recruiter":
             await self._assert_recruiter_owns(current_user, employee)
 
-        skill_matrix = await self.skill_matrix(employee)
-        journey = await self.journey_timeline(employee)
-        achievements = await self.achievements(employee)
-        progression = await self.career_progression(employee)
-        competency = await self.get_competency_history(current_user, employee_id)
-        dev_plan = await self.get_development_plan(current_user, employee_id)
-
-        certs = await self._employee_cert_docs(employee.get("user_id") or "")
-        goal = await database.learning_career_goals.find_one({"user_id": employee.get("user_id")})
-        recommendations = await database.learning_ai_recommendations.find_one({"user_id": employee.get("user_id")})
-
         emp_id = employee.get("employee_id")
         user_id = employee.get("user_id")
-        assignments = (
-            await database.learning_assignments.find({"employee_id": emp_id}).sort("created_at", -1).to_list(length=100)
-            if emp_id
-            else []
+
+        # Load shared inputs once, then fan out the rest in parallel.
+        merged_skills, certs = await asyncio.gather(
+            self._merged_skills_for_employee(employee),
+            self._employee_cert_docs(user_id or ""),
         )
-        enrollments = (
-            await database.learning_enrollments.find({"user_id": user_id}).sort("updated_at", -1).to_list(length=100)
-            if user_id
-            else []
+
+        (
+            skill_matrix,
+            journey,
+            achievements,
+            progression,
+            competency,
+            dev_plan,
+            goal,
+            recommendations,
+            assignments,
+            enrollments,
+        ) = await asyncio.gather(
+            self.skill_matrix(employee, merged_skills=merged_skills),
+            self.journey_timeline(employee),
+            self.achievements(employee),
+            self.career_progression(employee, merged_skills=merged_skills, certs=certs),
+            self.get_competency_history(current_user, employee_id),
+            self.get_development_plan(current_user, employee_id),
+            database.learning_career_goals.find_one({"user_id": user_id}) if user_id else asyncio.sleep(0, result=None),
+            database.learning_ai_recommendations.find_one({"user_id": user_id}) if user_id else asyncio.sleep(0, result=None),
+            (
+                database.learning_assignments.find({"employee_id": emp_id}).sort("created_at", -1).to_list(length=100)
+                if emp_id
+                else asyncio.sleep(0, result=[])
+            ),
+            (
+                database.learning_enrollments.find({"user_id": user_id}).sort("updated_at", -1).to_list(length=100)
+                if user_id
+                else asyncio.sleep(0, result=[])
+            ),
         )
+
         completed_assignments = [a for a in assignments if a.get("status") == "completed"]
         mandatory_open = [
             a for a in assignments if a.get("mandatory") and a.get("status") != "completed"

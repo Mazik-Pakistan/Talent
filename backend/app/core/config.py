@@ -28,7 +28,8 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     # OpenRouter model id, e.g. google/gemini-2.5-flash or openai/gpt-4o-mini
     OPENROUTER_MODEL: str = "google/gemini-2.5-flash"
-    OPENROUTER_MAX_TOKENS: int = 4096
+    # Keep default under typical free-tier affordability; 402 retries lower further.
+    OPENROUTER_MAX_TOKENS: int = 2048
     # Direct Gemini fallback model (only used if OpenRouter fails / missing)
     GEMINI_MODEL: str = "gemini-2.0-flash"
     REDIS_URL: str
