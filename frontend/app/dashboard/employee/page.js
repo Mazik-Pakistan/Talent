@@ -390,7 +390,11 @@ function EmployeeDashboardContent() {
               <div className={styles.banner}>
                 <MiniRing percentage={percentage} />
                 <div className={styles.bannerCopy}>
-                  <h3>Your profile is incomplete</h3>
+                  <h3>
+                    {notifications.some((n) => n.type === "profile_completion_reminder" && !n.read)
+                      ? "Your recruiter asked you to complete your profile"
+                      : "Your profile is incomplete"}
+                  </h3>
                   <p>
                     Add your emergency contact, banking details, references, sign the NDA, and acknowledge company
                     policies to unlock your full workspace.

@@ -382,6 +382,7 @@ class EmployeeService:
         department: str | None = None,
         job_title: str | None = None,
         status: str | None = None,
+        profile_status: str | None = None,
         joining_from: str | None = None,
         joining_to: str | None = None,
     ) -> dict:
@@ -392,6 +393,8 @@ class EmployeeService:
             query["status"] = status
         else:
             query["status"] = {"$in": ["active", "inactive", "on_leave"]}
+        if profile_status:
+            query["profile_status"] = profile_status.strip().lower()
         if employee_id:
             query["employee_id"] = {"$regex": employee_id.strip(), "$options": "i"}
         if department:
@@ -425,6 +428,7 @@ class EmployeeService:
         department: str | None = None,
         job_title: str | None = None,
         status: str | None = None,
+        profile_status: str | None = None,
         joining_from: str | None = None,
         joining_to: str | None = None,
         sort: str = "created_at",
@@ -440,6 +444,7 @@ class EmployeeService:
             department=department,
             job_title=job_title,
             status=status,
+            profile_status=profile_status,
             joining_from=joining_from,
             joining_to=joining_to,
         )
@@ -540,6 +545,13 @@ class EmployeeService:
         banking = onboarding.get("employment")
         onboarding["employment"] = decrypt_banking_payload(banking, mask=not reveal_banking)
         payload["onboarding"] = onboarding
+        progress = self._profile_progress(employee)
+        payload["profile_progress"] = progress
+        if employee.get("profile_reminder_sent_at"):
+            sent_at = employee["profile_reminder_sent_at"]
+            payload["profile_reminder_sent_at"] = (
+                sent_at.isoformat() if hasattr(sent_at, "isoformat") else sent_at
+            )
         career = await self.list_career_events(employee.get("employee_id") or key)
         payload["career"] = career["events"]
         return {"employee": payload}
@@ -1110,12 +1122,23 @@ class EmployeeService:
         message: str,
         link: str = "/dashboard/employee",
         related_id: str | None = None,
-    ) -> None:
-        recipient_id = employee.get("user_id") or str(employee.get("_id", ""))
+    ) -> str | None:
+        recipient_id = employee.get("user_id")
         if not recipient_id:
-            return
-        await create_notification(
-            recipient_id=recipient_id,
+            # Resolve from users collection by email so reminders still land.
+            user = await database.users.find_one({"email": (employee.get("email") or "").lower()})
+            if user:
+                recipient_id = str(user["_id"])
+                if not employee.get("user_id"):
+                    await database.employees.update_one(
+                        {"_id": employee["_id"]},
+                        {"$set": {"user_id": recipient_id}},
+                    )
+                    employee["user_id"] = recipient_id
+        if not recipient_id:
+            return None
+        return await create_notification(
+            recipient_id=str(recipient_id),
             recipient_role="employee",
             notif_type=notif_type,
             title=title,
@@ -1123,6 +1146,125 @@ class EmployeeService:
             link=link,
             related_id=related_id or employee.get("employee_id"),
         )
+
+    async def remind_profile_completion(
+        self,
+        current_user: CurrentUser,
+        employee_id: str,
+        note: str | None = None,
+        *,
+        force: bool = False,
+    ) -> dict:
+        """Recruiter nudge for employees who have not finished Complete Profile."""
+        from app.core.config import settings
+
+        employee = await self._resolve_employee_for_recruiter(current_user, employee_id)
+        progress = self._profile_progress(employee)
+        if progress.get("profile_status") == "complete" or not progress.get("missing_fields"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This employee has already completed their post-hire profile.",
+            )
+
+        now = datetime.now(UTC)
+        last_sent = employee.get("profile_reminder_sent_at")
+        if last_sent and not force:
+            last_dt = last_sent if isinstance(last_sent, datetime) else None
+            if last_dt and last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=UTC)
+            if last_dt and (now - last_dt).total_seconds() < 3600:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="A reminder was already sent within the last hour. Try again later, or resend with force=true.",
+                )
+
+        label_by_step = {t["step"]: t["label"] for t in PROFILE_TASK_DEFS}
+        missing_labels = [label_by_step.get(step, step) for step in progress["missing_fields"]]
+        note_text = (note or "").strip() or None
+        profile_link = f"{settings.frontend_base_url}/dashboard/employee/complete-profile"
+        to_email = employee.get("email")
+
+        notification_id = await self._notify_employee(
+            employee,
+            notif_type="profile_completion_reminder",
+            title="Please complete your profile",
+            message=(
+                f"Your recruiter asked you to finish your post-hire profile. "
+                f"Still needed: {', '.join(missing_labels)}."
+                + (f" Note: {note_text}" if note_text else "")
+            ),
+            link="/dashboard/employee/complete-profile",
+        )
+        notification_sent = bool(notification_id)
+
+        email_sent = False
+        email_error = None
+        if not to_email:
+            email_error = "Employee has no email address on file."
+        else:
+            try:
+                email_service.send_profile_completion_reminder(
+                    to_email=to_email,
+                    full_name=employee.get("full_name") or "there",
+                    employee_id=employee.get("employee_id") or "",
+                    missing_labels=missing_labels,
+                    dashboard_link=profile_link,
+                    recruiter_note=note_text,
+                )
+                email_sent = True
+            except Exception as exc:  # noqa: BLE001
+                email_error = str(exc)
+
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {
+                "$set": {
+                    "profile_reminder_sent_at": now,
+                    "profile_reminder_sent_by": current_user.id,
+                    "updated_at": now,
+                }
+            },
+        )
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "recruiter_id": current_user.id,
+                "employee_id": employee.get("employee_id"),
+                "email": employee.get("email"),
+                "actor_email": current_user.email,
+                "module": "employees",
+                "action": "profile_completion_reminder",
+                "outcome": "success" if email_sent and notification_sent else "partial",
+                "created_at": now,
+            }
+        )
+
+        refreshed = await database.employees.find_one({"_id": employee["_id"]})
+        profile = await self.get_employee_profile(
+            current_user, employee.get("employee_id") or employee_id, reveal_banking=False
+        )
+        parts = []
+        if notification_sent:
+            parts.append("dashboard notification created")
+        else:
+            parts.append("dashboard notification failed (no user id)")
+        if email_sent:
+            parts.append(f"email sent to {to_email}")
+        elif email_error:
+            parts.append(f"email not sent ({email_error})")
+        else:
+            parts.append("email not sent")
+        return {
+            "message": f"Reminder: {'; '.join(parts)}.",
+            "email_sent": email_sent,
+            "notification_sent": notification_sent,
+            "notification_id": notification_id,
+            "email_to": to_email,
+            "email_error": email_error,
+            "missing_steps": missing_labels,
+            "progress": self._profile_progress(refreshed or employee),
+            "employee": profile["employee"],
+        }
 
     async def set_company_email(self, current_user: CurrentUser, employee_id: str, company_email: str) -> dict:
         employee = await self._resolve_employee_for_recruiter(current_user, employee_id)

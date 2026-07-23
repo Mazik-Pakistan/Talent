@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
@@ -12,20 +12,12 @@ import {
   assignEmployeeAsset,
   removeEmployeeAsset,
   scheduleEmployeeOrientation,
+  remindEmployeeProfile,
 } from "@/services/authService";
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
 import EmployeeTalentPanel from "@/components/recruiter/EmployeeTalentPanel";
+import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Converts a snake_case / camelCase / kebab-case key into a readable label.
- * Examples:  "government_docs" → "Government Docs"
- *            "resume"          → "Resume"
- *            "education"       → "Education"
- */
 function toLabel(key) {
   return String(key)
     .replace(/_/g, " ")
@@ -33,88 +25,6 @@ function toLabel(key) {
     .replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
-/**
- * "Container" keys: their values are lists of sub-documents or sub-objects,
- * but the key itself should NOT become a new category/type label.
- * When we encounter these, we recurse while keeping the parent category/type.
- */
-const CONTAINER_KEYS = new Set(["documents", "entries", "files", "items"]);
-
-/**
- * Keys that are metadata, not sub-documents. Skip them when recursing.
- */
-const SKIP_KEYS = new Set([
-  "_id", "status", "step", "completed_steps", "submitted_at",
-  "ocr_result", "profile_verification", "summary",
-]);
-
-/**
- * Recursively walks `obj` and extracts every file object — defined as any
- * plain object that carries a `file_url` field.
- *
- * Category is set once per top-level onboarding section (the caller's
- * responsibility). Type is inferred from the nearest named parent key so that
- * versions of the same logical document always share the same group even when
- * the uploaded file has a different name each time.
- *
- * @param {unknown}  obj         - Value to inspect.
- * @param {string}   category    - Top-level onboarding section (e.g. "Government Docs").
- * @param {string}   type        - Current type label (e.g. "Cnic", "Resume").
- * @param {object[]} acc         - Accumulator array.
- */
-function extractDocuments(obj, category, type, acc) {
-  if (!obj || typeof obj !== "object") return;
-
-  // Arrays: recurse into each item without changing category/type.
-  if (Array.isArray(obj)) {
-    obj.forEach((item) => extractDocuments(item, category, type, acc));
-    return;
-  }
-
-  // Plain object: check if it is itself a file record.
-  if (obj.file_url) {
-    // If the object carries an explicit doc_type field, use that as the type
-    // (e.g. GovernmentDocument.doc_type === "cnic"). Otherwise keep ancestry.
-    const resolvedType = obj.doc_type ? toLabel(obj.doc_type) : (type || "Document");
-    acc.push({
-      file_url:     obj.file_url      || null,
-      file_name:    obj.file_name     || null,
-      document_type: resolvedType,
-      category,
-      status:       obj.status        || null,
-      uploaded_at:  obj.uploaded_at   || null,
-      submitted_at: obj.submitted_at  || null,
-      created_at:   obj.created_at    || null,
-    });
-    // Continue recursing — in edge cases a file record may embed sub-documents.
-  }
-
-  // Recurse into every object-valued property.
-  for (const [key, value] of Object.entries(obj)) {
-    if (!value || typeof value !== "object") continue;
-    if (SKIP_KEYS.has(key)) continue;
-
-    if (CONTAINER_KEYS.has(key)) {
-      // Container key: keep category & type as-is.
-      extractDocuments(value, category, type, acc);
-    } else {
-      // Named key: becomes the new type label for everything nested under it.
-      extractDocuments(value, category, toLabel(key), acc);
-    }
-  }
-}
-
-/**
- * Returns the best available date string from a document record.
- * Priority: uploaded_at → submitted_at → created_at
- */
-function docDate(doc) {
-  return doc.uploaded_at || doc.submitted_at || doc.created_at || null;
-}
-
-/**
- * Human-friendly date string, or null when unavailable.
- */
 function fmtDate(raw) {
   if (!raw) return null;
   try {
@@ -127,224 +37,6 @@ function fmtDate(raw) {
     return String(raw);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Sub-components (kept in this file to avoid new-file churn)
-// ---------------------------------------------------------------------------
-
-/**
- * A single document type group: renders the current version prominently and
- * lets the recruiter expand older versions inline.
- */
-function DocumentGroup({ groupName, docs }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const current = docs[0];
-  const older   = docs.slice(1);
-  const dateStr = fmtDate(docDate(current));
-
-  return (
-    <div
-      style={{
-        border: "1px solid var(--border)",
-        borderRadius: "10px",
-        overflow: "hidden",
-        background: "var(--card)",
-      }}
-    >
-      {/* ── Current version ─────────────────────────────────────────── */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: "12px",
-          padding: "14px 16px",
-          flexWrap: "wrap",
-          borderLeft: "4px solid var(--green)",
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              flexWrap: "wrap",
-              marginBottom: "4px",
-            }}
-          >
-            <strong style={{ fontSize: "13.5px", color: "var(--navy)" }}>
-              {current.file_name || groupName}
-            </strong>
-            {/* "Current" badge */}
-            <span
-              style={{
-                fontSize: "10px",
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.5px",
-                background: "var(--green-light)",
-                color: "var(--green)",
-                padding: "2px 8px",
-                borderRadius: "20px",
-                flexShrink: 0,
-              }}
-            >
-              Current
-            </span>
-            {/* Status badge */}
-            {current.status && (
-              <span
-                style={{
-                  fontSize: "10px",
-                  fontWeight: 600,
-                  textTransform: "capitalize",
-                  background: "var(--cyan-light)",
-                  color: "var(--cyan)",
-                  padding: "2px 7px",
-                  borderRadius: "20px",
-                  flexShrink: 0,
-                }}
-              >
-                {current.status}
-              </span>
-            )}
-          </div>
-          <div className={styles.mutedText}>
-            {dateStr ? `Uploaded ${dateStr}` : "Active document"}
-          </div>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
-          {/* View File link */}
-          {current.file_url && (
-            <a
-              href={current.file_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.secondaryButton}
-              style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "5px" }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                <polyline points="15 3 21 3 21 9"/>
-                <line x1="10" y1="14" x2="21" y2="3"/>
-              </svg>
-              View File
-            </a>
-          )}
-          {/* Toggle older versions */}
-          {older.length > 0 && (
-            <button
-              type="button"
-              className={styles.linkButton}
-              onClick={() => setExpanded((v) => !v)}
-              style={{ fontSize: "11.5px", whiteSpace: "nowrap" }}
-              aria-expanded={expanded}
-            >
-              {expanded
-                ? "Hide versions"
-                : `${older.length} previous version${older.length !== 1 ? "s" : ""}`}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── Previous versions (collapsible) ─────────────────────────── */}
-      {expanded && older.length > 0 && (
-        <div
-          style={{
-            borderTop: "1px dashed var(--border)",
-            background: "var(--bg)",
-            padding: "10px 16px 12px 20px",
-          }}
-        >
-          <p
-            style={{
-              fontSize: "10.5px",
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.6px",
-              color: "var(--text-faint)",
-              margin: "0 0 8px 0",
-            }}
-          >
-            Previous Versions
-          </p>
-          <ul className={styles.miniList} style={{ gap: "6px" }}>
-            {older.map((oldDoc, idx) => {
-              const oldDate = fmtDate(docDate(oldDoc));
-              return (
-                <li
-                  key={idx}
-                  className={styles.miniListItem}
-                  style={{
-                    background: "#FAFAFA",
-                    borderLeft: "3px solid var(--border)",
-                    borderRadius: "8px",
-                    padding: "10px 12px",
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                      <strong style={{ fontSize: "13px", color: "var(--text-muted)" }}>
-                        {oldDoc.file_name || groupName}
-                      </strong>
-                      <span
-                        style={{
-                          fontSize: "10px",
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          color: "var(--text-faint)",
-                          background: "#ECECEC",
-                          padding: "1px 6px",
-                          borderRadius: "20px",
-                        }}
-                      >
-                        v{docs.length - 1 - idx}
-                      </span>
-                    </div>
-                    <div className={styles.mutedText} style={{ fontSize: "11px" }}>
-                      {oldDate ? `Uploaded ${oldDate}` : `Archived version ${idx + 1}`}
-                    </div>
-                  </div>
-                  {oldDoc.file_url && (
-                    <a
-                      href={oldDoc.file_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={styles.secondaryButton}
-                      style={{
-                        textDecoration: "none",
-                        fontSize: "11.5px",
-                        padding: "5px 10px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                        <polyline points="15 3 21 3 21 9"/>
-                        <line x1="10" y1="14" x2="21" y2="3"/>
-                      </svg>
-                      View File
-                    </a>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Accent color for each category section (cycles through the design palette). */
-const CATEGORY_COLORS = ["cyan", "purple", "orange", "green", "navy"];
 
 const ASSET_TYPES = [
   { value: "laptop", label: "Laptop" },
@@ -370,6 +62,125 @@ function orientationDefaults(orientation) {
     trainer: orientation?.trainer || "",
     agenda: orientation?.agenda || "",
   };
+}
+
+/**
+ * Post-hire Complete Profile progress + recruiter reminder controls.
+ */
+function ProfileCompletionSection({ employee, employeeId, onEmployeeUpdate }) {
+  const progress = employee.profile_progress || null;
+  const tasks = Array.isArray(progress?.tasks) ? progress.tasks : [];
+  const percentage = typeof progress?.percentage === "number" ? progress.percentage : null;
+  const incomplete = (employee.profile_status || progress?.profile_status) === "incomplete";
+  const completedCount = tasks.filter((t) => t.completed).length;
+
+  const [note, setNote] = useState("");
+  const [showNote, setShowNote] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  async function handleRemind() {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setSending(true);
+    try {
+      const data = await remindEmployeeProfile(
+        employeeId,
+        note.trim() ? { note: note.trim() } : {},
+        accessToken
+      );
+      if (data.employee) onEmployeeUpdate(data.employee);
+      toast.success(data.message || "Reminder sent.");
+      setNote("");
+      setShowNote(false);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not send reminder."));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const lastReminder = fmtDate(employee.profile_reminder_sent_at);
+  const missingLabels = tasks.filter((t) => !t.completed).map((t) => t.label);
+
+  return (
+    <div className={styles.section} style={{ marginBottom: 16 }}>
+      <div className={styles.sectionHead}>
+        <div className={styles.sectionHeadLeft}>
+          <div className={`${styles.bar} ${incomplete ? styles.orange : styles.green}`} />
+          <div>
+            <div className={styles.sectionTitle}>Post-hire profile</div>
+            <div className={styles.sectionDesc}>
+              {incomplete
+                ? `${completedCount} of ${tasks.length || 5} steps done${
+                    missingLabels[0] ? ` Â· next: ${missingLabels[0]}` : ""
+                  }`
+                : "All post-hire steps completed."}
+            </div>
+          </div>
+        </div>
+        {percentage !== null && (
+          <span
+            className={styles.chip}
+            style={{
+              background: incomplete ? "var(--orange-light)" : "var(--green-light)",
+              color: incomplete ? "var(--orange)" : "var(--green)",
+              fontWeight: 700,
+            }}
+          >
+            {percentage}%
+          </span>
+        )}
+      </div>
+      <div className={styles.sectionBody}>
+        {tasks.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: incomplete ? 14 : 0 }}>
+            {tasks.map((task) => (
+              <span
+                key={task.id || task.step}
+                className={styles.chip}
+                style={{
+                  background: task.completed ? "var(--green-light)" : "#F3F4F6",
+                  color: task.completed ? "var(--green)" : "var(--text-muted)",
+                  borderColor: task.completed ? "transparent" : "var(--border)",
+                }}
+              >
+                {task.completed ? "âœ“ " : ""}
+                {task.label.replace(/^(Add |Complete |Provide |Acknowledge |Sign the )/i, "")}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {incomplete && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+            <button type="button" className={styles.primaryButton} disabled={sending} onClick={handleRemind}>
+              {sending ? "Sendingâ€¦" : "Send reminder"}
+            </button>
+            <button
+              type="button"
+              className={styles.linkButton}
+              onClick={() => setShowNote((v) => !v)}
+            >
+              {showNote ? "Hide note" : "Add note"}
+            </button>
+            {lastReminder && (
+              <span className={styles.mutedText} style={{ fontSize: 12 }}>
+                Last sent {lastReminder}
+              </span>
+            )}
+            {showNote && (
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Optional note for the employee"
+                style={{ flex: "1 1 220px", minWidth: 180 }}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -560,7 +371,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-        {/* ── Company email ─────────────────────────────────────────── */}
+        {/* â”€â”€ Company email â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div
           style={{
             border: "1px solid var(--border)",
@@ -614,13 +425,13 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
                 </p>
               )}
               <button type="submit" className={styles.primaryButton} disabled={emailSaving}>
-                {emailSaving ? "Saving…" : "Save company email"}
+                {emailSaving ? "Savingâ€¦" : "Save company email"}
               </button>
             </form>
           </div>
         </div>
 
-        {/* ── Company assets ────────────────────────────────────────── */}
+        {/* â”€â”€ Company assets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div
           style={{
             border: "1px solid var(--border)",
@@ -681,7 +492,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
                         </div>
                         <div className={styles.mutedText}>
                           {asset.serial_number ? `Serial: ${asset.serial_number}` : "No serial on file"}
-                          {assignedDate ? ` · Assigned ${assignedDate}` : ""}
+                          {assignedDate ? ` Â· Assigned ${assignedDate}` : ""}
                         </div>
                       </div>
                       <button
@@ -691,7 +502,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
                         disabled={removingAssetId === asset.id}
                         onClick={() => handleRemoveAsset(asset.id)}
                       >
-                        {removingAssetId === asset.id ? "Removing…" : "Remove"}
+                        {removingAssetId === asset.id ? "Removingâ€¦" : "Remove"}
                       </button>
                     </li>
                   );
@@ -744,13 +555,13 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
                 </p>
               )}
               <button type="submit" className={styles.primaryButton} disabled={assetSaving}>
-                {assetSaving ? "Assigning…" : "Assign asset"}
+                {assetSaving ? "Assigningâ€¦" : "Assign asset"}
               </button>
             </form>
           </div>
         </div>
 
-        {/* ── Orientation session ───────────────────────────────────── */}
+        {/* â”€â”€ Orientation session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div
           style={{
             border: "1px solid var(--border)",
@@ -804,7 +615,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
                   Scheduled session
                 </p>
                 <p className={styles.instruction} style={{ margin: 0, lineHeight: 1.6 }}>
-                  <strong>Date:</strong> {orientation.date} · <strong>Time:</strong> {orientation.time}
+                  <strong>Date:</strong> {orientation.date} Â· <strong>Time:</strong> {orientation.time}
                   <br />
                   <strong>Trainer:</strong> {orientation.trainer}
                   {orientation.meeting_link && (
@@ -882,7 +693,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
               )}
               <button type="submit" className={styles.primaryButton} disabled={orientationSaving}>
                 {orientationSaving
-                  ? "Saving…"
+                  ? "Savingâ€¦"
                   : orientation
                   ? "Update orientation"
                   : "Schedule orientation"}
@@ -935,7 +746,7 @@ export default function EmployeeProfilePage({ params }) {
       <RecruiterShell activeKey="employees" title="Employee Profile" subtitle="Loading profile details...">
         <div className={styles.section}>
           <div className={styles.sectionBody}>
-            <p className={styles.emptySub}>Loading…</p>
+            <p className={styles.emptySub}>Loadingâ€¦</p>
           </div>
         </div>
       </RecruiterShell>
@@ -957,81 +768,6 @@ export default function EmployeeProfilePage({ params }) {
     );
   }
 
-  // ── 1. Extract all file objects ──────────────────────────────────────────
-  //
-  // Source A: employee.onboarding
-  //   Walk each top-level key separately so that key name becomes the category
-  //   (e.g. "government_docs" → "Government Docs").
-  //
-  // Source B: employee.documents (fallback flat list)
-  //
-  const rawDocuments = [];
-
-  if (employee.onboarding) {
-    for (const [sectionKey, sectionValue] of Object.entries(employee.onboarding)) {
-      if (!sectionValue || typeof sectionValue !== "object") continue;
-      if (SKIP_KEYS.has(sectionKey)) continue;
-      const category = toLabel(sectionKey); // e.g. "Government Docs"
-      extractDocuments(sectionValue, category, category, rawDocuments);
-    }
-  }
-
-  // Fallback: general employee.documents array
-  if (Array.isArray(employee.documents)) {
-    employee.documents.forEach((doc) => {
-      if (!doc || typeof doc !== "object") return;
-      if (!doc.file_url) return;
-      rawDocuments.push({
-        file_url:      doc.file_url     || null,
-        file_name:     doc.file_name    || null,
-        document_type: doc.document_type
-          ? toLabel(doc.document_type)
-          : doc.category
-          ? toLabel(doc.category)
-          : "Document",
-        category:      doc.category ? toLabel(doc.category) : "Documents",
-        status:        doc.status       || null,
-        uploaded_at:   doc.uploaded_at  || null,
-        submitted_at:  doc.submitted_at || null,
-        created_at:    doc.created_at   || null,
-      });
-    });
-  }
-
-  // ── 2. Group: Category → Document Type → [versions] ─────────────────────
-  //
-  // Grouping key is the *structural type* (inferred from JSON key ancestry),
-  // NOT the file_name. This ensures multiple uploads of the same logical
-  // document end up in the same version group even when filenames differ.
-  //
-  const groupedByCategory = {};
-
-  for (const doc of rawDocuments) {
-    const cat     = doc.category      || "Uncategorized";
-    const docType = doc.document_type || "Document";
-
-    if (!groupedByCategory[cat])         groupedByCategory[cat] = {};
-    if (!groupedByCategory[cat][docType]) groupedByCategory[cat][docType] = [];
-
-    groupedByCategory[cat][docType].push(doc);
-  }
-
-  // ── 3. Sort each type group newest → oldest ──────────────────────────────
-  //
-  // Date priority: uploaded_at → submitted_at → created_at
-  //
-  for (const cat of Object.keys(groupedByCategory)) {
-    for (const docType of Object.keys(groupedByCategory[cat])) {
-      groupedByCategory[cat][docType].sort((a, b) => {
-        const dA = new Date(docDate(a) || 0);
-        const dB = new Date(docDate(b) || 0);
-        return dB - dA; // Descending (newest first)
-      });
-    }
-  }
-
-  const categoryEntries = Object.entries(groupedByCategory);
-  const hasDocuments    = categoryEntries.length > 0;
   const employeeId      = employee.employee_id || id;
   const careerEvents    = Array.isArray(employee.career) ? employee.career : [];
   const initials = (employee.full_name || "?")
@@ -1051,7 +787,7 @@ export default function EmployeeProfilePage({ params }) {
     { key: "day1", label: "Day-1" },
   ];
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <RecruiterShell
       activeKey="employees"
@@ -1064,20 +800,34 @@ export default function EmployeeProfilePage({ params }) {
         </button>
       </div>
 
-      {/* ── Profile hero ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Profile hero â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className={styles.section} style={{ marginBottom: 16 }}>
         <div className={styles.profileHero}>
           <div className={styles.profileAvatar}>{initials}</div>
           <div>
             <h2 className={styles.profileName}>{employee.full_name}</h2>
             <p className={styles.mutedText} style={{ margin: 0 }}>
-              {employee.job_title || "No designation"} · {employee.department || "No department"}
+              {employee.job_title || "No designation"} Â· {employee.department || "No department"}
             </p>
             <div className={styles.chipRow}>
               {employee.employee_id && <span className={styles.chip}>{employee.employee_id}</span>}
               {employee.profile_status && (
-                <span className={styles.chip} style={{ textTransform: "capitalize" }}>
-                  {employee.profile_status}
+                <span
+                  className={styles.chip}
+                  style={{
+                    textTransform: "capitalize",
+                    background:
+                      employee.profile_status === "incomplete"
+                        ? "var(--orange-light)"
+                        : "var(--green-light)",
+                    color:
+                      employee.profile_status === "incomplete" ? "var(--orange)" : "var(--green)",
+                  }}
+                >
+                  {employee.profile_status === "incomplete" ? "Profile incomplete" : "Profile complete"}
+                  {employee.profile_progress?.percentage != null
+                    ? ` Â· ${employee.profile_progress.percentage}%`
+                    : ""}
                 </span>
               )}
               {employee.company_email && <span className={styles.chip}>{employee.company_email}</span>}
@@ -1101,7 +851,13 @@ export default function EmployeeProfilePage({ params }) {
       </div>
 
       {activeTab === "overview" && (
-        <div className={styles.section}>
+        <>
+          <ProfileCompletionSection
+            employee={employee}
+            employeeId={employeeId}
+            onEmployeeUpdate={setEmployee}
+          />
+          <div className={styles.section}>
           <div className={styles.sectionHead}>
             <div className={styles.sectionHeadLeft}>
               <div className={`${styles.bar} ${styles.navy}`} />
@@ -1115,51 +871,57 @@ export default function EmployeeProfilePage({ params }) {
             <dl className={styles.employeeFactGrid}>
               <div className={styles.employeeFact}>
                 <dt>Full name</dt>
-                <dd>{employee.full_name || "—"}</dd>
+                <dd>{employee.full_name || "â€”"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Employee ID</dt>
-                <dd>{employee.employee_id || "—"}</dd>
+                <dd>{employee.employee_id || "â€”"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Email</dt>
-                <dd>{employee.email || "—"}</dd>
+                <dd>{employee.email || "â€”"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Company email</dt>
-                <dd>{employee.company_email || "—"}</dd>
+                <dd>{employee.company_email || "â€”"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Phone</dt>
-                <dd>{employee.phone || "—"}</dd>
+                <dd>{employee.phone || "â€”"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Job title</dt>
-                <dd>{employee.job_title || "—"}</dd>
+                <dd>{employee.job_title || "â€”"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Department</dt>
-                <dd>{employee.department || "—"}</dd>
+                <dd>{employee.department || "â€”"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Reporting manager</dt>
-                <dd>{employee.reporting_manager || "—"}</dd>
+                <dd>{employee.reporting_manager || "â€”"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Office location</dt>
-                <dd>{employee.office_location || "—"}</dd>
+                <dd>{employee.office_location || "â€”"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Start date</dt>
-                <dd>{fmtDate(employee.start_date) || "—"}</dd>
+                <dd>{fmtDate(employee.start_date) || "â€”"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Profile status</dt>
-                <dd style={{ textTransform: "capitalize" }}>{employee.profile_status || "—"}</dd>
+                <dd style={{ textTransform: "capitalize" }}>
+                  {employee.profile_status || "â€”"}
+                  {employee.profile_progress?.percentage != null
+                    ? ` (${employee.profile_progress.percentage}%)`
+                    : ""}
+                </dd>
               </div>
             </dl>
           </div>
         </div>
+        </>
       )}
 
       {activeTab === "day1" && (
@@ -1202,10 +964,10 @@ export default function EmployeeProfilePage({ params }) {
                       </strong>
                       <div className={styles.sectionDesc}>
                         {fmtDate(event.effective_date) || "No date"}
-                        {event.to_title ? ` · ${event.to_title}` : ""}
-                        {event.to_department ? ` · ${event.to_department}` : ""}
-                        {event.to_manager ? ` · Manager: ${event.to_manager}` : ""}
-                        {event.note ? ` — ${event.note}` : ""}
+                        {event.to_title ? ` Â· ${event.to_title}` : ""}
+                        {event.to_department ? ` Â· ${event.to_department}` : ""}
+                        {event.to_manager ? ` Â· Manager: ${event.to_manager}` : ""}
+                        {event.note ? ` â€” ${event.note}` : ""}
                       </div>
                     </div>
                   </li>
@@ -1222,79 +984,16 @@ export default function EmployeeProfilePage({ params }) {
             <div className={styles.sectionHeadLeft}>
               <div className={`${styles.bar} ${styles.purple}`} />
               <div>
-                <div className={styles.sectionTitle}>Uploaded documents</div>
-                <div className={styles.sectionDesc}>
-                  {hasDocuments
-                    ? `${rawDocuments.length} file${rawDocuments.length !== 1 ? "s" : ""} on file`
-                    : "Document version history for this employee"}
-                </div>
+                <div className={styles.sectionTitle}>Documents</div>
+                <div className={styles.sectionDesc}>Verify identity, education, and resume files.</div>
               </div>
             </div>
           </div>
           <div className={styles.sectionBody}>
-            {!hasDocuments ? (
-              <p className={styles.emptySub}>No documents found for this employee.</p>
+            {employee.id ? (
+              <RecruiterDocumentReview ownerId={employee.id} />
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-                {categoryEntries.map(([category, docGroups], catIdx) => {
-                  const colorClass = CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length];
-                  const groupEntries = Object.entries(docGroups);
-                  const totalFiles  = groupEntries.reduce((sum, [, docs]) => sum + docs.length, 0);
-
-                  return (
-                    <div
-                      key={category}
-                      style={{
-                        border: "1px solid var(--border)",
-                        borderRadius: "12px",
-                        overflow: "hidden",
-                        background: "var(--card)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "10px",
-                          padding: "14px 18px",
-                          borderBottom: "1px solid var(--border)",
-                          background: "var(--bg)",
-                        }}
-                      >
-                        <div className={`${styles.bar} ${styles[colorClass]}`} />
-                        <div style={{ flex: 1 }}>
-                          <div className={styles.sectionTitle} style={{ fontSize: "15px" }}>
-                            {category}
-                          </div>
-                          <div className={styles.sectionDesc}>
-                            {groupEntries.length} type{groupEntries.length !== 1 ? "s" : ""} · {totalFiles} file{totalFiles !== 1 ? "s" : ""}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: "16px" }}>
-                        {groupEntries.map(([groupName, docs]) => (
-                          <div key={groupName}>
-                            <p
-                              style={{
-                                fontSize: "10.5px",
-                                fontWeight: 700,
-                                textTransform: "uppercase",
-                                letterSpacing: "0.5px",
-                                color: "var(--text-faint)",
-                                margin: "0 0 6px 0",
-                              }}
-                            >
-                              {groupName}
-                            </p>
-                            <DocumentGroup groupName={groupName} docs={docs} />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <p className={styles.emptySub}>No document owner ID on this employee record.</p>
             )}
           </div>
         </div>

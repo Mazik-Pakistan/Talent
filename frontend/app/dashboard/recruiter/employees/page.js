@@ -21,7 +21,14 @@ export default function RecruiterEmployeesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [dirFilters, setDirFilters] = useState({ q: "", department: "", job_title: "", status: "active", employee_id: "" });
+  const [dirFilters, setDirFilters] = useState({
+    q: "",
+    department: "",
+    job_title: "",
+    status: "active",
+    employee_id: "",
+    profile_status: "",
+  });
   const [careerForm, setCareerForm] = useState({ event_type: "promoted", effective_date: "", to_title: "", to_department: "", to_manager: "", note: "" });
 
   const loadEmployees = useCallback(async (page = 1, filters = dirFilters) => {
@@ -34,6 +41,7 @@ export default function RecruiterEmployeesPage() {
         job_title: filters.job_title || undefined,
         status: filters.status || undefined,
         employee_id: filters.employee_id || undefined,
+        profile_status: filters.profile_status || undefined,
         page,
         page_size: 10,
         sort: "full_name",
@@ -63,7 +71,6 @@ export default function RecruiterEmployeesPage() {
     }
     try {
       const data = await getEmployeeDetail(id, accessToken);
-      console.log("BACKEND DATA:", data);
       setSelectedEmployee(data.employee);
       setCareerForm({
         event_type: "promoted",
@@ -150,6 +157,17 @@ export default function RecruiterEmployeesPage() {
                 <option value="">All statuses</option>
               </select>
             </label>
+            <label className={styles.field}>
+              <span>Profile completion</span>
+              <select
+                value={dirFilters.profile_status}
+                onChange={(e) => setDirFilters({ ...dirFilters, profile_status: e.target.value })}
+              >
+                <option value="">All profiles</option>
+                <option value="incomplete">Incomplete</option>
+                <option value="complete">Complete</option>
+              </select>
+            </label>
             <div className={styles.actions}>
               <button type="button" className={styles.primaryButton} onClick={() => loadEmployees(1, dirFilters)}>Apply filters</button>
               <button type="button" className={styles.secondaryButton} onClick={handleExport}>Export CSV</button>
@@ -162,7 +180,23 @@ export default function RecruiterEmployeesPage() {
                   <li className={styles.miniListItem} key={employee.employee_id || employee.id}>
                     <div>
                       <strong>{employee.full_name}</strong>
-                      <div className={styles.mutedText}>{employee.employee_id} · {employee.email} · {employee.job_title} · {employee.department}</div>
+                      <div className={styles.mutedText}>
+                        {employee.employee_id} · {employee.email} · {employee.job_title} · {employee.department}
+                      </div>
+                      {employee.profile_status === "incomplete" && (
+                        <div style={{ marginTop: 6 }}>
+                          <span
+                            className={styles.chip}
+                            style={{
+                              background: "var(--orange-light)",
+                              color: "var(--orange)",
+                              textTransform: "capitalize",
+                            }}
+                          >
+                            Profile incomplete
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button type="button" className={styles.secondaryButton} onClick={() => handleViewProfile(employee)}>Career timeline</button>

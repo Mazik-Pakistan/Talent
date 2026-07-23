@@ -557,10 +557,8 @@ class DocumentService:
             .to_list(length=100)
         )
         profile = await self._resolve_profile_fields(owner_id)
-        owner = await database.candidates.find_one(
-            {"$or": [{"user_id": owner_id}, {"email": owner_id}]}
-        ) or await database.employees.find_one({"$or": [{"user_id": owner_id}, {"email": owner_id}]})
-        cross = (owner or {}).get("document_verification") or compare_extractions(docs)
+        # Always recompute live so format-normalized matches (dates/names) stay current.
+        cross = compare_extractions(docs)
 
         enriched = []
         for d in docs:
@@ -572,11 +570,14 @@ class DocumentService:
                 mapped = dict(ocr_fields)
                 if "name" in mapped and "full_name" not in mapped:
                     mapped["full_name"] = mapped["name"]
+                if "candidate_name" in mapped and "full_name" not in mapped:
+                    mapped["full_name"] = mapped["candidate_name"]
                 if "cnic_number" in mapped:
                     mapped["cnic_number"] = mapped["cnic_number"]
                 profile_mismatches = ocr_service.compare_with_profile(mapped, profile)
             payload["mismatches"] = profile_mismatches
-            payload["cross_document_mismatches"] = d.get("mismatch_reasons") or cross.get("mismatches") or []
+            # Prefer live cross-document result over stale stored reasons.
+            payload["cross_document_mismatches"] = cross.get("mismatches") or []
             enriched.append(payload)
 
         return {

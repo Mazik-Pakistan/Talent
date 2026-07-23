@@ -84,12 +84,22 @@ def _degree_from_fields(fields: dict, category: str) -> str | None:
 
 
 def names_roughly_match(a: str | None, b: str | None) -> bool:
-    """Exact normalized match only. Partial overlaps (Hassan Farooqui vs Hassan Ullah Farooqui)
-    are treated as mismatches so recruiters can review and approve by judgment."""
+    """Treat names as matching when equal after normalize, or when one is a
+    token subset of the other (middle-name differences like
+    "Hassan Farooqui" vs "Hassan Ullah Farooqui")."""
+    if not a or not b:
+        return True
     na, nb = _norm(a), _norm(b)
     if not na or not nb:
         return True
-    return na == nb
+    if na == nb:
+        return True
+    tokens_a = re.findall(r"[a-z0-9]+", str(a).lower())
+    tokens_b = re.findall(r"[a-z0-9]+", str(b).lower())
+    if not tokens_a or not tokens_b:
+        return True
+    set_a, set_b = set(tokens_a), set(tokens_b)
+    return set_a.issubset(set_b) or set_b.issubset(set_a)
 
 
 def compare_extractions(docs: list[dict]) -> dict:

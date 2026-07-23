@@ -26,8 +26,9 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
-    # OpenRouter model id, e.g. google/gemini-2.5-flash or openai/gpt-4o-mini
-    OPENROUTER_MODEL: str = "google/gemini-2.5-flash"
+    # Prefer a :free model on free accounts (paid models need credits → 402).
+    # openrouter/free auto-routes among free models; or pin e.g. google/gemma-4-31b-it:free
+    OPENROUTER_MODEL: str = "openrouter/free"
     # Keep default under typical free-tier affordability; 402 retries lower further.
     OPENROUTER_MAX_TOKENS: int = 2048
     # Direct Gemini fallback model (only used if OpenRouter fails / missing)

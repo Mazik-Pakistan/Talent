@@ -41,14 +41,38 @@ def _default_max_tokens() -> int:
     return int(getattr(settings, "OPENROUTER_MAX_TOKENS", 2048) or 2048)
 
 
-def _affordable_tokens_from_error(text: str) -> int | None:
+def _affordable_tokens_from_error(text: str, *, requested: int) -> int | None:
+    """Parse OpenRouter 402 'can only afford N' and return a safe retry budget.
+
+    Must never return more than N (previous bug: floor of 256 broke retries when
+    affordability was 201).
+    """
     match = _AFFORD_RE.search(text or "")
     if not match:
         return None
     try:
-        return max(256, int(match.group(1)) - 64)
+        afford = int(match.group(1))
     except ValueError:
         return None
+    # Leave a tiny headroom; never exceed what they can afford or what we asked.
+    budget = min(requested, max(0, afford - 8))
+    if budget < 64:
+        return None  # too low for useful JSON — don't burn another failed call
+    return budget
+
+
+def _gemini_key_usable() -> bool:
+    gem_key = (settings.GEMINI_API_KEY or "").strip()
+    if not gem_key or gem_key.startswith("YOUR_"):
+        return False
+    # Standard keys: AIza… · Auth keys (AI Studio default now): AQ.…
+    if (gem_key.startswith("AIza") or gem_key.startswith("AQ.")) and len(gem_key) >= 20:
+        return True
+    logger.warning(
+        "GEMINI_API_KEY does not look like a Google AI Studio key (expected AIza… or AQ.…). "
+        "Get one from https://aistudio.google.com/apikey"
+    )
+    return True
 
 
 async def call_llm_json(
@@ -67,8 +91,7 @@ async def call_llm_json(
             return result
         logger.warning("OpenRouter failed; trying Gemini fallback if configured.")
 
-    gem_key = (settings.GEMINI_API_KEY or "").strip()
-    if gem_key and not gem_key.startswith("YOUR_"):
+    if _gemini_key_usable():
         return await _call_gemini_json(prompt, timeout=timeout)
     return None
 
@@ -80,7 +103,7 @@ async def _call_openrouter_json(
     max_tokens: int | None = None,
     temperature: float | None = None,
 ) -> dict | None:
-    model = (settings.OPENROUTER_MODEL or "google/gemini-2.5-flash").strip()
+    model = (settings.OPENROUTER_MODEL or "openrouter/free").strip()
     actual_tokens = max_tokens if max_tokens is not None else _default_max_tokens()
     actual_temp = temperature if temperature is not None else 0.2
 
@@ -123,7 +146,7 @@ async def _call_openrouter_json(
                 logger.error(f"OpenRouter call failed: {response.status_code} {body[:400]}")
 
                 if response.status_code == 402 and attempt_tokens is not None:
-                    affordable = _affordable_tokens_from_error(body)
+                    affordable = _affordable_tokens_from_error(body, requested=tokens)
                     if affordable and affordable < tokens:
                         logger.warning(
                             "OpenRouter credit limit: retrying with max_tokens={} (was {})",
@@ -132,6 +155,10 @@ async def _call_openrouter_json(
                         )
                         actual_tokens = affordable
                         continue
+                    logger.error(
+                        "OpenRouter credits nearly exhausted (can only afford a tiny max_tokens). "
+                        "Add credits at https://openrouter.ai/settings/credits"
+                    )
                 return None
         except Exception as exc:
             logger.error(f"OpenRouter call raised: {exc}")
@@ -142,20 +169,24 @@ async def _call_openrouter_json(
 async def _call_gemini_json(prompt: str, *, timeout: float) -> dict | None:
     model = (settings.GEMINI_MODEL or "gemini-2.0-flash").strip()
     url = f"{GEMINI_BASE}/{model}:generateContent"
+    api_key = settings.GEMINI_API_KEY.strip()
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"responseMimeType": "application/json"},
     }
+    # Auth keys (AQ.…) require x-goog-api-key; query ?key= often returns 401.
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key,
+    }
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                url, params={"key": settings.GEMINI_API_KEY.strip()}, json=payload
-            )
+            response = await client.post(url, headers=headers, json=payload)
             if response.status_code != 200:
                 if response.status_code in (401, 403):
                     logger.error(
                         "Gemini auth failed ({}). Check GEMINI_API_KEY in .env — "
-                        "use a Generative Language API key from Google AI Studio, not an OAuth token. {}",
+                        "use an AI Studio key (AIza… or AQ.…), not an OAuth token. {}",
                         response.status_code,
                         response.text[:240],
                     )
