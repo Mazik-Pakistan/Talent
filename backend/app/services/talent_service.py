@@ -109,6 +109,104 @@ class TalentService:
     async def _employee_skills(self, user_id: str) -> list[dict]:
         return await database.employee_skills.find({"user_id": user_id}).sort("skill_name", 1).to_list(length=500)
 
+    async def _resume_fields_for_user(self, user_id: str) -> dict:
+        if not user_id:
+            return {}
+        doc = await database.documents.find_one(
+            {"owner_id": user_id, "doc_type": "resume", "is_active": True},
+            sort=[("created_at", -1)],
+        )
+        if not doc:
+            return {}
+        return (doc.get("ocr_result") or {}).get("fields") or {}
+
+    @staticmethod
+    def _combine_skill_fields(resume_fields: dict | None, onboarding_skills: dict | None) -> dict:
+        """Merge resume OCR + onboarding skills into the shape merge_skill_sources expects."""
+        resume_fields = resume_fields or {}
+        onboarding_skills = onboarding_skills or {}
+        merged_fields = {
+            "technical_skills": list(resume_fields.get("technical_skills") or [])
+            + list(onboarding_skills.get("technical_skills") or []),
+            "soft_skills": list(resume_fields.get("soft_skills") or [])
+            + list(onboarding_skills.get("soft_skills") or []),
+            "skills": list(resume_fields.get("skills") or []) + list(onboarding_skills.get("skills") or []),
+        }
+        for key in ("technical_skills", "soft_skills", "skills"):
+            values = merged_fields[key]
+            normalized: list[str] = []
+            for value in values:
+                if isinstance(value, str) and "," in value and len(value) > 40:
+                    normalized.extend(part.strip() for part in value.split(",") if part.strip())
+                elif isinstance(value, str) and value.strip():
+                    normalized.append(value.strip())
+                elif isinstance(value, dict):
+                    label = (value.get("skill_name") or value.get("name") or "").strip()
+                    if label:
+                        normalized.append(label)
+            merged_fields[key] = normalized
+        return merged_fields
+
+    async def _merged_skills_for_employee(self, employee: dict) -> list[dict]:
+        """employee_skills + resume OCR + onboarding profile skills (same merge Learning uses)."""
+        from app.services import resume_analysis_service
+
+        user_id = employee.get("user_id") or ""
+        manual = await self._employee_skills(user_id) if user_id else []
+        resume_fields = await self._resume_fields_for_user(user_id)
+        onboarding_skills = (employee.get("onboarding") or {}).get("skills") or {}
+        certs = await self._employee_cert_docs(user_id) if user_id else []
+        return resume_analysis_service.merge_skill_sources(
+            manual_skills=manual,
+            resume_fields=self._combine_skill_fields(resume_fields, onboarding_skills),
+            certificate_skills=resume_analysis_service.extract_certificate_skill_list(certs),
+        )
+
+    async def _batch_merged_skills(self, employees: list[dict]) -> dict[str, list[dict]]:
+        """Batch-load merged skills for many employees (search / metrics)."""
+        from app.services import resume_analysis_service
+
+        user_ids = [e.get("user_id") for e in employees if e.get("user_id")]
+        if not user_ids:
+            return {}
+
+        skill_docs = await database.employee_skills.find({"user_id": {"$in": user_ids}}).to_list(length=20000)
+        manual_by_user: dict[str, list[dict]] = {}
+        for s in skill_docs:
+            manual_by_user.setdefault(s["user_id"], []).append(s)
+
+        resume_docs = await database.documents.find(
+            {"owner_id": {"$in": user_ids}, "doc_type": "resume", "is_active": True},
+            {"owner_id": 1, "ocr_result.fields": 1, "created_at": 1},
+        ).sort("created_at", -1).to_list(length=5000)
+        resume_by_user: dict[str, dict] = {}
+        for doc in resume_docs:
+            uid = doc.get("owner_id")
+            if uid and uid not in resume_by_user:
+                resume_by_user[uid] = (doc.get("ocr_result") or {}).get("fields") or {}
+
+        cert_docs = await database.learning_certificates.find(
+            {"user_id": {"$in": user_ids}, "verification_status": "verified"}
+        ).to_list(length=20000)
+        certs_by_user: dict[str, list[dict]] = {}
+        for c in cert_docs:
+            certs_by_user.setdefault(c["user_id"], []).append(c)
+
+        out: dict[str, list[dict]] = {}
+        for emp in employees:
+            uid = emp.get("user_id")
+            if not uid or uid in out:
+                continue
+            onboarding_skills = (emp.get("onboarding") or {}).get("skills") or {}
+            out[uid] = resume_analysis_service.merge_skill_sources(
+                manual_skills=manual_by_user.get(uid, []),
+                resume_fields=self._combine_skill_fields(resume_by_user.get(uid, {}), onboarding_skills),
+                certificate_skills=resume_analysis_service.extract_certificate_skill_list(
+                    certs_by_user.get(uid, [])
+                ),
+            )
+        return out
+
     async def _employee_cert_docs(self, user_id: str, *, verified_only: bool = True) -> list[dict]:
         query: dict[str, Any] = {"user_id": user_id}
         if verified_only:
@@ -121,16 +219,16 @@ class TalentService:
     async def skill_matrix(self, employee: dict) -> dict:
         from app.schemas.learning import SKILL_CATEGORIES
 
-        skills = await self._employee_skills(employee.get("user_id") or "")
+        skills = await self._merged_skills_for_employee(employee)
         by_category: dict[str, list[dict]] = {c: [] for c in SKILL_CATEGORIES}
         for s in skills:
             entry = {
-                "id": str(s.get("_id")),
+                "id": s.get("id"),
                 "skill_name": s.get("skill_name"),
                 "category": s.get("category") or "Other",
                 "proficiency": s.get("proficiency"),
                 "years_experience": s.get("years_experience"),
-                "last_used_date": _iso(s.get("last_used_date") or s.get("updated_at")),
+                "last_used_date": s.get("updated_at") if isinstance(s.get("updated_at"), str) else _iso(s.get("updated_at")),
                 "verification_status": s.get("verification_status", "unverified"),
                 "source": s.get("source", "manual"),
             }
@@ -154,7 +252,7 @@ class TalentService:
         if not roles:
             return {"current_title": employee.get("job_title"), "ladder": [], "message": "No org roles configured yet."}
 
-        skills = await self._employee_skills(employee.get("user_id") or "")
+        skills = await self._merged_skills_for_employee(employee)
         skill_names = [s.get("skill_name") for s in skills if s.get("skill_name")]
         certs = await self._employee_cert_docs(employee.get("user_id") or "")
         cert_titles = [c.get("course_title") for c in certs if c.get("course_title")]
@@ -417,8 +515,10 @@ class TalentService:
 
         # Eligibility check (US-095 AC: "Eligibility validated"): department
         # match OR at least one required skill already on the employee's
-        # profile. Not a hard block — flagged so the employee can see why.
-        skills = {s.lower() for s in [sk.get("skill_name") for sk in await self._employee_skills(current_user.id)] if s}
+        # profile (tracked matrix + resume/onboarding). Not a hard block —
+        # flagged so the employee can see why.
+        merged = await self._merged_skills_for_employee(employee)
+        skills = {s.lower() for s in [sk.get("skill_name") for sk in merged if sk.get("skill_name")]}
         required = {s.lower() for s in (opp.get("required_skills") or [])}
         eligible = (not required) or bool(skills & required) or (employee.get("department") == opp.get("department"))
 
@@ -537,11 +637,11 @@ class TalentService:
         user_ids = [c.get("user_id") for c in candidates if c.get("user_id")]
         emp_ids = [c.get("employee_id") for c in candidates if c.get("employee_id")]
 
-        skills_by_user: dict[str, list[str]] = {}
-        if user_ids:
-            skill_docs = await database.employee_skills.find({"user_id": {"$in": user_ids}}).to_list(length=10000)
-            for s in skill_docs:
-                skills_by_user.setdefault(s["user_id"], []).append(s.get("skill_name") or "")
+        merged_skills_by_user = await self._batch_merged_skills(candidates)
+        skills_by_user: dict[str, list[str]] = {
+            uid: [s.get("skill_name") for s in skills if s.get("skill_name")]
+            for uid, skills in merged_skills_by_user.items()
+        }
 
         certs_by_user: dict[str, list[str]] = {}
         if user_ids:
@@ -706,15 +806,14 @@ class TalentService:
         user_ids = [e.get("user_id") for e in employees if e.get("user_id")]
         emp_ids = [e.get("employee_id") for e in employees if e.get("employee_id")]
 
-        skill_docs = (
-            await database.employee_skills.find({"user_id": {"$in": user_ids}}).to_list(length=20000)
-            if user_ids
-            else []
-        )
+        merged_by_user = await self._batch_merged_skills(employees)
         skill_distribution: dict[str, int] = {}
-        for s in skill_docs:
-            cat = s.get("category") or "Other"
-            skill_distribution[cat] = skill_distribution.get(cat, 0) + 1
+        skills_per_user: dict[str, int] = {}
+        for uid, skills in merged_by_user.items():
+            skills_per_user[uid] = len(skills)
+            for s in skills:
+                cat = s.get("category") or "Other"
+                skill_distribution[cat] = skill_distribution.get(cat, 0) + 1
 
         certs = (
             await database.learning_certificates.find({"user_id": {"$in": user_ids}}).to_list(length=20000)
@@ -738,11 +837,8 @@ class TalentService:
         learning_completion = round(100 * completed / len(assignments), 1) if assignments else 0.0
 
         # High potential / promotion readiness: employees with a verified
-        # certificate AND at least 5 tracked skills, deterministic proxy
-        # until Performance Management (US-081) supplies a real rating.
-        skills_per_user: dict[str, int] = {}
-        for s in skill_docs:
-            skills_per_user[s["user_id"]] = skills_per_user.get(s["user_id"], 0) + 1
+        # certificate AND at least 5 tracked skills (matrix + resume/onboarding),
+        # deterministic proxy until Performance Management (US-081) supplies a rating.
         verified_by_user: dict[str, int] = {}
         for c in verified_certs:
             verified_by_user[c["user_id"]] = verified_by_user.get(c["user_id"], 0) + 1
@@ -768,14 +864,10 @@ class TalentService:
         dept_stats: dict[str, dict[str, int]] = {}
         for e in employees:
             dept = e.get("department") or "Unassigned"
+            uid = e.get("user_id") or ""
             bucket = dept_stats.setdefault(dept, {"headcount": 0, "skills_tracked": 0})
             bucket["headcount"] += 1
-        for s in skill_docs:
-            owner = next((e for e in employees if e.get("user_id") == s.get("user_id")), None)
-            if owner:
-                dept = owner.get("department") or "Unassigned"
-                dept_stats.setdefault(dept, {"headcount": 0, "skills_tracked": 0})
-                dept_stats[dept]["skills_tracked"] += 1
+            bucket["skills_tracked"] += skills_per_user.get(uid, 0)
 
         return {
             "headcount": len(employees),

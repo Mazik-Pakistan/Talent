@@ -351,7 +351,9 @@ function SearchTab() {
                 <div className={styles.resultName}>{e.full_name}</div>
                 <div className={styles.resultMeta}>{e.job_title} · {e.department}</div>
                 <div className={styles.resultTags}>
-                  {(e.skills || []).slice(0, 6).map((s) => <span key={s} className={styles.resultTag}>{s}</span>)}
+                  {(e.skills || []).slice(0, 6).map((s, i) => (
+                    <span key={`${s}-${i}`} className={styles.resultTag}>{s}</span>
+                  ))}
                 </div>
                 <div className={styles.resultStats}>
                   Learning progress: {e.learning_progress}%

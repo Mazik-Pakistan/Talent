@@ -210,14 +210,18 @@ export default function EmployeeTalentPanel({ employee }) {
             <span className={`${styles.bar} ${styles.cyan}`} />
             <div>
               <div className={styles.sectionTitle}>Skills</div>
-              <p className={styles.sectionDesc}>{skillList.length} tracked skills</p>
+              <p className={styles.sectionDesc}>{skillList.length} skills (resume, onboarding &amp; tracked)</p>
             </div>
           </div>
         </div>
         <div className={styles.sectionBody}>
           {skillList.length === 0 && <p className={styles.emptySub}>No skills recorded yet.</p>}
-          {skillList.slice(0, 16).map((s) => (
-            <div key={s.skill_name || s.name || s.id} className={styles.miniListItem} style={{ display: "flex", justifyContent: "space-between" }}>
+          {skillList.slice(0, 16).map((s, i) => (
+            <div
+              key={s.id || `${s.skill_name || s.name || "skill"}-${i}`}
+              className={styles.miniListItem}
+              style={{ display: "flex", justifyContent: "space-between" }}
+            >
               <span>{s.skill_name || s.name}</span>
               <span>{s.proficiency || s.category || ""}</span>
             </div>
