@@ -2,11 +2,11 @@
 
 import AgentChatWidget from "@/components/ai/Agentchatwidget";
 
-export default function RecruiterAIAssistantPage() {
+export default function EmployeeAIAssistantPage() {
   return (
     <div style={{ padding: "24px" }}>
-      <h1>AI Assistant</h1>
-      <p>Use the AI Assistant to automate hiring tasks and answer HR questions.</p>
+      <h1>Employee AI Assistant</h1>
+      <p>Get help with HR tasks, documents, and onboarding.</p>
 
       <AgentChatWidget />
     </div>
