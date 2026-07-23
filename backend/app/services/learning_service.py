@@ -161,6 +161,7 @@ class LearningService:
             "subjects": item.get("subjects"),
             "icon_url": item.get("icon_url"),
             "last_modified": item.get("last_modified"),
+            "ai_recommended": bool(item.get("_ai_recommended")),
         }
 
     # ------------------------------------------------------------------ #
@@ -233,6 +234,12 @@ class LearningService:
             pages = max(1, (total + page_size - 1) // page_size) if total else 1
             return {"courses": enriched, "total": total, "page": page, "page_size": page_size, "pages": pages}
 
+        if source == "coursera":
+            # Cheap, non-blocking: ensures the cache is warm even if this is
+            # the very first request this process has seen for Coursera
+            # (e.g. a deep link straight into the catalog tab).
+            coursera_service.start_post_login_course_loading()
+
         if source == "recruiter_kb":
             employee = None
             try:
@@ -265,6 +272,20 @@ class LearningService:
             pages = max(1, (total + page_size - 1) // page_size) if total else 1
             return {"courses": courses, "total": total, "page": page, "page_size": page_size, "pages": pages}
 
+        # AI-recommendation-first ordering: for a default browse (no active
+        # search text), surface courses the cached recommendation engine
+        # already identified as top-fit for this employee before everything
+        # else. This reads the existing cached recommendation record only —
+        # it never triggers a new AI call, matching the "only run AI when
+        # something changed" pattern used everywhere else in this module.
+        apply_ranking = source in ("microsoft_learn", "coursera") and not (q and q.strip())
+        fetch_page, fetch_page_size = page, page_size
+        if apply_ranking:
+            # Pull a wider pool once so ranking can reorder across the pages
+            # the employee is likely to see, then paginate locally.
+            fetch_page = 1
+            fetch_page_size = max(page_size * page, 200)
+
         result = await catalog_service.search_catalog(
             source=source,
             q=q,
@@ -273,9 +294,19 @@ class LearningService:
             product=product,
             course_type=course_type,
             category=category,
-            page=page,
-            page_size=page_size,
+            page=fetch_page,
+            page_size=fetch_page_size,
         )
+
+        if apply_ranking:
+            ranked = await self._rank_by_cached_recommendations(current_user, result["courses"])
+            total = result["total"]
+            start = (page - 1) * page_size
+            result["courses"] = ranked[start : start + page_size]
+            result["page"] = page
+            result["page_size"] = page_size
+            result["pages"] = max(1, (total + page_size - 1) // page_size) if total else 1
+
         uids = [c["uid"] for c in result["courses"]]
         status_map = await self._status_map(current_user.id, uids)
         courses = []
@@ -285,6 +316,45 @@ class LearningService:
             courses.append(public)
         result["courses"] = courses
         return result
+
+    async def _rank_by_cached_recommendations(self, current_user: CurrentUser, courses: list[dict]) -> list[dict]:
+        """Reorders catalog results so courses already flagged by the cached
+        AI recommendation record (see get_recommendations()) float to the
+        top, ordered by priority (critical > immediate > medium > low),
+        preserving the original relative order for everything else. Only
+        applies for employees who have a cached recommendation record —
+        recruiters browsing the catalog to assign courses see the normal
+        order. Never calls the AI itself."""
+        if current_user.role not in ("employee", "super_admin"):
+            return courses
+        cached = await database.learning_ai_recommendations.find_one({"user_id": current_user.id})
+        recommendations = (cached or {}).get("recommendations") or []
+        if not recommendations:
+            return courses
+
+        priority_rank = {"critical": 0, "immediate": 1, "medium": 2, "low": 3}
+        rec_rank: dict[str, int] = {}
+        for idx, rec in enumerate(recommendations):
+            uid = rec.get("uid")
+            if uid and uid not in rec_rank:
+                rec_rank[uid] = priority_rank.get(rec.get("priority"), 2) * 1000 + idx
+
+        if not rec_rank:
+            return courses
+
+        def _key(pair: tuple[int, dict]) -> tuple[int, int]:
+            index, item = pair
+            uid = item.get("uid")
+            if uid in rec_rank:
+                return (0, rec_rank[uid])
+            return (1, index)
+
+        indexed = sorted(enumerate(courses), key=_key)
+        ranked = [item for _, item in indexed]
+        for item in ranked:
+            if item.get("uid") in rec_rank:
+                item["_ai_recommended"] = True
+        return ranked
 
     async def get_facets(self, source: str = "microsoft_learn") -> dict:
         return await catalog_service.get_facets(source)

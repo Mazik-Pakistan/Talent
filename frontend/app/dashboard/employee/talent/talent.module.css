@@ -1,0 +1,114 @@
+.tabBar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 18px;
+  overflow-x: auto;
+}
+.tabBtn {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tabBtn:hover { color: var(--navy); }
+.tabBtn.tabActive { color: var(--navy); border-bottom-color: var(--cyan); }
+
+.inlineNote { font-size: 12.5px; color: var(--text-muted); }
+
+/* ── Journey timeline (US-094) ─────────────────────────────────────────── */
+.filterRow { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.filterChip {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.filterChip.filterChipActive { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+.timeline { display: flex; flex-direction: column; }
+.timelineItem { display: flex; gap: 14px; }
+.timelineMarkerWrap { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+.timelineDot { width: 12px; height: 12px; border-radius: 50%; background: var(--cyan); margin-top: 4px; flex-shrink: 0; }
+.timelineDot.joined { background: var(--navy); }
+.timelineDot.promoted, .timelineDot.title_change, .timelineDot.department_change, .timelineDot.manager_change { background: var(--orange); }
+.timelineDot.certification { background: var(--green); }
+.timelineDot.course_completed { background: var(--cyan); }
+.timelineDot.skill_improvement { background: #6A2FB0; }
+.timelineLine { width: 2px; flex: 1; background: var(--border); min-height: 24px; margin: 2px 0; }
+.timelineBody { padding-bottom: 20px; flex: 1; }
+.timelineTitle { font-size: 13px; font-weight: 700; color: var(--navy); }
+.timelineDetail { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.timelineDate { font-size: 10.5px; color: var(--text-faint); margin-top: 4px; text-transform: uppercase; letter-spacing: .3px; }
+
+/* ── Achievements (US-101) ─────────────────────────────────────────────── */
+.achievementGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.achievementCard {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  background: linear-gradient(180deg, #FBFDFE, #F6F9FC);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.achievementIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--cyan-light);
+  color: var(--cyan);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.achievementIcon.certification { background: var(--green-light); color: var(--green); }
+.achievementTitle { font-size: 12.5px; font-weight: 700; color: var(--navy); line-height: 1.35; }
+.achievementMeta { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
+
+/* ── Internal opportunities (US-095) ───────────────────────────────────── */
+.oppGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.oppCard { border: 1px solid var(--border); border-radius: 12px; padding: 16px; background: #FBFDFE; display: flex; flex-direction: column; gap: 8px; }
+.oppType {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: var(--orange-light);
+  color: var(--orange);
+}
+.oppTitle { font-size: 14px; font-weight: 700; color: var(--navy); }
+.oppMeta { font-size: 11.5px; color: var(--text-faint); }
+.oppDesc { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; flex: 1; }
+.oppSkills { display: flex; flex-wrap: wrap; gap: 5px; }
+.oppSkillTag { font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; background: #EEF2F6; color: var(--text-muted); }
+.oppFooter { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+.oppApplied { font-size: 11.5px; font-weight: 700; color: var(--green); }
+
+.smallBtn {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 7px 13px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--navy);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.smallBtn:hover { border-color: var(--cyan); color: var(--cyan); }
+.smallBtn:disabled { opacity: .5; cursor: wait; }
+.smallBtnPrimary { composes: smallBtn; background: var(--navy); color: #fff; border-color: var(--navy); }

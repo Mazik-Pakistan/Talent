@@ -23,6 +23,8 @@ from typing import Any
 import httpx
 from loguru import logger
 
+from app.core.database import database
+
 CATALOG_URL = "https://api.coursera.org/api/courses.v1"
 # Request only the fields we actually use to reduce bandwidth.
 FIELDS = "description,shortDescription,photoUrl,workload,courseType,partnerIds,primaryLanguages"
@@ -249,6 +251,56 @@ _refresh_in_progress = False
 _background_refresh_task: asyncio.Task | None = None
 _warm_cache_task: asyncio.Task | None = None
 
+# ---------------------------------------------------------------------- #
+# Mongo-backed persistence layer.
+#
+# The dict above is per-process and dies on every restart/redeploy, which
+# meant the very first employee to open the Coursera tab after a restart
+# paid for a full paginated catalog fetch (thousands of courses). We now
+# also keep the last good snapshot in Mongo so app startup can hydrate the
+# in-memory cache instantly (see load_persisted_cache(), called from the
+# FastAPI lifespan), and no request ever has to fetch Coursera live unless
+# both the in-memory cache AND the DB snapshot are empty/unreachable.
+# ---------------------------------------------------------------------- #
+_CACHE_DOC_ID = "coursera_catalog"
+
+
+async def _persist_cache_to_db(items: list[dict]) -> None:
+    try:
+        await database.learning_catalog_cache.update_one(
+            {"_id": _CACHE_DOC_ID},
+            {"$set": {"items": items, "updated_at": time.time()}},
+            upsert=True,
+        )
+    except Exception as exc:  # pragma: no cover - persistence is best-effort
+        logger.warning(f"Could not persist Coursera catalog snapshot to Mongo: {exc}")
+
+
+async def load_persisted_cache() -> None:
+    """Hydrate the in-memory cache from the last Mongo snapshot. Called once
+    at app startup so the process never starts "cold" from the user's point
+    of view — worst case they see a slightly stale (but instant) catalog
+    while a background refresh brings it up to date."""
+    global _cache
+    if _cache["items"]:
+        return
+    try:
+        doc = await database.learning_catalog_cache.find_one({"_id": _CACHE_DOC_ID})
+    except Exception as exc:  # pragma: no cover - DB may not be reachable yet
+        logger.warning(f"Could not load persisted Coursera catalog snapshot: {exc}")
+        return
+    if not doc or not doc.get("items"):
+        return
+    async with _cache_lock:
+        _cache["items"] = doc["items"]
+        _cache["by_uid"] = {item["uid"]: item for item in doc["items"]}
+        # Treat the persisted snapshot as already "fetched_at" load time so it
+        # is served immediately, but still counts toward the TTL for a
+        # background refresh rather than being trusted forever.
+        age_seconds = max(0.0, time.time() - (doc.get("updated_at") or 0))
+        _cache["fetched_at"] = time.monotonic() - min(age_seconds, CACHE_TTL_SECONDS)
+    logger.info(f"Coursera catalog hydrated from Mongo snapshot: {len(doc['items'])} courses")
+
 
 async def _get_cached_catalog(force_refresh: bool = False) -> tuple[list[dict], dict[str, dict]]:
     """Return the cached catalog (items and by_uid dict).
@@ -290,6 +342,7 @@ async def _get_cached_catalog(force_refresh: bool = False) -> tuple[list[dict], 
             _cache["by_uid"] = by_uid
             _cache["fetched_at"] = time.monotonic()
         logger.info(f"Coursera catalog refreshed: {len(items)} courses")
+        await _persist_cache_to_db(items)
     except Exception as exc:
         logger.error(f"Failed to refresh Coursera catalog: {exc}")
         if not _cache["items"]:
@@ -309,6 +362,7 @@ async def _refresh_cache_in_background() -> None:
             _cache["by_uid"] = by_uid
             _cache["fetched_at"] = time.monotonic()
         logger.info(f"Coursera catalog refreshed in background: {len(items)} courses")
+        await _persist_cache_to_db(items)
     except Exception as exc:
         logger.error(f"Background Coursera catalog refresh failed, keeping stale cache: {exc}")
     finally:

@@ -84,6 +84,17 @@ async def create_database_indexes() -> None:
 
     await database.learning_career_goals.create_index("user_id", unique=True)
     await database.learning_ai_recommendations.create_index("user_id", unique=True)
+
+    # Talent Management (Epic 8: US-090 - US-104)
+    await database.internal_opportunities.create_index([("status", 1), ("created_at", -1)])
+    await database.internal_opportunities.create_index([("department", 1)])
+    await database.internal_opportunity_applications.create_index(
+        [("opportunity_id", 1), ("employee_id", 1)], unique=True
+    )
+    await database.internal_opportunity_applications.create_index("employee_id")
+    await database.talent_competency_evaluations.create_index([("employee_id", 1), ("evaluated_at", -1)])
+    await database.talent_development_plans.create_index("employee_id", unique=True)
+    await database.learning_catalog_cache.create_index("_id")
     await database.learning_skill_assessments.create_index("user_id", unique=True)
     await database.learning_skill_gaps.create_index([("user_id", 1), ("target_role", 1)], unique=True)
     await database.learning_role_matches.create_index("user_id", unique=True)

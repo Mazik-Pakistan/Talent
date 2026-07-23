@@ -34,6 +34,7 @@ import {
   uploadCertificate,
   upsertSkill,
 } from "@/services/learningService";
+import { getCareerProgression } from "@/services/talentService";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -451,6 +452,25 @@ function CatalogTab({ onEnroll }) {
             />
             Bookmarked only
           </label>
+          {!isSoftSkills && (
+            <button
+              type="button"
+              className={`${styles.filterSelect} ${type === "certification" ? styles.sourceBtnActive : ""}`}
+              style={{ cursor: "pointer", fontWeight: 700 }}
+              onClick={() => { setPage(1); setType(type === "certification" ? "" : "certification"); }}
+            >
+              Certifications only
+            </button>
+          )}
+          {(q || role || level || type || category || bookmarkedOnly) && (
+            <button
+              type="button"
+              className={styles.clearFiltersBtn}
+              onClick={() => { setQ(""); setRole(""); setLevel(""); setType(""); setCategory(""); setBookmarkedOnly(false); setPage(1); }}
+            >
+              Clear filters
+            </button>
+          )}
         </div>
 
         {error && <div className={styles.errorNote}>{error}</div>}
@@ -471,6 +491,12 @@ function CatalogTab({ onEnroll }) {
                   <span className={`${styles.courseType} ${course.type === "certification" ? styles.certification : ""}`}>
                     {course.type === "learningPath" ? "Learning Path" : course.type === "certification" ? "Certification" : course.type === "course" ? "Course" : "Module"}
                   </span>
+                  {course.ai_recommended && (
+                    <span className={styles.recommendedBadge} title="Ranked first because it matches your current skill gap">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l7.1-1z" /></svg>
+                      For you
+                    </span>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -882,6 +908,18 @@ function CareerTab() {
   const [recsLoading, setRecsLoading] = useState(true);
   const [roleMatches, setRoleMatches] = useState([]);
   const [startingStep, setStartingStep] = useState("");
+  const [ladder, setLadder] = useState(null);
+  const [ladderLoading, setLadderLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    setLadderLoading(true);
+    getCareerProgression(token)
+      .then(setLadder)
+      .catch(() => {})
+      .finally(() => setLadderLoading(false));
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -971,6 +1009,78 @@ function CareerTab() {
 
   return (
     <>
+      <div className={dashStyles.section}>
+        <div className={dashStyles.sectionHead}>
+          <div className={dashStyles.sectionHeadLeft}>
+            <span className={`${dashStyles.bar} ${dashStyles.navy}`} />
+            <div>
+              <div className={dashStyles.sectionTitle}>Career progression</div>
+              <p className={dashStyles.sectionDesc}>
+                Your organization&apos;s role ladder, with readiness calculated from your current skills and verified
+                certifications against each rung&apos;s requirements.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className={dashStyles.sectionBody}>
+          {ladderLoading && <p className={styles.inlineNote}>Loading your progression ladder…</p>}
+          {!ladderLoading && (!ladder?.ladder || ladder.ladder.length === 0) && (
+            <div className={dashStyles.emptyState}>
+              <div className={dashStyles.emptyTitle}>No org roles configured yet</div>
+              <div className={dashStyles.emptySub}>
+                Your recruiter hasn&apos;t added roles to the knowledge base yet — set a free-form goal below instead.
+              </div>
+            </div>
+          )}
+          {!ladderLoading && ladder?.ladder?.length > 0 && (
+            <div className={styles.ladderWrap}>
+              {ladder.ladder.map((rung, idx) => (
+                <div key={rung.title}>
+                  {idx > 0 && <div className={styles.ladderConnector} />}
+                  <div
+                    className={`${styles.ladderRung} ${rung.is_current ? styles.ladderCurrent : ""} ${rung.is_next_step ? styles.ladderNext : ""}`}
+                  >
+                    <div className={styles.ladderRungMarker}>{idx + 1}</div>
+                    <div className={styles.ladderRungBody}>
+                      <div className={styles.ladderRungTitle}>
+                        {rung.title}
+                        {rung.is_current && <span className={`${styles.ladderRungTag} ${styles.current}`}>You are here</span>}
+                        {rung.is_next_step && <span className={`${styles.ladderRungTag} ${styles.next}`}>Next step</span>}
+                      </div>
+                      {rung.description && <div className={styles.ladderRungMeta}>{rung.description}</div>}
+                      {(rung.missing_skills?.length > 0 || rung.missing_certifications?.length > 0) && (
+                        <div className={styles.ladderRungGaps}>
+                          {(rung.missing_skills || []).slice(0, 6).map((s) => (
+                            <span key={s} className={styles.missingSkillTag}>{s}</span>
+                          ))}
+                          {(rung.missing_certifications || []).slice(0, 4).map((c) => (
+                            <span key={c} className={styles.missingSkillTag}>{c}</span>
+                          ))}
+                        </div>
+                      )}
+                      {!rung.is_current && (
+                        <button
+                          type="button"
+                          className={styles.smallBtn}
+                          style={{ marginTop: 8 }}
+                          onClick={() => handleSetGoal(rung.title)}
+                        >
+                          Build a learning path toward this
+                        </button>
+                      )}
+                    </div>
+                    <div className={styles.ladderRungProgress}>
+                      <div className={styles.ladderRungPct}>{Math.round(rung.progress_percentage ?? 0)}%</div>
+                      <div className={styles.ladderRungPctLabel}>Ready</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className={dashStyles.section}>
         <div className={dashStyles.sectionHead}>
           <div className={dashStyles.sectionHeadLeft}>

@@ -14,6 +14,7 @@ import {
   scheduleEmployeeOrientation,
 } from "@/services/authService";
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
+import EmployeeTalentPanel from "@/components/recruiter/EmployeeTalentPanel";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1044,6 +1045,7 @@ export default function EmployeeProfilePage({ params }) {
   const TABS = [
     { key: "overview", label: "Overview" },
     { key: "learning", label: "Learning" },
+    { key: "talent", label: "Talent" },
     { key: "documents", label: "Documents" },
     { key: "career", label: "Career" },
     { key: "day1", label: "Day-1" },
@@ -1170,6 +1172,10 @@ export default function EmployeeProfilePage({ params }) {
 
       {activeTab === "learning" && (
         <EmployeeLearningPanel employee={employee} onEmployeeUpdate={setEmployee} />
+      )}
+
+      {activeTab === "talent" && (
+        <EmployeeTalentPanel employee={employee} />
       )}
 
       {activeTab === "career" && (

@@ -80,6 +80,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    key: "talent",
+    label: "Talent",
+    href: "/dashboard/recruiter/talent",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 2l2.9 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l7.1-1z" />
+      </svg>
+    ),
+  },
+  {
     key: "announcements",
     label: "Announcements",
     href: "/dashboard/recruiter/announcements",

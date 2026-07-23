@@ -12,6 +12,7 @@ from app.api.learning import router as learning_router
 from app.api.offers import router as offers_router
 from app.api.onboarding import router as onboarding_router
 from app.api.rbac import router as rbac_router
+from app.api.talent import router as talent_router
 from app.core.config import settings
 from app.core.database import create_database_indexes, mongo_client
 from app.core.rbac_seed import seed_rbac_collections
@@ -24,6 +25,12 @@ async def lifespan(_: FastAPI):
     await create_database_indexes()
     await seed_rbac_collections()
     await seed_org_taxonomy()
+
+    # Hydrate the Coursera catalog cache from its last Mongo snapshot so the
+    # process never starts "cold" — the first employee to open the Coursera
+    # tab gets an instant response instead of waiting on a full live fetch.
+    await coursera_service.load_persisted_cache()
+    coursera_service.start_background_refresh()
 
     yield
 
@@ -50,3 +57,4 @@ app.include_router(employees_router)
 app.include_router(offers_router)
 app.include_router(documents_router)
 app.include_router(learning_router)
+app.include_router(talent_router)
