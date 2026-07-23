@@ -1,18 +1,25 @@
-"""Domain-aware search keyword mapping (taxonomy) and relevance ranking service.
+"""Domain-aware search keyword mapping (taxonomy), AI query intent expansion, and relevance ranking service.
 
-Provides lightweight, in-memory taxonomy resolution and 4-tier relevance ranking:
+Provides lightweight, in-memory taxonomy resolution, OpenRouter AI hybrid search expansion,
+local in-process caching, and 4-tier relevance ranking:
   Tier 1: Exact matches (exact title match or exact word match in title/metadata)
   Tier 2: Direct keyword matches (query substring match in title/summary/roles/products)
-  Tier 3: Related technology keywords (domain taxonomy mapped keywords)
+  Tier 3: Expanded technology keywords (AI + domain taxonomy keywords)
   Tier 4: Same domain / category matches
 
-Preserves high performance (< 5ms) without external DB/AI calls.
+Preserves high performance and minimal token consumption (< 60 max_tokens, cached per query).
 """
 
 from __future__ import annotations
 
 import re
 from typing import Any
+
+from loguru import logger
+from app.services.llm_service import call_llm_json, llm_configured
+
+# In-process cache for AI expanded keywords: query_normalized -> list[str]
+_AI_KEYWORD_CACHE: dict[str, list[str]] = {}
 
 # Domain taxonomy dictionary mapping search triggers (normalized) to related technology keywords
 SEARCH_TAXONOMY: dict[str, list[str]] = {
@@ -54,13 +61,23 @@ SEARCH_TAXONOMY: dict[str, list[str]] = {
         "SQLite", "Oracle Database", "NoSQL", "Database Design"
     ],
 
-    # Artificial Intelligence
+    # Artificial Intelligence / Machine Learning
     "ai": [
         "Machine Learning", "ML", "Deep Learning", "Data Science", "Generative AI",
         "Agentic AI", "LLM", "NLP", "Computer Vision", "Prompt Engineering",
         "TensorFlow", "PyTorch", "Reinforcement Learning"
     ],
     "artificial intelligence": [
+        "Machine Learning", "ML", "Deep Learning", "Data Science", "Generative AI",
+        "Agentic AI", "LLM", "NLP", "Computer Vision", "Prompt Engineering",
+        "TensorFlow", "PyTorch", "Reinforcement Learning"
+    ],
+    "ml": [
+        "Machine Learning", "ML", "Deep Learning", "Data Science", "Generative AI",
+        "Agentic AI", "LLM", "NLP", "Computer Vision", "Prompt Engineering",
+        "TensorFlow", "PyTorch", "Reinforcement Learning"
+    ],
+    "machine learning": [
         "Machine Learning", "ML", "Deep Learning", "Data Science", "Generative AI",
         "Agentic AI", "LLM", "NLP", "Computer Vision", "Prompt Engineering",
         "TensorFlow", "PyTorch", "Reinforcement Learning"
@@ -108,7 +125,7 @@ def _normalize_key(term: str) -> str:
 
 
 def get_related_keywords(query: str) -> list[str]:
-    """Retrieve related domain technology keywords for a given search query."""
+    """Retrieve related domain technology keywords for a given search query from static taxonomy."""
     key = _normalize_key(query)
     if key in SEARCH_TAXONOMY:
         return SEARCH_TAXONOMY[key]
@@ -121,17 +138,77 @@ def get_related_keywords(query: str) -> list[str]:
     if key_alt2 in SEARCH_TAXONOMY:
         return SEARCH_TAXONOMY[key_alt2]
 
+    # Handle multi-word / compound queries (e.g. "ML Frontend")
+    words = [w for w in re.split(r"[\s\-_]+", key) if w]
+    if len(words) > 1:
+        word_kw_lists = [get_related_keywords(w) for w in words]
+        word_kw_lists = [l for l in word_kw_lists if l]
+        if word_kw_lists:
+            merged: list[str] = []
+            max_len = max(len(l) for l in word_kw_lists)
+            for idx in range(max_len):
+                for kw_list in word_kw_lists:
+                    if idx < len(kw_list):
+                        k = kw_list[idx]
+                        if k not in merged:
+                            merged.append(k)
+            return merged
+
     return []
 
 
-def search_and_rank_items(items: list[dict[str, Any]], query: str | None) -> list[dict[str, Any]]:
-    """Filter and rank a list of course items according to query and domain taxonomy rules."""
+async def expand_query_keywords_async(query: str) -> list[str]:
+    """Retrieve expanded search keywords using local cache, static taxonomy, or OpenRouter AI query intent expansion."""
+    if not query or not query.strip():
+        return []
+
+    q_clean = query.strip()
+    q_lower = _normalize_key(q_clean)
+
+    # 1. Check local cache (Token optimization: hit cache first)
+    if q_lower in _AI_KEYWORD_CACHE:
+        return _AI_KEYWORD_CACHE[q_lower]
+
+    # 2. Get static taxonomy keywords
+    static_keywords = get_related_keywords(q_clean)
+
+    # 3. Call AI if configured for hybrid intent understanding
+    if llm_configured():
+        try:
+            prompt = (
+                f"User search query: '{q_clean}'\n"
+                "Understand search intent. Return ONLY a valid JSON object with key 'keywords': a list of 5 to 8 most relevant technical skills, framework, language, or domain search terms.\n"
+                'Example: {"keywords": ["React", "Next.js", "HTML", "CSS", "JavaScript"]}'
+            )
+            data = await call_llm_json(prompt, max_tokens=150, temperature=0.1, timeout=5.0)
+            if data and isinstance(data.get("keywords"), list):
+                ai_keywords = [str(k).strip() for k in data["keywords"] if k and str(k).strip()]
+                if ai_keywords:
+                    # Combine static and AI keywords without duplicates while preserving order
+                    combined = list(dict.fromkeys(static_keywords + ai_keywords))[:12]
+                    _AI_KEYWORD_CACHE[q_lower] = combined
+                    return combined
+        except Exception as exc:
+            logger.warning(f"AI keyword expansion failed for query '{q_clean}': {exc}")
+
+    # Fallback to static taxonomy
+    _AI_KEYWORD_CACHE[q_lower] = static_keywords
+    return static_keywords
+
+
+def search_and_rank_items(
+    items: list[dict[str, Any]],
+    query: str | None,
+    *,
+    expanded_keywords: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Filter and rank a list of course items according to query and domain taxonomy / expanded keyword rules."""
     if not query or not query.strip():
         return items
 
     q_clean = query.strip()
     q_lower = q_clean.lower()
-    related_kws = get_related_keywords(q_clean)
+    related_kws = expanded_keywords if expanded_keywords is not None else get_related_keywords(q_clean)
 
     is_short_q = len(q_lower) <= 3
     q_pattern = re.compile(rf"\b{re.escape(q_lower)}\b", re.IGNORECASE)
@@ -196,7 +273,7 @@ def search_and_rank_items(items: list[dict[str, Any]], query: str | None) -> lis
         elif not is_short_q and q_lower in combined_lower:
             rank = (2, 1, -popularity, title_lower)
 
-        # Tier 3: Related technology keywords
+        # Tier 3: Related / AI Expanded technology keywords
         else:
             best_rel: tuple[int, int] | None = None
             for kw_clean, kw_lower, is_short_kw, kw_pattern in rel_compiled:
@@ -224,3 +301,16 @@ def search_and_rank_items(items: list[dict[str, Any]], query: str | None) -> lis
 
     scored_items.sort(key=lambda pair: pair[0])
     return [item for _, item in scored_items]
+
+
+async def search_and_rank_items_async(
+    items: list[dict[str, Any]],
+    query: str | None,
+) -> list[dict[str, Any]]:
+    """Async wrapper that resolves AI/taxonomy expanded keywords and ranks items."""
+    if not query or not query.strip():
+        return items
+
+    q_clean = query.strip()
+    expanded_kws = await expand_query_keywords_async(q_clean)
+    return search_and_rank_items(items, q_clean, expanded_keywords=expanded_kws)

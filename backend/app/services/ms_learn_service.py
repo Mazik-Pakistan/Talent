@@ -114,7 +114,7 @@ async def refresh_catalog() -> dict[str, int]:
     return counts
 
 
-from app.services.search_taxonomy import search_and_rank_items
+from app.services.search_taxonomy import search_and_rank_items_async
 
 
 def _matches_query(item: dict, q: str) -> bool:
@@ -145,7 +145,7 @@ async def search_catalog(
 
     filtered = catalog
     if q and q.strip():
-        filtered = search_and_rank_items(filtered, q.strip())
+        filtered = await search_and_rank_items_async(filtered, q.strip())
 
     if role and role.strip():
         role_lower = role.strip().lower()
@@ -216,7 +216,7 @@ async def find_courses_for_keywords(keywords: list[str], *, per_keyword: int = 6
     for keyword in keywords:
         if not keyword or not keyword.strip():
             continue
-        matches = search_and_rank_items(catalog, keyword.strip())
+        matches = await search_and_rank_items_async(catalog, keyword.strip())
         for item in matches[:per_keyword]:
             seen[item["uid"]] = item
         if len(seen) >= limit:

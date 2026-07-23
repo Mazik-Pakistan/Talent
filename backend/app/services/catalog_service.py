@@ -62,9 +62,9 @@ async def search_catalog(
     if source == "recruiter_kb":
         courses = await recruiter_kb_service.list_as_catalog_courses()
         if q:
-            from app.services.search_taxonomy import search_and_rank_items
+            from app.services.search_taxonomy import search_and_rank_items_async
 
-            courses = search_and_rank_items(courses, q)
+            courses = await search_and_rank_items_async(courses, q)
         if course_type:
             courses = [c for c in courses if c.get("type") == course_type]
         total = len(courses)

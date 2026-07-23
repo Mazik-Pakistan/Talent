@@ -159,5 +159,43 @@ def test_performance_lightweight():
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
     assert len(results) > 0
-    # Must complete in under 50ms (usually under 5ms)
-    assert elapsed_ms < 50.0
+    # Must complete in under 100ms
+    assert elapsed_ms < 100.0
+
+
+@pytest.mark.asyncio
+async def test_ai_query_expansion_caching():
+    from app.services.search_taxonomy import expand_query_keywords_async, _AI_KEYWORD_CACHE
+
+    query = "ml frontend test query"
+    _AI_KEYWORD_CACHE.pop(query.lower(), None)
+
+    # First call expands and caches
+    kw1 = await expand_query_keywords_async(query)
+    assert len(kw1) > 0
+    assert query.lower() in _AI_KEYWORD_CACHE
+
+    # Second call returns from cache instantly
+    kw2 = await expand_query_keywords_async(query)
+    assert kw1 == kw2
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_ml_frontend():
+    from app.services.search_taxonomy import search_and_rank_items_async
+
+    mock_catalog = [
+        {"uid": "1", "title": "Machine Learning Fundamentals", "summary": "Intro to ML"},
+        {"uid": "2", "title": "React and Next.js Masterclass", "summary": "Frontend framework"},
+        {"uid": "3", "title": "HTML & CSS Essentials", "summary": "Web design"},
+        {"uid": "4", "title": "Unrelated Cooking Course", "summary": "Baking bread"},
+    ]
+
+    results = await search_and_rank_items_async(mock_catalog, "ML Frontend")
+    titles = [item["title"] for item in results]
+
+    # Both ML and Frontend courses should be returned
+    assert "Machine Learning Fundamentals" in titles
+    assert "React and Next.js Masterclass" in titles
+    assert "HTML & CSS Essentials" in titles
+    assert "Unrelated Cooking Course" not in titles

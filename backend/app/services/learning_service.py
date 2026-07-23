@@ -219,9 +219,9 @@ class LearningService:
                     continue
                 courses.append(public)
             if q and q.strip():
-                from app.services.search_taxonomy import search_and_rank_items
+                from app.services.search_taxonomy import search_and_rank_items_async
 
-                courses = search_and_rank_items(courses, q.strip())
+                courses = await search_and_rank_items_async(courses, q.strip())
             total = len(courses)
             start = (page - 1) * page_size
             page_items = courses[start : start + page_size]
@@ -255,9 +255,9 @@ class LearningService:
                 recruiter_id = self._employee_recruiter_id(employee)
             kb_courses = await recruiter_kb_service.list_as_catalog_courses(recruiter_id)
             if q and q.strip():
-                from app.services.search_taxonomy import search_and_rank_items
+                from app.services.search_taxonomy import search_and_rank_items_async
 
-                kb_courses = search_and_rank_items(kb_courses, q.strip())
+                kb_courses = await search_and_rank_items_async(kb_courses, q.strip())
             if course_type:
                 kb_courses = [c for c in kb_courses if c.get("type") == course_type]
             total = len(kb_courses)

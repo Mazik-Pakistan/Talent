@@ -33,10 +33,16 @@ def _openrouter_headers() -> dict[str, str]:
     }
 
 
-async def call_llm_json(prompt: str, *, timeout: float = 60.0) -> dict | None:
+async def call_llm_json(
+    prompt: str,
+    *,
+    timeout: float = 60.0,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+) -> dict | None:
     """Send a prompt and parse a JSON object response. Returns None on failure."""
     if (settings.OPENROUTER_API_KEY or "").strip():
-        result = await _call_openrouter_json(prompt, timeout=timeout)
+        result = await _call_openrouter_json(prompt, timeout=timeout, max_tokens=max_tokens, temperature=temperature)
         if result is not None:
             return result
         logger.warning("OpenRouter failed; trying Gemini fallback if configured.")
@@ -47,8 +53,16 @@ async def call_llm_json(prompt: str, *, timeout: float = 60.0) -> dict | None:
     return None
 
 
-async def _call_openrouter_json(prompt: str, *, timeout: float) -> dict | None:
+async def _call_openrouter_json(
+    prompt: str,
+    *,
+    timeout: float,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+) -> dict | None:
     model = (settings.OPENROUTER_MODEL or "google/gemini-2.5-flash").strip()
+    actual_tokens = max_tokens if max_tokens is not None else int(getattr(settings, "OPENROUTER_MAX_TOKENS", 4096) or 4096)
+    actual_temp = temperature if temperature is not None else 0.2
     payload: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -58,8 +72,8 @@ async def _call_openrouter_json(prompt: str, *, timeout: float) -> dict | None:
             },
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.2,
-        "max_tokens": int(getattr(settings, "OPENROUTER_MAX_TOKENS", 4096) or 4096),
+        "temperature": actual_temp,
+        "max_tokens": actual_tokens,
         "response_format": {"type": "json_object"},
     }
     try:

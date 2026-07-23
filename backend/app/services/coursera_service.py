@@ -490,7 +490,7 @@ def _score_course(item: dict, q: str) -> float:
     return ratio
 
 
-from app.services.search_taxonomy import search_and_rank_items
+from app.services.search_taxonomy import search_and_rank_items_async
 
 
 async def search_catalog(
@@ -509,7 +509,7 @@ async def search_catalog(
 
     # Apply search query (if any) using domain-aware taxonomy search and 4-tier relevance ranking
     if q and q.strip():
-        items = search_and_rank_items(items, q.strip())
+        items = await search_and_rank_items_async(items, q.strip())
     else:
         # If no query, sort by title
         items = sorted(items, key=lambda c: c.get("title") or "")
