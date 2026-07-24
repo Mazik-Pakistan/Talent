@@ -10,12 +10,9 @@ already do by hand.
 from __future__ import annotations
 
 import io
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from app.core.database import database
-from app.core.rbac import CurrentUser
 from app.core.security import RequireUser
 from app.schemas.agent import AgentChatRequest, AgentResetRequest
 from app.services import agent_tools
@@ -62,11 +59,11 @@ async def reset_session(request: AgentResetRequest, current_user: RequireUser):
 
 @router.post("/recruiter/bulk-invite")
 async def bulk_invite_from_spreadsheet(
-    current_user: Annotated[CurrentUser, Depends(RequireUser)],
+    current_user: RequireUser,
     file: UploadFile = File(...),
-    session_id: str | None = None,
+    session_id: str | None = Query(None),
 ):
-    """Parse an uploaded .xlsx roster and send an invitation to every row.
+    """Parse an uploaded .xlsx / .csv roster and send an invitation to every row.
 
     Expected columns (case-insensitive header row): email, full_name / name,
     job_title / title, department, office_location (optional), start_date
@@ -75,21 +72,39 @@ async def bulk_invite_from_spreadsheet(
     if current_user.role not in ("recruiter", "super_admin"):
         raise HTTPException(status_code=403, detail="Only recruiters can bulk-invite candidates.")
 
+    resolved_session = session_id
+
     filename = (file.filename or "").lower()
-    if not (filename.endswith(".xlsx") or filename.endswith(".xlsm")):
-        raise HTTPException(status_code=400, detail="Please upload a .xlsx spreadsheet.")
+    is_csv = filename.endswith(".csv")
+    is_xlsx = filename.endswith(".xlsx") or filename.endswith(".xlsm")
+    if not (is_csv or is_xlsx):
+        raise HTTPException(status_code=400, detail="Please upload a .xlsx or .csv spreadsheet.")
 
     raw = await file.read()
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File is too large (5MB limit).")
 
     try:
-        from openpyxl import load_workbook
+        if is_csv:
+            import csv
 
-        workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-        sheet = workbook.active
-        rows_iter = sheet.iter_rows(values_only=True)
-        header = [str(h).strip().lower() if h else "" for h in next(rows_iter, [])]
+            text = raw.decode("utf-8-sig", errors="replace")
+            reader = csv.reader(io.StringIO(text))
+            rows = list(reader)
+            if not rows:
+                raise HTTPException(status_code=400, detail="The CSV file is empty.")
+            header = [str(h).strip().lower() if h else "" for h in rows[0]]
+            data_rows = rows[1:]
+        else:
+            from openpyxl import load_workbook
+
+            workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+            sheet = workbook.active
+            rows_iter = sheet.iter_rows(values_only=True)
+            header = [str(h).strip().lower() if h else "" for h in next(rows_iter, [])]
+            data_rows = list(rows_iter)
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"Could not read the spreadsheet: {exc}") from exc
 
@@ -113,7 +128,7 @@ async def bulk_invite_from_spreadsheet(
         )
 
     candidates = []
-    for row in rows_iter:
+    for row in data_rows:
         if not row or idx_email >= len(row) or not row[idx_email]:
             continue
         candidates.append(
@@ -141,7 +156,7 @@ async def bulk_invite_from_spreadsheet(
         summary += " Failures: " + "; ".join(f"{f['email']}: {f['error']}" for f in failed[:5])
 
     # Fold this into the chat transcript so it's visible in the widget.
-    convo = await _load_or_create_session(current_user, session_id)
+    convo = await _load_or_create_session(current_user, resolved_session)
     await _save_messages(
         convo["session_id"],
         current_user.id,

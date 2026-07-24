@@ -112,7 +112,7 @@ function ProfileCompletionSection({ employee, employeeId, onEmployeeUpdate }) {
             <div className={styles.sectionDesc}>
               {incomplete
                 ? `${completedCount} of ${tasks.length || 5} steps done${
-                    missingLabels[0] ? ` Â· next: ${missingLabels[0]}` : ""
+                    missingLabels[0] ? ` | next: ${missingLabels[0]}` : ""
                   }`
                 : "All post-hire steps completed."}
             </div>
@@ -154,7 +154,7 @@ function ProfileCompletionSection({ employee, employeeId, onEmployeeUpdate }) {
         {incomplete && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
             <button type="button" className={styles.primaryButton} disabled={sending} onClick={handleRemind}>
-              {sending ? "Sendingâ€¦" : "Send reminder"}
+              {sending ? "Sending..." : "Send reminder"}
             </button>
             <button
               type="button"
@@ -425,7 +425,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
                 </p>
               )}
               <button type="submit" className={styles.primaryButton} disabled={emailSaving}>
-                {emailSaving ? "Savingâ€¦" : "Save company email"}
+                {emailSaving ? "Saving..." : "Save company email"}
               </button>
             </form>
           </div>
@@ -492,7 +492,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
                         </div>
                         <div className={styles.mutedText}>
                           {asset.serial_number ? `Serial: ${asset.serial_number}` : "No serial on file"}
-                          {assignedDate ? ` Â· Assigned ${assignedDate}` : ""}
+                          {assignedDate ? ` | Assigned ${assignedDate}` : ""}
                         </div>
                       </div>
                       <button
@@ -502,7 +502,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
                         disabled={removingAssetId === asset.id}
                         onClick={() => handleRemoveAsset(asset.id)}
                       >
-                        {removingAssetId === asset.id ? "Removingâ€¦" : "Remove"}
+                        {removingAssetId === asset.id ? "Removing..." : "Remove"}
                       </button>
                     </li>
                   );
@@ -555,7 +555,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
                 </p>
               )}
               <button type="submit" className={styles.primaryButton} disabled={assetSaving}>
-                {assetSaving ? "Assigningâ€¦" : "Assign asset"}
+                {assetSaving ? "Assigning..." : "Assign asset"}
               </button>
             </form>
           </div>
@@ -615,7 +615,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
                   Scheduled session
                 </p>
                 <p className={styles.instruction} style={{ margin: 0, lineHeight: 1.6 }}>
-                  <strong>Date:</strong> {orientation.date} Â· <strong>Time:</strong> {orientation.time}
+                  <strong>Date:</strong> {orientation.date} | <strong>Time:</strong> {orientation.time}
                   <br />
                   <strong>Trainer:</strong> {orientation.trainer}
                   {orientation.meeting_link && (
@@ -693,7 +693,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
               )}
               <button type="submit" className={styles.primaryButton} disabled={orientationSaving}>
                 {orientationSaving
-                  ? "Savingâ€¦"
+                  ? "Saving..."
                   : orientation
                   ? "Update orientation"
                   : "Schedule orientation"}
@@ -746,7 +746,7 @@ export default function EmployeeProfilePage({ params }) {
       <RecruiterShell activeKey="employees" title="Employee Profile" subtitle="Loading profile details...">
         <div className={styles.section}>
           <div className={styles.sectionBody}>
-            <p className={styles.emptySub}>Loadingâ€¦</p>
+            <p className={styles.emptySub}>Loading...</p>
           </div>
         </div>
       </RecruiterShell>
@@ -807,7 +807,7 @@ export default function EmployeeProfilePage({ params }) {
           <div>
             <h2 className={styles.profileName}>{employee.full_name}</h2>
             <p className={styles.mutedText} style={{ margin: 0 }}>
-              {employee.job_title || "No designation"} Â· {employee.department || "No department"}
+              {employee.job_title || "No designation"} | {employee.department || "No department"}
             </p>
             <div className={styles.chipRow}>
               {employee.employee_id && <span className={styles.chip}>{employee.employee_id}</span>}
@@ -826,7 +826,7 @@ export default function EmployeeProfilePage({ params }) {
                 >
                   {employee.profile_status === "incomplete" ? "Profile incomplete" : "Profile complete"}
                   {employee.profile_progress?.percentage != null
-                    ? ` Â· ${employee.profile_progress.percentage}%`
+                    ? ` | ${employee.profile_progress.percentage}%`
                     : ""}
                 </span>
               )}
@@ -871,48 +871,48 @@ export default function EmployeeProfilePage({ params }) {
             <dl className={styles.employeeFactGrid}>
               <div className={styles.employeeFact}>
                 <dt>Full name</dt>
-                <dd>{employee.full_name || "â€”"}</dd>
+                <dd>{employee.full_name || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Employee ID</dt>
-                <dd>{employee.employee_id || "â€”"}</dd>
+                <dd>{employee.employee_id || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Email</dt>
-                <dd>{employee.email || "â€”"}</dd>
+                <dd>{employee.email || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Company email</dt>
-                <dd>{employee.company_email || "â€”"}</dd>
+                <dd>{employee.company_email || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Phone</dt>
-                <dd>{employee.phone || "â€”"}</dd>
+                <dd>{employee.phone || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Job title</dt>
-                <dd>{employee.job_title || "â€”"}</dd>
+                <dd>{employee.job_title || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Department</dt>
-                <dd>{employee.department || "â€”"}</dd>
+                <dd>{employee.department || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Reporting manager</dt>
-                <dd>{employee.reporting_manager || "â€”"}</dd>
+                <dd>{employee.reporting_manager || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Office location</dt>
-                <dd>{employee.office_location || "â€”"}</dd>
+                <dd>{employee.office_location || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Start date</dt>
-                <dd>{fmtDate(employee.start_date) || "â€”"}</dd>
+                <dd>{fmtDate(employee.start_date) || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Profile status</dt>
                 <dd style={{ textTransform: "capitalize" }}>
-                  {employee.profile_status || "â€”"}
+                  {employee.profile_status || "-"}
                   {employee.profile_progress?.percentage != null
                     ? ` (${employee.profile_progress.percentage}%)`
                     : ""}
@@ -964,10 +964,10 @@ export default function EmployeeProfilePage({ params }) {
                       </strong>
                       <div className={styles.sectionDesc}>
                         {fmtDate(event.effective_date) || "No date"}
-                        {event.to_title ? ` Â· ${event.to_title}` : ""}
-                        {event.to_department ? ` Â· ${event.to_department}` : ""}
-                        {event.to_manager ? ` Â· Manager: ${event.to_manager}` : ""}
-                        {event.note ? ` â€” ${event.note}` : ""}
+                        {event.to_title ? ` | ${event.to_title}` : ""}
+                        {event.to_department ? ` | ${event.to_department}` : ""}
+                        {event.to_manager ? ` | Manager: ${event.to_manager}` : ""}
+                        {event.note ? ` - ${event.note}` : ""}
                       </div>
                     </div>
                   </li>

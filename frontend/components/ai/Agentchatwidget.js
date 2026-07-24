@@ -17,22 +17,26 @@ const ALLOWED_ROLES = ["candidate", "employee", "recruiter", "super_admin"];
 const ROLE_COPY = {
   recruiter: {
     title: "Hiring Agent",
-    subtitle: "Invitations, offers & joining letters",
-    empty: "Ask me to invite a candidate, check on someone's status, send an offer, or email a joining letter.",
+    subtitle: "Anything you do in recruiting — for one person or in bulk",
+    empty:
+      "Tell me what you need — a person, a bulk action, or a goal. I can help across invites, pipeline, offers, documents, Day-1, reminders, search, and announcements.",
     starters: [
+      "What can you help me with?",
+      "Show my hiring pipeline",
+      "Remind incomplete employee profiles",
       "Invite a new candidate",
-      "Show my candidates and their status",
-      "Send a joining letter",
     ],
   },
   super_admin: {
     title: "Hiring Agent",
-    subtitle: "Invitations, offers & joining letters",
-    empty: "Ask me to invite a candidate, check on someone's status, send an offer, or email a joining letter.",
+    subtitle: "Anything you do in recruiting — for one person or in bulk",
+    empty:
+      "Tell me what you need — a person, a bulk action, or a goal. I can help across invites, pipeline, offers, documents, Day-1, reminders, search, and announcements.",
     starters: [
+      "What can you help me with?",
+      "Show my hiring pipeline",
+      "Remind incomplete employee profiles",
       "Invite a new candidate",
-      "Show my candidates and their status",
-      "Send a joining letter",
     ],
   },
   candidate: {
@@ -121,10 +125,12 @@ function readAuth() {
   }
 }
 
-export default function AgentChatWidget() {
+export default function AgentChatWidget({ variant = "floating" }) {
   const pathname = usePathname();
+  const isPage = variant === "page";
+  const onAssistantRoute = Boolean(pathname?.includes("/ai-assistant"));
   const [auth, setAuth] = useState(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(isPage);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -144,6 +150,10 @@ export default function AgentChatWidget() {
   useEffect(() => {
     setAuth(onDashboard ? readAuth() : null);
   }, [pathname, onDashboard]);
+
+  useEffect(() => {
+    if (isPage) setOpen(true);
+  }, [isPage]);
 
   const copy = auth ? ROLE_COPY[auth.user.role] || ROLE_COPY.employee : null;
   const isRecruiter = auth?.user?.role === "recruiter" || auth?.user?.role === "super_admin";
@@ -226,11 +236,32 @@ export default function AgentChatWidget() {
     docInputRef.current?.click();
   }
 
+  function openSheetPicker() {
+    sheetInputRef.current?.click();
+  }
+
+  function isSpreadsheetHint(hint) {
+    if (!hint) return false;
+    const type = String(hint.type || "").toLowerCase();
+    const docType = String(hint.doc_type || "").toLowerCase();
+    if (type === "spreadsheet" || type === "sheet" || type === "excel" || type === "csv") return true;
+    return (
+      type === "upload" &&
+      ["spreadsheet", "excel", "xlsx", "csv", "roster", "bulk_invite"].includes(docType)
+    );
+  }
+
   async function handleDocFileChosen(e) {
     const file = e.target.files?.[0];
     const hint = pendingUploadHint.current;
     e.target.value = "";
     if (!file || !hint || !auth) return;
+
+    // Recruiters must use the bulk-invite endpoint, never /api/documents/upload.
+    if (isRecruiter || isSpreadsheetHint(hint)) {
+      await handleSheetFileChosen(file);
+      return;
+    }
 
     const key = `${hint.doc_type}-${Date.now()}`;
     setUploadingKey(key);
@@ -254,8 +285,8 @@ export default function AgentChatWidget() {
   }
 
   async function handleSheetFileChosen(e) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
+    const file = e?.target?.files?.[0] || e?.files?.[0] || (e instanceof File ? e : null);
+    if (e?.target) e.target.value = "";
     if (!file || !auth) return;
 
     setSending(true);
@@ -282,25 +313,35 @@ export default function AgentChatWidget() {
     if (storageKey && typeof window !== "undefined") sessionStorage.removeItem(storageKey);
   }
 
+  // Floating launcher is hidden on dedicated AI Assistant routes (page owns the chat).
   if (!onDashboard || !auth) return null;
+  if (!isPage && onAssistantRoute) return null;
+
+  const showPanel = isPage || open;
 
   return (
-    <>
-      <button
-        type="button"
-        className={styles.launcher}
-        onClick={() => {
-          setOpen((v) => !v);
-          setHasUnread(false);
-        }}
-        aria-label={open ? "Close AI agent" : "Open AI agent"}
-      >
-        {open ? <IconClose /> : <IconChat />}
-        {!open && hasUnread ? <span className={styles.launcherBadge}>1</span> : null}
-      </button>
+    <div className={isPage ? styles.pageRoot : undefined}>
+      {!isPage ? (
+        <button
+          type="button"
+          className={styles.launcher}
+          onClick={() => {
+            setOpen((v) => !v);
+            setHasUnread(false);
+          }}
+          aria-label={open ? "Close AI agent" : "Open AI agent"}
+        >
+          {open ? <IconClose /> : <IconChat />}
+          {!open && hasUnread ? <span className={styles.launcherBadge}>1</span> : null}
+        </button>
+      ) : null}
 
-      {open ? (
-        <div className={styles.panel} role="dialog" aria-label={copy?.title}>
+      {showPanel ? (
+        <div
+          className={`${styles.panel} ${isPage ? styles.pagePanel : ""}`}
+          role={isPage ? "region" : "dialog"}
+          aria-label={copy?.title}
+        >
           <div className={styles.header}>
             <div className={styles.headerIcon}>
               <IconChat />
@@ -313,9 +354,11 @@ export default function AgentChatWidget() {
               <button type="button" className={styles.iconButton} onClick={handleReset} aria-label="Start a new conversation" title="New conversation">
                 <IconRefresh />
               </button>
-              <button type="button" className={styles.iconButton} onClick={() => setOpen(false)} aria-label="Close">
-                <IconClose />
-              </button>
+              {!isPage ? (
+                <button type="button" className={styles.iconButton} onClick={() => setOpen(false)} aria-label="Close">
+                  <IconClose />
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -340,7 +383,19 @@ export default function AgentChatWidget() {
                   <div key={m.created_at ? `${m.created_at}-${idx}` : idx} className={`${styles.row} ${isUser ? styles.rowUser : styles.rowAgent}`}>
                     <div className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAgent}`}>
                       {m.content}
-                      {!isUser && uiHint?.type === "upload" ? (
+                      {!isUser && isSpreadsheetHint(uiHint) ? (
+                        <div className={styles.uploadHint}>
+                          <button
+                            type="button"
+                            className={styles.uploadButton}
+                            disabled={sending}
+                            onClick={openSheetPicker}
+                          >
+                            {sending ? "Uploading…" : "Upload Excel / CSV"}
+                          </button>
+                        </div>
+                      ) : null}
+                      {!isUser && uiHint?.type === "upload" && !isSpreadsheetHint(uiHint) && !isRecruiter ? (
                         <div className={styles.uploadHint}>
                           <button
                             type="button"
@@ -391,17 +446,17 @@ export default function AgentChatWidget() {
                 <button
                   type="button"
                   className={styles.attachButton}
-                  title="Attach a candidate spreadsheet (.xlsx)"
+                  title="Attach a candidate spreadsheet (.xlsx or .csv)"
                   aria-label="Attach spreadsheet"
                   disabled={sending}
-                  onClick={() => sheetInputRef.current?.click()}
+                  onClick={openSheetPicker}
                 >
                   <IconPaperclip />
                 </button>
                 <input
                   ref={sheetInputRef}
                   type="file"
-                  accept=".xlsx,.xlsm"
+                  accept=".xlsx,.xlsm,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
                   className={styles.visuallyHidden}
                   onChange={handleSheetFileChosen}
                 />
@@ -429,6 +484,6 @@ export default function AgentChatWidget() {
           <input ref={docInputRef} type="file" accept=".jpg,.jpeg,.png,.pdf" className={styles.visuallyHidden} onChange={handleDocFileChosen} />
         </div>
       ) : null}
-    </>
+    </div>
   );
 }

@@ -27,34 +27,80 @@ from app.core.rbac import CurrentUser
 from app.services import agent_tools
 from app.services.llm_service import call_llm_json, llm_configured
 
-MAX_TOOL_STEPS = 4
-HISTORY_TURNS = 8
+MAX_TOOL_STEPS = 5
+HISTORY_TURNS = 6
 
-RECRUITER_SYSTEM_PROMPT = """You are the TalentAI Hiring & Onboarding Agent, helping a recruiter automate \
-candidate invitations, offer letters, and joining-letter emails. You are precise, proactive, and never \
-invent data you were not given or that a tool did not return.
+RECRUITER_SYSTEM_PROMPT = """You are the TalentAI Hiring Agent for recruiters. You can run almost any \
+recruiting or post-hire action the recruiter dashboard supports — for one person or in bulk — via your tools. \
+You are precise, proactive, and never invent data you were not given or that a tool did not return.
+
+Greetings & capability talk (critical):
+- On hellos / "what can you do?", do NOT list a short fixed menu that makes it sound like you only do a few things.
+- Keep greetings open: you help with candidates and employees end-to-end (invite, pipeline, offers, activation, \
+documents, joining letters, profile reminders, Day-1 email/assets/orientation, career events, search, activity, \
+announcements) — one person or many at once.
+- Prefer asking what they want to do over enumerating features. If they ask for capabilities, give a broad \
+overview in one short paragraph, then invite them to name a person, a bulk action, or a goal.
+
+Contextual suggested_replies (critical):
+- Always return 3–5 suggested_replies that match the CURRENT topic — not a generic menu.
+- If the talk is about a CANDIDATE (or pre-hire): suggest candidate actions only, e.g. check status, send/resend \
+offer, review documents, verify/reject docs, approve & activate if signed, send joining letter, list pipeline. \
+Name the person when known (e.g. "Send offer to Sara").
+- If the talk is about an EMPLOYEE (post-hire): suggest employee actions only, e.g. profile progress, remind \
+Complete Profile, set company email, assign asset, schedule orientation, career event, list documents.
+- If the talk is about MANY people / bulk / "all": suggest bulk actions (remind all incomplete, activate all \
+signed offers, bulk invite, bulk assign assets, announce to employees).
+- If the talk is open/greeting: mix a few broad goals, and never imply those chips are the full feature set.
+- Keep each chip short (under ~8 words), actionable, and ready to send as the next user message.
 
 Rules:
-- Only use the tools listed. Never fabricate a tool result.
-- Ask the recruiter for any required field you don't have yet (e.g. reporting manager, start date) instead \
-of guessing.
+- Only use the tools listed. Never fabricate a tool result. If a request matches a tool, use it; if something \
+is outside your tools, say so briefly and suggest the closest supported action.
+- Ask the recruiter for any required field you don't have yet (e.g. reporting manager, start date, asset name) \
+instead of guessing.
 - Dates should be confirmed in a clear format before calling a tool that needs one.
+- When the user asks to act on everyone / all incomplete / all signed offers / a pasted list, prefer the \
+bulk_* tools (bulk_invite, bulk_approve_offers, bulk_remind_profiles, bulk_assign_assets, \
+bulk_schedule_orientation, bulk_set_company_email, bulk_verify_documents). Cap is handled by tools.
 - When a user pastes a list of candidates (from chat or a spreadsheet already parsed for you), use bulk_invite.
-- After a tool call, summarize plainly what happened (who was invited/offered/notified), including any failures.
+- For Excel/CSV bulk invite: tell the recruiter to use the paperclip attachment in the chat, OR set \
+ui_hint to {{"type": "spreadsheet"}} so the app shows an upload button. NEVER use ui_hint type "upload" \
+(that is only for candidates uploading CNIC/resume). Never invent doc_type values like excel/spreadsheet/csv \
+under type "upload".
+- After a tool call, summarize plainly what happened (who was invited/offered/notified/activated), including \
+any failures. For bulk ops, report counts: succeeded / failed / skipped.
 - Keep replies concise and action-oriented.
 - NEVER say you sent an email, reminder, or notification unless a tool result explicitly has email_sent=true \
-or notification_sent=true. If either flag is false, say so clearly and include email_error when present.
+or notification_sent=true (or emailed/notified counts > 0 for announcements). If either flag is false, say so \
+clearly and include email_error when present.
 
 Profile / onboarding status (critical):
 - Pre-hire candidate onboarding (personal, education, skills, government docs, resume) is NOT the same as \
 post-hire employee Complete Profile (emergency contact, banking, references, policies, NDA).
-- After someone is converted to an employee, always use get_candidate_status or list_employees and report \
-post_hire_profile_complete / post_hire_missing / profile_status. Never say their profile is complete just \
-because pre-hire fields are on file.
+- After someone is converted to an employee, always use get_candidate_status, get_employee_detail, or \
+list_employees/directory_employees and report post_hire_profile_complete / post_hire_missing / profile_status. \
+Never say their profile is complete just because pre-hire fields are on file.
 - If profile_status is incomplete or post_hire_missing is non-empty, say clearly that they have NOT finished \
 post-hire Complete Profile, and list the missing steps.
-- To remind an employee to finish Complete Profile, you MUST call remind_employee_profile. Use force=true \
-when the recruiter asks to resend.
+- To remind one employee, call remind_employee_profile. To remind everyone incomplete, call \
+bulk_remind_profiles. Use force=true only when the recruiter asks to resend.
+
+Pipeline & activation:
+- Use list_pipeline (pending_review / onboarding / ready_to_activate) to show hiring stages.
+- Use approve_offer for one signed offer, bulk_approve_offers to activate all (or a list).
+
+Documents:
+- Use list_person_documents then verify_document / bulk_verify_documents. Always include rejection_reason \
+when rejecting or requesting re-upload.
+
+Day-1:
+- set_company_email / bulk_set_company_email, assign_asset / bulk_assign_assets, \
+schedule_orientation / bulk_schedule_orientation. For assign_asset, identify the person by email or \
+employee_id — `name` means the asset name.
+
+Announcements:
+- create_announcement fans out in-app notifications (+ optional email) to candidates, employees, or both.
 """
 
 SELF_SERVE_SYSTEM_PROMPT = """You are the TalentAI Onboarding Agent, guiding a new candidate/employee through \
@@ -115,11 +161,33 @@ async def _load_or_create_session(user: CurrentUser, session_id: str | None) -> 
     return convo
 
 
+def _compact_params(parameters: dict) -> str:
+    """Short param hints for the prompt (keeps token use down)."""
+    if not parameters:
+        return ""
+    bits = []
+    for key, hint in parameters.items():
+        text = str(hint)
+        # Keep only the type / required cue, drop long prose.
+        short = text.split(",")[0].strip()
+        if len(short) > 40:
+            short = short[:37] + "…"
+        bits.append(f"{key}:{short}")
+    return "{" + ", ".join(bits) + "}"
+
+
 def _tool_spec_text(role: str) -> str:
     tools = agent_tools.tools_for_role(role)
     lines = []
     for tool in tools:
-        lines.append(f"- {tool.name}({json.dumps(tool.parameters)}): {tool.description}")
+        desc = (tool.description or "").strip()
+        # First sentence only — enough for the model to pick the right tool.
+        if ". " in desc:
+            desc = desc.split(". ", 1)[0].strip()
+        if len(desc) > 120:
+            desc = desc[:117] + "…"
+        params = _compact_params(tool.parameters or {})
+        lines.append(f"- {tool.name}{params}: {desc}")
     return "\n".join(lines)
 
 
@@ -128,8 +196,23 @@ def _history_text(messages: list[dict]) -> str:
     lines = []
     for m in recent:
         speaker = "User" if m["role"] == "user" else "Agent"
-        lines.append(f"{speaker}: {m['content']}")
+        content = m.get("content") or ""
+        if len(content) > 600:
+            content = content[:597] + "…"
+        lines.append(f"{speaker}: {content}")
     return "\n".join(lines) if lines else "(no previous messages)"
+
+
+def _scratchpad_text(scratchpad: list[dict]) -> str:
+    if not scratchpad:
+        return ""
+    lines = []
+    for s in scratchpad:
+        payload = json.dumps(s.get("result"), default=str)
+        if len(payload) > 1200:
+            payload = payload[:1197] + "…"
+        lines.append(f"Tool `{s['tool']}` result: {payload}")
+    return "\n\nObservations so far this turn:\n" + "\n".join(lines)
 
 
 def _build_prompt(
@@ -140,10 +223,7 @@ def _build_prompt(
     scratchpad: list[dict],
     new_message: str,
 ) -> str:
-    scratch_text = ""
-    if scratchpad:
-        scratch_lines = [f"Tool `{s['tool']}` result: {json.dumps(s['result'])}" for s in scratchpad]
-        scratch_text = "\n\nObservations so far this turn:\n" + "\n".join(scratch_lines)
+    scratch_text = _scratchpad_text(scratchpad)
 
     return f"""{system_prompt}
 
@@ -158,13 +238,12 @@ Conversation so far:
 New message from caller: {new_message!r}
 {scratch_text}
 
-Respond with a SINGLE JSON object, no markdown fences, matching exactly one of these shapes:
-1) To call a tool: {{"action": "tool", "tool": "<tool_name>", "args": {{...}}}}
-2) To reply to the caller: {{"action": "reply", "message": "<final reply text>", \
-"suggested_replies": ["short quick-reply option", "..."], \
-"ui_hint": {{"type": "upload", "doc_type": "cnic", "category": "identity"}} or null}}
-
-Only ever return one JSON object."""
+Respond with ONE JSON object only:
+1) {{"action":"tool","tool":"<name>","args":{{...}}}}
+2) {{"action":"reply","message":"<text>","suggested_replies":["…"],"ui_hint":null}}
+suggested_replies: 3–5 chips matching the current topic (candidate vs employee vs bulk); include the person's name when known.
+ui_hint for recruiters: {{"type":"spreadsheet"}} when they should attach an Excel/CSV roster, otherwise null.
+ui_hint for candidate/employee uploads only: {{"type":"upload","doc_type":"cnic","category":"identity"}}."""
 
 
 async def _save_messages(session_id: str, user_id: str, new_msgs: list[dict]) -> None:
@@ -197,6 +276,37 @@ async def _fallback_reply(user: CurrentUser) -> dict:
     return {"message": msg, "suggested_replies": [], "ui_hint": None}
 
 
+def _sanitize_ui_hint(user: CurrentUser, ui_hint: dict | None) -> dict | None:
+    """Keep ui_hints role-safe. Recruiters must not get candidate document upload hints."""
+    if not ui_hint or not isinstance(ui_hint, dict):
+        return None
+    hint_type = str(ui_hint.get("type") or "").strip().lower()
+    doc_type = str(ui_hint.get("doc_type") or "").strip().lower()
+
+    if user.role in ("recruiter", "super_admin"):
+        if hint_type in ("spreadsheet", "sheet", "excel", "csv"):
+            return {"type": "spreadsheet"}
+        if hint_type == "upload" and doc_type in (
+            "spreadsheet",
+            "excel",
+            "xlsx",
+            "csv",
+            "roster",
+            "bulk_invite",
+        ):
+            return {"type": "spreadsheet"}
+        # Recruiter must never hit /api/documents/upload (candidate/employee only).
+        return None
+
+    if hint_type == "upload" and doc_type in ("cnic", "passport", "transcript", "resume"):
+        return {
+            "type": "upload",
+            "doc_type": doc_type,
+            "category": ui_hint.get("category") or DOC_TYPE_CATEGORY.get(doc_type, "other"),
+        }
+    return None
+
+
 class AgentService:
     async def chat(self, user: CurrentUser, message: str, session_id: str | None) -> dict:
         message = (message or "").strip()
@@ -211,11 +321,12 @@ class AgentService:
         else:
             reply = await self._run_llm_loop(user, convo, message)
 
+        ui_hint = _sanitize_ui_hint(user, reply.get("ui_hint"))
         assistant_msg = {
             "role": "assistant",
             "content": reply["message"],
             "created_at": _now_iso(),
-            "meta": {"ui_hint": reply.get("ui_hint"), "suggested_replies": reply.get("suggested_replies") or []},
+            "meta": {"ui_hint": ui_hint, "suggested_replies": reply.get("suggested_replies") or []},
         }
         pending_to_save.append(assistant_msg)
         if pending_to_save:
@@ -227,7 +338,7 @@ class AgentService:
             "reply": reply["message"],
             "messages": all_messages[-40:],
             "suggested_replies": reply.get("suggested_replies") or [],
-            "ui_hint": reply.get("ui_hint"),
+            "ui_hint": ui_hint,
         }
 
     async def _run_llm_loop(self, user: CurrentUser, convo: dict, message: str) -> dict:
@@ -258,7 +369,7 @@ class AgentService:
                 return {
                     "message": (parsed.get("message") or "").strip() or "Done.",
                     "suggested_replies": parsed.get("suggested_replies") or [],
-                    "ui_hint": parsed.get("ui_hint"),
+                    "ui_hint": _sanitize_ui_hint(user, parsed.get("ui_hint")),
                 }
 
             # Unrecognized shape — treat whatever text we got as the reply.

@@ -52,17 +52,46 @@ export async function resetAgentSession(accessToken, sessionId) {
   return data;
 }
 
-/** Recruiter: upload a .xlsx roster and invite every row in one go. */
+/** Recruiter: upload a .xlsx/.csv roster and invite every row in one go. */
 export async function bulkInviteSpreadsheet(accessToken, file, sessionId) {
   const formData = new FormData();
-  formData.append("file", file);
-  const { data } = await client.post("/api/agent/recruiter/bulk-invite", formData, {
+  formData.append("file", file, file?.name || "roster.xlsx");
+  if (sessionId) formData.append("session_id", sessionId);
+
+  // Use fetch (not axios) so the browser sets multipart/form-data WITH boundary.
+  // Axios instance defaults to application/json and often drops the file → FastAPI 422.
+  const url = new URL(`${apiBaseUrl.replace(/\/$/, "")}/api/agent/recruiter/bulk-invite`);
+  if (sessionId) url.searchParams.set("session_id", sessionId);
+
+  const response = await fetch(url.toString(), {
+    method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "multipart/form-data",
+      "ngrok-skip-browser-warning": "true",
     },
-    params: sessionId ? { session_id: sessionId } : undefined,
+    body: formData,
   });
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const detail = data?.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail) && detail[0]?.msg
+          ? detail.map((d) => d.msg).join("; ")
+          : `Upload failed (${response.status})`;
+    const error = new Error(message);
+    error.response = { status: response.status, data };
+    throw error;
+  }
+
   return data;
 }
 
