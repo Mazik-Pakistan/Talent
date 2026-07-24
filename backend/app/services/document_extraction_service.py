@@ -68,6 +68,67 @@ CNIC_NAME_REJECT = frozenset(
 
 PK_CNIC_DATE_PATTERN = re.compile(r"\b(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{4})\b")
 
+# --- Banking (cheque / bank letter / account maintenance certificate) --------
+IBAN_TEXT_PATTERN = re.compile(r"\bPK\s?\d{2}(?:[ -]?[A-Z0-9]){16,20}\b", re.I)
+ACCOUNT_NUMBER_PATTERN = re.compile(r"\b\d[\d-]{7,23}\d\b")
+SWIFT_PATTERN = re.compile(r"\b[A-Z]{4}PK[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b")
+BRANCH_CODE_PATTERN = re.compile(r"\b(?:branch\s*(?:code|#|no\.?)\s*[:\-]?\s*)(\d{2,6})\b", re.I)
+NTN_PATTERN = re.compile(r"\b(?:ntn|tax\s*(?:id|number))\s*[:\-]?\s*([\d-]{6,15})\b", re.I)
+
+BANK_DOCUMENT_HINTS = (
+    "iban",
+    "account title",
+    "account holder",
+    "account number",
+    "branch code",
+    "swift",
+    "cheque",
+    "bank statement",
+    "account maintenance",
+)
+
+# Well-known Pakistani banks, longest-first so "MCB Islamic" wins over "MCB".
+PK_BANK_NAMES = (
+    "Allied Bank Limited",
+    "Askari Bank",
+    "Bank Alfalah",
+    "Bank Al Habib",
+    "BankIslami",
+    "Dubai Islamic Bank",
+    "Faysal Bank",
+    "Habib Bank Limited",
+    "Habib Metropolitan Bank",
+    "JS Bank",
+    "MCB Islamic Bank",
+    "MCB Bank",
+    "Meezan Bank",
+    "National Bank of Pakistan",
+    "Samba Bank",
+    "Silkbank",
+    "Sindh Bank",
+    "Soneri Bank",
+    "Standard Chartered",
+    "Summit Bank",
+    "The Bank of Punjab",
+    "United Bank Limited",
+    "Allied Bank",
+    "HBL",
+    "UBL",
+    "ABL",
+    "NBP",
+)
+
+BANK_FIELD_KEYS = (
+    "bank_name",
+    "account_holder_name",
+    "account_number",
+    "iban",
+    "branch",
+    "branch_code",
+    "swift_code",
+    "tax_id",
+)
+
 
 class DocumentExtractionService:
     def __init__(self):
@@ -786,6 +847,229 @@ Document Text:
 
         cleaned["gender"] = self._normalize_gender_token(cleaned.get("gender")) or parsed.get("gender")
         return cleaned
+
+    # ------------------------------------------------------------------
+    # Banking documents (cheque, bank letter, account maintenance cert)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _normalize_iban(value: str | None) -> str | None:
+        if not value:
+            return None
+        cleaned = re.sub(r"[^A-Z0-9]", "", str(value).upper())
+        return cleaned or None
+
+    def parse_bank_document_sync(self, raw_text: str) -> dict:
+        """Regex/keyword extraction of banking fields. Always available offline."""
+        text = raw_text or ""
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        lower = text.lower()
+
+        fields: dict = {key: None for key in BANK_FIELD_KEYS}
+        alternatives: dict = {}
+
+        iban_matches = []
+        for match in IBAN_TEXT_PATTERN.finditer(text):
+            normalized = self._normalize_iban(match.group(0))
+            if normalized and 20 <= len(normalized) <= 24 and normalized not in iban_matches:
+                iban_matches.append(normalized)
+        if iban_matches:
+            fields["iban"] = iban_matches[0]
+            if len(iban_matches) > 1:
+                alternatives["iban"] = iban_matches[1:4]
+
+        bank_hits = [name for name in PK_BANK_NAMES if name.lower() in lower]
+        if bank_hits:
+            fields["bank_name"] = bank_hits[0]
+            if len(bank_hits) > 1:
+                alternatives["bank_name"] = bank_hits[1:4]
+
+        title_candidates = []
+        for label in ("account title", "account holder", "title of account", "customer name", "a/c title"):
+            value = self._value_after_label(lines, label)
+            if value and value not in title_candidates:
+                title_candidates.append(value)
+        if title_candidates:
+            fields["account_holder_name"] = title_candidates[0]
+            if len(title_candidates) > 1:
+                alternatives["account_holder_name"] = title_candidates[1:4]
+
+        account_candidates = []
+        for label in ("account number", "account no", "a/c no", "a/c #", "account #"):
+            value = self._value_after_label(lines, label)
+            digits = re.sub(r"[^\d-]", "", value or "")
+            if digits and len(re.sub(r"\D", "", digits)) >= 8 and digits not in account_candidates:
+                account_candidates.append(digits)
+        if not account_candidates and fields["iban"]:
+            # Pakistani IBANs end with the zero-padded account number.
+            tail = fields["iban"][8:].lstrip("0")
+            if len(tail) >= 8:
+                account_candidates.append(tail)
+        if account_candidates:
+            fields["account_number"] = account_candidates[0]
+            if len(account_candidates) > 1:
+                alternatives["account_number"] = account_candidates[1:4]
+
+        branch = self._value_after_label(lines, "branch name") or self._value_after_label(lines, "branch")
+        if branch and not branch.isdigit() and not branch.lower().startswith("code"):
+            fields["branch"] = branch
+
+        branch_code_match = BRANCH_CODE_PATTERN.search(text)
+        if branch_code_match:
+            fields["branch_code"] = branch_code_match.group(1)
+
+        swift_match = SWIFT_PATTERN.search(text.upper())
+        if swift_match:
+            fields["swift_code"] = swift_match.group(0)
+
+        ntn_match = NTN_PATTERN.search(text)
+        if ntn_match:
+            fields["tax_id"] = ntn_match.group(1)
+
+        is_bank_document = bool(
+            fields["iban"] or fields["bank_name"] or any(hint in lower for hint in BANK_DOCUMENT_HINTS)
+        )
+
+        return {
+            "fields": fields,
+            "alternatives": alternatives,
+            "is_bank_document": is_bank_document,
+            "engine": "heuristic",
+        }
+
+    async def parse_bank_document(self, raw_text: str) -> dict:
+        """Extract banking fields from a cheque / bank letter, with confidences.
+
+        The LLM handles layout variety; the regex pass runs either way and is
+        used to backfill gaps and to validate the IBAN the model returned.
+        """
+        heuristic = self.parse_bank_document_sync(raw_text)
+
+        if not (raw_text or "").strip():
+            return {
+                "fields": {key: None for key in BANK_FIELD_KEYS},
+                "field_confidence": {},
+                "alternatives": {},
+                "extraction_confidence": 0.0,
+                "is_bank_document": False,
+                "engine": "none",
+            }
+
+        llm_fields: dict = {}
+        llm_confidence: dict = {}
+        llm_alternatives: dict = {}
+        engine = heuristic["engine"]
+        is_bank_document = heuristic["is_bank_document"]
+
+        if settings.OPENROUTER_API_KEY or (
+            settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.strip().startswith("YOUR_")
+        ):
+            try:
+                from app.services.llm_service import call_llm_json
+
+                prompt = f"""
+You are extracting bank account details from a Pakistani banking document
+(a cheque, bank letter, or account maintenance certificate).
+
+Extract these fields. Use null when the document does not clearly show a value.
+Never guess an IBAN or account number.
+
+- bank_name: the bank's name, e.g. "Meezan Bank" or "Habib Bank Limited"
+- account_holder_name: the account title exactly as printed
+- account_number: digits only (hyphens allowed)
+- iban: 24-character Pakistani IBAN starting with PK, no spaces
+- branch: branch name or address
+- branch_code: numeric branch code
+- swift_code: SWIFT/BIC code
+- tax_id: NTN / tax number if printed
+
+For every field also return a confidence between 0.0 and 1.0 reflecting how
+clearly it was printed and how sure you are.
+
+If the document shows more than one plausible value for a field (for example
+two different names), list the others under "alternatives".
+
+Set "is_bank_document" to false if this is not a banking document at all.
+
+Return JSON only:
+{{
+  "is_bank_document": true,
+  "fields": {{ "bank_name": null, "account_holder_name": null, "account_number": null,
+               "iban": null, "branch": null, "branch_code": null, "swift_code": null, "tax_id": null }},
+  "confidence": {{ "bank_name": 0.0 }},
+  "alternatives": {{ "account_holder_name": [] }}
+}}
+
+Document Text:
+{(raw_text or "")[:8000]}
+"""
+                parsed = await call_llm_json(prompt, timeout=45.0)
+                if parsed and isinstance(parsed.get("fields"), dict):
+                    llm_fields = parsed["fields"]
+                    llm_confidence = parsed.get("confidence") or {}
+                    llm_alternatives = parsed.get("alternatives") or {}
+                    engine = "llm"
+                    if parsed.get("is_bank_document") is True:
+                        is_bank_document = True
+                    elif parsed.get("is_bank_document") is False and not heuristic["fields"]["iban"]:
+                        is_bank_document = False
+            except Exception as exc:
+                logger.error(f"LLM bank document parse failed: {exc}. Falling back to heuristics.")
+
+        fields: dict = {}
+        field_confidence: dict = {}
+        for key in BANK_FIELD_KEYS:
+            llm_value = llm_fields.get(key)
+            if isinstance(llm_value, str):
+                llm_value = llm_value.strip() or None
+            heuristic_value = heuristic["fields"].get(key)
+
+            if key == "iban":
+                llm_value = self._normalize_iban(llm_value)
+                # Trust the printed IBAN over the model when they disagree.
+                if heuristic_value and llm_value and heuristic_value != llm_value:
+                    fields[key] = heuristic_value
+                    field_confidence[key] = 0.55
+                    existing = list(llm_alternatives.get(key) or [])
+                    llm_alternatives[key] = [llm_value, *existing]
+                    continue
+
+            if llm_value:
+                fields[key] = llm_value
+                try:
+                    field_confidence[key] = max(0.0, min(1.0, float(llm_confidence.get(key, 0.75))))
+                except (TypeError, ValueError):
+                    field_confidence[key] = 0.75
+            elif heuristic_value:
+                fields[key] = heuristic_value
+                field_confidence[key] = 0.6
+            else:
+                fields[key] = None
+
+        alternatives = {**heuristic["alternatives"]}
+        for key, values in (llm_alternatives or {}).items():
+            if key not in BANK_FIELD_KEYS or not isinstance(values, list):
+                continue
+            merged = [str(v).strip() for v in values if str(v or "").strip()]
+            merged.extend(alternatives.get(key, []))
+            deduped = []
+            for value in merged:
+                if value != fields.get(key) and value not in deduped:
+                    deduped.append(value)
+            if deduped:
+                alternatives[key] = deduped[:4]
+
+        # Any field with a listed alternative is genuinely ambiguous.
+        for key in alternatives:
+            field_confidence[key] = min(field_confidence.get(key, 0.6), 0.55)
+
+        return {
+            "fields": fields,
+            "field_confidence": field_confidence,
+            "alternatives": alternatives,
+            "extraction_confidence": self._field_completeness(fields),
+            "is_bank_document": is_bank_document,
+            "engine": engine,
+        }
 
 
 document_extraction_service = DocumentExtractionService()

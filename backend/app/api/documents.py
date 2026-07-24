@@ -39,6 +39,16 @@ async def upload_document(
     )
 
 
+@router.post("/analyze-bank-slip")
+async def analyze_bank_slip(current_user: RequireSelf, file: UploadFile = File(...)):
+    """Read banking fields off a cheque / bank letter for review before saving.
+
+    Nothing is stored — the employee confirms the values and the existing
+    profile-completion endpoint persists them.
+    """
+    return await document_service.analyze_bank_document(current_user, file=file)
+
+
 @router.get("/me")
 async def list_my_documents(current_user: RequireSelf):
     """US-049: candidate/employee's own document list with live status."""

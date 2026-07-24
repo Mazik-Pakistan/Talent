@@ -596,6 +596,19 @@ export async function uploadDocument(formData, accessToken) {
   return data;
 }
 
+/** Extraction-only scan of a cheque / bank letter. Nothing is persisted. */
+export async function analyzeBankSlip(file, accessToken) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await apiClient.post("/api/documents/analyze-bank-slip", formData, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return data;
+}
+
 export async function listMyDocuments(accessToken) {
   const { data } = await apiClient.get("/api/documents/me", {
     headers: { Authorization: `Bearer ${accessToken}` },

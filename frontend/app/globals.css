@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./ai-theme.css";
 
 :root { --ink: #123a63; --blue: #176896; --teal: #32a6ae; --muted: #5c7086; --line: #dbe5ec; --surface: #f6f9fb; --danger: #b42318; }
 * { box-sizing: border-box; }

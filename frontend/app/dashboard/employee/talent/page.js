@@ -13,6 +13,7 @@ import {
   getAchievements,
   getJourneyTimeline,
 } from "@/services/talentService";
+import { publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
 
 const TABS = [
   { key: "journey", label: "Journey" },
@@ -22,6 +23,68 @@ const TABS = [
 
 export default function EmployeeTalentPage() {
   const [tab, setTab] = useState("journey");
+  const [opportunityCount, setOpportunityCount] = useState(null);
+
+  // Soft peek at open roles so Copilot can offer a page-scoped next step.
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    browseOpportunities(token, { status: "open" })
+      .then((data) => setOpportunityCount((data.opportunities || []).length))
+      .catch(() => setOpportunityCount(null));
+  }, []);
+
+  useEffect(() => {
+    publishGuideContext({
+      pathname: "/dashboard/employee/talent",
+      section: tab,
+      label: TABS.find((item) => item.key === tab)?.label || tab,
+      tab,
+      progress: opportunityCount != null ? { open_opportunities: opportunityCount } : null,
+    });
+  }, [tab, opportunityCount]);
+
+  useEffect(() => {
+    return registerPageAssist({
+      propose: () => {
+        if (tab !== "opportunities" && opportunityCount > 0) {
+          return {
+            message: `There ${opportunityCount === 1 ? "is" : "are"} ${opportunityCount} open internal ${
+              opportunityCount === 1 ? "opportunity" : "opportunities"
+            }. I can switch you to that tab so you can review and apply — I won't leave My Talent.`,
+            items: [`${opportunityCount} open role${opportunityCount === 1 ? "" : "s"}`],
+            applyLabel: "Show opportunities",
+            busyMessage: "Opening Internal Opportunities…",
+            doneMessage: "✓ Opportunities are open — review a role and apply if it fits.",
+            meta: { tab: "opportunities" },
+          };
+        }
+        if (tab === "journey") {
+          return {
+            message: "Your journey timeline is here. I can open Achievements next to review badges and milestones you've earned.",
+            applyLabel: "Open Achievements",
+            busyMessage: "Opening Achievements…",
+            doneMessage: "✓ Achievements are open.",
+            meta: { tab: "achievements" },
+          };
+        }
+        if (tab === "achievements" && opportunityCount > 0) {
+          return {
+            message: "Nice progress. I can open Internal Opportunities so you can see roles that match your growth.",
+            applyLabel: "Show opportunities",
+            busyMessage: "Opening Internal Opportunities…",
+            doneMessage: "✓ Opportunities are open.",
+            meta: { tab: "opportunities" },
+          };
+        }
+        return null;
+      },
+      apply: async (offer) => {
+        if (offer.meta?.tab) setTab(offer.meta.tab);
+        await new Promise((resolve) => setTimeout(resolve, 280));
+      },
+    });
+  }, [tab, opportunityCount]);
 
   return (
     <EmployeeShell activeKey="talent" title="My Talent" subtitle="Career journey, achievements & internal opportunities">

@@ -1,6 +1,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 
 import AgentChatWidget from "@/components/ai/Agentchatwidget";
+import EmployeeAiGuide from "@/components/ai-experience/EmployeeAiGuide";
 import SessionTimeout from "@/components/SessionTimeout";
 import ToastProvider from "@/components/ToastProvider";
 import "./globals.css";
@@ -28,6 +29,10 @@ export default function RootLayout({ children }) {
         <SessionTimeout />
         <ToastProvider />
         {children}
+        {/* Employee Copilot: contextual partner (not the Agent). Hosted here so it
+            never unmounts across /dashboard/employee/* and /documents. */}
+        <EmployeeAiGuide />
+        {/* Autonomous AI Agent launcher — separate product surface. */}
         <AgentChatWidget />
       </body>
     </html>

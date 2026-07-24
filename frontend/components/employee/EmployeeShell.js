@@ -15,26 +15,43 @@ import {
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
 import { getEmployeeNavItems } from "@/utils/employeeNav";
+import { publishCopilotNotification, publishHover } from "@/lib/ai/guideContext";
 import styles from "@/app/dashboard/employee/employee-dashboard.module.css";
 
 const NOTIFICATIONS_POLL_MS = 20000;
 
+const COLLAPSE_KEY = "employee_sidebar_collapsed";
+
 /**
- * Shared chrome (sidebar + topbar) for employee pages that live outside the
- * monolithic /dashboard/employee page — e.g. the Learning module. Visually
- * identical to the main dashboard shell so navigation feels seamless.
+ * Shared chrome (sidebar + topbar) for every employee page. Pages supply their
+ * own permission set, an optional topbar action slot, and an `onEmployee`
+ * callback so they can reuse the profile lookup the shell already makes.
  */
-export default function EmployeeShell({ activeKey, title, subtitle, children }) {
+export default function EmployeeShell({
+  activeKey,
+  title,
+  subtitle,
+  permissions = ["learning.access", "profile.view"],
+  actions,
+  onEmployee,
+  children,
+}) {
   return (
-    <RequireAccess anyOf={["learning.access", "profile.view"]} roles={["employee"]}>
-      <EmployeeShellInner activeKey={activeKey} title={title} subtitle={subtitle}>
+    <RequireAccess anyOf={permissions} roles={["employee"]}>
+      <EmployeeShellInner
+        activeKey={activeKey}
+        title={title}
+        subtitle={subtitle}
+        actions={actions}
+        onEmployee={onEmployee}
+      >
         {children}
       </EmployeeShellInner>
     </RequireAccess>
   );
 }
 
-function EmployeeShellInner({ activeKey, title, subtitle, children }) {
+function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, children }) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState(null);
@@ -57,12 +74,30 @@ function EmployeeShellInner({ activeKey, title, subtitle, children }) {
   }, []);
 
   useEffect(() => {
+    setSidebarCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+  }, []);
+
+  useEffect(() => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     getMyEmployeeProfile(accessToken)
-      .then((data) => setEmployee(data.employee))
+      .then((data) => {
+        setEmployee(data.employee);
+        onEmployee?.(data.employee);
+      })
       .catch(() => {});
+    // `onEmployee` is a render-time callback; re-running on identity changes
+    // would refetch the profile on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function toggleSidebar() {
+    setSidebarCollapsed((value) => {
+      const next = !value;
+      localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
 
   const refreshNotifications = useCallback(async (silent = true) => {
     const accessToken = localStorage.getItem("access_token");
@@ -73,6 +108,12 @@ function EmployeeShellInner({ activeKey, title, subtitle, children }) {
       const nextList = data.notifications || [];
       if (silent && lastUnreadRef.current != null && nextUnread > lastUnreadRef.current && nextList[0]) {
         toast.info(nextList[0].title || "New notification");
+        publishCopilotNotification({
+          id: nextList[0].id,
+          message: nextList[0].title
+            ? `${nextList[0].title}${nextList[0].message ? ` — ${nextList[0].message}` : ""}`
+            : "You have a new notification.",
+        });
       }
       lastUnreadRef.current = nextUnread;
       setNotifications(nextList);
@@ -127,8 +168,9 @@ function EmployeeShellInner({ activeKey, title, subtitle, children }) {
           <button
             type="button"
             className={styles.brand}
-            onClick={() => setSidebarCollapsed((v) => !v)}
-            title="Click to collapse sidebar"
+            onClick={toggleSidebar}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!sidebarCollapsed}
           >
             <div className={styles.brandMark}>MZ</div>
             <div className={styles.brandText}>
@@ -150,6 +192,8 @@ function EmployeeShellInner({ activeKey, title, subtitle, children }) {
                     type="button"
                     className={`${styles.navItem} ${isActive ? styles.active : ""} ${disabled ? styles.disabled : ""}`}
                     onClick={() => item.href && router.push(item.href)}
+                    onMouseEnter={() => publishHover({ key: item.key, target: item.label })}
+                    onMouseLeave={() => publishHover(null)}
                     title={disabled ? `${item.label} — coming soon` : item.label}
                     disabled={disabled}
                   >
@@ -185,6 +229,7 @@ function EmployeeShellInner({ activeKey, title, subtitle, children }) {
               <div className={styles.topbarSub}>{subtitle}</div>
             </div>
             <div className={styles.topbarActions}>
+              {actions}
               <div className={styles.dropdownWrap}>
                 <div
                   className={styles.iconBtn}
