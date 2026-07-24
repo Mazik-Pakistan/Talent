@@ -6,6 +6,8 @@ import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import AnimatedNumber from "@/components/ai-experience/AnimatedNumber";
+import { publishGuideContext } from "@/lib/ai/guideContext";
 import {
   clearLocalSession,
   getAnnouncements,
@@ -24,6 +26,7 @@ import styles from "./employee-dashboard.module.css";
 
 const ANNOUNCEMENTS_POLL_MS = 30000;
 const NOTIFICATIONS_POLL_MS = 20000;
+const COLLAPSE_KEY = "employee_sidebar_collapsed";
 
 export default function EmployeeDashboardPage() {
   return (
@@ -60,6 +63,27 @@ function EmployeeDashboardContent() {
     window.addEventListener("talent-user-updated", onUserUpdated);
     return () => window.removeEventListener("talent-user-updated", onUserUpdated);
   }, []);
+
+  // Shared with EmployeeShell so the sidebar keeps its width across pages.
+  useEffect(() => {
+    setSidebarCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+  }, []);
+
+  useEffect(() => {
+    publishGuideContext({
+      pathname: "/dashboard/employee",
+      section: null,
+      formId: "dashboard",
+    });
+  }, []);
+
+  function toggleSidebar() {
+    setSidebarCollapsed((value) => {
+      const next = !value;
+      localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
 
   const loadProfile = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
@@ -174,7 +198,9 @@ function EmployeeDashboardContent() {
   const onboarding = useMemo(() => employee?.onboarding || {}, [employee]);
   const profileIncomplete = employee?.profile_status === "incomplete";
   const profileComplete = employee?.profile_status === "complete";
-  const percentage = progress?.percentage ?? (profileIncomplete ? 0 : 100);
+  // Start at zero while loading: the ring then sweeps up to the real figure
+  // instead of flashing a misleading 100%.
+  const percentage = loading ? 0 : progress?.percentage ?? (profileIncomplete ? 0 : 100);
   const navItems = useMemo(() => getEmployeeNavItems({ profileComplete }), [profileComplete]);
   const documentsSummary = onboarding?.government_docs?.documents?.length ?? null;
   const assignedAssets = employee?.assets || [];
@@ -229,8 +255,9 @@ function EmployeeDashboardContent() {
           <button
             type="button"
             className={styles.brand}
-            onClick={() => setSidebarCollapsed((v) => !v)}
-            title="Click to collapse sidebar"
+            onClick={toggleSidebar}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!sidebarCollapsed}
           >
             <div className={styles.brandMark}>MZ</div>
             <div className={styles.brandText}>
@@ -443,7 +470,7 @@ function EmployeeDashboardContent() {
             </div>
 
             {/* Stats */}
-            <div className={styles.stats}>
+            <div className={styles.stats} data-stagger>
               <StatCard
                 icon={<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />}
                 iconExtra={<path d="M14 2v6h6" />}
@@ -484,7 +511,14 @@ function EmployeeDashboardContent() {
               </div>
               <div className={styles.sectionBody}>
                 {loading ? (
-                  <p className={styles.emptySub}>Loading…</p>
+                  <div className={styles.fieldGrid}>
+                    {Array.from({ length: 8 }, (_, i) => (
+                      <div key={i}>
+                        <div className={`${styles.skeletonLine} ${styles.short}`} />
+                        <div className={styles.skeletonLine} />
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <div className={styles.fieldGrid}>
                     <Field label="Employee ID" value={employee?.employee_id} styles={styles} />
@@ -743,7 +777,9 @@ function StatCard({ icon, iconExtra, tone, value, label }) {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{icon}{iconExtra}</svg>
         </div>
       </div>
-      <div className={styles.statValue}>{value}</div>
+      <div className={styles.statValue}>
+        <AnimatedNumber value={value} />
+      </div>
       <div className={styles.statLabel}>{label}</div>
     </div>
   );

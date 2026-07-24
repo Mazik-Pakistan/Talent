@@ -58,6 +58,102 @@ def _extensions_for(category: str, doc_type: str) -> set[str]:
 
 
 class DocumentService:
+    async def analyze_bank_document(self, current_user: CurrentUser, *, file: UploadFile) -> dict:
+        """Read banking fields off a cheque / bank letter without storing anything.
+
+        Deliberately extraction-only: the employee reviews and confirms the
+        values, and the existing profile-completion endpoint remains the single
+        writer for banking data.
+        """
+        original = file.filename or "bank-document"
+        ext = Path(original).suffix.lower()
+        if ext not in STRICT_EXTENSIONS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported file type. Allowed: {', '.join(sorted(STRICT_EXTENSIONS))}.",
+            )
+
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File is too large (max {settings.MAX_DOCUMENT_MB} MB).",
+            )
+
+        if not settings.ENABLE_OCR:
+            return {
+                "status": "disabled",
+                "message": "Document scanning is turned off. Please enter your bank details manually.",
+                "fields": {},
+                "field_confidence": {},
+                "alternatives": {},
+                "confidence": 0.0,
+            }
+
+        import asyncio
+        import tempfile
+
+        temp_local_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext or ".bin") as scratch:
+                scratch.write(content)
+                temp_local_path = scratch.name
+
+            raw_text = await asyncio.to_thread(document_extraction_service.extract_text, temp_local_path)
+            if not (raw_text or "").strip():
+                return {
+                    "status": "unreadable",
+                    "message": "I couldn't read any text from that image. Try a sharper, well-lit photo.",
+                    "fields": {},
+                    "field_confidence": {},
+                    "alternatives": {},
+                    "confidence": 0.0,
+                }
+
+            parsed = await document_extraction_service.parse_bank_document(raw_text)
+            if not parsed.get("is_bank_document"):
+                return {
+                    "status": "wrong_document",
+                    "message": "That doesn't look like a cheque or bank letter. Upload a cancelled cheque, "
+                    "bank letter, or account maintenance certificate.",
+                    "fields": {},
+                    "field_confidence": {},
+                    "alternatives": {},
+                    "confidence": 0.0,
+                }
+
+            fields = {key: value for key, value in (parsed.get("fields") or {}).items() if value}
+            return {
+                "status": "completed",
+                "message": "Bank details extracted.",
+                "file_name": original,
+                "fields": fields,
+                "field_confidence": parsed.get("field_confidence") or {},
+                "alternatives": parsed.get("alternatives") or {},
+                "confidence": parsed.get("extraction_confidence") or 0.0,
+                "engine": parsed.get("engine"),
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error(f"Bank document analysis failed: {exc}")
+            return {
+                "status": "failed",
+                "message": "Scanning failed. You can still enter your bank details manually.",
+                "fields": {},
+                "field_confidence": {},
+                "alternatives": {},
+                "confidence": 0.0,
+            }
+        finally:
+            if temp_local_path:
+                try:
+                    Path(temp_local_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
     async def upload(
         self,
         current_user: CurrentUser,

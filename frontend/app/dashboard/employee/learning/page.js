@@ -35,6 +35,8 @@ import {
   upsertSkill,
 } from "@/services/learningService";
 import { getCareerProgression } from "@/services/talentService";
+import { publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
+import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -88,6 +90,70 @@ function EmployeeLearningPageInner() {
     if (next && TABS.some((t) => t.key === next)) setTab(next);
   }, [searchParams]);
 
+  useEffect(() => {
+    publishGuideContext({
+      pathname: "/dashboard/employee/learning",
+      section: tab,
+      label: TABS.find((item) => item.key === tab)?.label || tab,
+      tab,
+      progress: dashboard?.summary || null,
+    });
+  }, [tab, dashboard]);
+
+  // Enrollments / progress / certificates change what the AI guide reports.
+  const refreshAfterChange = useCallback(() => {
+    invalidateInsightCache();
+    loadDashboard();
+  }, [loadDashboard]);
+
+  // Page-scoped Copilot assist — switch tabs / point at next learning action only.
+  useEffect(() => {
+    return registerPageAssist({
+      propose: () => {
+        const summary = dashboard?.summary || {};
+        const assigned = summary.assigned_count ?? dashboard?.mandatory_count ?? 0;
+        const inProgress = summary.in_progress_count ?? 0;
+        const items = [];
+        if (assigned) items.push(`${assigned} course${assigned === 1 ? "" : "s"} to start`);
+        if (inProgress) items.push(`${inProgress} in progress`);
+
+        if (tab !== "my-courses" && (assigned || inProgress)) {
+          return {
+            message: `You have learning work waiting. I can switch you to My Learning so you can start or resume — I won't leave Learning.`,
+            items,
+            applyLabel: "Open My Learning",
+            busyMessage: "Switching to My Learning…",
+            doneMessage: "✓ You're on My Learning — pick a course to continue.",
+            meta: { tab: "my-courses" },
+          };
+        }
+        if (tab === "overview" && !assigned && !inProgress) {
+          return {
+            message: "Nothing is overdue. I can open the Course Catalog so you can pick something that closes a skill gap.",
+            applyLabel: "Browse catalog",
+            busyMessage: "Opening the catalog…",
+            doneMessage: "✓ Catalog is open — enroll in anything that fits your role.",
+            meta: { tab: "catalog" },
+          };
+        }
+        if (tab === "skills") {
+          return {
+            message: "Your skill profile drives recommendations. I can open Career Path next so you can see role matches and gaps.",
+            applyLabel: "Open Career Path",
+            busyMessage: "Opening Career Path…",
+            doneMessage: "✓ Career Path is open — review matches and gaps.",
+            meta: { tab: "career" },
+          };
+        }
+        return null;
+      },
+      apply: async (offer) => {
+        if (offer.meta?.tab) setTab(offer.meta.tab);
+        await new Promise((resolve) => setTimeout(resolve, 280));
+      },
+    });
+  }, [tab, dashboard]);
+
   return (
     <EmployeeShell
       activeKey="learning"
@@ -109,12 +175,12 @@ function EmployeeLearningPageInner() {
         ))}
       </div>
 
-      {tab === "overview" && <OverviewTab dashboard={dashboard} onGo={setTab} onRefresh={loadDashboard} />}
-      {tab === "catalog" && <CatalogTab onEnroll={loadDashboard} />}
-      {tab === "my-courses" && <MyCoursesTab onChange={loadDashboard} />}
+      {tab === "overview" && <OverviewTab dashboard={dashboard} onGo={setTab} onRefresh={refreshAfterChange} />}
+      {tab === "catalog" && <CatalogTab onEnroll={refreshAfterChange} />}
+      {tab === "my-courses" && <MyCoursesTab onChange={refreshAfterChange} />}
       {tab === "skills" && <SkillsTab />}
       {tab === "career" && <CareerTab />}
-      {tab === "certificates" && <CertificatesTab onChange={loadDashboard} />}
+      {tab === "certificates" && <CertificatesTab onChange={refreshAfterChange} />}
     </EmployeeShell>
   );
 }

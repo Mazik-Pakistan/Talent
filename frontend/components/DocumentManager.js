@@ -11,6 +11,8 @@ import {
   uploadDocument,
 } from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
+import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
+import { COPILOT_DOCUMENTS_ASSIST_EVENT } from "@/lib/ai/guideContext";
 
 const CATEGORY_OPTIONS = [
   { value: "all", label: "All documents" },
@@ -62,7 +64,7 @@ const STATUS_FILTER_OPTIONS = [
 const STATUS_GROUPS = {
   pending: new Set(["pending", "processing", "uploaded", "sent", "pending_verification", "viewed", "incomplete"]),
   verified: new Set(["verified", "signed", "approved", "complete"]),
-  rejected: new Set(["rejected", "reupload_required", "declined", "expired"]),
+  rejected: new Set(["rejected", "reupload_required", "declined", "expired", "mismatch"]),
 };
 
 function matchesStatusFilter(status, filter) {
@@ -116,6 +118,24 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadDocuments]);
+
+  // Copilot can focus problem documents without leaving this page.
+  useEffect(() => {
+    const onAssist = (event) => {
+      const detail = event.detail || {};
+      if (detail.status) setActiveStatus(detail.status);
+      if (detail.category) setActiveCategory(detail.category);
+      if (detail.search != null) setSearchQuery(detail.search);
+      if (detail.openUploader) setShowUploader(true);
+      if (detail.replaceDocId) setReplacementDocId(detail.replaceDocId);
+      window.setTimeout(() => {
+        document.querySelector(".document-filter-group, .document-list, [class*='document']")
+          ?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+      }, 80);
+    };
+    window.addEventListener(COPILOT_DOCUMENTS_ASSIST_EVENT, onAssist);
+    return () => window.removeEventListener(COPILOT_DOCUMENTS_ASSIST_EVENT, onAssist);
+  }, []);
 
   const groupedDocuments = useMemo(() => {
     const filtered = documents.filter((doc) => {
@@ -191,6 +211,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       if (fileInputRef.current) fileInputRef.current.value = "";
       setActiveCategory("all");
       loadDocuments();
+      invalidateInsightCache();
       onChanged?.();
     } catch (err) {
       setUploadMessage({ type: "error", text: getApiErrorMessage(err, "Upload failed. Please try again.") });
@@ -232,6 +253,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     try {
       await deleteDocument(documentId, accessToken);
       loadDocuments();
+      invalidateInsightCache();
       onChanged?.();
     } catch (err) {
       setError(getApiErrorMessage(err, "Could not delete the document."));
@@ -261,6 +283,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       setReplacementFile(null);
       if (replacementInputRef.current) replacementInputRef.current.value = "";
       loadDocuments();
+      invalidateInsightCache();
       onChanged?.();
     } catch (err) {
       setReplacementMessage({ type: "error", text: getApiErrorMessage(err, "Replacement upload failed.") });

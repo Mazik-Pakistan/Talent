@@ -1,0 +1,162 @@
+/* Design tokens and motion primitives for the AI-first employee portal.
+   Kept global (not a CSS module) so keyframes can be shared by every
+   AI surface without duplication. */
+
+:root {
+  /* Core bluish palette */
+  --ai-abyss: #060d1f;
+  --ai-navy: #0b1631;
+  --ai-navy-2: #12224a;
+  --ai-indigo: #2b3fd8;
+  --ai-blue: #2f6bff;
+  --ai-sky: #34b6ff;
+  --ai-cyan: #22d3ee;
+  --ai-violet: #7c5cff;
+
+  --ai-mint: #10c88b;
+  --ai-amber: #f5a524;
+  --ai-rose: #f04a6a;
+
+  /* Surfaces */
+  --ai-canvas: #eef3fc;
+  --ai-canvas-2: #f7f9ff;
+  --ai-surface: #ffffff;
+  --ai-surface-sunken: #f3f6fd;
+  --ai-line: #dfe6f5;
+  --ai-line-soft: #eaeff9;
+
+  /* Type */
+  --ai-text: #101a33;
+  --ai-text-soft: #55618099;
+  --ai-muted: #5a6a8c;
+  --ai-faint: #8f9cb8;
+
+  /* Glass */
+  --ai-glass: rgba(255, 255, 255, 0.72);
+  --ai-glass-dark: rgba(11, 22, 49, 0.72);
+  --ai-glass-border: rgba(255, 255, 255, 0.55);
+  --ai-blur: saturate(160%) blur(18px);
+
+  /* Elevation */
+  --ai-shadow-sm: 0 1px 2px rgba(16, 26, 51, 0.05), 0 4px 12px -6px rgba(16, 26, 51, 0.12);
+  --ai-shadow: 0 2px 6px rgba(16, 26, 51, 0.05), 0 18px 40px -22px rgba(16, 26, 51, 0.35);
+  --ai-shadow-lg: 0 8px 24px rgba(16, 26, 51, 0.08), 0 40px 80px -40px rgba(11, 22, 49, 0.55);
+  --ai-glow: 0 0 0 1px rgba(47, 107, 255, 0.28), 0 0 28px -6px rgba(47, 107, 255, 0.5);
+
+  /* Shape */
+  --ai-r-sm: 10px;
+  --ai-r: 14px;
+  --ai-r-lg: 20px;
+  --ai-r-xl: 26px;
+
+  /* Motion */
+  --ai-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ai-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ai-fast: 160ms;
+  --ai-mid: 280ms;
+  --ai-slow: 520ms;
+
+  --ai-gradient: linear-gradient(135deg, var(--ai-indigo) 0%, var(--ai-blue) 45%, var(--ai-sky) 100%);
+  --ai-gradient-soft: linear-gradient(135deg, rgba(43, 63, 216, 0.12), rgba(52, 182, 255, 0.12));
+}
+
+/* ── Motion primitives ───────────────────────────────────────────────── */
+
+@keyframes ai-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes ai-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ai-slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes ai-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes ai-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.06); opacity: 0.82; }
+}
+
+@keyframes ai-halo {
+  0% { transform: scale(0.85); opacity: 0.55; }
+  70% { transform: scale(1.7); opacity: 0; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+@keyframes ai-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ai-shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+@keyframes ai-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+
+@keyframes ai-dot-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
+  40% { transform: translateY(-4px); opacity: 1; }
+}
+
+@keyframes ai-draw-check {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes ai-field-flash {
+  0% { box-shadow: 0 0 0 0 rgba(16, 200, 139, 0.45); }
+  100% { box-shadow: 0 0 0 12px rgba(16, 200, 139, 0); }
+}
+
+@keyframes ai-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes ai-particle-rise {
+  0% { transform: translate3d(0, 0, 0) scale(0.6); opacity: 0; }
+  20% { opacity: 0.9; }
+  100% { transform: translate3d(var(--ai-drift, 6px), -34px, 0) scale(1); opacity: 0; }
+}
+
+@keyframes ai-caret {
+  0%, 45% { opacity: 1; }
+  50%, 95% { opacity: 0; }
+}
+
+@keyframes ai-progress-line {
+  0% { transform: scaleX(0); transform-origin: left; }
+  50% { transform: scaleX(1); transform-origin: left; }
+  51% { transform: scaleX(1); transform-origin: right; }
+  100% { transform: scaleX(0); transform-origin: right; }
+}
+
+/* Utility classes usable from any employee surface. */
+.ai-animate-in { animation: ai-fade-up var(--ai-mid) var(--ai-ease) both; }
+.ai-skeleton {
+  background: linear-gradient(90deg, var(--ai-surface-sunken) 25%, #e8eefb 37%, var(--ai-surface-sunken) 63%);
+  background-size: 200% 100%;
+  animation: ai-shimmer 1.4s linear infinite;
+  border-radius: var(--ai-r-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-animate-in,
+  .ai-skeleton {
+    animation: none !important;
+  }
+}

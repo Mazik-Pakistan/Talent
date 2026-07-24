@@ -89,6 +89,13 @@ export function getEmployeeNavItems({ profileComplete = false } = {}) {
       icon: EMPLOYEE_NAV_ICONS.talent,
     },
     {
+      key: "ai-assistant",
+      label: "AI Assistant",
+      module: null,
+      href: "/dashboard/employee/ai-assistant",
+      icon: EMPLOYEE_NAV_ICONS.ai,
+    },
+    {
       key: "profile",
       label: "Profile",
       module: "profile",

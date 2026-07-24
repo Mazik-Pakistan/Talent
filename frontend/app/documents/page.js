@@ -12,11 +12,13 @@ import {
   getCandidateDashboard,
   getMyEmployeeProfile,
   getNotifications,
+  listMyDocuments,
   logout,
   markNotificationsRead,
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
 import { getEmployeeNavItems } from "@/utils/employeeNav";
+import { COPILOT_DOCUMENTS_ASSIST_EVENT, publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
 import candidateStyles from "@/app/dashboard/candidate/candidate-dashboard.module.css";
 import employeeStyles from "@/app/dashboard/employee/employee-dashboard.module.css";
 
@@ -95,6 +97,68 @@ function DocumentsPageContent() {
   useEffect(() => {
     setUser(JSON.parse(localStorage.getItem("user")));
   }, []);
+
+  useEffect(() => {
+    if (!isEmployee) return undefined;
+    publishGuideContext({
+      pathname: "/documents",
+      section: null,
+      formId: "documents",
+    });
+  }, [isEmployee]);
+
+  useEffect(() => {
+    if (!isEmployee) return registerPageAssist(null);
+
+    return registerPageAssist({
+      propose: async () => {
+        const accessToken = localStorage.getItem("access_token");
+        if (!accessToken) return null;
+        try {
+          const data = await listMyDocuments(accessToken);
+          const documents = data?.documents || [];
+          const problem = documents.filter((doc) =>
+            ["mismatch", "rejected", "reupload_required"].includes(
+              String(doc.verification_status || doc.status || "").toLowerCase()
+            )
+          );
+          if (problem.length) {
+            return {
+              message: "I can take you straight to those files and keep the rest out of the way.",
+              applyLabel: "Show problem files",
+              doneMessage: "Problem files are now in view.",
+              meta: { status: "rejected", firstId: problem[0]?.id },
+            };
+          }
+          if (!documents.length) {
+            return {
+              message: "Want me to open the uploader so you can add your first document?",
+              applyLabel: "Open uploader",
+              doneMessage: "The uploader is ready.",
+              meta: { openUploader: true, category: "identity" },
+            };
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      },
+      apply: async (offer) => {
+        const meta = offer.meta || {};
+        window.dispatchEvent(
+          new CustomEvent(COPILOT_DOCUMENTS_ASSIST_EVENT, {
+            detail: {
+              status: meta.status || "all",
+              category: meta.category || "all",
+              openUploader: !!meta.openUploader,
+              replaceDocId: meta.firstId && meta.status ? meta.firstId : null,
+            },
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      },
+    });
+  }, [isEmployee]);
 
   const loadContext = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
