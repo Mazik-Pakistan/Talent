@@ -38,16 +38,18 @@ function IconClose() {
 
 /**
  * Global floating agent widget. Mounted once at the root layout so it's
- * available on every authenticated screen (dashboard home, profile, talent,
- * learning, complete-profile, candidates, employees, announcements, etc.)
- * without every page needing to remember to import it.
+ * available on every authenticated screen without every page needing to
+ * remember to import it. Hidden on dedicated /ai-assistant routes (those
+ * pages own the full-canvas chat).
  */
 export default function AgentChatWidget() {
   const pathname = usePathname();
   const [auth, setAuth] = useState(null);
   const [open, setOpen] = useState(false);
 
-  const hidden = HIDDEN_PREFIXES.some((p) => pathname?.startsWith(p)) || pathname === "/";
+  const onAssistantRoute = Boolean(pathname?.includes("/ai-assistant"));
+  const hidden =
+    HIDDEN_PREFIXES.some((p) => pathname?.startsWith(p)) || pathname === "/" || onAssistantRoute;
 
   useEffect(() => {
     setAuth(hidden ? null : readAuth());

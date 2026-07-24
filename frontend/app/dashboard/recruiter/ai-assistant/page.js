@@ -1,22 +1,56 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import AgentChatCore, { readAuth } from "@/components/ai/AgentChatCore";
 import AssistantPageShell from "@/components/ai/AssistantPageShell";
+import RecruiterShell from "@/components/recruiter/RecruiterShell";
+
+const QUICK_ACTIONS = [
+  {
+    label: "Show hiring pipeline",
+    prompt: "Show my hiring pipeline — new signups, pending offer review, and ready to activate.",
+  },
+  {
+    label: "Invite in bulk",
+    prompt:
+      "I want to invite candidates in bulk. Tell me the required spreadsheet columns (same as Create invitation), then I'll upload the file.",
+  },
+  {
+    label: "Remind incomplete profiles",
+    prompt: "Remind all employees who still have an incomplete post-hire Complete Profile.",
+  },
+  {
+    label: "Ready to activate",
+    prompt: "Show candidates with signed offers who are ready to activate.",
+  },
+];
 
 export default function RecruiterAIAssistantPage() {
+  const agentRef = useRef(null);
   const [auth, setAuth] = useState(null);
+
   useEffect(() => setAuth(readAuth()), []);
 
+  function handleQuickAction(prompt) {
+    agentRef.current?.sendPrompt?.(prompt);
+  }
+
   return (
-    <AssistantPageShell
-      eyebrow="Recruiter workspace"
-      title="Your hiring copilot"
-      description="Run hiring workflows, review candidates, open & verify documents, and send offers without leaving your recruiting dashboard."
-      highlights={["Invite candidates", "Document verification", "Offer workflows"]}
+    <RecruiterShell
+      activeKey="assistant"
+      title="AI Assistant"
+      subtitle="Ask in plain language — invite, review, offer, onboard, and notify, for one person or many."
     >
-      <AgentChatCore variant="canvas" auth={auth} />
-    </AssistantPageShell>
+      <AssistantPageShell
+        eyebrow="Quick actions"
+        title="Hiring Agent"
+        description="Click an action below or type in the chat. Same agent as the floating assistant — for one candidate/employee or bulk. Document lists open as interactive cards you can verify in place."
+        highlights={QUICK_ACTIONS}
+        onHighlightClick={handleQuickAction}
+      >
+        <AgentChatCore ref={agentRef} variant="canvas" auth={auth} />
+      </AssistantPageShell>
+    </RecruiterShell>
   );
 }

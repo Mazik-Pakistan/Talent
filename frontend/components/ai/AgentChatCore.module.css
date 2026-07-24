@@ -227,6 +227,17 @@
   background: #fdecea;
 }
 
+.inlineLink {
+  color: var(--blue, #176896);
+  font-weight: 700;
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.inlineLink:hover {
+  color: #0e557d;
+}
+
 .typing {
   display: inline-flex;
   gap: 4px;

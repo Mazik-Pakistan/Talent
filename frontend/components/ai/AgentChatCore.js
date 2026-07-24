@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
 import { getApiErrorMessage, uploadDocument, verifyDocument } from "@/services/authService";
 import {
@@ -16,29 +16,33 @@ export const ALLOWED_ROLES = ["candidate", "employee", "recruiter", "super_admin
 const ROLE_COPY = {
   recruiter: {
     title: "Hiring Agent",
-    subtitle: "Invitations, offers, documents & joining letters",
-    empty: "Ask me to invite a candidate, list your candidates, open & verify someone's documents, send an offer, or email a joining letter.",
+    subtitle: "Anything you do in recruiting — for one person or in bulk",
+    empty:
+      "Tell me what you need — a person, a bulk action, or a goal. I can help across invites, pipeline, offers, documents, Day-1, reminders, search, and announcements.",
     starters: [
-      "Show my candidates and their status",
-      "Show documents for a candidate",
-      "Send an offer letter",
+      "What can you help me with?",
+      "Show my hiring pipeline",
+      "Remind incomplete employee profiles",
+      "Invite a new candidate",
     ],
   },
   super_admin: {
     title: "Hiring Agent",
-    subtitle: "Invitations, offers, documents & joining letters",
-    empty: "Ask me to invite a candidate, list your candidates, open & verify someone's documents, send an offer, or email a joining letter.",
+    subtitle: "Anything you do in recruiting — for one person or in bulk",
+    empty:
+      "Tell me what you need — a person, a bulk action, or a goal. I can help across invites, pipeline, offers, documents, Day-1, reminders, search, and announcements.",
     starters: [
-      "Show my candidates and their status",
-      "Show documents for a candidate",
-      "Send an offer letter",
+      "What can you help me with?",
+      "Show my hiring pipeline",
+      "Remind incomplete employee profiles",
+      "Invite a new candidate",
     ],
   },
   candidate: {
     title: "Onboarding Agent",
     subtitle: "Let's get your profile ready",
-    empty: "Tell me \"let's start my onboarding\" and I'll walk you through it step by step — personal info, education, skills, and your documents.",
-    starters: ["Let's start my onboarding", "What do I still need to upload?", "Check my progress"],
+    empty: "Tell me \"complete my onboarding\" and I'll walk you through it — or ask what's still missing.",
+    starters: ["Complete my onboarding", "What do I still need to upload?", "Check my progress"],
   },
   employee: {
     title: "Onboarding Agent",
@@ -136,6 +140,45 @@ function statusTone(status) {
   return "neutral";
 }
 
+function linkifyText(text) {
+  if (!text) return null;
+  const parts = String(text).split(/(https?:\/\/[^\s<>"']+)/g);
+  return parts.map((part, i) => {
+    if (/^https?:\/\//i.test(part)) {
+      const href = part.replace(/[),.;]+$/, "");
+      const trailing = part.slice(href.length);
+      return (
+        <span key={`l-${i}`}>
+          <a href={href} target="_blank" rel="noopener noreferrer" className={styles.inlineLink}>
+            Open document
+          </a>
+          {trailing}
+        </span>
+      );
+    }
+    return <span key={`t-${i}`}>{part}</span>;
+  });
+}
+
+function isSpreadsheetHint(hint) {
+  if (!hint) return false;
+  const type = String(hint.type || "").toLowerCase();
+  const docType = String(hint.doc_type || "").toLowerCase();
+  if (type === "spreadsheet" || type === "sheet" || type === "excel" || type === "csv") return true;
+  return (
+    type === "upload" &&
+    ["spreadsheet", "excel", "xlsx", "csv", "roster", "bulk_invite"].includes(docType)
+  );
+}
+
+function docKey(doc) {
+  return doc.id || doc.document_id;
+}
+
+function docFileUrl(doc) {
+  return doc.file_url || doc.download_url;
+}
+
 /**
  * DocumentsAttachment — recruiter-facing document review cards rendered inline
  * in the agent chat. Verify/reject act directly against the documents API
@@ -154,10 +197,14 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
 
   async function act(doc, status, rejectionReason) {
     if (!auth) return;
-    setBusyId(doc.id);
+    const id = docKey(doc);
+    if (!id) return;
+    setBusyId(id);
     try {
-      await verifyDocument(doc.id, { status, rejection_reason: rejectionReason || null }, auth.accessToken);
-      setDocs((prev) => prev.map((d) => (d.id === doc.id ? { ...d, status, verification_status: status } : d)));
+      await verifyDocument(id, { status, rejection_reason: rejectionReason || null }, auth.accessToken);
+      setDocs((prev) =>
+        prev.map((d) => (docKey(d) === id ? { ...d, status, verification_status: status } : d))
+      );
       const label = DOC_TYPE_LABEL[doc.doc_type] || doc.doc_type;
       onLocalNote(
         status === "verified"
@@ -182,10 +229,12 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
   return (
     <div className={styles.docGrid}>
       {docs.map((doc) => {
+        const id = docKey(doc);
         const tone = statusTone(doc.verification_status || doc.status);
-        const busy = busyId === doc.id;
+        const busy = busyId === id;
+        const openUrl = docFileUrl(doc);
         return (
-          <div key={doc.id} className={styles.docCard}>
+          <div key={id || doc.file_name} className={styles.docCard}>
             <div className={styles.docCardTop}>
               <span className={styles.docIcon}>
                 <IconFile />
@@ -206,8 +255,8 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
             ) : null}
 
             <div className={styles.docActions}>
-              {doc.file_url ? (
-                <a href={doc.file_url} target="_blank" rel="noreferrer" className={styles.docOpenLink}>
+              {openUrl ? (
+                <a href={openUrl} target="_blank" rel="noreferrer" className={styles.docOpenLink}>
                   Open file
                 </a>
               ) : null}
@@ -223,13 +272,13 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
                 type="button"
                 className={styles.docRejectBtn}
                 disabled={busy}
-                onClick={() => setReasonFor(reasonFor === doc.id ? null : doc.id)}
+                onClick={() => setReasonFor(reasonFor === id ? null : id)}
               >
                 Reject
               </button>
             </div>
 
-            {reasonFor === doc.id ? (
+            {reasonFor === id ? (
               <div className={styles.reasonRow}>
                 <input
                   className={styles.reasonInput}
@@ -287,9 +336,9 @@ function Attachment({ attachment, auth, onLocalNote }) {
 /**
  * variant: "floating" (default, chrome-less body meant to sit inside the
  * launcher panel) or "canvas" (large, embedded, full-height surface used as
- * the default onboarding screen).
+ * the default onboarding screen / AI assistant page).
  */
-export default function AgentChatCore({ variant = "floating", auth, onEscalate }) {
+const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", auth, onEscalate }, ref) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -374,6 +423,15 @@ export default function AgentChatCore({ variant = "floating", auth, onEscalate }
     [auth, sessionId, persistSession, pushLocalMessages]
   );
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      sendPrompt: (text) => doSend(text),
+      openSheetPicker: () => sheetInputRef.current?.click(),
+    }),
+    [doSend]
+  );
+
   function handleSubmit(e) {
     e.preventDefault();
     doSend(input);
@@ -400,6 +458,12 @@ export default function AgentChatCore({ variant = "floating", auth, onEscalate }
     const hint = pendingUploadHint.current;
     e.target.value = "";
     if (!file || !hint || !auth) return;
+
+    // Recruiters must use the bulk-invite endpoint, never /api/documents/upload.
+    if (isRecruiter || isSpreadsheetHint(hint)) {
+      await handleSheetFileChosen({ target: { files: [file], value: "" } });
+      return;
+    }
 
     const key = `${hint.doc_type}-${Date.now()}`;
     setUploadingKey(key);
@@ -493,8 +557,20 @@ export default function AgentChatCore({ variant = "floating", auth, onEscalate }
             return (
               <div key={m.created_at ? `${m.created_at}-${idx}` : idx} className={`${styles.row} ${isUser ? styles.rowUser : styles.rowAgent}`}>
                 <div className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAgent} ${isErrorNote ? styles.bubbleError : ""}`}>
-                  {m.content}
-                  {!isUser && uiHint?.type === "upload" ? (
+                  {isUser ? m.content : linkifyText(m.content)}
+                  {!isUser && isSpreadsheetHint(uiHint) ? (
+                    <div className={styles.uploadHint}>
+                      <button
+                        type="button"
+                        className={styles.uploadButton}
+                        disabled={sending}
+                        onClick={() => sheetInputRef.current?.click()}
+                      >
+                        {sending ? "Uploading…" : "Upload Excel / CSV"}
+                      </button>
+                    </div>
+                  ) : null}
+                  {!isUser && uiHint?.type === "upload" && !isSpreadsheetHint(uiHint) && !isRecruiter ? (
                     <div className={styles.uploadHint}>
                       <button
                         type="button"
@@ -558,7 +634,7 @@ export default function AgentChatCore({ variant = "floating", auth, onEscalate }
             <button
               type="button"
               className={styles.attachButton}
-              title="Attach a candidate spreadsheet (.xlsx)"
+              title="Attach a candidate spreadsheet (.xlsx or .csv)"
               aria-label="Attach spreadsheet"
               disabled={sending}
               onClick={() => sheetInputRef.current?.click()}
@@ -568,7 +644,7 @@ export default function AgentChatCore({ variant = "floating", auth, onEscalate }
             <input
               ref={sheetInputRef}
               type="file"
-              accept=".xlsx,.xlsm"
+              accept=".xlsx,.xlsm,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
               className={styles.visuallyHidden}
               onChange={handleSheetFileChosen}
             />
@@ -596,4 +672,6 @@ export default function AgentChatCore({ variant = "floating", auth, onEscalate }
       <input ref={docInputRef} type="file" accept=".jpg,.jpeg,.png,.pdf" className={styles.visuallyHidden} onChange={handleDocFileChosen} />
     </div>
   );
-}
+});
+
+export default AgentChatCore;
