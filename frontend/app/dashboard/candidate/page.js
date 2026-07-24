@@ -6,7 +6,6 @@ import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
-import AgentChatWidget from "@/components/ai/Agentchatwidget";
 import {
   clearLocalSession,
   getApiErrorMessage,
@@ -274,7 +273,6 @@ function CandidateDashboardContent() {
 
         {/* Main */}
         <main className={styles.main}>
-          <AgentChatWidget />
           <div className={styles.topbar}>
             <div>
               <div className={styles.topbarTitle}>Candidate Dashboard</div>

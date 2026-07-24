@@ -433,9 +433,12 @@ a.fileChip:hover {
 .modeChooser { display: grid; gap: 8px; }
 .modeGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   margin-top: 12px;
+}
+@media (max-width: 860px) {
+  .modeGrid { grid-template-columns: 1fr; }
 }
 .modeCard {
   display: grid;
@@ -448,11 +451,30 @@ a.fileChip:hover {
   cursor: pointer;
   color: var(--text);
   transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+  position: relative;
 }
 .modeCard:hover {
   border-color: var(--cyan);
   transform: translateY(-2px);
   box-shadow: var(--shadow);
+}
+.modeCard:first-child {
+  border-color: var(--cyan);
+  background: linear-gradient(180deg, #f3fcfe 0%, #eaf8fb 100%);
+}
+.modeCard:first-child::after {
+  content: "Recommended";
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  color: #056280;
+  background: #d7f2f8;
+  padding: 3px 8px;
+  border-radius: 999px;
 }
 .modeCard strong { font-size: 16px; color: var(--navy); font-family: 'Sora', system-ui, sans-serif; }
 .modeCard span:last-child { font-size: 13.5px; color: var(--text-muted); line-height: 1.5; }

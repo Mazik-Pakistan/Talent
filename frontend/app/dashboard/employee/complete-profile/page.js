@@ -22,6 +22,7 @@ import {
   PK_MOBILE_HINT,
 } from "@/utils/phone";
 import { getEmployeeNavItems } from "@/utils/employeeNav";
+import AgentChatCore, { readAuth } from "@/components/ai/AgentChatCore";
 import styles from "./complete-profile.module.css";
 
 const STEPS = [
@@ -60,6 +61,10 @@ export default function CompleteProfilePage() {
   const [ndaAgreed, setNdaAgreed] = useState(false);
   const [ndaSignature, setNdaSignature] = useState(null);
   const [recruiterNudge, setRecruiterNudge] = useState(null);
+  const [uiMode, setUiMode] = useState(null);
+  const [auth, setAuth] = useState(null);
+
+  useEffect(() => setAuth(readAuth()), []);
 
   const stepIndex = useMemo(() => STEPS.findIndex((s) => s.id === step), [step]);
   const complete = progress?.profile_status === "complete";
@@ -176,11 +181,37 @@ export default function CompleteProfilePage() {
       } else if (data.progress?.current_step) {
         setStep(data.progress.current_step);
       }
+      const storedMode = sessionStorage.getItem("complete_profile_ui_mode");
+      if (storedMode === "agent" || storedMode === "manual") {
+        setUiMode(storedMode);
+      } else if (data.progress?.profile_status !== "complete" && !data.progress?.percentage) {
+        setUiMode("agent");
+        sessionStorage.setItem("complete_profile_ui_mode", "agent");
+      } else {
+        setUiMode("manual");
+      }
     } catch (error) {
       showToast("error", getApiErrorMessage(error, "Unable to load your profile."));
     } finally {
       setLoading(false);
     }
+  }
+
+  async function switchToManual() {
+    const accessToken = localStorage.getItem("access_token");
+    if (accessToken) {
+      try {
+        const data = await getProfileCompletion(accessToken);
+        setEmployee(data.employee);
+        setProgress(data.progress);
+        hydrate(data.onboarding, data.employee);
+        if (data.progress?.current_step) setStep(data.progress.current_step);
+      } catch {
+        /* keep whatever local state we already have */
+      }
+    }
+    setUiMode("manual");
+    sessionStorage.setItem("complete_profile_ui_mode", "manual");
   }
 
   async function persist(payload) {
@@ -499,6 +530,25 @@ export default function CompleteProfilePage() {
               <div className={styles.ringWrap}>
                 <HeroRing percentage={progress?.percentage ?? (complete ? 100 : 0)} />
                 <div className={styles.ringLabel}>{complete ? "Completed" : <>Completion<br />progress</>}</div>
+                {!complete ? (
+                  <button
+                    type="button"
+                    onClick={() => (uiMode === "agent" ? switchToManual() : (setUiMode("agent"), sessionStorage.setItem("complete_profile_ui_mode", "agent")))}
+                    style={{
+                      marginTop: 10,
+                      border: "1px solid #9ad7e4",
+                      background: "#fff",
+                      color: "#056280",
+                      borderRadius: 8,
+                      padding: "6px 12px",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {uiMode === "agent" ? "Switch to manual form" : "Use AI agent instead"}
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -570,6 +620,12 @@ export default function CompleteProfilePage() {
                       Go to my dashboard
                     </button>
                   </div>
+                </div>
+              </div>
+            ) : !complete && uiMode === "agent" ? (
+              <div className={styles.section} style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ height: "min(74vh, 720px)", minHeight: 480 }}>
+                  <AgentChatCore variant="canvas" auth={auth} onEscalate={switchToManual} />
                 </div>
               </div>
             ) : (

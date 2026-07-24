@@ -23,6 +23,7 @@ class AgentChatResponse(BaseModel):
     messages: list[AgentMessage]
     suggested_replies: list[str] = Field(default_factory=list)
     ui_hint: dict | None = None
+    attachment: dict | None = None
     state: dict | None = None
 
 

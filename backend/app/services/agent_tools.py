@@ -19,6 +19,7 @@ from pydantic import ValidationError
 
 from app.core.database import database
 from app.core.rbac import CurrentUser
+from app.schemas.document import DocumentVerifyRequest
 from app.schemas.employee_profile import EmployeeProfileSaveRequest
 from app.schemas.invitation import CreateInvitationRequest, OnboardingSaveRequest
 from app.schemas.offer import OfferCreateRequest
@@ -435,6 +436,71 @@ async def _tool_remind_employee_profile(user: CurrentUser, args: dict) -> ToolRe
         return _err(exc)
 
 
+async def _tool_list_candidate_documents(user: CurrentUser, args: dict) -> ToolResult:
+    """List a candidate/employee's uploaded documents for the recruiter to open & verify."""
+    query = (args.get("email") or args.get("name") or args.get("full_name") or "").strip()
+    if not query:
+        return ToolResult(ok=False, error="An email or name is required.")
+
+    target = await _find_candidate_by_query(query) or await _find_employee_by_query(query)
+    if not target:
+        return ToolResult(ok=False, error=f"No candidate or employee found for {query}.")
+
+    owner_id = target.get("user_id") or str(target.get("_id"))
+    try:
+        result = await document_service.list_for_owner(user, owner_id)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+    docs = []
+    for d in result.get("documents", []):
+        docs.append(
+            {
+                "id": d.get("id"),
+                "doc_type": d.get("doc_type"),
+                "category": d.get("category"),
+                "file_name": d.get("file_name"),
+                "file_url": d.get("file_url"),
+                "status": d.get("status"),
+                "verification_status": d.get("verification_status"),
+                "mismatches": (d.get("mismatches") or [])[:3],
+                "cross_document_mismatches": (d.get("cross_document_mismatches") or [])[:3],
+                "uploaded_at": d.get("uploaded_at"),
+            }
+        )
+
+    return ToolResult(
+        ok=True,
+        data={
+            "owner_id": owner_id,
+            "full_name": target.get("full_name"),
+            "email": target.get("email"),
+            "document_verification": result.get("document_verification"),
+            "documents": docs,
+            "count": len(docs),
+        },
+    )
+
+
+async def _tool_verify_document(user: CurrentUser, args: dict) -> ToolResult:
+    """Approve, reject, or request re-upload for one document by id (from list_candidate_documents)."""
+    document_id = (args.get("document_id") or "").strip()
+    status = (args.get("status") or "verified").strip()
+    if not document_id:
+        return ToolResult(ok=False, error="document_id is required — call list_candidate_documents first.")
+    try:
+        payload = DocumentVerifyRequest(
+            status=status,
+            rejection_reason=args.get("rejection_reason"),
+            note=args.get("note"),
+            approve_despite_mismatch=bool(args.get("approve_despite_mismatch")),
+        )
+        result = await document_service.verify(user, document_id, payload)
+        return ToolResult(ok=True, data={"message": f"Document marked {status}.", "document": result})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 RECRUITER_TOOLS: list[Tool] = [
     Tool(
         name="send_invitation",
@@ -546,6 +612,34 @@ RECRUITER_TOOLS: list[Tool] = [
             "extra_notes": "string, optional",
         },
         handler=_tool_send_joining_letter,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="list_candidate_documents",
+        description=(
+            "List every document a candidate/employee has uploaded (CNIC, passport, transcripts, resume) "
+            "so the recruiter can open and review them, including OCR mismatches vs. their profile. "
+            "Always call this before verify_document — you need the document `id` values it returns."
+        ),
+        parameters={"email": "string, preferred", "name": "string, optional alternative to email"},
+        handler=_tool_list_candidate_documents,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="verify_document",
+        description=(
+            "Approve, reject, or request re-upload for one document by its id (get the id from "
+            "list_candidate_documents first — never invent one). Rejecting or requesting re-upload "
+            "requires a rejection_reason."
+        ),
+        parameters={
+            "document_id": "string, required — from list_candidate_documents",
+            "status": "string, required: verified | rejected | reupload_required",
+            "rejection_reason": "string, required if status is rejected or reupload_required",
+            "note": "string, optional",
+            "approve_despite_mismatch": "boolean, optional — set true to override a flagged OCR mismatch",
+        },
+        handler=_tool_verify_document,
         roles=("recruiter", "super_admin"),
     ),
 ]

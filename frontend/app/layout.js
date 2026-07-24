@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google";
 
+import AgentChatWidget from "@/components/ai/Agentchatwidget";
 import SessionTimeout from "@/components/SessionTimeout";
 import ToastProvider from "@/components/ToastProvider";
 import "./globals.css";
@@ -27,6 +28,7 @@ export default function RootLayout({ children }) {
         <SessionTimeout />
         <ToastProvider />
         {children}
+        <AgentChatWidget />
       </body>
     </html>
   );

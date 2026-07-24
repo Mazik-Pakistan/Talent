@@ -6,7 +6,6 @@ import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
-import AgentChatWidget from "@/components/ai/Agentchatwidget";
 import {
   clearLocalSession,
   getNotifications,
@@ -478,7 +477,6 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
             </div>
 
             <div className={styles.content}>
-              <AgentChatWidget />
               {selectedPerson && (
                 <div className={styles.selectionBox}>
                   <div>

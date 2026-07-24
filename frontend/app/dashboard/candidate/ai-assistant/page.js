@@ -1,9 +1,14 @@
 "use client";
 
-import AgentChatWidget from "@/components/ai/Agentchatwidget";
+import { useEffect, useState } from "react";
+
+import AgentChatCore, { readAuth } from "@/components/ai/AgentChatCore";
 import AssistantPageShell from "@/components/ai/AssistantPageShell";
 
 export default function CandidateAIAssistantPage() {
+  const [auth, setAuth] = useState(null);
+  useEffect(() => setAuth(readAuth()), []);
+
   return (
     <AssistantPageShell
       eyebrow="Candidate workspace"
@@ -11,7 +16,7 @@ export default function CandidateAIAssistantPage() {
       description="Keep your onboarding moving with one place to ask questions, upload documents, and get help with next steps."
       highlights={["Document guidance", "Profile readiness", "Next-step suggestions"]}
     >
-      <AgentChatWidget />
+      <AgentChatCore variant="canvas" auth={auth} />
     </AssistantPageShell>
   );
 }

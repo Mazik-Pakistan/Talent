@@ -55,6 +55,18 @@ because pre-hire fields are on file.
 post-hire Complete Profile, and list the missing steps.
 - To remind an employee to finish Complete Profile, you MUST call remind_employee_profile. Use force=true \
 when the recruiter asks to resend.
+
+Document review & verification (hiring workflow):
+- If the recruiter asks to see/open/review someone's documents, call list_candidate_documents — never guess \
+document ids. The app renders the returned documents as cards the recruiter can open directly, so you don't \
+need to restate every field back to them; just briefly summarize count and any flagged mismatches.
+- To verify, reject, or request re-upload of a specific document, call verify_document with the exact `id` \
+from list_candidate_documents. Rejecting or requesting re-upload requires a rejection_reason — ask the \
+recruiter for one if they didn't give it.
+- If list_candidate_documents shows OCR mismatches against the candidate's profile, point them out before \
+verifying, and only use approve_despite_mismatch=true if the recruiter explicitly says to override it.
+- Typical hiring flow you can help orchestrate end-to-end in chat: list_candidates → list_candidate_documents \
+→ verify_document (each doc) → create_offer (with start_date, reporting_manager, salary) → send_joining_letter.
 """
 
 SELF_SERVE_SYSTEM_PROMPT = """You are the TalentAI Onboarding Agent, guiding a new candidate/employee through \
@@ -85,6 +97,16 @@ to finish (candidates: sends the profile for recruiter review; employees: comple
 route real values into save_step so they're stored securely.
 - Be encouraging and clear about what's next.
 """
+
+# Tool results that the frontend can render as rich cards instead of raw text.
+# When one of these was called this turn, we attach its data to the reply so the
+# UI never depends on the LLM perfectly re-typing structured data back out.
+RENDERABLE_TOOLS = {
+    "list_candidate_documents": "documents",
+    "list_documents": "documents",
+    "list_candidates": "candidates",
+    "list_employees": "employees",
+}
 
 DOC_TYPE_CATEGORY = {
     "cnic": "identity",
@@ -167,6 +189,16 @@ Respond with a SINGLE JSON object, no markdown fences, matching exactly one of t
 Only ever return one JSON object."""
 
 
+def _last_renderable_attachment(scratchpad: list[dict]) -> dict | None:
+    """Find the most recent successful call to a RENDERABLE_TOOLS tool this turn."""
+    for entry in reversed(scratchpad):
+        kind = RENDERABLE_TOOLS.get(entry["tool"])
+        result = entry["result"]
+        if kind and result.get("ok") and result.get("data"):
+            return {"type": kind, "data": result["data"]}
+    return None
+
+
 async def _save_messages(session_id: str, user_id: str, new_msgs: list[dict]) -> None:
     await database.agent_conversations.update_one(
         {"session_id": session_id, "user_id": user_id},
@@ -215,7 +247,11 @@ class AgentService:
             "role": "assistant",
             "content": reply["message"],
             "created_at": _now_iso(),
-            "meta": {"ui_hint": reply.get("ui_hint"), "suggested_replies": reply.get("suggested_replies") or []},
+            "meta": {
+                "ui_hint": reply.get("ui_hint"),
+                "suggested_replies": reply.get("suggested_replies") or [],
+                "attachment": reply.get("attachment"),
+            },
         }
         pending_to_save.append(assistant_msg)
         if pending_to_save:
@@ -228,6 +264,7 @@ class AgentService:
             "messages": all_messages[-40:],
             "suggested_replies": reply.get("suggested_replies") or [],
             "ui_hint": reply.get("ui_hint"),
+            "attachment": reply.get("attachment"),
         }
 
     async def _run_llm_loop(self, user: CurrentUser, convo: dict, message: str) -> dict:
@@ -259,6 +296,7 @@ class AgentService:
                     "message": (parsed.get("message") or "").strip() or "Done.",
                     "suggested_replies": parsed.get("suggested_replies") or [],
                     "ui_hint": parsed.get("ui_hint"),
+                    "attachment": _last_renderable_attachment(scratchpad),
                 }
 
             # Unrecognized shape — treat whatever text we got as the reply.
@@ -266,12 +304,14 @@ class AgentService:
                 "message": parsed.get("message") or "I didn't quite catch that — could you rephrase?",
                 "suggested_replies": [],
                 "ui_hint": None,
+                "attachment": _last_renderable_attachment(scratchpad),
             }
 
         return {
             "message": "I gathered the information but need one more detail from you to finish — could you confirm and try again?",
             "suggested_replies": [],
             "ui_hint": None,
+            "attachment": _last_renderable_attachment(scratchpad),
         }
 
     async def get_history(self, user: CurrentUser, session_id: str) -> dict:
