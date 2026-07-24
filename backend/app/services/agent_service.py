@@ -100,9 +100,18 @@ Pipeline & activation:
 - Use list_pipeline (pending_review / onboarding / ready_to_activate) to show hiring stages.
 - Use approve_offer for one signed offer, bulk_approve_offers to activate all (or a list).
 
-Documents:
-- Use list_person_documents then verify_document / bulk_verify_documents. Always include rejection_reason \
-when rejecting or requesting re-upload.
+Document review & verification (hiring workflow):
+- If the recruiter asks to see/open/review someone's documents, call list_person_documents (alias: \
+list_candidate_documents) — never guess document ids. The app renders returned documents as cards the \
+recruiter can open/verify directly, so briefly summarize count and any flagged OCR mismatches instead of \
+restating every field.
+- To verify, reject, or request re-upload of a specific document, call verify_document with the exact \
+document_id from list_person_documents. Rejecting or requesting re-upload requires a rejection_reason — \
+ask the recruiter for one if they didn't give it. Use bulk_verify_documents for many docs at once.
+- If list_person_documents shows OCR mismatches against the profile, point them out before verifying, and \
+only use approve_despite_mismatch=true if the recruiter explicitly says to override it.
+- Typical hiring flow: list_candidates / list_pipeline → list_person_documents → verify_document → \
+create_offer → approve_offer / send_joining_letter.
 
 Day-1:
 - set_company_email / bulk_set_company_email, assign_asset / bulk_assign_assets, \
@@ -141,6 +150,19 @@ to finish (candidates: sends the profile for recruiter review; employees: comple
 route real values into save_step so they're stored securely.
 - Be encouraging and clear about what's next.
 """
+
+# Tool results that the frontend can render as rich cards instead of raw text.
+# When one of these was called this turn, we attach its data to the reply so the
+# UI never depends on the LLM perfectly re-typing structured data back out.
+RENDERABLE_TOOLS = {
+    "list_person_documents": "documents",
+    "list_candidate_documents": "documents",
+    "list_documents": "documents",
+    "list_candidates": "candidates",
+    "list_employees": "employees",
+    "directory_employees": "employees",
+    "list_pipeline": "candidates",
+}
 
 DOC_TYPE_CATEGORY = {
     "cnic": "identity",
@@ -256,6 +278,16 @@ ui_hint for recruiters: {{"type":"spreadsheet"}} when they should attach an Exce
 ui_hint for candidate/employee uploads only: {{"type":"upload","doc_type":"cnic","category":"identity"}}."""
 
 
+def _last_renderable_attachment(scratchpad: list[dict]) -> dict | None:
+    """Find the most recent successful call to a RENDERABLE_TOOLS tool this turn."""
+    for entry in reversed(scratchpad):
+        kind = RENDERABLE_TOOLS.get(entry["tool"])
+        result = entry["result"]
+        if kind and result.get("ok") and result.get("data"):
+            return {"type": kind, "data": result["data"]}
+    return None
+
+
 async def _save_messages(session_id: str, user_id: str, new_msgs: list[dict]) -> None:
     await database.agent_conversations.update_one(
         {"session_id": session_id, "user_id": user_id},
@@ -336,7 +368,11 @@ class AgentService:
             "role": "assistant",
             "content": reply["message"],
             "created_at": _now_iso(),
-            "meta": {"ui_hint": ui_hint, "suggested_replies": reply.get("suggested_replies") or []},
+            "meta": {
+                "ui_hint": ui_hint,
+                "suggested_replies": reply.get("suggested_replies") or [],
+                "attachment": reply.get("attachment"),
+            },
         }
         pending_to_save.append(assistant_msg)
         if pending_to_save:
@@ -349,6 +385,7 @@ class AgentService:
             "messages": all_messages[-40:],
             "suggested_replies": reply.get("suggested_replies") or [],
             "ui_hint": ui_hint,
+            "attachment": reply.get("attachment"),
         }
 
     async def _run_llm_loop(self, user: CurrentUser, convo: dict, message: str) -> dict:
@@ -380,6 +417,7 @@ class AgentService:
                     "message": (parsed.get("message") or "").strip() or "Done.",
                     "suggested_replies": parsed.get("suggested_replies") or [],
                     "ui_hint": _sanitize_ui_hint(user, parsed.get("ui_hint")),
+                    "attachment": _last_renderable_attachment(scratchpad),
                 }
 
             # Unrecognized shape — treat whatever text we got as the reply.
@@ -387,12 +425,14 @@ class AgentService:
                 "message": parsed.get("message") or "I didn't quite catch that — could you rephrase?",
                 "suggested_replies": [],
                 "ui_hint": None,
+                "attachment": _last_renderable_attachment(scratchpad),
             }
 
         return {
             "message": "I gathered the information but need one more detail from you to finish — could you confirm and try again?",
             "suggested_replies": [],
             "ui_hint": None,
+            "attachment": _last_renderable_attachment(scratchpad),
         }
 
     async def get_history(self, user: CurrentUser, session_id: str) -> dict:

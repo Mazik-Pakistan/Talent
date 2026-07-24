@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import AgentChatWidget from "@/components/ai/Agentchatwidget";
+import AgentChatCore, { readAuth } from "@/components/ai/AgentChatCore";
 import AssistantPageShell from "@/components/ai/AssistantPageShell";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 
@@ -28,6 +28,9 @@ const QUICK_ACTIONS = [
 
 export default function RecruiterAIAssistantPage() {
   const agentRef = useRef(null);
+  const [auth, setAuth] = useState(null);
+
+  useEffect(() => setAuth(readAuth()), []);
 
   function handleQuickAction(prompt) {
     agentRef.current?.sendPrompt?.(prompt);
@@ -42,11 +45,11 @@ export default function RecruiterAIAssistantPage() {
       <AssistantPageShell
         eyebrow="Quick actions"
         title="Hiring Agent"
-        description="Click an action below or type in the chat. Same agent as the floating assistant — for one candidate/employee or bulk."
+        description="Click an action below or type in the chat. Same agent as the floating assistant — for one candidate/employee or bulk. Document lists open as interactive cards you can verify in place."
         highlights={QUICK_ACTIONS}
         onHighlightClick={handleQuickAction}
       >
-        <AgentChatWidget ref={agentRef} variant="page" />
+        <AgentChatCore ref={agentRef} variant="canvas" auth={auth} />
       </AssistantPageShell>
     </RecruiterShell>
   );

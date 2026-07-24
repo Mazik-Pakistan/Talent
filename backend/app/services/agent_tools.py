@@ -551,16 +551,23 @@ async def _tool_remind_employee_profile(user: CurrentUser, args: dict) -> ToolRe
 
 
 def _doc_summary(doc: dict) -> dict:
+    """Normalize document fields for LLM replies and rich chat attachment cards."""
+    doc_id = doc.get("id") or doc.get("document_id") or str(doc.get("_id") or "")
+    file_url = doc.get("file_url") or doc.get("download_url")
     return {
-        "document_id": doc.get("id") or doc.get("document_id") or str(doc.get("_id") or ""),
+        # `id` is what the frontend document cards / verify API expect.
+        "id": doc_id,
+        "document_id": doc_id,
         "doc_type": doc.get("doc_type"),
         "category": doc.get("category"),
         "file_name": doc.get("file_name"),
+        "file_url": file_url,
         "status": doc.get("status") or doc.get("verification_status"),
         "verification_status": doc.get("verification_status"),
         "rejection_reason": doc.get("rejection_reason"),
-        "mismatches": doc.get("mismatches") or doc.get("profile_mismatches") or [],
-        "cross_document_mismatches": doc.get("cross_document_mismatches") or [],
+        "mismatches": (doc.get("mismatches") or doc.get("profile_mismatches") or [])[:3],
+        "cross_document_mismatches": (doc.get("cross_document_mismatches") or [])[:3],
+        "uploaded_at": doc.get("uploaded_at"),
     }
 
 
@@ -751,14 +758,20 @@ async def _tool_list_person_documents(user: CurrentUser, args: dict) -> ToolResu
             if doc_id:
                 try:
                     link = await document_service.get_signed_url(user, doc_id, None)
-                    summary["download_url"] = link.get("url")
+                    signed = link.get("url")
+                    summary["download_url"] = signed
+                    summary["file_url"] = signed or summary.get("file_url")
                     summary["download_expires_in"] = link.get("expires_in")
                 except Exception:  # noqa: BLE001
-                    summary["download_url"] = None
+                    summary["download_url"] = summary.get("file_url")
             docs.append(summary)
         return ToolResult(
             ok=True,
             data={
+                # Top-level fields keep document attachment cards working.
+                "owner_id": owner_id,
+                "full_name": person.get("full_name"),
+                "email": person.get("email"),
                 "owner": {
                     "full_name": person.get("full_name"),
                     "email": person.get("email"),
@@ -769,8 +782,8 @@ async def _tool_list_person_documents(user: CurrentUser, args: dict) -> ToolResu
                 "count": len(docs),
                 "document_verification": result.get("document_verification"),
                 "note": (
-                    "Include each download_url as a clickable link in your reply so the recruiter "
-                    "can open the file. Chat cannot embed PDF previews."
+                    "Documents are also shown as interactive cards in chat. Briefly summarize "
+                    "count and any OCR mismatches; include download_url links when helpful."
                 ),
             },
         )
@@ -1561,7 +1574,12 @@ RECRUITER_TOOLS: list[Tool] = [
     ),
     Tool(
         name="list_person_documents",
-        description="List documents for one candidate or employee (by email/name/employee_id) with verification status and mismatches.",
+        description=(
+            "List every document a candidate/employee has uploaded (CNIC, passport, transcripts, resume) "
+            "so the recruiter can open and review them, including OCR mismatches vs. their profile. "
+            "Always call this before verify_document — you need the document id values it returns. "
+            "The app also renders these as interactive cards in chat."
+        ),
         parameters={
             "email": "string, optional",
             "name": "string, optional",
@@ -1571,16 +1589,28 @@ RECRUITER_TOOLS: list[Tool] = [
         handler=_tool_list_person_documents,
         roles=("recruiter", "super_admin"),
     ),
+    # Alias kept for prompts / older sessions that still say list_candidate_documents.
+    Tool(
+        name="list_candidate_documents",
+        description=(
+            "Alias of list_person_documents. Prefer list_person_documents. Lists uploaded documents "
+            "for a candidate/employee so the recruiter can review and verify them."
+        ),
+        parameters={"email": "string, preferred", "name": "string, optional alternative to email"},
+        handler=_tool_list_person_documents,
+        roles=("recruiter", "super_admin"),
+    ),
     Tool(
         name="verify_document",
         description=(
-            "Verify, reject, or request re-upload for one document. "
-            "rejected/reupload_required require rejection_reason: blurry_or_unreadable|wrong_document_type|"
-            "expired_document|information_mismatch|incomplete_document|other. "
-            "Sends email + in-app notification to the owner."
+            "Approve, reject, or request re-upload for one document by its id (from list_person_documents — "
+            "never invent one). rejected/reupload_required require rejection_reason: "
+            "blurry_or_unreadable|wrong_document_type|expired_document|information_mismatch|"
+            "incomplete_document|other. Sends email + in-app notification to the owner. "
+            "Set approve_despite_mismatch=true only when the recruiter explicitly overrides an OCR flag."
         ),
         parameters={
-            "document_id": "string, required",
+            "document_id": "string, required — from list_person_documents",
             "status": "verified|rejected|reupload_required|mismatch",
             "rejection_reason": "string, required for rejected/reupload_required",
             "note": "string, optional",

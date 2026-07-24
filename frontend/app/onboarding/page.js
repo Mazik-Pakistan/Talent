@@ -16,6 +16,7 @@ import { can, ROLE_HOME } from "@/services/rbac";
 import Toast from "@/components/Toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import AgentChatCore, { readAuth } from "@/components/ai/AgentChatCore";
 import styles from "./onboarding.module.css";
 
 const STEPS = [
@@ -237,7 +238,7 @@ function OnboardingContent() {
     Promise.resolve().then(async () => {
       try {
         const storedMode = sessionStorage.getItem(FILL_MODE_KEY);
-        if (storedMode === "ocr" || storedMode === "manual") {
+        if (storedMode === "ocr" || storedMode === "manual" || storedMode === "agent") {
           setFillMode(storedMode);
         } else if (isEditMode) {
           setFillMode("manual");
@@ -247,6 +248,15 @@ function OnboardingContent() {
         setOnboarding(data.onboarding);
         setProgress(data.progress);
         hydrateForms(data.onboarding);
+        // First-ever visit (nothing chosen, nothing started yet): default straight
+        // into the AI onboarding agent instead of the mode-picker screen.
+        if (!storedMode && !isEditMode) {
+          const neverStarted = !data.onboarding?.current_step && isPersonalIncomplete(data.onboarding?.personal);
+          if (neverStarted) {
+            setFillMode("agent");
+            sessionStorage.setItem(FILL_MODE_KEY, "agent");
+          }
+        }
         // Restore local draft if server personal is empty/partial after an OCR fill that wasn't fully saved.
         try {
           const draft = JSON.parse(localStorage.getItem(draftStorageKey()) || "null");
@@ -575,6 +585,7 @@ function OnboardingContent() {
   const submitted = onboarding?.status === "submitted";
   const isOcrMode = fillMode === "ocr";
   const isManualMode = fillMode === "manual";
+  const isAgentMode = fillMode === "agent";
   const showModeChooser = !loading && !submitted && !isEditMode && !fillMode;
 
   // ── Per-step completion checks (drive the blue progress indicator) ──
@@ -722,6 +733,29 @@ function OnboardingContent() {
     setFillMode(mode);
     sessionStorage.setItem(FILL_MODE_KEY, mode);
     setMessage("");
+  }
+
+  // Used when leaving agent mode (explicit toggle, or auto-fallback on repeated
+  // agent errors). Re-fetches from the server first so any fields the agent
+  // already saved via save_step show up pre-filled in the manual form —
+  // nothing typed to the agent is lost.
+  async function switchToManual() {
+    const accessToken = localStorage.getItem("access_token");
+    if (accessToken) {
+      try {
+        const data = await getOnboarding(accessToken);
+        setCandidate(data.candidate);
+        setOnboarding(data.onboarding);
+        setProgress(data.progress);
+        hydrateForms(data.onboarding);
+        const stepAliases = { government_docs: "personal", resume: "skills", complete: "submit" };
+        const nextStep = stepAliases[data.onboarding?.current_step] || data.onboarding?.current_step || "personal";
+        setStep(isPersonalIncomplete(data.onboarding?.personal) ? "personal" : nextStep);
+      } catch {
+        /* fall through to manual mode with whatever we already have locally */
+      }
+    }
+    chooseFillMode("manual");
   }
 
   async function persist(payload) {
@@ -1170,6 +1204,15 @@ function OnboardingContent() {
                       to save time; other documents are stored without scanning.
                     </p>
                     <div className={styles.modeGrid}>
+                      <button type="button" className={styles.modeCard} onClick={() => chooseFillMode("agent")}>
+                        <span className={styles.modeIcon} aria-hidden>
+                          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                          </svg>
+                        </span>
+                        <strong>Let the AI Agent do it</strong>
+                        <span>Chat through your profile — upload your CNIC and the agent reads it, fills your details, and confirms everything with you.</span>
+                      </button>
                       <button type="button" className={styles.modeCard} onClick={() => chooseFillMode("ocr")}>
                         <span className={styles.modeIcon} aria-hidden>
                           <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -1192,6 +1235,8 @@ function OnboardingContent() {
                       </button>
                     </div>
                   </div>
+                ) : isAgentMode ? (
+                  <AgentOnboardingPanel styles={styles} onSwitchToManual={switchToManual} onChangeMode={() => { sessionStorage.removeItem(FILL_MODE_KEY); setFillMode(null); }} />
                 ) : (
                   <>
                     <div className={styles.modeBanner}>
@@ -1942,6 +1987,28 @@ function OnboardingContent() {
       />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
+    </div>
+  );
+}
+
+function AgentOnboardingPanel({ styles, onSwitchToManual, onChangeMode }) {
+  const [auth, setAuth] = useState(null);
+  useEffect(() => setAuth(readAuth()), []);
+
+  return (
+    <div>
+      <div className={styles.modeBanner}>
+        <span>AI Agent mode — chat through personal, education, skills & documents together</span>
+        <button type="button" className={styles.modeSwitch} onClick={onSwitchToManual}>
+          Switch to manual form
+        </button>
+        <button type="button" className={styles.modeSwitch} onClick={onChangeMode} style={{ marginLeft: 8 }}>
+          Change mode
+        </button>
+      </div>
+      <div style={{ height: "min(72vh, 700px)", minHeight: 480, marginTop: 16 }}>
+        <AgentChatCore variant="canvas" auth={auth} onEscalate={onSwitchToManual} />
+      </div>
     </div>
   );
 }

@@ -82,7 +82,8 @@
   background: #fff;
   box-shadow: 0 20px 40px rgba(18, 58, 99, 0.08);
   overflow: hidden;
-  min-height: min(640px, calc(100vh - 280px));
+  height: min(76vh, 760px);
+  min-height: min(520px, calc(100vh - 280px));
 }
 
 .content:empty {
