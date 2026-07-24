@@ -10,6 +10,7 @@ LLM as "observations".
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
@@ -97,41 +98,119 @@ async def _find_employee_by_email(email: str) -> dict | None:
     return await database.employees.find_one({"email": email.lower().strip()})
 
 
-async def _find_employee_by_query(q: str) -> dict | None:
+def _escape_regex(term: str) -> str:
+    return re.escape(term or "")
+
+
+def _name_match_clauses(term: str) -> list[dict]:
+    """Match full or partial names so 'Omer Shamsi' / 'omer' both resolve."""
+    cleaned = " ".join((term or "").split())
+    if not cleaned:
+        return []
+    clauses: list[dict] = [
+        {"full_name": {"$regex": _escape_regex(cleaned), "$options": "i"}},
+        {"email": {"$regex": _escape_regex(cleaned), "$options": "i"}},
+    ]
+    tokens = [t for t in cleaned.split(" ") if len(t) >= 2]
+    if len(tokens) >= 2:
+        clauses.append(
+            {
+                "$and": [
+                    {"full_name": {"$regex": _escape_regex(tok), "$options": "i"}} for tok in tokens
+                ]
+            }
+        )
+    return clauses
+
+
+def _recruiter_scope(user: CurrentUser) -> str | None:
+    return None if user.role == "super_admin" else user.id
+
+
+async def _find_employee_by_query(q: str, *, recruiter_id: str | None = None) -> dict | None:
     term = (q or "").strip()
     if not term:
         return None
     if "@" in term:
-        return await _find_employee_by_email(term)
-    return await database.employees.find_one(
-        {
-            "$or": [
-                {"full_name": {"$regex": term, "$options": "i"}},
-                {"employee_id": {"$regex": term, "$options": "i"}},
-                {"email": {"$regex": term, "$options": "i"}},
-            ]
-        }
-    )
+        emp = await _find_employee_by_email(term)
+        if emp and recruiter_id and emp.get("recruiter_id") != recruiter_id:
+            return None
+        return emp
+    query: dict = {
+        "$or": [
+            *_name_match_clauses(term),
+            {"employee_id": {"$regex": _escape_regex(term), "$options": "i"}},
+        ]
+    }
+    if recruiter_id:
+        query = {"$and": [{"recruiter_id": recruiter_id}, query]}
+    return await database.employees.find_one(query)
 
 
-async def _find_candidate_by_query(q: str) -> dict | None:
+async def _find_candidate_by_query(q: str, *, recruiter_id: str | None = None) -> dict | None:
     term = (q or "").strip()
     if not term:
         return None
     if "@" in term:
-        return await _find_candidate_by_email(term)
-    return await database.candidates.find_one(
-        {
-            "$or": [
-                {"full_name": {"$regex": term, "$options": "i"}},
-                {"email": {"$regex": term, "$options": "i"}},
-            ]
-        }
-    )
+        cand = await _find_candidate_by_email(term)
+        if cand and recruiter_id and cand.get("recruiter_id") != recruiter_id:
+            return None
+        return cand
+    query: dict = {"$or": _name_match_clauses(term)}
+    if recruiter_id:
+        query = {"$and": [{"recruiter_id": recruiter_id}, query]}
+    return await database.candidates.find_one(query)
 
 
 POST_HIRE_PROFILE_KEYS = ("emergency", "employment", "references", "documents", "nda")
 PRE_HIRE_ONBOARDING_KEYS = ("personal", "education", "skills", "government_docs", "resume")
+
+
+def _candidate_profile_summary(candidate: dict) -> dict:
+    """Compact profile for chat — overview fields a recruiter expects to see."""
+    onboarding = candidate.get("onboarding") or {}
+    personal = onboarding.get("personal") or {}
+    education = onboarding.get("education") or {}
+    skills = onboarding.get("skills") or {}
+    return {
+        "full_name": candidate.get("full_name"),
+        "email": candidate.get("email"),
+        "phone": candidate.get("phone"),
+        "job_title": candidate.get("job_title"),
+        "department": candidate.get("department"),
+        "office_location": candidate.get("office_location"),
+        "start_date": candidate.get("start_date"),
+        "status": candidate.get("status"),
+        "conversion_status": candidate.get("conversion_status"),
+        "onboarding_status": onboarding.get("status") or "not_started",
+        "current_step": onboarding.get("current_step"),
+        "personal": {
+            "first_name": personal.get("first_name"),
+            "last_name": personal.get("last_name"),
+            "date_of_birth": personal.get("date_of_birth"),
+            "gender": personal.get("gender"),
+            "nationality": personal.get("nationality"),
+            "city": personal.get("city"),
+            "country": personal.get("country"),
+        }
+        if personal
+        else None,
+        "education_entries": (education.get("entries") or [])[:5] if education else [],
+        "skills": {
+            "technical_skills": (skills.get("technical_skills") or [])[:20],
+            "soft_skills": (skills.get("soft_skills") or [])[:20],
+            "languages": (skills.get("languages") or [])[:10],
+            "certifications": (skills.get("certifications") or [])[:10],
+        }
+        if skills
+        else None,
+        "has_resume": bool(
+            (onboarding.get("resume") or {}).get("file_url")
+            or (onboarding.get("resume") or {}).get("file_name")
+        ),
+        "has_government_docs": bool((onboarding.get("government_docs") or {}).get("documents")),
+        "pre_hire_missing": [k for k in PRE_HIRE_ONBOARDING_KEYS if not onboarding.get(k)],
+    }
 
 
 def _employee_status_payload(employee: dict) -> dict:
@@ -216,12 +295,16 @@ async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResul
     """
     email = (args.get("email") or "").strip()
     name = (args.get("name") or args.get("full_name") or "").strip()
+    # If the model puts a person's name into `email`, treat it as a name search.
+    if email and "@" not in email and not name:
+        name, email = email, ""
     query = email or name
     if not query:
         return ToolResult(ok=False, error="An email or name is required.")
 
-    employee = await _find_employee_by_query(query)
-    candidate = await _find_candidate_by_query(query)
+    scope = _recruiter_scope(user)
+    employee = await _find_employee_by_query(query, recruiter_id=scope)
+    candidate = await _find_candidate_by_query(query, recruiter_id=scope)
 
     if employee:
         payload = _employee_status_payload(employee)
@@ -230,12 +313,14 @@ async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResul
             payload["also_found_as"] = "converted_candidate"
             payload["pre_hire_onboarding_status"] = cand_onboarding.get("status", "not_started")
             payload["conversion_status"] = candidate.get("conversion_status")
+            payload["profile"] = _candidate_profile_summary(candidate)
         return ToolResult(ok=True, data=payload)
 
     if candidate:
         onboarding = candidate.get("onboarding") or {}
         conversion = candidate.get("conversion_status")
         missing = [k for k in PRE_HIRE_ONBOARDING_KEYS if not onboarding.get(k)]
+        profile = _candidate_profile_summary(candidate)
         # Converted but employee row somehow missing — still warn clearly.
         if conversion == "converted" or candidate.get("status") == "converted":
             return ToolResult(
@@ -248,6 +333,7 @@ async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResul
                     "pre_hire_onboarding_status": onboarding.get("status", "not_started"),
                     "pre_hire_missing": missing,
                     "post_hire_profile_complete": False,
+                    "profile": profile,
                     "warning": (
                         "This person was converted, but no employee profile row was found. "
                         "Do not treat pre-hire onboarding as post-hire profile completion."
@@ -270,10 +356,10 @@ async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResul
                 "pre_hire_complete": not missing,
                 "offer_status": (offer or {}).get("status"),
                 "offer_id": str(offer["_id"]) if offer else None,
+                "profile": profile,
                 "note": (
-                    "This is pre-hire candidate onboarding only "
-                    "(personal/education/skills/docs/resume). "
-                    "Post-hire Complete Profile applies after conversion to employee."
+                    "profile includes personal/education/skills when filled. "
+                    "Use list_person_documents for uploaded files with download links."
                 ),
             },
         )
@@ -304,13 +390,29 @@ async def _tool_bulk_invite(user: CurrentUser, args: dict) -> ToolResult:
         return ToolResult(ok=False, error="No candidates provided.")
     sent, failed = [], []
     for row in rows[:200]:
+        email = (row.get("email") or "").strip()
+        full_name = (row.get("full_name") or "").strip()
+        job_title = (row.get("job_title") or row.get("designation") or "").strip()
+        department = (row.get("department") or "").strip()
+        if not email or not full_name or not job_title or not department:
+            failed.append(
+                {
+                    "email": email or None,
+                    "error": (
+                        "Missing required fields (same as Create invitation): "
+                        "email, full_name, job_title/designation, department. "
+                        "Do not use placeholders like 'Not specified'."
+                    ),
+                }
+            )
+            continue
         try:
             payload = CreateInvitationRequest(
-                email=row["email"],
-                full_name=row["full_name"],
-                job_title=row.get("job_title") or "Not specified",
-                department=row.get("department") or "Not specified",
-                office_location=row.get("office_location"),
+                email=email,
+                full_name=full_name,
+                job_title=job_title,
+                department=department,
+                office_location=row.get("office_location") or None,
                 start_date=row.get("start_date") or None,
                 expires_in_days=int(row.get("expires_in_days") or 7),
             )
@@ -318,7 +420,7 @@ async def _tool_bulk_invite(user: CurrentUser, args: dict) -> ToolResult:
             sent.append({"email": payload.email, "email_sent": result.get("email_sent", False)})
         except Exception as exc:  # noqa: BLE001
             detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
-            failed.append({"email": row.get("email"), "error": str(detail)})
+            failed.append({"email": email or row.get("email"), "error": str(detail)})
     return ToolResult(ok=True, data={"sent": sent, "failed": failed, "total": len(rows)})
 
 
@@ -419,7 +521,7 @@ async def _tool_remind_employee_profile(user: CurrentUser, args: dict) -> ToolRe
         query = email or name
         if not query:
             return ToolResult(ok=False, error="Provide email, name, or employee_id.")
-        employee = await _find_employee_by_query(query)
+        employee = await _find_employee_by_query(query, recruiter_id=_recruiter_scope(user))
         if not employee:
             return ToolResult(ok=False, error=f"No employee found for {query}.")
 
@@ -467,13 +569,15 @@ async def _resolve_employee(user: CurrentUser, args: dict) -> tuple[dict | None,
     employee_id = (args.get("employee_id") or "").strip()
     email = (args.get("email") or "").strip()
     name = (args.get("name") or args.get("full_name") or "").strip()
+    if email and "@" not in email and not name:
+        name, email = email, ""
     try:
         if employee_id:
             return await employee_service._resolve_employee_for_recruiter(user, employee_id), None
         query = email or name
         if not query:
             return None, "Provide email, name, or employee_id."
-        employee = await _find_employee_by_query(query)
+        employee = await _find_employee_by_query(query, recruiter_id=_recruiter_scope(user))
         if not employee:
             return None, f"No employee found for {query}."
         # Enforce recruiter ownership via service resolver.
@@ -487,22 +591,27 @@ async def _resolve_employee(user: CurrentUser, args: dict) -> tuple[dict | None,
         return None, str(exc)
 
 
-async def _resolve_candidate(args: dict) -> tuple[dict | None, str | None]:
+async def _resolve_candidate(user: CurrentUser, args: dict) -> tuple[dict | None, str | None]:
     from bson import ObjectId
 
     email = (args.get("email") or args.get("candidate_email") or "").strip()
     name = (args.get("name") or args.get("full_name") or "").strip()
     candidate_id = (args.get("candidate_id") or "").strip()
+    if email and "@" not in email and not name:
+        name, email = email, ""
     if candidate_id:
         query: dict = {"$or": [{"user_id": candidate_id}]}
         if ObjectId.is_valid(candidate_id):
             query["$or"].append({"_id": ObjectId(candidate_id)})
+        scope = _recruiter_scope(user)
+        if scope:
+            query = {"$and": [query, {"recruiter_id": scope}]}
         doc = await database.candidates.find_one(query)
         return (doc, None) if doc else (None, f"No candidate found for id {candidate_id}.")
     query_text = email or name
     if not query_text:
         return None, "Provide email, name, or candidate_id."
-    doc = await _find_candidate_by_query(query_text)
+    doc = await _find_candidate_by_query(query_text, recruiter_id=_recruiter_scope(user))
     if not doc:
         return None, f"No candidate found for {query_text}."
     return doc, None
@@ -622,7 +731,7 @@ async def _tool_list_person_documents(user: CurrentUser, args: dict) -> ToolResu
     if emp:
         person = emp
     else:
-        cand, cand_err = await _resolve_candidate(args)
+        cand, cand_err = await _resolve_candidate(user, args)
         if cand:
             person = cand
         else:
@@ -635,7 +744,18 @@ async def _tool_list_person_documents(user: CurrentUser, args: dict) -> ToolResu
         return ToolResult(ok=False, error="Could not resolve owner_id for this person.")
     try:
         result = await document_service.list_for_owner(user, owner_id)
-        docs = [_doc_summary(d) for d in (result.get("documents") or [])]
+        docs = []
+        for d in result.get("documents") or []:
+            summary = _doc_summary(d)
+            doc_id = summary.get("document_id")
+            if doc_id:
+                try:
+                    link = await document_service.get_signed_url(user, doc_id, None)
+                    summary["download_url"] = link.get("url")
+                    summary["download_expires_in"] = link.get("expires_in")
+                except Exception:  # noqa: BLE001
+                    summary["download_url"] = None
+            docs.append(summary)
         return ToolResult(
             ok=True,
             data={
@@ -648,6 +768,10 @@ async def _tool_list_person_documents(user: CurrentUser, args: dict) -> ToolResu
                 "documents": docs,
                 "count": len(docs),
                 "document_verification": result.get("document_verification"),
+                "note": (
+                    "Include each download_url as a clickable link in your reply so the recruiter "
+                    "can open the file. Chat cannot embed PDF previews."
+                ),
             },
         )
     except Exception as exc:  # noqa: BLE001
@@ -824,18 +948,44 @@ async def _tool_get_employee_detail(user: CurrentUser, args: dict) -> ToolResult
         progress = emp.get("profile_progress") or {}
         assets = emp.get("assets") or []
         orientation = emp.get("orientation")
+        onboarding = emp.get("onboarding") or {}
+        personal = onboarding.get("personal") or {}
+        education = onboarding.get("education") or {}
+        skills = onboarding.get("skills") or {}
         return ToolResult(
             ok=True,
             data={
                 "employee_id": emp.get("employee_id"),
                 "full_name": emp.get("full_name"),
                 "email": emp.get("email"),
+                "phone": emp.get("phone"),
                 "company_email": emp.get("company_email"),
                 "job_title": emp.get("job_title"),
                 "department": emp.get("department"),
                 "status": emp.get("status"),
                 "office_location": emp.get("office_location"),
                 "profile_progress": progress,
+                "personal": {
+                    "first_name": personal.get("first_name"),
+                    "last_name": personal.get("last_name"),
+                    "date_of_birth": personal.get("date_of_birth"),
+                    "gender": personal.get("gender"),
+                    "city": personal.get("city"),
+                    "country": personal.get("country"),
+                }
+                if personal
+                else None,
+                "education_entries": (education.get("entries") or [])[:5] if education else [],
+                "skills": {
+                    "technical_skills": (skills.get("technical_skills") or [])[:20],
+                    "soft_skills": (skills.get("soft_skills") or [])[:20],
+                    "languages": (skills.get("languages") or [])[:10],
+                }
+                if skills
+                else None,
+                "post_hire_sections_on_file": [
+                    k for k in POST_HIRE_PROFILE_KEYS if onboarding.get(k)
+                ],
                 "assets": [
                     {
                         "asset_id": a.get("id") or a.get("asset_id"),
@@ -848,6 +998,10 @@ async def _tool_get_employee_detail(user: CurrentUser, args: dict) -> ToolResult
                 ],
                 "orientation": orientation,
                 "career_event_count": len(emp.get("career_events") or emp.get("career") or []),
+                "note": (
+                    "Banking details stay masked in chat. Use list_person_documents for files with download links, "
+                    "and list_career_events for the career timeline."
+                ),
             },
         )
     except Exception as exc:  # noqa: BLE001
@@ -1204,8 +1358,15 @@ RECRUITER_TOOLS: list[Tool] = [
     ),
     Tool(
         name="bulk_invite",
-        description="Invite many candidates at once. `candidates` is a list of objects each with email, full_name, job_title, department, and optionally office_location/start_date.",
-        parameters={"candidates": "array of {email, full_name, job_title, department, office_location?, start_date?}"},
+        description=(
+            "Invite many candidates at once. Each row MUST include email, full_name, job_title "
+            "(designation), and department — same required fields as Create invitation. "
+            "Never invent or default missing job_title/department. If any are missing, tell the "
+            "recruiter to fix the list/spreadsheet first instead of inviting."
+        ),
+        parameters={
+            "candidates": "array of {email, full_name, job_title, department, office_location?, start_date?}"
+        },
         handler=_tool_bulk_invite,
         roles=("recruiter", "super_admin"),
     ),
@@ -1271,9 +1432,9 @@ RECRUITER_TOOLS: list[Tool] = [
     Tool(
         name="get_candidate_status",
         description=(
-            "Look up one person by email or name. If they are an employee (converted), returns "
-            "post_hire_profile_complete / post_hire_missing — NOT pre-hire candidate onboarding. "
-            "Pre-hire fields on file (personal/education/resume) do not mean the post-hire profile is done."
+            "Look up one person by email or name. Returns status plus a profile summary "
+            "(personal/education/skills for candidates; post-hire progress for employees). "
+            "If they are an employee (converted), report post_hire_* fields — NOT only pre-hire onboarding."
         ),
         parameters={
             "email": "string, preferred when known",

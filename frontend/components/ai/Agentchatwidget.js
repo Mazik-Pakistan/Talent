@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { getApiErrorMessage, uploadDocument } from "@/services/authService";
@@ -67,6 +67,26 @@ function purposeForDocType(docType) {
   return undefined;
 }
 
+function linkifyText(text) {
+  if (!text) return null;
+  const parts = String(text).split(/(https?:\/\/[^\s<>"']+)/g);
+  return parts.map((part, i) => {
+    if (/^https?:\/\//i.test(part)) {
+      const href = part.replace(/[),.;]+$/, "");
+      const trailing = part.slice(href.length);
+      return (
+        <span key={`l-${i}`}>
+          <a href={href} target="_blank" rel="noopener noreferrer" className={styles.inlineLink}>
+            Open document
+          </a>
+          {trailing}
+        </span>
+      );
+    }
+    return <span key={`t-${i}`}>{part}</span>;
+  });
+}
+
 function IconChat() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -125,7 +145,7 @@ function readAuth() {
   }
 }
 
-export default function AgentChatWidget({ variant = "floating" }) {
+export default forwardRef(function AgentChatWidget({ variant = "floating" }, ref) {
   const pathname = usePathname();
   const isPage = variant === "page";
   const onAssistantRoute = Boolean(pathname?.includes("/ai-assistant"));
@@ -224,6 +244,18 @@ export default function AgentChatWidget({ variant = "floating" }) {
       }
     },
     [auth, sessionId, persistSession, pushLocalMessages]
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      sendPrompt: (text) => {
+        if (isPage) setOpen(true);
+        return doSend(text);
+      },
+      openSheetPicker: () => sheetInputRef.current?.click(),
+    }),
+    [doSend, isPage]
   );
 
   function handleSubmit(e) {
@@ -382,7 +414,7 @@ export default function AgentChatWidget({ variant = "floating" }) {
                 return (
                   <div key={m.created_at ? `${m.created_at}-${idx}` : idx} className={`${styles.row} ${isUser ? styles.rowUser : styles.rowAgent}`}>
                     <div className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAgent}`}>
-                      {m.content}
+                      {isUser ? m.content : linkifyText(m.content)}
                       {!isUser && isSpreadsheetHint(uiHint) ? (
                         <div className={styles.uploadHint}>
                           <button
@@ -486,4 +518,4 @@ export default function AgentChatWidget({ variant = "floating" }) {
       ) : null}
     </div>
   );
-}
+});

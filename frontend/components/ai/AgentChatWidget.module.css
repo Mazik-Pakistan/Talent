@@ -239,10 +239,15 @@
   border-bottom-left-radius: 4px;
 }
 
-.bubbleError {
-  border-color: var(--danger, #b42318);
-  color: var(--danger, #b42318);
-  background: #fdecea;
+.inlineLink {
+  color: var(--blue, #176896);
+  font-weight: 700;
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.inlineLink:hover {
+  color: #0e557d;
 }
 
 .typing {
