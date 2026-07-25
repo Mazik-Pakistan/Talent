@@ -370,7 +370,7 @@ function CandidateDashboardContent() {
             </div>
           </div>
 
-          <div className={styles.content}>
+          <div className={`${styles.content} ${styles.pageEnter}`}>
             {loadError && <div className={styles.loadError} role="alert">{loadError}</div>}
 
             {pendingReuploadNotifications.map((notification) => (
@@ -469,7 +469,11 @@ function CandidateDashboardContent() {
               </div>
               <div className={styles.sectionBody}>
                 {loading ? (
-                  <p className={styles.emptySub}>Loading…</p>
+                  <div aria-hidden="true">
+                    <div className={`${styles.skeleton} ${styles.skeletonBlock}`} style={{ marginBottom: 16 }} />
+                    <div className={`${styles.skeleton} ${styles.skeletonLine}`} />
+                    <div className={`${styles.skeleton} ${styles.skeletonLine} ${styles.short}`} />
+                  </div>
                 ) : (
                   <>
                     <div className={styles.profileHero}>
@@ -533,7 +537,11 @@ function CandidateDashboardContent() {
                           </button>
                         </li>
                       ))}
-                      {!loading && tasks.length === 0 && <p className={styles.emptySub}>No tasks yet.</p>}
+                      {!loading && tasks.length === 0 && (
+                        <div className={styles.emptyState}>
+                          <p className={styles.emptySub} style={{ margin: 0 }}>No tasks yet.</p>
+                        </div>
+                      )}
                     </ul>
                   </div>
                 </div>
@@ -579,7 +587,10 @@ function CandidateDashboardContent() {
                 <div className={styles.sectionBody}>
                   <div className={styles.announcementStack}>
                     {loading ? (
-                      <p className={styles.emptySub}>Loading…</p>
+                      <div aria-hidden="true">
+                        <div className={`${styles.skeleton} ${styles.skeletonBlock}`} style={{ marginBottom: 10 }} />
+                        <div className={`${styles.skeleton} ${styles.skeletonBlock}`} />
+                      </div>
                     ) : announcements.length ? (
                       announcements.map((a) => (
                         <article className={styles.announcementCard} key={a.id}>
@@ -591,7 +602,9 @@ function CandidateDashboardContent() {
                         </article>
                       ))
                     ) : (
-                      <p className={styles.emptySub}>No announcements yet.</p>
+                      <div className={styles.emptyState}>
+                        <p className={styles.emptySub} style={{ margin: 0 }}>No announcements yet.</p>
+                      </div>
                     )}
                   </div>
                 </div>
