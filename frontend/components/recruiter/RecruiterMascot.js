@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import {
   buildIdleInsights,
@@ -20,6 +20,7 @@ import {
   updatePipelineMemory,
   welcomeMessage,
 } from "@/lib/ai/recruiterMemory";
+import { globalSearch } from "@/services/authService";
 import styles from "./RecruiterMascot.module.css";
 
 const PRIORITY = {
@@ -36,9 +37,9 @@ const COOLDOWN_MS = 12000;
 const IDLE_TIMEOUT_MS = 30000;
 
 const COMMAND_FIELDS = {
-  full_name: ["full name", "name"], first_name: ["first name"], last_name: ["last name", "surname"],
+  full_name: ["full name", "name", "mera naam", "naam"], first_name: ["first name"], last_name: ["last name", "surname"],
   cnic: ["cnic", "nic", "national id"], email: ["email", "email address"], phone: ["phone", "mobile"],
-  department: ["department"], job_title: ["job title", "designation", "title"],
+  department: ["department", "dep"], job_title: ["job title", "designation", "title"],
   office_location: ["office location", "location"], start_date: ["start date", "joining date"], address: ["address"],
 };
 
@@ -200,6 +201,7 @@ function fillFromCommand(command) {
 
 export default function RecruiterMascot({ openChat, toggleChat }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [activeState, setActiveState] = useState("stateIdle");
   const [bubbleText, setBubbleText] = useState("");
   const [eyeOffset, setEyeOffset] = useState({ x: 0, y: 0 });
@@ -207,6 +209,7 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
   const [showFormCommand, setShowFormCommand] = useState(false);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [insightCount, setInsightCount] = useState(0);
+  const [confirmInvite, setConfirmInvite] = useState(false);
 
   const bubbleTimerRef = useRef(null);
   const cooldownTimerRef = useRef(null);
@@ -359,8 +362,33 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
     [clearFieldHighlight, dismissBubble, highlightField, setMessage]
   );
 
-  const handleFormCommand = useCallback((event) => {
+  const handleFormCommand = useCallback(async (event) => {
     event.preventDefault();
+    const command = formCommand.trim();
+    const searchMatch = command.match(/^(?:search|find|dhoondo|talash)\s+(.+?)(?:\s+(employee|candidate))?$/i);
+    if (searchMatch) {
+      const query = searchMatch[1].trim();
+      const requestedType = searchMatch[2]?.toLowerCase();
+      const token = localStorage.getItem("access_token");
+      if (!token || query.length < 2) return;
+      triggerState("stateThinking", 2200);
+      try {
+        const results = (await globalSearch(query, token)).results || [];
+        const matches = requestedType ? results.filter((item) => item.type === requestedType) : results;
+        const match = matches.find((item) => item.full_name?.toLowerCase() === query.toLowerCase()) || matches[0];
+        if (!match) {
+          setMessage(`No ${requestedType || "candidate or employee"} found for “${query}”.`, PRIORITY.SUGGESTION, "command-search-empty", { force: true, bypassCooldown: true, animation: "stateThinking" });
+          return;
+        }
+        setFormCommand("");
+        setMessage(`Found ${match.full_name}. Opening their ${match.type} record.`, PRIORITY.SUGGESTION, `command-search:${match.id}`, { force: true, bypassCooldown: true, animation: "stateHappy" });
+        router.push(match.type === "employee" ? `/dashboard/recruiter/employees/${match.id}` : "/dashboard/recruiter/candidates");
+      } catch {
+        setMessage("Search is unavailable right now. Please try again.", PRIORITY.ERROR, "command-search-error", { force: true, bypassCooldown: true, animation: "stateWarning" });
+      }
+      return;
+    }
+
     const { fields, filled } = fillFromCommand(formCommand);
     if (!filled) {
       const firstField = fields[0] ? getFieldLabel(fields[0]) : "a visible field";
@@ -370,19 +398,32 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
       return;
     }
     setFormCommand("");
+    const asksToSendInvite = /(?:send|bhej|bhj).*(?:invite|invitation)|(?:invite|invitation).*(?:send|bhej|bhj)/i.test(command);
+    setConfirmInvite(Boolean(asksToSendInvite && pathname?.includes("/invite")));
     const required = fields.filter((field) => field.required);
     const remaining = required.filter(isFieldEmpty).length;
     const progress = required.length ? ` Step ${required.length - remaining} of ${required.length}; ${remaining} left.` : "";
-    setMessage(`Filled ${filled} field${filled === 1 ? "" : "s"}.${progress}`, PRIORITY.SUGGESTION, `form-command:${Date.now()}`, {
+    const sendNote = asksToSendInvite && pathname?.includes("/invite") ? " Review the details, then confirm sending." : asksToSendInvite ? " Offers can be sent after candidate onboarding and document review." : "";
+    setMessage(`Filled ${filled} field${filled === 1 ? "" : "s"}.${progress}${sendNote}`, PRIORITY.SUGGESTION, `form-command:${Date.now()}`, {
       force: true, bypassCooldown: true, animation: "stateHappy",
     });
     setTimeout(() => refreshFormGuidance({ force: true }), 0);
-  }, [formCommand, refreshFormGuidance, setMessage]);
+  }, [formCommand, pathname, refreshFormGuidance, router, setMessage, triggerState]);
 
   const formCommandPlaceholder = useCallback(() => {
     const labels = visibleFormFields().slice(0, 2).map(getFieldLabel).filter(Boolean);
-    return labels.length ? `Fill: ${labels.join(", ")}${labels.length > 1 ? "…" : ""}` : "Fill the visible form fields";
+    return labels.length ? `Fill: ${labels.join(", ")}${labels.length > 1 ? "…" : ""}` : "Search employee or candidate";
   }, []);
+
+  const handleConfirmInvite = useCallback(() => {
+    const inviteForm = getVisibleForms()[0];
+    if (!inviteForm) return;
+    setConfirmInvite(false);
+    setMessage("Verifying invitation details before sending…", PRIORITY.SUGGESTION, "invite-confirm", {
+      force: true, bypassCooldown: true, animation: "stateThinking",
+    });
+    inviteForm.requestSubmit();
+  }, [setMessage]);
 
   const showPageSuggestion = useCallback(
     (force = false) => {
@@ -516,7 +557,7 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
   }, [refreshInsights]);
 
   useEffect(() => {
-    const updateVisibility = () => setShowFormCommand(visibleFormFields().length > 0);
+    const updateVisibility = () => setShowFormCommand(Boolean(pathname?.includes("/dashboard/recruiter")));
     const initialTimer = setTimeout(updateVisibility, 0);
     const observer = new MutationObserver(updateVisibility);
     observer.observe(document.body, { childList: true, subtree: true });
@@ -717,15 +758,22 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
   return (
     <div className={styles.mascotWrapper}>
       {showFormCommand && (
-        <form className={styles.formCommand} data-mascot-command onSubmit={handleFormCommand}>
-          <input
-            value={formCommand}
-            onChange={(event) => setFormCommand(event.target.value)}
-            placeholder={formCommandPlaceholder()}
-            aria-label="Fill the current recruiter form"
-          />
-          <button type="submit" aria-label="Fill form">Fill</button>
-        </form>
+        <div className={styles.commandStack}>
+          <form className={styles.formCommand} data-mascot-command onSubmit={handleFormCommand}>
+            <input
+              value={formCommand}
+              onChange={(event) => setFormCommand(event.target.value)}
+              placeholder={formCommandPlaceholder()}
+              aria-label="Recruiter command"
+            />
+            <button type="submit" aria-label="Run command">Go</button>
+          </form>
+          {confirmInvite && (
+            <button type="button" className={styles.confirmInvite} onClick={handleConfirmInvite}>
+              Review & send invitation
+            </button>
+          )}
+        </div>
       )}
       {bubbleText && (
         <div className={styles.speechBubble} role="alert" aria-live="polite">
