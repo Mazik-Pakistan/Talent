@@ -89,3 +89,16 @@ class UpdateRecruiterProfileRequest(BaseModel):
             return None
         cleaned = value.strip()
         return cleaned or None
+
+
+class RecruiterMascotBriefRequest(BaseModel):
+    """Pre-digested pipeline facts for a one-line mascot speech bubble."""
+
+    page: str = "overview"
+    first_name: str | None = None
+    pending_approvals: int = Field(default=0, ge=0)
+    ready_to_activate: int = Field(default=0, ge=0)
+    pending_offers: int = Field(default=0, ge=0)
+    onboarding_in_progress: int = Field(default=0, ge=0)
+    active_employees: int = Field(default=0, ge=0)
+    recent_names: list[str] = Field(default_factory=list, max_length=5)

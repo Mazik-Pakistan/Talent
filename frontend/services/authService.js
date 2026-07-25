@@ -193,6 +193,15 @@ export async function getDashboardSummary(accessToken) {
   return data;
 }
 
+export async function getRecruiterMascotBrief(payload, accessToken) {
+  const { data } = await apiClient.post("/api/dashboard/recruiter-mascot/brief", payload, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  return data;
+}
+
 export async function getDashboardActivity(accessToken, limit = 20) {
   const { data } = await apiClient.get("/api/dashboard/activity", {
     headers: {

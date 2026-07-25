@@ -3,7 +3,23 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { toast } from "react-toastify";
-import { getDashboardSummary, getReadyForConversion } from "@/services/authService";
+import {
+  buildIdleInsights,
+  buildRecruiterInsights,
+  invalidateRecruiterInsightCache,
+  RECRUITER_INSIGHTS_REFRESH_EVENT,
+} from "@/lib/ai/recruiterInsights";
+import {
+  MASCOT_CONTEXT_EVENT,
+  markMascotGreeted,
+  readMascotGreeted,
+  readRecruiterContext,
+} from "@/lib/ai/recruiterContext";
+import {
+  buildContinuityMessage,
+  updatePipelineMemory,
+  welcomeMessage,
+} from "@/lib/ai/recruiterMemory";
 import styles from "./RecruiterMascot.module.css";
 
 const PRIORITY = {
@@ -89,179 +105,44 @@ function getFormGuidance() {
   return null;
 }
 
-function formatNotificationText(notifications) {
-  const unread = (notifications || []).filter((n) => !n.read);
-  if (!unread.length) return null;
-  const latest = unread[0];
-  const title = latest.title?.trim();
-  const message = latest.message?.trim();
-  if (title && message) return `${title}: ${message.slice(0, 100)}`;
+function humanizeNotification(notification) {
+  if (!notification) return null;
+  const message = notification.message?.trim();
+  const title = notification.title?.trim();
+  const type = notification.type;
+
+  const nameFromMessage = message?.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/)?.[1];
+  const subject = nameFromMessage || title?.replace(/:$/, "") || "Someone";
+
+  const byType = {
+    intake_submitted: `${subject} submitted onboarding for your review.`,
+    offer_signed: `${subject} signed the offer letter.`,
+    offer_sent: `Offer sent to ${subject}.`,
+    offer_declined: `${subject} declined the offer.`,
+    candidate_registered: `${subject} accepted the invitation.`,
+    invitation_sent: message || `Invitation sent to ${subject}.`,
+    employee_created: `${subject} is ready — employee record created.`,
+    employee_profile_completed: `${subject} completed their profile.`,
+    document_uploaded: `${subject} uploaded documents for review.`,
+    document_reuploaded: `${subject} re-uploaded a document.`,
+    certificate_uploaded: `${subject} uploaded a certificate.`,
+    certificate_verified: `${subject}'s certificate was verified.`,
+    certificate_rejected: `${subject}'s certificate needs attention.`,
+    course_assigned: message || `New learning assignment for ${subject}.`,
+    announcement: title || message,
+  };
+
+  if (byType[type]) return byType[type];
+  if (message && title && !message.startsWith(title)) return `${title}: ${message.slice(0, 100)}`;
   if (message) return message.slice(0, 120);
   if (title) return title;
   return null;
 }
 
-function buildPageSuggestions(path, stats) {
-  if (path.includes("/overview")) {
-    return [
-      stats.pendingApprovals > 0
-        ? `${stats.pendingApprovals} approval${stats.pendingApprovals > 1 ? "s" : ""} need attention.`
-        : null,
-      stats.readyCandidates > 0
-        ? `${stats.readyCandidates} candidate${stats.readyCandidates > 1 ? "s are" : " is"} ready for activation.`
-        : null,
-      "Welcome to your recruiter overview.",
-      "Review recent recruiter activities.",
-      "Check the notification bell for updates.",
-    ].filter(Boolean);
-  }
-
-  if (path.includes("/candidates")) {
-    return [
-      stats.readyCandidates > 0
-        ? `${stats.readyCandidates} candidate${stats.readyCandidates > 1 ? "s are" : " is"} ready for activation.`
-        : null,
-      "Track candidate onboarding progress.",
-      "Review signed offers awaiting activation.",
-      "Filter candidates by onboarding stage.",
-    ].filter(Boolean);
-  }
-
-  if (path.includes("/invite")) {
-    return [
-      "Fill in candidate details to send an invite.",
-      "Pick designation and department from org lists.",
-      "Set an expiry date before sending.",
-    ];
-  }
-
-  if (path.includes("/employees")) {
-    return [
-      "Browse the active employee directory.",
-      "Search employees from the top bar.",
-      "Open a profile to manage assets and orientation.",
-    ];
-  }
-
-  if (path.includes("/learning")) {
-    return [
-      "Assign corporate learning paths to roles.",
-      "Review role skill requirements.",
-      "Add certifications to keep teams current.",
-    ];
-  }
-
-  if (path.includes("/talent")) {
-    return [
-      "Review skill match analytics.",
-      "Post internal opportunities for talent mapping.",
-      "Compare candidate skills against open roles.",
-    ];
-  }
-
-  if (path.includes("/announcements")) {
-    return [
-      "Create a new announcement for your teams.",
-      "Broadcast updates to employees and candidates.",
-      "Review past announcements for reference.",
-    ];
-  }
-
-  if (path.includes("/activity")) {
-    return [
-      "Review recent system activity logs.",
-      "Track recruiter actions across the platform.",
-      "Use logs to audit invitation and offer events.",
-    ];
-  }
-
-  if (path.includes("/profile")) {
-    return [
-      "Keep your profile info current.",
-      "Update your contact details and photo.",
-      "Review your recruiter account settings.",
-    ];
-  }
-
-  return ["Need assistance? Click me to chat!"];
-}
-
-function buildIdleTips(path, stats) {
-  if (path.includes("/overview")) {
-    return [
-      "Review pending approvals when you have a moment.",
-      "Check candidates ready for activation.",
-      "Glance at recent recruiter activity.",
-      stats.pendingApprovals > 0 ? "Approvals are waiting on your review." : null,
-    ].filter(Boolean);
-  }
-
-  if (path.includes("/candidates")) {
-    return [
-      "Track onboarding progress for active candidates.",
-      stats.readyCandidates > 0 ? "Some candidates are ready to activate." : null,
-      "Review offer status from the candidates list.",
-      "Follow up on incomplete candidate profiles.",
-    ].filter(Boolean);
-  }
-
-  if (path.includes("/invite")) {
-    return [
-      "Complete the invite form when you're ready.",
-      "Double-check designation and department selections.",
-      "Set a sensible expiry for new invitations.",
-    ];
-  }
-
-  if (path.includes("/employees")) {
-    return [
-      "Review today's new employees.",
-      "Search the directory from the top bar.",
-      "Open employee profiles to manage onboarding.",
-    ];
-  }
-
-  if (path.includes("/learning")) {
-    return [
-      "Learning assignments are available.",
-      "Review role-based skill requirements.",
-      "Add certifications to learning paths.",
-    ];
-  }
-
-  if (path.includes("/talent")) {
-    return [
-      "Review skill match analytics.",
-      "Explore internal talent opportunities.",
-      "Map skills to open roles.",
-    ];
-  }
-
-  if (path.includes("/announcements")) {
-    return [
-      "Create a new announcement.",
-      "Share updates with your teams.",
-      "Review recent broadcasts.",
-    ];
-  }
-
-  if (path.includes("/activity")) {
-    return [
-      "Review recruiter activity logs.",
-      "Audit recent platform events.",
-      "Check invitation and offer history.",
-    ];
-  }
-
-  if (path.includes("/profile")) {
-    return [
-      "Keep profile info current.",
-      "Update your photo and contact details.",
-      "Review account settings.",
-    ];
-  }
-
-  return ["Click me if you need help."];
+function formatNotificationText(notifications) {
+  const unread = (notifications || []).filter((n) => !n.read);
+  if (!unread.length) return null;
+  return humanizeNotification(unread[0]);
 }
 
 function pickFromPool(pool, lastPick) {
@@ -289,7 +170,8 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
   const cooldownActiveRef = useRef(false);
   const highlightedTargetRef = useRef(null);
   const mascotBtnRef = useRef(null);
-  const statsRef = useRef({ pendingApprovals: 0, readyCandidates: 0 });
+  const statsRef = useRef({});
+  const insightsRef = useRef([]);
 
   const clearFieldHighlight = useCallback(() => {
     if (highlightedTargetRef.current) {
@@ -390,23 +272,6 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
     [clearFieldHighlight, highlightField, startCooldown, triggerState]
   );
 
-  const fetchOverviewStats = useCallback(async () => {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    try {
-      const [summary, ready] = await Promise.all([
-        getDashboardSummary(token).catch(() => null),
-        getReadyForConversion(token).catch(() => null),
-      ]);
-      statsRef.current = {
-        pendingApprovals: summary?.pending_approvals?.length || 0,
-        readyCandidates: ready?.candidates?.length || 0,
-      };
-    } catch {
-      // Non-critical
-    }
-  }, []);
-
   const refreshFormGuidance = useCallback(
     (options = {}) => {
       const { force = false, animation = "statePoint" } = options;
@@ -440,20 +305,20 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
         });
       }
     },
-    [clearFieldHighlight, dismissBubble, setMessage]
+    [clearFieldHighlight, dismissBubble, highlightField, setMessage]
   );
 
   const showPageSuggestion = useCallback(
     (force = false) => {
-      const path = pathname || "";
       const formGuidance = getFormGuidance();
       if (formGuidance?.type === "missing") {
         refreshFormGuidance({ force: true, animation: "stateWave" });
         return;
       }
 
-      const pool = buildPageSuggestions(path, statsRef.current);
+      const pool = insightsRef.current.map((insight) => insight.message).filter(Boolean);
       const pick = pickFromPool(pool, lastPageSuggestionRef.current) || pool[0];
+      if (!pick) return;
       lastPageSuggestionRef.current = pick;
       setMessage(pick, PRIORITY.SUGGESTION, `page:${pick}`, {
         force,
@@ -461,18 +326,58 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
         animation: "stateWave",
       });
     },
-    [pathname, refreshFormGuidance, setMessage]
+    [refreshFormGuidance, setMessage]
   );
 
   const showIdleTip = useCallback(() => {
     if (cooldownActiveRef.current) return;
-    const path = pathname || "";
-    const pool = buildIdleTips(path, statsRef.current);
+    const pool = buildIdleInsights(insightsRef.current);
     const pick = pickFromPool(pool, lastIdleMessageRef.current) || pool[0];
+    if (!pick) return;
     lastIdleMessageRef.current = pick;
     triggerState("stateBlink", 2000);
     setMessage(pick, PRIORITY.IDLE_TIP, `idle:${pick}`, { animation: "stateBlink" });
-  }, [pathname, setMessage, triggerState]);
+  }, [setMessage, triggerState]);
+
+  const recruiterFirstName = useCallback(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "null");
+      return (user?.full_name || user?.name || "").trim().split(/\s+/)[0] || "";
+    } catch {
+      return "";
+    }
+  }, []);
+
+  const refreshInsights = useCallback(async () => {
+    const token = localStorage.getItem("access_token");
+    if (!token || !pathname?.includes("/dashboard/recruiter")) return;
+
+    const context = { ...(readRecruiterContext() || {}), firstName: recruiterFirstName() };
+    try {
+      const { insights, stats } = await buildRecruiterInsights(pathname, token, context);
+      insightsRef.current = insights || [];
+      statsRef.current = stats || {};
+
+      const { prev, next } = updatePipelineMemory(statsRef.current);
+      const continuity = buildContinuityMessage(prev, next, context.firstName);
+      if (continuity) {
+        setMessage(continuity, PRIORITY.SUGGESTION, `continuity:${continuity}`, {
+          bypassCooldown: true,
+          animation: "stateHappy",
+        });
+      } else if (!readMascotGreeted()) {
+        markMascotGreeted();
+        setMessage(welcomeMessage(context.firstName, statsRef.current), PRIORITY.SUGGESTION, "welcome", {
+          bypassCooldown: true,
+          animation: "stateWave",
+        });
+      } else {
+        showPageSuggestion(true);
+      }
+    } catch {
+      // The existing mascot remains available even when contextual data is unavailable.
+    }
+  }, [pathname, recruiterFirstName, setMessage, showPageSuggestion]);
 
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -482,29 +387,40 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
   useEffect(() => {
     if (!pathname?.includes("/dashboard/recruiter")) return;
 
-    if (pathname.includes("/overview") || pathname.includes("/candidates")) {
-      fetchOverviewStats();
-    }
-
     lastMessageKeyRef.current = null;
     lastPageSuggestionRef.current = null;
     clearFieldHighlight();
     resetIdleTimer();
-    triggerState("stateWave", 2500);
+
+    const animationTimer = setTimeout(() => {
+      triggerState("stateWave", 2500);
+    }, 0);
 
     const timer = setTimeout(() => {
-      showPageSuggestion(true);
+      refreshInsights();
     }, 800);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(animationTimer);
+      clearTimeout(timer);
+    };
   }, [
     pathname,
-    fetchOverviewStats,
-    showPageSuggestion,
+    refreshInsights,
     triggerState,
     resetIdleTimer,
     clearFieldHighlight,
   ]);
+
+  useEffect(() => {
+    const refresh = () => refreshInsights();
+    window.addEventListener(MASCOT_CONTEXT_EVENT, refresh);
+    window.addEventListener(RECRUITER_INSIGHTS_REFRESH_EVENT, refresh);
+    return () => {
+      window.removeEventListener(MASCOT_CONTEXT_EVENT, refresh);
+      window.removeEventListener(RECRUITER_INSIGHTS_REFRESH_EVENT, refresh);
+    };
+  }, [refreshInsights]);
 
   useEffect(() => {
     const events = ["mousedown", "mousemove", "keydown", "scroll", "touchstart"];
@@ -618,6 +534,7 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
         force: true,
         bypassCooldown: true,
       });
+      invalidateRecruiterInsightCache();
     };
 
     const handleFormError = (e) => {

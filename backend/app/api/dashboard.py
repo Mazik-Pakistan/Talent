@@ -7,11 +7,13 @@ from app.core.security import RequireUser, require_permissions, require_roles
 from app.schemas.dashboard import (
     CreateAnnouncementRequest,
     MarkNotificationsReadRequest,
+    RecruiterMascotBriefRequest,
     UpdateAnnouncementRequest,
     UpdateRecruiterProfileRequest,
 )
 from app.services.candidate_service import CandidateService
 from app.services.dashboard_service import DashboardService
+from app.services.recruiter_mascot_service import generate_mascot_brief
 
 router = APIRouter(tags=["Dashboard"])
 service = DashboardService()
@@ -103,3 +105,12 @@ async def upload_recruiter_photo(
 @router.delete("/api/recruiters/me/photo")
 async def remove_recruiter_photo(current_user: RequireRecruiter):
     return await service.remove_recruiter_photo(current_user)
+
+
+@router.post("/api/dashboard/recruiter-mascot/brief")
+async def recruiter_mascot_brief(request: RecruiterMascotBriefRequest, current_user: RequireRecruiter):
+    """Optional OpenRouter one-liner for the recruiter mascot — rule-based fallback when unavailable."""
+    result = await generate_mascot_brief(request.model_dump())
+    if not result:
+        return {"message": None, "source": "fallback"}
+    return result
