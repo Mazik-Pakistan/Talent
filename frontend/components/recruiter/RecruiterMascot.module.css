@@ -266,10 +266,42 @@
   animation: antennaAlertPulse 0.3s infinite alternate;
 }
 
+/* --- POINT STATE (field guidance) --- */
+.statePoint .leftArm {
+  animation: armPoint 1.1s ease-in-out infinite;
+}
+
+.statePoint .mascotSvg {
+  animation: slowTilt 2.5s infinite ease-in-out;
+}
+
 /* --- CHAT OPEN STATE (Slight adjustments when active) --- */
 .chatOpen .headShell {
   stroke: #06b6d4;
   fill: #0d456c;
+}
+
+/* Form field highlight (applied to page inputs via JS) */
+.fieldHighlight {
+  outline: 2px solid #06b6d4 !important;
+  outline-offset: 2px;
+  border-radius: 8px;
+  animation: fieldPulse 1.6s ease-in-out infinite;
+}
+
+.fieldHighlight::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 6px solid #06b6d4;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transform: translateY(-50%);
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 /* CSS Keyframes */
@@ -336,6 +368,24 @@
   }
   50% {
     transform: rotate(-45deg);
+  }
+}
+
+@keyframes armPoint {
+  0%, 100% {
+    transform: rotate(-15deg) translateY(-1px);
+  }
+  50% {
+    transform: rotate(-52deg) translateY(-3px);
+  }
+}
+
+@keyframes fieldPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(6, 182, 212, 0);
   }
 }
 
