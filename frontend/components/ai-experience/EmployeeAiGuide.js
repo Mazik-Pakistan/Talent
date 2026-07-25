@@ -21,7 +21,6 @@ import {
 import { IconAlert, IconCheck, IconChevronLeft, IconChevronRight, IconSparkle } from "./icons";
 import styles from "./EmployeeAiGuide.module.css";
 
-const INCLUDED_PREFIXES = ["/dashboard/employee", "/documents"];
 const SEEN_KEY = "employee_ai_copilot_seen_tips";
 const WAVE_MS = 2400;
 
@@ -79,7 +78,9 @@ export default function EmployeeAiGuide() {
   const pageTipKeysRef = useRef([]);
   const mascotBtnRef = useRef(null);
   const waveTimerRef = useRef(null);
-  const eligible = INCLUDED_PREFIXES.some((prefix) => pathname?.startsWith(prefix));
+  // Eligible on every page — actual visibility is still gated by the
+  // employee-role/auth-token check below, so non-employee users never see it.
+  const eligible = true;
 
   function appendHistory(entry) {
     // Quiet log — no page tips, focus/hover noise, or intermediate "busy" lines.
@@ -381,7 +382,7 @@ export default function EmployeeAiGuide() {
           : null);
 
   return (
-    <div className={styles.wrapper}>
+    <div className={styles.mascotWrapper}>
       {!minimized && current?.message ? (
         <div className={styles.speechBubble} role="status" aria-live="polite">
           <button
