@@ -8,12 +8,13 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
 
+from app.core.config import settings
 from app.core.crypto import decrypt_banking_payload, encrypt_banking_payload, iban_fingerprint
 from app.core.database import database
 from app.core.rbac import CurrentUser
 from app.schemas.auth import names_match
 from app.services.candidate_service import CandidateService, onboarding_missing_keys
-from app.services.dashboard_service import create_notification
+from app.services.dashboard_service import DashboardService, create_notification
 from app.services.email_service import email_service
 
 EMPLOYEE_ID_PREFIX = "MZK"
@@ -137,11 +138,13 @@ class EmployeeService:
 
         docs = await database.candidates.find(query).sort("created_at", -1).to_list(length=100)
         in_progress = []
+        candidate_service = CandidateService()
         for candidate in docs:
             if candidate.get("conversion_status") in {"converted", "offer_sent", "offer_declined", "declined"}:
                 continue
 
             onboarding = candidate.get("onboarding") or {}
+            progress = candidate_service._progress_payload(candidate)
             in_progress.append(
                 {
                     "id": candidate.get("user_id") or str(candidate["_id"]),
@@ -151,6 +154,7 @@ class EmployeeService:
                     "department": candidate.get("department"),
                     "current_step": onboarding.get("current_step") or "personal",
                     "onboarding_status": onboarding.get("status") or "not_started",
+                    "progress": progress,
                     "created_at": (
                         candidate.get("created_at").isoformat()
                         if hasattr(candidate.get("created_at"), "isoformat")
@@ -159,6 +163,141 @@ class EmployeeService:
                 }
             )
         return {"candidates": in_progress, "count": len(in_progress)}
+
+    async def list_candidates(
+        self,
+        current_user: CurrentUser,
+        *,
+        q: str | None = None,
+        status: str | None = None,
+        profile_status: str | None = None,
+        progress_min: int | None = None,
+        progress_max: int | None = None,
+        joined_from: str | None = None,
+        joined_to: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict:
+        """Recruiter candidate directory, using the canonical onboarding progress payload."""
+        query: dict = {
+            "status": "active",
+            "role": "candidate",
+            "conversion_status": {"$ne": "converted"},
+            "onboarding.status": {"$ne": "submitted"},
+        }
+        if current_user.role != "super_admin":
+            query["recruiter_id"] = current_user.id
+        if q and q.strip():
+            term = q.strip()
+            query["$or"] = [
+                {"full_name": {"$regex": term, "$options": "i"}},
+                {"user_id": {"$regex": term, "$options": "i"}},
+                {"email": {"$regex": term, "$options": "i"}},
+                {"job_title": {"$regex": term, "$options": "i"}},
+            ]
+        if joined_from or joined_to:
+            created_filter: dict = {}
+            try:
+                if joined_from:
+                    created_filter["$gte"] = datetime.fromisoformat(f"{joined_from}T00:00:00+00:00")
+                if joined_to:
+                    created_filter["$lt"] = datetime.fromisoformat(f"{joined_to}T00:00:00+00:00").replace(hour=23, minute=59, second=59, microsecond=999999)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Joined dates must use YYYY-MM-DD.")
+            if created_filter:
+                query["created_at"] = created_filter
+
+        page = max(1, page)
+        page_size = max(1, min(page_size, 100))
+        docs = await database.candidates.find(query).sort("created_at", -1).to_list(length=2000)
+        candidates = []
+        for candidate in docs:
+            progress = CandidateService()._progress_payload(candidate)
+            if progress["status"] == "submitted" or candidate.get("conversion_status") == "converted":
+                continue
+            completion_status = "complete" if progress["percentage"] == 100 else "incomplete"
+            if profile_status and completion_status != profile_status.strip().lower():
+                continue
+            if progress_min is not None and progress["percentage"] < progress_min:
+                continue
+            if progress_max is not None and progress["percentage"] > progress_max:
+                continue
+            candidates.append(self._public_candidate(candidate, progress))
+
+        total = len(candidates)
+        start = (page - 1) * page_size
+        return {
+            "candidates": candidates[start : start + page_size],
+            "count": len(candidates[start : start + page_size]),
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "pages": max(1, (total + page_size - 1) // page_size),
+        }
+
+    async def remind_candidate_onboarding(
+        self, current_user: CurrentUser, candidate_id: str, note: str | None = None, *, force: bool = False
+    ) -> dict:
+        candidate = await self._find_candidate(candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found.")
+        if current_user.role != "super_admin" and candidate.get("recruiter_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="Not allowed.")
+
+        progress = CandidateService()._progress_payload(candidate)
+        if progress["status"] == "submitted" or candidate.get("conversion_status") == "converted" or candidate.get("status") == "converted":
+            raise HTTPException(status_code=400, detail="This candidate has already completed onboarding.")
+        now = datetime.now(UTC)
+        last_sent = candidate.get("onboarding_reminder_sent_at")
+        if last_sent and not force:
+            last_dt = last_sent if isinstance(last_sent, datetime) else None
+            if last_dt and last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=UTC)
+            if last_dt and (now - last_dt).total_seconds() < 3600:
+                raise HTTPException(status_code=429, detail="A reminder was already sent within the last hour.")
+
+        labels = {
+            "personal": "Personal information and ID document",
+            "education": "Education history",
+            "skills": "Skills and certifications",
+            "government_docs": "Government ID document",
+            "resume": "Resume / CV",
+        }
+        missing_labels = [labels.get(key, key.replace("_", " ").title()) for key in progress["missing_fields"]]
+        note_text = (note or "").strip() or None
+        recipient_id = candidate.get("user_id")
+        if not recipient_id:
+            user = await database.users.find_one({"email": (candidate.get("email") or "").lower()})
+            recipient_id = str(user["_id"]) if user else None
+        reminder = await DashboardService().upsert_candidate_onboarding_reminder(current_user, candidate, progress, note_text)
+        notification_sent = bool(reminder["notified"]) or reminder["updated"]
+        email_sent = False
+        email_error = None
+        try:
+            email_service.send_candidate_onboarding_reminder(
+                candidate.get("email"), candidate.get("full_name") or "there", missing_labels,
+                f"{settings.frontend_base_url}/onboarding", note_text,
+            )
+            email_sent = True
+        except Exception as exc:  # noqa: BLE001
+            email_error = str(exc)
+        await database.candidates.update_one(
+            {"_id": candidate["_id"]},
+            {"$set": {"onboarding_reminder_sent_at": now, "onboarding_reminder_sent_by": current_user.id, "updated_at": now}},
+        )
+        await database.audit_logs.insert_one({
+            "user_id": current_user.id, "recruiter_id": current_user.id,
+            "candidate_id": candidate.get("user_id") or str(candidate["_id"]), "email": candidate.get("email"),
+            "actor_email": current_user.email, "module": "onboarding", "action": "candidate_onboarding_reminder",
+            "outcome": "success" if email_sent and notification_sent else "partial", "created_at": now,
+        })
+        refreshed = await database.candidates.find_one({"_id": candidate["_id"]})
+        return {
+            "message": "Reminder updated." if reminder["updated"] else "Reminder sent.",
+            "email_sent": email_sent, "notification_sent": notification_sent, "email_error": email_error,
+            "announcement": reminder["announcement"],
+            "candidate": self._public_candidate(refreshed or candidate, CandidateService()._progress_payload(refreshed or candidate)),
+        }
 
     async def list_ready_for_conversion(self, current_user: CurrentUser) -> dict:
         """Candidates whose offer has been signed and is awaiting HR approval/activation."""
@@ -748,24 +887,23 @@ class EmployeeService:
             raise HTTPException(status_code=404, detail="Candidate not found.")
         if current_user.role != "super_admin" and candidate.get("recruiter_id") != current_user.id:
             raise HTTPException(status_code=403, detail="Not allowed.")
-        progress = CandidateService()._progress_payload(candidate)
-        return {
-            "candidate": {
-                "id": candidate.get("user_id") or str(candidate["_id"]),
-                "full_name": candidate.get("full_name"),
-                "email": candidate.get("email"),
-                "phone": candidate.get("phone"),
-                "job_title": candidate.get("job_title"),
-                "department": candidate.get("department"),
-                "office_location": candidate.get("office_location"),
-                "start_date": candidate.get("start_date"),
-                "status": candidate.get("status"),
-                "conversion_status": candidate.get("conversion_status"),
-                "employee_id": candidate.get("employee_id"),
-                "onboarding": candidate.get("onboarding"),
-                "progress": progress,
-            }
+        return {"candidate": self._public_candidate(candidate, CandidateService()._progress_payload(candidate), include_onboarding=True)}
+
+    @staticmethod
+    def _public_candidate(doc: dict, progress: dict, *, include_onboarding: bool = False) -> dict:
+        payload = {
+            "id": doc.get("user_id") or str(doc.get("_id", "")),
+            "full_name": doc.get("full_name"), "email": doc.get("email"), "phone": doc.get("phone"),
+            "job_title": doc.get("job_title"), "department": doc.get("department"),
+            "office_location": doc.get("office_location"), "start_date": doc.get("start_date"),
+            "status": doc.get("status"), "conversion_status": doc.get("conversion_status"),
+            "created_at": doc.get("created_at").isoformat() if hasattr(doc.get("created_at"), "isoformat") else doc.get("created_at"),
+            "progress": progress,
+            "onboarding_reminder_sent_at": doc.get("onboarding_reminder_sent_at").isoformat() if hasattr(doc.get("onboarding_reminder_sent_at"), "isoformat") else doc.get("onboarding_reminder_sent_at"),
         }
+        if include_onboarding:
+            payload["onboarding"] = doc.get("onboarding") or {}
+        return payload
 
     async def attach_uploaded_file(
         self,

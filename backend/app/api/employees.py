@@ -65,6 +65,24 @@ async def list_onboarding_in_progress(current_user: RequireRecruiter):
     return await service.list_onboarding_in_progress(current_user)
 
 
+@router.get("/candidates")
+async def list_candidates(
+    current_user: RequireRecruiter,
+    q: str | None = None,
+    status: str | None = None,
+    profile_status: str | None = None,
+    progress_min: int | None = Query(default=None, ge=0, le=100),
+    progress_max: int | None = Query(default=None, ge=0, le=100),
+    joined_from: str | None = None,
+    joined_to: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+):
+    return await service.list_candidates(current_user, q=q, status=status, profile_status=profile_status,
+                                         progress_min=progress_min, progress_max=progress_max,
+                                         joined_from=joined_from, joined_to=joined_to, page=page, page_size=page_size)
+
+
 @router.get("/ready-for-conversion")
 async def list_ready_for_conversion(current_user: RequireRecruiter):
     return await service.list_ready_for_conversion(current_user)
@@ -169,6 +187,14 @@ async def save_profile_completion(payload: dict, current_user: RequireEmployee):
 @router.get("/candidates/{candidate_id}")
 async def get_candidate_detail(candidate_id: str, current_user: RequireRecruiter):
     return await service.get_candidate_detail(current_user, candidate_id)
+
+
+@router.post("/candidates/{candidate_id}/remind")
+async def remind_candidate_onboarding(
+    candidate_id: str, current_user: RequireRecruiter, payload: dict | None = Body(default=None)
+):
+    body = payload if isinstance(payload, dict) else {}
+    return await service.remind_candidate_onboarding(current_user, candidate_id, body.get("note"), force=bool(body.get("force") or body.get("resend")))
 
 
 @router.get("/detail/{employee_id}")

@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
@@ -9,11 +11,13 @@ import {
   getOnboardingInProgress,
   getPendingReview,
   getReadyForConversion,
+  remindCandidateOnboarding,
 } from "@/services/authService";
 import OfferComposerModal from "@/components/OfferComposerModal";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
 
 export default function RecruiterCandidatesPage() {
+  const router = useRouter();
   const [newCandidates, setNewCandidates] = useState([]);
   const [pendingCandidates, setPendingCandidates] = useState([]);
   const [readyCandidates, setReadyCandidates] = useState([]);
@@ -23,6 +27,8 @@ export default function RecruiterCandidatesPage() {
   const [offerModalCandidate, setOfferModalCandidate] = useState(null);
   const [approvingOfferId, setApprovingOfferId] = useState(null);
   const [conversionMessage, setConversionMessage] = useState("");
+  const [search, setSearch] = useState("");
+  const [remindingId, setRemindingId] = useState(null);
 
   const loadCandidates = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
@@ -45,8 +51,39 @@ export default function RecruiterCandidatesPage() {
   }, []);
 
   useEffect(() => {
-    loadCandidates();
+    const timer = setTimeout(() => {
+      loadCandidates();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [loadCandidates]);
+
+  const visibleNewCandidates = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return newCandidates;
+    return newCandidates.filter((candidate) => [
+      candidate.full_name,
+      candidate.id,
+      candidate.email,
+      candidate.job_title,
+    ].some((value) => String(value || "").toLowerCase().includes(term)));
+  }, [newCandidates, search]);
+
+  async function handleReminder(candidate) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setRemindingId(candidate.id);
+    try {
+      const data = await remindCandidateOnboarding(candidate.id, {}, accessToken);
+      toast.success(data.message || "Reminder sent.");
+      if (data.candidate) {
+        setNewCandidates((items) => items.map((item) => item.id === candidate.id ? { ...item, ...data.candidate } : item));
+      }
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not send reminder."));
+    } finally {
+      setRemindingId(null);
+    }
+  }
 
   async function handleApproveOffer(offerId) {
     const accessToken = localStorage.getItem("access_token");
@@ -80,21 +117,25 @@ export default function RecruiterCandidatesPage() {
           </div>
         </div>
         <div className={styles.sectionBody}>
-          {loading ? <p className={styles.emptySub}>Loading…</p> : newCandidates.length ? (
-            <ul className={styles.miniList}>
-              {newCandidates.map((candidate) => (
-                <li className={styles.miniListItem} key={candidate.id}>
-                  <div>
-                    <strong>{candidate.full_name}</strong>
-                    <div className={styles.mutedText}>
-                      {candidate.email} · {candidate.job_title || "—"} · {candidate.department || "—"} · Step {humanizeStep(candidate.current_step)}
-                    </div>
-                  </div>
-                  <span className={styles.mutedText}>Joined {formatDate(candidate.created_at)}</span>
-                </li>
+          <div className={styles.formGrid} style={{ marginBottom: 16 }}>
+            <label className={styles.field}>
+              <span>Search new signups</span>
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search onboarding candidates..." />
+            </label>
+          </div>
+          {loading ? <p className={styles.emptySub}>Loading…</p> : visibleNewCandidates.length ? (
+            <div style={{ display: "grid", gap: 12 }}>
+              {visibleNewCandidates.map((candidate) => (
+                <NewSignupCard
+                  key={candidate.id}
+                  candidate={candidate}
+                  reminding={remindingId === candidate.id}
+                  onView={() => router.push(`/dashboard/recruiter/candidates/${candidate.id}`)}
+                  onRemind={() => handleReminder(candidate)}
+                />
               ))}
-            </ul>
-          ) : <p className={styles.emptySub}>No newly registered candidates are currently in progress.</p>}
+            </div>
+          ) : <p className={styles.emptySub}>{search ? "No new signups match your search." : "No newly registered candidates are currently in progress."}</p>}
         </div>
       </div>
 
@@ -126,11 +167,7 @@ export default function RecruiterCandidatesPage() {
                     </button>
                   </div>
                 </div>
-                {expandedCandidateId === candidate.id && (
-                  <div style={{ marginTop: 14 }}>
-                    <RecruiterDocumentReview ownerId={candidate.id} />
-                  </div>
-                )}
+                {expandedCandidateId === candidate.id && <div style={{ marginTop: 14 }}><RecruiterDocumentReview ownerId={candidate.id} /></div>}
               </div>
             ))
           ) : <p className={styles.emptySub}>No candidates currently need offer review.</p>}
@@ -166,18 +203,36 @@ export default function RecruiterCandidatesPage() {
         </div>
       </div>
 
-      {offerModalCandidate && (
-        <OfferComposerModal
-          candidate={offerModalCandidate}
-          onClose={() => setOfferModalCandidate(null)}
-          onSent={(data) => {
-            setConversionMessage(data.message);
-            setOfferModalCandidate(null);
-            loadCandidates();
-          }}
-        />
-      )}
+      {offerModalCandidate && <OfferComposerModal candidate={offerModalCandidate} onClose={() => setOfferModalCandidate(null)} onSent={(data) => { setConversionMessage(data.message); setOfferModalCandidate(null); loadCandidates(); }} />}
     </RecruiterShell>
+  );
+}
+
+function NewSignupCard({ candidate, reminding, onView, onRemind }) {
+  const progress = candidate.progress || {};
+  const percentage = progress.percentage ?? 0;
+  const status = candidate.onboarding_status || progress.status || "not_started";
+  return (
+    <article className={styles.candidateCard}>
+      <div className={styles.candidateHead}>
+        <div>
+          <h4>{candidate.full_name}</h4>
+          <span>{candidate.email} · {candidate.job_title || "—"} · {candidate.department || "—"}</span>
+        </div>
+        <div className={styles.rowActions}>
+          <button type="button" className={styles.secondaryButton} onClick={onView}>View profile</button>
+          <button type="button" className={styles.primaryButton} disabled={reminding} onClick={onRemind}>{reminding ? "Sending…" : "Send reminder"}</button>
+        </div>
+      </div>
+      <div className={styles.chipRow}>
+        <span className={styles.chip}>Candidate ID: {candidate.id}</span>
+        <span className={styles.chip} style={{ background: percentage === 100 ? "var(--green-light)" : "var(--orange-light)", color: percentage === 100 ? "var(--green)" : "var(--orange)" }}>Profile {percentage}%</span>
+        <span className={styles.chip}>Onboarding {percentage}%</span>
+        <span className={styles.chip} style={{ textTransform: "capitalize" }}>{humanize(status)}</span>
+        <span className={styles.chip}>Joined {formatDate(candidate.created_at)}</span>
+      </div>
+      <div className={styles.sectionDesc} style={{ marginTop: 10 }}>Current step: <strong>{humanize(progress.current_step || candidate.current_step)}</strong>{progress.missing_fields?.length ? ` · Missing: ${progress.missing_fields.map(humanize).join(", ")}` : ""}</div>
+    </article>
   );
 }
 
@@ -188,6 +243,6 @@ function formatDate(value) {
   return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-function humanizeStep(value) {
-  return String(value || "personal").replace(/_/g, " ");
+function humanize(value) {
+  return String(value || "personal").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }

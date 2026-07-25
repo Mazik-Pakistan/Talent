@@ -571,6 +571,42 @@ class EmailService:
 """
         self._send(to_email, subject, self._branded_shell("Action required", "Complete your profile", body))
 
+    def send_candidate_onboarding_reminder(
+        self,
+        to_email: str,
+        full_name: str,
+        missing_labels: list[str],
+        dashboard_link: str,
+        recruiter_note: str | None = None,
+    ) -> None:
+        """Nudge a candidate to complete their existing pre-offer intake."""
+        safe_name = escape(full_name or "there")
+        safe_link = escape(dashboard_link, quote=True)
+        missing_html = "".join(
+            f'<li style="margin:0 0 6px;color:#475569;font-size:14px;">{escape(label)}</li>'
+            for label in (missing_labels or ["Complete remaining onboarding steps"])
+        )
+        note_html = (
+            f'<p style="margin:16px 0 0;color:#475569;font-size:14px;"><strong>Note from your recruiter:</strong> {escape(recruiter_note)}</p>'
+            if recruiter_note
+            else ""
+        )
+        subject = "Reminder: Complete your onboarding — TalentAI"
+        body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {safe_name}, your recruiter is waiting for a few onboarding details before they can review your application.
+            </p>
+            <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:18px;margin-bottom:22px;">
+              <p style="margin:0 0 10px;color:#9a3412;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;">Still needed</p>
+              <ul style="margin:0;padding-left:18px;">{missing_html}</ul>
+              {note_html}
+            </div>
+            <div style="text-align:center;">
+              <a href="{safe_link}" style="display:inline-block;background:#123a63;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-size:15px;font-weight:700;">Continue onboarding</a>
+            </div>
+"""
+        self._send(to_email, subject, self._branded_shell("Action required", "Complete your onboarding", body))
+
     def send_announcement(
         self,
         to_email: str,

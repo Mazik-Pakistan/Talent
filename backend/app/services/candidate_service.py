@@ -675,14 +675,17 @@ class CandidateService:
             elif candidate.get("recruiter_email"):
                 recruiter_contact = {"full_name": None, "email": candidate["recruiter_email"], "phone": None}
 
+        candidate_id = candidate.get("user_id") or str(candidate.get("_id") or "")
         announcements = (
             await database.announcements.find(
-                {
-                    "$or": [
-                        {"audience": {"$in": ["candidates", "both"]}},
-                        {"audience": {"$exists": False}},
-                    ]
-                }
+                {"$and": [
+                    {"$or": [{"audience": {"$in": ["candidates", "both"]}}, {"audience": {"$exists": False}}]},
+                    {"$or": [
+                        {"target_candidate_ids": {"$exists": False}},
+                        {"target_candidate_ids": {"$size": 0}},
+                        {"target_candidate_ids": candidate_id},
+                    ]},
+                ]}
             )
             .sort("created_at", -1)
             .limit(3)

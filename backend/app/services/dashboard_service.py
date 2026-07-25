@@ -401,6 +401,7 @@ class DashboardService:
             "target_departments": entry.get("target_departments") or [],
             "target_designations": entry.get("target_designations") or [],
             "target_employee_ids": entry.get("target_employee_ids") or [],
+            "target_candidate_ids": entry.get("target_candidate_ids") or [],
             "created_by": entry.get("created_by"),
             "created_by_name": entry.get("created_by_name"),
             "created_at": _iso(entry.get("created_at")),
@@ -417,9 +418,18 @@ class DashboardService:
         query: dict = {}
         role = current_user.role
         if role == "candidate":
-            query["$or"] = [
-                {"audience": {"$in": ["candidates", "both"]}},
-                {"audience": {"$exists": False}},
+            candidate = await database.candidates.find_one(
+                {"$or": [{"user_id": current_user.id}, {"email": current_user.email}]},
+                {"user_id": 1},
+            ) or {}
+            candidate_id = candidate.get("user_id") or current_user.id
+            query["$and"] = [
+                {"$or": [{"audience": {"$in": ["candidates", "both"]}}, {"audience": {"$exists": False}}]},
+                {"$or": [
+                    {"target_candidate_ids": {"$exists": False}},
+                    {"target_candidate_ids": {"$size": 0}},
+                    {"target_candidate_ids": candidate_id},
+                ]},
             ]
         elif role == "employee":
             employee = await database.employees.find_one(
@@ -462,6 +472,7 @@ class DashboardService:
             "target_departments": request.target_departments,
             "target_designations": request.target_designations,
             "target_employee_ids": request.target_employee_ids,
+            "target_candidate_ids": request.target_candidate_ids,
             "created_by": current_user.id,
             "created_by_name": current_user.full_name,
             "created_at": now,
@@ -504,14 +515,17 @@ class DashboardService:
             updates["body"] = request.body
         if request.audience is not None:
             updates["audience"] = request.audience
-        for field_name in ("target_departments", "target_designations", "target_employee_ids"):
+        for field_name in ("target_departments", "target_designations", "target_employee_ids", "target_candidate_ids"):
             value = getattr(request, field_name)
             if value is not None:
                 updates[field_name] = value
         effective_audience = updates.get("audience", entry.get("audience") or "both")
-        has_targets = any(updates.get(field_name, entry.get(field_name) or []) for field_name in ("target_departments", "target_designations", "target_employee_ids"))
-        if has_targets and effective_audience != "employees":
-            raise HTTPException(status_code=422, detail="Targeted announcements must use the employees audience.")
+        has_employee_targets = any(updates.get(field_name, entry.get(field_name) or []) for field_name in ("target_departments", "target_designations", "target_employee_ids"))
+        has_candidate_targets = bool(updates.get("target_candidate_ids", entry.get("target_candidate_ids") or []))
+        if has_employee_targets and effective_audience != "employees":
+            raise HTTPException(status_code=422, detail="Employee-targeted announcements must use the employees audience.")
+        if has_candidate_targets and effective_audience != "candidates":
+            raise HTTPException(status_code=422, detail="Candidate-targeted announcements must use the candidates audience.")
         await database.announcements.update_one({"_id": entry["_id"]}, {"$set": updates})
         refreshed = await database.announcements.find_one({"_id": entry["_id"]})
         notified, emailed = 0, 0
@@ -575,8 +589,11 @@ class DashboardService:
         scope = self._scope_filter(current_user)
 
         if audience in ("candidates", "both"):
+            candidate_query = {**scope, "status": {"$ne": "converted"}}
+            if announcement.get("target_candidate_ids"):
+                candidate_query["user_id"] = {"$in": announcement["target_candidate_ids"]}
             candidates = await database.candidates.find(
-                {**scope, "status": {"$ne": "converted"}},
+                candidate_query,
                 {"user_id": 1, "email": 1, "full_name": 1},
             ).to_list(length=None)
             for doc in candidates:
@@ -654,6 +671,54 @@ class DashboardService:
                 except Exception:
                     continue
         return notified, emailed
+
+    async def upsert_candidate_onboarding_reminder(
+        self, current_user: CurrentUser, candidate: dict, progress: dict, note: str | None = None
+    ) -> dict:
+        """Persist a candidate-only reminder using the existing announcement delivery path."""
+        now = datetime.now(UTC)
+        candidate_id = self._candidate_id(candidate)
+        missing = progress.get("missing_fields") or []
+        labels = {
+            "personal": "Personal information and ID document",
+            "education": "Education history",
+            "skills": "Skills and certifications",
+            "government_docs": "Government ID document",
+            "resume": "Resume / CV",
+        }
+        missing_labels = [labels.get(key, key.replace("_", " ").title()) for key in missing]
+        body = f"Your onboarding profile is currently {progress.get('percentage', 0)}% complete.\nPlease complete remaining sections and submit your profile for HR review."
+        if missing_labels:
+            body += "\n\nMissing:\n" + "\n".join(f"- {label}" for label in missing_labels)
+        if note:
+            body += f"\n\nNote from your recruiter: {note}"
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        existing = await database.announcements.find_one({
+            "created_by": current_user.id,
+            "audience": "candidates",
+            "target_candidate_ids": candidate_id,
+            "reminder_type": "candidate_onboarding",
+            "created_at": {"$gte": day_start},
+        })
+        if existing:
+            await database.announcements.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {"body": body, "updated_at": now}},
+            )
+            announcement = await database.announcements.find_one({"_id": existing["_id"]})
+            return {"announcement": self._public_announcement(announcement), "updated": True, "notified": 0, "emailed": 0}
+
+        document = {
+            "title": "Reminder", "body": body, "audience": "candidates",
+            "target_departments": [], "target_designations": [], "target_employee_ids": [],
+            "target_candidate_ids": [candidate_id], "reminder_type": "candidate_onboarding",
+            "created_by": current_user.id, "created_by_name": current_user.full_name,
+            "created_at": now, "updated_at": now,
+        }
+        result = await database.announcements.insert_one(document)
+        document["_id"] = result.inserted_id
+        notified, emailed = await self._fanout_announcement(current_user, document, send_email=False, notify=True)
+        return {"announcement": self._public_announcement(document), "updated": False, "notified": notified, "emailed": emailed}
 
     async def get_recruiter_profile(self, current_user: CurrentUser) -> dict:
         collection = database.super_admins if current_user.role == "super_admin" else database.recruiters

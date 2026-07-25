@@ -442,7 +442,24 @@ export async function createEmployeeFromCandidate(candidateId, accessToken) {
 }
 
 export async function getCandidateDetail(candidateId, accessToken) {
-  const { data } = await apiClient.get(`/api/employees/candidates/${candidateId}`, {
+  const id = encodeURIComponent(String(candidateId || "").trim());
+  const { data } = await apiClient.get(`/api/employees/candidates/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function listCandidates(accessToken, params = {}) {
+  const { data } = await apiClient.get("/api/employees/candidates", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params,
+  });
+  return data;
+}
+
+export async function remindCandidateOnboarding(candidateId, payload, accessToken) {
+  const id = encodeURIComponent(String(candidateId || "").trim());
+  const { data } = await apiClient.post(`/api/employees/candidates/${id}/remind`, payload || {}, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return data;
