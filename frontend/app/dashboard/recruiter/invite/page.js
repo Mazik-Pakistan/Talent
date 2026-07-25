@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { createInvitation, getApiErrorMessage } from "@/services/authService";
@@ -61,8 +62,11 @@ export default function RecruiterInvitePage() {
       setInviteLink(data.invitation?.invite_link || "");
       setInviteEmailSent(Boolean(data.email_sent));
       setInviteForm(initialInvite);
+      toast.success(data.message || "Invitation sent successfully.");
     } catch (error) {
-      setInviteMessage(getApiErrorMessage(error, "Could not create invitation."));
+      const errMsg = getApiErrorMessage(error, "Could not create invitation.");
+      setInviteMessage(errMsg);
+      toast.error(errMsg);
     } finally {
       setIsCreating(false);
     }
