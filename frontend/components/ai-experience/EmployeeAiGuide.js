@@ -16,15 +16,14 @@ import {
   clearGuideContext,
   readGuideContext,
   readGuideMinimized,
-  readPageAssist,
   writeGuideMinimized,
 } from "@/lib/ai/guideContext";
-import AiOrb from "./AiOrb";
-import { IconAlert, IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconChevronUp, IconSparkle } from "./icons";
-import styles from "./AiExperience.module.css";
+import { IconAlert, IconCheck, IconChevronLeft, IconChevronRight, IconSparkle } from "./icons";
+import styles from "./EmployeeAiGuide.module.css";
 
 const INCLUDED_PREFIXES = ["/dashboard/employee", "/documents"];
 const SEEN_KEY = "employee_ai_copilot_seen_tips";
+const WAVE_MS = 2400;
 
 function readSeenTips() {
   try {
@@ -43,17 +42,19 @@ function writeSeenTips(set) {
 }
 
 function historyToneClass(kind, tone) {
-  if (tone === "warn" || kind === "validation") return styles.guideTimelineWarn;
-  if (kind === "autosave" || kind === "assist") return styles.guideTimelineOk;
-  return styles.guideTimelineInfo;
+  if (tone === "warn" || kind === "validation") return styles.bubbleQuietWarn;
+  if (kind === "autosave" || kind === "assist") return styles.bubbleQuietOk;
+  return "";
 }
 
 /**
  * Employee AI Copilot — global contextual partner (NOT the autonomous Agent).
  *
  * Mounted once from the root layout so it never unmounts during employee
- * routing. It explains, recommends, and can autofill the CURRENT page only
- * after the employee approves — with visible typing handled by the page.
+ * routing. Strictly read-only: it explains what's on screen and surfaces
+ * tips/notifications. It never types into fields, fills forms, switches
+ * tabs, or takes any action on the employee's behalf — that's the separate,
+ * explicitly-invoked Agent.
  */
 export default function EmployeeAiGuide() {
   const pathname = usePathname();
@@ -70,17 +71,16 @@ export default function EmployeeAiGuide() {
   const [hoverHint, setHoverHint] = useState(null);
   const [flash, setFlash] = useState(null);
   const [history, setHistory] = useState([]);
-  const [assistOffer, setAssistOffer] = useState(null);
-  const [lastAssist, setLastAssist] = useState(null);
-  const [assistBusy, setAssistBusy] = useState(false);
-  const [assistDone, setAssistDone] = useState(false);
   const [contextTick, setContextTick] = useState(0);
   const [statusLine, setStatusLine] = useState(null);
+  const [eyeOffset, setEyeOffset] = useState({ x: 0, y: 0 });
+  const [waving, setWaving] = useState(false);
 
   const historyIdsRef = useRef(new Set());
   const seenTipsRef = useRef(null);
   const pageTipKeysRef = useRef([]);
-  const assistDoneRef = useRef(false);
+  const mascotBtnRef = useRef(null);
+  const waveTimerRef = useRef(null);
   const eligible = INCLUDED_PREFIXES.some((prefix) => pathname?.startsWith(prefix));
 
   function appendHistory(entry) {
@@ -95,27 +95,41 @@ export default function EmployeeAiGuide() {
     setHistory((prev) => [{ id, at: Date.now(), ...entry }, ...prev].slice(0, 3));
   }
 
-  function acceptAssistOffer(offer) {
-    if (!offer?.applyLabel && !offer?.message) {
-      setAssistOffer(null);
-      return;
-    }
-    setLastAssist(offer);
-    setAssistOffer(offer);
-    assistDoneRef.current = false;
-    setAssistDone(false);
-  }
-
-  // Fresh page = fresh assist / status (don't carry Documents noise to Learning).
+  // Fresh page = fresh status/history (don't carry Documents noise to Learning).
   useEffect(() => {
-    assistDoneRef.current = false;
-    setAssistDone(false);
-    setAssistOffer(null);
     setStatusLine(null);
-    setLastAssist(null);
     setHistory([]);
     historyIdsRef.current = new Set();
+
+    setWaving(true);
+    if (waveTimerRef.current) clearTimeout(waveTimerRef.current);
+    waveTimerRef.current = setTimeout(() => setWaving(false), WAVE_MS);
+    return () => {
+      if (waveTimerRef.current) clearTimeout(waveTimerRef.current);
+    };
   }, [pathname]);
+
+  // Eyes track the cursor, like the recruiter mascot.
+  useEffect(() => {
+    let rafId = null;
+    const handleMouseMove = (event) => {
+      if (!mascotBtnRef.current || rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const rect = mascotBtnRef.current.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 3;
+        const dx = Math.max(-3, Math.min(3, (event.clientX - cx) / 40));
+        const dy = Math.max(-2, Math.min(2, (event.clientY - cy) / 40));
+        setEyeOffset({ x: dx, y: dy });
+      });
+    };
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, []);
 
   // Persist open/minimized — default open, never auto-minimise.
   useEffect(() => {
@@ -273,25 +287,6 @@ export default function EmployeeAiGuide() {
           if (!seenTipsRef.current) seenTipsRef.current = readSeenTips();
           const tipKeys = deck.map((tip) => `${pathname}:${tip.id}`).filter(Boolean);
           pageTipKeysRef.current = tipKeys;
-          // Page-scoped assist offer (current page only).
-          const assist = readPageAssist();
-          if (assist?.propose) {
-            Promise.resolve(assist.propose({ pathname, section: context.section, context }))
-              .then((offer) => {
-                if (cancelled) return;
-                // After they act or dismiss, keep a quiet "Show again" — don't re-spam the card.
-                if (assistDoneRef.current) {
-                  setAssistOffer(null);
-                  return;
-                }
-                acceptAssistOffer(offer);
-              })
-              .catch(() => {
-                if (!cancelled) setAssistOffer(null);
-              });
-          } else {
-            setAssistOffer(null);
-          }
         })
         .catch(() => {
           if (cancelled) return;
@@ -315,38 +310,18 @@ export default function EmployeeAiGuide() {
     writeGuideMinimized(true);
   }
 
-  function maximize() {
-    setMinimized(false);
-    writeGuideMinimized(false);
-  }
-
-  async function approveAssist(offerOverride) {
-    const assist = readPageAssist();
-    const offer = offerOverride || assistOffer || lastAssist;
-    if (!assist?.apply || !offer) return;
-    setAssistBusy(true);
-    setStatusLine(null);
-    try {
-      await assist.apply(offer);
-      const done = offer.doneMessage || "Done";
-      setStatusLine(done);
-      assistDoneRef.current = true;
-      setAssistDone(true);
-      setAssistOffer(null);
-      setLastAssist(offer);
-      window.setTimeout(() => setStatusLine((line) => (line === done ? null : line)), 4000);
-    } catch {
-      setStatusLine("Couldn't finish — try again from the list.");
-      setAssistDone(false);
-    } finally {
-      setAssistBusy(false);
-    }
+  function toggleOpen() {
+    setMinimized((current) => {
+      const next = !current;
+      writeGuideMinimized(next);
+      return next;
+    });
   }
 
   // Stay mounted when ineligible — just hide UI so state survives brief exits.
   if (!hydrated || !eligible || !ready) return null;
 
-  // Priority surface: focus > flash validation/notify > assist > insights
+  // Priority surface: focus > flash validation/notify > insights
   const deck = (() => {
     const items = [];
     if (focusHint) items.push(focusHint);
@@ -363,212 +338,171 @@ export default function EmployeeAiGuide() {
     0
   );
   const tipCount = insights.length;
-  const roleLabel = focusHint
-    ? "Helping with this field"
-    : flash?.tone === "ok"
-      ? "Your progress is saved"
-      : assistBusy
-        ? "Working…"
-        : alertCount
-          ? "I found something to review"
-          : section
-            ? `Helping with ${String(section).replace(/_/g, " ")}`
-            : "Your page assistant";
 
-  const showAssistAgain = assistDone && lastAssist && !assistOffer && !assistBusy;
+  const isWarn = current?.tone === "warn";
+  const isOk = flash?.tone === "ok" && !isWarn;
+  const mascotState = waving ? "stateWave" : isWarn ? "stateWarn" : isOk ? "stateOk" : "stateIdle";
+  const ariaLabel = alertCount
+    ? `Employee Copilot — ${alertCount} to review`
+    : tipCount
+      ? `Employee Copilot — ${tipCount} tip${tipCount === 1 ? "" : "s"}`
+      : "Employee Copilot";
 
-  if (minimized) {
-    return (
+  return (
+    <div className={styles.wrapper}>
+      {!minimized && current?.message ? (
+        <div className={styles.speechBubble} role="status" aria-live="polite">
+          <button
+            type="button"
+            className={styles.closeBubbleBtn}
+            onClick={minimize}
+            aria-label="Close Copilot"
+            title="Close"
+          >
+            &times;
+          </button>
+
+          <div className={`${styles.bubbleLabel} ${isWarn ? styles.bubbleLabelWarn : ""}`}>
+            {isWarn ? <IconAlert width={12} height={12} /> : <IconSparkle width={12} height={12} />}
+            {isWarn ? "Needs your attention" : "For you"}
+          </div>
+          <p
+            className={`${styles.bubbleMessage} ${isWarn ? styles.bubbleMessageWarn : ""}`}
+            key={`${current?.id || "msg"}-${section || pathname}`}
+          >
+            {current.message}
+          </p>
+
+          {current?.actions?.length ? (
+            <div className={styles.bubbleActions}>
+              {current.actions.map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  className={`${styles.bubbleAction} ${action.primary ? styles.bubbleActionPrimary : ""}`}
+                  onClick={() => {
+                    if (action.href) router.push(action.href);
+                    else action.onClick?.();
+                  }}
+                >
+                  {action.primary ? <IconSparkle width={11} height={11} /> : null}
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {statusLine ? (
+            <p className={styles.bubbleStatus} role="status">
+              {statusLine}
+            </p>
+          ) : null}
+
+          {deck.length > 1 ? (
+            <div className={styles.bubblePager} aria-label={`Suggestion ${index + 1} of ${deck.length}`}>
+              <button
+                type="button"
+                className={styles.bubblePagerBtn}
+                disabled={index <= 0}
+                onClick={() => setIndex((n) => Math.max(0, n - 1))}
+                aria-label="Previous suggestion"
+              >
+                <IconChevronLeft width={13} height={13} />
+              </button>
+              <span className={styles.bubblePagerLabel}>
+                {index + 1} of {deck.length}
+              </span>
+              <button
+                type="button"
+                className={styles.bubblePagerBtn}
+                disabled={index >= deck.length - 1}
+                onClick={() => setIndex((n) => Math.min(deck.length - 1, n + 1))}
+                aria-label="Next suggestion"
+              >
+                <IconChevronRight width={13} height={13} />
+              </button>
+            </div>
+          ) : null}
+
+          {history.length > 0 && !statusLine ? (
+            <details className={styles.bubbleHistory}>
+              <summary>Recent activity</summary>
+              <ul className={styles.bubbleQuietLog} aria-label="Recent activity">
+                {history.slice(0, 2).map((item) => (
+                  <li key={item.id} className={`${styles.bubbleQuietItem} ${historyToneClass(item.kind, item.tone)}`}>
+                    <span className={styles.bubbleQuietMark} aria-hidden="true">
+                      {item.tone === "warn" ? <IconAlert width={8} height={8} /> : <IconCheck width={8} height={8} />}
+                    </span>
+                    <span>{item.message}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+
+          <div className={styles.bubbleArrow} />
+        </div>
+      ) : null}
+
       <button
+        ref={mascotBtnRef}
         type="button"
-        className={styles.guideLauncher}
-        onClick={maximize}
-        aria-expanded={false}
-        aria-label={
-          alertCount
-            ? `Expand Copilot — ${alertCount} to fix`
-            : tipCount
-              ? `Expand Copilot — ${tipCount} tip${tipCount === 1 ? "" : "s"}`
-              : "Expand Copilot"
-        }
-        title={alertCount ? `${alertCount} to fix` : "Open Copilot"}
+        className={`${styles.mascotBtn} ${styles[mascotState]}`}
+        onClick={toggleOpen}
+        aria-expanded={!minimized}
+        aria-label={ariaLabel}
+        title={ariaLabel}
       >
-        <AiOrb size="sm" />
-        Copilot
-        {alertCount > 0 ? (
-          <span className={styles.guideBadge} title={`${alertCount} to fix`}>
+        {minimized && alertCount > 0 ? (
+          <span className={styles.avatarBadge} title={`${alertCount} to review`}>
             {alertCount}
           </span>
         ) : null}
-        <IconChevronUp width={14} height={14} />
+        <svg viewBox="0 0 100 100" className={styles.mascotSvg} xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <filter id="employeeCopilotShadow" x="-10%" y="-10%" width="120%" height="120%">
+              <feDropShadow dx="0" dy="4" stdDeviation="3" floodColor="#000" floodOpacity="0.2" />
+            </filter>
+          </defs>
+
+          <ellipse cx="50" cy="84" rx="12" ry="4" className={styles.thrusterGlow} />
+
+          <path d="M 38 65 Q 50 78 62 65 Q 50 68 38 65 Z" className={styles.bodyBase} filter="url(#employeeCopilotShadow)" />
+          <path d="M 45 68 L 55 68 L 50 78 Z" className={styles.bodyThruster} />
+
+          <rect x="46" y="54" width="8" height="8" rx="2" className={styles.robotNeck} />
+
+          <path
+            d="M 28 50 C 18 50 14 38 16 32 C 18 30 20 34 20 38 C 20 44 26 46 28 46 Z"
+            className={styles.leftArm}
+          />
+          <path
+            d="M 72 50 C 82 50 86 44 84 38 C 82 36 80 40 80 44 C 80 46 74 46 72 46 Z"
+            className={styles.rightArm}
+          />
+
+          <rect x="24" y="18" width="52" height="42" rx="16" className={styles.headShell} filter="url(#employeeCopilotShadow)" />
+          <rect x="28" y="22" width="44" height="34" rx="12" className={styles.faceScreen} />
+
+          <ellipse
+            cx={42 + eyeOffset.x}
+            cy={39 + eyeOffset.y}
+            rx="5"
+            ry="7"
+            className={styles.eye}
+          />
+          <ellipse
+            cx={58 + eyeOffset.x}
+            cy={39 + eyeOffset.y}
+            rx="5"
+            ry="7"
+            className={styles.eye}
+          />
+
+          <line x1="50" y1="18" x2="50" y2="10" strokeWidth="3" strokeLinecap="round" className={styles.antennaStem} />
+          <circle cx="50" cy="8" r="4" className={styles.antennaTip} />
+        </svg>
       </button>
-    );
-  }
-
-  return (
-    <aside className={styles.guide} aria-label="Employee AI Copilot">
-      <div className={styles.guideTop}>
-        <AiOrb size="md" thinking={assistBusy} />
-        <div>
-          <div className={styles.guideName}>Employee Copilot</div>
-          <div className={styles.guideRole}>{roleLabel}</div>
-        </div>
-        <button
-          type="button"
-          className={styles.guideClose}
-          onClick={minimize}
-          aria-label="Minimize Copilot"
-          title="Minimize"
-        >
-          <IconChevronDown />
-        </button>
-      </div>
-
-      <div className={styles.guideBody}>
-        <div
-          className={`${styles.guideConversation} ${
-            current?.tone === "warn" ? styles.guideConversationWarn : ""
-          }`}
-        >
-          {current?.message ? (
-            <>
-              <div className={styles.guideMessageLabel}>
-                {current?.tone === "warn" ? (
-                  <IconAlert width={13} height={13} />
-                ) : (
-                  <IconSparkle width={13} height={13} />
-                )}
-                {current?.tone === "warn" ? "Needs your attention" : "For you"}
-              </div>
-              <p
-                className={`${styles.guideMessage} ${current?.tone === "warn" ? styles.guideMessageWarn : ""}`}
-                key={`${current?.id || "msg"}-${section || pathname}`}
-              >
-                {current.message}
-              </p>
-            </>
-          ) : null}
-
-          {assistOffer ? (
-            <div className={styles.guideAssist}>
-              {assistOffer.message ? (
-                <p className={styles.guideAssistText}>{assistOffer.message}</p>
-              ) : null}
-              {assistOffer.items?.length ? (
-                <ul className={styles.guideAssistItems}>
-                  {assistOffer.items.slice(0, 3).map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              ) : null}
-              <div className={styles.guideActions}>
-                <button
-                  type="button"
-                  className={`${styles.guideAction} ${styles.guideActionPrimary}`}
-                  disabled={assistBusy}
-                  onClick={() => approveAssist(assistOffer)}
-                >
-                  <IconSparkle width={12} height={12} />
-                  {assistBusy ? "Working…" : assistOffer.applyLabel || "Help me"}
-                </button>
-                <button
-                  type="button"
-                  className={styles.guideAction}
-                  disabled={assistBusy}
-                  onClick={() => {
-                    assistDoneRef.current = true;
-                    setAssistOffer(null);
-                    setAssistDone(true);
-                  }}
-                >
-                  Not now
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        {showAssistAgain ? (
-          <div className={styles.guideActions}>
-            <button
-              type="button"
-              className={`${styles.guideAction} ${styles.guideActionPrimary}`}
-              disabled={assistBusy}
-              onClick={() => approveAssist(lastAssist)}
-            >
-              <IconSparkle width={12} height={12} />
-              {assistBusy ? "Working…" : lastAssist.applyLabel || "Show again"}
-            </button>
-          </div>
-        ) : null}
-
-        {current?.actions?.length ? (
-          <div className={styles.guideActions}>
-            {current.actions.map((action) => (
-              <button
-                key={action.label}
-                type="button"
-                className={`${styles.guideAction} ${action.primary ? styles.guideActionPrimary : ""}`}
-                onClick={() => {
-                  if (action.href) router.push(action.href);
-                  else action.onClick?.();
-                }}
-              >
-                {action.primary ? <IconSparkle width={12} height={12} /> : null}
-                {action.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {statusLine ? (
-          <p className={styles.guideStatus} role="status">
-            {statusLine}
-          </p>
-        ) : null}
-
-        {deck.length > 1 ? (
-          <div className={styles.guidePager} aria-label={`Suggestion ${index + 1} of ${deck.length}`}>
-            <button
-              type="button"
-              className={styles.guidePagerBtn}
-              disabled={index <= 0}
-              onClick={() => setIndex((n) => Math.max(0, n - 1))}
-              aria-label="Previous suggestion"
-            >
-              <IconChevronLeft width={16} height={16} />
-            </button>
-            <span className={styles.guidePagerLabel}>
-              {index + 1} of {deck.length}
-            </span>
-            <button
-              type="button"
-              className={styles.guidePagerBtn}
-              disabled={index >= deck.length - 1}
-              onClick={() => setIndex((n) => Math.min(deck.length - 1, n + 1))}
-              aria-label="Next suggestion"
-            >
-              <IconChevronRight width={16} height={16} />
-            </button>
-          </div>
-        ) : null}
-
-        {history.length > 0 && !statusLine ? (
-          <details className={styles.guideHistory}>
-            <summary>Recent activity</summary>
-            <ul className={styles.guideQuietLog} aria-label="Recent activity">
-              {history.slice(0, 2).map((item) => (
-                <li key={item.id} className={`${styles.guideQuietItem} ${historyToneClass(item.kind, item.tone)}`}>
-                  <span className={styles.guideTimelineMark} aria-hidden="true">
-                    {item.tone === "warn" ? <IconAlert width={10} height={10} /> : <IconCheck width={10} height={10} />}
-                  </span>
-                  <span>{item.message}</span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        ) : null}
-      </div>
-    </aside>
+    </div>
   );
 }
