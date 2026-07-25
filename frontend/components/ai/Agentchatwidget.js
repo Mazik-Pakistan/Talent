@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import AgentChatCore, { readAuth } from "./AgentChatCore";
 import styles from "./AgentChatWidgetLauncher.module.css";
+import RecruiterMascot from "@/components/recruiter/RecruiterMascot";
 
 // Routes where the floating agent should never appear (public/unauthenticated
 // surfaces — landing, auth flows, invite/offer accept pages, the onboarding
@@ -47,9 +48,13 @@ export default function AgentChatWidget() {
   const [auth, setAuth] = useState(null);
   const [open, setOpen] = useState(false);
 
+  const isRecruiterPage = Boolean(pathname?.startsWith("/dashboard/recruiter"));
   const onAssistantRoute = Boolean(pathname?.includes("/ai-assistant"));
   const hidden =
-    HIDDEN_PREFIXES.some((p) => pathname?.startsWith(p)) || pathname === "/" || onAssistantRoute;
+    HIDDEN_PREFIXES.some((p) => pathname?.startsWith(p)) ||
+    pathname === "/" ||
+    onAssistantRoute;
+  const showRecruiterMascot = isRecruiterPage && !hidden;
 
   useEffect(() => {
     setAuth(hidden ? null : readAuth());
@@ -73,14 +78,18 @@ export default function AgentChatWidget() {
 
   return (
     <>
-      <button
-        type="button"
-        className={styles.launcher}
-        onClick={() => setOpen((v) => !v)}
-        aria-label={open ? "Close AI agent" : "Open AI agent"}
-      >
-        {open ? <IconClose /> : <IconChat />}
-      </button>
+      {showRecruiterMascot ? (
+        <RecruiterMascot openChat={open} toggleChat={() => setOpen((v) => !v)} />
+      ) : (
+        <button
+          type="button"
+          className={styles.launcher}
+          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? "Close AI agent" : "Open AI agent"}
+        >
+          {open ? <IconClose /> : <IconChat />}
+        </button>
+      )}
 
       {open ? (
         <div className={styles.panel} role="dialog" aria-label="AI agent">

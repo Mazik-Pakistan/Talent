@@ -192,6 +192,9 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
       lastUnreadRef.current = nextUnread;
       setNotifications(nextList);
       setUnreadCount(nextUnread);
+      window.dispatchEvent(new CustomEvent('talent-notifications-updated', {
+        detail: { unreadCount: nextUnread, notifications: nextList }
+      }));
     } catch {
       // Non-critical polling failure
     }
@@ -244,7 +247,13 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
     setNotifBusy(true);
     try {
       await markNotificationsRead({ all: true }, accessToken);
-      setNotifications((current) => current.map((n) => ({ ...n, read: true })));
+      setNotifications((current) => {
+        const nextList = current.map((n) => ({ ...n, read: true }));
+        window.dispatchEvent(new CustomEvent('talent-notifications-updated', {
+          detail: { unreadCount: 0, notifications: nextList }
+        }));
+        return nextList;
+      });
       setUnreadCount(0);
       lastUnreadRef.current = 0;
       toast.success("All notifications marked as read.");
@@ -260,10 +269,18 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
     if (!accessToken) return;
     try {
       await markNotificationsRead({ ids: [notificationId] }, accessToken);
-      setNotifications((current) => current.map((n) => (n.id === notificationId ? { ...n, read: true } : n)));
+      let updatedList = [];
+      setNotifications((current) => {
+        const nextList = current.map((n) => (n.id === notificationId ? { ...n, read: true } : n));
+        updatedList = nextList;
+        return nextList;
+      });
       setUnreadCount((count) => {
         const next = Math.max(0, count - 1);
         lastUnreadRef.current = next;
+        window.dispatchEvent(new CustomEvent('talent-notifications-updated', {
+          detail: { unreadCount: next, notifications: updatedList }
+        }));
         return next;
       });
     } catch {
