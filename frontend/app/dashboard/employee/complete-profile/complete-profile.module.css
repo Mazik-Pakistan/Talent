@@ -12,11 +12,14 @@
   margin-bottom: 22px;
   padding: 30px 34px;
   border-radius: var(--ai-r-xl);
-  background: linear-gradient(122deg, #0b1631 0%, #12224a 42%, #24408f 100%);
-  color: #fff;
-  box-shadow: 0 30px 70px -42px rgba(11, 22, 49, 0.95);
+  background: linear-gradient(128deg, #eaf4ff 0%, #f6fbff 55%, #ffffff 100%);
+  border: 1px solid #c3e3ff;
+  color: var(--ai-text);
+  box-shadow: 0 26px 60px -38px rgba(56, 162, 255, 0.55);
+  transition: box-shadow var(--ai-mid) var(--ai-ease);
   animation: ai-fade-up 460ms var(--ai-ease) both;
 }
+.hero:hover { box-shadow: 0 30px 68px -34px rgba(56, 162, 255, 0.65); }
 .hero::after {
   content: "";
   position: absolute;
@@ -25,7 +28,8 @@
   width: 300px;
   height: 300px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(52, 182, 255, 0.32), transparent 70%);
+  background: radial-gradient(circle, rgba(56, 162, 255, 0.24), transparent 70%);
+  animation: heroDrift 9s ease-in-out infinite;
 }
 .hero::before {
   content: "";
@@ -35,7 +39,11 @@
   width: 240px;
   height: 240px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(124, 92, 255, 0.28), transparent 70%);
+  background: radial-gradient(circle, rgba(21, 61, 94, 0.08), transparent 70%);
+}
+@keyframes heroDrift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-14px, 10px) scale(1.06); }
 }
 .heroLeft { position: relative; z-index: 1; min-width: 0; }
 .heroEyebrow {
@@ -47,19 +55,20 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #8fd6ff;
+  color: var(--ai-blue);
 }
 .hero h1 {
   margin: 0 0 8px;
   font-size: clamp(22px, 3vw, 29px);
   font-weight: 750;
   letter-spacing: -0.02em;
+  color: #0c2a41;
 }
 .heroMeta {
   max-width: 620px;
   font-size: 13.5px;
   line-height: 1.6;
-  color: rgba(255, 255, 255, 0.74);
+  color: var(--ai-muted);
 }
 .heroChips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .heroChip {
@@ -67,14 +76,17 @@
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid var(--ai-line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
+  background: #fff;
   font-size: 11.5px;
   font-weight: 650;
+  color: var(--ai-text);
+  transition: transform var(--ai-fast) var(--ai-ease), box-shadow var(--ai-fast) var(--ai-ease);
 }
-.heroChipAi { border-color: rgba(52, 182, 255, 0.45); background: rgba(52, 182, 255, 0.16); color: #cbe9ff; }
-.heroChipDone { border-color: rgba(16, 200, 139, 0.45); background: rgba(16, 200, 139, 0.16); color: #9ff0d3; }
+.heroChip:hover { transform: translateY(-1px); box-shadow: var(--ai-shadow-sm); }
+.heroChipAi { border-color: rgba(47, 107, 255, 0.35); background: rgba(47, 107, 255, 0.08); color: var(--ai-blue); }
+.heroChipDone { border-color: rgba(16, 200, 139, 0.35); background: rgba(16, 200, 139, 0.1); color: #0a8a63; }
 
 .ringWrap {
   position: relative;
@@ -83,11 +95,12 @@
   display: grid;
   justify-items: center;
   gap: 8px;
+  animation: ai-pop 550ms var(--ai-ease) both;
 }
 .ring { width: 108px; height: 108px; }
-.ringTrack { stroke: rgba(255, 255, 255, 0.14); }
-.ringValue { font-size: 21px; font-weight: 800; fill: #fff; font-family: "Sora", system-ui, sans-serif; }
-.ringLabel { font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, 0.68); text-align: center; }
+.ringTrack { stroke: var(--ai-line); }
+.ringValue { font-size: 21px; font-weight: 800; fill: #0c2a41; font-family: "Sora", system-ui, sans-serif; }
+.ringLabel { font-size: 11px; font-weight: 600; color: var(--ai-muted); text-align: center; }
 
 /* ── Mode chooser ────────────────────────────────────────────────────── */
 .chooser { animation: ai-fade-up 420ms var(--ai-ease) both; }
