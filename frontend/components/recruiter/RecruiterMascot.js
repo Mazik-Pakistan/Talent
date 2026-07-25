@@ -31,9 +31,16 @@ const PRIORITY = {
   NONE: 0,
 };
 
-const BUBBLE_TIMEOUT_MS = 6000;
+const BUBBLE_TIMEOUT_MS = 8000;
 const COOLDOWN_MS = 12000;
 const IDLE_TIMEOUT_MS = 30000;
+
+const COMMAND_FIELDS = {
+  full_name: ["full name", "name"], first_name: ["first name"], last_name: ["last name", "surname"],
+  cnic: ["cnic", "nic", "national id"], email: ["email", "email address"], phone: ["phone", "mobile"],
+  department: ["department"], job_title: ["job title", "designation", "title"],
+  office_location: ["office location", "location"], start_date: ["start date", "joining date"], address: ["address"],
+};
 
 function isFieldEmpty(field) {
   if (field.type === "checkbox" || field.type === "radio") return !field.checked;
@@ -61,7 +68,9 @@ function getFieldLabel(field) {
 }
 
 function getVisibleForms() {
-  return Array.from(document.querySelectorAll("form")).filter((form) => form.offsetParent !== null);
+  return Array.from(document.querySelectorAll("form")).filter(
+    (form) => form.offsetParent !== null && !form.hasAttribute("data-mascot-command")
+  );
 }
 
 function getNextMissingRequiredField() {
@@ -152,11 +161,52 @@ function pickFromPool(pool, lastPick) {
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
+function visibleFormFields() {
+  return getVisibleForms().flatMap((form) => Array.from(form.querySelectorAll("input, select, textarea")).filter(
+    (field) => isFieldVisible(field) && !["hidden", "submit", "button", "file", "password"].includes(field.type)
+  ));
+}
+
+function setNativeFieldValue(field, value) {
+  const prototype = field.tagName === "SELECT" ? HTMLSelectElement.prototype : field.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+  if (!setter) return false;
+  let next = value.trim();
+  if (field.tagName === "SELECT") {
+    const option = Array.from(field.options).find((item) => item.value.toLowerCase() === next.toLowerCase() || item.text.trim().toLowerCase() === next.toLowerCase());
+    if (!option) return false;
+    next = option.value;
+  }
+  setter.call(field, next);
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  field.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+}
+
+function fillFromCommand(command) {
+  const fields = visibleFormFields();
+  const allAliases = Object.values(COMMAND_FIELDS).flat().join("|");
+  let filled = 0;
+  fields.forEach((field) => {
+    const identifier = `${field.name || ""} ${field.id || ""} ${getFieldLabel(field)}`.toLowerCase().replace(/[_-]/g, " ");
+    const aliases = Object.entries(COMMAND_FIELDS).filter(([key, names]) => identifier.includes(key.replace(/_/g, " ")) || names.some((name) => identifier.includes(name))).flatMap(([, names]) => names).sort((a, b) => b.length - a.length);
+    const alias = aliases.find((name) => new RegExp(`(?:^|[,;\\s])${name.replace(/ /g, "\\s+")}(?:\\s*(?:is|:|=))?\\s+`, "i").test(command));
+    if (!alias) return;
+    const value = command.match(new RegExp(`(?:^|[,;\\s])${alias.replace(/ /g, "\\s+")}(?:\\s*(?:is|:|=))?\\s+(.+?)(?=\\s*(?:,|;|\\band\\b)\\s*(?:${allAliases})\\b|$)`, "i"))?.[1]?.trim().replace(/^['\"]|['\"]$/g, "");
+    if (value && setNativeFieldValue(field, value)) filled += 1;
+  });
+  return { fields, filled };
+}
+
 export default function RecruiterMascot({ openChat, toggleChat }) {
   const pathname = usePathname();
   const [activeState, setActiveState] = useState("stateIdle");
   const [bubbleText, setBubbleText] = useState("");
   const [eyeOffset, setEyeOffset] = useState({ x: 0, y: 0 });
+  const [formCommand, setFormCommand] = useState("");
+  const [showFormCommand, setShowFormCommand] = useState(false);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [insightCount, setInsightCount] = useState(0);
 
   const bubbleTimerRef = useRef(null);
   const cooldownTimerRef = useRef(null);
@@ -172,6 +222,7 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
   const mascotBtnRef = useRef(null);
   const statsRef = useRef({});
   const insightsRef = useRef([]);
+  const suggestionIndexRef = useRef(0);
 
   const clearFieldHighlight = useCallback(() => {
     if (highlightedTargetRef.current) {
@@ -308,6 +359,31 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
     [clearFieldHighlight, dismissBubble, highlightField, setMessage]
   );
 
+  const handleFormCommand = useCallback((event) => {
+    event.preventDefault();
+    const { fields, filled } = fillFromCommand(formCommand);
+    if (!filled) {
+      const firstField = fields[0] ? getFieldLabel(fields[0]) : "a visible field";
+      setMessage(`Enter ${firstField} followed by its value.`, PRIORITY.SUGGESTION, "form-command-help", {
+        force: true, bypassCooldown: true, animation: "stateThinking",
+      });
+      return;
+    }
+    setFormCommand("");
+    const required = fields.filter((field) => field.required);
+    const remaining = required.filter(isFieldEmpty).length;
+    const progress = required.length ? ` Step ${required.length - remaining} of ${required.length}; ${remaining} left.` : "";
+    setMessage(`Filled ${filled} field${filled === 1 ? "" : "s"}.${progress}`, PRIORITY.SUGGESTION, `form-command:${Date.now()}`, {
+      force: true, bypassCooldown: true, animation: "stateHappy",
+    });
+    setTimeout(() => refreshFormGuidance({ force: true }), 0);
+  }, [formCommand, refreshFormGuidance, setMessage]);
+
+  const formCommandPlaceholder = useCallback(() => {
+    const labels = visibleFormFields().slice(0, 2).map(getFieldLabel).filter(Boolean);
+    return labels.length ? `Fill: ${labels.join(", ")}${labels.length > 1 ? "…" : ""}` : "Fill the visible form fields";
+  }, []);
+
   const showPageSuggestion = useCallback(
     (force = false) => {
       const formGuidance = getFormGuidance();
@@ -317,7 +393,7 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
       }
 
       const pool = insightsRef.current.map((insight) => insight.message).filter(Boolean);
-      const pick = pickFromPool(pool, lastPageSuggestionRef.current) || pool[0];
+      const pick = pool[suggestionIndexRef.current] || pool[0];
       if (!pick) return;
       lastPageSuggestionRef.current = pick;
       setMessage(pick, PRIORITY.SUGGESTION, `page:${pick}`, {
@@ -356,6 +432,9 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
     try {
       const { insights, stats } = await buildRecruiterInsights(pathname, token, context);
       insightsRef.current = insights || [];
+      setInsightCount(insightsRef.current.length);
+      suggestionIndexRef.current = 0;
+      setSuggestionIndex(0);
       statsRef.current = stats || {};
 
       const { prev, next } = updatePipelineMemory(statsRef.current);
@@ -378,6 +457,20 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
       // The existing mascot remains available even when contextual data is unavailable.
     }
   }, [pathname, recruiterFirstName, setMessage, showPageSuggestion]);
+
+  const showSuggestion = useCallback((nextIndex) => {
+    const deck = insightsRef.current;
+    const item = deck[nextIndex];
+    if (!item?.message) return;
+    suggestionIndexRef.current = nextIndex;
+    setSuggestionIndex(nextIndex);
+    lastPageSuggestionRef.current = item.message;
+    setMessage(item.message, PRIORITY.SUGGESTION, `page:${item.id || item.message}`, {
+      force: true,
+      bypassCooldown: true,
+      animation: "stateWave",
+    });
+  }, [setMessage]);
 
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -420,6 +513,22 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
       window.removeEventListener(MASCOT_CONTEXT_EVENT, refresh);
       window.removeEventListener(RECRUITER_INSIGHTS_REFRESH_EVENT, refresh);
     };
+  }, [refreshInsights]);
+
+  useEffect(() => {
+    const updateVisibility = () => setShowFormCommand(visibleFormFields().length > 0);
+    const initialTimer = setTimeout(updateVisibility, 0);
+    const observer = new MutationObserver(updateVisibility);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      clearTimeout(initialTimer);
+      observer.disconnect();
+    };
+  }, [pathname]);
+
+  useEffect(() => {
+    const timer = setInterval(refreshInsights, 45000);
+    return () => clearInterval(timer);
   }, [refreshInsights]);
 
   useEffect(() => {
@@ -607,6 +716,17 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
 
   return (
     <div className={styles.mascotWrapper}>
+      {showFormCommand && (
+        <form className={styles.formCommand} data-mascot-command onSubmit={handleFormCommand}>
+          <input
+            value={formCommand}
+            onChange={(event) => setFormCommand(event.target.value)}
+            placeholder={formCommandPlaceholder()}
+            aria-label="Fill the current recruiter form"
+          />
+          <button type="submit" aria-label="Fill form">Fill</button>
+        </form>
+      )}
       {bubbleText && (
         <div className={styles.speechBubble} role="alert" aria-live="polite">
           <p className={styles.bubbleText}>{bubbleText}</p>
@@ -624,6 +744,13 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
           >
             &times;
           </button>
+          {insightCount > 1 && (
+            <div className={styles.suggestionPager} aria-label={`Suggestion ${suggestionIndex + 1} of ${insightCount}`}>
+              <button type="button" disabled={suggestionIndex <= 0} onClick={() => showSuggestion(suggestionIndex - 1)} aria-label="Previous suggestion">‹</button>
+              <span>{suggestionIndex + 1} of {insightCount}</span>
+              <button type="button" disabled={suggestionIndex >= insightCount - 1} onClick={() => showSuggestion(suggestionIndex + 1)} aria-label="Next suggestion">›</button>
+            </div>
+          )}
           <div className={styles.bubbleArrow} />
         </div>
       )}

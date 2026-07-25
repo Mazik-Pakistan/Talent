@@ -206,6 +206,27 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
     return () => clearInterval(timer);
   }, [pathname, refreshNotifications]);
 
+  const runGlobalSearch = useCallback(async (query) => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setSearching(true);
+    try {
+      const data = await globalSearch(trimmed, accessToken);
+      setSearchResults(data.results || []);
+      setSearchOpen(true);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     const trimmed = searchQuery.trim();
@@ -215,24 +236,14 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
       return;
     }
 
-    setSearching(true);
-    searchTimerRef.current = setTimeout(async () => {
-      const accessToken = localStorage.getItem("access_token");
-      if (!accessToken) return;
-      try {
-        const data = await globalSearch(trimmed, accessToken);
-        setSearchResults(data.results || []);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
+    searchTimerRef.current = setTimeout(() => {
+      runGlobalSearch(trimmed);
     }, SEARCH_DEBOUNCE_MS);
 
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
-  }, [searchQuery]);
+  }, [searchQuery, runGlobalSearch]);
 
   async function handleLogout() {
     const accessToken = localStorage.getItem("access_token");
@@ -404,6 +415,12 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                         setSearchOpen(true);
                       }}
                       onFocus={() => setSearchOpen(true)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") return;
+                        event.preventDefault();
+                        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+                        runGlobalSearch(searchQuery);
+                      }}
                       onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
                       placeholder="Search candidates, employees…"
                       aria-label="Search"
