@@ -6,19 +6,15 @@ import { usePathname } from "next/navigation";
 import AgentChatCore, { readAuth } from "./AgentChatCore";
 import styles from "./AgentChatWidgetLauncher.module.css";
 import RecruiterMascot from "@/components/recruiter/RecruiterMascot";
+import CandidateMascot from "@/components/candidate/CandidateMascot";
 
-// Routes where the floating agent should never appear (public/unauthenticated
-// surfaces — landing, auth flows, invite/offer accept pages, the onboarding
-// page itself which has its own full-canvas agent, and print-style pages).
-const HIDDEN_PREFIXES = [
+// Routes where floating assistants are hidden (unauthenticated auth flows & dedicated full-canvas AI pages).
+const PUBLIC_HIDDEN_PREFIXES = [
   "/login",
   "/register",
   "/forgot-password",
   "/reset-password",
   "/verify-email",
-  "/invite",
-  "/offer",
-  "/onboarding",
 ];
 
 function IconChat() {
@@ -38,10 +34,8 @@ function IconClose() {
 }
 
 /**
- * Global floating agent widget. Mounted once at the root layout so it's
- * available on every authenticated screen without every page needing to
- * remember to import it. Hidden on dedicated /ai-assistant routes (those
- * pages own the full-canvas chat).
+ * Global floating assistant widget launcher.
+ * Renders RecruiterMascot on recruiter routes and CandidateMascot on candidate routes.
  */
 export default function AgentChatWidget() {
   const pathname = usePathname();
@@ -49,19 +43,26 @@ export default function AgentChatWidget() {
   const [open, setOpen] = useState(false);
 
   const isRecruiterPage = Boolean(pathname?.startsWith("/dashboard/recruiter"));
+  const isCandidatePage = Boolean(
+    pathname?.startsWith("/dashboard/candidate") ||
+    pathname?.startsWith("/onboarding") ||
+    pathname?.startsWith("/offer") ||
+    pathname?.startsWith("/documents")
+  );
   const onAssistantRoute = Boolean(pathname?.includes("/ai-assistant"));
+
   const hidden =
-    HIDDEN_PREFIXES.some((p) => pathname?.startsWith(p)) ||
+    PUBLIC_HIDDEN_PREFIXES.some((p) => pathname?.startsWith(p)) ||
     pathname === "/" ||
     onAssistantRoute;
+
   const showRecruiterMascot = isRecruiterPage && !hidden;
+  const showCandidateMascot = isCandidatePage && !hidden && !showRecruiterMascot;
 
   useEffect(() => {
     setAuth(hidden ? null : readAuth());
   }, [pathname, hidden]);
 
-  // Re-check auth on focus/storage changes so the widget appears immediately
-  // after login without a full navigation.
   useEffect(() => {
     function recheck() {
       if (!hidden) setAuth(readAuth());
@@ -80,6 +81,8 @@ export default function AgentChatWidget() {
     <>
       {showRecruiterMascot ? (
         <RecruiterMascot openChat={open} toggleChat={() => setOpen((v) => !v)} />
+      ) : showCandidateMascot ? (
+        <CandidateMascot openChat={open} toggleChat={() => setOpen((v) => !v)} />
       ) : (
         <button
           type="button"
