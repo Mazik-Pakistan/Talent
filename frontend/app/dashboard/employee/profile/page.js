@@ -298,6 +298,65 @@ function EmployeeProfileContent() {
   const documents = onboarding?.documents || {};
   const nda = onboarding?.nda || {};
 
+  // ── Section completeness (drives status badges, nav dots, and the ring) ──
+  const sectionComplete = useMemo(() => ({
+    employment: !!employee?.employee_id,
+    personal: !!(personal.first_name || personal.national_id),
+    education: educationEntries.length > 0,
+    skills: !!(skills.technical_skills?.length || skills.soft_skills?.length || resume.file_name),
+    emergency: !!(onboarding?.emergency?.name && onboarding?.emergency?.phone),
+    banking: !!(onboarding?.employment?.iban && onboarding?.employment?.bank_name),
+    references: (onboarding?.references?.references?.length || 0) >= 2,
+    policies: !!(
+      documents.accepted_code_of_conduct &&
+      documents.accepted_privacy_policy &&
+      documents.accepted_employee_handbook &&
+      nda.full_legal_name
+    ),
+  }), [employee, personal, educationEntries.length, skills, resume, onboarding, documents, nda]);
+
+  const sectionsMeta = useMemo(
+    () => [
+      { id: "sec-employment", label: "Employment", icon: <IconBriefcase />, done: sectionComplete.employment },
+      { id: "sec-personal", label: "Personal", icon: <IconUser />, done: sectionComplete.personal },
+      { id: "sec-education", label: "Education", icon: <IconCap />, done: sectionComplete.education },
+      { id: "sec-skills", label: "Skills & resume", icon: <IconSpark />, done: sectionComplete.skills },
+      { id: "sec-emergency", label: "Emergency contact", icon: <IconHeart />, done: sectionComplete.emergency },
+      { id: "sec-banking", label: "Banking", icon: <IconBank />, done: sectionComplete.banking },
+      { id: "sec-references", label: "References", icon: <IconUsers />, done: sectionComplete.references },
+      { id: "sec-policies", label: "Policies & NDA", icon: <IconShield />, done: sectionComplete.policies },
+    ],
+    [sectionComplete]
+  );
+
+  const sectionsDoneCount = sectionsMeta.filter((item) => item.done).length;
+  const [activeSectionId, setActiveSectionId] = useState(sectionsMeta[0]?.id || null);
+
+  useEffect(() => {
+    if (loading) return undefined;
+    const targets = sectionsMeta
+      .map((item) => document.getElementById(item.id))
+      .filter(Boolean);
+    if (!targets.length || typeof IntersectionObserver === "undefined") return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]?.target?.id) setActiveSectionId(visible[0].target.id);
+      },
+      { rootMargin: "-96px 0px -65% 0px", threshold: [0, 1] }
+    );
+    targets.forEach((target) => observer.observe(target));
+    return () => observer.disconnect();
+  }, [loading, sectionsMeta]);
+
+  function jumpToSection(id) {
+    setActiveSectionId(id);
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   function showToast(type, messageText) {
     setToast({ id: Date.now(), type, message: messageText });
   }
@@ -636,7 +695,30 @@ function EmployeeProfileContent() {
             {loading ? (
               <p className={styles.empty}>Loading your profile…</p>
             ) : (
-              <div className={styles.stack}>
+              <div className={styles.layout}>
+                <nav className={styles.sectionsNav} aria-label="Profile sections">
+                  <div className={styles.sectionsNavLabel}>Sections</div>
+                  <div className={styles.navProgressTrack}>
+                    <div
+                      className={styles.navProgressFill}
+                      style={{ width: `${Math.round((sectionsDoneCount / sectionsMeta.length) * 100)}%` }}
+                    />
+                  </div>
+                  {sectionsMeta.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`${styles.navBtn} ${activeSectionId === item.id ? styles.navActive : ""}`}
+                      onClick={() => jumpToSection(item.id)}
+                    >
+                      {item.icon}
+                      <span>{item.label}</span>
+                      <span className={`${styles.navDot} ${item.done ? styles.dotDone : ""}`} />
+                    </button>
+                  ))}
+                </nav>
+
+                <div className={styles.stack}>
                 <div className={styles.heroCard}>
                   <ProfilePhotoEditor
                     src={photoUrl}
@@ -665,7 +747,13 @@ function EmployeeProfileContent() {
                   </div>
                 </div>
 
-                <ProfileSection title="Employment" subtitle="Core employment record from HR.">
+                <ProfileSection
+                  id="sec-employment"
+                  icon={<IconBriefcase />}
+                  complete={sectionComplete.employment}
+                  title="Employment"
+                  subtitle="Core employment record from HR."
+                >
                   <dl className={styles.grid}>
                     <Row label="Employee ID" value={employee?.employee_id} />
                     <Row label="Designation" value={employee?.job_title} />
@@ -695,6 +783,9 @@ function EmployeeProfileContent() {
                 </ProfileSection>
 
                 <ProfileSection
+                  id="sec-personal"
+                  icon={<IconUser />}
+                  complete={sectionComplete.personal}
                   title="Personal"
                   subtitle="Keep your personal details current."
                   editable
@@ -778,6 +869,9 @@ function EmployeeProfileContent() {
                 </ProfileSection>
 
                 <ProfileSection
+                  id="sec-education"
+                  icon={<IconCap />}
+                  complete={sectionComplete.education}
                   title="Education"
                   subtitle="Keep your education history current."
                   editable
@@ -829,7 +923,13 @@ function EmployeeProfileContent() {
                   )}
                 </ProfileSection>
 
-                <ProfileSection title="Skills & resume" subtitle={INTAKE_SUBTITLE}>
+                <ProfileSection
+                  id="sec-skills"
+                  icon={<IconSpark />}
+                  complete={sectionComplete.skills}
+                  title="Skills & resume"
+                  subtitle={INTAKE_SUBTITLE}
+                >
                   <dl className={styles.grid}>
                     <Row label="Technical skills" value={joinList(skills.technical_skills)} wide />
                     <Row label="Soft skills" value={joinList(skills.soft_skills)} wide />
@@ -861,6 +961,9 @@ function EmployeeProfileContent() {
                 </ProfileSection>
 
                 <ProfileSection
+                  id="sec-emergency"
+                  icon={<IconHeart />}
+                  complete={sectionComplete.emergency}
                   title="Emergency contact"
                   subtitle="Who we reach if we cannot contact you at work."
                   editable
@@ -940,6 +1043,9 @@ function EmployeeProfileContent() {
                 </ProfileSection>
 
                 <ProfileSection
+                  id="sec-banking"
+                  icon={<IconBank />}
+                  complete={sectionComplete.banking}
                   title="Banking"
                   subtitle="Salary deposit account. Stored securely by HR."
                   editable
@@ -1046,6 +1152,9 @@ function EmployeeProfileContent() {
                 </ProfileSection>
 
                 <ProfileSection
+                  id="sec-references"
+                  icon={<IconUsers />}
+                  complete={sectionComplete.references}
                   title="References"
                   subtitle="At least two professional references with unique email addresses."
                   editable
@@ -1159,6 +1268,9 @@ function EmployeeProfileContent() {
                 </ProfileSection>
 
                 <ProfileSection
+                  id="sec-policies"
+                  icon={<IconShield />}
+                  complete={sectionComplete.policies}
                   title="Policies & NDA"
                   subtitle={
                     profileIncomplete
@@ -1205,6 +1317,60 @@ function EmployeeProfileContent() {
                     </div>
                   )}
                 </ProfileSection>
+                </div>
+
+                <aside className={styles.rightRail}>
+                  <div className={styles.railCard}>
+                    <p className={styles.railTitle}>Profile completion</p>
+                    <div className={styles.ringWrap}>
+                      <div className={styles.ring} style={{ "--pct": percentage }}>
+                        <div className={styles.ringInner}>
+                          <span className={styles.ringPct}>{percentage}%</span>
+                          <span className={styles.ringLabel}>complete</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className={styles.railStat}>
+                      <span>Sections done</span>
+                      <strong>{sectionsDoneCount} / {sectionsMeta.length}</strong>
+                    </div>
+                    <div className={styles.railStat}>
+                      <span>Status</span>
+                      <strong>{profileComplete ? "Complete" : "In progress"}</strong>
+                    </div>
+                  </div>
+
+                  <div className={styles.railCard}>
+                    <p className={styles.railTitle}>Insights</p>
+                    {sectionsMeta.filter((item) => !item.done).length === 0 ? (
+                      <div className={styles.insightRow}>
+                        <span className={styles.insightIconOk}><IconCheckSmall /></span>
+                        <span>Every section on your profile is complete — nicely done.</span>
+                      </div>
+                    ) : (
+                      sectionsMeta
+                        .filter((item) => !item.done)
+                        .slice(0, 4)
+                        .map((item) => (
+                          <div key={item.id} className={styles.insightRow}>
+                            <span className={styles.insightIconWarn}><IconAlert /></span>
+                            <span>
+                              <strong>{item.label}</strong> still needs attention to finish your checklist.
+                            </span>
+                          </div>
+                        ))
+                    )}
+                  </div>
+
+                  <div className={styles.helpCard}>
+                    <h4>Need a hand?</h4>
+                    <p>Something look off, or a section won&apos;t save? Reach out and HR will help you sort it.</p>
+                    <a className={styles.helpBtn} href="mailto:hr@mazikglobal.com">
+                      <IconPhone />
+                      Contact HR
+                    </a>
+                  </div>
+                </aside>
               </div>
             )}
 
@@ -1217,6 +1383,9 @@ function EmployeeProfileContent() {
 }
 
 function ProfileSection({
+  id,
+  icon,
+  complete,
   title,
   subtitle,
   editable,
@@ -1227,25 +1396,135 @@ function ProfileSection({
   editForm,
 }) {
   return (
-    <section className={styles.section}>
+    <section id={id} className={styles.section}>
       <div className={styles.sectionHead}>
-        <div>
-          <h2>{title}</h2>
-          {subtitle && <p>{subtitle}</p>}
+        <div className={styles.sectionHeadLeft}>
+          {icon && <span className={styles.sectionIcon}>{icon}</span>}
+          <div>
+            <h2>{title}</h2>
+            {subtitle && <p>{subtitle}</p>}
+          </div>
         </div>
-        {editable && !editing && (
-          <button type="button" className={styles.linkBtn} onClick={onEdit}>
-            Edit
-          </button>
-        )}
-        {editable && editing && (
-          <button type="button" className={styles.linkBtn} onClick={onCancel}>
-            Cancel
-          </button>
-        )}
+        <div className={styles.sectionHeadActions}>
+          {typeof complete === "boolean" && (
+            <span className={`${styles.statusBadge} ${complete ? styles.statusDone : styles.statusPending}`}>
+              {complete ? "Done" : "Incomplete"}
+            </span>
+          )}
+          {editable && !editing && (
+            <button type="button" className={styles.linkBtn} onClick={onEdit}>
+              Edit
+            </button>
+          )}
+          {editable && editing && (
+            <button type="button" className={styles.linkBtn} onClick={onCancel}>
+              Cancel
+            </button>
+          )}
+        </div>
       </div>
       {editing ? editForm : children}
     </section>
+  );
+}
+
+/* ── Section icons ────────────────────────────────────────────────────── */
+
+function IconBriefcase() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="7" width="20" height="14" rx="2" />
+      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+    </svg>
+  );
+}
+
+function IconUser() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4 3.6-6 8-6s8 2 8 6" />
+    </svg>
+  );
+}
+
+function IconCap() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 10 12 5 2 10l10 5 10-5Z" />
+      <path d="M6 12v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5" />
+    </svg>
+  );
+}
+
+function IconSpark() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18" />
+    </svg>
+  );
+}
+
+function IconHeart() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z" />
+    </svg>
+  );
+}
+
+function IconBank() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 10 12 4l9 6" />
+      <path d="M5 10v9M10 10v9M14 10v9M19 10v9" />
+      <path d="M3 21h18" />
+    </svg>
+  );
+}
+
+function IconUsers() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="3" />
+      <path d="M2 20c0-3 3-5 7-5s7 2 7 5" />
+      <circle cx="17" cy="8" r="2.6" />
+      <path d="M16 12.2c2.6.6 4 2.3 4 4.8" />
+    </svg>
+  );
+}
+
+function IconShield() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3 4 6v6c0 5 3.4 8.5 8 9 4.6-.5 8-4 8-9V6l-8-3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
+
+function IconCheckSmall() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+function IconAlert() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 9v4M12 17h.01" />
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
+}
+
+function IconPhone() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 17.5c-4.7 0-8.5-3.8-8.5-8.5.4-.4 1.4-1.3 2-1.9.5-.5.5-1 .2-1.5L7 3.6c-.3-.5-1-.7-1.5-.3-1 .7-2.4 2-2.9 3.6C1.7 11.7 6.3 20 14.1 21.4c1.6.3 3.4-.8 4.2-1.7.4-.5.2-1.2-.3-1.5l-1.9-1.7c-.5-.3-1-.3-1.5.2-.6.6-1.5 1.6-1.9 2Z" />
+    </svg>
   );
 }
 
