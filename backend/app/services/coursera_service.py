@@ -268,6 +268,7 @@ async def _fetch_all_courses() -> list[dict]:
 
 _refresh_in_progress = False
 _background_refresh_task: asyncio.Task | None = None
+_warm_cache_task: asyncio.Task | None = None
 _cold_fetch_lock = asyncio.Lock()
 _cold_fetch_task: asyncio.Task | None = None
 
@@ -426,9 +427,8 @@ async def _get_cached_catalog(force_refresh: bool = False) -> tuple[list[dict], 
         making the caller wait. This is what used to make a random employee's
         click block on a full catalog fetch.
       - No data yet (true cold start) or force_refresh=True -> fetch inline,
-        exactly like before. In practice this should now only happen if
-        load_persisted_cache() found nothing at app startup (fresh Mongo /
-        first deploy) or the persisted snapshot itself failed to load.
+        exactly like before. In practice this should now only happen if the
+        app-startup warm-up (see warm_cache()) itself failed.
     """
     global _cache, _refresh_in_progress
     now = time.monotonic()
@@ -507,6 +507,40 @@ async def _periodic_refresh_loop() -> None:
             await _refresh_cache_in_background()
         except Exception as exc:  # pragma: no cover - safety net
             logger.error(f"Periodic Coursera refresh loop error: {exc}")
+
+
+async def warm_cache() -> None:
+    """Eagerly populate the cache once.
+
+    This is intentionally triggered after authentication, from the first
+    authenticated learning-dashboard request, so login is not delayed by the
+    Coursera catalog fetch. Failures are swallowed and logged; the existing
+    lazy-fetch-on-request behavior remains as a safety net.
+    """
+    try:
+        await _get_cached_catalog(force_refresh=False)
+    except Exception as exc:
+        logger.error(f"Coursera catalog warm-up failed (will retry lazily on first request): {exc}")
+
+
+def start_post_login_course_loading() -> None:
+    """Start the Coursera warm-up after a successful login.
+
+    The first authenticated learning-dashboard request calls this so the
+    catalog begins loading only once the user has already entered the app.
+    Subsequent calls are ignored while the warm-up task is in flight.
+    """
+    global _warm_cache_task
+
+    start_background_refresh()
+
+    if _cache["items"]:
+        return
+
+    if _warm_cache_task is not None and not _warm_cache_task.done():
+        return
+
+    _warm_cache_task = asyncio.create_task(warm_cache())
 
 
 def start_background_refresh() -> None:
