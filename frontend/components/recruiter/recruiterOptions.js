@@ -12,9 +12,12 @@ export const RECRUITER_DEPARTMENTS = [
 
 export const RECRUITER_DESIGNATIONS = [
   "Intern",
-  "Junior Solution Engineer/System Analyst",
-  "Solution Engineer/System Analyst",
-  "Senior Solution Engineer/System Analyst",
+  "Junior Solution Engineer",
+  "Junior System Analyst",
+  "Solution Engineer",
+  "System Analyst",
+  "Senior Solution Engineer",
+  "Senior System Analyst",
   "Associate Consultant",
   "Consultant",
   "Senior Consultant",

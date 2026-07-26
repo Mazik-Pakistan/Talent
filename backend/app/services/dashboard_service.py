@@ -678,6 +678,16 @@ class DashboardService:
         """Persist a candidate-only reminder using the existing announcement delivery path."""
         now = datetime.now(UTC)
         candidate_id = self._candidate_id(candidate)
+        recipient_id = candidate.get("user_id")
+        if not recipient_id:
+            user = await database.users.find_one({"email": (candidate.get("email") or "").lower()})
+            if user:
+                recipient_id = str(user["_id"])
+                await database.candidates.update_one(
+                    {"_id": candidate["_id"]},
+                    {"$set": {"user_id": recipient_id, "updated_at": now}},
+                )
+                candidate["user_id"] = recipient_id
         missing = progress.get("missing_fields") or []
         labels = {
             "personal": "Personal information and ID document",
@@ -706,7 +716,21 @@ class DashboardService:
                 {"$set": {"body": body, "updated_at": now}},
             )
             announcement = await database.announcements.find_one({"_id": existing["_id"]})
-            return {"announcement": self._public_announcement(announcement), "updated": True, "notified": 0, "emailed": 0}
+            notification_id = await create_notification(
+                recipient_id=recipient_id,
+                recipient_role="candidate",
+                notif_type="announcement",
+                title="Reminder",
+                message=body,
+                link="/dashboard/candidate",
+                related_id=str(existing["_id"]),
+            )
+            return {
+                "announcement": self._public_announcement(announcement),
+                "updated": True,
+                "notified": 1 if notification_id else 0,
+                "emailed": 0,
+            }
 
         document = {
             "title": "Reminder", "body": body, "audience": "candidates",
@@ -717,8 +741,21 @@ class DashboardService:
         }
         result = await database.announcements.insert_one(document)
         document["_id"] = result.inserted_id
-        notified, emailed = await self._fanout_announcement(current_user, document, send_email=False, notify=True)
-        return {"announcement": self._public_announcement(document), "updated": False, "notified": notified, "emailed": emailed}
+        notification_id = await create_notification(
+            recipient_id=recipient_id,
+            recipient_role="candidate",
+            notif_type="announcement",
+            title="Reminder",
+            message=body,
+            link="/dashboard/candidate",
+            related_id=str(document["_id"]),
+        )
+        return {
+            "announcement": self._public_announcement(document),
+            "updated": False,
+            "notified": 1 if notification_id else 0,
+            "emailed": 0,
+        }
 
     async def get_recruiter_profile(self, current_user: CurrentUser) -> dict:
         collection = database.super_admins if current_user.role == "super_admin" else database.recruiters

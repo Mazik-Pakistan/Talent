@@ -292,8 +292,15 @@ class EmployeeService:
             "outcome": "success" if email_sent and notification_sent else "partial", "created_at": now,
         })
         refreshed = await database.candidates.find_one({"_id": candidate["_id"]})
+        if not email_sent or not notification_sent:
+            failures = []
+            if not email_sent:
+                failures.append(f"email failed ({email_error})" if email_error else "email failed")
+            if not notification_sent:
+                failures.append("dashboard notification failed")
+            raise HTTPException(status_code=502, detail=f"Reminder saved, but {' and '.join(failures)}.")
         return {
-            "message": "Reminder updated." if reminder["updated"] else "Reminder sent.",
+            "message": "Reminder has been sent via email and dashboard.",
             "email_sent": email_sent, "notification_sent": notification_sent, "email_error": email_error,
             "announcement": reminder["announcement"],
             "candidate": self._public_candidate(refreshed or candidate, CandidateService()._progress_payload(refreshed or candidate)),
@@ -1381,6 +1388,13 @@ class EmployeeService:
         profile = await self.get_employee_profile(
             current_user, employee.get("employee_id") or employee_id, reveal_banking=False
         )
+        if not email_sent or not notification_sent:
+            failures = []
+            if not email_sent:
+                failures.append(f"email failed ({email_error})" if email_error else "email failed")
+            if not notification_sent:
+                failures.append("dashboard notification failed")
+            raise HTTPException(status_code=502, detail=f"Reminder saved, but {' and '.join(failures)}.")
         parts = []
         if notification_sent:
             parts.append("dashboard notification created")
@@ -1393,7 +1407,7 @@ class EmployeeService:
         else:
             parts.append("email not sent")
         return {
-            "message": f"Reminder: {'; '.join(parts)}.",
+            "message": "Reminder has been sent via email and dashboard.",
             "email_sent": email_sent,
             "notification_sent": notification_sent,
             "notification_id": notification_id,
