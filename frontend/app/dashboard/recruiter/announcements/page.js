@@ -5,6 +5,7 @@ import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
+import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import {
   createAnnouncement,
   deleteAnnouncement,
@@ -13,7 +14,6 @@ import {
   listEmployees,
   updateAnnouncement,
 } from "@/services/authService";
-import { getOrgTaxonomy } from "@/services/learningService";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -39,7 +39,6 @@ export default function RecruiterAnnouncementsPage() {
   const [editingId, setEditingId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [employees, setEmployees] = useState([]);
-  const [taxonomy, setTaxonomy] = useState({ departments: [], designations: [] });
   const [employeeSearch, setEmployeeSearch] = useState("");
 
   useEffect(() => {
@@ -76,12 +75,8 @@ export default function RecruiterAnnouncementsPage() {
   useEffect(() => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
-    Promise.all([
-      listEmployees(accessToken, { status: "active", page: 1, page_size: 100, sort: "full_name" }),
-      getOrgTaxonomy(accessToken),
-    ]).then(([employeeData, taxonomyData]) => {
+    listEmployees(accessToken, { status: "active", page: 1, page_size: 100, sort: "full_name" }).then((employeeData) => {
       setEmployees(employeeData.employees || []);
-      setTaxonomy(taxonomyData || { departments: [], designations: [] });
     }).catch((err) => toast.error(getApiErrorMessage(err, "Could not load employee recipients.")));
   }, []);
 
@@ -261,13 +256,13 @@ export default function RecruiterAnnouncementsPage() {
                 <div className={styles.recipientGrid}>
                   <MultiSelectGroup
                     label="Departments"
-                    options={taxonomy.departments || []}
+                    options={RECRUITER_DEPARTMENTS}
                     selected={form.target_departments}
                     onChange={(values) => setForm({ ...form, target_departments: values })}
                   />
                   <MultiSelectGroup
                     label="Designations"
-                    options={taxonomy.designations || []}
+                    options={RECRUITER_DESIGNATIONS}
                     selected={form.target_designations}
                     onChange={(values) => setForm({ ...form, target_designations: values })}
                   />

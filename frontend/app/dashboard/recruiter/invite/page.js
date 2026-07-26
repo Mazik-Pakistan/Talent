@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
+import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import { createInvitation, getApiErrorMessage } from "@/services/authService";
-import { getOrgTaxonomy } from "@/services/learningService";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -27,7 +27,6 @@ export default function RecruiterInvitePage() {
   const [inviteLink, setInviteLink] = useState("");
   const [inviteEmailSent, setInviteEmailSent] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [taxonomy, setTaxonomy] = useState({ departments: [], designations: [] });
 
   useEffect(() => {
     publishRecruiterContext({
@@ -36,12 +35,6 @@ export default function RecruiterInvitePage() {
       fields: ["full_name", "email", "job_title", "department", "office_location", "start_date", "expires_in_days"],
     });
     return () => clearRecruiterContext();
-  }, []);
-
-  useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    getOrgTaxonomy(token).then(setTaxonomy).catch(() => {});
   }, []);
 
   function updateInviteField(event) {
@@ -118,7 +111,7 @@ export default function RecruiterInvitePage() {
                 <span>Designation</span>
                 <select name="job_title" value={inviteForm.job_title} onChange={updateInviteField} required>
                   <option value="">Select designation</option>
-                  {(taxonomy.designations || []).map((d) => (
+                  {RECRUITER_DESIGNATIONS.map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
@@ -127,7 +120,7 @@ export default function RecruiterInvitePage() {
                 <span>Department</span>
                 <select name="department" value={inviteForm.department} onChange={updateInviteField} required>
                   <option value="">Select department</option>
-                  {(taxonomy.departments || []).map((d) => (
+                  {RECRUITER_DEPARTMENTS.map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>

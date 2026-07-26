@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import { createOffer, getApiErrorMessage } from "@/services/authService";
 
 const initialForm = {
@@ -71,11 +72,21 @@ export default function OfferComposerModal({ candidate, onClose, onSent }) {
         <form onSubmit={handleSubmit} className="form-grid">
           <label className="field">
             <span>Job title</span>
-            <input name="job_title" value={form.job_title} onChange={(e) => update("job_title", e.target.value)} />
+            <select name="job_title" value={form.job_title} onChange={(e) => update("job_title", e.target.value)}>
+              <option value="">Select designation</option>
+              {RECRUITER_DESIGNATIONS.map((designation) => (
+                <option key={designation} value={designation}>{designation}</option>
+              ))}
+            </select>
           </label>
           <label className="field">
             <span>Department</span>
-            <input name="department" value={form.department} onChange={(e) => update("department", e.target.value)} />
+            <select name="department" value={form.department} onChange={(e) => update("department", e.target.value)}>
+              <option value="">Select department</option>
+              {RECRUITER_DEPARTMENTS.map((department) => (
+                <option key={department} value={department}>{department}</option>
+              ))}
+            </select>
           </label>
           <label className="field">
             <span>Employment type</span>

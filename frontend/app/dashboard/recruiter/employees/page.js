@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
+import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import {
   addCareerEvent,
   exportEmployeesCsv,
@@ -159,11 +160,21 @@ export default function RecruiterEmployeesPage() {
             </label>
             <label className={styles.field}>
               <span>Department</span>
-              <input value={dirFilters.department} onChange={(e) => setDirFilters({ ...dirFilters, department: e.target.value })} />
+              <select value={dirFilters.department} onChange={(e) => setDirFilters({ ...dirFilters, department: e.target.value })}>
+                <option value="">All departments</option>
+                {RECRUITER_DEPARTMENTS.map((department) => (
+                  <option key={department} value={department}>{department}</option>
+                ))}
+              </select>
             </label>
             <label className={styles.field}>
               <span>Designation</span>
-              <input value={dirFilters.job_title} onChange={(e) => setDirFilters({ ...dirFilters, job_title: e.target.value })} />
+              <select value={dirFilters.job_title} onChange={(e) => setDirFilters({ ...dirFilters, job_title: e.target.value })}>
+                <option value="">All designations</option>
+                {RECRUITER_DESIGNATIONS.map((designation) => (
+                  <option key={designation} value={designation}>{designation}</option>
+                ))}
+              </select>
             </label>
             <label className={styles.field}>
               <span>Status</span>
@@ -274,11 +285,21 @@ export default function RecruiterEmployeesPage() {
               </label>
               <label className={styles.field}>
                 <span>New title</span>
-                <input value={careerForm.to_title} onChange={(e) => setCareerForm({ ...careerForm, to_title: e.target.value })} />
+                <select value={careerForm.to_title} onChange={(e) => setCareerForm({ ...careerForm, to_title: e.target.value })}>
+                  <option value="">Select designation</option>
+                  {RECRUITER_DESIGNATIONS.map((designation) => (
+                    <option key={designation} value={designation}>{designation}</option>
+                  ))}
+                </select>
               </label>
               <label className={styles.field}>
                 <span>New department</span>
-                <input value={careerForm.to_department} onChange={(e) => setCareerForm({ ...careerForm, to_department: e.target.value })} />
+                <select value={careerForm.to_department} onChange={(e) => setCareerForm({ ...careerForm, to_department: e.target.value })}>
+                  <option value="">Select department</option>
+                  {RECRUITER_DEPARTMENTS.map((department) => (
+                    <option key={department} value={department}>{department}</option>
+                  ))}
+                </select>
               </label>
               <label className={styles.field}>
                 <span>New manager</span>
