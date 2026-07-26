@@ -13,12 +13,13 @@
   flex-direction: column;
   width: 100%;
   height: 100%;
-  min-height: 560px;
+  min-height: 100%;
   overflow: hidden;
-  border: 1px solid var(--line, #dbe5ec);
-  border-radius: 22px;
+  /* Nested inside AssistantPageShell — no second card frame */
+  border: 0;
+  border-radius: 0;
   background: #fff;
-  box-shadow: 0 24px 60px rgba(18, 58, 99, 0.1);
+  box-shadow: none;
 }
 
 /* ── header ───────────────────────────────────────────────────────────── */
@@ -29,13 +30,26 @@
   align-items: center;
   gap: 10px;
   padding: 16px 16px;
-  background: linear-gradient(135deg, #0d456c, #157b91);
+  background: linear-gradient(135deg, #0b1631 0%, #12224a 48%, #2f6bff 130%);
   color: #fff;
 }
 
 .canvasHeader {
-  padding: 22px 26px;
-  border-radius: 22px 22px 0 0;
+  position: relative;
+  padding: 20px 26px;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.canvasHeader::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% -40% auto;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(52, 182, 255, 0.35), transparent 68%);
+  pointer-events: none;
 }
 
 .headerIcon {
@@ -46,24 +60,40 @@
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.16);
   flex: none;
+  position: relative;
+  z-index: 1;
 }
 
 .canvasHeader .headerIcon {
   width: 42px;
   height: 42px;
   border-radius: 12px;
+  animation: headerIconFloat 3.2s ease-in-out infinite;
+}
+
+@keyframes headerIconFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
 }
 
 .headerText {
   display: grid;
   gap: 1px;
   min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .headerTitle {
   font-size: 0.92rem;
   font-weight: 800;
   letter-spacing: -0.01em;
+  font-family: "Sora", system-ui, sans-serif;
 }
 
 .canvasHeader .headerTitle {
@@ -86,6 +116,8 @@
   display: flex;
   gap: 4px;
   margin-left: auto;
+  position: relative;
+  z-index: 1;
 }
 
 .iconButton {
@@ -98,11 +130,12 @@
   background: transparent;
   color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, transform 0.15s ease;
 }
 
 .iconButton:hover {
   background: rgba(255, 255, 255, 0.14);
+  transform: scale(1.04);
 }
 
 /* ── body / message list ─────────────────────────────────────────────── */
@@ -115,7 +148,9 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: var(--surface, #f6f9fb);
+  background:
+    radial-gradient(520px 220px at 100% 0%, rgba(47, 107, 255, 0.05), transparent 60%),
+    var(--ai-surface-sunken, #f3f6fd);
 }
 
 .canvasBody {
@@ -126,8 +161,9 @@
 .emptyState {
   margin: auto 0;
   text-align: center;
-  color: var(--muted, #5c7086);
+  color: var(--ai-muted, #5a6a8c);
   padding: 12px;
+  animation: msgIn 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .canvasBody .emptyState {
@@ -136,9 +172,10 @@
 
 .emptyState strong {
   display: block;
-  color: var(--ink, #123a63);
+  color: var(--ai-navy-2, #12224a);
   font-size: 0.95rem;
   margin-bottom: 6px;
+  font-family: "Sora", system-ui, sans-serif;
 }
 
 .canvasBody .emptyState strong {
@@ -162,26 +199,40 @@
 }
 
 .starterButton {
-  border: 1px solid var(--line, #dbe5ec);
-  border-radius: 10px;
+  border: 1px solid var(--ai-line, #dfe6f5);
+  border-radius: 12px;
   background: #fff;
-  padding: 10px 12px;
-  color: var(--ink, #123a63);
+  padding: 11px 13px;
+  color: var(--ai-navy-2, #12224a);
   font-size: 0.8rem;
   font-weight: 600;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .starterButton:hover {
-  border-color: var(--blue, #176896);
-  background: #f2f8fc;
+  border-color: rgba(47, 107, 255, 0.45);
+  background: #f4f7ff;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px -14px rgba(47, 107, 255, 0.55);
 }
 
 .row {
   display: flex;
   width: 100%;
+  animation: msgIn 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes msgIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .rowUser {
@@ -209,33 +260,35 @@
 }
 
 .bubbleUser {
-  background: var(--blue, #176896);
+  background: linear-gradient(135deg, #2f6bff, #1b4fd8);
   color: #fff;
   border-bottom-right-radius: 4px;
+  box-shadow: 0 8px 18px -12px rgba(47, 107, 255, 0.65);
 }
 
 .bubbleAgent {
   background: #fff;
-  color: #29455e;
-  border: 1px solid var(--line, #dbe5ec);
+  color: var(--ai-text, #101a33);
+  border: 1px solid var(--ai-line, #dfe6f5);
   border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 2px rgba(16, 26, 51, 0.04);
 }
 
 .bubbleError {
-  border-color: var(--danger, #b42318);
-  color: var(--danger, #b42318);
+  border-color: var(--ai-rose, #f04a6a);
+  color: #b42318;
   background: #fdecea;
 }
 
 .inlineLink {
-  color: var(--blue, #176896);
+  color: var(--ai-blue, #2f6bff);
   font-weight: 700;
   text-decoration: underline;
   word-break: break-all;
 }
 
 .inlineLink:hover {
-  color: #0e557d;
+  color: #1b4fd8;
 }
 
 .typing {
@@ -248,7 +301,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--muted, #5c7086);
+  background: var(--ai-blue, #2f6bff);
   animation: bounce 1.1s infinite ease-in-out;
 }
 
@@ -276,7 +329,7 @@
 .uploadHint {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px dashed var(--line, #dbe5ec);
+  border-top: 1px dashed var(--ai-line, #dfe6f5);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -284,10 +337,10 @@
 }
 
 .uploadButton {
-  border: 1px solid var(--blue, #176896);
+  border: 1px solid rgba(47, 107, 255, 0.35);
   border-radius: 8px;
-  background: #f2f8fc;
-  color: var(--blue, #176896);
+  background: #eef3ff;
+  color: var(--ai-blue, #2f6bff);
   padding: 7px 12px;
   font-size: 0.78rem;
   font-weight: 700;
@@ -295,7 +348,7 @@
 }
 
 .uploadButton:hover {
-  background: #e5f1f8;
+  background: #e0e9ff;
 }
 
 .uploadButton:disabled {
@@ -341,12 +394,12 @@
 .attachmentWrap {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px dashed var(--line, #dbe5ec);
+  border-top: 1px dashed var(--ai-line, #dfe6f5);
 }
 
 .attachmentEmpty {
   font-size: 0.8rem;
-  color: var(--muted, #5c7086);
+  color: var(--ai-muted, #5a6a8c);
 }
 
 .docGrid,
@@ -356,10 +409,10 @@
 }
 
 .docCard {
-  border: 1px solid var(--line, #dbe5ec);
+  border: 1px solid var(--ai-line, #dfe6f5);
   border-radius: 12px;
   padding: 10px 12px;
-  background: #f9fbfd;
+  background: #f7f9ff;
 }
 
 .docCardTop {
@@ -374,8 +427,8 @@
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: #eaf2f8;
-  color: var(--blue, #176896);
+  background: #eaf1ff;
+  color: var(--ai-blue, #2f6bff);
   flex: none;
 }
 
@@ -387,12 +440,12 @@
 .docCardTitle {
   font-size: 0.84rem;
   font-weight: 700;
-  color: var(--ink, #123a63);
+  color: var(--ai-navy-2, #12224a);
 }
 
 .docCardMeta {
   font-size: 0.72rem;
-  color: var(--muted, #5c7086);
+  color: var(--ai-muted, #5a6a8c);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -447,7 +500,7 @@
 .docOpenLink {
   font-size: 0.76rem;
   font-weight: 700;
-  color: var(--blue, #176896);
+  color: var(--ai-blue, #2f6bff);
   text-decoration: none;
   margin-right: auto;
 }
@@ -496,7 +549,7 @@
 
 .reasonInput {
   flex: 1;
-  border: 1px solid #bed0dc;
+  border: 1px solid var(--ai-line, #dfe6f5);
   border-radius: 8px;
   padding: 7px 10px;
   font-size: 0.78rem;
@@ -504,14 +557,15 @@
 }
 
 .reasonInput:focus {
-  border-color: var(--blue, #176896);
+  border-color: var(--ai-blue, #2f6bff);
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.14);
 }
 
 .personCard {
-  border: 1px solid var(--line, #dbe5ec);
+  border: 1px solid var(--ai-line, #dfe6f5);
   border-radius: 12px;
   padding: 10px 12px;
-  background: #f9fbfd;
+  background: #f7f9ff;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -521,12 +575,12 @@
 .personName {
   font-size: 0.83rem;
   font-weight: 700;
-  color: var(--ink, #123a63);
+  color: var(--ai-navy-2, #12224a);
 }
 
 .personMeta {
   font-size: 0.72rem;
-  color: var(--muted, #5c7086);
+  color: var(--ai-muted, #5a6a8c);
   margin-right: auto;
 }
 
@@ -537,7 +591,7 @@
   flex-wrap: wrap;
   gap: 6px;
   padding: 0 16px 10px;
-  background: var(--surface, #f6f9fb);
+  background: var(--ai-surface-sunken, #f3f6fd);
 }
 
 .canvasBody + .suggestions {
@@ -545,18 +599,21 @@
 }
 
 .suggestionChip {
-  border: 1px solid var(--line, #dbe5ec);
+  border: 1px solid var(--ai-line, #dfe6f5);
   border-radius: 999px;
   background: #fff;
-  color: var(--blue, #176896);
+  color: var(--ai-blue, #2f6bff);
   padding: 6px 12px;
   font-size: 0.76rem;
   font-weight: 700;
   cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
 }
 
 .suggestionChip:hover {
-  background: #f2f8fc;
+  background: #eef3ff;
+  border-color: rgba(47, 107, 255, 0.35);
+  transform: translateY(-1px);
 }
 
 .footer {
@@ -564,7 +621,7 @@
   align-items: flex-end;
   gap: 8px;
   padding: 12px;
-  border-top: 1px solid var(--line, #dbe5ec);
+  border-top: 1px solid var(--ai-line, #dfe6f5);
   background: #fff;
 }
 
@@ -577,13 +634,14 @@
   resize: none;
   max-height: 96px;
   min-height: 40px;
-  border: 1px solid #bed0dc;
+  border: 1px solid var(--ai-line, #dfe6f5);
   border-radius: 10px;
   padding: 10px 12px;
   font: inherit;
   font-size: 0.85rem;
-  color: var(--ink, #123a63);
+  color: var(--ai-text, #101a33);
   outline: 0;
+  background: #fff;
 }
 
 .canvasRoot .textarea {
@@ -593,8 +651,8 @@
 }
 
 .textarea:focus {
-  border-color: var(--blue, #176896);
-  box-shadow: 0 0 0 3px rgba(23, 104, 150, 0.13);
+  border-color: var(--ai-blue, #2f6bff);
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.14);
 }
 
 .sendButton {
@@ -605,19 +663,22 @@
   flex: none;
   border: 0;
   border-radius: 10px;
-  background: var(--blue, #176896);
+  background: linear-gradient(135deg, #2f6bff, #1b4fd8);
   color: #fff;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  box-shadow: 0 8px 16px -10px rgba(47, 107, 255, 0.8);
 }
 
 .sendButton:hover:not(:disabled) {
-  background: #0e557d;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px -10px rgba(47, 107, 255, 0.9);
 }
 
 .sendButton:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .attachButton {
@@ -626,20 +687,17 @@
   width: 40px;
   height: 40px;
   flex: none;
-  border: 1px solid var(--line, #dbe5ec);
+  border: 1px solid var(--ai-line, #dfe6f5);
   border-radius: 10px;
   background: #fff;
-  color: var(--blue, #176896);
+  color: var(--ai-blue, #2f6bff);
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .attachButton:hover {
-  background: #f2f8fc;
-}
-
-.attachButton:disabled {
-  opacity: 0.5;
-  cursor: wait;
+  background: #eef3ff;
+  border-color: rgba(47, 107, 255, 0.35);
 }
 
 .visuallyHidden {
@@ -654,22 +712,15 @@
   border: 0;
 }
 
-@media (max-width: 640px) {
-  .canvasBody {
-    padding: 18px 14px;
-  }
-  .canvasHeader {
-    padding: 16px 16px;
-    border-radius: 16px 16px 0 0;
-  }
-  .canvasRoot {
-    border-radius: 16px;
-    min-height: 460px;
-  }
-  .canvasRoot .footer {
-    padding: 12px 14px 16px;
-  }
-  .canvasBody .bubble {
-    max-width: 90%;
+@media (prefers-reduced-motion: reduce) {
+  .row,
+  .emptyState,
+  .canvasHeader .headerIcon,
+  .starterButton,
+  .suggestionChip,
+  .sendButton,
+  .iconButton {
+    animation: none !important;
+    transition: none !important;
   }
 }

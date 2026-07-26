@@ -25,7 +25,17 @@ export default function AssistantPageShell({
   return (
     <div className={styles.page}>
       <section className={styles.hero}>
-        {eyebrow ? <div className={styles.eyebrow}>{eyebrow}</div> : null}
+        <div className={styles.heroTop}>
+          {eyebrow ? (
+            <div className={styles.eyebrow}>
+              <span className={styles.liveDot} aria-hidden="true" />
+              {eyebrow}
+            </div>
+          ) : null}
+          <div className={styles.liveLabel} aria-live="polite">
+            Agent ready
+          </div>
+        </div>
         {title ? <h1>{title}</h1> : null}
         {description ? <p>{description}</p> : null}
         {items.length > 0 ? (

@@ -45,9 +45,9 @@ const ROLE_COPY = {
     starters: ["Complete my onboarding", "What do I still need to upload?", "Check my progress"],
   },
   employee: {
-    title: "Onboarding Agent",
-    subtitle: "Finish setting up your profile",
-    empty: "Tell me \"continue my onboarding\" and I'll walk you through what's left.",
+    title: "Workday Agent",
+    subtitle: "Onboarding, HR help, and day-to-day answers",
+    empty: "Tell me \"continue my onboarding\" and I'll walk you through what's left — or ask anything about your workday.",
     starters: ["Continue my onboarding", "What's left to complete?", "Check my progress"],
   },
 };
