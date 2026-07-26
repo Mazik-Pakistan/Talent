@@ -128,8 +128,9 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
         duration_minutes: course.duration_minutes,
         mandatory: true,
       });
-      if (result.skipped?.length) toast.warn("Already assigned to this employee.");
-      else toast.success("Course assigned.");
+      const assignedCount = result.assigned?.length || 0;
+      if (assignedCount > 0) toast.success("Course assigned successfully.");
+      else if (result.skipped?.length) toast.warn("Already assigned to this employee.");
       setSelectedCourse(null);
       setAssignQ("");
       load(false);
