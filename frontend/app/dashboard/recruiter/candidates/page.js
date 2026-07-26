@@ -11,10 +11,10 @@ import {
   getOnboardingInProgress,
   getPendingReview,
   getReadyForConversion,
-  remindCandidateOnboarding,
 } from "@/services/authService";
 import OfferComposerModal from "@/components/OfferComposerModal";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
+import SendReminderModal from "@/components/recruiter/SendReminderModal";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -32,7 +32,7 @@ export default function RecruiterCandidatesPage() {
   const [approvingOfferId, setApprovingOfferId] = useState(null);
   const [conversionMessage, setConversionMessage] = useState("");
   const [search, setSearch] = useState("");
-  const [remindingId, setRemindingId] = useState(null);
+  const [reminderTarget, setReminderTarget] = useState(null);
 
   useEffect(() => {
     const onboard = newCandidates.length;
@@ -94,21 +94,12 @@ export default function RecruiterCandidatesPage() {
     ].some((value) => String(value || "").toLowerCase().includes(term)));
   }, [newCandidates, search]);
 
-  async function handleReminder(candidate) {
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-    setRemindingId(candidate.id);
-    try {
-      const data = await remindCandidateOnboarding(candidate.id, {}, accessToken);
-      toast.success(data.message || "Reminder sent.");
-      if (data.candidate) {
-        setNewCandidates((items) => items.map((item) => item.id === candidate.id ? { ...item, ...data.candidate } : item));
-      }
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not send reminder."));
-    } finally {
-      setRemindingId(null);
-    }
+  function handleReminder(candidate) {
+    setReminderTarget({
+      id: candidate.id,
+      full_name: candidate.full_name,
+      role: "candidate",
+    });
   }
 
   async function handleApproveOffer(offerId) {
@@ -155,7 +146,7 @@ export default function RecruiterCandidatesPage() {
                 <NewSignupCard
                   key={candidate.id}
                   candidate={candidate}
-                  reminding={remindingId === candidate.id}
+                  reminding={false}
                   onView={() => router.push(`/dashboard/recruiter/candidates/${candidate.id}`)}
                   onRemind={() => handleReminder(candidate)}
                 />
@@ -230,6 +221,17 @@ export default function RecruiterCandidatesPage() {
       </div>
 
       {offerModalCandidate && <OfferComposerModal candidate={offerModalCandidate} onClose={() => setOfferModalCandidate(null)} onSent={(data) => { setConversionMessage(data.message); setOfferModalCandidate(null); loadCandidates(); }} />}
+      <SendReminderModal
+        open={Boolean(reminderTarget)}
+        target={reminderTarget}
+        accessToken={typeof window !== "undefined" ? localStorage.getItem("access_token") : null}
+        defaultKind="onboarding"
+        onClose={() => setReminderTarget(null)}
+        onSent={(data) => {
+          toast.success(data?.message || "Reminder sent.");
+          loadCandidates();
+        }}
+      />
     </RecruiterShell>
   );
 }

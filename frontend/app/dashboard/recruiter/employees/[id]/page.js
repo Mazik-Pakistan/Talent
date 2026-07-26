@@ -12,11 +12,11 @@ import {
   assignEmployeeAsset,
   removeEmployeeAsset,
   scheduleEmployeeOrientation,
-  remindEmployeeProfile,
 } from "@/services/authService";
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
 import EmployeeTalentPanel from "@/components/recruiter/EmployeeTalentPanel";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
+import SendReminderModal from "@/components/recruiter/SendReminderModal";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -73,36 +73,13 @@ function orientationDefaults(orientation) {
  * Post-hire Complete Profile progress + recruiter reminder controls.
  */
 function ProfileCompletionSection({ employee, employeeId, onEmployeeUpdate }) {
+  const router = useRouter();
   const progress = employee.profile_progress || null;
   const tasks = Array.isArray(progress?.tasks) ? progress.tasks : [];
   const percentage = typeof progress?.percentage === "number" ? progress.percentage : null;
   const incomplete = (employee.profile_status || progress?.profile_status) === "incomplete";
   const completedCount = tasks.filter((t) => t.completed).length;
-
-  const [note, setNote] = useState("");
-  const [showNote, setShowNote] = useState(false);
-  const [sending, setSending] = useState(false);
-
-  async function handleRemind() {
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-    setSending(true);
-    try {
-      const data = await remindEmployeeProfile(
-        employeeId,
-        note.trim() ? { note: note.trim() } : {},
-        accessToken
-      );
-      if (data.employee) onEmployeeUpdate(data.employee);
-      toast.success(data.message || "Reminder sent.");
-      setNote("");
-      setShowNote(false);
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not send reminder."));
-    } finally {
-      setSending(false);
-    }
-  }
+  const [reminderOpen, setReminderOpen] = useState(false);
 
   const lastReminder = fmtDate(employee.profile_reminder_sent_at);
   const missingLabels = tasks.filter((t) => !t.completed).map((t) => t.label);
@@ -138,7 +115,7 @@ function ProfileCompletionSection({ employee, employeeId, onEmployeeUpdate }) {
       </div>
       <div className={styles.sectionBody}>
         {tasks.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: incomplete ? 14 : 0 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
             {tasks.map((task) => (
               <span
                 key={task.id || task.step}
@@ -149,41 +126,44 @@ function ProfileCompletionSection({ employee, employeeId, onEmployeeUpdate }) {
                   borderColor: task.completed ? "transparent" : "var(--border)",
                 }}
               >
-                {task.completed ? "âœ“ " : ""}
+                {task.completed ? "✓ " : ""}
                 {task.label.replace(/^(Add |Complete |Provide |Acknowledge |Sign the )/i, "")}
               </span>
             ))}
           </div>
         )}
 
-        {incomplete && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-            <button type="button" className={styles.primaryButton} disabled={sending} onClick={handleRemind}>
-              {sending ? "Sending..." : "Send reminder"}
-            </button>
-            <button
-              type="button"
-              className={styles.linkButton}
-              onClick={() => setShowNote((v) => !v)}
-            >
-              {showNote ? "Hide note" : "Add note"}
-            </button>
-            {lastReminder && (
-              <span className={styles.mutedText} style={{ fontSize: 12 }}>
-                Last sent {lastReminder}
-              </span>
-            )}
-            {showNote && (
-              <input
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Optional note for the employee"
-                style={{ flex: "1 1 220px", minWidth: 180 }}
-              />
-            )}
-          </div>
-        )}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          <button type="button" className={styles.primaryButton} onClick={() => setReminderOpen(true)}>
+            Send reminder
+          </button>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={() =>
+              router.push(`/dashboard/recruiter/messages?employee_id=${encodeURIComponent(employeeId)}`)
+            }
+          >
+            Messages
+          </button>
+          {lastReminder && (
+            <span className={styles.mutedText} style={{ fontSize: 12 }}>
+              Last profile reminder {lastReminder}
+            </span>
+          )}
+        </div>
       </div>
+      <SendReminderModal
+        open={reminderOpen}
+        target={{ id: employeeId, full_name: employee.full_name, role: "employee" }}
+        accessToken={typeof window !== "undefined" ? localStorage.getItem("access_token") : null}
+        defaultKind={incomplete ? "profile" : "general"}
+        onClose={() => setReminderOpen(false)}
+        onSent={(data) => {
+          toast.success(data?.message || "Reminder sent.");
+          if (data?.employee) onEmployeeUpdate(data.employee);
+        }}
+      />
     </div>
   );
 }

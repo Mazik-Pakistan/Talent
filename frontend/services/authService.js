@@ -740,3 +740,19 @@ export async function remindEmployeeProfile(employeeId, payload, accessToken) {
   );
   return data;
 }
+
+/** Unified employee reminder: kind = profile | reupload | course | general */
+export async function remindEmployee(employeeId, payload, accessToken) {
+  const id = encodeURIComponent(String(employeeId || "").trim());
+  const { data } = await apiClient.post(`/api/employees/detail/${id}/remind`, payload || {}, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function remindCourseAssignments(payload, accessToken) {
+  const { data } = await apiClient.post("/api/learning/assignments/remind", payload || {}, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}

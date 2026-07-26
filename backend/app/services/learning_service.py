@@ -712,6 +712,8 @@ class LearningService:
     # Certificates — upload (employee) + verify (recruiter)
     # ------------------------------------------------------------------ #
     def _public_certificate(self, doc: dict) -> dict:
+        file_url = doc.get("file_url")
+        source_url = doc.get("source_url") or doc.get("certificate_url")
         return {
             "id": str(doc["_id"]),
             "employee_id": doc.get("employee_id"),
@@ -719,7 +721,9 @@ class LearningService:
             "course_uid": doc.get("course_uid"),
             "course_title": doc.get("course_title"),
             "file_name": doc.get("file_name"),
-            "file_url": doc.get("file_url"),
+            "file_url": file_url,
+            "source_url": source_url,
+            "certificate_url": file_url or source_url,
             "learning_hours": doc.get("learning_hours"),
             "completion_date": _iso(doc.get("completion_date")),
             "verification_status": doc.get("verification_status", "pending"),
@@ -739,10 +743,12 @@ class LearningService:
         learning_hours: float | None,
         filename: str,
         content: bytes,
+        source_url: str | None = None,
     ) -> dict:
         employee = await self._get_employee(current_user)
         upload = await storage_service.save_file(current_user.id, "certificates", filename, content)
         now = _now()
+        cleaned_source = (source_url or "").strip() or None
         doc = {
             "user_id": current_user.id,
             "employee_id": employee.get("employee_id"),
@@ -752,6 +758,7 @@ class LearningService:
             "course_title": course_title,
             "file_name": filename,
             "file_url": upload.get("file_url"),
+            "source_url": cleaned_source,
             "object_path": upload.get("object_path"),
             "learning_hours": learning_hours,
             "completion_date": completion_date.isoformat() if completion_date else None,
@@ -1639,15 +1646,40 @@ class LearningService:
 
             if employee.get("user_id"):
                 kind = "mandatory course" if request.mandatory else "course"
+                note_suffix = f" Note: {request.note}" if request.note else ""
                 await create_notification(
                     recipient_id=employee["user_id"],
                     recipient_role="employee",
                     notif_type="course_assigned",
                     title="New course assigned",
-                    message=f"\"{request.course_title}\" ({kind}) was assigned to you, due {due_date}.",
+                    message=(
+                        f"\"{request.course_title}\" ({kind}) was assigned to you, due {due_date}."
+                        f"{note_suffix}"
+                    ),
                     link="/dashboard/employee/learning",
                     related_id=str(doc["_id"]),
                 )
+                try:
+                    from app.core.config import settings
+                    from app.services.email_service import email_service
+
+                    to_email = employee.get("email")
+                    if to_email:
+                        email_service.send_custom_reminder(
+                            to_email,
+                            employee.get("full_name") or "there",
+                            title="New course assigned",
+                            body_text=(
+                                f'"{request.course_title}" ({kind}) was assigned to you.\n'
+                                f"Due date: {due_date}."
+                            ),
+                            cta_link=f"{settings.frontend_base_url}/dashboard/employee/learning",
+                            cta_label="Open Learning",
+                            recruiter_note=request.note,
+                            eyebrow="Learning",
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
         return {"assigned": assigned, "skipped": skipped, "errors": errors, "due_date": due_date.isoformat()}
 
     def _public_assignment(self, doc: dict) -> dict:

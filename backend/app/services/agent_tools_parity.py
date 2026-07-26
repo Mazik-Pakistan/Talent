@@ -1,0 +1,1816 @@
+"""Additional agent tools for full dashboard parity (P1–P3).
+
+Handlers wrap existing permission-checked services only — no new business logic.
+Imported and merged by agent_tools.py into role tool lists.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import Any
+
+from app.core.rbac import CurrentUser
+from app.schemas.career import RoleAssignRequest
+from app.schemas.dashboard import (
+    MarkNotificationsReadRequest,
+    UpdateAnnouncementRequest,
+    UpdateRecruiterProfileRequest,
+)
+from app.schemas.learning import (
+    BookmarkRequest,
+    CareerGoalRequest,
+    CertificateVerifyRequest,
+    CourseAssignRequest,
+    EnrollmentProgressRequest,
+    SkillUpsertRequest,
+)
+from app.schemas.offer import OfferDeclineRequest, OfferSignRequest
+from app.schemas.talent import (
+    CompetencyEvaluationRequest,
+    DevelopmentPlanUpdateRequest,
+    DevelopmentMilestoneUpdate,
+    InternalOpportunityCreateRequest,
+    InternalOpportunityUpdateRequest,
+    TalentSearchRequest,
+)
+from app.services.dashboard_service import DashboardService
+from app.services.document_service import document_service
+from app.services.employee_service import EmployeeService
+from app.services.learning_service import learning_service
+from app.services.offer_service import offer_service
+from app.services.recruiter_kb_service import recruiter_kb_service
+from app.services.talent_service import talent_service
+
+# Imported late-safe symbols from agent_tools (loaded after base helpers exist).
+from app.services.agent_tools import (  # noqa: E402
+    BULK_CAP,
+    Tool,
+    ToolResult,
+    _err,
+    _resolve_candidate,
+    _resolve_employee,
+    confirm_gate,
+)
+
+dashboard_service = DashboardService()
+employee_service = EmployeeService()
+
+
+def _parse_date(value: Any) -> date | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    text = str(value).strip()[:10]
+    return date.fromisoformat(text)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Recruiter P1
+# ─────────────────────────────────────────────────────────────────────────
+
+
+async def _tool_remind_candidate(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        from app.services.reminder_service import reminder_service
+
+        candidate, err = await _resolve_candidate(user, args)
+        if not candidate:
+            return ToolResult(ok=False, error=err or "Candidate not found.")
+        cid = str(candidate.get("_id") or candidate.get("id") or "")
+        result = await reminder_service.send_candidate_reminder(
+            user,
+            cid,
+            kind=(args.get("kind") or "onboarding"),
+            note=(args.get("note") or None),
+            force=bool(args.get("force")),
+        )
+        return ToolResult(
+            ok=True,
+            data={
+                "message": result.get("message"),
+                "email_sent": result.get("email_sent"),
+                "notification_sent": result.get("notification_sent"),
+                "candidate": {
+                    "email": (result.get("candidate") or {}).get("email") or candidate.get("email"),
+                    "full_name": (result.get("candidate") or {}).get("full_name") or candidate.get("full_name"),
+                },
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_bulk_remind_candidates(user: CurrentUser, args: dict) -> ToolResult:
+    emails = args.get("emails") or []
+    note = args.get("note")
+    force = bool(args.get("force"))
+    sent: list[dict] = []
+    failed: list[dict] = []
+    try:
+        if emails:
+            targets = []
+            for email in emails[:BULK_CAP]:
+                person, err = await _resolve_candidate(user, {"email": email})
+                if not person:
+                    failed.append({"email": email, "error": err or "not found"})
+                else:
+                    targets.append(person)
+        else:
+            pipeline = await employee_service.list_onboarding_in_progress(user)
+            targets = (pipeline.get("candidates") or [])[:BULK_CAP]
+        for person in targets:
+            cid = str(person.get("id") or person.get("_id") or "")
+            email = person.get("email")
+            try:
+                result = await employee_service.remind_candidate_onboarding(
+                    user, cid, note=note, force=force
+                )
+                sent.append({"email": email, "email_sent": result.get("email_sent")})
+            except Exception as exc:  # noqa: BLE001
+                failed.append({"email": email, "error": str(exc)})
+        return ToolResult(
+            ok=True,
+            data={
+                "message": f"Reminded {len(sent)} candidate(s); {len(failed)} failed.",
+                "sent": sent,
+                "failed": failed,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_get_dashboard_summary(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await dashboard_service.get_summary(user)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_update_announcement(user: CurrentUser, args: dict) -> ToolResult:
+    announcement_id = (args.get("announcement_id") or args.get("id") or "").strip()
+    if not announcement_id:
+        return ToolResult(ok=False, error="announcement_id is required.")
+    try:
+        payload = UpdateAnnouncementRequest(
+            title=args.get("title"),
+            body=args.get("body"),
+            audience=args.get("audience"),
+            target_departments=args.get("target_departments"),
+            target_designations=args.get("target_designations"),
+            target_employee_ids=args.get("target_employee_ids"),
+            send_email=bool(args.get("send_email", False)),
+            notify_again=bool(args.get("notify_again", False)),
+        )
+        result = await dashboard_service.update_announcement(user, announcement_id, payload)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_delete_announcement(user: CurrentUser, args: dict) -> ToolResult:
+    announcement_id = (args.get("announcement_id") or args.get("id") or "").strip()
+    if not announcement_id:
+        return ToolResult(ok=False, error="announcement_id is required. Confirm with the recruiter before deleting.")
+    if not args.get("confirm"):
+        return confirm_gate(
+            "delete_announcement",
+            {"announcement_id": announcement_id},
+            f"Delete announcement {announcement_id}?",
+        )
+    try:
+        result = await dashboard_service.delete_announcement(user, announcement_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_update_employee_role(user: CurrentUser, args: dict) -> ToolResult:
+    employee, err = await _resolve_employee(user, args)
+    if not employee:
+        return ToolResult(ok=False, error=err or "Employee not found.")
+    job_title = (args.get("job_title") or args.get("to_title") or "").strip()
+    department = (args.get("department") or args.get("to_department") or "").strip()
+    if not job_title or not department:
+        return ToolResult(ok=False, error="job_title and department are required.")
+    try:
+        payload = RoleAssignRequest(
+            job_title=job_title,
+            department=department,
+            event_type=args.get("event_type") or "title_change",
+            effective_date=_parse_date(args.get("effective_date")),
+            note=args.get("note"),
+        )
+        result = await employee_service.assign_role(
+            user, employee.get("employee_id") or str(employee.get("_id")), payload
+        )
+        emp = result.get("employee") or {}
+        return ToolResult(
+            ok=True,
+            data={
+                "message": "Role updated.",
+                "employee_id": emp.get("employee_id"),
+                "full_name": emp.get("full_name"),
+                "job_title": emp.get("job_title"),
+                "department": emp.get("department"),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_get_recruiter_profile(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await dashboard_service.get_recruiter_profile(user)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_update_recruiter_profile(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        existing = await dashboard_service.get_recruiter_profile(user)
+        profile = existing.get("profile") or existing or {}
+        payload = UpdateRecruiterProfileRequest(
+            full_name=args.get("full_name") or profile.get("full_name") or user.full_name or "Recruiter",
+            phone=args.get("phone") if "phone" in args else profile.get("phone"),
+            department=args.get("department") if "department" in args else profile.get("department"),
+            job_title=args.get("job_title") if "job_title" in args else profile.get("job_title"),
+            office_location=args.get("office_location")
+            if "office_location" in args
+            else profile.get("office_location"),
+        )
+        result = await dashboard_service.update_recruiter_profile(user, payload)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Candidate / Employee shared document + notifications
+# ─────────────────────────────────────────────────────────────────────────
+
+
+async def _tool_list_documents_rich(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await document_service.list_mine(user)
+        docs = []
+        for d in result.get("documents", []):
+            docs.append(
+                {
+                    "id": d.get("id") or d.get("document_id"),
+                    "doc_type": d.get("doc_type"),
+                    "category": d.get("category"),
+                    "status": d.get("status"),
+                    "file_name": d.get("file_name"),
+                    "rejection_reason": d.get("rejection_reason"),
+                }
+            )
+        return ToolResult(ok=True, data={"documents": docs})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_get_my_document_link(user: CurrentUser, args: dict) -> ToolResult:
+    document_id = (args.get("document_id") or "").strip()
+    if not document_id:
+        # Allow lookup by doc_type
+        doc_type = (args.get("doc_type") or "").strip().lower()
+        if not doc_type:
+            return ToolResult(ok=False, error="document_id or doc_type is required.")
+        listed = await document_service.list_mine(user)
+        match = next(
+            (d for d in listed.get("documents", []) if (d.get("doc_type") or "").lower() == doc_type),
+            None,
+        )
+        if not match:
+            return ToolResult(ok=False, error=f"No uploaded document of type '{doc_type}'.")
+        document_id = match.get("id") or match.get("document_id")
+    try:
+        result = await document_service.get_signed_url(user, document_id, None)
+        return ToolResult(ok=True, data={"document_id": document_id, **result})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_delete_my_document(user: CurrentUser, args: dict) -> ToolResult:
+    document_id = (args.get("document_id") or "").strip()
+    if not document_id:
+        return ToolResult(ok=False, error="document_id is required.")
+    if not args.get("confirm"):
+        return confirm_gate(
+            "delete_document",
+            {"document_id": document_id},
+            f"Delete document {document_id}?",
+        )
+    try:
+        result = await document_service.delete(user, document_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_reextract_document(user: CurrentUser, args: dict) -> ToolResult:
+    document_id = (args.get("document_id") or "").strip()
+    if not document_id:
+        return ToolResult(ok=False, error="document_id is required.")
+    try:
+        result = await document_service.reextract(user, document_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_my_announcements(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        limit = int(args.get("limit") or 20)
+        result = await dashboard_service.list_announcements(user, limit=limit)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_notifications(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        limit = int(args.get("limit") or 20)
+        result = await dashboard_service.get_notifications(user, limit=limit)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_mark_notifications_read(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        payload = MarkNotificationsReadRequest(
+            ids=args.get("ids") or [],
+            all=bool(args.get("all", False)),
+        )
+        result = await dashboard_service.mark_notifications_read(user, payload)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Candidate offer tools
+# ─────────────────────────────────────────────────────────────────────────
+
+
+async def _tool_get_my_offer(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await offer_service.get_mine(user)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_sign_offer(user: CurrentUser, args: dict) -> ToolResult:
+    if not args.get("agreed"):
+        return ToolResult(
+            ok=False,
+            error="agreed must be true. Confirm the candidate accepts the offer terms before signing.",
+        )
+    try:
+        offer = await offer_service.get_mine(user)
+        offer_id = (args.get("offer_id") or (offer.get("offer") or offer).get("id") or "").strip()
+        if not offer_id and isinstance(offer.get("offer"), dict):
+            offer_id = str(offer["offer"].get("id") or "")
+        if not offer_id:
+            return ToolResult(ok=False, error="No offer found to sign.")
+        full_legal_name = (
+            args.get("full_legal_name") or user.full_name or ""
+        ).strip()
+        if len(full_legal_name) < 2:
+            return ToolResult(ok=False, error="full_legal_name is required to sign.")
+        payload = OfferSignRequest(
+            full_legal_name=full_legal_name,
+            signature_data_url=args.get("signature_data_url"),
+            agreed=True,
+        )
+        result = await offer_service.sign(user, offer_id, payload)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_decline_offer(user: CurrentUser, args: dict) -> ToolResult:
+    if not args.get("confirm"):
+        pending = {"reason": args.get("reason"), "offer_id": args.get("offer_id")}
+        pending = {k: v for k, v in pending.items() if v is not None and v != ""}
+        return confirm_gate("decline_offer", pending, "Decline your offer letter?")
+    try:
+        offer = await offer_service.get_mine(user)
+        offer_obj = offer.get("offer") or offer
+        offer_id = (args.get("offer_id") or offer_obj.get("id") or "").strip()
+        if not offer_id:
+            return ToolResult(ok=False, error="No offer found to decline.")
+        payload = OfferDeclineRequest(reason=args.get("reason"))
+        result = await offer_service.decline(user, offer_id, payload)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Employee profile tools
+# ─────────────────────────────────────────────────────────────────────────
+
+
+async def _tool_get_my_profile(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await employee_service.get_my_profile(user)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Learning — recruiter + employee
+# ─────────────────────────────────────────────────────────────────────────
+
+
+async def _tool_browse_catalog(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await learning_service.browse_catalog(
+            user,
+            q=args.get("q") or args.get("query"),
+            role=args.get("role"),
+            level=args.get("level"),
+            product=args.get("product"),
+            course_type=args.get("type") or args.get("course_type"),
+            page=int(args.get("page") or 1),
+            page_size=min(int(args.get("page_size") or 20), 60),
+            bookmarked_only=bool(args.get("bookmarked_only")),
+            source=args.get("source") or "microsoft_learn",
+            category=args.get("category"),
+        )
+        courses = []
+        for c in (result.get("courses") or result.get("items") or [])[:30]:
+            courses.append(
+                {
+                    "uid": c.get("uid") or c.get("id"),
+                    "title": c.get("title"),
+                    "url": c.get("url") or c.get("course_url"),
+                    "type": c.get("type") or c.get("course_type"),
+                    "level": c.get("level"),
+                    "duration_minutes": c.get("duration_minutes"),
+                    "source": c.get("source"),
+                }
+            )
+        return ToolResult(
+            ok=True,
+            data={
+                "courses": courses,
+                "total": result.get("total"),
+                "page": result.get("page"),
+                "pages": result.get("pages"),
+                "source": args.get("source") or "microsoft_learn",
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_assign_courses(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        payload = CourseAssignRequest(
+            employee_ids=args.get("employee_ids") or [],
+            department=args.get("department"),
+            job_title=args.get("job_title") or args.get("joining_role"),
+            joining_role=args.get("joining_role"),
+            required_skills=args.get("required_skills") or [],
+            course_uid=args["course_uid"],
+            course_title=args["course_title"],
+            course_url=args["course_url"],
+            course_type=args.get("course_type") or "learningPath",
+            duration_minutes=args.get("duration_minutes"),
+            due_date=_parse_date(args.get("due_date")),
+            mandatory=bool(args.get("mandatory")),
+            note=args.get("note"),
+        )
+        result = await learning_service.assign_courses(user, payload)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_assignments(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await learning_service.list_assignments(
+            user,
+            employee_id=args.get("employee_id"),
+            status_filter=args.get("status"),
+            mandatory_only=args.get("mandatory"),
+        )
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_pending_certificates(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await learning_service.list_pending_certificates(user)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_verify_certificate(user: CurrentUser, args: dict) -> ToolResult:
+    certificate_id = (args.get("certificate_id") or "").strip()
+    if not certificate_id:
+        return ToolResult(ok=False, error="certificate_id is required.")
+    if "approve" not in args:
+        return ToolResult(ok=False, error="approve=true|false is required.")
+    try:
+        payload = CertificateVerifyRequest(approve=bool(args.get("approve")), note=args.get("note"))
+        result = await learning_service.verify_certificate(user, certificate_id, payload)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_learning_analytics(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await learning_service.get_analytics(user, department=args.get("department"))
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_employee_learning_profile(user: CurrentUser, args: dict) -> ToolResult:
+    employee, err = await _resolve_employee(user, args)
+    if not employee:
+        return ToolResult(ok=False, error=err or "Employee not found.")
+    try:
+        result = await learning_service.get_employee_learning_profile(
+            user,
+            employee.get("employee_id") or str(employee.get("_id")),
+            refresh_ai=bool(args.get("refresh")),
+        )
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_kb_list_roles(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(ok=True, data=await recruiter_kb_service.list_roles(user))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_kb_create_role(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await recruiter_kb_service.create_role(
+            user,
+            {
+                "title": args.get("title") or args.get("name"),
+                "department": args.get("department"),
+                "description": args.get("description"),
+                "required_skills": args.get("required_skills") or [],
+            },
+        )
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_kb_delete_role(user: CurrentUser, args: dict) -> ToolResult:
+    role_id = (args.get("role_id") or args.get("id") or "").strip()
+    if not role_id:
+        return ToolResult(ok=False, error="role_id is required.")
+    if not args.get("confirm"):
+        return confirm_gate("kb_delete_role", {"role_id": role_id}, f"Delete KB role {role_id}?")
+    try:
+        return ToolResult(ok=True, data=await recruiter_kb_service.delete_role(user, role_id))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_kb_list_certs(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(ok=True, data=await recruiter_kb_service.list_certifications(user))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_kb_create_cert(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await recruiter_kb_service.create_certification(
+            user,
+            {
+                "title": args.get("title"),
+                "provider": args.get("provider"),
+                "url": args.get("url"),
+                "official_url": args.get("url"),
+                "skills_covered": args.get("skills") or args.get("skills_covered") or [],
+                "estimated_hours": args.get("hours") or args.get("estimated_hours"),
+                "difficulty": args.get("difficulty"),
+                "priority": args.get("priority"),
+                "description": args.get("description"),
+            },
+        )
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_kb_delete_cert(user: CurrentUser, args: dict) -> ToolResult:
+    cert_id = (args.get("cert_id") or args.get("id") or "").strip()
+    if not cert_id:
+        return ToolResult(ok=False, error="cert_id is required.")
+    if not args.get("confirm"):
+        return confirm_gate("kb_delete_certification", {"cert_id": cert_id}, f"Delete KB certification {cert_id}?")
+    try:
+        return ToolResult(ok=True, data=await recruiter_kb_service.delete_certification(user, cert_id))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# Employee learning
+
+
+async def _tool_my_learning_dashboard(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(ok=True, data=await learning_service.get_learning_dashboard(user))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_my_courses(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(
+            ok=True,
+            data=await learning_service.list_my_courses(user, args.get("status")),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_start_course(user: CurrentUser, args: dict) -> ToolResult:
+    uid = (args.get("course_uid") or args.get("uid") or "").strip()
+    if not uid:
+        return ToolResult(ok=False, error="course_uid is required.")
+    try:
+        return ToolResult(ok=True, data=await learning_service.start_course(user, uid))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_update_course_progress(user: CurrentUser, args: dict) -> ToolResult:
+    uid = (args.get("course_uid") or args.get("uid") or "").strip()
+    if not uid:
+        return ToolResult(ok=False, error="course_uid is required.")
+    try:
+        payload = EnrollmentProgressRequest(
+            progress_percent=int(args.get("progress_percent") or 0),
+            status=args.get("status"),
+        )
+        return ToolResult(ok=True, data=await learning_service.update_progress(user, uid, payload))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_bookmarks(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(ok=True, data=await learning_service.list_bookmarks(user))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_add_bookmark(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        payload = BookmarkRequest(
+            course_uid=args["course_uid"],
+            course_title=args["course_title"],
+            course_url=args["course_url"],
+            course_type=args.get("course_type") or "learningPath",
+            duration_minutes=args.get("duration_minutes"),
+            level=args.get("level"),
+        )
+        return ToolResult(ok=True, data=await learning_service.add_bookmark(user, payload))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_remove_bookmark(user: CurrentUser, args: dict) -> ToolResult:
+    uid = (args.get("course_uid") or args.get("uid") or "").strip()
+    if not uid:
+        return ToolResult(ok=False, error="course_uid is required.")
+    try:
+        return ToolResult(ok=True, data=await learning_service.remove_bookmark(user, uid))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_skills(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(ok=True, data=await learning_service.list_skills(user))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_upsert_skill(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        payload = SkillUpsertRequest(
+            skill_name=args["skill_name"],
+            category=args.get("category") or "Other",
+            proficiency=args.get("proficiency") or "Beginner",
+            years_experience=args.get("years_experience"),
+        )
+        return ToolResult(ok=True, data=await learning_service.upsert_skill(user, payload))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_delete_skill(user: CurrentUser, args: dict) -> ToolResult:
+    skill_id = (args.get("skill_id") or "").strip()
+    if not skill_id:
+        return ToolResult(ok=False, error="skill_id is required.")
+    if not args.get("confirm"):
+        return confirm_gate("delete_skill", {"skill_id": skill_id}, f"Delete skill {skill_id}?")
+    try:
+        return ToolResult(ok=True, data=await learning_service.delete_skill(user, skill_id))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_assess_skills(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(
+            ok=True,
+            data=await learning_service.assess_my_skills(
+                user, refresh=bool(args.get("refresh")), lazy=bool(args.get("lazy"))
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_get_career_goal(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(ok=True, data=await learning_service.get_career_goal(user))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_set_career_goal(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        payload = CareerGoalRequest(target_role=args["target_role"])
+        return ToolResult(ok=True, data=await learning_service.set_career_goal(user, payload))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_skill_gap(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(
+            ok=True,
+            data=await learning_service.get_skill_gap(
+                user,
+                args.get("target_role"),
+                refresh=bool(args.get("refresh")),
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_career_path(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(
+            ok=True,
+            data=await learning_service.get_career_path(user, refresh=bool(args.get("refresh"))),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_learning_recommendations(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(
+            ok=True,
+            data=await learning_service.get_recommendations(user, refresh=bool(args.get("refresh"))),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_my_certificates(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(ok=True, data=await learning_service.list_my_certificates(user))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_delete_certificate(user: CurrentUser, args: dict) -> ToolResult:
+    certificate_id = (args.get("certificate_id") or "").strip()
+    if not certificate_id:
+        return ToolResult(ok=False, error="certificate_id is required.")
+    if not args.get("confirm"):
+        return confirm_gate(
+            "delete_certificate",
+            {"certificate_id": certificate_id},
+            f"Delete certificate {certificate_id}?",
+        )
+    try:
+        return ToolResult(ok=True, data=await learning_service.delete_certificate(user, certificate_id))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_update_certificate(user: CurrentUser, args: dict) -> ToolResult:
+    certificate_id = (args.get("certificate_id") or "").strip()
+    if not certificate_id:
+        return ToolResult(ok=False, error="certificate_id is required.")
+    try:
+        return ToolResult(
+            ok=True,
+            data=await learning_service.update_certificate(
+                user,
+                certificate_id,
+                course_title=args.get("course_title"),
+                completion_date=_parse_date(args.get("completion_date")),
+                learning_hours=args.get("learning_hours"),
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Talent — recruiter + employee
+# ─────────────────────────────────────────────────────────────────────────
+
+
+async def _tool_talent_metrics(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        return ToolResult(
+            ok=True,
+            data=await talent_service.talent_metrics(user, department=args.get("department")),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_search_talent(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        payload = TalentSearchRequest(
+            q=args.get("q") or args.get("query"),
+            skills=args.get("skills") or [],
+            certifications=args.get("certifications") or [],
+            department=args.get("department"),
+            min_experience_years=args.get("min_experience_years"),
+            min_performance_rating=args.get("min_performance_rating"),
+            min_learning_progress=args.get("min_learning_progress"),
+            min_competency_score=args.get("min_competency_score"),
+            semantic=bool(args.get("semantic")),
+            page=int(args.get("page") or 1),
+            page_size=min(int(args.get("page_size") or 20), 60),
+        )
+        result = await talent_service.search_talent(user, payload)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_opportunities(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        result = await talent_service.list_opportunities(
+            user,
+            q=args.get("q") or args.get("query"),
+            opp_type=args.get("type"),
+            department=args.get("department"),
+            status_filter=args.get("status") or "open",
+            page=int(args.get("page") or 1),
+            page_size=min(int(args.get("page_size") or 20), 60),
+            for_employee=user.role == "employee",
+        )
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_create_opportunity(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        payload = InternalOpportunityCreateRequest(
+            title=args["title"],
+            type=args.get("type") or "open_position",
+            department=args["department"],
+            description=args["description"],
+            required_skills=args.get("required_skills") or [],
+            location=args.get("location"),
+            commitment=args.get("commitment"),
+            closes_at=_parse_date(args.get("closes_at")),
+        )
+        return ToolResult(ok=True, data=await talent_service.create_opportunity(user, payload))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_update_opportunity(user: CurrentUser, args: dict) -> ToolResult:
+    opportunity_id = (args.get("opportunity_id") or args.get("id") or "").strip()
+    if not opportunity_id:
+        return ToolResult(ok=False, error="opportunity_id is required.")
+    try:
+        payload = InternalOpportunityUpdateRequest(
+            title=args.get("title"),
+            description=args.get("description"),
+            required_skills=args.get("required_skills"),
+            status=args.get("status"),
+            closes_at=_parse_date(args.get("closes_at")),
+        )
+        return ToolResult(
+            ok=True,
+            data=await talent_service.update_opportunity(user, opportunity_id, payload),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_applicants(user: CurrentUser, args: dict) -> ToolResult:
+    opportunity_id = (args.get("opportunity_id") or args.get("id") or "").strip()
+    if not opportunity_id:
+        return ToolResult(ok=False, error="opportunity_id is required.")
+    try:
+        return ToolResult(
+            ok=True,
+            data=await talent_service.list_opportunity_applicants(user, opportunity_id),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_submit_competency(user: CurrentUser, args: dict) -> ToolResult:
+    employee, err = await _resolve_employee(user, args)
+    if not employee:
+        return ToolResult(ok=False, error=err or "Employee not found.")
+    try:
+        payload = CompetencyEvaluationRequest(
+            technical=int(args.get("technical") or 3),
+            leadership=int(args.get("leadership") or 3),
+            communication=int(args.get("communication") or 3),
+            collaboration=int(args.get("collaboration") or 3),
+            problem_solving=int(args.get("problem_solving") or 3),
+            innovation=int(args.get("innovation") or 3),
+            comments=args.get("comments"),
+        )
+        eid = employee.get("employee_id") or str(employee.get("_id"))
+        return ToolResult(
+            ok=True,
+            data=await talent_service.submit_competency_evaluation(user, eid, payload),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_update_development_plan(user: CurrentUser, args: dict) -> ToolResult:
+    employee, err = await _resolve_employee(user, args)
+    if not employee:
+        return ToolResult(ok=False, error=err or "Employee not found.")
+    try:
+        milestones = []
+        for m in args.get("milestones") or []:
+            milestones.append(
+                DevelopmentMilestoneUpdate(
+                    id=m["id"],
+                    status=m.get("status"),
+                    due_date=_parse_date(m.get("due_date")),
+                    note=m.get("note"),
+                )
+            )
+        payload = DevelopmentPlanUpdateRequest(
+            target_timeline=args.get("target_timeline"),
+            milestones=milestones,
+            recruiter_note=args.get("recruiter_note"),
+        )
+        eid = employee.get("employee_id") or str(employee.get("_id"))
+        return ToolResult(
+            ok=True,
+            data=await talent_service.update_development_plan(user, eid, payload),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_get_talent_profile(user: CurrentUser, args: dict) -> ToolResult:
+    employee, err = await _resolve_employee(user, args)
+    if not employee:
+        return ToolResult(ok=False, error=err or "Employee not found.")
+    try:
+        eid = employee.get("employee_id") or str(employee.get("_id"))
+        return ToolResult(ok=True, data=await talent_service.get_talent_profile(user, eid))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_apply_opportunity(user: CurrentUser, args: dict) -> ToolResult:
+    opportunity_id = (args.get("opportunity_id") or args.get("id") or "").strip()
+    if not opportunity_id:
+        return ToolResult(ok=False, error="opportunity_id is required.")
+    if not args.get("confirm"):
+        return confirm_gate(
+            "apply_to_opportunity",
+            {"opportunity_id": opportunity_id},
+            f"Apply to opportunity {opportunity_id}?",
+        )
+    try:
+        return ToolResult(
+            ok=True,
+            data=await talent_service.apply_to_opportunity(user, opportunity_id),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_my_journey(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        employee = await talent_service.get_current_employee(user)
+        types = args.get("types")
+        event_types = [t.strip() for t in types.split(",")] if isinstance(types, str) and types else args.get("event_types")
+        return ToolResult(
+            ok=True,
+            data=await talent_service.journey_timeline(employee, event_types=event_types),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_my_achievements(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        employee = await talent_service.get_current_employee(user)
+        return ToolResult(ok=True, data=await talent_service.achievements(employee))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_my_career_progression(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        employee = await talent_service.get_current_employee(user)
+        return ToolResult(ok=True, data=await talent_service.career_progression(employee))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_send_reminder(user: CurrentUser, args: dict) -> ToolResult:
+    """Unified reminder for employees (and candidates via target_role)."""
+    try:
+        from app.services.reminder_service import reminder_service
+
+        target_role = (args.get("target_role") or "employee").strip().lower()
+        kind = (args.get("kind") or ("onboarding" if target_role == "candidate" else "general")).strip().lower()
+        note = args.get("note")
+        force = bool(args.get("force"))
+        if target_role == "candidate":
+            candidate, err = await _resolve_candidate(user, args)
+            if not candidate:
+                return ToolResult(ok=False, error=err or "Candidate not found.")
+            cid = str(candidate.get("_id") or candidate.get("id") or "")
+            result = await reminder_service.send_candidate_reminder(
+                user, cid, kind=kind, note=note, force=force
+            )
+        else:
+            employee, err = await _resolve_employee(user, args)
+            if not employee:
+                return ToolResult(ok=False, error=err or "Employee not found.")
+            eid = employee.get("employee_id") or str(employee.get("_id") or "")
+            result = await reminder_service.send_employee_reminder(
+                user, eid, kind=kind, note=note, force=force
+            )
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_hr_threads(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        from app.services.message_service import message_service
+
+        if user.role in ("recruiter", "super_admin"):
+            return ToolResult(ok=True, data=await message_service.list_threads_for_recruiter(user))
+        return ToolResult(ok=True, data=await message_service.list_threads_for_employee(user))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_message_recruiter(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        from app.services.message_service import message_service
+
+        body = (args.get("body") or args.get("message") or "").strip()
+        if not body:
+            return ToolResult(ok=False, error="body is required.")
+        result = await message_service.employee_send(
+            user,
+            body=body,
+            subject=args.get("subject"),
+            thread_id=args.get("thread_id"),
+        )
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_message_employee(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        from app.services.message_service import message_service
+
+        body = (args.get("body") or args.get("message") or "").strip()
+        employee_id = (args.get("employee_id") or "").strip()
+        if not body:
+            return ToolResult(ok=False, error="body is required.")
+        if not employee_id and args.get("email"):
+            # Resolve employee_id from email when possible
+            from app.core.database import database
+
+            emp = await database.employees.find_one({"email": str(args.get("email")).strip().lower()})
+            if emp:
+                employee_id = emp.get("employee_id") or str(emp.get("_id"))
+        if not employee_id:
+            return ToolResult(ok=False, error="employee_id (or email of an employee) is required.")
+        result = await message_service.recruiter_start(
+            user,
+            employee_id=employee_id,
+            body=body,
+            subject=args.get("subject"),
+        )
+        return ToolResult(ok=True, data={**(result if isinstance(result, dict) else {}), "message": "Message sent to employee."})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_reply_hr_thread(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        from app.services.message_service import message_service
+
+        thread_id = (args.get("thread_id") or "").strip()
+        body = (args.get("body") or args.get("message") or "").strip()
+        if not thread_id or not body:
+            return ToolResult(ok=False, error="thread_id and body are required.")
+        if user.role in ("recruiter", "super_admin"):
+            result = await message_service.recruiter_reply(user, thread_id, body=body)
+        else:
+            result = await message_service.employee_send(user, body=body, thread_id=thread_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Tool registrations
+# ─────────────────────────────────────────────────────────────────────────
+
+RECRUITER_PARITY_TOOLS: list[Tool] = [
+    Tool(
+        name="remind_candidate",
+        description=(
+            "Send a reminder to a candidate via email + in-app notification. "
+            "kind=onboarding|reupload|general. Include note when helpful."
+        ),
+        parameters={
+            "email": "string, preferred",
+            "name": "string, optional",
+            "kind": "onboarding|reupload|general, default onboarding",
+            "note": "string, optional (required for general)",
+            "force": "boolean, optional — resend within an hour",
+        },
+        handler=_tool_remind_candidate,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="bulk_remind_candidates",
+        description="Remind all (or listed) candidates still in onboarding to finish intake.",
+        parameters={"emails": "optional array", "note": "optional", "force": "boolean, optional"},
+        handler=_tool_bulk_remind_candidates,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="get_dashboard_summary",
+        description="Recruiter overview KPIs: pipeline counts, upcoming joinings, and related summary stats.",
+        parameters={},
+        handler=_tool_get_dashboard_summary,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="update_announcement",
+        description="Edit an existing announcement; optionally re-notify and/or re-email the audience.",
+        parameters={
+            "announcement_id": "string, required",
+            "title": "optional",
+            "body": "optional",
+            "audience": "optional",
+            "send_email": "boolean, default false",
+            "notify_again": "boolean, default false",
+        },
+        handler=_tool_update_announcement,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="delete_announcement",
+        description="Delete an announcement. Requires confirm=true after explicit recruiter approval.",
+        parameters={"announcement_id": "string, required", "confirm": "boolean, required true"},
+        handler=_tool_delete_announcement,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="update_employee_role",
+        description="Change an employee's designation (job_title) and department via a career event.",
+        parameters={
+            "email": "optional",
+            "employee_id": "optional",
+            "name": "optional",
+            "job_title": "string, required",
+            "department": "string, required",
+            "event_type": "promoted|title_change|department_change",
+            "effective_date": "YYYY-MM-DD optional",
+            "note": "optional",
+        },
+        handler=_tool_update_employee_role,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="get_recruiter_profile",
+        description="Fetch the signed-in recruiter's own profile.",
+        parameters={},
+        handler=_tool_get_recruiter_profile,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="update_recruiter_profile",
+        description="Update the signed-in recruiter's name, phone, title, department, or office.",
+        parameters={
+            "full_name": "optional",
+            "phone": "optional",
+            "job_title": "optional",
+            "department": "optional",
+            "office_location": "optional",
+        },
+        handler=_tool_update_recruiter_profile,
+        roles=("recruiter", "super_admin"),
+    ),
+    # Learning
+    Tool(
+        name="browse_learning_catalog",
+        description="Search/browse the learning catalog (microsoft_learn, coursera, or recruiter_kb).",
+        parameters={
+            "q": "optional search",
+            "source": "microsoft_learn|coursera|recruiter_kb",
+            "type": "optional",
+            "level": "optional",
+            "role": "optional",
+            "category": "optional (coursera)",
+            "page": "optional",
+        },
+        handler=_tool_browse_catalog,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="assign_courses",
+        description="Assign a course to employees by ids and/or department and/or joining role and/or skills.",
+        parameters={
+            "course_uid": "required",
+            "course_title": "required",
+            "course_url": "required",
+            "employee_ids": "optional array",
+            "department": "optional",
+            "job_title": "optional joining role",
+            "required_skills": "optional array",
+            "due_date": "optional YYYY-MM-DD",
+            "mandatory": "boolean",
+            "note": "optional",
+        },
+        handler=_tool_assign_courses,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="list_learning_assignments",
+        description="Track course assignment progress across employees.",
+        parameters={"employee_id": "optional", "status": "optional", "mandatory": "optional bool"},
+        handler=_tool_list_assignments,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="list_pending_certificates",
+        description="List employee-uploaded certificates awaiting recruiter verification (includes file_url / certificate_url to open).",
+        parameters={},
+        handler=_tool_list_pending_certificates,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="verify_certificate",
+        description="Approve or reject an employee learning certificate.",
+        parameters={"certificate_id": "required", "approve": "boolean required", "note": "optional"},
+        handler=_tool_verify_certificate,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="learning_analytics",
+        description="Recruiter learning analytics summary (optionally by department).",
+        parameters={"department": "optional"},
+        handler=_tool_learning_analytics,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="get_employee_learning_profile",
+        description="Learning profile and AI course recommendations for one employee.",
+        parameters={"email": "optional", "employee_id": "optional", "name": "optional", "refresh": "bool"},
+        handler=_tool_employee_learning_profile,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="kb_list_roles",
+        description="List recruiter knowledge-base roles.",
+        parameters={},
+        handler=_tool_kb_list_roles,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="kb_create_role",
+        description="Add a role to the learning knowledge base.",
+        parameters={"title": "required", "department": "optional", "description": "optional", "required_skills": "optional"},
+        handler=_tool_kb_create_role,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="kb_delete_role",
+        description="Delete a KB role. Requires confirm=true.",
+        parameters={"role_id": "required", "confirm": "boolean"},
+        handler=_tool_kb_delete_role,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="kb_list_certifications",
+        description="List recruiter knowledge-base certifications.",
+        parameters={},
+        handler=_tool_kb_list_certs,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="kb_create_certification",
+        description="Add a certification to the learning knowledge base.",
+        parameters={
+            "title": "required",
+            "provider": "optional",
+            "url": "optional",
+            "skills": "optional",
+            "hours": "optional",
+            "difficulty": "optional",
+            "description": "optional",
+        },
+        handler=_tool_kb_create_cert,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="kb_delete_certification",
+        description="Delete a KB certification. Requires confirm=true.",
+        parameters={"cert_id": "required", "confirm": "boolean"},
+        handler=_tool_kb_delete_cert,
+        roles=("recruiter", "super_admin"),
+    ),
+    # Talent
+    Tool(
+        name="talent_metrics",
+        description="Org talent metrics dashboard (skill distribution, high potential, etc.).",
+        parameters={"department": "optional"},
+        handler=_tool_talent_metrics,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="search_talent",
+        description="Search employees by skills, certs, department, progress, competency; optional semantic search.",
+        parameters={
+            "q": "optional",
+            "skills": "optional array",
+            "certifications": "optional array",
+            "department": "optional",
+            "min_learning_progress": "optional",
+            "min_competency_score": "optional",
+            "semantic": "boolean",
+        },
+        handler=_tool_search_talent,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="list_opportunities",
+        description="List internal opportunities.",
+        parameters={"q": "optional", "type": "optional", "department": "optional", "status": "open|closed"},
+        handler=_tool_list_opportunities,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="create_opportunity",
+        description="Post an internal opportunity.",
+        parameters={
+            "title": "required",
+            "type": "internal_project|cross_functional|temporary_assignment|open_position",
+            "department": "required",
+            "description": "required",
+            "required_skills": "optional",
+            "location": "optional",
+            "commitment": "optional",
+        },
+        handler=_tool_create_opportunity,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="update_opportunity",
+        description="Update or close/reopen an internal opportunity (set status open|closed).",
+        parameters={"opportunity_id": "required", "status": "optional", "title": "optional", "description": "optional"},
+        handler=_tool_update_opportunity,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="list_opportunity_applicants",
+        description="List applicants for an internal opportunity.",
+        parameters={"opportunity_id": "required"},
+        handler=_tool_list_applicants,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="submit_competency_evaluation",
+        description="Submit a 1–5 competency evaluation for an employee across six dimensions.",
+        parameters={
+            "email": "optional",
+            "employee_id": "optional",
+            "technical": "1-5",
+            "leadership": "1-5",
+            "communication": "1-5",
+            "collaboration": "1-5",
+            "problem_solving": "1-5",
+            "innovation": "1-5",
+            "comments": "optional",
+        },
+        handler=_tool_submit_competency,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="update_development_plan",
+        description="Update an employee's development plan milestones / timeline / note.",
+        parameters={
+            "email": "optional",
+            "employee_id": "optional",
+            "target_timeline": "optional",
+            "milestones": "optional array of {id, status, due_date, note}",
+            "recruiter_note": "optional",
+        },
+        handler=_tool_update_development_plan,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="get_talent_profile",
+        description="Aggregated 360 talent profile for an employee.",
+        parameters={"email": "optional", "employee_id": "optional", "name": "optional"},
+        handler=_tool_get_talent_profile,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="send_reminder",
+        description=(
+            "Send a typed reminder (email + notification) to an employee or candidate. "
+            "Employee kinds: profile|reupload|course|general. Candidate kinds: onboarding|reupload|general."
+        ),
+        parameters={
+            "target_role": "employee|candidate, default employee",
+            "email": "optional",
+            "employee_id": "optional",
+            "name": "optional",
+            "kind": "string, required for clarity",
+            "note": "optional note (required for general)",
+            "force": "boolean optional",
+        },
+        handler=_tool_send_reminder,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="list_hr_threads",
+        description="List HR ↔ employee message threads for the signed-in recruiter.",
+        parameters={},
+        handler=_tool_list_hr_threads,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="message_employee",
+        description="Start or continue an HR message thread with an employee (email + notification).",
+        parameters={
+            "employee_id": "preferred",
+            "email": "optional alternative to locate the employee",
+            "body": "required",
+            "subject": "optional for a new thread",
+        },
+        handler=_tool_message_employee,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="reply_hr_thread",
+        description="Reply to an HR message thread by thread_id.",
+        parameters={"thread_id": "required", "body": "required"},
+        handler=_tool_reply_hr_thread,
+        roles=("recruiter", "super_admin"),
+    ),
+]
+
+
+SHARED_SELF_DOCUMENT_TOOLS: list[Tool] = [
+    Tool(
+        name="get_my_document_link",
+        description="Get a time-limited signed download URL for one of the caller's documents (by id or doc_type).",
+        parameters={"document_id": "optional", "doc_type": "optional e.g. cnic|resume|transcript"},
+        handler=_tool_get_my_document_link,
+        roles=("candidate", "employee"),
+    ),
+    Tool(
+        name="delete_document",
+        description="Delete one of the caller's uploaded documents. Requires confirm=true.",
+        parameters={"document_id": "required", "confirm": "boolean required"},
+        handler=_tool_delete_my_document,
+        roles=("candidate", "employee"),
+    ),
+    Tool(
+        name="reextract_document",
+        description="Re-run OCR extraction on an uploaded document (typically CNIC).",
+        parameters={"document_id": "required"},
+        handler=_tool_reextract_document,
+        roles=("candidate", "employee"),
+    ),
+    Tool(
+        name="list_my_announcements",
+        description="List announcements visible to the caller.",
+        parameters={"limit": "optional"},
+        handler=_tool_list_my_announcements,
+        roles=("candidate", "employee"),
+    ),
+    Tool(
+        name="list_notifications",
+        description="List the caller's in-app notifications.",
+        parameters={"limit": "optional"},
+        handler=_tool_list_notifications,
+        roles=("candidate", "employee"),
+    ),
+    Tool(
+        name="mark_notifications_read",
+        description="Mark notifications read by ids, or all=true.",
+        parameters={"ids": "optional array", "all": "boolean"},
+        handler=_tool_mark_notifications_read,
+        roles=("candidate", "employee"),
+    ),
+]
+
+
+CANDIDATE_PARITY_TOOLS: list[Tool] = [
+    *SHARED_SELF_DOCUMENT_TOOLS,
+    Tool(
+        name="get_my_offer",
+        description="Fetch the candidate's current offer letter and status.",
+        parameters={},
+        handler=_tool_get_my_offer,
+        roles=("candidate",),
+    ),
+    Tool(
+        name="sign_offer",
+        description=(
+            "Digitally sign the candidate's offer. Requires agreed=true and full_legal_name. "
+            "Only call after the candidate clearly confirms they accept the terms."
+        ),
+        parameters={
+            "agreed": "boolean, must be true",
+            "full_legal_name": "string, required",
+            "offer_id": "optional if only one offer",
+        },
+        handler=_tool_sign_offer,
+        roles=("candidate",),
+    ),
+    Tool(
+        name="decline_offer",
+        description="Decline the candidate's offer. Requires confirm=true. Optional reason.",
+        parameters={"confirm": "boolean required", "reason": "optional", "offer_id": "optional"},
+        handler=_tool_decline_offer,
+        roles=("candidate",),
+    ),
+]
+
+
+EMPLOYEE_PARITY_TOOLS: list[Tool] = [
+    *SHARED_SELF_DOCUMENT_TOOLS,
+    Tool(
+        name="get_my_profile",
+        description="Fetch the signed-in employee's full profile record.",
+        parameters={},
+        handler=_tool_get_my_profile,
+        roles=("employee",),
+    ),
+    Tool(
+        name="browse_learning_catalog",
+        description="Search/browse learning catalog for the employee.",
+        parameters={
+            "q": "optional",
+            "source": "microsoft_learn|coursera|recruiter_kb",
+            "type": "optional",
+            "level": "optional",
+            "bookmarked_only": "bool",
+            "page": "optional",
+        },
+        handler=_tool_browse_catalog,
+        roles=("employee",),
+    ),
+    Tool(
+        name="my_learning_dashboard",
+        description="Employee learning overview: assigned courses, progress, recommendations summary.",
+        parameters={},
+        handler=_tool_my_learning_dashboard,
+        roles=("employee",),
+    ),
+    Tool(
+        name="my_courses",
+        description="List the employee's enrollments; optional status filter.",
+        parameters={"status": "optional assigned|in_progress|completed"},
+        handler=_tool_my_courses,
+        roles=("employee",),
+    ),
+    Tool(
+        name="start_course",
+        description="Start/enroll in a catalog course and return the provider URL.",
+        parameters={"course_uid": "required"},
+        handler=_tool_start_course,
+        roles=("employee",),
+    ),
+    Tool(
+        name="update_course_progress",
+        description="Update self-reported progress percent on a started course.",
+        parameters={"course_uid": "required", "progress_percent": "0-100", "status": "optional"},
+        handler=_tool_update_course_progress,
+        roles=("employee",),
+    ),
+    Tool(
+        name="list_bookmarks",
+        description="List bookmarked courses.",
+        parameters={},
+        handler=_tool_list_bookmarks,
+        roles=("employee",),
+    ),
+    Tool(
+        name="add_bookmark",
+        description="Bookmark a course.",
+        parameters={"course_uid": "required", "course_title": "required", "course_url": "required"},
+        handler=_tool_add_bookmark,
+        roles=("employee",),
+    ),
+    Tool(
+        name="remove_bookmark",
+        description="Remove a course bookmark.",
+        parameters={"course_uid": "required"},
+        handler=_tool_remove_bookmark,
+        roles=("employee",),
+    ),
+    Tool(
+        name="list_skills",
+        description="List the employee's skill matrix entries.",
+        parameters={},
+        handler=_tool_list_skills,
+        roles=("employee",),
+    ),
+    Tool(
+        name="upsert_skill",
+        description="Add or update a skill on the employee's profile.",
+        parameters={
+            "skill_name": "required",
+            "category": "optional",
+            "proficiency": "Beginner|Intermediate|Advanced|Expert",
+            "years_experience": "optional",
+        },
+        handler=_tool_upsert_skill,
+        roles=("employee",),
+    ),
+    Tool(
+        name="delete_skill",
+        description="Delete a skill. Requires confirm=true.",
+        parameters={"skill_id": "required", "confirm": "boolean"},
+        handler=_tool_delete_skill,
+        roles=("employee",),
+    ),
+    Tool(
+        name="assess_skills",
+        description="Run or refresh AI skill assessment for the employee.",
+        parameters={"refresh": "bool", "lazy": "bool"},
+        handler=_tool_assess_skills,
+        roles=("employee",),
+    ),
+    Tool(
+        name="get_career_goal",
+        description="Get the employee's saved career goal.",
+        parameters={},
+        handler=_tool_get_career_goal,
+        roles=("employee",),
+    ),
+    Tool(
+        name="set_career_goal",
+        description="Set the employee's target career role for path/gap guidance.",
+        parameters={"target_role": "required"},
+        handler=_tool_set_career_goal,
+        roles=("employee",),
+    ),
+    Tool(
+        name="get_skill_gap",
+        description="Skill-gap analysis vs career goal.",
+        parameters={"refresh": "bool"},
+        handler=_tool_skill_gap,
+        roles=("employee",),
+    ),
+    Tool(
+        name="get_career_path",
+        description="AI learning path toward the career goal.",
+        parameters={"refresh": "bool"},
+        handler=_tool_career_path,
+        roles=("employee",),
+    ),
+    Tool(
+        name="get_learning_recommendations",
+        description="Personalized course recommendations.",
+        parameters={"refresh": "bool"},
+        handler=_tool_learning_recommendations,
+        roles=("employee",),
+    ),
+    Tool(
+        name="list_my_certificates",
+        description="List certificates the employee has uploaded (includes file_url for viewing).",
+        parameters={},
+        handler=_tool_list_my_certificates,
+        roles=("employee",),
+    ),
+    Tool(
+        name="update_certificate",
+        description="Edit metadata on an unverified certificate.",
+        parameters={
+            "certificate_id": "required",
+            "course_title": "optional",
+            "completion_date": "optional",
+            "learning_hours": "optional",
+        },
+        handler=_tool_update_certificate,
+        roles=("employee",),
+    ),
+    Tool(
+        name="delete_certificate",
+        description="Delete a certificate upload. Requires confirm=true.",
+        parameters={"certificate_id": "required", "confirm": "boolean"},
+        handler=_tool_delete_certificate,
+        roles=("employee",),
+    ),
+    Tool(
+        name="list_opportunities",
+        description="Browse open internal opportunities.",
+        parameters={"q": "optional", "type": "optional", "department": "optional"},
+        handler=_tool_list_opportunities,
+        roles=("employee",),
+    ),
+    Tool(
+        name="apply_to_opportunity",
+        description="Apply to an internal opportunity. Requires confirm=true.",
+        parameters={"opportunity_id": "required", "confirm": "boolean"},
+        handler=_tool_apply_opportunity,
+        roles=("employee",),
+    ),
+    Tool(
+        name="my_talent_journey",
+        description="Employee career/learning journey timeline.",
+        parameters={"types": "optional comma list Career,Certifications,Courses,Skills"},
+        handler=_tool_my_journey,
+        roles=("employee",),
+    ),
+    Tool(
+        name="my_achievements",
+        description="Employee achievements grid.",
+        parameters={},
+        handler=_tool_my_achievements,
+        roles=("employee",),
+    ),
+    Tool(
+        name="my_career_progression",
+        description="Career progression ladder for the employee.",
+        parameters={},
+        handler=_tool_my_career_progression,
+        roles=("employee",),
+    ),
+    Tool(
+        name="list_hr_threads",
+        description="List the employee's conversations with HR/recruiter.",
+        parameters={},
+        handler=_tool_list_hr_threads,
+        roles=("employee",),
+    ),
+    Tool(
+        name="message_recruiter",
+        description="Send a message to the assigned recruiter/HR (starts or continues a thread).",
+        parameters={"body": "required", "subject": "optional for new thread", "thread_id": "optional to reply"},
+        handler=_tool_message_recruiter,
+        roles=("employee",),
+    ),
+    Tool(
+        name="reply_hr_thread",
+        description="Reply in an existing HR conversation by thread_id.",
+        parameters={"thread_id": "required", "body": "required"},
+        handler=_tool_reply_hr_thread,
+        roles=("employee",),
+    ),
+]

@@ -8,7 +8,7 @@ import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./learning.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
-import { getApiErrorMessage, listEmployees } from "@/services/authService";
+import { getApiErrorMessage, listEmployees, remindCourseAssignments } from "@/services/authService";
 import { downloadCsv } from "@/utils/downloadCsv";
 import {
   clearRecruiterContext,
@@ -885,7 +885,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
             <div className={styles.assignPanelHead}>
               <div>
                 <div className={styles.assignPanelTitle}>3 · Details &amp; send</div>
-                <p className={styles.assignPanelDesc}>Due date, note, and mandatory flag.</p>
+                <p className={styles.assignPanelDesc}>Due date, note, and mandatory flag. Notes appear in the assignment email and in-app notification.</p>
               </div>
             </div>
 
@@ -901,7 +901,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   </label>
                   <label className={styles.fieldLabel}>
                     Note
-                    <span>Optional context for employees</span>
+                    <span>Included in email + notification</span>
                     <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Required for onboarding" />
                   </label>
                 </div>
@@ -936,6 +936,7 @@ function AssignmentsTab() {
   const [statusFilter, setStatusFilter] = useState("");
   const [mandatoryOnly, setMandatoryOnly] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [remindingId, setRemindingId] = useState(null);
 
   const load = useCallback((force = false) => {
     const token = localStorage.getItem("access_token");
@@ -956,6 +957,23 @@ function AssignmentsTab() {
 
   useEffect(() => { load(false); }, [load]);
 
+  async function handleRemind(assignment) {
+    const token = localStorage.getItem("access_token");
+    if (!token || !assignment?.employee_id) return;
+    setRemindingId(assignment.id);
+    try {
+      const data = await remindCourseAssignments(
+        { employee_id: assignment.employee_id, note: assignment.note || undefined },
+        token
+      );
+      toast.success(data.message || "Course reminder sent.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not send course reminder."));
+    } finally {
+      setRemindingId(null);
+    }
+  }
+
   return (
     <div className={shellStyles.section}>
       <div className={shellStyles.sectionHead}>
@@ -963,7 +981,9 @@ function AssignmentsTab() {
           <span className={`${shellStyles.bar} ${shellStyles.navy}`} />
           <div>
             <div className={shellStyles.sectionTitle}>Assigned courses</div>
-            <p className={shellStyles.sectionDesc}>Track completion of courses you&apos;ve assigned</p>
+            <p className={shellStyles.sectionDesc}>
+              Track completion — reminders go by email and notification (assignment notes are included when present)
+            </p>
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -996,6 +1016,16 @@ function AssignmentsTab() {
               </div>
             </div>
             <span className={`${styles.statusChip} ${styles[a.status] || ""}`}>{a.status.replace("_", " ")}</span>
+            {a.status !== "completed" ? (
+              <button
+                type="button"
+                className={styles.smallBtn}
+                disabled={remindingId === a.id}
+                onClick={() => handleRemind(a)}
+              >
+                {remindingId === a.id ? "Sending…" : "Remind"}
+              </button>
+            ) : null}
           </div>
         ))}
       </div>
@@ -1078,7 +1108,10 @@ function CertificatesTab({ selectedCertificateId = null }) {
                 {c.learning_hours ? ` · ${c.learning_hours} hrs` : ""}
               </div>
             </div>
-            <a href={c.file_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View file</a>
+            <a href={c.file_url || c.certificate_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View file</a>
+            {c.source_url && c.source_url !== c.file_url ? (
+              <a href={c.source_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Public URL</a>
+            ) : null}
             {rejecting === c.id ? (
               <div className={styles.rejectRow}>
                 <input className={styles.rejectInput} placeholder="Reason (optional)" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />

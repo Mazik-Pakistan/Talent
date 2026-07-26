@@ -47,6 +47,7 @@ export const HOVER_HELP = {
   documents: "Upload your identity and employment documents here.",
   learning: "Assigned courses, skill profile, and career-path recommendations.",
   talent: "Your journey, achievements, and internal opportunities.",
+  messages: "Message your recruiter — they get an in-app notification and an email copy.",
   profile: "This page manages your personal and employment information.",
   "ai-assistant": "Full AI Agent chat — multi-step workflows live here, not in the Copilot.",
   emergency: "Verify emergency contact information carefully.",

@@ -148,6 +148,19 @@ function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, c
       }
     }
     setNotifOpen(false);
+    if (notification.type === "hr_message") {
+      const threadId = notification.related_id || notification.relatedId;
+      if (threadId) {
+        router.push(`/dashboard/employee/messages?thread=${encodeURIComponent(threadId)}`);
+        return;
+      }
+      if (notification.link) {
+        router.push(notification.link);
+        return;
+      }
+      router.push("/dashboard/employee/messages");
+      return;
+    }
     if (notification.link) router.push(notification.link);
   }
 

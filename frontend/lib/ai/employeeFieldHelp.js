@@ -34,6 +34,11 @@ export const EMPLOYEE_PAGE_SUMMARIES = {
     what: "Update personal and employment information.",
     why: "Payroll, compliance, and teammates rely on accurate details.",
   },
+  messages: {
+    title: "Message HR",
+    what: "Start or continue a conversation with your recruiter — they also get an email copy.",
+    why: "Keeps HR questions in one place so you get a reply in-app and by email.",
+  },
 };
 
 function fieldLabel(field) {
@@ -99,6 +104,7 @@ export function employeePageSummaryFor(pathname, context = null) {
   if (pathname.includes("/documents")) return { key: "documents", ...EMPLOYEE_PAGE_SUMMARIES.documents };
   if (pathname.includes("/learning")) return { key: "learning", ...EMPLOYEE_PAGE_SUMMARIES.learning };
   if (pathname.includes("/talent")) return { key: "talent", ...EMPLOYEE_PAGE_SUMMARIES.talent };
+  if (pathname.includes("/messages")) return { key: "messages", ...EMPLOYEE_PAGE_SUMMARIES.messages };
   if (pathname.includes("/profile")) {
     const section = context?.section;
     if (section && HOVER_HELP[section]) {

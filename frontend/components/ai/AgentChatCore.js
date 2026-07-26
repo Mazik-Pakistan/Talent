@@ -3,7 +3,8 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { getApiErrorMessage, uploadDocument, verifyDocument } from "@/services/authService";
+import { getApiErrorMessage, uploadDocument, verifyDocument, uploadEmployeePhoto, uploadRecruiterPhoto, analyzeBankSlip, uploadOnboardingFile } from "@/services/authService";
+import { uploadCertificate, verifyCertificate } from "@/services/learningService";
 import {
   bulkInviteSpreadsheet,
   getAgentErrorMessage,
@@ -14,42 +15,55 @@ import styles from "./AgentChatCore.module.css";
 
 export const ALLOWED_ROLES = ["candidate", "employee", "recruiter", "super_admin"];
 
+const CONFIRM_PREFIX = "__CONFIRM__:";
+
 const ROLE_COPY = {
   recruiter: {
     title: "Hiring Agent",
     subtitle: "Anything you do in recruiting — for one person or in bulk",
     empty:
-      "Tell me what you need — a person, a bulk action, or a goal. I can help across invites, pipeline, offers, documents, Day-1, reminders, search, and announcements.",
+      "Tell me what you need — a person, a bulk action, or a goal. I can help across invites, pipeline, offers, documents, Day-1, Learning, Talent, reminders, search, and announcements.",
     starters: [
-      "What can you help me with?",
       "Show my hiring pipeline",
       "Remind incomplete employee profiles",
-      "Invite a new candidate",
+      "Assign a learning course",
+      "Search talent by skills",
     ],
   },
   super_admin: {
     title: "Hiring Agent",
     subtitle: "Anything you do in recruiting — for one person or in bulk",
     empty:
-      "Tell me what you need — a person, a bulk action, or a goal. I can help across invites, pipeline, offers, documents, Day-1, reminders, search, and announcements.",
+      "Tell me what you need — a person, a bulk action, or a goal. I can help across invites, pipeline, offers, documents, Day-1, Learning, Talent, reminders, search, and announcements.",
     starters: [
-      "What can you help me with?",
       "Show my hiring pipeline",
       "Remind incomplete employee profiles",
-      "Invite a new candidate",
+      "Assign a learning course",
+      "Search talent by skills",
     ],
   },
   candidate: {
     title: "Onboarding Agent",
-    subtitle: "Let's get your profile ready",
-    empty: "Tell me \"complete my onboarding\" and I'll walk you through it — or ask what's still missing.",
-    starters: ["Complete my onboarding", "What do I still need to upload?", "Check my progress"],
+    subtitle: "Onboarding, documents, and your offer letter",
+    empty: "Tell me \"complete my onboarding\" and I'll walk you through it — or ask about documents and your offer.",
+    starters: [
+      "Complete my onboarding",
+      "What do I still need to upload?",
+      "Show my offer letter",
+      "List my documents",
+    ],
   },
   employee: {
     title: "Workday Agent",
-    subtitle: "Onboarding, HR help, and day-to-day answers",
-    empty: "Tell me \"continue my onboarding\" and I'll walk you through what's left — or ask anything about your workday.",
-    starters: ["Continue my onboarding", "What's left to complete?", "Check my progress"],
+    subtitle: "Onboarding, Learning, Talent, and day-to-day help",
+    empty:
+      "Tell me \"continue my onboarding\", ask about Learning or internal opportunities, or update your profile — I can help across your workday.",
+    starters: [
+      "Continue my onboarding",
+      "Show my learning dashboard",
+      "Browse internal opportunities",
+      "Check my progress",
+    ],
   },
 };
 
@@ -58,6 +72,10 @@ const DOC_TYPE_LABEL = {
   passport: "Passport",
   transcript: "academic transcript",
   resume: "resume",
+  photo: "profile photo",
+  certificate: "certificate",
+  skill_certificate: "certificate",
+  bank_slip: "bank slip",
 };
 
 function purposeForDocType(docType) {
@@ -65,6 +83,12 @@ function purposeForDocType(docType) {
   if (docType === "transcript") return "education_cert";
   if (docType === "cnic" || docType === "passport") return "government_doc";
   return undefined;
+}
+
+function canShowUploadHint(uiHint, isRecruiter) {
+  if (!uiHint || uiHint.type !== "upload" || isSpreadsheetHint(uiHint)) return false;
+  if (!isRecruiter) return true;
+  return uiHint.doc_type === "photo";
 }
 
 function IconChat() {
@@ -441,19 +465,239 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
 }
 
 function PeopleAttachment({ attachment }) {
-  const items = attachment.data.candidates || attachment.data.employees || [];
+  const items = attachment.data.candidates || attachment.data.employees || attachment.data.results || [];
   if (!items.length) return <div className={styles.attachmentEmpty}>Nothing to show.</div>;
   return (
     <div className={styles.peopleGrid}>
       {items.slice(0, 12).map((p) => (
-        <div key={p.email} className={styles.personCard}>
-          <div className={styles.personName}>{p.full_name}</div>
-          <div className={styles.personMeta}>{p.email}</div>
+        <div key={p.email || p.employee_id || p.id || p.full_name} className={styles.personCard}>
+          <div className={styles.personName}>{p.full_name || p.name || "Person"}</div>
+          <div className={styles.personMeta}>{p.email || p.job_title || p.department || ""}</div>
           <span className={`${styles.statusPill} ${styles.tone_neutral}`}>
-            {(p.conversion_status || p.profile_status || p.onboarding_status || "on file").toString().replace("_", " ")}
+            {(p.conversion_status || p.profile_status || p.onboarding_status || p.status || "on file")
+              .toString()
+              .replaceAll("_", " ")}
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ListCardsAttachment({ attachment, itemKey }) {
+  const items = attachment.data[itemKey] || attachment.data.items || [];
+  if (!items.length) return <div className={styles.attachmentEmpty}>Nothing to show.</div>;
+  return (
+    <div className={styles.peopleGrid}>
+      {items.slice(0, 12).map((item, index) => {
+        const title = item.title || item.course_title || item.name || `Item ${index + 1}`;
+        const meta =
+          item.url ||
+          item.course_url ||
+          item.department ||
+          item.type ||
+          item.provider ||
+          item.verification_status ||
+          "";
+        const href = item.url || item.course_url || item.file_url || item.certificate_url || item.document_url || item.download_url;
+        return (
+          <div key={item.uid || item.id || item.opportunity_id || `${title}-${index}`} className={styles.personCard}>
+            <div className={styles.personName}>{title}</div>
+            {meta ? <div className={styles.personMeta}>{String(meta).slice(0, 120)}</div> : null}
+            {href ? (
+              <a className={styles.docOpenBtn} href={href} target="_blank" rel="noreferrer">
+                Open
+              </a>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CertificatesAttachment({ attachment, auth, onLocalNote }) {
+  const [certs, setCerts] = useState(attachment.data.certificates || []);
+  const [busyId, setBusyId] = useState(null);
+  const [rejectId, setRejectId] = useState(null);
+  const [rejectNote, setRejectNote] = useState("");
+  const isRecruiter = auth?.user?.role === "recruiter" || auth?.user?.role === "super_admin";
+
+  useEffect(() => {
+    setCerts(attachment.data.certificates || []);
+  }, [attachment]);
+
+  if (!certs.length) return <div className={styles.attachmentEmpty}>No certificates to show.</div>;
+
+  async function act(cert, approve, note) {
+    if (!auth || !cert?.id) return;
+    setBusyId(cert.id);
+    try {
+      await verifyCertificate(auth.accessToken, cert.id, { approve, note: note || undefined });
+      setCerts((prev) =>
+        prev.map((c) =>
+          c.id === cert.id
+            ? {
+                ...c,
+                verification_status: approve ? "verified" : "rejected",
+                rejection_reason: approve ? null : note || c.rejection_reason,
+              }
+            : c
+        )
+      );
+      onLocalNote(
+        approve
+          ? `Verified certificate “${cert.course_title || cert.name || cert.id}”.`
+          : `Rejected certificate “${cert.course_title || cert.name || cert.id}”${note ? ` — ${note}` : ""}.`
+      );
+      setRejectId(null);
+      setRejectNote("");
+    } catch (err) {
+      onLocalNote(getApiErrorMessage(err, "Could not update that certificate."), true);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className={styles.peopleGrid}>
+      {certs.slice(0, 12).map((cert) => {
+        const href = cert.file_url || cert.certificate_url || cert.source_url || cert.document_url;
+        const status = String(cert.verification_status || "pending").toLowerCase();
+        return (
+          <div key={cert.id || cert.course_title} className={styles.personCard}>
+            <div className={styles.personName}>{cert.course_title || cert.name || "Certificate"}</div>
+            <div className={styles.personMeta}>
+              {[cert.employee_name, cert.employee_id, status.replaceAll("_", " ")].filter(Boolean).join(" · ")}
+            </div>
+            {href ? (
+              <a className={styles.docOpenBtn} href={href} target="_blank" rel="noreferrer">
+                Open certificate
+              </a>
+            ) : (
+              <div className={styles.personMeta}>No file URL on file</div>
+            )}
+            {cert.source_url && cert.source_url !== href ? (
+              <a className={styles.docOpenBtn} href={cert.source_url} target="_blank" rel="noreferrer">
+                Public URL
+              </a>
+            ) : null}
+            {isRecruiter && status === "pending" ? (
+              <div className={styles.confirmActions} style={{ marginTop: 8 }}>
+                <button
+                  type="button"
+                  className={styles.docVerifyBtn}
+                  disabled={busyId === cert.id}
+                  onClick={() => act(cert, true)}
+                >
+                  Verify
+                </button>
+                {rejectId === cert.id ? (
+                  <>
+                    <input
+                      className={styles.reasonInput}
+                      placeholder="Reason (optional)"
+                      value={rejectNote}
+                      onChange={(e) => setRejectNote(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className={styles.docRejectBtn}
+                      disabled={busyId === cert.id}
+                      onClick={() => act(cert, false, rejectNote)}
+                    >
+                      Confirm reject
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className={styles.docRejectBtn} onClick={() => setRejectId(cert.id)}>
+                    Reject
+                  </button>
+                )}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function OfferAttachment({ attachment }) {
+  const offer = attachment.data.offer || attachment.data;
+  if (!offer || typeof offer !== "object") {
+    return <div className={styles.attachmentEmpty}>No offer on file.</div>;
+  }
+  return (
+    <div className={styles.personCard}>
+      <div className={styles.personName}>{offer.job_title || "Offer letter"}</div>
+      <div className={styles.personMeta}>
+        {[offer.department, offer.employment_type, offer.start_date].filter(Boolean).join(" · ")}
+      </div>
+      <span className={`${styles.statusPill} ${styles.tone_neutral}`}>
+        {(offer.status || "unknown").toString().replaceAll("_", " ")}
+      </span>
+      <a className={styles.docOpenBtn} href="/offer" style={{ marginTop: 8, display: "inline-flex" }}>
+        Open offer page
+      </a>
+    </div>
+  );
+}
+
+function CsvExportAttachment({ attachment }) {
+  const csv = attachment.data.csv;
+  const filename = attachment.data.filename || "export.csv";
+  const rowCount = attachment.data.row_count;
+  if (!csv) return <div className={styles.attachmentEmpty}>No CSV data.</div>;
+
+  function download() {
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className={styles.personCard}>
+      <div className={styles.personName}>CSV export ready</div>
+      <div className={styles.personMeta}>{rowCount != null ? `${rowCount} row(s)` : filename}</div>
+      <button type="button" className={styles.docOpenBtn} onClick={download}>
+        Download CSV
+      </button>
+    </div>
+  );
+}
+
+function ProgressSteps({ steps }) {
+  if (!steps?.length) return null;
+  return (
+    <ol className={styles.progressList}>
+      {steps.map((step, index) => (
+        <li key={`${step.tool}-${index}`} className={step.ok ? styles.progressOk : styles.progressFail}>
+          <span className={styles.progressMark}>{step.ok ? "✓" : "!"}</span>
+          <span>{step.label || step.tool}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ConfirmationGate({ confirmation, onApprove, onCancel, disabled }) {
+  if (!confirmation) return null;
+  return (
+    <div className={styles.confirmGate}>
+      <div className={styles.confirmSummary}>{confirmation.summary || "Confirm this action?"}</div>
+      <div className={styles.confirmActions}>
+        <button type="button" className={styles.confirmApprove} disabled={disabled} onClick={onApprove}>
+          Approve
+        </button>
+        <button type="button" className={styles.confirmCancel} disabled={disabled} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
@@ -465,6 +709,21 @@ function Attachment({ attachment, auth, onLocalNote }) {
   }
   if (attachment.type === "candidates" || attachment.type === "employees") {
     return <PeopleAttachment attachment={attachment} />;
+  }
+  if (attachment.type === "courses") {
+    return <ListCardsAttachment attachment={attachment} itemKey="courses" />;
+  }
+  if (attachment.type === "opportunities") {
+    return <ListCardsAttachment attachment={attachment} itemKey="opportunities" />;
+  }
+  if (attachment.type === "certificates") {
+    return <CertificatesAttachment attachment={attachment} auth={auth} onLocalNote={onLocalNote} />;
+  }
+  if (attachment.type === "offer") {
+    return <OfferAttachment attachment={attachment} />;
+  }
+  if (attachment.type === "csv_export") {
+    return <CsvExportAttachment attachment={attachment} />;
   }
   return null;
 }
@@ -614,16 +873,77 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
     e.target.value = "";
     if (!file || !hint || !auth) return;
 
-    // Recruiters must use the bulk-invite endpoint, never /api/documents/upload.
-    if (isRecruiter || isSpreadsheetHint(hint)) {
+    const docType = String(hint.doc_type || "").toLowerCase();
+
+    // Recruiters: spreadsheet roster OR own profile photo — never /api/documents/upload.
+    if (isRecruiter && docType !== "photo") {
+      await handleSheetFileChosen({ target: { files: [file], value: "" } });
+      return;
+    }
+    if (isSpreadsheetHint(hint)) {
       await handleSheetFileChosen({ target: { files: [file], value: "" } });
       return;
     }
 
-    const key = `${hint.doc_type}-${Date.now()}`;
+    const key = `${docType}-${Date.now()}`;
     setUploadingKey(key);
     setErrorBanner("");
     try {
+      if (docType === "photo") {
+        if (isRecruiter) {
+          await uploadRecruiterPhoto(file, auth.accessToken);
+        } else {
+          await uploadEmployeePhoto(file, auth.accessToken);
+        }
+        await doSend("I've uploaded my profile photo.");
+        return;
+      }
+
+      if (docType === "certificate" || docType === "skill_certificate") {
+        const role = auth.user?.role;
+        if (role === "employee") {
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("course_title", hint.course_title || hint.title || "Certificate");
+          if (hint.course_uid) formData.append("course_uid", hint.course_uid);
+          if (hint.source_url) formData.append("source_url", hint.source_url);
+          const result = await uploadCertificate(auth.accessToken, formData);
+          const cert = result?.certificate || result || {};
+          const url = cert.file_url || cert.certificate_url || "";
+          await doSend(
+            `I've uploaded my certificate for ${hint.course_title || hint.title || "my course"}.` +
+              (url ? ` Certificate URL for recruiter verification: ${url}` : " Please confirm it was saved with a file URL.")
+          );
+          return;
+        }
+
+        // Candidate (and employee fallback): store URL on skills.certifications.document_url
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("purpose", "skill_cert");
+        formData.append("index", String(hint.index || 0));
+        const data = await uploadOnboardingFile(formData, auth.accessToken);
+        const url = data.file_url || data.document_url;
+        const certName = hint.course_title || hint.title || hint.cert_name || "my certification";
+        await doSend(
+          `I've uploaded the certificate file for "${certName}".` +
+            (url
+              ? ` Save it on my skills certifications with document_url=${url} (recruiter must be able to open this URL).`
+              : " Please attach the returned document URL to my skills certifications.")
+        );
+        return;
+      }
+
+      if (docType === "bank_slip") {
+        const data = await analyzeBankSlip(file, auth.accessToken);
+        const fields = data?.fields || data?.extracted || data || {};
+        const summary = typeof fields === "object" ? JSON.stringify(fields) : String(fields);
+        await doSend(
+          `I uploaded my bank slip. Please use these OCR fields for my employment/banking step (ask me to confirm before saving): ${summary}`
+        );
+        return;
+      }
+
       const formData = new FormData();
       formData.append("file", file);
       formData.append("category", hint.category || "other");
@@ -639,6 +959,16 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
     } finally {
       setUploadingKey(null);
     }
+  }
+
+  function approveConfirmation(confirmation) {
+    if (!confirmation?.tool) return;
+    const payload = JSON.stringify({ tool: confirmation.tool, args: confirmation.args || {} });
+    doSend(`${CONFIRM_PREFIX}${payload}`);
+  }
+
+  function cancelConfirmation() {
+    doSend("Cancel — do not proceed with that action.");
   }
 
   async function handleSheetFileChosen(e) {
@@ -709,11 +1039,15 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
             const uiHint = m.meta?.ui_hint;
             const attachment = m.meta?.attachment;
             const actions = m.meta?.actions || [];
+            const progress = m.meta?.progress || [];
+            const confirmation = m.meta?.confirmation;
             const isErrorNote = m.meta?.error;
+            const isLatest = idx === messages.length - 1;
             return (
               <div key={m.created_at ? `${m.created_at}-${idx}` : idx} className={`${styles.row} ${isUser ? styles.rowUser : styles.rowAgent}`}>
                 <div className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAgent} ${isErrorNote ? styles.bubbleError : ""}`}>
                   {isUser ? m.content : linkifyText(m.content)}
+                  {!isUser && progress.length > 0 ? <ProgressSteps steps={progress} /> : null}
                   {!isUser && isSpreadsheetHint(uiHint) ? (
                     <div className={styles.uploadHint}>
                       <button
@@ -726,7 +1060,7 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
                       </button>
                     </div>
                   ) : null}
-                  {!isUser && uiHint?.type === "upload" && !isSpreadsheetHint(uiHint) && !isRecruiter ? (
+                  {!isUser && canShowUploadHint(uiHint, isRecruiter) ? (
                     <div className={styles.uploadHint}>
                       <button
                         type="button"
@@ -734,7 +1068,9 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
                         disabled={uploadingKey !== null}
                         onClick={() => openDocPicker(uiHint)}
                       >
-                        {uploadingKey !== null ? "Uploading…" : `Upload ${DOC_TYPE_LABEL[uiHint.doc_type] || uiHint.doc_type}`}
+                        {uploadingKey !== null
+                          ? "Uploading…"
+                          : `Upload ${DOC_TYPE_LABEL[uiHint.doc_type] || uiHint.doc_type}`}
                       </button>
                     </div>
                   ) : null}
@@ -742,6 +1078,14 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
                     <div className={styles.attachmentWrap}>
                       <Attachment attachment={attachment} auth={auth} onLocalNote={onLocalNote} />
                     </div>
+                  ) : null}
+                  {!isUser && confirmation && isLatest ? (
+                    <ConfirmationGate
+                      confirmation={confirmation}
+                      disabled={sending}
+                      onApprove={() => approveConfirmation(confirmation)}
+                      onCancel={cancelConfirmation}
+                    />
                   ) : null}
                   {!isUser && actions.length > 0 ? (
                     <div className={styles.suggestions}>

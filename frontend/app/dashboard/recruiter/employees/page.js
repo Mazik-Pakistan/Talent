@@ -12,6 +12,8 @@ import {
   getEmployeeDetail,
   listEmployees,
 } from "@/services/authService";
+import SendReminderModal from "@/components/recruiter/SendReminderModal";
+import { toast } from "react-toastify";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -26,6 +28,7 @@ export default function RecruiterEmployeesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [reminderTarget, setReminderTarget] = useState(null);
   const [dirFilters, setDirFilters] = useState({
     q: "",
     department: "",
@@ -226,8 +229,21 @@ export default function RecruiterEmployeesPage() {
                         </div>
                       )}
                     </div>
-                    <div style={{ display: "flex", gap: "8px" }}>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                       <button type="button" className={styles.secondaryButton} onClick={() => handleViewProfile(employee)}>Career timeline</button>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() =>
+                          setReminderTarget({
+                            id: employee.employee_id || employee.id,
+                            full_name: employee.full_name,
+                            role: "employee",
+                          })
+                        }
+                      >
+                        Remind
+                      </button>
                       <button type="button" className={styles.primaryButton} onClick={() => router.push(`/dashboard/recruiter/employees/${employee.employee_id || employee.id}`)}>View profile</button>
                     </div>
                   </li>
@@ -317,6 +333,14 @@ export default function RecruiterEmployeesPage() {
           </div>
         </div>
       )}
+      <SendReminderModal
+        open={Boolean(reminderTarget)}
+        target={reminderTarget}
+        accessToken={typeof window !== "undefined" ? localStorage.getItem("access_token") : null}
+        defaultKind={reminderTarget?.defaultKind || "profile"}
+        onClose={() => setReminderTarget(null)}
+        onSent={(data) => toast.success(data?.message || "Reminder sent.")}
+      />
     </RecruiterShell>
   );
 }

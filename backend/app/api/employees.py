@@ -32,11 +32,13 @@ PURPOSE_TO_CATEGORY = {
     "resume": "other",
     "government_doc": "identity",
     "education_cert": "education",
+    "skill_cert": "other",
 }
 PURPOSE_TO_DEFAULT_DOC_TYPE = {
     "resume": "resume",
     "government_doc": "cnic",
     "education_cert": "transcript",
+    "skill_cert": "other",
 }
 IDENTITY_DOC_TYPES = {"cnic"}
 
@@ -190,11 +192,21 @@ async def get_candidate_detail(candidate_id: str, current_user: RequireRecruiter
 
 
 @router.post("/candidates/{candidate_id}/remind")
-async def remind_candidate_onboarding(
+async def remind_candidate(
     candidate_id: str, current_user: RequireRecruiter, payload: dict | None = Body(default=None)
 ):
+    """Send onboarding / reupload / general reminder (email + notification)."""
+    from app.services.reminder_service import reminder_service
+
     body = payload if isinstance(payload, dict) else {}
-    return await service.remind_candidate_onboarding(current_user, candidate_id, body.get("note"), force=bool(body.get("force") or body.get("resend")))
+    kind = (body.get("kind") or "onboarding").strip().lower()
+    return await reminder_service.send_candidate_reminder(
+        current_user,
+        candidate_id,
+        kind=kind,
+        note=body.get("note"),
+        force=bool(body.get("force") or body.get("resend")),
+    )
 
 
 @router.get("/detail/{employee_id}")
@@ -265,6 +277,26 @@ async def remind_profile_completion(
     return await service.remind_profile_completion(current_user, employee_id, note, force=force)
 
 
+@router.post("/detail/{employee_id}/remind")
+async def remind_employee(
+    employee_id: str,
+    current_user: RequireRecruiter,
+    payload: dict | None = Body(default=None),
+):
+    """Unified employee reminder: profile | reupload | course | general."""
+    from app.services.reminder_service import reminder_service
+
+    body = payload if isinstance(payload, dict) else {}
+    kind = (body.get("kind") or "general").strip().lower()
+    return await reminder_service.send_employee_reminder(
+        current_user,
+        employee_id,
+        kind=kind,
+        note=body.get("note"),
+        force=bool(body.get("force") or body.get("resend")),
+    )
+
+
 @router.get("/{employee_id}/career")
 async def list_career(employee_id: str, current_user: RequireRecruiter):
     employee = await service.get_employee_profile(current_user, employee_id)
@@ -300,7 +332,7 @@ async def get_employee_detail_legacy(employee_id: str, current_user: RequireRecr
 async def upload_onboarding_file(
     current_user: RequireCandidate,
     file: UploadFile = File(...),
-    purpose: Literal["resume", "government_doc", "education_cert"] = Form(...),
+    purpose: Literal["resume", "government_doc", "education_cert", "skill_cert"] = Form(...),
     doc_type: str | None = Form(default=None),
     index: int = Form(default=0),
 ):
@@ -330,6 +362,8 @@ async def upload_onboarding_file(
         resolved_doc_type = "transcript"
     if purpose == "resume":
         resolved_doc_type = "resume"
+    if purpose == "skill_cert":
+        resolved_doc_type = "other"
 
     class _FakeUpload:
         filename = original
@@ -413,7 +447,7 @@ async def upload_onboarding_file(
 @router.delete("/upload")
 async def clear_onboarding_file(
     current_user: RequireCandidate,
-    purpose: Literal["resume", "government_doc", "education_cert"] = Query(...),
+    purpose: Literal["resume", "government_doc", "education_cert", "skill_cert"] = Query(...),
     index: int = Query(default=0, ge=0),
 ):
     """Remove an onboarding file (transcript / resume / CNIC) so the candidate can replace it."""

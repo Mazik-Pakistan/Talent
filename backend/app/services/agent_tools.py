@@ -70,6 +70,21 @@ class ToolResult:
         return {"ok": self.ok, "data": self.data, "error": self.error}
 
 
+def confirm_gate(tool: str, args: dict, summary: str) -> ToolResult:
+    """Return a structured confirmation request the chat UI can Approve/Cancel."""
+    pending = {**(args or {}), "confirm": True}
+    return ToolResult(
+        ok=False,
+        error=f"Confirmation required: {summary}",
+        data={
+            "needs_confirm": True,
+            "tool": tool,
+            "args": pending,
+            "summary": summary,
+        },
+    )
+
+
 @dataclass
 class Tool:
     name: str
@@ -382,7 +397,21 @@ async def _tool_send_invitation(user: CurrentUser, args: dict) -> ToolResult:
             expires_in_days=int(args.get("expires_in_days") or 7),
         )
         result = await invitation_service.create_invitation(payload, user)
-        return ToolResult(ok=True, data=result)
+        return ToolResult(
+            ok=True,
+            data={
+                **(result if isinstance(result, dict) else {"result": result}),
+                "invite_link": (result or {}).get("invite_link") if isinstance(result, dict) else None,
+                "message": (
+                    f"Invitation sent to {payload.email}."
+                    + (
+                        f" Invite link: {(result or {}).get('invite_link')}"
+                        if isinstance(result, dict) and result.get("invite_link")
+                        else ""
+                    )
+                ),
+            },
+        )
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
 
@@ -939,10 +968,13 @@ async def _tool_export_employees(user: CurrentUser, args: dict) -> ToolResult:
             data={
                 "row_count": max(0, len(lines) - 1),
                 "preview_csv": preview,
+                "csv": csv_text,
+                "filename": "employees_export.csv",
+                "mime_type": "text/csv",
                 "message": (
                     f"Export ready with {max(0, len(lines) - 1)} employee row(s). "
-                    "Full CSV is available from the Employees page Export button; "
-                    "preview above shows the first rows."
+                    "The full CSV is in the `csv` field — share a downloadable preview of the first rows "
+                    "and tell the recruiter they can copy the CSV or use the Employees page Export button."
                 ),
             },
         )
@@ -1434,7 +1466,7 @@ RECRUITER_TOOLS: list[Tool] = [
     ),
     Tool(
         name="export_employees",
-        description="Export filtered employees as CSV preview + row count (same filters as directory).",
+        description="Export filtered employees as full CSV (same filters as directory). Returns csv text + preview for download in chat.",
         parameters={
             "q": "string, optional",
             "department": "string, optional",
@@ -1880,7 +1912,14 @@ async def _tool_list_documents(user: CurrentUser, args: dict) -> ToolResult:
     try:
         result = await document_service.list_mine(user)
         docs = [
-            {"doc_type": d.get("doc_type"), "category": d.get("category"), "status": d.get("status")}
+            {
+                "id": d.get("id") or d.get("document_id"),
+                "doc_type": d.get("doc_type"),
+                "category": d.get("category"),
+                "status": d.get("status"),
+                "file_name": d.get("file_name"),
+                "rejection_reason": d.get("rejection_reason"),
+            }
             for d in result.get("documents", [])
         ]
         return ToolResult(ok=True, data={"documents": docs})
@@ -1923,7 +1962,7 @@ SELF_SERVE_TOOLS: list[Tool] = [
     ),
     Tool(
         name="list_documents",
-        description="List documents the caller has already uploaded, with type/category/verification status.",
+        description="List documents the caller has already uploaded, with id/type/category/verification status.",
         parameters={},
         handler=_tool_list_documents,
         roles=("candidate", "employee"),
@@ -1931,11 +1970,25 @@ SELF_SERVE_TOOLS: list[Tool] = [
 ]
 
 
+# Extended parity tools (Learning, Talent, offers, docs, etc.) — imported after base tools exist.
+from app.services.agent_tools_parity import (  # noqa: E402
+    CANDIDATE_PARITY_TOOLS,
+    EMPLOYEE_PARITY_TOOLS,
+    RECRUITER_PARITY_TOOLS,
+)
+
+RECRUITER_TOOLS.extend(RECRUITER_PARITY_TOOLS)
+CANDIDATE_TOOLS: list[Tool] = [*SELF_SERVE_TOOLS, *CANDIDATE_PARITY_TOOLS]
+EMPLOYEE_TOOLS: list[Tool] = [*SELF_SERVE_TOOLS, *EMPLOYEE_PARITY_TOOLS]
+
+
 def tools_for_role(role: str) -> list[Tool]:
     if role in ("recruiter", "super_admin"):
         return RECRUITER_TOOLS
-    if role in ("candidate", "employee"):
-        return SELF_SERVE_TOOLS
+    if role == "candidate":
+        return CANDIDATE_TOOLS
+    if role == "employee":
+        return EMPLOYEE_TOOLS
     return []
 
 

@@ -90,6 +90,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    key: "messages",
+    label: "Messages",
+    href: "/dashboard/recruiter/messages",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </svg>
+    ),
+  },
+  {
     key: "announcements",
     label: "Announcements",
     href: "/dashboard/recruiter/announcements",
@@ -312,6 +322,17 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
     }
     if (notification.type === "announcement") {
       router.push("/dashboard/recruiter/announcements");
+      return;
+    }
+    if (notification.type === "hr_message") {
+      const threadId = notification.related_id || notification.relatedId;
+      if (threadId) {
+        router.push(`/dashboard/recruiter/messages?thread=${encodeURIComponent(threadId)}`);
+      } else if (notification.link) {
+        router.push(notification.link);
+      } else {
+        router.push("/dashboard/recruiter/messages");
+      }
       return;
     }
     if (notification.type === "invitation_sent") {

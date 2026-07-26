@@ -120,3 +120,14 @@ async def create_database_indexes() -> None:
     # AI Agent (hiring/onboarding automation) conversations
     await database.agent_conversations.create_index("session_id", unique=True)
     await database.agent_conversations.create_index([("user_id", 1), ("updated_at", -1)])
+
+    await database.hr_threads.create_index([("recruiter_id", 1), ("updated_at", -1)])
+    await database.hr_threads.create_index([("employee_user_id", 1), ("updated_at", -1)])
+    await database.hr_threads.create_index([("employee_id", 1), ("status", 1)])
+    try:
+        await database.hr_threads.create_index(
+            [("employee_user_id", 1), ("recruiter_id", 1), ("status", 1)],
+            name="hr_thread_open_pair",
+        )
+    except Exception:
+        pass

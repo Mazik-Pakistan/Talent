@@ -497,6 +497,35 @@ class CandidateService:
                 "onboarding": refreshed.get("onboarding"),
             }
 
+        if purpose == "skill_cert":
+            skills = dict(onboarding.get("skills") or {})
+            certifications = list(skills.get("certifications") or [])
+            while len(certifications) <= index:
+                certifications.append({"name": "", "document_url": None, "expiry_date": ""})
+            entry = dict(certifications[index] or {})
+            entry["document_url"] = file_url
+            if not entry.get("name"):
+                entry["name"] = ""
+            if "expiry_date" not in entry:
+                entry["expiry_date"] = ""
+            certifications[index] = entry
+            skills["certifications"] = certifications
+            skills.setdefault("technical_skills", [])
+            skills.setdefault("soft_skills", [])
+            skills.setdefault("languages", [])
+            await database.candidates.update_one(
+                {"_id": candidate["_id"]},
+                {"$set": {"onboarding.skills": skills, "updated_at": now}},
+            )
+            refreshed = await database.candidates.find_one({"_id": candidate["_id"]})
+            return {
+                "message": "Certificate uploaded. Recruiters can open the document URL to review it.",
+                "file_name": file_name,
+                "file_url": file_url,
+                "document_url": file_url,
+                "onboarding": refreshed.get("onboarding"),
+            }
+
         # Preserve the existing return shape for any other wizard attachments.
         return {
             "message": "File uploaded.",
@@ -543,6 +572,14 @@ class CandidateService:
             education["entries"] = entries
             onboarding["education"] = education
             doc_types = ["transcript", "certificate", "degree"]
+        elif purpose == "skill_cert":
+            skills = dict(onboarding.get("skills") or {})
+            certifications = list(skills.get("certifications") or [])
+            if 0 <= index < len(certifications):
+                certifications[index] = {**certifications[index], "document_url": None}
+            skills["certifications"] = certifications
+            onboarding["skills"] = skills
+            doc_types = []
         else:
             raise HTTPException(status_code=400, detail="Unsupported upload purpose.")
 

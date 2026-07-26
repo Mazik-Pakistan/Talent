@@ -813,6 +813,12 @@ function OnboardingContent() {
           if (next[index]) next[index] = { ...next[index], certificate_file: null };
           return next;
         });
+      } else if (purpose === "skill_cert") {
+        setSkills((current) => {
+          const next = [...(current.certifications || [])];
+          if (next[index]) next[index] = { ...next[index], document_url: null };
+          return { ...current, certifications: next };
+        });
       }
       setExtractionPreview(null);
       setMessage("Document removed. You can upload a new file.");
@@ -910,6 +916,15 @@ function OnboardingContent() {
           const next = [...current];
           next[index] = { ...next[index], certificate_file: data.file_url };
           return next;
+        });
+      } else if (purpose === "skill_cert") {
+        setSkills((current) => {
+          const next = [...(current.certifications || [])];
+          while (next.length <= index) {
+            next.push({ name: "", document_url: null, expiry_date: "" });
+          }
+          next[index] = { ...next[index], document_url: data.file_url || data.document_url };
+          return { ...current, certifications: next };
         });
       }
 
@@ -1761,6 +1776,33 @@ function OnboardingContent() {
                                   next[index] = { ...next[index], expiry_date: e.target.value };
                                   setSkills({ ...skills, certifications: next });
                                 }} />
+                                <FileUploadField
+                                  styles={styles}
+                                  wide
+                                  label="Certificate file"
+                                  accept=".pdf,.png,.jpg,.jpeg"
+                                  disabled={uploading}
+                                  fileUrl={cert.document_url}
+                                  hint="Upload the certificate so your recruiter can open and verify it"
+                                  onChange={(e) => handleFileUpload(e, "skill_cert", index)}
+                                  onRemove={
+                                    cert.document_url
+                                      ? () => handleFileRemove("skill_cert", index)
+                                      : undefined
+                                  }
+                                />
+                                <Field
+                                  styles={styles}
+                                  wide
+                                  label="Certificate URL (optional)"
+                                  value={cert.document_url || ""}
+                                  hint="Paste a public link, or upload a file above — recruiters use this URL to open and verify"
+                                  onChange={(e) => {
+                                    const next = [...skills.certifications];
+                                    next[index] = { ...next[index], document_url: e.target.value.trim() || null };
+                                    setSkills({ ...skills, certifications: next });
+                                  }}
+                                />
                                 {(skills.certifications || []).length > 1 && (
                                   <div className={`${styles.entryActions} ${styles.wide}`}>
                                     <button

@@ -167,6 +167,7 @@ function pageTitle(pathname) {
   if (pathname.startsWith("/dashboard/employee/profile")) return "your profile";
   if (pathname.startsWith("/dashboard/employee/learning")) return "learning";
   if (pathname.startsWith("/dashboard/employee/talent")) return "My Talent";
+  if (pathname.startsWith("/dashboard/employee/messages")) return "Message HR";
   if (pathname.startsWith("/dashboard/employee/ai-assistant")) return "AI Assistant";
   if (pathname.startsWith("/dashboard/employee/ai-coach")) return "AI Coach";
   if (pathname.startsWith("/documents")) return "documents";
@@ -488,6 +489,22 @@ export async function buildEmployeeInsights(pathname, accessToken, rawContext = 
     });
   }
 
+  // ── Message HR ───────────────────────────────────────────────────────
+  if (pathname?.startsWith("/dashboard/employee/messages")) {
+    push(insights, {
+      id: "messages-intro",
+      priority: COPILOT_PRIORITY.tip,
+      message:
+        "Message HR sends your note to your assigned recruiter in-app and by email. Use New for a fresh topic, or reply in an open thread.",
+    });
+    push(insights, {
+      id: "messages-tip",
+      priority: COPILOT_PRIORITY.tip,
+      message:
+        "You’ll get a notification when HR replies — tap it to jump straight back into this conversation.",
+    });
+  }
+
   // ── AI Assistant (Agent chat — Copilot only points, never runs it) ───
   if (pathname?.startsWith("/dashboard/employee/ai-assistant")) {
     push(insights, {
@@ -532,6 +549,7 @@ export async function buildEmployeeInsights(pathname, accessToken, rawContext = 
     if (pathname?.startsWith("/documents")) return "documents";
     if (pathname?.startsWith("/dashboard/employee/learning")) return "learning";
     if (pathname?.startsWith("/dashboard/employee/talent")) return "talent";
+    if (pathname?.startsWith("/dashboard/employee/messages")) return "messages";
     if (pathname?.startsWith("/dashboard/employee/profile")) return "profile";
     if (pathname === "/dashboard/employee") return "dashboard";
     return null;

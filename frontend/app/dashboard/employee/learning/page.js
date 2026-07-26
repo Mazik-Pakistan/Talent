@@ -1422,7 +1422,7 @@ function ReadinessRing({ percentage = 0, size = 84, stroke = 8 }) {
 function CertificatesTab({ onChange }) {
   const [certificates, setCertificates] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ course_title: "", completion_date: "", learning_hours: "" });
+  const [form, setForm] = useState({ course_title: "", completion_date: "", learning_hours: "", source_url: "" });
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ course_title: "", completion_date: "", learning_hours: "" });
   const [file, setFile] = useState(null);
@@ -1452,11 +1452,12 @@ function CertificatesTab({ onChange }) {
     fd.append("course_title", form.course_title.trim());
     if (form.completion_date) fd.append("completion_date", form.completion_date);
     if (form.learning_hours) fd.append("learning_hours", form.learning_hours);
+    if (form.source_url?.trim()) fd.append("source_url", form.source_url.trim());
     setSaving(true);
     try {
       await uploadCertificate(token, fd);
       toast.success("Certificate submitted for recruiter verification.");
-      setForm({ course_title: "", completion_date: "", learning_hours: "" });
+      setForm({ course_title: "", completion_date: "", learning_hours: "", source_url: "" });
       setFile(null);
       load();
       onChange?.();
@@ -1546,6 +1547,15 @@ function CertificatesTab({ onChange }) {
             Certificate file
             <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] || null)} required />
           </label>
+          <label>
+            Public certificate URL (optional)
+            <input
+              type="url"
+              placeholder="https://…"
+              value={form.source_url || ""}
+              onChange={(e) => setForm((f) => ({ ...f, source_url: e.target.value }))}
+            />
+          </label>
           <button type="submit" className={dashStyles.btnPrimary} disabled={saving} style={{ gridColumn: "1 / -1", justifySelf: "start" }}>
             {saving ? "Uploading…" : "Submit for verification"}
           </button>
@@ -1597,7 +1607,10 @@ function CertificatesTab({ onChange }) {
                 <span className={`${styles.certStatus} ${styles[c.verification_status]}`}>
                   {c.verification_status === "verified" ? "Verified" : c.verification_status === "rejected" ? "Rejected" : "Pending review"}
                 </span>
-                <a href={c.file_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View</a>
+                <a href={c.file_url || c.certificate_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View</a>
+                {c.source_url && c.source_url !== c.file_url ? (
+                  <a href={c.source_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Public URL</a>
+                ) : null}
                 {c.verification_status !== "verified" && (
                   <button type="button" className={styles.editCertBtn} onClick={() => handleEditStart(c)} title="Edit certificate">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
