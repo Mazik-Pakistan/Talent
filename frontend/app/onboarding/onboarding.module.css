@@ -37,7 +37,7 @@
   min-height: 100vh;
 }
 .root h1, .root h2, .root h3 { font-family: 'Sora', system-ui, sans-serif; }
-.app { display: flex; min-height: 100vh; }
+.app { display: flex; height: 100vh; overflow: hidden; }
 
 /* ===== Sidebar ===== */
 .sidebar {
@@ -46,7 +46,9 @@
   color: var(--navy);
   display: flex; flex-direction: column; padding: 18px 12px;
   position: sticky; top: 0; height: 100vh;
+  min-height: 0;
   border-right: 1px solid var(--border);
+  overflow: hidden;
 }
 .brand {
   display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px 8px;
@@ -94,7 +96,7 @@
 .logoutBtn:hover { background: var(--red-light); color: var(--red); }
 
 /* ===== Main ===== */
-.main { flex: 1; min-width: 0; }
+.main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .topbar {
   position: sticky; top: 0; z-index: 5;
   background: rgba(242, 247, 253, .82); backdrop-filter: saturate(160%) blur(18px);
