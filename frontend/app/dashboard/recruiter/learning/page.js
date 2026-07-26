@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./learning.module.css";
+import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import { getApiErrorMessage, listEmployees } from "@/services/authService";
 import { downloadCsv } from "@/utils/downloadCsv";
 import {
@@ -22,7 +23,6 @@ import {
   deleteKbRole,
   getCatalogFacets,
   getLearningAnalytics,
-  getOrgTaxonomy,
   listAssignments,
   listKbCertifications,
   listKbRoles,
@@ -393,7 +393,7 @@ function KnowledgeBaseTab() {
         </div>
         <div className={shellStyles.sectionBody}>
           <form data-partner-coach className={styles.filterBar} onSubmit={handleCreateRole} style={{ flexWrap: "wrap" }}>
-            <input className={styles.searchInput} placeholder="Role title (e.g. Software Architect)" value={roleForm.title} onChange={(e) => setRoleForm((f) => ({ ...f, title: e.target.value }))} required />
+            <input className={styles.searchInput} placeholder="Role title (e.g. Architect)" value={roleForm.title} onChange={(e) => setRoleForm((f) => ({ ...f, title: e.target.value }))} required />
             <input className={styles.searchInput} placeholder="Required skills (comma-separated)" value={roleForm.required_skills} onChange={(e) => setRoleForm((f) => ({ ...f, required_skills: e.target.value }))} />
             <input className={styles.searchInput} placeholder="Required certs (comma-separated)" value={roleForm.required_certifications} onChange={(e) => setRoleForm((f) => ({ ...f, required_certifications: e.target.value }))} />
             <input className={styles.searchInput} placeholder="Description" value={roleForm.description} onChange={(e) => setRoleForm((f) => ({ ...f, description: e.target.value }))} />
@@ -496,7 +496,6 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
   const [employees, setEmployees] = useState([]);
   const [empQuery, setEmpQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
-  const [taxonomy, setTaxonomy] = useState({ departments: [], designations: [] });
   const [filterDept, setFilterDept] = useState("");
   const [filterTitle, setFilterTitle] = useState("");
   const [assignMode, setAssignMode] = useState("employees"); // employees | department | designation | skills
@@ -514,12 +513,6 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
     setCourses([]);
     onConsumedInitial?.();
   }, [initialCourse, initialSource, onConsumedInitial]);
-
-  useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    getOrgTaxonomy(token).then(setTaxonomy).catch(() => {});
-  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -794,11 +787,11 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                 <div className={styles.filterBar}>
                   <select className={styles.filterSelect} value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
                     <option value="">All departments</option>
-                    {(taxonomy.departments || []).map((d) => <option key={d} value={d}>{d}</option>)}
+                    {RECRUITER_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
                   </select>
                   <select className={styles.filterSelect} value={filterTitle} onChange={(e) => setFilterTitle(e.target.value)}>
                     <option value="">All designations</option>
-                    {(taxonomy.designations || []).map((d) => <option key={d} value={d}>{d}</option>)}
+                    {RECRUITER_DESIGNATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
 
@@ -1091,7 +1084,6 @@ function AnalyticsTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [department, setDepartment] = useState("");
-  const [taxonomy, setTaxonomy] = useState({ departments: [] });
 
   const load = useCallback((force = false) => {
     const token = localStorage.getItem("access_token");
@@ -1102,12 +1094,6 @@ function AnalyticsTab() {
       .catch((err) => toast.error(getApiErrorMessage(err, "Could not load learning analytics.")))
       .finally(() => setLoading(false));
   }, [department]);
-
-  useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    getOrgTaxonomy(token).then(setTaxonomy).catch(() => {});
-  }, []);
 
   useEffect(() => { load(false); }, [load]);
 
@@ -1158,7 +1144,7 @@ function AnalyticsTab() {
       <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
         <select className={styles.filterSelect} value={department} onChange={(e) => setDepartment(e.target.value)}>
           <option value="">All departments</option>
-          {(taxonomy.departments || []).map((d) => (
+          {RECRUITER_DEPARTMENTS.map((d) => (
             <option key={d} value={d}>{d}</option>
           ))}
         </select>

@@ -10,9 +10,9 @@ import {
   assignCourses,
   browseCatalog,
   getEmployeeLearningProfile,
-  getOrgTaxonomy,
 } from "@/services/learningService";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
+import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 
 const PROF = { Beginner: 25, Intermediate: 50, Advanced: 75, Expert: 100 };
 
@@ -21,7 +21,6 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [taxonomy, setTaxonomy] = useState({ departments: [], designations: [] });
   const [roleForm, setRoleForm] = useState({
     job_title: employee?.job_title || "",
     department: employee?.department || "",
@@ -49,9 +48,6 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
 
   useEffect(() => {
     load(false);
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    getOrgTaxonomy(token).then(setTaxonomy).catch(() => {});
   }, [load]);
 
   useEffect(() => {
@@ -179,7 +175,7 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
                   required
                 >
                   <option value="">Select designation</option>
-                  {(taxonomy.designations || []).map((d) => (
+                  {RECRUITER_DESIGNATIONS.map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
@@ -192,7 +188,7 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
                   required
                 >
                   <option value="">Select department</option>
-                  {(taxonomy.departments || []).map((d) => (
+                  {RECRUITER_DEPARTMENTS.map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>

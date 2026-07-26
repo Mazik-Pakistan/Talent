@@ -15,6 +15,7 @@ export default function EmployeeAIAssistantPage() {
       activeKey="ai-assistant"
       title="AI Assistant"
       subtitle="Workday help · onboarding · HR answers"
+      permissions={["onboarding.self", "profile.view"]}
     >
       <AssistantPageShell
         eyebrow="Automation workspace"

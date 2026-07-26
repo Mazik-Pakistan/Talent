@@ -5,6 +5,7 @@ import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import ProfilePhotoEditor from "@/components/ProfilePhotoEditor";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
+import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import {
   getApiErrorMessage,
   getRecruiterProfile,
@@ -206,21 +207,29 @@ export default function RecruiterProfilePage() {
                 </label>
                 <label className={styles.field}>
                   <span>Job title</span>
-                  <input
+                  <select
                     name="job_title"
                     value={form.job_title}
                     onChange={(e) => setForm({ ...form, job_title: e.target.value })}
-                    placeholder="Talent Acquisition Lead"
-                  />
+                  >
+                    <option value="">Select designation</option>
+                    {RECRUITER_DESIGNATIONS.map((designation) => (
+                      <option key={designation} value={designation}>{designation}</option>
+                    ))}
+                  </select>
                 </label>
                 <label className={styles.field}>
                   <span>Department</span>
-                  <input
+                  <select
                     name="department"
                     value={form.department}
                     onChange={(e) => setForm({ ...form, department: e.target.value })}
-                    placeholder="Human Resources"
-                  />
+                  >
+                    <option value="">Select department</option>
+                    {RECRUITER_DEPARTMENTS.map((department) => (
+                      <option key={department} value={department}>{department}</option>
+                    ))}
+                  </select>
                 </label>
                 <label className={styles.field}>
                   <span>Office location</span>

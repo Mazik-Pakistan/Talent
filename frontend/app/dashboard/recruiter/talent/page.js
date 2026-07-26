@@ -7,8 +7,8 @@ import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./talent.module.css";
+import { RECRUITER_DEPARTMENTS } from "@/components/recruiter/recruiterOptions";
 import { getApiErrorMessage } from "@/services/authService";
-import { getOrgTaxonomy } from "@/services/learningService";
 import { downloadCsv } from "@/utils/downloadCsv";
 import {
   clearRecruiterContext,
@@ -73,7 +73,6 @@ function MetricsTab() {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [department, setDepartment] = useState("");
-  const [taxonomy, setTaxonomy] = useState({ departments: [] });
   const router = useRouter();
 
   const load = useCallback((force = false) => {
@@ -85,12 +84,6 @@ function MetricsTab() {
       .catch((err) => toast.error(getApiErrorMessage(err, "Could not load talent metrics.")))
       .finally(() => setLoading(false));
   }, [department]);
-
-  useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    getOrgTaxonomy(token).then(setTaxonomy).catch(() => {});
-  }, []);
 
   useEffect(() => { load(false); }, [load]);
 
@@ -135,7 +128,7 @@ function MetricsTab() {
       <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
         <select className={styles.filterSelect} value={department} onChange={(e) => setDepartment(e.target.value)}>
           <option value="">All departments</option>
-          {(taxonomy.departments || []).map((d) => (
+          {RECRUITER_DEPARTMENTS.map((d) => (
             <option key={d} value={d}>{d}</option>
           ))}
         </select>
@@ -296,13 +289,17 @@ function SearchTab() {
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && runSearch()}
           />
-          <input
+          <select
             className={styles.filterSelect}
             style={{ width: 140 }}
-            placeholder="Department"
             value={department}
             onChange={(e) => setDepartment(e.target.value)}
-          />
+          >
+            <option value="">All departments</option>
+            {RECRUITER_DEPARTMENTS.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
           <input
             className={styles.filterSelect}
             style={{ width: 180 }}
@@ -502,7 +499,12 @@ function OpportunitiesMgmtTab() {
           </label>
           <label>
             Department
-            <input value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} placeholder="Engineering" required />
+            <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} required>
+              <option value="">Select department</option>
+              {RECRUITER_DEPARTMENTS.map((department) => (
+                <option key={department} value={department}>{department}</option>
+              ))}
+            </select>
           </label>
           <label className={styles.wide}>
             Description
