@@ -635,5 +635,70 @@ class EmailService:
 """
         self._send(to_email, subject, self._branded_shell("Team announcement", title, body))
 
+    def send_custom_reminder(
+        self,
+        to_email: str,
+        full_name: str,
+        *,
+        title: str,
+        body_text: str,
+        cta_link: str,
+        cta_label: str = "Open dashboard",
+        recruiter_note: str | None = None,
+        eyebrow: str = "Reminder",
+    ) -> None:
+        """Generic recruiter nudge (reupload, courses, general, etc.)."""
+        safe_name = escape(full_name or "there")
+        safe_link = escape(cta_link, quote=True)
+        note_html = (
+            f'<p style="margin:16px 0 0;color:#475569;font-size:14px;"><strong>Note from your recruiter:</strong> {escape(recruiter_note)}</p>'
+            if recruiter_note
+            else ""
+        )
+        subject = f"Reminder: {title} — TalentAI"
+        body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {safe_name}, your recruiter sent you a reminder.
+            </p>
+            <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:18px;margin-bottom:22px;">
+              <p style="margin:0 0 10px;color:#9a3412;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;">{escape(title)}</p>
+              <p style="margin:0;color:#475569;font-size:15px;line-height:1.6;white-space:pre-wrap;">{escape(body_text)}</p>
+              {note_html}
+            </div>
+            <div style="text-align:center;">
+              <a href="{safe_link}" style="display:inline-block;background:#123a63;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-size:15px;font-weight:700;">{escape(cta_label)}</a>
+            </div>
+"""
+        self._send(to_email, subject, self._branded_shell(eyebrow, title, body))
+
+    def send_hr_message(
+        self,
+        to_email: str,
+        full_name: str,
+        *,
+        subject_line: str,
+        body_text: str,
+        sender_label: str,
+        cta_link: str,
+        cta_label: str = "Open conversation",
+    ) -> None:
+        """Email copy of an in-app HR ↔ employee message."""
+        safe_name = escape(full_name or "there")
+        safe_link = escape(cta_link, quote=True)
+        subject = f"Message: {subject_line} — TalentAI"
+        body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {safe_name}, you have a new message from {escape(sender_label)}.
+            </p>
+            <div style="background:#f1f5fe;border:2px solid #32a6ae;border-radius:10px;padding:20px;margin-bottom:22px;">
+              <p style="margin:0 0 8px;color:#123a63;font-size:16px;font-weight:800;">{escape(subject_line)}</p>
+              <p style="margin:0;color:#475569;font-size:15px;line-height:1.6;white-space:pre-wrap;">{escape(body_text)}</p>
+            </div>
+            <div style="text-align:center;">
+              <a href="{safe_link}" style="display:inline-block;background:#123a63;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-size:15px;font-weight:700;">{escape(cta_label)}</a>
+            </div>
+"""
+        self._send(to_email, subject, self._branded_shell("New message", subject_line, body))
+
 
 email_service = EmailService()

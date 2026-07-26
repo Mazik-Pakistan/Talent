@@ -6,7 +6,8 @@ import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
-import { getApiErrorMessage, getCandidateDetail, remindCandidateOnboarding } from "@/services/authService";
+import { getApiErrorMessage, getCandidateDetail } from "@/services/authService";
+import SendReminderModal from "@/components/recruiter/SendReminderModal";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -18,9 +19,7 @@ export default function CandidateProfilePage({ params }) {
   const [candidate, setCandidate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [sending, setSending] = useState(false);
-  const [note, setNote] = useState("");
-  const [showNote, setShowNote] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -52,16 +51,7 @@ export default function CandidateProfilePage({ params }) {
   }, [candidate]);
 
   async function handleReminder() {
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken || !candidate) return;
-    setSending(true);
-    try {
-      const data = await remindCandidateOnboarding(candidate.id, note.trim() ? { note: note.trim() } : {}, accessToken);
-      setCandidate(data.candidate);
-      setNote(""); setShowNote(false);
-      toast.success(data.message || "Reminder sent.");
-    } catch (err) { toast.error(getApiErrorMessage(err, "Could not send reminder.")); }
-    finally { setSending(false); }
+    setReminderOpen(true);
   }
 
   if (loading) return <RecruiterShell activeKey="candidates" title="Candidate Profile" subtitle="Loading profile details..."><Loading /></RecruiterShell>;
@@ -80,7 +70,7 @@ export default function CandidateProfilePage({ params }) {
     <div style={{ marginBottom: 20 }}><button type="button" className={styles.secondaryButton} onClick={() => router.back()}>← Back to Candidates</button></div>
     <section className={styles.section} style={{ marginBottom: 16 }}><div className={styles.profileHero}><div className={styles.profileAvatar}>{initials || "?"}</div><div><h2 className={styles.profileName}>{candidate.full_name}</h2><p className={styles.mutedText} style={{ margin: 0 }}>{candidate.job_title || "No applied role"} · {candidate.department || "No department"}</p><div className={styles.chipRow}><span className={styles.chip} style={{ background: complete ? "var(--green-light)" : "var(--orange-light)", color: complete ? "var(--green)" : "var(--orange)" }}>Profile {progress.percentage ?? 0}%</span><span className={styles.chip} style={{ textTransform: "capitalize" }}>{humanize(candidate.conversion_status || progress.status || candidate.status)}</span>{candidate.office_location && <span className={styles.chip}>{candidate.office_location}</span>}</div></div></div></section>
 
-    <section className={styles.section} style={{ marginBottom: 16 }}><div className={styles.sectionHead}><div className={styles.sectionHeadLeft}><div className={`${styles.bar} ${complete ? styles.green : styles.orange}`} /><div><div className={styles.sectionTitle}>Onboarding progress</div><div className={styles.sectionDesc}>{tasks.filter((task) => task.completed).length} of {tasks.length} steps completed · Current step: {humanize(progress.current_step)}</div></div></div><span className={styles.chip}>{progress.percentage ?? 0}%</span></div><div className={styles.sectionBody}><div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: complete ? 0 : 14 }}>{tasks.map((task) => <span key={task.id} className={styles.chip} style={{ background: task.completed ? "var(--green-light)" : "#F3F4F6", color: task.completed ? "var(--green)" : "var(--text-muted)" }}>{task.completed ? "✓ " : ""}{task.label}</span>)}</div>{!complete && <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}><button type="button" className={styles.primaryButton} disabled={sending} onClick={handleReminder}>{sending ? "Sending…" : "Send reminder"}</button><button type="button" className={styles.linkButton} onClick={() => setShowNote((value) => !value)}>{showNote ? "Hide note" : "Add note"}</button>{candidate.onboarding_reminder_sent_at && <span className={styles.mutedText}>Last sent {formatDate(candidate.onboarding_reminder_sent_at)}</span>}{showNote && <input style={{ flex: "1 1 260px" }} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional note for the candidate" />}</div>}</div></section>
+    <section className={styles.section} style={{ marginBottom: 16 }}><div className={styles.sectionHead}><div className={styles.sectionHeadLeft}><div className={`${styles.bar} ${complete ? styles.green : styles.orange}`} /><div><div className={styles.sectionTitle}>Onboarding progress</div><div className={styles.sectionDesc}>{tasks.filter((task) => task.completed).length} of {tasks.length} steps completed · Current step: {humanize(progress.current_step)}</div></div></div><span className={styles.chip}>{progress.percentage ?? 0}%</span></div><div className={styles.sectionBody}><div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: complete ? 0 : 14 }}>{tasks.map((task) => <span key={task.id} className={styles.chip} style={{ background: task.completed ? "var(--green-light)" : "#F3F4F6", color: task.completed ? "var(--green)" : "var(--text-muted)" }}>{task.completed ? "✓ " : ""}{task.label}</span>)}</div><div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}><button type="button" className={styles.primaryButton} onClick={handleReminder}>Send reminder</button>{candidate.onboarding_reminder_sent_at && <span className={styles.mutedText}>Last sent {formatDate(candidate.onboarding_reminder_sent_at)}</span>}</div></div></section>
 
     <DetailSection tone="navy" title="Overview" description="Basic, contact, and application information."><dl className={styles.employeeFactGrid}><Fact label="Full name" value={candidate.full_name} /><Fact label="Email" value={candidate.email} /><Fact label="Phone" value={candidate.phone} /><Fact label="Applied role" value={candidate.job_title} /><Fact label="Department / track" value={candidate.department} /><Fact label="Office location" value={candidate.office_location} /><Fact label="Start date" value={formatDate(candidate.start_date)} /><Fact label="Joined date" value={formatDate(candidate.created_at)} /><Fact label="Current status" value={humanize(candidate.conversion_status || progress.status || candidate.status)} /></dl></DetailSection>
 
@@ -93,6 +83,17 @@ export default function CandidateProfilePage({ params }) {
     <DetailSection tone="orange" title="Resume / CV" description="Resume submitted during onboarding.">{onboarding.resume?.file_url ? <div className={styles.actions}><span className={styles.mutedText}>{onboarding.resume.file_name || "Resume / CV"}</span><a href={onboarding.resume.file_url} target="_blank" rel="noreferrer" className={styles.secondaryButton}>Open resume</a></div> : <p className={styles.emptySub}>No resume has been submitted yet.</p>}{onboarding.resume?.summary && <p className={styles.instruction} style={{ marginTop: 12 }}>{onboarding.resume.summary}</p>}</DetailSection>
 
     <DetailSection tone="cyan" title="Documents" description="Identity and uploaded onboarding documents.">{governmentDocs.length ? <ul className={styles.miniList}>{governmentDocs.map((document, index) => <li key={`${document.doc_type}-${index}`} className={styles.miniListItem}><div><strong>{humanize(document.doc_type)}</strong><div className={styles.mutedText}>{document.file_name || "No filename"}</div>{document.file_url && <a href={document.file_url} target="_blank" rel="noreferrer" className={styles.linkButton}>Open document</a>}</div></li>)}</ul> : <p className={styles.emptySub}>No identity documents have been submitted yet.</p>}<div style={{ marginTop: 16 }}><RecruiterDocumentReview ownerId={candidate.id} /></div></DetailSection>
+    <SendReminderModal
+      open={reminderOpen}
+      target={candidate ? { id: candidate.id, full_name: candidate.full_name, role: "candidate" } : null}
+      accessToken={typeof window !== "undefined" ? localStorage.getItem("access_token") : null}
+      defaultKind="onboarding"
+      onClose={() => setReminderOpen(false)}
+      onSent={(data) => {
+        toast.success(data?.message || "Reminder sent.");
+        if (data?.candidate) setCandidate(data.candidate);
+      }}
+    />
   </RecruiterShell>;
 }
 

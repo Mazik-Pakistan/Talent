@@ -1,0 +1,244 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: 16px;
+  min-height: min(70vh, 720px);
+  align-items: stretch;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel {
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #dfe9f6);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+  overflow: hidden;
+}
+
+.panelHead {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-soft, #eaf1fa);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.panelTitle {
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: var(--ink, #17233b);
+}
+
+.panelHint {
+  font-size: 0.78rem;
+  color: var(--text-muted, #5b6d86);
+  margin: 2px 0 0;
+}
+
+.threadList {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.threadItem {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid var(--border-soft, #eaf1fa);
+  background: transparent;
+  padding: 12px 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: background 0.15s ease;
+}
+
+.threadItem:hover {
+  background: var(--blue-lighter, #f6fbff);
+}
+
+.threadItemActive {
+  background: var(--blue-light, #e9f4ff);
+}
+
+.threadSubject {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink, #17233b);
+}
+
+.threadMeta {
+  font-size: 0.75rem;
+  color: var(--text-muted, #5b6d86);
+}
+
+.threadPreview {
+  font-size: 0.78rem;
+  color: var(--text-faint, #8fa0b8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.statusChip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--blue-light, #e9f4ff);
+  color: var(--blue-deep, #22649f);
+  text-transform: capitalize;
+}
+
+.statusClosed {
+  background: #eef1f5;
+  color: #667788;
+}
+
+.empty {
+  padding: 28px 18px;
+  color: var(--text-muted, #5b6d86);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: linear-gradient(180deg, #f7fbff 0%, #ffffff 40%);
+}
+
+.bubble {
+  max-width: min(78%, 560px);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border, #dfe9f6);
+  background: #fff;
+}
+
+.bubbleMine {
+  align-self: flex-end;
+  background: var(--navy, #0c2a41);
+  color: #fff;
+  border-color: transparent;
+}
+
+.bubbleTheirs {
+  align-self: flex-start;
+}
+
+.bubbleMeta {
+  font-size: 0.7rem;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
+.bubbleMine .bubbleMeta {
+  opacity: 0.85;
+}
+
+.bubbleBody {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.compose {
+  border-top: 1px solid var(--border-soft, #eaf1fa);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff;
+}
+
+.composeRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  border: 1px solid var(--border, #dfe9f6);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--ink, #17233b);
+  background: #fff;
+  resize: vertical;
+}
+
+.textarea {
+  min-height: 72px;
+}
+
+.input:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--blue, #38a2ff);
+  box-shadow: 0 0 0 3px rgba(56, 162, 255, 0.15);
+}
+
+.primaryBtn,
+.ghostBtn {
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 9px 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.primaryBtn {
+  background: var(--navy, #0c2a41);
+  color: #fff;
+}
+
+.primaryBtn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.ghostBtn {
+  background: #fff;
+  border-color: var(--border, #dfe9f6);
+  color: var(--ink, #17233b);
+}
+
+.ghostBtn:hover {
+  border-color: var(--blue, #38a2ff);
+  color: var(--blue-deep, #22649f);
+}
+
+.newForm {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.error {
+  color: #b42318;
+  font-size: 0.82rem;
+}

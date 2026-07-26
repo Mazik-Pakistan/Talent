@@ -127,6 +127,7 @@ async def upload_certificate(
     course_title: str = Form(...),
     completion_date: date | None = Form(default=None),
     learning_hours: float | None = Form(default=None),
+    source_url: str | None = Form(default=None),
 ):
     original = file.filename or "certificate.pdf"
     ext = Path(original).suffix.lower()
@@ -143,6 +144,7 @@ async def upload_certificate(
         learning_hours=learning_hours,
         filename=original,
         content=content,
+        source_url=source_url,
     )
 
 
@@ -334,6 +336,21 @@ async def kb_delete_cert(cert_id: str, current_user: RequireRecruiter):
 @router.post("/assignments", status_code=201)
 async def assign_courses(request: CourseAssignRequest, current_user: RequireRecruiter):
     return await learning_service.assign_courses(current_user, request)
+
+
+@router.post("/assignments/remind")
+async def remind_course_assignments(payload: dict, current_user: RequireRecruiter):
+    """Nudge an employee about open course assignments (email + notification)."""
+    from app.services.reminder_service import reminder_service
+
+    body = payload if isinstance(payload, dict) else {}
+    return await reminder_service.remind_courses(
+        current_user,
+        employee_id=body.get("employee_id"),
+        email=body.get("email"),
+        note=body.get("note"),
+        force=bool(body.get("force") or body.get("resend")),
+    )
 
 
 @router.get("/assignments")

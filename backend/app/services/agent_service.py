@@ -27,7 +27,7 @@ from app.core.rbac import CurrentUser
 from app.services import agent_tools
 from app.services.llm_service import call_llm_json, llm_configured
 
-MAX_TOOL_STEPS = 5
+MAX_TOOL_STEPS = 8
 HISTORY_TURNS = 6
 
 RECRUITER_SYSTEM_PROMPT = """You are the TalentAI Hiring Agent for recruiters. You can run almost any \
@@ -38,17 +38,27 @@ Greetings & capability talk (critical):
 - On hellos / "what can you do?", do NOT list a short fixed menu that makes it sound like you only do a few things.
 - Keep greetings open: you help with candidates and employees end-to-end (invite, pipeline, offers, activation, \
 documents, joining letters, profile reminders, Day-1 email/assets/orientation, career events, search, activity, \
-announcements) — one person or many at once.
+announcements, Learning catalog/assign/verify certificates, Talent search/opportunities/competency) — \
+one person or many at once.
 - Prefer asking what they want to do over enumerating features. If they ask for capabilities, give a broad \
 overview in one short paragraph, then invite them to name a person, a bulk action, or a goal.
 
+Workflows & confirmation gates (critical):
+- Chain tools toward a goal when the recruiter asks (e.g. review docs → verify → create offer → activate). \
+Ask only for missing required fields; confirm before destructive/irreversible actions.
+- ALWAYS confirm before: reject/delete documents, delete announcements, decline-equivalent irreversible steps, \
+approve_offer / bulk_approve when not explicit, role changes, certificate reject.
+- When chaining, briefly narrate progress (Found X → listed docs → verified CNIC → …).
+- For your own profile photo, set ui_hint {{"type":"upload","doc_type":"photo"}} so the app shows an upload button.
+
 Contextual suggested_replies (critical):
 - Always return 3–5 suggested_replies that match the CURRENT topic — not a generic menu.
-- If the talk is about a CANDIDATE (or pre-hire): suggest candidate actions only, e.g. check status, send/resend \
-offer, review documents, verify/reject docs, approve & activate if signed, send joining letter, list pipeline. \
-Name the person when known (e.g. "Send offer to Sara").
+- If the talk is about a CANDIDATE (or pre-hire): suggest candidate actions only, e.g. check status, remind \
+onboarding (remind_candidate), send/resend offer, review documents, verify/reject docs, approve & activate if \
+signed, send joining letter, list pipeline. Name the person when known.
 - If the talk is about an EMPLOYEE (post-hire): suggest employee actions only, e.g. profile progress, remind \
-Complete Profile, set company email, assign asset, schedule orientation, career event, list documents.
+Complete Profile, set company email, assign asset, schedule orientation, career event, list documents, assign \
+course, competency evaluation.
 - When looking someone up by name, call get_candidate_status / get_employee_detail with name= (or email=). \
 Never say you could not find them if list_pipeline just showed that name — retry with the email from the list.
 - When the recruiter asks for a profile, return the tool's profile fields (personal, education, skills, title, \
@@ -67,8 +77,8 @@ is outside your tools, say so briefly and suggest the closest supported action.
 instead of guessing.
 - Dates should be confirmed in a clear format before calling a tool that needs one.
 - When the user asks to act on everyone / all incomplete / all signed offers / a pasted list, prefer the \
-bulk_* tools (bulk_invite, bulk_approve_offers, bulk_remind_profiles, bulk_assign_assets, \
-bulk_schedule_orientation, bulk_set_company_email, bulk_verify_documents). Cap is handled by tools.
+bulk_* tools (bulk_invite, bulk_approve_offers, bulk_remind_profiles, bulk_remind_candidates, \
+bulk_assign_assets, bulk_schedule_orientation, bulk_set_company_email, bulk_verify_documents). Cap is handled by tools.
 - When a user pastes a list of candidates (from chat or a spreadsheet already parsed for you), use bulk_invite \
 only if every person has email, full_name, job_title/designation, and department (same as Create invitation). \
 If any required field is missing, do NOT call bulk_invite and do NOT invent values like "Not specified" — \
@@ -95,9 +105,11 @@ Never say their profile is complete just because pre-hire fields are on file.
 post-hire Complete Profile, and list the missing steps.
 - To remind one employee, call remind_employee_profile. To remind everyone incomplete, call \
 bulk_remind_profiles. Use force=true only when the recruiter asks to resend.
+- To remind a pre-hire candidate, call remind_candidate (not remind_employee_profile).
 
 Pipeline & activation:
 - Use list_pipeline (pending_review / onboarding / ready_to_activate) to show hiring stages.
+- Use get_dashboard_summary for overview KPIs.
 - Use approve_offer for one signed offer, bulk_approve_offers to activate all (or a list).
 
 Document review & verification (hiring workflow):
@@ -117,39 +129,68 @@ Day-1:
 - set_company_email / bulk_set_company_email, assign_asset / bulk_assign_assets, \
 schedule_orientation / bulk_schedule_orientation. For assign_asset, identify the person by email or \
 employee_id — `name` means the asset name.
+- update_employee_role changes designation/department.
+
+Learning & Talent:
+- browse_learning_catalog → assign_courses; list_learning_assignments; list_pending_certificates → \
+verify_certificate (open certificate_url/file_url first); learning_analytics; KB role/cert CRUD tools.
+- talent_metrics, search_talent, create/update_opportunity, list_opportunity_applicants, \
+submit_competency_evaluation, update_development_plan, get_talent_profile.
 
 Announcements:
-- create_announcement fans out in-app notifications (+ optional email) to candidates, employees, or both.
+- create_announcement / update_announcement / delete_announcement (delete needs confirm=true).
 """
 
-SELF_SERVE_SYSTEM_PROMPT = """You are the TalentAI Onboarding Agent, guiding a new candidate/employee through \
-account onboarding: uploading identity/education/resume documents, filling in personal, education, skills, \
-emergency, banking, and reference information, and signing required acknowledgements/NDA.
+CANDIDATE_SYSTEM_PROMPT = """You are the TalentAI Onboarding Agent for candidates. You help them complete \
+pre-hire intake, manage documents, and review/sign or decline their offer letter — using only your tools.
 
 Rules:
-- Always check get_status first if you don't already know the current step. It tells you the stage \
-("pre_offer_intake" for candidates: steps personal, education, skills, submit — or "post_hire_profile" for \
-employees: steps emergency, employment, references, documents, nda, submit) and exactly which sections/documents \
-are still missing.
-- Ask only for the information still missing — never re-ask for something already saved.
-- When the person gives you information in free text (e.g. "my name is Ali Khan, DOB 1998-05-02..."), extract \
-it into structured fields and call save_step yourself with that step's object (see the tool's parameter list \
-for the exact shape each step needs). Don't make the person fill a form manually if they already told you the \
-values in chat.
-- The 'personal' step (candidates) needs a valid CNIC/passport already uploaded, and the 'skills' step needs a \
-resume already uploaded — the tool fills those in automatically from whatever the person already uploaded, so \
-just call save_step with the text fields; if it fails because the document isn't uploaded yet, tell the person \
-to upload it first.
-- Documents (CNIC, passport, transcripts, resume) must be uploaded as files — you cannot accept them as text. \
-When a document is still missing, say so clearly and include a ui_hint of type "upload" with the right \
-doc_type/category so the app can show an uploader button. Valid doc_type/category pairs: \
-cnic/identity, passport/identity, transcript/education, resume/other.
-- Once every required section is complete (get_status shows none missing), call save_step with step="submit" \
-to finish (candidates: sends the profile for recruiter review; employees: completes onboarding).
-- Never ask for or store banking/national ID numbers as freeform trivia outside the proper step — always \
-route real values into save_step so they're stored securely.
-- Be encouraging and clear about what's next.
+- Always check get_status first if you don't already know the current step. Candidate steps: personal, \
+education, skills, submit (plus uploaded government_docs / resume).
+- Ask only for information still missing — never re-ask for something already saved.
+- When the person gives free text, extract fields and call save_step yourself.
+- Documents (CNIC, passport, transcripts, resume) must be uploaded as files — include ui_hint type "upload" \
+with doc_type/category when needed: cnic/identity, passport/identity, transcript/education, resume/other.
+- Skill certifications: set ui_hint {{"type":"upload","doc_type":"skill_certificate","course_title":"<name>"}} \
+so the file is stored and its document_url is saved for recruiter review. After upload, call save_step skills \
+including certifications[].document_url from the returned URL.
+- Use list_documents / get_my_document_link / delete_document (confirm=true) / reextract_document for doc management.
+- Once every required section is complete, call save_step with step="submit".
+- Offers: get_my_offer to show status; sign_offer only after they clearly accept (agreed=true + full_legal_name); \
+decline_offer only with confirm=true.
+- list_my_announcements / list_notifications / mark_notifications_read for inbox parity.
+- Never invent tool results. Keep replies encouraging and clear about what's next.
+- Prefer chaining steps toward completing onboarding when they say "complete my onboarding".
+- When a tool needs confirmation, call it without confirm first so the app can show Approve/Cancel — do not ask \
+them to type "confirm" as free text if a button will appear.
 """
+
+EMPLOYEE_SYSTEM_PROMPT = """You are the TalentAI Workday Agent for employees. You help with post-hire Complete \
+Profile, documents, Learning, Talent (journey/opportunities), and day-to-day profile questions — using only your tools.
+
+Rules:
+- Always check get_status first for post-hire steps: emergency, employment (banking), references, documents \
+(policies), nda, submit.
+- Ask only for missing information; extract free text into save_step payloads.
+- Documents: list_documents, get_my_document_link, delete_document (confirm=true), reextract_document; use \
+ui_hint upload when a file is needed (cnic/passport/transcript/resume).
+- Profile photo: ui_hint {{"type":"upload","doc_type":"photo"}}.
+- Bank slip OCR (employment step): ui_hint {{"type":"upload","doc_type":"bank_slip"}} — after OCR results arrive \
+in chat, call save_step with the employment/banking fields the person confirms.
+- Learning: my_learning_dashboard, browse_learning_catalog, start_course, update_course_progress, bookmarks, \
+skills CRUD/assess, career goal/path/gap, recommendations, certificates list/update/delete.
+- Certificate file upload: ui_hint {{"type":"upload","doc_type":"certificate","course_title":"<title>","course_uid":"<optional>","source_url":"<optional public URL>"}}. \
+After upload the file_url is stored so recruiters can open and verify it — always mention that URL in your reply.
+- Talent: my_talent_journey, my_achievements, my_career_progression, list_opportunities, apply_to_opportunity \
+(confirm=true).
+- Announcements/notifications: list_my_announcements, list_notifications, mark_notifications_read.
+- Confirm before destructive actions (delete document/skill/certificate, apply to opportunity) by calling the \
+tool without confirm so Approve/Cancel buttons appear.
+- Chain tools toward goals (e.g. "continue onboarding", "start my assigned course", "apply to the frontend rotation").
+- Never invent tool results. Be clear and action-oriented.
+"""
+
+SELF_SERVE_SYSTEM_PROMPT = CANDIDATE_SYSTEM_PROMPT  # backward-compatible alias
 
 # Tool results that the frontend can render as rich cards instead of raw text.
 # When one of these was called this turn, we attach its data to the reply so the
@@ -162,6 +203,13 @@ RENDERABLE_TOOLS = {
     "list_employees": "employees",
     "directory_employees": "employees",
     "list_pipeline": "candidates",
+    "browse_learning_catalog": "courses",
+    "list_opportunities": "opportunities",
+    "search_talent": "employees",
+    "list_pending_certificates": "certificates",
+    "list_my_certificates": "certificates",
+    "get_my_offer": "offer",
+    "export_employees": "csv_export",
 }
 
 DOC_TYPE_CATEGORY = {
@@ -169,6 +217,43 @@ DOC_TYPE_CATEGORY = {
     "passport": "identity",
     "transcript": "education",
     "resume": "other",
+    "photo": "photo",
+    "certificate": "certificate",
+    "skill_certificate": "other",
+    "bank_slip": "banking",
+}
+
+CONFIRM_PREFIX = "__CONFIRM__:"
+
+TOOL_STEP_LABELS = {
+    "list_pipeline": "Listed hiring pipeline",
+    "list_candidates": "Listed candidates",
+    "list_employees": "Listed employees",
+    "directory_employees": "Opened employee directory",
+    "get_candidate_status": "Checked candidate status",
+    "get_employee_detail": "Loaded employee detail",
+    "list_candidate_documents": "Listed candidate documents",
+    "list_documents": "Listed your documents",
+    "verify_document": "Verified document",
+    "reject_document": "Rejected document",
+    "create_offer": "Created offer",
+    "approve_offer": "Approved offer",
+    "get_status": "Checked onboarding status",
+    "save_step": "Saved profile step",
+    "get_my_offer": "Loaded offer letter",
+    "browse_learning_catalog": "Browsed learning catalog",
+    "assign_courses": "Assigned course(s)",
+    "search_talent": "Searched talent",
+    "list_opportunities": "Listed opportunities",
+    "get_dashboard_summary": "Loaded dashboard summary",
+    "remind_candidate": "Sent candidate reminder",
+    "bulk_remind_candidates": "Sent bulk candidate reminders",
+    "bulk_remind_profiles": "Sent profile reminders",
+    "export_employees": "Prepared employee export",
+    "my_learning_dashboard": "Opened learning dashboard",
+    "start_course": "Started course",
+    "apply_to_opportunity": "Applied to opportunity",
+    "get_my_profile": "Loaded your profile",
 }
 
 
@@ -316,8 +401,9 @@ Respond with ONE JSON object only:
 1) {{"action":"tool","tool":"<name>","args":{{...}}}}
 2) {{"action":"reply","message":"<text>","suggested_replies":["…"],"ui_hint":null}}
 suggested_replies: 3–5 chips matching the current topic (candidate vs employee vs bulk); include the person's name when known.
-ui_hint for recruiters: {{"type":"spreadsheet"}} when they should attach an Excel/CSV roster, otherwise null.
-ui_hint for candidate/employee uploads only: {{"type":"upload","doc_type":"cnic","category":"identity"}}."""
+ui_hint for recruiters: {{"type":"spreadsheet"}} for Excel/CSV roster, or {{"type":"upload","doc_type":"photo"}} for profile photo, otherwise null.
+ui_hint for candidate/employee: {{"type":"upload","doc_type":"cnic|passport|transcript|resume|photo|certificate|bank_slip"}} \
+(for certificate include course_title and optional course_uid)."""
 
 
 def _action(kind: str, label: str, *, route: str | None = None, prompt: str | None = None) -> dict:
@@ -334,7 +420,8 @@ def _default_actions_for_role(user: CurrentUser) -> list[dict]:
         return [
             _action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates"),
             _action("navigate", "Open Employees", route="/dashboard/recruiter/employees"),
-            _action("navigate", "Open Activity", route="/dashboard/recruiter/activity"),
+            _action("navigate", "Open Learning", route="/dashboard/recruiter/learning"),
+            _action("navigate", "Open Talent", route="/dashboard/recruiter/talent"),
             _action("navigate", "Open Announcements", route="/dashboard/recruiter/announcements"),
         ]
     if user.role == "employee":
@@ -343,11 +430,22 @@ def _default_actions_for_role(user: CurrentUser) -> list[dict]:
             _action("navigate", "Open Learning", route="/dashboard/employee/learning"),
             _action("navigate", "Open Complete Profile", route="/dashboard/employee/complete-profile"),
             _action("navigate", "Open Talent", route="/dashboard/employee/talent"),
+            _action("navigate", "Open Documents", route="/documents"),
         ]
     return [
-        _action("navigate", "Open Profile", route="/dashboard/candidate"),
-        _action("navigate", "Check Onboarding", route="/dashboard/candidate"),
+        _action("navigate", "Open Dashboard", route="/dashboard/candidate"),
+        _action("navigate", "Continue Onboarding", route="/onboarding"),
+        _action("navigate", "Open Documents", route="/documents"),
+        _action("navigate", "View Offer", route="/offer"),
     ]
+
+
+def _system_prompt_for_role(role: str) -> str:
+    if role in ("recruiter", "super_admin"):
+        return RECRUITER_SYSTEM_PROMPT
+    if role == "employee":
+        return EMPLOYEE_SYSTEM_PROMPT
+    return CANDIDATE_SYSTEM_PROMPT
 
 
 def _detail_actions(user: CurrentUser, scratchpad: list[dict], context: dict | None) -> list[dict]:
@@ -437,6 +535,51 @@ def _last_renderable_attachment(scratchpad: list[dict]) -> dict | None:
     return None
 
 
+def _progress_from_scratchpad(scratchpad: list[dict]) -> list[dict]:
+    steps: list[dict] = []
+    for entry in scratchpad:
+        result = entry.get("result") or {}
+        data = result.get("data") if isinstance(result.get("data"), dict) else {}
+        if data.get("needs_confirm"):
+            continue
+        tool = entry.get("tool") or ""
+        label = TOOL_STEP_LABELS.get(tool) or tool.replace("_", " ").strip().title()
+        steps.append({"tool": tool, "ok": bool(result.get("ok")), "label": label})
+    return steps
+
+
+def _confirmation_from_result(tool_name: str, result: agent_tools.ToolResult) -> dict | None:
+    data = result.data if isinstance(result.data, dict) else None
+    if not data or not data.get("needs_confirm"):
+        return None
+    return {
+        "tool": data.get("tool") or tool_name,
+        "args": data.get("args") or {},
+        "summary": data.get("summary") or result.error or "Confirm this action?",
+    }
+
+
+def _pack_reply(
+    *,
+    message: str,
+    user: CurrentUser,
+    scratchpad: list[dict],
+    context: dict | None = None,
+    suggested_replies: list | None = None,
+    ui_hint: dict | None = None,
+    confirmation: dict | None = None,
+) -> dict:
+    return {
+        "message": message,
+        "suggested_replies": suggested_replies or [],
+        "ui_hint": _sanitize_ui_hint(user, ui_hint),
+        "attachment": _last_renderable_attachment(scratchpad),
+        "actions": _detail_actions(user, scratchpad, context),
+        "progress": _progress_from_scratchpad(scratchpad),
+        "confirmation": confirmation,
+    }
+
+
 async def _save_messages(session_id: str, user_id: str, new_msgs: list[dict]) -> None:
     await database.agent_conversations.update_one(
         {"session_id": session_id, "user_id": user_id},
@@ -487,15 +630,43 @@ def _sanitize_ui_hint(user: CurrentUser, ui_hint: dict | None) -> dict | None:
             "bulk_invite",
         ):
             return {"type": "spreadsheet"}
+        if hint_type == "upload" and doc_type == "photo":
+            return {"type": "upload", "doc_type": "photo", "category": "photo"}
         # Recruiter must never hit /api/documents/upload (candidate/employee only).
         return None
 
-    if hint_type == "upload" and doc_type in ("cnic", "passport", "transcript", "resume"):
-        return {
+    allowed = set(DOC_TYPE_CATEGORY.keys())
+    if user.role == "candidate":
+        allowed = {"cnic", "passport", "transcript", "resume", "certificate", "skill_certificate"}
+    elif user.role == "employee":
+        allowed = set(DOC_TYPE_CATEGORY.keys()) | {"skill_certificate"}
+
+    if hint_type == "upload" and doc_type in allowed:
+        # Candidates store cert file URL on skills.certifications.document_url
+        if user.role == "candidate" and doc_type in ("certificate", "skill_certificate"):
+            out_type = "skill_certificate"
+        elif doc_type == "skill_certificate":
+            out_type = "certificate"
+        else:
+            out_type = doc_type
+        hint = {
             "type": "upload",
-            "doc_type": doc_type,
-            "category": ui_hint.get("category") or DOC_TYPE_CATEGORY.get(doc_type, "other"),
+            "doc_type": out_type,
+            "category": ui_hint.get("category")
+            or DOC_TYPE_CATEGORY.get(doc_type)
+            or DOC_TYPE_CATEGORY.get(out_type, "other"),
         }
+        if out_type in ("certificate", "skill_certificate"):
+            title = (ui_hint.get("course_title") or ui_hint.get("title") or ui_hint.get("cert_name") or "").strip()
+            if title:
+                hint["course_title"] = title
+            course_uid = (ui_hint.get("course_uid") or "").strip()
+            if course_uid:
+                hint["course_uid"] = course_uid
+            source_url = (ui_hint.get("source_url") or "").strip()
+            if source_url:
+                hint["source_url"] = source_url
+        return hint
     return None
 
 
@@ -505,13 +676,20 @@ class AgentService:
         convo = await _load_or_create_session(user, session_id)
         sid = convo["session_id"]
 
-        user_msg = {"role": "user", "content": message, "created_at": _now_iso()}
-        pending_to_save = [user_msg] if message else []
-
-        if not llm_configured():
+        is_confirm = message.startswith(CONFIRM_PREFIX)
+        if is_confirm:
+            reply = await self._run_confirm_action(user, message[len(CONFIRM_PREFIX) :], context)
+            display_user = "Approved."
+        elif not llm_configured():
             reply = await _fallback_reply(user, context)
+            display_user = message
         else:
             reply = await self._run_llm_loop(user, convo, message, context)
+            display_user = message
+
+        pending_to_save: list[dict] = []
+        if display_user:
+            pending_to_save.append({"role": "user", "content": display_user, "created_at": _now_iso()})
 
         ui_hint = _sanitize_ui_hint(user, reply.get("ui_hint"))
         assistant_msg = {
@@ -523,6 +701,8 @@ class AgentService:
                 "suggested_replies": reply.get("suggested_replies") or [],
                 "actions": reply.get("actions") or [],
                 "attachment": reply.get("attachment"),
+                "progress": reply.get("progress") or [],
+                "confirmation": reply.get("confirmation"),
             },
         }
         pending_to_save.append(assistant_msg)
@@ -538,10 +718,52 @@ class AgentService:
             "actions": reply.get("actions") or [],
             "ui_hint": ui_hint,
             "attachment": reply.get("attachment"),
+            "progress": reply.get("progress") or [],
+            "confirmation": reply.get("confirmation"),
         }
 
+    async def _run_confirm_action(self, user: CurrentUser, raw: str, context: dict | None = None) -> dict:
+        scratchpad: list[dict] = []
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return _pack_reply(
+                message="That confirmation payload was invalid — please try again from the chat buttons.",
+                user=user,
+                scratchpad=scratchpad,
+                context=context,
+            )
+        tool_name = (payload.get("tool") or "").strip()
+        args = payload.get("args") if isinstance(payload.get("args"), dict) else {}
+        if not tool_name:
+            return _pack_reply(
+                message="Missing tool name in confirmation.",
+                user=user,
+                scratchpad=scratchpad,
+                context=context,
+            )
+        args = {**args, "confirm": True}
+        result = await agent_tools.run_tool(user, tool_name, args)
+        scratchpad.append({"tool": tool_name, "result": result.to_json()})
+        if result.ok:
+            data = result.data if isinstance(result.data, dict) else {}
+            done_msg = data.get("message") or f"Done — {tool_name.replace('_', ' ')} completed."
+            return _pack_reply(
+                message=str(done_msg),
+                user=user,
+                scratchpad=scratchpad,
+                context=context,
+                suggested_replies=["What's next?", "Show my status"],
+            )
+        return _pack_reply(
+            message=result.error or "That action could not be completed.",
+            user=user,
+            scratchpad=scratchpad,
+            context=context,
+        )
+
     async def _run_llm_loop(self, user: CurrentUser, convo: dict, message: str, context: dict | None = None) -> dict:
-        system_prompt = RECRUITER_SYSTEM_PROMPT if user.role in ("recruiter", "super_admin") else SELF_SERVE_SYSTEM_PROMPT
+        system_prompt = _system_prompt_for_role(user.role)
         tool_spec = _tool_spec_text(user.role)
         history_text = _history_text(convo.get("messages") or [])
         scratchpad: list[dict] = []
@@ -550,12 +772,12 @@ class AgentService:
             prompt = _build_prompt(user, system_prompt, tool_spec, history_text, scratchpad, message, context)
             parsed = await call_llm_json(prompt, max_tokens=1200, temperature=0.2)
             if not parsed:
-                return {
-                    "message": "I'm having trouble reaching the AI service right now — please try again in a moment.",
-                    "suggested_replies": [],
-                    "actions": _default_actions_for_role(user),
-                    "ui_hint": None,
-                }
+                return _pack_reply(
+                    message="I'm having trouble reaching the AI service right now — please try again in a moment.",
+                    user=user,
+                    scratchpad=scratchpad,
+                    context=context,
+                )
 
             action = parsed.get("action")
             if action == "tool":
@@ -563,33 +785,42 @@ class AgentService:
                 args = parsed.get("args") or {}
                 result = await agent_tools.run_tool(user, tool_name, args)
                 scratchpad.append({"tool": tool_name, "result": result.to_json()})
+                confirmation = _confirmation_from_result(tool_name or "", result)
+                if confirmation:
+                    return _pack_reply(
+                        message=confirmation["summary"],
+                        user=user,
+                        scratchpad=scratchpad,
+                        context=context,
+                        suggested_replies=[],
+                        confirmation=confirmation,
+                    )
                 continue
 
             if action == "reply":
-                return {
-                    "message": (parsed.get("message") or "").strip() or "Done.",
-                    "suggested_replies": parsed.get("suggested_replies") or [],
-                    "ui_hint": _sanitize_ui_hint(user, parsed.get("ui_hint")),
-                    "attachment": _last_renderable_attachment(scratchpad),
-                    "actions": _detail_actions(user, scratchpad, context),
-                }
+                return _pack_reply(
+                    message=(parsed.get("message") or "").strip() or "Done.",
+                    user=user,
+                    scratchpad=scratchpad,
+                    context=context,
+                    suggested_replies=parsed.get("suggested_replies") or [],
+                    ui_hint=parsed.get("ui_hint"),
+                )
 
             # Unrecognized shape — treat whatever text we got as the reply.
-            return {
-                "message": parsed.get("message") or "I didn't quite catch that — could you rephrase?",
-                "suggested_replies": [],
-                "actions": _detail_actions(user, scratchpad, context),
-                "ui_hint": None,
-                "attachment": _last_renderable_attachment(scratchpad),
-            }
+            return _pack_reply(
+                message=parsed.get("message") or "I didn't quite catch that — could you rephrase?",
+                user=user,
+                scratchpad=scratchpad,
+                context=context,
+            )
 
-        return {
-            "message": "I gathered the information but need one more detail from you to finish — could you confirm and try again?",
-            "suggested_replies": [],
-            "actions": _detail_actions(user, scratchpad, context),
-            "ui_hint": None,
-            "attachment": _last_renderable_attachment(scratchpad),
-        }
+        return _pack_reply(
+            message="I gathered the information but need one more detail from you to finish — could you confirm and try again?",
+            user=user,
+            scratchpad=scratchpad,
+            context=context,
+        )
 
     async def get_history(self, user: CurrentUser, session_id: str) -> dict:
         convo = await database.agent_conversations.find_one({"session_id": session_id, "user_id": user.id})

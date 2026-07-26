@@ -39,6 +39,11 @@ export const EMPLOYEE_NAV_ICONS = {
       <path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
     </svg>
   ),
+  messages: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  ),
   talent: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 2l2.9 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l7.1-1z" />
@@ -94,6 +99,13 @@ export function getEmployeeNavItems({ profileComplete = false } = {}) {
       module: null,
       href: "/dashboard/employee/ai-assistant",
       icon: EMPLOYEE_NAV_ICONS.ai,
+    },
+    {
+      key: "messages",
+      label: "Message HR",
+      module: null,
+      href: "/dashboard/employee/messages",
+      icon: EMPLOYEE_NAV_ICONS.messages,
     },
     {
       key: "profile",

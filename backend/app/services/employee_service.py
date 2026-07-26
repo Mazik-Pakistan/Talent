@@ -981,6 +981,21 @@ class EmployeeService:
             entries[index]["certificate_file"] = file_url
             education["entries"] = entries
             onboarding["education"] = education
+        elif purpose == "skill_cert":
+            skills = dict(onboarding.get("skills") or {})
+            certifications = list(skills.get("certifications") or [])
+            while len(certifications) <= index:
+                certifications.append({"name": "", "document_url": None, "expiry_date": ""})
+            entry = dict(certifications[index] or {})
+            entry["document_url"] = file_url
+            entry.setdefault("name", "")
+            entry.setdefault("expiry_date", "")
+            certifications[index] = entry
+            skills["certifications"] = certifications
+            skills.setdefault("technical_skills", [])
+            skills.setdefault("soft_skills", [])
+            skills.setdefault("languages", [])
+            onboarding["skills"] = skills
         else:
             return {
                 "message": "File uploaded.",
@@ -996,9 +1011,14 @@ class EmployeeService:
         )
         refreshed = await database.employees.find_one({"_id": employee["_id"]})
         return {
-            "message": "File uploaded.",
+            "message": (
+                "Certificate uploaded. Recruiters can open the document URL to review it."
+                if purpose == "skill_cert"
+                else "File uploaded."
+            ),
             "file_name": file_name,
             "file_url": file_url,
+            "document_url": file_url if purpose == "skill_cert" else None,
             "onboarding": refreshed.get("onboarding"),
         }
 
@@ -1039,6 +1059,14 @@ class EmployeeService:
             education["entries"] = entries
             onboarding["education"] = education
             doc_types = ["transcript", "certificate", "degree"]
+        elif purpose == "skill_cert":
+            skills = dict(onboarding.get("skills") or {})
+            certifications = list(skills.get("certifications") or [])
+            if 0 <= index < len(certifications):
+                certifications[index] = {**certifications[index], "document_url": None}
+            skills["certifications"] = certifications
+            onboarding["skills"] = skills
+            doc_types = []
         else:
             raise HTTPException(status_code=400, detail="Unsupported upload purpose.")
 

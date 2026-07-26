@@ -644,6 +644,88 @@
   transform: translateY(-1px);
 }
 
+.progressList {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.progressList li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #334155;
+}
+
+.progressMark {
+  flex: none;
+  width: 16px;
+  font-weight: 700;
+}
+
+.progressOk .progressMark {
+  color: #15803d;
+}
+
+.progressFail .progressMark {
+  color: #b45309;
+}
+
+.confirmGate {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(180, 83, 9, 0.28);
+  background: #fff8ef;
+}
+
+.confirmSummary {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #7c2d12;
+  margin-bottom: 8px;
+}
+
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.confirmApprove,
+.confirmCancel {
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.confirmApprove {
+  background: #15803d;
+  color: #fff;
+}
+
+.confirmApprove:disabled,
+.confirmCancel:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.confirmCancel {
+  background: #fff;
+  color: #7c2d12;
+  border-color: rgba(180, 83, 9, 0.35);
+}
+
 .footer {
   display: flex;
   align-items: flex-end;
