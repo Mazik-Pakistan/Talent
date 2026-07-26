@@ -13,6 +13,7 @@ import {
   replyHrThread,
   startHrMessage,
 } from "@/services/messageService";
+import { publishRecruiterContext } from "@/lib/ai/recruiterContext";
 import styles from "@/app/dashboard/messages.module.css";
 
 function formatWhen(value) {
@@ -48,6 +49,23 @@ function RecruiterMessagesInner() {
   const [error, setError] = useState("");
 
   const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+
+  useEffect(() => {
+    publishRecruiterContext({
+      pathname: "/dashboard/recruiter/messages",
+      section: composing ? "compose" : selectedId ? "thread" : "inbox",
+      label: composing
+        ? "New message"
+        : thread?.subject || (employeeFilter ? `Employee ${employeeFilter}` : "Messages inbox"),
+      employee_id: employeeFilter || thread?.employee_id || undefined,
+      employeeName: thread?.employee_name || undefined,
+      hint: composing
+        ? "Write a clear first message — the employee gets it in-app and by email."
+        : selectedId
+          ? "Reply to continue the thread, or Close when the topic is resolved."
+          : "Select a conversation, or open Messages from an employee profile to start one.",
+    });
+  }, [composing, selectedId, thread?.subject, thread?.employee_id, thread?.employee_name, employeeFilter]);
 
   const loadThreads = useCallback(async () => {
     if (!token) return;

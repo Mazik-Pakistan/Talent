@@ -1113,6 +1113,34 @@ async def _tool_message_recruiter(user: CurrentUser, args: dict) -> ToolResult:
         return _err(exc)
 
 
+async def _tool_message_employee(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        from app.services.message_service import message_service
+
+        body = (args.get("body") or args.get("message") or "").strip()
+        employee_id = (args.get("employee_id") or "").strip()
+        if not body:
+            return ToolResult(ok=False, error="body is required.")
+        if not employee_id and args.get("email"):
+            # Resolve employee_id from email when possible
+            from app.core.database import database
+
+            emp = await database.employees.find_one({"email": str(args.get("email")).strip().lower()})
+            if emp:
+                employee_id = emp.get("employee_id") or str(emp.get("_id"))
+        if not employee_id:
+            return ToolResult(ok=False, error="employee_id (or email of an employee) is required.")
+        result = await message_service.recruiter_start(
+            user,
+            employee_id=employee_id,
+            body=body,
+            subject=args.get("subject"),
+        )
+        return ToolResult(ok=True, data={**(result if isinstance(result, dict) else {}), "message": "Message sent to employee."})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 async def _tool_reply_hr_thread(user: CurrentUser, args: dict) -> ToolResult:
     try:
         from app.services.message_service import message_service
@@ -1460,6 +1488,18 @@ RECRUITER_PARITY_TOOLS: list[Tool] = [
         description="List HR ↔ employee message threads for the signed-in recruiter.",
         parameters={},
         handler=_tool_list_hr_threads,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="message_employee",
+        description="Start or continue an HR message thread with an employee (email + notification).",
+        parameters={
+            "employee_id": "preferred",
+            "email": "optional alternative to locate the employee",
+            "body": "required",
+            "subject": "optional for a new thread",
+        },
+        handler=_tool_message_employee,
         roles=("recruiter", "super_admin"),
     ),
     Tool(

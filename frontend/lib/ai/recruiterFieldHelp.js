@@ -163,6 +163,7 @@ export const RECRUITER_PAGE_HELP = {
   learning: "Browse courses, assign to people, track progress, and verify certificates.",
   talent: "Org metrics, talent search, and internal opportunities.",
   announcements: "Publish targeted updates to candidates and/or employees.",
+  messages: "Employee inbox — reply to HR threads; each reply also emails the employee.",
   activity: "Live audit of invitations, offers, activations, and related actions.",
   profile: "Keep your recruiter profile current for teammates.",
 };
@@ -203,6 +204,11 @@ export const RECRUITER_PAGE_SUMMARIES = {
     title: "Announcements",
     what: "Publish updates to candidates and/or employees.",
     why: "Keeps everyone aligned without one-off emails.",
+  },
+  messages: {
+    title: "Messages inbox",
+    what: "Read and reply to employee HR conversations — they also get an email copy.",
+    why: "Keeps employee questions in one place so nothing sits only in your mailbox.",
   },
   activity: {
     title: "Activity log",

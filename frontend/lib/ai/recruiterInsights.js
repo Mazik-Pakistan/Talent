@@ -86,6 +86,7 @@ function recruiterPageKey(pathname) {
   if (pathname.includes("/learning")) return "learning";
   if (pathname.includes("/talent")) return "talent";
   if (pathname.includes("/announcements")) return "announcements";
+  if (pathname.includes("/messages")) return "messages";
   if (pathname.includes("/activity")) return "activity";
   if (pathname.includes("/profile")) return "profile";
   return "other";
@@ -845,6 +846,31 @@ function announcementsInsights() {
   ];
 }
 
+function messagesInsights(context = {}) {
+  const insights = [
+    {
+      id: "msg-inbox",
+      priority: MASCOT_PRIORITY.task,
+      message:
+        "Open a thread on the left, then Reply — the employee gets an in-app notification and an email copy.",
+    },
+    {
+      id: "msg-from-employee",
+      priority: MASCOT_PRIORITY.tip,
+      message:
+        "From an employee profile, use Messages to open or start a conversation filtered to that person.",
+    },
+  ];
+  if (context?.employee_id || context?.employeeId) {
+    insights.unshift({
+      id: "msg-filtered",
+      priority: MASCOT_PRIORITY.insight,
+      message: `Filtered to employee ${context.employee_id || context.employeeId} — reply here or send the first message if none exists yet.`,
+    });
+  }
+  return insights;
+}
+
 function activityInsights(snapshot) {
   const insights = [];
   const latest = snapshot?.recentActivity?.[0];
@@ -960,6 +986,8 @@ export async function buildRecruiterInsights(pathname, accessToken, rawContext =
     insights.push(...(await talentPageInsights(accessToken, context)));
   } else if (page === "announcements") {
     insights.push(...announcementsInsights());
+  } else if (page === "messages") {
+    insights.push(...messagesInsights(context));
   } else if (page === "activity") {
     insights.push(...activityInsights(snapshot));
   } else if (page === "profile") {

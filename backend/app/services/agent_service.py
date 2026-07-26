@@ -38,8 +38,8 @@ Greetings & capability talk (critical):
 - On hellos / "what can you do?", do NOT list a short fixed menu that makes it sound like you only do a few things.
 - Keep greetings open: you help with candidates and employees end-to-end (invite, pipeline, offers, activation, \
 documents, joining letters, profile reminders, Day-1 email/assets/orientation, career events, search, activity, \
-announcements, Learning catalog/assign/verify certificates, Talent search/opportunities/competency) — \
-one person or many at once.
+announcements, Learning catalog/assign/verify certificates, Talent search/opportunities/competency, \
+employee HR messaging) — one person or many at once.
 - Prefer asking what they want to do over enumerating features. If they ask for capabilities, give a broad \
 overview in one short paragraph, then invite them to name a person, a bulk action, or a goal.
 
@@ -58,7 +58,7 @@ onboarding (remind_candidate), send/resend offer, review documents, verify/rejec
 signed, send joining letter, list pipeline. Name the person when known.
 - If the talk is about an EMPLOYEE (post-hire): suggest employee actions only, e.g. profile progress, remind \
 Complete Profile, set company email, assign asset, schedule orientation, career event, list documents, assign \
-course, competency evaluation.
+course, competency evaluation, HR message reply.
 - When looking someone up by name, call get_candidate_status / get_employee_detail with name= (or email=). \
 Never say you could not find them if list_pipeline just showed that name — retry with the email from the list.
 - When the recruiter asks for a profile, return the tool's profile fields (personal, education, skills, title, \
@@ -137,6 +137,11 @@ verify_certificate (open certificate_url/file_url first); learning_analytics; KB
 - talent_metrics, search_talent, create/update_opportunity, list_opportunity_applicants, \
 submit_competency_evaluation, update_development_plan, get_talent_profile.
 
+Reminders & HR messages:
+- send_reminder (kind + note) for employee or candidate nudges (email + notification).
+- list_hr_threads / reply_hr_thread / message_employee for the employee ↔ HR inbox \
+(replies also email the other side). Prefer list_hr_threads before replying.
+
 Announcements:
 - create_announcement / update_announcement / delete_announcement (delete needs confirm=true).
 """
@@ -183,10 +188,12 @@ skills CRUD/assess, career goal/path/gap, recommendations, certificates list/upd
 After upload the file_url is stored so recruiters can open and verify it — always mention that URL in your reply.
 - Talent: my_talent_journey, my_achievements, my_career_progression, list_opportunities, apply_to_opportunity \
 (confirm=true).
+- Message HR: list_hr_threads, message_recruiter (new or continue), reply_hr_thread — each message emails HR too.
 - Announcements/notifications: list_my_announcements, list_notifications, mark_notifications_read.
 - Confirm before destructive actions (delete document/skill/certificate, apply to opportunity) by calling the \
 tool without confirm so Approve/Cancel buttons appear.
-- Chain tools toward goals (e.g. "continue onboarding", "start my assigned course", "apply to the frontend rotation").
+- Chain tools toward goals (e.g. "continue onboarding", "start my assigned course", "apply to the frontend rotation", \
+"message HR about my documents").
 - Never invent tool results. Be clear and action-oriented.
 """
 
@@ -249,6 +256,11 @@ TOOL_STEP_LABELS = {
     "remind_candidate": "Sent candidate reminder",
     "bulk_remind_candidates": "Sent bulk candidate reminders",
     "bulk_remind_profiles": "Sent profile reminders",
+    "send_reminder": "Sent reminder",
+    "list_hr_threads": "Listed HR message threads",
+    "reply_hr_thread": "Replied to HR message",
+    "message_recruiter": "Sent message to HR",
+    "message_employee": "Sent message to employee",
     "export_employees": "Prepared employee export",
     "my_learning_dashboard": "Opened learning dashboard",
     "start_course": "Started course",
@@ -422,6 +434,7 @@ def _default_actions_for_role(user: CurrentUser) -> list[dict]:
             _action("navigate", "Open Employees", route="/dashboard/recruiter/employees"),
             _action("navigate", "Open Learning", route="/dashboard/recruiter/learning"),
             _action("navigate", "Open Talent", route="/dashboard/recruiter/talent"),
+            _action("navigate", "Open Messages", route="/dashboard/recruiter/messages"),
             _action("navigate", "Open Announcements", route="/dashboard/recruiter/announcements"),
         ]
     if user.role == "employee":
@@ -430,6 +443,7 @@ def _default_actions_for_role(user: CurrentUser) -> list[dict]:
             _action("navigate", "Open Learning", route="/dashboard/employee/learning"),
             _action("navigate", "Open Complete Profile", route="/dashboard/employee/complete-profile"),
             _action("navigate", "Open Talent", route="/dashboard/employee/talent"),
+            _action("navigate", "Message HR", route="/dashboard/employee/messages"),
             _action("navigate", "Open Documents", route="/documents"),
         ]
     return [

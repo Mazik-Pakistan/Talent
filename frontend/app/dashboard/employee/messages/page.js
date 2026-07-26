@@ -12,6 +12,7 @@ import {
   listHrThreads,
   sendHrMessage,
 } from "@/services/messageService";
+import { publishGuideContext } from "@/lib/ai/guideContext";
 import styles from "@/app/dashboard/messages.module.css";
 
 function formatWhen(value) {
@@ -46,6 +47,19 @@ function EmployeeMessagesInner() {
   const [error, setError] = useState("");
 
   const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+
+  useEffect(() => {
+    publishGuideContext({
+      pathname: "/dashboard/employee/messages",
+      section: composing ? "compose" : selectedId ? "thread" : "inbox",
+      label: composing ? "New message" : thread?.subject || "Message HR",
+      hint: composing
+        ? "Write a clear subject and message — your recruiter gets this in-app and by email."
+        : selectedId
+          ? "Reply here to continue the thread, or Close when the topic is done."
+          : "Pick a conversation or start a new one with HR.",
+    });
+  }, [composing, selectedId, thread?.subject]);
 
   const loadThreads = useCallback(async () => {
     if (!token) return;
