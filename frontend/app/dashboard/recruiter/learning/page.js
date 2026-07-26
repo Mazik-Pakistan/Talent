@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
+import { useSearchParams } from "next/navigation";
 
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
@@ -70,8 +71,16 @@ function sourceBadgeClass(source) {
 }
 
 export default function RecruiterLearningPage() {
-  const [tab, setTab] = useState("catalog");
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState(() => (searchParams.get("tab") === "certificates" ? "certificates" : "catalog"));
   const [pendingAssign, setPendingAssign] = useState(null);
+  const selectedCertificateId = searchParams.get("certificateId");
+
+  useEffect(() => {
+    if (searchParams.get("tab") === "certificates") {
+      setTab("certificates");
+    }
+  }, [searchParams]);
 
   function handleAssignFromCatalog(course, source) {
     setPendingAssign({ course, source: course?.source || source || "microsoft_learn" });
@@ -123,7 +132,7 @@ export default function RecruiterLearningPage() {
         />
       )}
       {tab === "assignments" && <AssignmentsTab />}
-      {tab === "certificates" && <CertificatesTab />}
+      {tab === "certificates" && <CertificatesTab selectedCertificateId={selectedCertificateId} />}
       {tab === "analytics" && <AnalyticsTab />}
     </RecruiterShell>
   );
@@ -994,11 +1003,12 @@ function AssignmentsTab() {
   );
 }
 
-function CertificatesTab() {
+function CertificatesTab({ selectedCertificateId = null }) {
   const [certificates, setCertificates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [rejecting, setRejecting] = useState(null);
   const [rejectNote, setRejectNote] = useState("");
+  const lastScrolledIdRef = useRef(null);
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
@@ -1011,6 +1021,14 @@ function CertificatesTab() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (loading || !selectedCertificateId || lastScrolledIdRef.current === selectedCertificateId) return;
+    const el = document.getElementById(`certificate-${selectedCertificateId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    lastScrolledIdRef.current = selectedCertificateId;
+  }, [loading, selectedCertificateId, certificates]);
 
   async function handleApprove(id) {
     const token = localStorage.getItem("access_token");
@@ -1051,7 +1069,7 @@ function CertificatesTab() {
         {loading && <p className={styles.inlineNote}>Loading…</p>}
         {!loading && certificates.length === 0 && <p className={shellStyles.emptySub}>Nothing pending review.</p>}
         {certificates.map((c) => (
-          <div key={c.id} className={styles.listRow}>
+          <div key={c.id} id={`certificate-${c.id}`} className={styles.listRow}>
             <div className={styles.listInfo}>
               <div className={styles.listTitle}>{c.course_title}</div>
               <div className={styles.listMeta}>

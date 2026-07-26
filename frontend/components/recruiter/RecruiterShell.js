@@ -303,21 +303,27 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
     if (!notification.read) handleMarkOneRead(notification.id);
     setNotifOpen(false);
     if (!notification.link) return;
+    if (notification.type === "certificate_uploaded" || notification.link.startsWith("/dashboard/recruiter/learning")) {
+      const certificateId = notification.related_id || notification.relatedId;
+      const params = new URLSearchParams({ tab: "certificates" });
+      if (certificateId) params.set("certificateId", certificateId);
+      router.push(`/dashboard/recruiter/learning?${params.toString()}`);
+      return;
+    }
     if (notification.type === "announcement") {
       router.push("/dashboard/recruiter/announcements");
       return;
     }
-    if (notification.link.includes("#")) {
-      const hash = notification.link.split("#")[1];
-      document.getElementById(hash)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else if (notification.type === "invitation_sent") {
+    if (notification.type === "invitation_sent") {
       router.push("/dashboard/recruiter/invite");
     } else if (notification.type === "intake_submitted" || notification.type === "offer_signed") {
       router.push("/dashboard/recruiter/candidates");
     } else if (notification.link.startsWith("/dashboard/recruiter/employees")) {
       router.push(notification.link);
+    } else if (notification.link.includes("#")) {
+      router.push(notification.link);
     } else {
-      router.push("/dashboard/recruiter/overview");
+      router.push(notification.link);
     }
   }
 
