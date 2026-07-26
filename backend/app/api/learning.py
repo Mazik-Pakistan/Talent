@@ -161,6 +161,28 @@ async def verify_certificate(certificate_id: str, request: CertificateVerifyRequ
     return await learning_service.verify_certificate(current_user, certificate_id, request)
 
 
+@router.delete("/certificates/{certificate_id}")
+async def delete_certificate(certificate_id: str, current_user: RequireEmployee):
+    return await learning_service.delete_certificate(current_user, certificate_id)
+
+
+@router.put("/certificates/{certificate_id}")
+async def update_certificate(
+    certificate_id: str,
+    current_user: RequireEmployee,
+    course_title: str | None = Form(default=None),
+    completion_date: date | None = Form(default=None),
+    learning_hours: float | None = Form(default=None),
+):
+    return await learning_service.update_certificate(
+        current_user,
+        certificate_id,
+        course_title=course_title,
+        completion_date=completion_date,
+        learning_hours=learning_hours,
+    )
+
+
 # ---------------------------------------------------------------------- #
 # Skill matrix (US-092, US-093, US-094)
 # ---------------------------------------------------------------------- #

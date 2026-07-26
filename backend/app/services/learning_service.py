@@ -858,6 +858,46 @@ class LearningService:
         updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
         return {"certificate": self._public_certificate(updated)}
 
+    async def delete_certificate(self, current_user: CurrentUser, certificate_id: str) -> dict:
+        if not ObjectId.is_valid(certificate_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
+        cert = await database.learning_certificates.find_one({"_id": ObjectId(certificate_id), "user_id": current_user.id})
+        if not cert:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
+        # Only allow deletion if not verified (employees can only delete pending/rejected)
+        if cert.get("verification_status") == "verified":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot delete verified certificates.")
+        await database.learning_certificates.delete_one({"_id": cert["_id"]})
+        await self._invalidate_ai_caches(current_user.id)
+        return {"message": "Certificate deleted."}
+
+    async def update_certificate(
+        self,
+        current_user: CurrentUser,
+        certificate_id: str,
+        course_title: str | None = None,
+        completion_date: date | None = None,
+        learning_hours: float | None = None,
+    ) -> dict:
+        if not ObjectId.is_valid(certificate_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
+        cert = await database.learning_certificates.find_one({"_id": ObjectId(certificate_id), "user_id": current_user.id})
+        if not cert:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
+        # Only allow edits if not verified
+        if cert.get("verification_status") == "verified":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot edit verified certificates.")
+        updates = {"updated_at": _now()}
+        if course_title is not None:
+            updates["course_title"] = course_title.strip()
+        if completion_date is not None:
+            updates["completion_date"] = completion_date
+        if learning_hours is not None:
+            updates["learning_hours"] = learning_hours
+        await database.learning_certificates.update_one({"_id": cert["_id"]}, {"$set": updates})
+        updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
+        return {"certificate": self._public_certificate(updated)}
+
     async def _extract_certificate_text(self, cert: dict) -> str | None:
         """Best-effort OCR of an uploaded certificate for skill extraction."""
         file_url = cert.get("file_url")

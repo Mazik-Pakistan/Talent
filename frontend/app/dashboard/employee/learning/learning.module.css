@@ -395,6 +395,74 @@
 .smallBtnPrimary { composes: smallBtn; background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0)); color: #fff; border-color: transparent; }
 .smallBtnPrimary:hover { filter: brightness(1.04); color: #fff; }
 
+.deleteCertBtn {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0; border-radius: 8px;
+  background: #fff; border: 1px solid var(--border);
+  color: var(--text-faint); cursor: pointer;
+  transition: background .18s ease, color .18s ease, border-color .18s ease;
+  flex-shrink: 0;
+}
+.deleteCertBtn svg { width: 14px; height: 14px; }
+.deleteCertBtn:hover { background: #fee9e7; border-color: #b42318; color: #b42318; }
+
+.editCertBtn {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0; border-radius: 8px;
+  background: #fff; border: 1px solid var(--border);
+  color: var(--text-faint); cursor: pointer;
+  transition: background .18s ease, color .18s ease, border-color .18s ease;
+  flex-shrink: 0;
+}
+.editCertBtn svg { width: 14px; height: 14px; }
+.editCertBtn:hover { background: #e9f4ff; border-color: #38a2ff; color: #38a2ff; }
+
+.editCertForm {
+  display: flex; flex-direction: column; gap: 12px;
+  border: 1.5px dashed var(--border); border-radius: 12px; padding: 16px;
+  background: var(--blue-lighter); margin-bottom: 10px;
+}
+
+.editFormRow {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+
+.editFormRow:first-child {
+  grid-template-columns: 1fr;
+}
+
+.editFormRow label {
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--navy);
+}
+
+.editFormRow input {
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  font-size: 13px; font-family: inherit; color: var(--text); background: #fff;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+.editFormRow input:focus {
+  outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(56, 162, 255, 0.1);
+}
+
+.editFormActions {
+  display: flex; gap: 8px; margin-top: 4px;
+}
+
+.editFormActions button {
+  font-size: 13px; font-weight: 650; padding: 10px 16px; border-radius: 8px; border: none; cursor: pointer;
+  transition: all .18s ease;
+}
+
+.editCancelBtn {
+  background: #fff; border: 1px solid var(--border); color: var(--navy);
+}
+
+.editCancelBtn:hover {
+  background: var(--border-soft); border-color: var(--blue-mid); color: var(--navy);
+}
+
 .inlineNote { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
 .errorNote { font-size: 12px; color: #b42318; margin-bottom: 14px; }
 

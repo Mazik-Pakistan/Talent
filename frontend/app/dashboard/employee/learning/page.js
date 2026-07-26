@@ -14,6 +14,7 @@ import {
   assessSkills,
   browseCatalog,
   deleteSkill,
+  deleteCertificate,
   getCareerGoal,
   getCareerPath,
   getCatalogFacets,
@@ -30,6 +31,7 @@ import {
   removeBookmark,
   setCareerGoal,
   startCourse,
+  updateCertificate,
   updateCourseProgress,
   uploadCertificate,
   upsertSkill,
@@ -1421,6 +1423,8 @@ function CertificatesTab({ onChange }) {
   const [certificates, setCertificates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ course_title: "", completion_date: "", learning_hours: "" });
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ course_title: "", completion_date: "", learning_hours: "" });
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -1460,6 +1464,56 @@ function CertificatesTab({ onChange }) {
       toast.error(getApiErrorMessage(err, "Could not upload certificate."));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(certId) {
+    if (!window.confirm("Delete this certificate? This cannot be undone.")) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    try {
+      await deleteCertificate(token, certId);
+      toast.success("Certificate deleted.");
+      load();
+      onChange?.();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not delete certificate."));
+    }
+  }
+
+  function handleEditStart(cert) {
+    setEditingId(cert.id);
+    setEditForm({
+      course_title: cert.course_title,
+      completion_date: cert.completion_date || "",
+      learning_hours: cert.learning_hours || "",
+    });
+  }
+
+  function handleEditCancel() {
+    setEditingId(null);
+    setEditForm({ course_title: "", completion_date: "", learning_hours: "" });
+  }
+
+  async function handleEditSave(certId) {
+    if (!editForm.course_title.trim()) {
+      toast.error("Course title is required.");
+      return;
+    }
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    const fd = new FormData();
+    if (editForm.course_title) fd.append("course_title", editForm.course_title.trim());
+    if (editForm.completion_date) fd.append("completion_date", editForm.completion_date);
+    if (editForm.learning_hours) fd.append("learning_hours", editForm.learning_hours);
+    try {
+      await updateCertificate(token, certId, fd);
+      toast.success("Certificate updated.");
+      setEditingId(null);
+      load();
+      onChange?.();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not update certificate."));
     }
   }
 
@@ -1505,20 +1559,60 @@ function CertificatesTab({ onChange }) {
           </div>
         )}
         {certificates.map((c) => (
-          <div key={c.id} className={styles.certRow}>
-            <div className={styles.certInfo}>
-              <div className={styles.certTitle}>{c.course_title}</div>
-              <div className={styles.certMeta}>
-                {c.completion_date ? `Completed ${c.completion_date} · ` : ""}
-                {c.learning_hours ? `${c.learning_hours} hrs · ` : ""}
-                Submitted {new Date(c.created_at).toLocaleDateString()}
-                {c.rejection_reason ? ` · ${c.rejection_reason}` : ""}
+          <div key={c.id}>
+            {editingId === c.id ? (
+              <form className={styles.editCertForm} onSubmit={(e) => { e.preventDefault(); handleEditSave(c.id); }}>
+                <div className={styles.editFormRow}>
+                  <label>
+                    Course / certification title
+                    <input value={editForm.course_title} onChange={(e) => setEditForm((f) => ({ ...f, course_title: e.target.value }))} required />
+                  </label>
+                </div>
+                <div className={styles.editFormRow}>
+                  <label>
+                    Completion date
+                    <input type="date" value={editForm.completion_date} onChange={(e) => setEditForm((f) => ({ ...f, completion_date: e.target.value }))} />
+                  </label>
+                  <label>
+                    Learning hours
+                    <input type="number" min="0" step="0.5" value={editForm.learning_hours} onChange={(e) => setEditForm((f) => ({ ...f, learning_hours: e.target.value }))} />
+                  </label>
+                </div>
+                <div className={styles.editFormActions}>
+                  <button type="submit" className={dashStyles.btnPrimary}>Save changes</button>
+                  <button type="button" className={styles.editCancelBtn} onClick={handleEditCancel}>Cancel</button>
+                </div>
+              </form>
+            ) : (
+              <div className={styles.certRow}>
+                <div className={styles.certInfo}>
+                  <div className={styles.certTitle}>{c.course_title}</div>
+                  <div className={styles.certMeta}>
+                    {c.completion_date ? `Completed ${c.completion_date} · ` : ""}
+                    {c.learning_hours ? `${c.learning_hours} hrs · ` : ""}
+                    Submitted {new Date(c.created_at).toLocaleDateString()}
+                    {c.rejection_reason ? ` · ${c.rejection_reason}` : ""}
+                  </div>
+                </div>
+                <span className={`${styles.certStatus} ${styles[c.verification_status]}`}>
+                  {c.verification_status === "verified" ? "Verified" : c.verification_status === "rejected" ? "Rejected" : "Pending review"}
+                </span>
+                <a href={c.file_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View</a>
+                {c.verification_status !== "verified" && (
+                  <button type="button" className={styles.editCertBtn} onClick={() => handleEditStart(c)} title="Edit certificate">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  </button>
+                )}
+                <button type="button" className={styles.deleteCertBtn} onClick={() => handleDelete(c.id)} title="Delete certificate">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h16zM10 11v6M14 11v6" />
+                  </svg>
+                </button>
               </div>
-            </div>
-            <span className={`${styles.certStatus} ${styles[c.verification_status]}`}>
-              {c.verification_status === "verified" ? "Verified" : c.verification_status === "rejected" ? "Rejected" : "Pending review"}
-            </span>
-            <a href={c.file_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View</a>
+            )}
           </div>
         ))}
       </div>

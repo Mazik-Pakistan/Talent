@@ -111,6 +111,20 @@ export async function verifyCertificate(accessToken, certificateId, payload) {
   return data;
 }
 
+export async function deleteCertificate(accessToken, certificateId) {
+  const { data } = await client.delete(`/api/learning/certificates/${certificateId}`, auth(accessToken));
+  invalidateLearningCaches();
+  return data;
+}
+
+export async function updateCertificate(accessToken, certificateId, formData) {
+  const { data } = await client.put(`/api/learning/certificates/${certificateId}`, formData, {
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  });
+  invalidateLearningCaches();
+  return data;
+}
+
 // ─── Skill matrix (US-092 / US-093 / US-094) ─────────────────────────────────
 
 export async function getSkillCategories(accessToken) {
