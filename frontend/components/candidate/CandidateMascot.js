@@ -48,9 +48,12 @@ export default function CandidateMascot() {
           "partner-not-agent",
           { force: true, bypassCooldown: true, animation: "stateWave" }
         );
-        if (pathname && !pathname.includes("/ai-assistant")) {
-          // Stay on page — candidate should complete offer themselves with guidance.
-        }
+        return true;
+      }
+
+      if (/(?:open|go to|take me to)\s+(?:ai )?assistant/i.test(command)) {
+        setFormCommand("");
+        router?.push?.("/dashboard/candidate/ai-assistant");
         return true;
       }
 
@@ -98,6 +101,7 @@ export default function CandidateMascot() {
   return (
     <BaseMascot
       roleLabel="Candidate"
+      fabStorageKey="mascot_fab_pos_candidate"
       routePrefixes={["/dashboard/candidate", "/onboarding", "/offer", "/documents"]}
       contextEvent={CANDIDATE_MASCOT_CONTEXT_EVENT}
       refreshEvent={CANDIDATE_INSIGHTS_REFRESH_EVENT}

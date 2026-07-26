@@ -57,7 +57,7 @@
   top: 10px;
   right: -28px;
   transform: rotate(35deg);
-  background: linear-gradient(90deg, #00A9CE, #0F2A4A);
+  background: linear-gradient(90deg, #38a2ff, #1f7fe0);
   color: #fff;
   font-size: 9.5px;
   font-weight: 800;
@@ -131,10 +131,10 @@
 }
 .sourceBtn:hover { border-color: var(--cyan, #0EA5C9); color: var(--cyan, #0EA5C9); }
 .sourceBtnActive {
-  background: var(--navy, #0F2A4A);
+  background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0));
   color: #fff;
-  border-color: var(--navy, #0F2A4A);
-  box-shadow: 0 2px 8px rgba(15, 42, 74, 0.18);
+  border-color: transparent;
+  box-shadow: 0 8px 18px -10px rgba(56, 162, 255, 0.7);
 }
 
 .sourceHint {
@@ -336,7 +336,7 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--navy);
+  background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0));
   color: #fff;
   font-size: 12.5px;
   font-weight: 800;
@@ -392,8 +392,8 @@
 }
 .smallBtn:hover { border-color: var(--cyan); color: var(--cyan); }
 .smallBtn:disabled { opacity: .5; cursor: wait; }
-.smallBtnPrimary { composes: smallBtn; background: var(--navy); color: #fff; border-color: var(--navy); }
-.smallBtnPrimary:hover { background: var(--navy-2); color: #fff; }
+.smallBtnPrimary { composes: smallBtn; background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0)); color: #fff; border-color: transparent; }
+.smallBtnPrimary:hover { filter: brightness(1.04); color: #fff; }
 
 .inlineNote { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
 .errorNote { font-size: 12px; color: #b42318; margin-bottom: 14px; }
@@ -480,7 +480,7 @@
 .matrixFill {
   height: 100%;
   border-radius: 99px;
-  background: linear-gradient(90deg, #00A9CE, #0F2A4A);
+  background: linear-gradient(90deg, #38a2ff, #1f7fe0);
 }
 .matrixPct {
   font-size: 11px;
@@ -516,7 +516,7 @@
   color: var(--text-faint);
   background: #E8EEF5;
 }
-.ladderRung.ladderCurrent .ladderRungMarker { background: var(--navy); color: #fff; }
+.ladderRung.ladderCurrent .ladderRungMarker { background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0)); color: #fff; }
 .ladderRung.ladderNext .ladderRungMarker { background: var(--cyan); color: #fff; }
 .ladderRungBody { flex: 1; min-width: 0; }
 .ladderRungTitle { font-size: 13.5px; font-weight: 700; color: var(--navy); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -528,7 +528,7 @@
   padding: 2px 8px;
   border-radius: 20px;
 }
-.ladderRungTag.current { background: var(--navy); color: #fff; }
+.ladderRungTag.current { background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0)); color: #fff; }
 .ladderRungTag.next { background: var(--cyan-light); color: var(--cyan); }
 .ladderRungMeta { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; }
 .ladderRungGaps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

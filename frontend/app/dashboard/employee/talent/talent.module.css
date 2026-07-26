@@ -33,7 +33,7 @@
   color: var(--text-muted);
   cursor: pointer;
 }
-.filterChip.filterChipActive { background: var(--navy); color: #fff; border-color: var(--navy); }
+.filterChip.filterChipActive { background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0)); color: #fff; border-color: transparent; }
 
 .timeline { display: flex; flex-direction: column; }
 .timelineItem { display: flex; gap: 14px; }
@@ -111,4 +111,4 @@
 }
 .smallBtn:hover { border-color: var(--cyan); color: var(--cyan); }
 .smallBtn:disabled { opacity: .5; cursor: wait; }
-.smallBtnPrimary { composes: smallBtn; background: var(--navy); color: #fff; border-color: var(--navy); }
+.smallBtnPrimary { composes: smallBtn; background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0)); color: #fff; border-color: transparent; }

@@ -1,25 +1,30 @@
 :root {
-  --navy: #0F2A4A;
-  --navy-2: #16385C;
-  --navy-3: #0A1F38;
-  --cyan: #00A9CE;
-  --cyan-light: #E5F7FB;
-  --orange: #F2994A;
-  --orange-light: #FDF0E3;
-  --green: #1FAE7A;
-  --green-light: #E7F7F1;
-  --red: #D0342C;
-  --red-light: #FBEAE9;
-  --purple: #7C6FE0;
-  --purple-light: #EEECFC;
-  --bg: #EEF3F8;
-  --card: #FFFFFF;
-  --border: #E3E9F0;
-  --text: #16212E;
-  --text-muted: #647186;
-  --text-faint: #9AA6B5;
+  --navy: #0c2a41;
+  --navy-2: #153d5e;
+  --navy-3: #0b3355;
+  --blue: #38a2ff;
+  --blue-strong: #1f7fe0;
+  --blue-light: #e9f4ff;
+  --blue-lighter: #f6fbff;
+  --blue-mid: #c3e3ff;
+  --cyan: #38a2ff;
+  --cyan-light: #e9f4ff;
+  --orange: #f5a524;
+  --orange-light: #fef4e3;
+  --green: #1fae7a;
+  --green-light: #e3f8f0;
+  --red: #e5484d;
+  --red-light: #fdecec;
+  --purple: #7c6fe0;
+  --purple-light: #eeecfc;
+  --bg: #f2f7fd;
+  --card: #ffffff;
+  --border: #dfe9f6;
+  --text: #17233b;
+  --text-muted: #5b6d86;
+  --text-faint: #8fa0b8;
   --radius: 14px;
-  --shadow: 0 1px 2px rgba(15, 42, 74, 0.04), 0 8px 24px -12px rgba(15, 42, 74, 0.12);
+  --shadow: 0 1px 2px rgba(12, 42, 65, 0.05), 0 20px 44px -26px rgba(12, 42, 65, 0.28);
 }
 
 .root { background: var(--bg); font-family: 'Inter', system-ui, sans-serif; color: var(--text); -webkit-font-smoothing: antialiased; min-height: 100vh; }
@@ -191,13 +196,13 @@
 .rowActions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
 /* ---------- Buttons ---------- */
-.primaryButton { display: inline-flex; align-items: center; gap: 6px; background: var(--navy); color: #fff; border: none; font-size: 12.5px; font-weight: 600; padding: 9px 16px; border-radius: 9px; cursor: pointer; white-space: nowrap; }
-.primaryButton:hover { background: var(--navy-2); }
-.primaryButton:disabled { opacity: .6; cursor: wait; }
-.secondaryButton { background: #fff; color: var(--navy); border: 1px solid var(--border); font-size: 12.5px; font-weight: 600; padding: 8px 15px; border-radius: 9px; cursor: pointer; white-space: nowrap; }
-.secondaryButton:hover { border-color: var(--cyan); color: var(--cyan); }
+.primaryButton { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0) 60%, var(--navy-2, #153d5e)); color: #fff; border: none; font-size: 12.5px; font-weight: 650; padding: 10px 16px; border-radius: 12px; cursor: pointer; white-space: nowrap; box-shadow: 0 12px 24px -12px rgba(56, 162, 255, .85); transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; }
+.primaryButton:hover { transform: translateY(-2px); filter: brightness(1.04); box-shadow: 0 16px 30px -12px rgba(56, 162, 255, 1); }
+.primaryButton:disabled { opacity: .6; cursor: wait; box-shadow: none; transform: none; }
+.secondaryButton { background: #fff; color: var(--navy); border: 1px solid var(--border); font-size: 12.5px; font-weight: 650; padding: 8px 15px; border-radius: 12px; cursor: pointer; white-space: nowrap; }
+.secondaryButton:hover { border-color: var(--blue-mid, #c3e3ff); background: var(--blue-lighter, #f6fbff); color: var(--navy); }
 .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.linkButton { background: transparent; border: none; color: var(--cyan); font-size: 12px; font-weight: 600; cursor: pointer; padding: 0; }
+.linkButton { background: transparent; border: none; color: var(--blue-strong, #1f7fe0); font-size: 12px; font-weight: 600; cursor: pointer; padding: 0; }
 .linkButton:disabled { color: var(--text-faint); cursor: default; }
 
 /* ---------- Invite link box ---------- */

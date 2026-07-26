@@ -187,9 +187,9 @@ function CandidateShellInner({ activeKey, title, subtitle, jobTitle, actions, ch
 
         <main className={styles.main}>
           <div className={styles.topbar}>
-            <div>
+            <div className={styles.topbarLeft}>
               <div className={styles.topbarTitle}>{title}</div>
-              {subtitle ? <div className={styles.topbarSub}>{subtitle}</div> : null}
+              {subtitle ? <div className={styles.topbarSub} title={subtitle}>{subtitle}</div> : null}
             </div>
             <div className={styles.topbarActions}>
               {actions}

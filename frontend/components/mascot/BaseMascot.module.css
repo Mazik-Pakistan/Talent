@@ -9,6 +9,35 @@
   align-items: flex-end;
   pointer-events: none;
   font-family: var(--font-geist-sans), 'Inter', -apple-system, sans-serif;
+  max-width: min(320px, calc(100vw - 16px));
+}
+
+.panelAlignStart {
+  align-items: flex-start;
+}
+
+.panelBelow {
+  flex-direction: column-reverse;
+}
+
+.panelBelow .partnerPanel {
+  margin-bottom: 0;
+  margin-top: 12px;
+}
+
+.panelBelow .bubbleArrow {
+  top: -6px;
+  bottom: auto;
+  transform: rotate(225deg);
+}
+
+.panelAlignStart .bubbleArrow {
+  right: auto;
+  left: 28px;
+}
+
+.panelAlignStart .commandStack {
+  align-items: flex-start;
 }
 
 .formCommand {
@@ -161,9 +190,10 @@
   background: transparent;
   border: 0;
   padding: 0;
-  cursor: pointer;
+  cursor: grab;
   pointer-events: auto;
   outline: none;
+  touch-action: none;
   transition: transform 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
   isolation: isolate;
 }
@@ -173,7 +203,16 @@
 }
 
 .mascotBtn:active {
+  cursor: grabbing;
   transform: scale(0.96);
+}
+
+.mascotBtnDragging,
+.mascotBtnDragging:hover,
+.mascotBtnDragging:active {
+  cursor: grabbing;
+  transform: scale(1.05);
+  transition: none;
 }
 
 .mascotBtnActive {

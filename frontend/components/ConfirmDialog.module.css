@@ -51,14 +51,15 @@
 
 .cancel {
   background: #fff;
-  border: 1px solid #e3e9f0;
-  color: #0f2a4a;
+  border: 1px solid #dfe9f6;
+  color: #0c2a41;
 }
 
 .confirm {
-  background: #0f2a4a;
+  background: linear-gradient(135deg, #38a2ff, #1f7fe0 60%, #153d5e);
   border: none;
   color: #fff;
+  box-shadow: 0 12px 24px -12px rgba(56, 162, 255, 0.85);
 }
 
 .danger {

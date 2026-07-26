@@ -39,7 +39,7 @@
 
 .stack {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   width: 100%;
   min-width: 0;
 }
@@ -270,11 +270,12 @@
 }
 
 .helpCard {
-  background: linear-gradient(160deg, var(--navy, #0c2a41), var(--navy-2, #153d5e));
-  color: #fff;
+  background: linear-gradient(160deg, #eaf4ff 0%, #f6fbff 55%, #ffffff 100%);
+  color: var(--navy, #0c2a41);
+  border: 1px solid var(--blue-mid, #c3e3ff);
   border-radius: 16px;
   padding: 18px;
-  box-shadow: var(--shadow, 0 1px 2px rgba(12, 42, 65, 0.05), 0 20px 44px -26px rgba(12, 42, 65, 0.28));
+  box-shadow: 0 16px 36px -28px rgba(56, 162, 255, 0.55);
   animation: fadeInUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
   animation-delay: 0.3s;
 }
@@ -283,35 +284,80 @@
   margin: 0 0 6px;
   font-size: 13.5px;
   font-family: "Sora", system-ui, sans-serif;
+  color: var(--navy, #0c2a41);
 }
 
 .helpCard p {
   margin: 0 0 14px;
   font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--text-muted, #5b6d86);
   line-height: 1.5;
+}
+
+.helpActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .helpBtn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.12);
+  background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0) 60%, var(--navy-2, #153d5e));
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: none;
   font-size: 12.5px;
   font-weight: 700;
-  padding: 9px 14px;
-  border-radius: 9px;
+  padding: 10px 14px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: background 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+  box-shadow: 0 12px 24px -12px rgba(56, 162, 255, 0.85);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
   text-decoration: none;
+  width: 100%;
+}
+
+.helpBtn svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
 }
 
 .helpBtn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.35);
   transform: translateY(-2px);
+  filter: brightness(1.04);
+  box-shadow: 0 16px 30px -12px rgba(56, 162, 255, 1);
+}
+
+.helpSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: #fff;
+  color: var(--navy, #0c2a41);
+  border: 1px solid var(--border, #dfe9f6);
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 9px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.16s ease, border-color 0.16s ease;
+  width: 100%;
+}
+
+.helpSecondary:hover {
+  background: var(--blue-lighter, #f6fbff);
+  border-color: var(--blue-mid, #c3e3ff);
+}
+
+.helpSecondary svg {
+  width: 14px;
+  height: 14px;
+  color: var(--blue-strong, #1f7fe0);
 }
 
 /* ── Hero card ───────────────────────────────────────────────────────── */
@@ -613,21 +659,23 @@
 }
 
 .linkBtn {
-  background: none;
-  border: none;
+  background: var(--blue-light, #e9f4ff);
+  border: 1px solid var(--blue-mid, #c3e3ff);
   color: var(--blue-strong, #1f7fe0);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
-  padding: 6px 4px;
-  border-radius: 6px;
-  transition: color 0.16s ease, transform 0.16s ease;
+  padding: 6px 12px;
+  border-radius: 9px;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
 }
 
 .linkBtn:hover {
-  color: var(--navy, #0f2a4a);
-  transform: translateX(1px);
-  text-decoration: underline;
+  background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0));
+  border-color: transparent;
+  color: #fff;
+  transform: translateY(-1px);
+  text-decoration: none;
 }
 
 .editForm {
@@ -708,35 +756,39 @@
 }
 
 .primaryBtn {
-  background: linear-gradient(135deg, var(--blue-strong, #1f7fe0), var(--navy-2, #153d5e));
+  background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0) 60%, var(--navy-2, #153d5e));
   color: #fff;
   border: none;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 11px 20px;
-  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 11px 19px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+  box-shadow: 0 12px 24px -12px rgba(56, 162, 255, 0.85);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease, opacity 0.16s ease;
 }
 
 .primaryBtn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 10px 22px -10px rgba(31, 127, 224, 0.5);
+  filter: brightness(1.04);
+  box-shadow: 0 16px 30px -12px rgba(56, 162, 255, 1);
 }
 
 .primaryBtn:disabled {
   opacity: 0.6;
   cursor: wait;
+  box-shadow: none;
+  transform: none;
 }
 
 .secondaryBtn {
   background: #fff;
-  color: var(--navy, #0f2a4a);
-  border: 1px solid var(--border, #e3e9f0);
-  font-size: 14px;
-  font-weight: 600;
+  color: var(--navy, #0c2a41);
+  border: 1px solid var(--border, #dfe9f6);
+  font-size: 13px;
+  font-weight: 650;
   padding: 10px 18px;
-  border-radius: 9px;
+  border-radius: 12px;
   cursor: pointer;
   transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
 }
@@ -748,20 +800,22 @@
 }
 
 .topPrimary {
-  background: linear-gradient(135deg, var(--blue-strong, #1f7fe0), var(--navy-2, #153d5e));
+  background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0) 60%, var(--navy-2, #153d5e));
   color: #fff;
   border: none;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 650;
   padding: 10px 16px;
-  border-radius: 9px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  box-shadow: 0 12px 24px -12px rgba(56, 162, 255, 0.85);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
 }
 
 .topPrimary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 22px -10px rgba(31, 127, 224, 0.5);
+  filter: brightness(1.04);
+  box-shadow: 0 16px 30px -12px rgba(56, 162, 255, 1);
 }
 
 .refCard {

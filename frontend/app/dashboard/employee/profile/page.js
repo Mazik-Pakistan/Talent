@@ -666,7 +666,7 @@ function EmployeeProfileContent() {
 
         <main className={dashStyles.main}>
           <div className={dashStyles.topbar}>
-            <div>
+            <div className={dashStyles.topbarLeft}>
               <div className={dashStyles.topbarTitle}>My Profile</div>
               <div className={dashStyles.topbarSub}>
                 {employee?.employee_id || "—"} · {employee?.department || "—"}
@@ -1364,11 +1364,24 @@ function EmployeeProfileContent() {
 
                   <div className={styles.helpCard}>
                     <h4>Need a hand?</h4>
-                    <p>Something look off, or a section won&apos;t save? Reach out and HR will help you sort it.</p>
-                    <a className={styles.helpBtn} href="mailto:hr@mazikglobal.com">
-                      <IconPhone />
-                      Contact HR
-                    </a>
+                    <p>
+                      Ask the workday assistant about profile fields, onboarding, or what to fix next.
+                      HR email stays available if you need a person.
+                    </p>
+                    <div className={styles.helpActions}>
+                      <button
+                        type="button"
+                        className={styles.helpBtn}
+                        onClick={() => router.push("/dashboard/employee/ai-assistant")}
+                      >
+                        <IconSpark />
+                        Ask AI Assistant
+                      </button>
+                      <a className={styles.helpSecondary} href="mailto:hr@mazikglobal.com">
+                        <IconPhone />
+                        Email HR
+                      </a>
+                    </div>
                   </div>
                 </aside>
               </div>

@@ -1,6 +1,6 @@
 /* Employee Copilot — observable partner panel */
 
-.wrapper {
+.mascotWrapper {
   position: fixed;
   right: 24px;
   bottom: 24px;
@@ -10,6 +10,31 @@
   align-items: flex-end;
   pointer-events: none;
   font-family: var(--font-geist-sans), "Inter", -apple-system, sans-serif;
+  max-width: min(320px, calc(100vw - 16px));
+}
+
+.panelAlignStart {
+  align-items: flex-start;
+}
+
+.panelBelow {
+  flex-direction: column-reverse;
+}
+
+.panelBelow .speechBubble {
+  margin-bottom: 0;
+  margin-top: 12px;
+}
+
+.panelBelow .bubbleArrow {
+  top: -6px;
+  bottom: auto;
+  transform: rotate(225deg);
+}
+
+.panelAlignStart .bubbleArrow {
+  right: auto;
+  left: 28px;
 }
 
 .speechBubble {
@@ -257,14 +282,26 @@
   background: transparent;
   border: 0;
   padding: 0;
-  cursor: pointer;
+  cursor: grab;
   pointer-events: auto;
   outline: none;
+  touch-action: none;
   transition: transform 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.mascotBtn:active {
+  cursor: grabbing;
 }
 
 .mascotBtn:hover {
   transform: scale(1.08) translateY(-2px);
+}
+
+.mascotBtnDragging,
+.mascotBtnDragging:hover {
+  cursor: grabbing;
+  transform: scale(1.05);
+  transition: none;
 }
 
 .mascotSvg {
@@ -344,6 +381,14 @@
   fill: #1a4f80;
   stroke: #22d3ee;
   stroke-width: 1.5;
+}
+
+.leftArm {
+  transform-origin: 28px 46px;
+}
+
+.rightArm {
+  transform-origin: 72px 46px;
 }
 
 .stateIdle .mascotSvg {

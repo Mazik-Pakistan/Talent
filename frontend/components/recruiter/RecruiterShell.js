@@ -396,9 +396,9 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
 
           <main className={styles.main}>
             <div className={styles.topbar}>
-              <div>
+              <div className={styles.topbarLeft}>
                 <div className={styles.topbarTitle}>{title}</div>
-                <div className={styles.topbarSub}>{subtitle}</div>
+                <div className={styles.topbarSub} title={subtitle}>{subtitle}</div>
               </div>
 
               <div className={styles.topbarActions}>
@@ -422,7 +422,7 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                         runGlobalSearch(searchQuery);
                       }}
                       onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
-                      placeholder="Search candidates, employees…"
+                      placeholder="Ask AI or search candidates…"
                       aria-label="Search"
                     />
                   </div>

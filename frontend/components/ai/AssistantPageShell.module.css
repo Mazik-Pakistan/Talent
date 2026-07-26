@@ -1,174 +1,22 @@
 .page {
   --assistant-navy: var(--ai-navy-2, #12224a);
-  --assistant-navy-deep: var(--ai-navy, #0b1631);
   --assistant-blue: var(--ai-blue, #2f6bff);
-  --assistant-sky: var(--ai-sky, #34b6ff);
-  --assistant-canvas: var(--ai-canvas, #eef3fc);
-  --assistant-text: var(--ai-text, #101a33);
   --assistant-muted: var(--ai-muted, #5a6a8c);
-  --assistant-line: var(--ai-line, #dfe6f5);
   --assistant-shadow: var(--ai-shadow, 0 2px 6px rgba(16, 26, 51, 0.05), 0 18px 40px -22px rgba(16, 26, 51, 0.35));
   --assistant-ease: var(--ai-ease, cubic-bezier(0.22, 1, 0.36, 1));
 
-  display: grid;
-  gap: 18px;
-  padding: 4px 0 8px;
-  animation: assistantPageIn 420ms var(--assistant-ease) both;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Pull into shell padding so chat fills the viewport like a normal assistant */
+  margin: -6px -10px -24px;
+  height: calc(100vh - 92px);
+  min-height: 420px;
+  max-height: calc(100vh - 92px);
+  animation: assistantPageIn 320ms var(--assistant-ease) both;
 }
 
 @keyframes assistantPageIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.hero {
-  position: relative;
-  display: grid;
-  gap: 12px;
-  padding: 26px 28px;
-  overflow: hidden;
-  border: 1px solid rgba(47, 107, 255, 0.14);
-  border-radius: var(--ai-r-xl, 26px);
-  background:
-    radial-gradient(720px 280px at 92% -20%, rgba(52, 182, 255, 0.18), transparent 60%),
-    radial-gradient(520px 240px at -8% 110%, rgba(124, 92, 255, 0.12), transparent 55%),
-    linear-gradient(135deg, rgba(47, 107, 255, 0.1), rgba(18, 34, 74, 0.04) 55%, #fff);
-  box-shadow: var(--assistant-shadow);
-  animation: assistantHeroIn 520ms var(--assistant-ease) both;
-}
-
-@keyframes assistantHeroIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.hero::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.35) 48%, transparent 66%);
-  transform: translateX(-120%);
-  animation: assistantSheen 2.8s var(--assistant-ease) 0.6s 1;
-}
-
-@keyframes assistantSheen {
-  to {
-    transform: translateX(120%);
-  }
-}
-
-.heroTop {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: fit-content;
-  padding: 7px 12px;
-  border-radius: 999px;
-  background: rgba(47, 107, 255, 0.12);
-  color: var(--assistant-blue);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.liveDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--assistant-blue);
-  box-shadow: 0 0 0 0 rgba(47, 107, 255, 0.45);
-  animation: assistantLivePulse 1.6s ease-out infinite;
-}
-
-@keyframes assistantLivePulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(47, 107, 255, 0.45);
-  }
-  70% {
-    box-shadow: 0 0 0 8px rgba(47, 107, 255, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(47, 107, 255, 0);
-  }
-}
-
-.liveLabel {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(16, 200, 139, 0.1);
-  color: #0d9a6a;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.hero h1 {
-  margin: 0;
-  color: var(--assistant-navy);
-  font-family: "Sora", system-ui, sans-serif;
-  font-size: clamp(1.4rem, 2.2vw, 1.9rem);
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-.hero p {
-  margin: 0;
-  color: var(--assistant-muted);
-  line-height: 1.65;
-  max-width: 760px;
-  font-size: 0.95rem;
-}
-
-.highlights {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-.highlightPill {
-  padding: 9px 13px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(47, 107, 255, 0.16);
-  color: var(--assistant-navy);
-  font-size: 0.78rem;
-  font-weight: 700;
-  line-height: 1.2;
-  box-shadow: 0 1px 2px rgba(16, 26, 51, 0.04);
-  animation: assistantChipIn 380ms var(--assistant-ease) both;
-}
-
-.highlightPill:nth-child(1) { animation-delay: 80ms; }
-.highlightPill:nth-child(2) { animation-delay: 140ms; }
-.highlightPill:nth-child(3) { animation-delay: 200ms; }
-.highlightPill:nth-child(4) { animation-delay: 260ms; }
-.highlightPill:nth-child(5) { animation-delay: 320ms; }
-
-@keyframes assistantChipIn {
   from {
     opacity: 0;
     transform: translateY(6px);
@@ -179,23 +27,115 @@
   }
 }
 
+.toolbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border: 1px solid rgba(47, 107, 255, 0.14);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(47, 107, 255, 0.08), rgba(255, 255, 255, 0.95) 55%);
+  box-shadow: 0 1px 2px rgba(16, 26, 51, 0.04);
+}
+
+.toolbarLeft {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(47, 107, 255, 0.12);
+  color: var(--assistant-blue);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.liveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--assistant-blue);
+  box-shadow: 0 0 0 0 rgba(47, 107, 255, 0.45);
+  animation: assistantLivePulse 1.6s ease-out infinite;
+}
+
+@keyframes assistantLivePulse {
+  0% { box-shadow: 0 0 0 0 rgba(47, 107, 255, 0.45); }
+  70% { box-shadow: 0 0 0 7px rgba(47, 107, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(47, 107, 255, 0); }
+}
+
+.liveLabel {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(16, 200, 139, 0.1);
+  color: #0d9a6a;
+  font-size: 0.62rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.title {
+  margin: 0;
+  color: var(--assistant-navy);
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.highlightPill {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(47, 107, 255, 0.16);
+  color: var(--assistant-navy);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .highlightButton {
   cursor: pointer;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  transition:
-    background 160ms var(--assistant-ease),
-    border-color 160ms var(--assistant-ease),
-    transform 160ms var(--assistant-ease),
-    box-shadow 160ms var(--assistant-ease);
+  transition: background 140ms var(--assistant-ease), border-color 140ms var(--assistant-ease), transform 140ms var(--assistant-ease);
 }
 
 .highlightButton:hover {
   background: #fff;
-  border-color: rgba(47, 107, 255, 0.4);
+  border-color: rgba(47, 107, 255, 0.45);
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px -12px rgba(47, 107, 255, 0.55);
 }
 
 .highlightButton:active {
@@ -204,42 +144,55 @@
 
 .content {
   position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   border: 1px solid rgba(47, 107, 255, 0.14);
-  border-radius: var(--ai-r-xl, 26px);
+  border-radius: 14px;
   background: #fff;
   box-shadow: var(--assistant-shadow);
   overflow: hidden;
-  height: min(74vh, 740px);
-  min-height: min(520px, calc(100vh - 300px));
-  animation: assistantHeroIn 560ms var(--assistant-ease) 60ms both;
+  min-height: 0;
+}
+
+.content > * {
+  flex: 1;
+  min-height: 0;
 }
 
 .content:empty {
   min-height: 120px;
 }
 
+@media (max-width: 900px) {
+  .page {
+    margin: -4px -6px -18px;
+    height: calc(100vh - 110px);
+    max-height: calc(100vh - 110px);
+  }
+
+  .toolbar {
+    align-items: flex-start;
+  }
+
+  .highlights {
+    justify-content: flex-start;
+  }
+}
+
 @media (max-width: 640px) {
   .page {
-    padding: 0;
+    height: calc(100vh - 150px);
+    max-height: calc(100vh - 150px);
   }
 
-  .hero {
-    padding: 18px;
-  }
-
-  .content {
-    height: min(70vh, 640px);
-    min-height: 420px;
-    border-radius: 20px;
+  .title {
+    white-space: normal;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .page,
-  .hero,
-  .hero::after,
-  .highlightPill,
-  .content,
   .liveDot {
     animation: none !important;
   }

@@ -9,7 +9,7 @@
   height: 58px;
   border: 0;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--blue, #176896), var(--teal, #32a6ae));
+  background: linear-gradient(135deg, var(--blue, #38a2ff), var(--teal, #1f7fe0));
   color: #fff;
   cursor: pointer;
   box-shadow: 0 12px 30px rgba(18, 58, 99, 0.3);

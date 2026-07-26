@@ -56,8 +56,8 @@
   --ai-mid: 280ms;
   --ai-slow: 520ms;
 
-  --ai-gradient: linear-gradient(135deg, var(--ai-indigo) 0%, var(--ai-blue) 45%, var(--ai-sky) 100%);
-  --ai-gradient-soft: linear-gradient(135deg, rgba(43, 63, 216, 0.12), rgba(52, 182, 255, 0.12));
+  --ai-gradient: linear-gradient(135deg, #38a2ff 0%, #1f7fe0 55%, #153d5e 100%);
+  --ai-gradient-soft: linear-gradient(135deg, rgba(56, 162, 255, 0.12), rgba(31, 127, 224, 0.12));
 }
 
 /* ── Motion primitives ───────────────────────────────────────────────── */

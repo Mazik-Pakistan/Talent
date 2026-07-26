@@ -19,9 +19,11 @@ import {
   writeGuideMinimized,
 } from "@/lib/ai/guideContext";
 import { IconAlert, IconCheck, IconChevronLeft, IconChevronRight, IconSparkle } from "./icons";
+import useDraggableFab from "@/lib/ai/useDraggableFab";
 import styles from "./EmployeeAiGuide.module.css";
 
 const SEEN_KEY = "employee_ai_copilot_seen_tips";
+const FAB_POS_KEY = "employee_ai_copilot_fab_pos";
 const WAVE_MS = 2400;
 
 function readSeenTips() {
@@ -78,6 +80,10 @@ export default function EmployeeAiGuide() {
   const pageTipKeysRef = useRef([]);
   const mascotBtnRef = useRef(null);
   const waveTimerRef = useRef(null);
+  const { wrapRef, style: fabStyle, dragging, didDrag, handleProps, alignH, alignV } = useDraggableFab(
+    FAB_POS_KEY,
+    { fabRef: mascotBtnRef }
+  );
   // Eligible on every page — actual visibility is still gated by the
   // employee-role/auth-token check below, so non-employee users never see it.
   const eligible = true;
@@ -310,6 +316,7 @@ export default function EmployeeAiGuide() {
   }
 
   function toggleOpen() {
+    if (didDrag()) return;
     setMinimized((current) => {
       const next = !current;
       writeGuideMinimized(next);
@@ -382,7 +389,17 @@ export default function EmployeeAiGuide() {
           : null);
 
   return (
-    <div className={styles.mascotWrapper}>
+    <div
+      ref={wrapRef}
+      className={[
+        styles.mascotWrapper,
+        alignH === "start" ? styles.panelAlignStart : "",
+        alignV === "below" ? styles.panelBelow : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={fabStyle}
+    >
       {!minimized && current?.message ? (
         <div className={styles.speechBubble} role="status" aria-live="polite">
           <button
@@ -505,11 +522,12 @@ export default function EmployeeAiGuide() {
       <button
         ref={mascotBtnRef}
         type="button"
-        className={`${styles.mascotBtn} ${styles[mascotState]}`}
+        className={`${styles.mascotBtn} ${styles[mascotState]} ${dragging ? styles.mascotBtnDragging : ""}`}
         onClick={toggleOpen}
         aria-expanded={!minimized}
         aria-label={ariaLabel}
-        title={ariaLabel}
+        title={`${ariaLabel} — drag to move`}
+        {...handleProps}
       >
         {minimized && alertCount > 0 ? (
           <span className={styles.avatarBadge} title={`${alertCount} to review`}>

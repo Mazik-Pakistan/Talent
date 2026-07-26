@@ -134,9 +134,10 @@ export function readAuth() {
 }
 
 function statusTone(status) {
-  if (status === "verified") return "good";
-  if (status === "rejected" || status === "mismatch") return "bad";
-  if (status === "reupload_required") return "warn";
+  const value = String(status || "").toLowerCase();
+  if (value === "verified") return "good";
+  if (value === "rejected" || value === "mismatch") return "bad";
+  if (value === "reupload_required") return "warn";
   return "neutral";
 }
 
@@ -181,13 +182,13 @@ function docFileUrl(doc) {
 
 /**
  * DocumentsAttachment — recruiter-facing document review cards rendered inline
- * in the agent chat. Verify/reject act directly against the documents API
- * (not through the LLM) so the outcome is instant and deterministic; a short
+ * in the agent chat. Verify / reject / request-reupload act directly against
+ * the documents API (not through the LLM) so the outcome is instant; a short
  * confirmation line is then appended to the conversation for continuity.
  */
 function DocumentsAttachment({ attachment, auth, onLocalNote }) {
   const [busyId, setBusyId] = useState(null);
-  const [reasonFor, setReasonFor] = useState(null);
+  const [reasonFor, setReasonFor] = useState(null); // { id, kind }
   const [reason, setReason] = useState("");
   const [docs, setDocs] = useState(attachment.data.documents || []);
 
@@ -195,24 +196,49 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
     setDocs(attachment.data.documents || []);
   }, [attachment]);
 
+  function resolvedStatus(doc) {
+    return String(doc.verification_status || doc.status || "pending").toLowerCase();
+  }
+
+  function hasMismatch(doc) {
+    return Boolean(doc.mismatches?.length || doc.cross_document_mismatches?.length);
+  }
+
   async function act(doc, status, rejectionReason) {
     if (!auth) return;
     const id = docKey(doc);
     if (!id) return;
     setBusyId(id);
     try {
-      await verifyDocument(id, { status, rejection_reason: rejectionReason || null }, auth.accessToken);
+      await verifyDocument(
+        id,
+        {
+          status,
+          rejection_reason: rejectionReason || null,
+          approve_despite_mismatch: status === "verified" && hasMismatch(doc),
+        },
+        auth.accessToken
+      );
       setDocs((prev) =>
-        prev.map((d) => (docKey(d) === id ? { ...d, status, verification_status: status } : d))
+        prev.map((d) =>
+          docKey(d) === id
+            ? { ...d, status, verification_status: status, rejection_reason: rejectionReason || null }
+            : d
+        )
       );
       const label = DOC_TYPE_LABEL[doc.doc_type] || doc.doc_type;
-      onLocalNote(
-        status === "verified"
-          ? `Marked ${label} as verified for ${attachment.data.full_name || "this person"}.`
-          : `Marked ${label} as ${status.replace("_", " ")} for ${attachment.data.full_name || "this person"}${
-              rejectionReason ? ` — ${rejectionReason}` : ""
-            }.`
-      );
+      const who = attachment.data.full_name || "this person";
+      if (status === "verified") {
+        onLocalNote(`Marked ${label} as verified for ${who}.`);
+      } else if (status === "reupload_required") {
+        onLocalNote(`Requested a re-upload of ${label} for ${who}${rejectionReason ? ` — ${rejectionReason}` : ""}.`);
+      } else {
+        onLocalNote(
+          `Marked ${label} as ${status.replace(/_/g, " ")} for ${who}${
+            rejectionReason ? ` — ${rejectionReason}` : ""
+          }.`
+        );
+      }
     } catch (err) {
       onLocalNote(getApiErrorMessage(err, "That verification action didn't go through — please try again."), true);
     } finally {
@@ -220,6 +246,11 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
       setReasonFor(null);
       setReason("");
     }
+  }
+
+  function toggleReason(id, kind) {
+    setReason("");
+    setReasonFor((current) => (current?.id === id && current?.kind === kind ? null : { id, kind }));
   }
 
   if (!docs.length) {
@@ -230,9 +261,18 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
     <div className={styles.docGrid}>
       {docs.map((doc) => {
         const id = docKey(doc);
-        const tone = statusTone(doc.verification_status || doc.status);
+        const status = resolvedStatus(doc);
+        const tone = statusTone(status);
         const busy = busyId === id;
         const openUrl = docFileUrl(doc);
+        const isVerified = status === "verified";
+        const isFinalReject = status === "rejected";
+        const awaitingReupload = status === "reupload_required";
+        const canVerify = !isVerified && !awaitingReupload;
+        const canReject = !isVerified && !awaitingReupload && !isFinalReject;
+        const canRequestReupload = !isVerified && !awaitingReupload;
+        const reasonOpen = reasonFor?.id === id ? reasonFor.kind : null;
+
         return (
           <div key={id || doc.file_name} className={styles.docCard}>
             <div className={styles.docCardTop}>
@@ -244,7 +284,7 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
                 <div className={styles.docCardMeta}>{doc.file_name || "Uploaded file"}</div>
               </div>
               <span className={`${styles.statusPill} ${styles[`tone_${tone}`]}`}>
-                {(doc.verification_status || doc.status || "pending").replace("_", " ")}
+                {status.replace(/_/g, " ")}
               </span>
             </div>
 
@@ -254,44 +294,83 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
               </div>
             ) : null}
 
+            {doc.rejection_reason || doc.reupload_request_reason ? (
+              <div className={styles.docMismatch}>
+                {doc.rejection_reason || doc.reupload_request_reason}
+              </div>
+            ) : null}
+
             <div className={styles.docActions}>
               {openUrl ? (
                 <a href={openUrl} target="_blank" rel="noreferrer" className={styles.docOpenLink}>
                   Open file
                 </a>
+              ) : (
+                <span className={styles.docOpenLink} style={{ opacity: 0.45, pointerEvents: "none" }}>
+                  No file link
+                </span>
+              )}
+
+              {isVerified ? (
+                <span className={styles.docDoneHint}>Verified</span>
               ) : null}
-              <button
-                type="button"
-                className={styles.docVerifyBtn}
-                disabled={busy}
-                onClick={() => act(doc, "verified")}
-              >
-                {busy ? "Working…" : "Verify"}
-              </button>
-              <button
-                type="button"
-                className={styles.docRejectBtn}
-                disabled={busy}
-                onClick={() => setReasonFor(reasonFor === id ? null : id)}
-              >
-                Reject
-              </button>
+
+              {awaitingReupload ? (
+                <span className={styles.docDoneHint}>Re-upload requested</span>
+              ) : null}
+
+              {canVerify ? (
+                <button
+                  type="button"
+                  className={styles.docVerifyBtn}
+                  disabled={busy}
+                  onClick={() => act(doc, "verified")}
+                >
+                  {busy ? "Working…" : hasMismatch(doc) ? "Approve anyway" : "Verify"}
+                </button>
+              ) : null}
+
+              {canRequestReupload ? (
+                <button
+                  type="button"
+                  className={styles.docReuploadBtn}
+                  disabled={busy}
+                  onClick={() => toggleReason(id, "reupload_required")}
+                >
+                  Request reupload
+                </button>
+              ) : null}
+
+              {canReject ? (
+                <button
+                  type="button"
+                  className={styles.docRejectBtn}
+                  disabled={busy}
+                  onClick={() => toggleReason(id, "rejected")}
+                >
+                  Reject
+                </button>
+              ) : null}
             </div>
 
-            {reasonFor === id ? (
+            {reasonOpen ? (
               <div className={styles.reasonRow}>
                 <input
                   className={styles.reasonInput}
-                  placeholder="Reason for rejection…"
+                  placeholder={
+                    reasonOpen === "reupload_required"
+                      ? "Why does this need a re-upload?"
+                      : "Reason for rejection…"
+                  }
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   autoFocus
                 />
                 <button
                   type="button"
-                  className={styles.docRejectBtn}
+                  className={reasonOpen === "reupload_required" ? styles.docReuploadBtn : styles.docRejectBtn}
                   disabled={!reason.trim() || busy}
-                  onClick={() => act(doc, "rejected", reason.trim())}
+                  onClick={() => act(doc, reasonOpen, reason.trim())}
                 >
                   Confirm
                 </button>
