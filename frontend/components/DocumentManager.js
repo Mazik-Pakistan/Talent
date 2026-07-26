@@ -12,7 +12,13 @@ import {
 } from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
-import { COPILOT_DOCUMENTS_ASSIST_EVENT } from "@/lib/ai/guideContext";
+import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
+import { COPILOT_DOCUMENTS_ASSIST_EVENT, publishGuideContext } from "@/lib/ai/guideContext";
+import { publishCandidateContext } from "@/lib/ai/candidateContext";
+import {
+  buildDocumentStatusInsights,
+  classifyDocuments,
+} from "@/lib/ai/documentStatusInsights";
 
 const CATEGORY_OPTIONS = [
   { value: "all", label: "All documents" },
@@ -107,10 +113,53 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     if (!accessToken) return;
     setLoading(true);
     listMyDocuments(accessToken)
-      .then((data) => setDocuments(data.documents || []))
+      .then((data) => {
+        const docs = data.documents || [];
+        setDocuments(docs);
+        const classified = classifyDocuments(docs);
+        const tip = buildDocumentStatusInsights(docs, { audience: "self" })[0];
+        const role = (() => {
+          try {
+            return JSON.parse(localStorage.getItem("user") || "null")?.role;
+          } catch {
+            return null;
+          }
+        })();
+        // Short status hint only — full tip text comes from insights (avoid Tip 1 == Tip 2).
+        const shortHint = classified.problem.length
+          ? `${classified.problem.length} document${classified.problem.length === 1 ? "" : "s"} need attention on this page.`
+          : classified.pending.length
+            ? `${classified.pending.length} document${classified.pending.length === 1 ? "" : "s"} awaiting review.`
+            : classified.verified.length
+              ? "Documents on this page look verified."
+              : "Upload identity and employment files, then track verification status here.";
+        const payload = {
+          pathname: "/documents",
+          section: "documents",
+          formId: "documents",
+          documents: docs,
+          problemCount: classified.problem.length,
+          hint: shortHint,
+          tipId: tip?.id || null,
+        };
+        if (role === "candidate") {
+          const prev =
+            typeof window !== "undefined" ? window.__talentCandidateMascotContext || {} : {};
+          publishCandidateContext({ ...prev, ...payload });
+        } else if (role === "employee") {
+          const prev =
+            typeof window !== "undefined" ? window.__talentAiGuideContext || {} : {};
+          publishGuideContext({ ...prev, ...payload });
+        }
+      })
       .catch((err) => setError(getApiErrorMessage(err, "Unable to load documents.")))
       .finally(() => setLoading(false));
   }, []);
+
+  function refreshPartnerInsights() {
+    invalidateInsightCache();
+    invalidateCandidateInsightCache();
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -211,7 +260,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       if (fileInputRef.current) fileInputRef.current.value = "";
       setActiveCategory("all");
       loadDocuments();
-      invalidateInsightCache();
+      refreshPartnerInsights();
       onChanged?.();
     } catch (err) {
       setUploadMessage({ type: "error", text: getApiErrorMessage(err, "Upload failed. Please try again.") });
@@ -238,6 +287,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     try {
       await reextractDocument(documentId, accessToken);
       loadDocuments();
+      refreshPartnerInsights();
     } catch (err) {
       setError(getApiErrorMessage(err, "Could not re-extract the document."));
     } finally {
@@ -253,7 +303,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     try {
       await deleteDocument(documentId, accessToken);
       loadDocuments();
-      invalidateInsightCache();
+      refreshPartnerInsights();
       onChanged?.();
     } catch (err) {
       setError(getApiErrorMessage(err, "Could not delete the document."));
@@ -283,7 +333,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       setReplacementFile(null);
       if (replacementInputRef.current) replacementInputRef.current.value = "";
       loadDocuments();
-      invalidateInsightCache();
+      refreshPartnerInsights();
       onChanged?.();
     } catch (err) {
       setReplacementMessage({ type: "error", text: getApiErrorMessage(err, "Replacement upload failed.") });

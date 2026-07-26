@@ -71,15 +71,15 @@ export default function OfferComposerModal({ candidate, onClose, onSent }) {
         <form onSubmit={handleSubmit} className="form-grid">
           <label className="field">
             <span>Job title</span>
-            <input value={form.job_title} onChange={(e) => update("job_title", e.target.value)} />
+            <input name="job_title" value={form.job_title} onChange={(e) => update("job_title", e.target.value)} />
           </label>
           <label className="field">
             <span>Department</span>
-            <input value={form.department} onChange={(e) => update("department", e.target.value)} />
+            <input name="department" value={form.department} onChange={(e) => update("department", e.target.value)} />
           </label>
           <label className="field">
             <span>Employment type</span>
-            <select value={form.employment_type} onChange={(e) => update("employment_type", e.target.value)}>
+            <select name="employment_type" value={form.employment_type} onChange={(e) => update("employment_type", e.target.value)}>
               <option>Full-time</option>
               <option>Part-time</option>
               <option>Contract</option>
@@ -88,27 +88,27 @@ export default function OfferComposerModal({ candidate, onClose, onSent }) {
           </label>
           <label className="field">
             <span>Office location</span>
-            <input value={form.office_location} onChange={(e) => update("office_location", e.target.value)} />
+            <input name="office_location" value={form.office_location} onChange={(e) => update("office_location", e.target.value)} />
           </label>
           <label className="field">
             <span>Reporting manager *</span>
-            <input value={form.reporting_manager} onChange={(e) => update("reporting_manager", e.target.value)} required />
+            <input name="reporting_manager" value={form.reporting_manager} onChange={(e) => update("reporting_manager", e.target.value)} required />
           </label>
           <label className="field">
             <span>Start date</span>
-            <input type="date" value={form.start_date} onChange={(e) => update("start_date", e.target.value)} />
+            <input name="start_date" type="date" value={form.start_date} onChange={(e) => update("start_date", e.target.value)} />
           </label>
           <label className="field">
             <span>Monthly salary (optional)</span>
-            <input type="number" min="0" value={form.monthly_salary} onChange={(e) => update("monthly_salary", e.target.value)} />
+            <input name="monthly_salary" type="number" min="0" value={form.monthly_salary} onChange={(e) => update("monthly_salary", e.target.value)} />
           </label>
           <label className="field">
             <span>Currency</span>
-            <input value={form.currency} onChange={(e) => update("currency", e.target.value)} />
+            <input name="currency" value={form.currency} onChange={(e) => update("currency", e.target.value)} />
           </label>
           <label className="field wide">
             <span>Personal message (optional)</span>
-            <textarea rows={2} value={form.message_to_candidate} onChange={(e) => update("message_to_candidate", e.target.value)} />
+            <textarea name="message_to_candidate" rows={2} value={form.message_to_candidate} onChange={(e) => update("message_to_candidate", e.target.value)} />
           </label>
 
           <div className="onboarding-actions" style={{ gridColumn: "1 / -1" }}>

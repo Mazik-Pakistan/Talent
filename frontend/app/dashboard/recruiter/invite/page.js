@@ -6,6 +6,10 @@ import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { createInvitation, getApiErrorMessage } from "@/services/authService";
 import { getOrgTaxonomy } from "@/services/learningService";
+import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
 
 const initialInvite = {
   full_name: "",
@@ -24,6 +28,15 @@ export default function RecruiterInvitePage() {
   const [inviteEmailSent, setInviteEmailSent] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
   const [taxonomy, setTaxonomy] = useState({ departments: [], designations: [] });
+
+  useEffect(() => {
+    publishRecruiterContext({
+      section: "invite_form",
+      hint: "Fill name, email, designation, and department — focus each field for tips. Bulk Excel invites live in AI Assistant.",
+      fields: ["full_name", "email", "job_title", "department", "office_location", "start_date", "expires_in_days"],
+    });
+    return () => clearRecruiterContext();
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -91,7 +104,7 @@ export default function RecruiterInvitePage() {
           </div>
         </div>
         <div className={styles.sectionBody}>
-          <form onSubmit={handleCreateInvite}>
+          <form data-partner-coach onSubmit={handleCreateInvite}>
             <div className={styles.formGrid}>
               <label className={styles.field}>
                 <span>Candidate full name</span>

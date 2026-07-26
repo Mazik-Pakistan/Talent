@@ -11,6 +11,8 @@ import {
   signOffer,
 } from "@/services/authService";
 import SignaturePad from "@/components/SignaturePad";
+import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
+import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
 
 const OFFER_DRAFT_KEY = "offer_letter_draft";
 
@@ -38,6 +40,18 @@ function OfferLetterPageContent() {
     }
     load(accessToken);
   }, [router]);
+
+  useEffect(() => {
+    publishCandidateContext({
+      pathname: "/offer",
+      section: "offer",
+      hint: offer?.status
+        ? `Offer status: ${offer.status}. Review terms carefully before you sign.`
+        : "Review your offer letter, agree to the terms, then sign with your legal name.",
+      fields: ["full_legal_name", "agree", "signature"],
+    });
+    return () => clearCandidateContext();
+  }, [offer?.status]);
 
   // Keep an unfinished signature/confirmation safe when the candidate goes back
   // to the dashboard or uses the browser navigation controls.
@@ -116,6 +130,7 @@ function OfferLetterPageContent() {
       setOffer(data.offer);
       sessionStorage.removeItem(`${OFFER_DRAFT_KEY}_${offer.id}`);
       setMessage(data.message);
+      invalidateCandidateInsightCache();
     } catch (error) {
       setMessage(getApiErrorMessage(error, "Could not sign the offer."));
     } finally {
@@ -131,6 +146,7 @@ function OfferLetterPageContent() {
       await declineOffer(offer.id, { reason: declineReason }, accessToken);
       await load(accessToken);
       setShowDeclineForm(false);
+      invalidateCandidateInsightCache();
     } catch (error) {
       setMessage(getApiErrorMessage(error, "Could not decline the offer."));
     } finally {
@@ -244,7 +260,7 @@ function OfferLetterPageContent() {
                   Your full legal name is locked to the name on your account from registration. Draw your signature
                   and confirm you agree to the terms.
                 </p>
-                <form onSubmit={handleSign} className="auth-form">
+                <form data-partner-coach onSubmit={handleSign} className="auth-form">
                   <label className="field">
                     <span>Full legal name</span>
                     <input

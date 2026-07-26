@@ -51,10 +51,8 @@ function historyToneClass(kind, tone) {
  * Employee AI Copilot — global contextual partner (NOT the autonomous Agent).
  *
  * Mounted once from the root layout so it never unmounts during employee
- * routing. Strictly read-only: it explains what's on screen and surfaces
- * tips/notifications. It never types into fields, fills forms, switches
- * tabs, or takes any action on the employee's behalf — that's the separate,
- * explicitly-invoked Agent.
+ * routing. Shows observable guidance: progress, step checklist, field tips,
+ * and next actions. It does not run Hiring Agent workflows — that's /ai-assistant.
  */
 export default function EmployeeAiGuide() {
   const pathname = usePathname();
@@ -348,6 +346,40 @@ export default function EmployeeAiGuide() {
       ? `Employee Copilot — ${tipCount} tip${tipCount === 1 ? "" : "s"}`
       : "Employee Copilot";
 
+  const progressPct = Number(pageContext?.progress?.percentage);
+  const workflowSteps = (() => {
+    const currentSection = pageContext?.section || section;
+    const fields = pageContext?.fields || [];
+    if (fields.length) {
+      return fields.map((label, i) => ({
+        id: `field-${i}`,
+        label: String(label),
+        status: "pending",
+      }));
+    }
+    // Onboarding workflow visibility (employee complete-profile).
+    if (pathname?.includes("/complete-profile")) {
+      const order = ["personal", "emergency", "employment", "references", "documents", "nda", "submit"];
+      const idx = Math.max(0, order.indexOf(currentSection || "personal"));
+      return order.map((id, i) => ({
+        id,
+        label: id === "employment" ? "Bank details" : id === "documents" ? "Policies" : id.replace(/_/g, " "),
+        status: i < idx ? "done" : i === idx ? "active" : "pending",
+      }));
+    }
+    return [];
+  })();
+
+  const liveStatus =
+    statusLine ||
+    (pageContext?.progress?.profile_status === "complete"
+      ? "Profile complete — you're all set"
+      : Number.isFinite(progressPct)
+        ? `${Math.round(progressPct)}% complete${pageContext?.section ? ` · on ${String(pageContext.section).replace(/_/g, " ")}` : ""}`
+        : focusHint
+          ? "Guiding the field you're on"
+          : null);
+
   return (
     <div className={styles.wrapper}>
       {!minimized && current?.message ? (
@@ -364,8 +396,15 @@ export default function EmployeeAiGuide() {
 
           <div className={`${styles.bubbleLabel} ${isWarn ? styles.bubbleLabelWarn : ""}`}>
             {isWarn ? <IconAlert width={12} height={12} /> : <IconSparkle width={12} height={12} />}
-            {isWarn ? "Needs your attention" : "For you"}
+            {isWarn ? "Needs your attention" : Number.isFinite(progressPct) && progressPct >= 100 ? "Ready to save" : "Guiding you"}
           </div>
+
+          {Number.isFinite(progressPct) ? (
+            <div className={styles.bubbleProgress} aria-hidden="true">
+              <div className={styles.bubbleProgressFill} style={{ width: `${Math.min(100, Math.max(0, progressPct))}%` }} />
+            </div>
+          ) : null}
+
           <p
             className={`${styles.bubbleMessage} ${isWarn ? styles.bubbleMessageWarn : ""}`}
             key={`${current?.id || "msg"}-${section || pathname}`}
@@ -392,10 +431,28 @@ export default function EmployeeAiGuide() {
             </div>
           ) : null}
 
-          {statusLine ? (
+          {liveStatus ? (
             <p className={styles.bubbleStatus} role="status">
-              {statusLine}
+              {liveStatus}
             </p>
+          ) : null}
+
+          {workflowSteps.length > 0 ? (
+            <ul className={styles.stepList} aria-label="Onboarding steps">
+              {workflowSteps.map((step) => (
+                <li
+                  key={step.id}
+                  className={`${styles.stepItem} ${
+                    step.status === "done" ? styles.stepDone : step.status === "active" ? styles.stepActive : ""
+                  }`}
+                >
+                  <span className={styles.stepMark} aria-hidden="true">
+                    {step.status === "done" ? "✓" : step.status === "active" ? "●" : "○"}
+                  </span>
+                  <span>{step.label}</span>
+                </li>
+              ))}
+            </ul>
           ) : null}
 
           {deck.length > 1 ? (

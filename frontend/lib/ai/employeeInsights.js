@@ -3,6 +3,9 @@
 import { getLearningDashboard } from "@/services/learningService";
 import { getProfileCompletion, listMyDocuments } from "@/services/authService";
 import { COPILOT_PRIORITY, ONBOARDING_WORKFLOW } from "@/lib/ai/guideContext";
+import { buildDocumentStatusInsights } from "@/lib/ai/documentStatusInsights";
+import { scopedContext } from "@/lib/ai/contextScope";
+import { EMPLOYEE_PAGE_SUMMARIES } from "@/lib/ai/employeeFieldHelp";
 
 /**
  * Contextual guidance for the Employee AI Copilot (NOT the autonomous Agent).
@@ -172,7 +175,18 @@ function pageTitle(pathname) {
 
 function push(insights, item) {
   if (!item?.message) return;
-  if (insights.some((existing) => existing.id === item.id)) return;
+  const normalized = String(item.message).trim().toLowerCase();
+  if (
+    insights.some(
+      (existing) =>
+        existing.id === item.id ||
+        String(existing.message || "")
+          .trim()
+          .toLowerCase() === normalized
+    )
+  ) {
+    return;
+  }
   insights.push({
     priority: COPILOT_PRIORITY.tip,
     ...item,
@@ -212,10 +226,11 @@ function sectionInsight(section, helpMap, prefix) {
  * Build the insight deck for a route (+ optional live subsection context).
  * Always returns at least one insight so the floating guide never disappears.
  */
-export async function buildEmployeeInsights(pathname, accessToken, context = {}) {
+export async function buildEmployeeInsights(pathname, accessToken, rawContext = {}) {
   const insights = [];
+  const context = scopedContext(rawContext, pathname);
   const section = context?.section || null;
-  const firstNameHint = context?.firstName;
+  const firstNameHint = context?.firstName || rawContext?.firstName;
 
   let profile = null;
   if (accessToken) {
@@ -389,69 +404,34 @@ export async function buildEmployeeInsights(pathname, accessToken, context = {})
   }
 
   // ── Documents ────────────────────────────────────────────────────────
-  // One tip only — avoid stacking count + mismatch + howto that all say the same thing.
   if (pathname?.startsWith("/documents")) {
     try {
-      const data = accessToken ? await cached("my-documents", () => listMyDocuments(accessToken)) : null;
+      const contextDocs = context?.documents;
+      const data =
+        contextDocs?.length
+          ? { documents: contextDocs }
+          : accessToken
+            ? await cached("my-documents", () => listMyDocuments(accessToken))
+            : null;
       const documents = data?.documents || [];
-      const docStatus = (doc) => String(doc.verification_status || doc.status || "").toLowerCase();
-      const rejected = documents.filter((doc) =>
-        ["rejected", "reupload_required"].includes(docStatus(doc))
+      const live = buildDocumentStatusInsights(documents, { audience: "self" });
+      live.forEach((item) =>
+        push(insights, {
+          ...item,
+          priority:
+            item.tone === "warn" ? COPILOT_PRIORITY.validation : COPILOT_PRIORITY.tip,
+        })
       );
-      const mismatched = documents.filter((doc) => docStatus(doc) === "mismatch");
-      const verified = documents.filter((doc) => docStatus(doc) === "verified");
-      const pending = documents.filter((doc) =>
-        ["pending", "processing", "uploaded", "sent", "pending_verification", "viewed", "incomplete"].includes(
-          docStatus(doc)
-        )
-      );
-      const problem = [...mismatched, ...rejected];
-
-      const typeLabel = (doc) => {
-        const raw = doc.doc_type || doc.category || "document";
-        if (raw === "cnic") return "National ID";
-        if (raw === "passport") return "Passport";
-        if (raw === "transcript") return "Education transcript";
-        if (raw === "resume") return "Resume";
-        return String(raw).replace(/_/g, " ");
-      };
-
-      if (!documents.length) {
+      if (!live.length) {
         push(insights, {
-          id: "documents-empty",
-          priority: COPILOT_PRIORITY.task,
-          tone: "warn",
-          count: 1,
-          message: "No documents yet — upload a clear National ID to get started.",
-        });
-      } else if (problem.length) {
-        const names = problem.map(typeLabel).slice(0, 3).join(", ");
-        push(insights, {
-          id: "documents-attention",
-          priority: COPILOT_PRIORITY.validation,
-          tone: "warn",
-          count: problem.length,
-          message:
-            problem.length === 1
-              ? `I found an issue with your ${names}. It may need a clearer scan.`
-              : `I found ${problem.length} documents to review: ${names}.`,
-        });
-      } else if (pending.length) {
-        push(insights, {
-          id: "documents-pending",
-          priority: COPILOT_PRIORITY.tip,
-          message: `${pending.length} document${pending.length === 1 ? "" : "s"} awaiting review.`,
-        });
-      } else if (verified.length) {
-        push(insights, {
-          id: "documents-verified",
-          message: `All set — ${verified.length} verified document${verified.length === 1 ? "" : "s"} on file.`,
+          id: "documents-fallback",
+          message: "Upload and manage your identity and employment files here.",
         });
       }
     } catch {
       push(insights, {
         id: "documents-fallback",
-        message: "Upload and manage your identity and employment files here.",
+        message: "Check each document card’s status badge — that’s the live truth for this page.",
       });
     }
   }
@@ -546,12 +526,38 @@ export async function buildEmployeeInsights(pathname, accessToken, context = {})
     });
   }
 
+  // Always seed what/why for the screen so every page has at least one tip.
+  const seedKey = (() => {
+    if (pathname?.startsWith("/dashboard/employee/complete-profile")) return "onboarding";
+    if (pathname?.startsWith("/documents")) return "documents";
+    if (pathname?.startsWith("/dashboard/employee/learning")) return "learning";
+    if (pathname?.startsWith("/dashboard/employee/talent")) return "talent";
+    if (pathname?.startsWith("/dashboard/employee/profile")) return "profile";
+    if (pathname === "/dashboard/employee") return "dashboard";
+    return null;
+  })();
+  const summary = seedKey ? EMPLOYEE_PAGE_SUMMARIES[seedKey] : null;
+  if (summary?.what) {
+    push(insights, {
+      id: `page-what-${seedKey}`,
+      priority: COPILOT_PRIORITY.tip,
+      message: summary.what,
+    });
+  }
+  if (summary?.why) {
+    push(insights, {
+      id: `page-why-${seedKey}`,
+      priority: COPILOT_PRIORITY.tip,
+      message: summary.why,
+    });
+  }
+
   // ── Always-on fallback so the guide never goes blank ─────────────────
   if (!insights.length) {
     push(insights, {
       id: "generic-page",
       priority: COPILOT_PRIORITY.tip,
-      message: `You're on ${pageTitle(pathname)}. I'm beside you with tips for whatever you need to fill or finish on this screen.`,
+      message: `You're on ${pageTitle(pathname)}. Tips for this screen appear here.`,
     });
   }
 

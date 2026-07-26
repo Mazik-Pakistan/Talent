@@ -6,20 +6,23 @@ import {
   getProfileCompletion,
   getNotifications,
   listMyDocuments,
-  getRecruiterMascotBrief,
 } from "@/services/authService";
 import { getLearningDashboard } from "@/services/learningService";
 import { CANDIDATE_MASCOT_PRIORITY } from "@/lib/ai/candidateContext";
+import {
+  buildDocumentStatusInsights,
+  classifyDocuments,
+  isProblemDocument,
+} from "@/lib/ai/documentStatusInsights";
+import { scopedContext } from "@/lib/ai/contextScope";
+import { CANDIDATE_PAGE_SUMMARIES } from "@/lib/ai/candidateFieldHelp";
 
 /**
  * Contextual guidance engine for the Candidate Assistant.
- *
- * Rule-based insights use cached candidate APIs. OpenRouter AI is invoked only
- * for high-value workflow reasoning briefs via the shared backend service.
+ * Rule-based insights only — no invented AI briefs on the tip carousel.
  */
 
 const CACHE_TTL_MS = 45000;
-const AI_BRIEF_TTL_MS = 300000;
 const cache = new Map();
 
 export const CANDIDATE_INSIGHTS_REFRESH_EVENT = "talent-candidate-data-changed";
@@ -41,7 +44,18 @@ export function invalidateCandidateInsightCache() {
 
 function push(insights, item) {
   if (!item?.message) return;
-  if (insights.some((existing) => existing.id === item.id)) return;
+  const normalized = String(item.message).trim().toLowerCase();
+  if (
+    insights.some(
+      (existing) =>
+        existing.id === item.id ||
+        String(existing.message || "")
+          .trim()
+          .toLowerCase() === normalized
+    )
+  ) {
+    return;
+  }
   insights.push({
     priority: CANDIDATE_MASCOT_PRIORITY.tip,
     tone: "info",
@@ -55,11 +69,16 @@ function sortByPriority(insights) {
 
 function candidatePageKey(pathname) {
   if (!pathname) return "unknown";
-  if (pathname.includes("/dashboard/candidate")) return "dashboard";
-  if (pathname.includes("/onboarding")) return "onboarding";
+  if (pathname.includes("/onboarding")) {
+    if (typeof window !== "undefined" && /(?:\?|&)edit=true\b/.test(window.location.search)) {
+      return "profile";
+    }
+    return "onboarding";
+  }
   if (pathname.includes("/documents")) return "documents";
   if (pathname.includes("/offer")) return "offer";
   if (pathname.includes("/learning")) return "learning";
+  if (pathname.includes("/dashboard/candidate")) return "dashboard";
   if (pathname.includes("/profile")) return "profile";
   return "other";
 }
@@ -83,13 +102,19 @@ async function loadCandidateSnapshot(accessToken) {
     const docs = docsData?.documents || [];
     const notifs = notifData?.notifications || [];
 
-    const unverifiedDocs = docs.filter((d) => d.status === "pending" || d.status === "rejected");
+    const classified = classifyDocuments(docs);
+    const unverifiedDocs = docs.filter(
+      (d) => isProblemDocument(d) || ["pending", "processing", "uploaded", "pending_verification"].includes(
+        String(d.verification_status || d.status || "").toLowerCase()
+      )
+    );
     const missingResume = !profile.resume_url && !docs.some((d) => d.document_type?.includes("resume"));
     const missingSkills = !profile.skills || (Array.isArray(profile.skills) && profile.skills.length === 0);
     const missingEducation = !profile.education || (Array.isArray(profile.education) && profile.education.length === 0);
     const missingExperience = !profile.experience || (Array.isArray(profile.experience) && profile.experience.length === 0);
 
-    const completionPct = profileData?.completion_percentage ?? dashboard?.progress?.percentage ?? 82;
+    const completionPct =
+      profileData?.completion_percentage ?? dashboard?.progress?.percentage ?? null;
     const remainingTasks = tasks.filter((t) => !t.completed);
 
     return {
@@ -100,6 +125,8 @@ async function loadCandidateSnapshot(accessToken) {
       offer,
       offerStatus: offer?.status || (dashboard?.has_signed_offer ? "accepted" : "none"),
       docs,
+      docsClassified: classified,
+      problemDocsCount: classified.problem.length,
       unverifiedDocsCount: unverifiedDocs.length,
       missingResume,
       missingSkills: missingSkills ? 1 : 0,
@@ -108,27 +135,35 @@ async function loadCandidateSnapshot(accessToken) {
       completionPct,
       unreadNotifications: notifData?.unread_count || 0,
       assignedLearning: learningData?.enrolled_courses?.length || 0,
-      recommendedLearning: learningData?.recommended_courses?.length || 2,
+      recommendedLearning: Array.isArray(learningData?.recommended_courses)
+        ? learningData.recommended_courses.length
+        : 0,
       interviewScheduled: Boolean(dashboard?.upcoming_interview),
+      interviewAt:
+        dashboard?.upcoming_interview?.scheduled_at ||
+        dashboard?.upcoming_interview?.date ||
+        null,
     };
   });
 }
 
 function candidateStats(snapshot) {
+  // No data yet → no fabricated numbers. Insight builders skip null values.
   if (!snapshot) {
     return {
-      profileCompletionPct: 82,
-      missingResume: true,
-      missingSkills: 1,
-      missingEducation: true,
+      profileCompletionPct: null,
+      missingResume: null,
+      missingSkills: null,
+      missingEducation: null,
       unverifiedDocuments: 0,
-      assessmentStatus: "none",
+      problemDocuments: 0,
       interviewScheduled: false,
-      offerStatus: "none",
-      onboardingProgress: 80,
-      onboardingRemaining: 1,
+      interviewAt: null,
+      offerStatus: null,
+      onboardingProgress: null,
+      onboardingRemaining: null,
       assignedLearning: 0,
-      recommendedLearning: 2,
+      recommendedLearning: 0,
       unreadNotifications: 0,
     };
   }
@@ -139,8 +174,9 @@ function candidateStats(snapshot) {
     missingSkills: snapshot.missingSkills,
     missingEducation: snapshot.missingEducation,
     unverifiedDocuments: snapshot.unverifiedDocsCount,
-    assessmentStatus: "none",
+    problemDocuments: snapshot.problemDocsCount || 0,
     interviewScheduled: snapshot.interviewScheduled,
+    interviewAt: snapshot.interviewAt || null,
     offerStatus: snapshot.offerStatus,
     onboardingProgress: snapshot.completionPct,
     onboardingRemaining: snapshot.onboardingRemaining,
@@ -151,6 +187,7 @@ function candidateStats(snapshot) {
 }
 
 function profileCompletionInsight(stats) {
+  if (stats.profileCompletionPct == null) return null;
   if (stats.profileCompletionPct >= 100) return null;
   return {
     id: "cand-profile-pct",
@@ -160,7 +197,7 @@ function profileCompletionInsight(stats) {
 }
 
 function resumeInsight(stats) {
-  if (!stats.missingResume) return null;
+  if (stats.missingResume !== true) return null;
   return {
     id: "cand-missing-resume",
     priority: CANDIDATE_MASCOT_PRIORITY.task,
@@ -187,7 +224,57 @@ function offerInsight(stats) {
   return null;
 }
 
-function documentVerificationInsight(stats) {
+/**
+ * Concise, dashboard-safe document status (never the full "upload a clear copy"
+ * instruction — that belongs only to the Documents page).
+ */
+function documentSummaryInsight(docs = []) {
+  const { problem, pending, verified } = classifyDocuments(docs);
+  if (problem.length) {
+    return {
+      id: "cand-docs-problem",
+      priority: CANDIDATE_MASCOT_PRIORITY.task,
+      tone: "warn",
+      message: `${problem.length} document${problem.length > 1 ? "s" : ""} need attention — open Documents to fix.`,
+      actions: [{ label: "Open documents", href: "/documents", primary: true }],
+    };
+  }
+  if (pending.length) {
+    return {
+      id: "cand-docs-pending",
+      priority: CANDIDATE_MASCOT_PRIORITY.insight,
+      message: `${pending.length} document${pending.length > 1 ? "s" : ""} awaiting verification.`,
+    };
+  }
+  if (verified.length) {
+    return {
+      id: "cand-docs-verified",
+      priority: CANDIDATE_MASCOT_PRIORITY.insight,
+      message: "Your documents have been verified.",
+    };
+  }
+  return null;
+}
+
+function documentVerificationInsight(stats, docs = []) {
+  const live = buildDocumentStatusInsights(docs, { audience: "self" });
+  if (live.length) {
+    return {
+      ...live[0],
+      priority:
+        live[0].tone === "warn"
+          ? CANDIDATE_MASCOT_PRIORITY.task
+          : CANDIDATE_MASCOT_PRIORITY.insight,
+    };
+  }
+  if (stats.problemDocuments > 0) {
+    return {
+      id: "cand-docs-problem",
+      priority: CANDIDATE_MASCOT_PRIORITY.task,
+      tone: "warn",
+      message: `Check your screen — ${stats.problemDocuments} document${stats.problemDocuments > 1 ? "s" : ""} need attention (reupload or rejected).`,
+    };
+  }
   if (stats.unverifiedDocuments > 0) {
     return {
       id: "cand-docs-pending",
@@ -203,7 +290,7 @@ function documentVerificationInsight(stats) {
 }
 
 function onboardingStepInsight(stats) {
-  if (!stats.onboardingRemaining) return null;
+  if (stats.onboardingRemaining == null || !stats.onboardingRemaining) return null;
   return {
     id: "cand-onboarding-step",
     priority: CANDIDATE_MASCOT_PRIORITY.workflow,
@@ -219,20 +306,51 @@ function learningRecommendationInsight(stats) {
   return {
     id: "cand-learning-rec",
     priority: CANDIDATE_MASCOT_PRIORITY.tip,
-    message: `${stats.recommendedLearning} recommended courses match your profile.`,
+    message: `${stats.recommendedLearning} recommended course${stats.recommendedLearning === 1 ? "" : "s"} match your profile.`,
   };
 }
 
 function interviewInsight(stats) {
   if (!stats.interviewScheduled) return null;
+  const when = stats.interviewAt ? new Date(stats.interviewAt) : null;
+  const label =
+    when && !Number.isNaN(when.getTime())
+      ? when.toLocaleString(undefined, {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : null;
   return {
     id: "cand-interview-scheduled",
     priority: CANDIDATE_MASCOT_PRIORITY.workflow,
-    message: "Interview scheduled for tomorrow.",
+    message: label ? `Interview scheduled for ${label}.` : "You have an interview scheduled.",
   };
 }
 
-function pageInsights(page, snapshot) {
+function seedPageTips(page) {
+  const summary = CANDIDATE_PAGE_SUMMARIES[page];
+  if (!summary) return [];
+  const tips = [];
+  if (summary.what) {
+    tips.push({
+      id: `page-what-${page}`,
+      priority: CANDIDATE_MASCOT_PRIORITY.tip,
+      message: summary.what,
+    });
+  }
+  if (summary.why) {
+    tips.push({
+      id: `page-why-${page}`,
+      priority: CANDIDATE_MASCOT_PRIORITY.tip,
+      message: summary.why,
+    });
+  }
+  return tips;
+}
+
+function pageInsights(page, snapshot, context = {}) {
   const stats = candidateStats(snapshot);
 
   if (page === "dashboard") {
@@ -242,61 +360,117 @@ function pageInsights(page, snapshot) {
       resumeInsight,
       offerInsight,
       onboardingStepInsight,
-      documentVerificationInsight,
       interviewInsight,
-      learningRecommendationInsight,
     ].forEach((fn) => {
       const item = fn(stats);
       if (item) push(insights, item);
     });
+    const docsItem = documentSummaryInsight(snapshot?.docs || []);
+    if (docsItem) push(insights, docsItem);
+    seedPageTips("dashboard").forEach((item) => push(insights, item));
     return insights;
   }
 
   if (page === "onboarding" || page === "profile") {
     const insights = [];
-    if (stats.missingResume) {
+    const step = context?.step || context?.section;
+    if (step === "personal") {
       push(insights, {
-        id: "onboarding-resume",
+        id: "onboarding-personal",
         priority: CANDIDATE_MASCOT_PRIORITY.task,
-        message: "You haven't uploaded your resume yet.",
+        message: "Start with legal name, CNIC, phone, and address — recruiters verify these first.",
       });
-    }
-    if (stats.missingSkills) {
       push(insights, {
-        id: "onboarding-skills",
-        priority: CANDIDATE_MASCOT_PRIORITY.task,
-        message: "Add key skills to boost your profile strength.",
+        id: "onboarding-personal-id",
+        priority: CANDIDATE_MASCOT_PRIORITY.tip,
+        message: "Your name and CNIC must match your National ID document exactly.",
       });
-    }
-    if (stats.missingEducation) {
+    } else if (step === "education") {
       push(insights, {
         id: "onboarding-education",
         priority: CANDIDATE_MASCOT_PRIORITY.task,
-        message: "Include education history for verification.",
+        message: "Add at least one education entry with institution and degree.",
       });
-    }
-    if (stats.onboardingRemaining > 0) {
       push(insights, {
-        id: "onboarding-remaining",
-        priority: CANDIDATE_MASCOT_PRIORITY.workflow,
-        message:
-          stats.onboardingRemaining === 1
-            ? "Only one onboarding step remains."
-            : `${stats.onboardingRemaining} steps left to complete onboarding.`,
+        id: "onboarding-education-transcript",
+        priority: CANDIDATE_MASCOT_PRIORITY.tip,
+        message: "Upload a clear transcript or certificate if you have it — it speeds up verification.",
       });
+      push(insights, {
+        id: "onboarding-education-fields",
+        priority: CANDIDATE_MASCOT_PRIORITY.tip,
+        message: "Institute, degree, field of study, and year are the details recruiters check first.",
+      });
+    } else if (step === "skills") {
+      push(insights, {
+        id: "onboarding-skills",
+        priority: CANDIDATE_MASCOT_PRIORITY.task,
+        message: "List skills recruiters search for — React, SQL, Python, etc.",
+      });
+      push(insights, {
+        id: "onboarding-skills-roles",
+        priority: CANDIDATE_MASCOT_PRIORITY.tip,
+        message: "Add a recent job title and company if you have work experience.",
+      });
+    } else if (step === "submit") {
+      push(insights, {
+        id: "onboarding-submit",
+        priority: CANDIDATE_MASCOT_PRIORITY.task,
+        message: "Review each section once, then submit your onboarding record.",
+      });
+    } else {
+      if (stats.missingSkills) {
+        push(insights, {
+          id: "onboarding-skills",
+          priority: CANDIDATE_MASCOT_PRIORITY.task,
+          message: "Add key skills to boost your profile strength.",
+        });
+      }
+      if (stats.missingEducation) {
+        push(insights, {
+          id: "onboarding-education",
+          priority: CANDIDATE_MASCOT_PRIORITY.task,
+          message: "Include education history for verification.",
+        });
+      }
+      if (stats.onboardingRemaining > 0) {
+        push(insights, {
+          id: "onboarding-remaining",
+          priority: CANDIDATE_MASCOT_PRIORITY.workflow,
+          message:
+            stats.onboardingRemaining === 1
+              ? "Only one onboarding step remains."
+              : `${stats.onboardingRemaining} steps left to complete onboarding.`,
+        });
+      }
     }
+    push(insights, {
+      id: "onboarding-guide",
+      priority: CANDIDATE_MASCOT_PRIORITY.tip,
+      message: "Need help filling fields? Tap Guide me through it.",
+    });
+    seedPageTips(page).forEach((item) => push(insights, item));
     return insights;
   }
 
   if (page === "documents") {
     const insights = [];
-    const docInsight = documentVerificationInsight(stats);
-    if (docInsight) push(insights, docInsight);
-    push(insights, {
-      id: "documents-hint",
-      priority: CANDIDATE_MASCOT_PRIORITY.tip,
-      message: "Ensure uploaded document copies are clear and legible.",
-    });
+    const docs = context?.documents?.length ? context.documents : snapshot?.docs || [];
+    const live = buildDocumentStatusInsights(docs, { audience: "self" });
+    live.forEach((item) =>
+      push(insights, {
+        ...item,
+        priority:
+          item.tone === "warn"
+            ? CANDIDATE_MASCOT_PRIORITY.task
+            : CANDIDATE_MASCOT_PRIORITY.tip,
+      })
+    );
+    if (!live.length) {
+      const docInsight = documentVerificationInsight(stats, docs);
+      if (docInsight) push(insights, docInsight);
+    }
+    seedPageTips("documents").forEach((item) => push(insights, item));
     return insights;
   }
 
@@ -309,6 +483,12 @@ function pageInsights(page, snapshot) {
       priority: CANDIDATE_MASCOT_PRIORITY.tip,
       message: "Review compensation, benefits, and start date before signing.",
     });
+    push(insights, {
+      id: "offer-guide",
+      priority: CANDIDATE_MASCOT_PRIORITY.tip,
+      message: "I can highlight the agree + signature fields — you confirm the final sign.",
+    });
+    seedPageTips("offer").forEach((item) => push(insights, item));
     return insights;
   }
 
@@ -323,55 +503,30 @@ function pageInsights(page, snapshot) {
     }
     const rec = learningRecommendationInsight(stats);
     if (rec) push(insights, rec);
+    if (!insights.length) {
+      push(insights, {
+        id: "learning-empty",
+        priority: CANDIDATE_MASCOT_PRIORITY.tip,
+        message: "Learning tips appear here when courses are assigned to you.",
+      });
+    }
     return insights;
   }
 
-  return [];
+  return seedPageTips(page);
 }
 
-async function maybeAiBrief(accessToken, page, snapshot, firstName) {
-  if (!accessToken || page !== "dashboard") return null;
-  const stats = candidateStats(snapshot);
-  const cacheKey = `cand-ai-brief:${page}:${stats.profileCompletionPct}:${stats.offerStatus}:${stats.onboardingRemaining}`;
-
-  return cached(
-    cacheKey,
-    async () => {
-      try {
-        const payload = {
-          page,
-          first_name: firstName || null,
-          role: "candidate",
-          profile_completion: `${stats.profileCompletionPct}%`,
-          missing_resume: stats.missingResume,
-          unverified_docs: stats.unverifiedDocuments,
-          offer_status: stats.offerStatus,
-          onboarding_remaining: stats.onboardingRemaining,
-        };
-        const result = await getRecruiterMascotBrief(payload, accessToken);
-        if (result?.message) {
-          return {
-            id: "cand-ai-brief",
-            priority: CANDIDATE_MASCOT_PRIORITY.ai,
-            message: String(result.message).slice(0, 140),
-          };
-        }
-      } catch {
-        // Fallback to rule-based candidate insights
-      }
-      return null;
-    },
-    AI_BRIEF_TTL_MS
-  );
-}
-
-export async function buildCandidateInsights(pathname, accessToken, context = {}) {
+export async function buildCandidateInsights(pathname, accessToken, rawContext = {}) {
   const page = candidatePageKey(pathname);
+  const context = scopedContext(rawContext, pathname);
   const snapshot = await loadCandidateSnapshot(accessToken);
   const stats = candidateStats(snapshot);
   const insights = [];
 
-  if (context?.hint) {
+  // Live page tips only — no AI brief (it invents off-page content like courses).
+  insights.push(...pageInsights(page, snapshot, context));
+
+  if (context?.hint && page !== "documents") {
     push(insights, {
       id: "context-hint",
       priority: CANDIDATE_MASCOT_PRIORITY.task,
@@ -379,16 +534,11 @@ export async function buildCandidateInsights(pathname, accessToken, context = {}
     });
   }
 
-  insights.push(...pageInsights(page, snapshot));
-
-  const aiBrief = await maybeAiBrief(accessToken, page, snapshot, context?.firstName);
-  if (aiBrief) push(insights, aiBrief);
-
   if (!insights.length) {
     push(insights, {
       id: "cand-fallback",
       priority: CANDIDATE_MASCOT_PRIORITY.tip,
-      message: "Need help with your candidate profile or documents? Click me to chat!",
+      message: "You’re on this page — focus a field for help, or use the left menu to continue.",
     });
   }
 

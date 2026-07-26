@@ -702,7 +702,7 @@ function EmployeeProfileContent() {
                   onEdit={() => startEdit("personal")}
                   onCancel={cancelEdit}
                   editForm={
-                    <div className={styles.editForm}>
+                    <div className={styles.editForm} data-partner-coach>
                       <div className={styles.formGrid}>
                         <Field label="First name" value={personalDraft.first_name} onChange={(e) => setPersonalDraft({ ...personalDraft, first_name: e.target.value })} />
                         <Field label="Last name" value={personalDraft.last_name} onChange={(e) => setPersonalDraft({ ...personalDraft, last_name: e.target.value })} />
@@ -785,7 +785,7 @@ function EmployeeProfileContent() {
                   onEdit={() => startEdit("education")}
                   onCancel={cancelEdit}
                   editForm={
-                    <div className={styles.editForm}>
+                    <div className={styles.editForm} data-partner-coach>
                       {educationDrafts.map((entry, index) => (
                         <div key={index} className={styles.eduCard}>
                           <strong>Education {index + 1}</strong>
@@ -868,7 +868,7 @@ function EmployeeProfileContent() {
                   onEdit={() => startEdit("emergency")}
                   onCancel={cancelEdit}
                   editForm={
-                    <div className={styles.editForm}>
+                    <div className={styles.editForm} data-partner-coach>
                       <div className={styles.formGrid}>
                         <Field
                           label="Full name"
@@ -947,7 +947,7 @@ function EmployeeProfileContent() {
                   onEdit={() => startEdit("employment")}
                   onCancel={cancelEdit}
                   editForm={
-                    <div className={styles.editForm}>
+                    <div className={styles.editForm} data-partner-coach>
                       <div className={styles.formGrid}>
                         <Field
                           label="Bank name"
@@ -1053,7 +1053,7 @@ function EmployeeProfileContent() {
                   onEdit={() => startEdit("references")}
                   onCancel={cancelEdit}
                   editForm={
-                    <div className={styles.editForm}>
+                    <div className={styles.editForm} data-partner-coach>
                       {references.map((ref, index) => (
                         <div key={index} className={styles.refCard}>
                           <div className={styles.refCardHead}>

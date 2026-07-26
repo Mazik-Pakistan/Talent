@@ -40,12 +40,12 @@ export default function RecruiterAIAssistantPage() {
     <RecruiterShell
       activeKey="assistant"
       title="AI Assistant"
-      subtitle="Ask in plain language — invite, review, offer, onboard, and notify, for one person or many."
+      subtitle="Hiring Agent — chat here for full automation (bulk invite, approvals, reminders, day-1). On other pages, the mascot is your field-by-field partner only."
     >
       <AssistantPageShell
-        eyebrow="Quick actions"
+        eyebrow="Automation workspace"
         title="Hiring Agent"
-        description="Click an action below or type in the chat. Same agent as the floating assistant — for one candidate/employee or bulk. Document lists open as interactive cards you can verify in place."
+        description="This is the only place the agent runs workflows for you. Upload Excel for bulk invites, approve offers, verify docs, assign assets — one person or many. Page tips stay with the floating mascot elsewhere."
         highlights={QUICK_ACTIONS}
         onHighlightClick={handleQuickAction}
       >

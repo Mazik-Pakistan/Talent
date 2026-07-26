@@ -1075,7 +1075,7 @@ function OnboardingForm({
           })}
         </ol>
 
-        <form onSubmit={onSubmit}>
+        <form data-partner-coach onSubmit={onSubmit}>
           {step === "emergency" ? (
             <div className={styles.formStack}>
               <div>

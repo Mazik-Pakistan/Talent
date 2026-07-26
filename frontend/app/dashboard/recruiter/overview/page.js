@@ -13,6 +13,10 @@ import {
   getPendingReview,
   getReadyForConversion,
 } from "@/services/authService";
+import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
 
 const ICONS = {
   overview: (
@@ -63,6 +67,26 @@ export default function RecruiterOverviewPage() {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const approvals = pendingApprovals.length;
+    const offers = pendingCandidates.length;
+    const ready = readyCandidates.length;
+    let hint = "Pipeline looks clear — invite a new candidate when you're ready.";
+    if (approvals > 0) {
+      hint = `Next: review ${approvals} onboarding submission${approvals === 1 ? "" : "s"} on Candidates.`;
+    } else if (offers > 0) {
+      hint = `Next: review docs and send offers for ${offers} candidate${offers === 1 ? "" : "s"}.`;
+    } else if (ready > 0) {
+      hint = `Next: approve & activate ${ready} signed offer${ready === 1 ? "" : "s"}.`;
+    }
+    publishRecruiterContext({
+      section: "overview",
+      hint,
+      fields: [],
+    });
+    return () => clearRecruiterContext();
+  }, [pendingApprovals.length, pendingCandidates.length, readyCandidates.length]);
 
   const loadDashboard = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");

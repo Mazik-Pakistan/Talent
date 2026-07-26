@@ -13,6 +13,10 @@ import {
   updateRecruiterProfile,
   uploadRecruiterPhoto,
 } from "@/services/authService";
+import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
 
 export default function RecruiterProfilePage() {
   const [loading, setLoading] = useState(true);
@@ -26,6 +30,15 @@ export default function RecruiterProfilePage() {
     job_title: "",
     office_location: "",
   });
+
+  useEffect(() => {
+    publishRecruiterContext({
+      section: "recruiter_profile",
+      hint: "Update your name, phone, designation, department, and office. Focus each field for a tip.",
+      fields: ["full_name", "phone", "job_title", "department", "office_location"],
+    });
+    return () => clearRecruiterContext();
+  }, []);
 
   const syncLocalUser = useCallback((nextProfile) => {
     patchLocalUser({
@@ -167,10 +180,11 @@ export default function RecruiterProfilePage() {
               </div>
             </div>
             <div className={styles.sectionBody}>
-              <form onSubmit={handleSave} className={styles.profileForm}>
+              <form data-partner-coach onSubmit={handleSave} className={styles.profileForm}>
                 <label className={styles.field}>
                   <span>Full name</span>
                   <input
+                    name="full_name"
                     value={form.full_name}
                     onChange={(e) => setForm({ ...form, full_name: e.target.value })}
                     required
@@ -179,11 +193,12 @@ export default function RecruiterProfilePage() {
                 </label>
                 <label className={styles.field}>
                   <span>Email</span>
-                  <input value={profile?.email || ""} disabled readOnly />
+                  <input name="email" value={profile?.email || ""} disabled readOnly />
                 </label>
                 <label className={styles.field}>
                   <span>Phone</span>
                   <input
+                    name="phone"
                     value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
                     placeholder="03XX-XXXXXXX"
@@ -192,6 +207,7 @@ export default function RecruiterProfilePage() {
                 <label className={styles.field}>
                   <span>Job title</span>
                   <input
+                    name="job_title"
                     value={form.job_title}
                     onChange={(e) => setForm({ ...form, job_title: e.target.value })}
                     placeholder="Talent Acquisition Lead"
@@ -200,6 +216,7 @@ export default function RecruiterProfilePage() {
                 <label className={styles.field}>
                   <span>Department</span>
                   <input
+                    name="department"
                     value={form.department}
                     onChange={(e) => setForm({ ...form, department: e.target.value })}
                     placeholder="Human Resources"
@@ -208,6 +225,7 @@ export default function RecruiterProfilePage() {
                 <label className={styles.field}>
                   <span>Office location</span>
                   <input
+                    name="office_location"
                     value={form.office_location}
                     onChange={(e) => setForm({ ...form, office_location: e.target.value })}
                     placeholder="Karachi"

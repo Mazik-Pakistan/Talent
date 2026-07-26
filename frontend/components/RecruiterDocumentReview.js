@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getApiErrorMessage, getDocumentDownloadUrl, listOwnerDocuments, verifyDocument } from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
+import { publishRecruiterContext } from "@/lib/ai/recruiterContext";
+import { invalidateRecruiterInsightCache } from "@/lib/ai/recruiterInsights";
+import { buildDocumentStatusInsights } from "@/lib/ai/documentStatusInsights";
 
 const ACTION_REASONS = [
   { value: "blurry_or_unreadable", label: "Blurry or unreadable" },
@@ -94,9 +97,19 @@ export default function RecruiterDocumentReview({ ownerId }) {
     setLoading(true);
     try {
       const data = await listOwnerDocuments(ownerId, accessToken);
-      setDocuments(data.documents || []);
+      const docs = data.documents || [];
+      setDocuments(docs);
       setDocumentVerification(data.document_verification || null);
       setError("");
+      const tip = buildDocumentStatusInsights(docs, { audience: "reviewer" })[0];
+      const prev =
+        typeof window !== "undefined" ? window.__talentRecruiterMascotContext || {} : {};
+      publishRecruiterContext({
+        ...prev,
+        documents: docs,
+        ownerId,
+        hint: tip?.message || prev.hint || "Verify documents below — trust each card’s status badge.",
+      });
     } catch (err) {
       setError(getApiErrorMessage(err, "Unable to load documents."));
     } finally {
@@ -142,6 +155,7 @@ export default function RecruiterDocumentReview({ ownerId }) {
           : result.message || "Document status updated."
       );
       await load();
+      invalidateRecruiterInsightCache();
       setActionForm(null);
       setActionNote("");
     } catch (err) {
