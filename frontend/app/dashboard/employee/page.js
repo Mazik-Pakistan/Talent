@@ -669,8 +669,7 @@ function EmployeeDashboardContent() {
                   <div className={styles.panelHead}>
                     <div className={styles.panelHeadLeft}>
                       <div className={styles.panelTitleRow}>
-                        <span className={styles.panelTitle}>AI says: complete these first</span>
-                        <span className={styles.aiChipGhost}><SparkleIcon /> AI</span>
+                        <span className={styles.panelTitle}>Complete these first</span>
                       </div>
                       <div className={styles.panelDesc}>
                         {incompleteTasks.length
@@ -860,7 +859,6 @@ function EmployeeDashboardContent() {
                     <div className={styles.sectionDesc}>Auto-tracked from your onboarding &amp; document records.</div>
                   </div>
                 </div>
-                <span className={styles.aiChipGhost}><SparkleIcon /> AUTO-TRACKED</span>
               </div>
               <div className={styles.sectionBody}>
                 <div className={styles.journeyTrack}>
@@ -1160,7 +1158,6 @@ function StatCard({ icon, iconExtra, tone, value, label, sub }) {
         <div className={`${styles.statIcon} ${styles[tone]}`}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{icon}{iconExtra}</svg>
         </div>
-        <span className={styles.aiChipGhost}><SparkleIcon /> AI</span>
       </div>
       <div className={styles.statValue}>
         <AnimatedNumber value={value} />

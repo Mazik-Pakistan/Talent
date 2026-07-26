@@ -18,6 +18,13 @@ import {
   publishRecruiterContext,
 } from "@/lib/ai/recruiterContext";
 
+const SparkleIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1-5.1-1.9 5.1-1.9L12 2.5z" />
+    <path d="M19 15l.9 2.3L22 18l-2.1.7L19 21l-.9-2.3L16 18l2.1-.7L19 15z" />
+  </svg>
+);
+
 const ICONS = {
   overview: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -131,14 +138,76 @@ export default function RecruiterOverviewPage() {
     [pendingApprovals.length, pendingCandidates.length, readyCandidates.length, router]
   );
 
+  const aiRecommendation = useMemo(() => {
+    if (pendingApprovals.length > 0) {
+      return {
+        title: "Today's recommendation",
+        body: (
+          <>
+            Review <b>{pendingApprovals.length}</b> onboarding submission{pendingApprovals.length === 1 ? "" : "s"} next — this unblocks offer review.
+          </>
+        ),
+        action: () => router.push("/dashboard/recruiter/candidates"),
+        cta: "Open approvals →",
+      };
+    }
+    if (pendingCandidates.length > 0) {
+      return {
+        title: "Today's recommendation",
+        body: (
+          <>
+            Send or review offers for <b>{pendingCandidates.length}</b> candidate{pendingCandidates.length === 1 ? "" : "s"} waiting in the pipeline.
+          </>
+        ),
+        action: () => router.push("/dashboard/recruiter/candidates"),
+        cta: "Review offers →",
+      };
+    }
+    if (readyCandidates.length > 0) {
+      return {
+        title: "Today's recommendation",
+        body: (
+          <>
+            Activate <b>{readyCandidates.length}</b> signed offer{readyCandidates.length === 1 ? "" : "s"} to convert candidates into employees.
+          </>
+        ),
+        action: () => router.push("/dashboard/recruiter/candidates"),
+        cta: "Activate →",
+      };
+    }
+    return {
+      title: "Pipeline looks clear",
+      body: <>Invite a new candidate when you&apos;re ready — AI can help with bulk invites from the Assistant.</>,
+      action: () => router.push("/dashboard/recruiter/invite"),
+      cta: "Invite candidate →",
+    };
+  }, [pendingApprovals.length, pendingCandidates.length, readyCandidates.length, router]);
+
   return (
     <RecruiterShell activeKey="overview" title="Recruiter overview" subtitle="Real-time hiring pipeline and onboarding snapshots">
       {error && <div className={styles.formMessage} role="alert">{error}</div>}
 
       <div className={styles.hero} style={{ marginBottom: 20 }}>
-        <div className={styles.heroEyebrow}>Recruiter dashboard</div>
+        <div className={styles.heroEyebrow}>Hiring command center</div>
         <h1>Keep the hiring pipeline moving</h1>
-        <div className={styles.heroMeta}>Monitor onboarding, offers, approvals, and employee activation in one place.</div>
+        <div className={styles.heroMeta}>
+          Monitor onboarding, offers, approvals, and employee activation in one place.
+        </div>
+        <div className={styles.heroRecommend}>
+          <SparkleIcon />
+          <div>
+            <div style={{ fontWeight: 700, color: "var(--navy)", marginBottom: 2 }}>{aiRecommendation.title}</div>
+            <div>{aiRecommendation.body}</div>
+            <button
+              type="button"
+              className={styles.linkButton}
+              style={{ marginTop: 8 }}
+              onClick={aiRecommendation.action}
+            >
+              {aiRecommendation.cta}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className={styles.stats}>

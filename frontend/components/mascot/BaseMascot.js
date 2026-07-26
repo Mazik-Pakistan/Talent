@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import styles from "./BaseMascot.module.css";
+import useDraggableFab from "@/lib/ai/useDraggableFab";
 import {
   coachMessage,
   coachSnapshot,
@@ -232,9 +233,17 @@ export default function BaseMascot({
   resolvePageSummary = null,
   /** When false, hide the quick-ask strip (partner tips still show on focus/click). */
   enableCommands = true,
+  /** localStorage key for Messenger-style FAB position. */
+  fabStorageKey,
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const mascotBtnRef = useRef(null);
+  const resolvedFabKey = fabStorageKey || `mascot_fab_pos_${String(roleLabel || "assistant").toLowerCase()}`;
+  const { wrapRef, style: fabStyle, dragging, didDrag, handleProps, alignH, alignV } = useDraggableFab(
+    resolvedFabKey,
+    { fabRef: mascotBtnRef }
+  );
 
   const [activeState, setActiveState] = useState("stateIdle");
   const [bubbleText, setBubbleText] = useState("");
@@ -266,7 +275,6 @@ export default function BaseMascot({
   const bubbleRef = useRef({ text: "", priority: MASCOT_PRIORITY_LEVELS.NONE });
   const cooldownActiveRef = useRef(false);
   const highlightedTargetRef = useRef(null);
-  const mascotBtnRef = useRef(null);
   const statsRef = useRef({});
   const insightsRef = useRef([]);
   const suggestionIndexRef = useRef(0);
@@ -1062,6 +1070,7 @@ export default function BaseMascot({
   );
 
   const handlePartnerTap = useCallback(() => {
+    if (didDrag()) return;
     playMascotSound("click");
     setPanelOpen(true);
     const snapshot = refreshCoach({ announce: false });
@@ -1093,6 +1102,7 @@ export default function BaseMascot({
     }
     showPageSuggestion(true);
   }, [
+    didDrag,
     explainField,
     playMascotSound,
     refreshCoach,
@@ -1426,7 +1436,17 @@ export default function BaseMascot({
   }, [activeState]);
 
   return (
-    <div className={styles.mascotWrapper}>
+    <div
+      ref={wrapRef}
+      className={[
+        styles.mascotWrapper,
+        alignH === "start" ? styles.panelAlignStart : "",
+        alignV === "below" ? styles.panelBelow : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={fabStyle}
+    >
       {showFormCommand && (
         <div className={styles.commandStack}>
           <form className={styles.formCommand} data-mascot-command onSubmit={handleFormCommand}>
@@ -1922,6 +1942,7 @@ export default function BaseMascot({
           styles[activeState],
           panelOpen ? styles.mascotBtnActive : "",
           isTypingIntoField ? styles.mascotBtnWorking : "",
+          dragging ? styles.mascotBtnDragging : "",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -1929,6 +1950,8 @@ export default function BaseMascot({
         onMouseEnter={() => playMascotSound("hover")}
         aria-label={`${roleLabel} partner — show next tip`}
         aria-expanded={panelOpen}
+        title={`${roleLabel} partner — drag to move`}
+        {...handleProps}
       >
         <span className={styles.auraRing} aria-hidden="true" />
         <span className={`${styles.auraRing} ${styles.auraRingDelayed}`} aria-hidden="true" />

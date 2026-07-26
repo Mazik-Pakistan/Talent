@@ -1,6 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google";
 
-import EmployeeAiGuide from "@/components/ai-experience/EmployeeAiGuide";
+import AgentChatWidget from "@/components/ai/Agentchatwidget";
 import SessionTimeout from "@/components/SessionTimeout";
 import ToastProvider from "@/components/ToastProvider";
 import "./globals.css";
@@ -28,11 +28,8 @@ export default function RootLayout({ children }) {
         <SessionTimeout />
         <ToastProvider />
         {children}
-        {/* Employee Copilot: contextual partner (not the Agent). Hosted here so it
-            stays mounted across every route and always renders bottom-right. */}
-        <EmployeeAiGuide />
-        {/* The autonomous AI Agent launcher has been removed from the global
-            layout — it must not appear on any page. */}
+        {/* Fixed partner mascot for Recruiter / Candidate / Employee (not the Agent chat). */}
+        <AgentChatWidget />
       </body>
     </html>
   );

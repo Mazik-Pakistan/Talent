@@ -21,6 +21,24 @@ import styles from "./candidate-dashboard.module.css";
 
 const DASHBOARD_REFRESH_MS = 60000;
 
+const SparkleIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1-5.1-1.9 5.1-1.9L12 2.5z" />
+    <path d="M19 15l.9 2.3L22 18l-2.1.7L19 21l-.9-2.3L16 18l2.1-.7L19 15z" />
+  </svg>
+);
+
+function greetingForHour(hour) {
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function firstNameOf(name) {
+  if (!name) return "there";
+  return name.trim().split(/\s+/)[0];
+}
+
 export default function CandidateDashboardPage() {
   return (
     <RequireAccess anyOf={["onboarding.self", "profile.view"]} roles={["candidate"]}>
@@ -133,6 +151,10 @@ function CandidateDashboardContent() {
   );
   const pct = progress?.percentage ?? 0;
   const completedCount = tasks.filter((t) => t.completed).length;
+  const remainingTasks = tasks.filter((t) => !t.completed && t.available);
+  const nextTask = remainingTasks[0] || tasks.find((t) => !t.completed) || null;
+  const greeting = greetingForHour(new Date().getHours());
+  const firstName = firstNameOf(profile?.full_name || user?.full_name);
 
   // ----- Client-side "Search records" over the data already on this page -----
   const searchIndex = useMemo(() => {
@@ -239,7 +261,7 @@ function CandidateDashboardContent() {
                     <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
                   </svg>
                   <input
-                    placeholder="Search records…"
+                    placeholder="Ask AI or search onboarding tasks…"
                     value={searchQuery}
                     onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }}
                     onFocus={() => setSearchOpen(true)}
@@ -343,11 +365,14 @@ function CandidateDashboardContent() {
             {/* Hero */}
             <div className={styles.hero}>
               <div>
-                <div className={styles.heroEyebrow}>Candidate Dashboard</div>
-                <h1>Welcome, {user.full_name}</h1>
-                <div className={styles.heroMeta}>
-                  Signed in as <b>{user.email}</b> · Role: <b>Candidate</b>
-                </div>
+                <div className={styles.heroEyebrow}>Candidate onboarding</div>
+                <h1>{greeting}, {firstName}</h1>
+                <p className={styles.heroSub}>
+                  You&apos;re <b>{pct}% ready</b> for Day 1.
+                  {remainingTasks.length > 0
+                    ? ` ${remainingTasks.length} step${remainingTasks.length === 1 ? "" : "s"} left in your onboarding.`
+                    : " Your checklist looks clear."}
+                </p>
                 <div className={styles.heroChips}>
                   {profile?.start_date && <span className={styles.chip}>Joins {formatDate(profile.start_date)}</span>}
                   {offer?.status === "signed" && <span className={`${styles.chip} ${styles.complete}`}>✓ Offer signed</span>}
@@ -355,6 +380,37 @@ function CandidateDashboardContent() {
                     {pct === 100 ? "✓ Onboarding complete" : "Onboarding in progress"}
                   </span>
                 </div>
+                <div className={styles.heroActions}>
+                  <button
+                    type="button"
+                    className={styles.btnPrimary}
+                    onClick={() => {
+                      if (nextTask?.available) {
+                        router.push(`/onboarding?step=${nextTask.action_step || ""}`);
+                      } else {
+                        router.push("/onboarding");
+                      }
+                    }}
+                  >
+                    Continue onboarding →
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.btnGhost}
+                    onClick={() => document.getElementById("tasks-section")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  >
+                    View full checklist
+                  </button>
+                </div>
+                {nextTask ? (
+                  <div className={styles.heroRecommend}>
+                    <SparkleIcon />
+                    <div>
+                      <div className={styles.heroRecommendTitle}>Today&apos;s recommendation</div>
+                      Complete <b>{nextTask.label}</b> next — it keeps your joining timeline on track.
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <div className={styles.ringWrap}>
                 <HeroRing percentage={pct} />
@@ -600,9 +656,9 @@ function HeroRing({ percentage = 0 }) {
   const offset = circumference - (Math.min(100, Math.max(0, percentage)) / 100) * circumference;
   return (
     <svg className={styles.ring} viewBox="0 0 100 100">
-      <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="9" />
+      <circle cx="50" cy="50" r={r} fill="none" stroke="#dfe9f6" strokeWidth="9" />
       <circle
-        cx="50" cy="50" r={r} fill="none" stroke="#1FAE7A" strokeWidth="9" strokeLinecap="round"
+        cx="50" cy="50" r={r} fill="none" stroke="#38a2ff" strokeWidth="9" strokeLinecap="round"
         strokeDasharray={circumference} strokeDashoffset={offset} transform="rotate(-90 50 50)"
       />
       <text x="50" y="55" textAnchor="middle" className={styles.ringValue}>{percentage}%</text>

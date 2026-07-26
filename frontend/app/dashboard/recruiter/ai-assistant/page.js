@@ -40,7 +40,7 @@ export default function RecruiterAIAssistantPage() {
     <RecruiterShell
       activeKey="assistant"
       title="AI Assistant"
-      subtitle="Hiring Agent — chat here for full automation (bulk invite, approvals, reminders, day-1). On other pages, the mascot is your field-by-field partner only."
+      subtitle="Hiring Agent · bulk invite, approvals, reminders, Day-1"
     >
       <AssistantPageShell
         eyebrow="Automation workspace"

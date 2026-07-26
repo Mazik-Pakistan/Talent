@@ -102,13 +102,17 @@
 
 .kbSubmit {
   align-self: flex-start;
-  background: var(--navy, #0f2a4a);
+  background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0) 60%, var(--navy-2, #153d5e));
   color: #fff;
   border: none;
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 10px 20px;
-  font-weight: 600;
+  font-weight: 650;
   cursor: pointer;
+  box-shadow: 0 12px 24px -12px rgba(56, 162, 255, 0.85);
+}
+.kbSubmit:hover:not(:disabled) {
+  filter: brightness(1.04);
 }
 .kbSubmit:disabled {
   opacity: 0.6;

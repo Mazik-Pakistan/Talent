@@ -135,6 +135,12 @@ export default function RecruiterMascot() {
         return true;
       }
 
+      if (/(?:open|go to|take me to)\s+(?:ai )?assistant/i.test(command)) {
+        setFormCommand("");
+        router?.push?.("/dashboard/recruiter/ai-assistant");
+        return true;
+      }
+
       // Partner: explain a named field — never auto-fill values.
       const fields = typeof visibleFormFields === "function" ? visibleFormFields() : [];
       const lowered = command.toLowerCase().replace(/^(what(?:'s| is)|help(?: with)?|explain)\s+/i, "");
@@ -183,6 +189,7 @@ export default function RecruiterMascot() {
   return (
     <BaseMascot
       roleLabel="Recruiter"
+      fabStorageKey="mascot_fab_pos_recruiter"
       routePrefixes={["/dashboard/recruiter"]}
       contextEvent={MASCOT_CONTEXT_EVENT}
       refreshEvent={RECRUITER_INSIGHTS_REFRESH_EVENT}

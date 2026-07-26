@@ -24,20 +24,23 @@ export default function AssistantPageShell({
 
   return (
     <div className={styles.page}>
-      <section className={styles.hero}>
-        <div className={styles.heroTop}>
+      <header className={styles.toolbar}>
+        <div className={styles.toolbarLeft}>
           {eyebrow ? (
-            <div className={styles.eyebrow}>
+            <span className={styles.eyebrow}>
               <span className={styles.liveDot} aria-hidden="true" />
               {eyebrow}
-            </div>
+            </span>
           ) : null}
-          <div className={styles.liveLabel} aria-live="polite">
+          {title ? (
+            <h1 className={styles.title} title={description || undefined}>
+              {title}
+            </h1>
+          ) : null}
+          <span className={styles.liveLabel} aria-live="polite">
             Agent ready
-          </div>
+          </span>
         </div>
-        {title ? <h1>{title}</h1> : null}
-        {description ? <p>{description}</p> : null}
         {items.length > 0 ? (
           <div className={styles.highlights} role="group" aria-label="Quick actions">
             {items.map((item) => {
@@ -62,7 +65,7 @@ export default function AssistantPageShell({
             })}
           </div>
         ) : null}
-      </section>
+      </header>
 
       <section className={styles.content}>{children}</section>
     </div>

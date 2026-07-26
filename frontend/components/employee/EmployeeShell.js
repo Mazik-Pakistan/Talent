@@ -224,9 +224,9 @@ function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, c
 
         <main className={styles.main}>
           <div className={styles.topbar}>
-            <div>
+            <div className={styles.topbarLeft}>
               <div className={styles.topbarTitle}>{title}</div>
-              <div className={styles.topbarSub}>{subtitle}</div>
+              <div className={styles.topbarSub} title={subtitle}>{subtitle}</div>
             </div>
             <div className={styles.topbarActions}>
               {actions}
