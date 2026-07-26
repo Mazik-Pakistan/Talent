@@ -17,6 +17,10 @@ import Toast from "@/components/Toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import AgentChatCore, { readAuth } from "@/components/ai/AgentChatCore";
+import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
+import { CANDIDATE_STEP_HELP } from "@/lib/ai/candidateFieldHelp";
+import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
+import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
 import styles from "./onboarding.module.css";
 
 const STEPS = [
@@ -33,55 +37,6 @@ const MISSING_SECTION_LABELS = {
   skills: "skills",
   resume: "Resume / CV",
 };
-
-const NAV_ITEMS = [
-  {
-    key: "dashboard",
-    label: "Dashboard",
-    href: "/dashboard/candidate",
-    disabled: false,
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" />
-        <rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
-      </svg>
-    ),
-  },
-  {
-    key: "onboarding",
-    label: "Onboarding",
-    href: "/onboarding",
-    disabled: false,
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" />
-      </svg>
-    ),
-  },
-  {
-    key: "documents",
-    label: "Documents",
-    href: "/documents",
-    disabled: false,
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <path d="M14 2v6h6" /><path d="M16 13H8" /><path d="M16 17H8" /><path d="M10 9H8" />
-      </svg>
-    ),
-  },
-  {
-    key: "profile",
-    label: "Profile",
-    href: "/onboarding?edit=true",
-    disabled: false,
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
-      </svg>
-    ),
-  },
-];
 
 const FILL_MODE_KEY = "onboarding_fill_mode";
 
@@ -588,6 +543,18 @@ function OnboardingContent() {
   const isAgentMode = fillMode === "agent";
   const showModeChooser = !loading && !submitted && !isEditMode && !fillMode;
 
+  useEffect(() => {
+    const help = CANDIDATE_STEP_HELP[step] || {};
+    publishCandidateContext({
+      pathname: isEditMode ? "/onboarding?edit=true" : "/onboarding",
+      step,
+      section: step,
+      hint: help.hint || null,
+      fields: help.fields || [],
+    });
+    return () => clearCandidateContext();
+  }, [step, isEditMode]);
+
   // ── Per-step completion checks (drive the blue progress indicator) ──
   // A step should only be shown as "complete" once its own required fields
   // are actually filled — not merely because the user has navigated past it.
@@ -772,6 +739,7 @@ function OnboardingContent() {
       setCandidate(data.candidate);
       setProgress(data.progress);
       hydrateForms(data.onboarding);
+      invalidateCandidateInsightCache();
       setMessage(data.message);
       showToast("success", data.message || "Saved successfully.");
       if (payload.step === "submit") {
@@ -1116,20 +1084,28 @@ function OnboardingContent() {
 
           <div className={styles.navSectionLabel}>Workspace</div>
           <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {NAV_ITEMS.map((item) => {
-              const isActive = item.key === "onboarding";
+            {CANDIDATE_NAV_ITEMS.map((item) => {
+              const search =
+                typeof window !== "undefined"
+                  ? window.location.search
+                  : isEditMode
+                    ? "?edit=true"
+                    : "";
+              const isActive = isCandidateNavActive(item, {
+                pathname: "/onboarding",
+                search,
+                activeKey: isEditMode ? "profile" : "onboarding",
+              });
               return (
                 <li key={item.key}>
                   <button
                     type="button"
-                    className={`${styles.navItem} ${isActive ? styles.active : ""} ${item.disabled ? styles.disabled : ""}`}
+                    className={`${styles.navItem} ${isActive ? styles.active : ""}`}
                     onClick={() => item.href && router.push(item.href)}
-                    title={item.disabled ? `${item.label} — coming in Phase 3` : item.label}
-                    disabled={item.disabled}
+                    title={item.label}
                   >
                     {item.icon}
                     <span>{item.label}</span>
-                    {item.badge && <span className={styles.navBadge}>{item.badge}</span>}
                   </button>
                 </li>
               );
@@ -1330,7 +1306,7 @@ function OnboardingContent() {
                       </p>
                     )}
 
-                    <form onSubmit={handleNext}>
+                    <form data-partner-coach onSubmit={handleNext}>
                       {step === "personal" && (
                         <div className={styles.formStack}>
                           <h2 className={styles.stepTitle}>Personal &amp; contact information</h2>

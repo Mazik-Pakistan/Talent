@@ -9,6 +9,11 @@ import styles from "./learning.module.css";
 import { getApiErrorMessage, listEmployees } from "@/services/authService";
 import { downloadCsv } from "@/utils/downloadCsv";
 import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
+import { LEARNING_TAB_HELP } from "@/lib/ai/recruiterFieldHelp";
+import {
   assignCourses,
   browseCatalog,
   createKbCertification,
@@ -77,6 +82,17 @@ export default function RecruiterLearningPage() {
   const clearPendingAssign = useCallback(() => {
     setPendingAssign(null);
   }, []);
+
+  useEffect(() => {
+    const help = LEARNING_TAB_HELP[tab] || {};
+    publishRecruiterContext({
+      tab,
+      section: tab,
+      hint: help.hint || null,
+      fields: help.fields || [],
+    });
+    return () => clearRecruiterContext();
+  }, [tab]);
 
   return (
     <RecruiterShell
@@ -376,7 +392,7 @@ function KnowledgeBaseTab() {
           </div>
         </div>
         <div className={shellStyles.sectionBody}>
-          <form className={styles.filterBar} onSubmit={handleCreateRole} style={{ flexWrap: "wrap" }}>
+          <form data-partner-coach className={styles.filterBar} onSubmit={handleCreateRole} style={{ flexWrap: "wrap" }}>
             <input className={styles.searchInput} placeholder="Role title (e.g. Software Architect)" value={roleForm.title} onChange={(e) => setRoleForm((f) => ({ ...f, title: e.target.value }))} required />
             <input className={styles.searchInput} placeholder="Required skills (comma-separated)" value={roleForm.required_skills} onChange={(e) => setRoleForm((f) => ({ ...f, required_skills: e.target.value }))} />
             <input className={styles.searchInput} placeholder="Required certs (comma-separated)" value={roleForm.required_certifications} onChange={(e) => setRoleForm((f) => ({ ...f, required_certifications: e.target.value }))} />
@@ -425,7 +441,7 @@ function KnowledgeBaseTab() {
           </div>
         </div>
         <div className={shellStyles.sectionBody}>
-          <form className={styles.filterBar} onSubmit={handleCreateCert} style={{ flexWrap: "wrap" }}>
+          <form data-partner-coach className={styles.filterBar} onSubmit={handleCreateCert} style={{ flexWrap: "wrap" }}>
             <input className={styles.searchInput} placeholder="Title (e.g. AZ-305)" value={certForm.title} onChange={(e) => setCertForm((f) => ({ ...f, title: e.target.value }))} required />
             <input className={styles.searchInput} placeholder="Provider" value={certForm.provider} onChange={(e) => setCertForm((f) => ({ ...f, provider: e.target.value }))} />
             <input className={styles.searchInput} placeholder="Official URL" value={certForm.official_url} onChange={(e) => setCertForm((f) => ({ ...f, official_url: e.target.value }))} />

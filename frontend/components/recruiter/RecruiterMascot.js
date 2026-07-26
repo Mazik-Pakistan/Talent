@@ -1,10 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import BaseMascot, {
-  setNativeFieldValue,
-  visibleFormFields,
-} from "@/components/mascot/BaseMascot";
+import { useCallback } from "react";
+import BaseMascot from "@/components/mascot/BaseMascot";
 import {
   buildIdleInsights,
   buildRecruiterInsights,
@@ -22,8 +19,8 @@ import {
   updatePipelineMemory,
   welcomeMessage,
 } from "@/lib/ai/recruiterMemory";
+import { recruiterFieldHelpFor, recruiterPageSummaryFor } from "@/lib/ai/recruiterFieldHelp";
 import { globalSearch } from "@/services/authService";
-import styles from "@/components/mascot/BaseMascot.module.css";
 
 const COMMAND_FIELDS = {
   full_name: ["full name", "name", "mera naam", "naam"],
@@ -37,42 +34,38 @@ const COMMAND_FIELDS = {
   office_location: ["office location", "location"],
   start_date: ["start date", "joining date"],
   address: ["address"],
+  expires_in_days: ["expires", "expiry", "expire days"],
+  employment_type: ["employment type"],
+  reporting_manager: ["reporting manager", "manager"],
+  monthly_salary: ["monthly salary", "salary"],
+  currency: ["currency"],
+  message_to_candidate: ["message to candidate", "message"],
+  company_email: ["company email"],
+  asset_type: ["asset type"],
+  serial_number: ["serial number", "serial"],
+  trainer: ["trainer"],
+  meeting_link: ["meeting link"],
+  agenda: ["agenda"],
+  dueDate: ["due date"],
+  mandatory: ["mandatory"],
+  audience: ["audience"],
+  body: ["body", "announcement body"],
+  actionReason: ["reason", "action reason"],
+  actionNote: ["action note"],
+  rejectNote: ["reject note", "rejection"],
+  required_skills: ["required skills", "skills"],
+  description: ["description"],
 };
 
-function getFieldLabel(field) {
-  const labelEl = field.closest("label");
-  if (labelEl) {
-    const span = labelEl.querySelector("span");
-    const text = (span?.textContent || labelEl.textContent || "").trim();
-    if (text) return text.replace(/\*$/, "").trim();
-  }
-  const placeholder = field.getAttribute("placeholder");
-  if (placeholder) return placeholder.trim();
-  const name = field.name || field.id;
-  if (name) return name.replace(/_/g, " ");
-  return "This field";
-}
-
-function getVisibleForms() {
-  return Array.from(document.querySelectorAll("form")).filter(
-    (form) => form.offsetParent !== null && !form.hasAttribute("data-mascot-command")
-  );
-}
-
-function isFieldEmpty(field) {
-  if (field.type === "checkbox" || field.type === "radio") return !field.checked;
-  const value = typeof field.value === "string" ? field.value.trim() : field.value;
-  if (field.tagName === "SELECT") return !value;
-  return !value;
-}
-
-export default function RecruiterMascot({ openChat, toggleChat }) {
-  const [confirmInvite, setConfirmInvite] = useState(false);
-
+/**
+ * Recruiter partner mascot — page/field guidance only.
+ * Autonomous hiring actions live on /dashboard/recruiter/ai-assistant.
+ */
+export default function RecruiterMascot() {
   const handleFormCommand = useCallback(
     async (
       command,
-      { pathname, router, setMessage, triggerState, refreshFormGuidance, setFormCommand }
+      { pathname, router, setMessage, triggerState, setFormCommand, explainField, visibleFormFields }
     ) => {
       const searchMatch = command.match(
         /^(?:search|find|dhoondo|talash)\s+(.+?)(?:\s+(employee|candidate))?$/i
@@ -102,7 +95,7 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
           }
           setFormCommand("");
           setMessage(
-            `Found ${match.full_name}. Opening their ${match.type} record.`,
+            `Found ${match.full_name}. Opening their ${match.type} record — you take it from here.`,
             2,
             `command-search:${match.id}`,
             { force: true, bypassCooldown: true, animation: "stateHappy" }
@@ -123,105 +116,72 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
         return true;
       }
 
-      const fields = visibleFormFields();
-      const allAliases = Object.values(COMMAND_FIELDS).flat().join("|");
-      let filled = 0;
-      fields.forEach((field) => {
-        const identifier = `${field.name || ""} ${field.id || ""} ${getFieldLabel(field)}`
-          .toLowerCase()
-          .replace(/[_-]/g, " ");
-        const aliases = Object.entries(COMMAND_FIELDS)
-          .filter(
-            ([key, names]) =>
-              identifier.includes(key.replace(/_/g, " ")) ||
-              names.some((name) => identifier.includes(name))
-          )
-          .flatMap(([, names]) => names)
-          .sort((a, b) => b.length - a.length);
-        const alias = aliases.find((name) =>
-          new RegExp(`(?:^|[,;\\s])${name.replace(/ /g, "\\s+")}(?:\\s*(?:is|:|=))?\\s+`, "i").test(
-            command
-          )
+      // Redirect automation intents to the Hiring Agent page.
+      if (
+        /(?:bulk\s*invite|excel|spreadsheet|approve\s+all|remind\s+all|send\s+invite|verify\s+all)/i.test(
+          command
+        )
+      ) {
+        setFormCommand("");
+        setMessage(
+          "That’s a Hiring Agent job — open AI Assistant in the sidebar for bulk invites, approvals, and reminders.",
+          2,
+          "redirect-agent",
+          { force: true, bypassCooldown: true, animation: "stateWave" }
         );
-        if (!alias) return;
-        const value = command
-          .match(
-            new RegExp(
-              `(?:^|[,;\\s])${alias.replace(/ /g, "\\s+")}(?:\\s*(?:is|:|=))?\\s+(.+?)(?=\\s*(?:,|;|\\band\\b)\\s*(?:${allAliases})\\b|$)`,
-              "i"
-            )
-          )?.[1]
-          ?.trim()
-          .replace(/^['\"]|['\"]$/g, "");
-        if (value && setNativeFieldValue(field, value)) filled += 1;
-      });
-
-      if (!filled) {
-        const firstField = fields[0] ? getFieldLabel(fields[0]) : "a visible field";
-        setMessage(`Enter ${firstField} followed by its value.`, 2, "form-command-help", {
-          force: true,
-          bypassCooldown: true,
-          animation: "stateThinking",
-        });
+        if (pathname && !pathname.includes("/ai-assistant")) {
+          setTimeout(() => router.push("/dashboard/recruiter/ai-assistant"), 900);
+        }
         return true;
       }
 
-      setFormCommand("");
-      const asksToSendInvite = /(?:send|bhej|bhj).*(?:invite|invitation)|(?:invite|invitation).*(?:send|bhej|bhj)/i.test(
-        command
-      );
-      setConfirmInvite(Boolean(asksToSendInvite && pathname?.includes("/invite")));
-      const required = fields.filter((field) => field.required);
-      const remaining = required.filter(isFieldEmpty).length;
-      const progress = required.length
-        ? ` Step ${required.length - remaining} of ${required.length}; ${remaining} left.`
-        : "";
-      const sendNote =
-        asksToSendInvite && pathname?.includes("/invite")
-          ? " Review the details, then confirm sending."
-          : asksToSendInvite
-          ? " Offers can be sent after candidate onboarding and document review."
-          : "";
-      setMessage(
-        `Filled ${filled} field${filled === 1 ? "" : "s"}.${progress}${sendNote}`,
-        2,
-        `form-command:${Date.now()}`,
-        {
-          force: true,
-          bypassCooldown: true,
-          animation: "stateHappy",
-        }
-      );
-      setTimeout(() => refreshFormGuidance({ force: true }), 0);
-      return true;
+      // Partner: explain a named field — never auto-fill values.
+      const fields = typeof visibleFormFields === "function" ? visibleFormFields() : [];
+      const lowered = command.toLowerCase().replace(/^(what(?:'s| is)|help(?: with)?|explain)\s+/i, "");
+      const match = fields.find((field) => {
+        const identifier = `${field.name || ""} ${field.id || ""}`
+          .toLowerCase()
+          .replace(/[_-]/g, " ");
+        const label = (field.closest("label")?.textContent || field.placeholder || "").toLowerCase();
+        return (
+          Object.entries(COMMAND_FIELDS).some(
+            ([key, names]) =>
+              (identifier.includes(key.replace(/_/g, " ")) || names.some((n) => identifier.includes(n) || label.includes(n))) &&
+              (lowered.includes(key.replace(/_/g, " ")) || names.some((n) => lowered.includes(n)))
+          ) || identifier.includes(lowered) || label.includes(lowered)
+        );
+      });
+
+      if (match && explainField) {
+        setFormCommand("");
+        explainField(match);
+        return true;
+      }
+
+      return false;
     },
     []
   );
 
   const commandPlaceholderFn = useCallback((fields) => {
-    const labels = fields.slice(0, 2).map(getFieldLabel).filter(Boolean);
+    const labels = fields
+      .slice(0, 2)
+      .map((field) => {
+        const labelEl = field.closest("label");
+        const text = (labelEl?.querySelector("span")?.textContent || labelEl?.textContent || field.name || "")
+          .trim()
+          .replace(/\*$/, "")
+          .trim();
+        return text || null;
+      })
+      .filter(Boolean);
     return labels.length
-      ? `Fill: ${labels.join(", ")}${labels.length > 1 ? "…" : ""}`
-      : "Search employee or candidate";
+      ? `Ask about ${labels.join(" / ")}… or search name`
+      : "Ask about a field, or search employee/candidate";
   }, []);
-
-  const handleConfirmInvite = useCallback(() => {
-    const inviteForm = getVisibleForms()[0];
-    if (!inviteForm) return;
-    setConfirmInvite(false);
-    inviteForm.requestSubmit();
-  }, []);
-
-  const confirmActionButton = confirmInvite ? (
-    <button type="button" className={styles.confirmAction} onClick={handleConfirmInvite}>
-      Review & send invitation
-    </button>
-  ) : null;
 
   return (
     <BaseMascot
-      openChat={openChat}
-      toggleChat={toggleChat}
       roleLabel="Recruiter"
       routePrefixes={["/dashboard/recruiter"]}
       contextEvent={MASCOT_CONTEXT_EVENT}
@@ -238,7 +198,9 @@ export default function RecruiterMascot({ openChat, toggleChat }) {
       commandFields={COMMAND_FIELDS}
       onFormCommand={handleFormCommand}
       commandPlaceholderFn={commandPlaceholderFn}
-      confirmAction={confirmActionButton}
+      resolveFieldHelp={recruiterFieldHelpFor}
+      resolvePageSummary={recruiterPageSummaryFor}
+      enableCommands={false}
     />
   );
 }

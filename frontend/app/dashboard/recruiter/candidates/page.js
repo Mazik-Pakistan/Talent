@@ -15,6 +15,10 @@ import {
 } from "@/services/authService";
 import OfferComposerModal from "@/components/OfferComposerModal";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
+import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
 
 export default function RecruiterCandidatesPage() {
   const router = useRouter();
@@ -29,6 +33,28 @@ export default function RecruiterCandidatesPage() {
   const [conversionMessage, setConversionMessage] = useState("");
   const [search, setSearch] = useState("");
   const [remindingId, setRemindingId] = useState(null);
+
+  useEffect(() => {
+    const onboard = newCandidates.length;
+    const offers = pendingCandidates.length;
+    const ready = readyCandidates.length;
+    let hint = "Work the pipeline: remind stalled onboarding → review docs/offers → activate signed offers.";
+    if (offers > 0) {
+      hint = `${offers} candidate${offers === 1 ? "" : "s"} need offer review — verify documents, then send offer letters.`;
+    } else if (ready > 0) {
+      hint = `${ready} signed offer${ready === 1 ? "" : "s"} ready — Approve & activate.`;
+    } else if (onboard > 0) {
+      hint = `${onboard} candidate${onboard === 1 ? "" : "s"} mid-onboarding — open profiles or send reminders.`;
+    }
+    publishRecruiterContext({
+      section: "candidates_pipeline",
+      hint,
+      fields: offerModalCandidate
+        ? ["job_title", "department", "employment_type", "reporting_manager", "start_date", "monthly_salary"]
+        : ["search"],
+    });
+    return () => clearRecruiterContext();
+  }, [newCandidates.length, pendingCandidates.length, readyCandidates.length, offerModalCandidate]);
 
   const loadCandidates = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");

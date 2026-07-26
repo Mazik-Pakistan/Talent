@@ -377,6 +377,7 @@ export default function EmployeeTalentPanel({ employee }) {
                   {d.label}: {evalScores[d.key]}
                   <input
                     type="range"
+                    name={d.key}
                     min="1"
                     max="5"
                     value={evalScores[d.key]}
@@ -386,6 +387,7 @@ export default function EmployeeTalentPanel({ employee }) {
               ))}
             </div>
             <textarea
+              name="evalComments"
               placeholder="Comments (optional)"
               value={evalComments}
               onChange={(e) => setEvalComments(e.target.value)}

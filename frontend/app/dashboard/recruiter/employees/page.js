@@ -11,6 +11,10 @@ import {
   getEmployeeDetail,
   listEmployees,
 } from "@/services/authService";
+import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
 
 export default function RecruiterEmployeesPage() {
   const router = useRouter();
@@ -30,6 +34,19 @@ export default function RecruiterEmployeesPage() {
     profile_status: "",
   });
   const [careerForm, setCareerForm] = useState({ event_type: "promoted", effective_date: "", to_title: "", to_department: "", to_manager: "", note: "" });
+
+  useEffect(() => {
+    publishRecruiterContext({
+      section: selectedEmployee ? "career_event" : "employee_directory",
+      hint: selectedEmployee
+        ? `Add a career event for ${selectedEmployee.full_name || "this employee"} — type, date, and new title/department.`
+        : "Filter the directory, export CSV, or open a profile for day-1 / learning. Career timeline logs promotions.",
+      fields: selectedEmployee
+        ? ["event_type", "effective_date", "to_title", "to_department", "to_manager", "note"]
+        : ["q", "employee_id", "department", "job_title", "status", "profile_status"],
+    });
+    return () => clearRecruiterContext();
+  }, [selectedEmployee]);
 
   const loadEmployees = useCallback(async (page = 1, filters = dirFilters) => {
     const accessToken = localStorage.getItem("access_token");

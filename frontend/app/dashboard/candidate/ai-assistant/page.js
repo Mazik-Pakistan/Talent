@@ -19,9 +19,9 @@ export default function CandidateAIAssistantPage() {
     >
       <div className={styles.assistantEnter}>
         <AssistantPageShell
-          eyebrow="Candidate workspace"
-          title="Your onboarding copilot"
-          description="Keep your onboarding moving with one place to ask questions, upload documents, and get help with next steps."
+          eyebrow="Automation workspace"
+          title="Your onboarding assistant"
+          description="Chat here for multi-step help. Elsewhere, the floating mascot is your partner — tips and field guidance while you complete each step yourself."
           highlights={["Document guidance", "Profile readiness", "Next-step suggestions"]}
         >
           <AgentChatCore variant="canvas" auth={auth} />

@@ -11,6 +11,11 @@ import { getApiErrorMessage } from "@/services/authService";
 import { getOrgTaxonomy } from "@/services/learningService";
 import { downloadCsv } from "@/utils/downloadCsv";
 import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
+import { TALENT_TAB_HELP } from "@/lib/ai/recruiterFieldHelp";
+import {
   browseOpportunities,
   createOpportunity,
   getOpportunityApplicants,
@@ -27,6 +32,17 @@ const TABS = [
 
 export default function RecruiterTalentPage() {
   const [tab, setTab] = useState("metrics");
+
+  useEffect(() => {
+    const help = TALENT_TAB_HELP[tab] || {};
+    publishRecruiterContext({
+      tab,
+      section: tab,
+      hint: help.hint || null,
+      fields: help.fields || [],
+    });
+    return () => clearRecruiterContext();
+  }, [tab]);
 
   return (
     <RecruiterShell activeKey="talent" title="Talent Management" subtitle="Organization-wide talent metrics, search, and internal mobility">
@@ -473,7 +489,7 @@ function OpportunitiesMgmtTab() {
         <button type="button" className={styles.smallBtn} onClick={() => load(true)}>Refresh</button>
       </div>
       <div className={shellStyles.sectionBody}>
-        <form className={styles.oppForm} onSubmit={handleCreate}>
+        <form data-partner-coach className={styles.oppForm} onSubmit={handleCreate}>
           <label className={styles.wide}>
             Title
             <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="e.g. Internal AI Tooling Squad" required />

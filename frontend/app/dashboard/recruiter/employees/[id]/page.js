@@ -17,6 +17,11 @@ import {
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
 import EmployeeTalentPanel from "@/components/recruiter/EmployeeTalentPanel";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
+import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
+import { EMPLOYEE_TAB_HELP } from "@/lib/ai/recruiterFieldHelp";
 
 function toLabel(key) {
   return String(key)
@@ -409,6 +414,7 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
                   <span>{employee.company_email ? "Update company email" : "Company email"}</span>
                   <input
                     type="email"
+                    name="company_email"
                     value={companyEmail}
                     onChange={(e) => {
                       setCompanyEmail(e.target.value);
@@ -740,6 +746,22 @@ export default function EmployeeProfilePage({ params }) {
     }
     loadProfile();
   }, [id, router]);
+
+  useEffect(() => {
+    if (!employee) {
+      clearRecruiterContext();
+      return undefined;
+    }
+    const help = EMPLOYEE_TAB_HELP[activeTab] || {};
+    publishRecruiterContext({
+      tab: activeTab,
+      section: activeTab,
+      hint: help.hint || null,
+      fields: help.fields || [],
+      employeeName: employee.full_name || null,
+    });
+    return () => clearRecruiterContext();
+  }, [activeTab, employee]);
 
   if (loading) {
     return (

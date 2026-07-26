@@ -1,0 +1,217 @@
+"use client";
+
+/**
+ * Shared form-coaching helpers for partner mascots (recruiter / candidate).
+ * Guides required fields, then offers optional ones (fill or skip).
+ */
+
+export function isCoachableField(field) {
+  if (!field || field.disabled || field.readOnly) return false;
+  if (field.offsetParent === null) return false;
+  if (["hidden", "submit", "button", "file", "password"].includes(field.type)) return false;
+  if (field.closest("[data-mascot-command]")) return false;
+  return true;
+}
+
+/** Only intentional create/edit forms — not every filter bar on the page. */
+export function isCoachableForm(form) {
+  if (!form || form.offsetParent === null) return false;
+  if (form.hasAttribute("data-mascot-command")) return false;
+  if (form.hasAttribute("data-partner-ignore")) return false;
+  if (form.hasAttribute("data-partner-coach")) return true;
+
+  // Heuristic: a real workflow form usually has at least one required field.
+  const fields = Array.from(form.querySelectorAll("input, select, textarea")).filter(isCoachableField);
+  return fields.some((field) => field.required);
+}
+
+/**
+ * Collect coachable containers: real <form> elements plus any element explicitly
+ * tagged with data-partner-coach (e.g. div-based edit sections on profile pages).
+ */
+function collectCoachableContainers(root) {
+  const forms = Array.from(root.querySelectorAll("form")).filter(isCoachableForm);
+  const tagged = Array.from(root.querySelectorAll("[data-partner-coach]")).filter(
+    (el) =>
+      el.tagName !== "FORM" &&
+      el.offsetParent !== null &&
+      !el.hasAttribute("data-mascot-command") &&
+      !el.hasAttribute("data-partner-ignore")
+  );
+  // De-dupe nested tagged containers (keep outermost only).
+  const containers = [...forms, ...tagged];
+  return containers.filter(
+    (el) => !containers.some((other) => other !== el && other.contains(el))
+  );
+}
+
+export function fieldKey(field) {
+  return field.name || field.id || getFieldLabel(field) || "field";
+}
+
+export function getFieldLabel(field) {
+  const labelEl = field?.closest?.("label");
+  if (labelEl) {
+    const span = labelEl.querySelector("span");
+    const text = (span?.textContent || labelEl.textContent || "").trim();
+    if (text) return text.replace(/\*$/, "").trim().slice(0, 48);
+  }
+  const placeholder = field?.getAttribute?.("placeholder");
+  if (placeholder) return placeholder.trim().slice(0, 48);
+  const name = field?.name || field?.id;
+  if (name) return String(name).replace(/_/g, " ");
+  return "This field";
+}
+
+export function isFieldFilled(field) {
+  if (!field) return false;
+  if (field.type === "checkbox" || field.type === "radio") return Boolean(field.checked);
+  if (field.tagName === "SELECT") return Boolean(field.value);
+  const value = typeof field.value === "string" ? field.value.trim() : field.value;
+  return Boolean(value);
+}
+
+function formHasUnsetRequired(form) {
+  return Array.from(form.querySelectorAll("input, select, textarea"))
+    .filter(isCoachableField)
+    .some((field) => field.required && !isFieldFilled(field));
+}
+
+/**
+ * Collect steps from ONE primary form so Invite and Learning don't blend into one checklist.
+ */
+export function collectFormSteps(root = typeof document !== "undefined" ? document : null) {
+  if (!root) return [];
+  const forms = collectCoachableContainers(root);
+  if (!forms.length) return [];
+
+  const marked = forms.filter((form) => form.hasAttribute("data-partner-coach"));
+  const pool = marked.length ? marked : forms;
+  const form = pool.find(formHasUnsetRequired) || pool[0];
+  if (!form) return [];
+
+  const steps = [];
+  const seen = new Set();
+  Array.from(form.querySelectorAll("input, select, textarea"))
+    .filter(isCoachableField)
+    .forEach((field) => {
+      const key = fieldKey(field);
+      const dedupe = `${key}:${field.type}`;
+      if (seen.has(dedupe)) return;
+      seen.add(dedupe);
+      steps.push({
+        key,
+        label: getFieldLabel(field),
+        required: Boolean(field.required),
+        filled: isFieldFilled(field),
+        field,
+      });
+    });
+
+  // Required first, then optional — stable within each group.
+  steps.sort((a, b) => Number(b.required) - Number(a.required));
+  return steps;
+}
+
+/**
+ * @param {Array} steps from collectFormSteps
+ * @param {Set<string>|string[]} skippedKeys optional fields the user chose to skip
+ */
+export function coachSnapshot(steps, skippedKeys = []) {
+  const skipped = skippedKeys instanceof Set ? skippedKeys : new Set(skippedKeys || []);
+  const list = (steps || []).map((s) => ({
+    ...s,
+    skipped: !s.required && skipped.has(s.key),
+  }));
+
+  const isSettled = (s) => s.filled || s.skipped;
+  const next = list.find((s) => !isSettled(s)) || null;
+
+  const required = list.filter((s) => s.required);
+  const optional = list.filter((s) => !s.required);
+  const requiredDone = required.filter((s) => s.filled).length;
+  const requiredTotal = required.length;
+  const requiredComplete = requiredTotal > 0 ? requiredDone >= requiredTotal : true;
+
+  const optionalDone = optional.filter((s) => isSettled(s)).length;
+  const optionalTotal = optional.length;
+  const optionalComplete = optionalTotal === 0 || optionalDone >= optionalTotal;
+
+  const settledCount = list.filter(isSettled).length;
+  const total = list.length;
+  const progress = total ? Math.round((settledCount / total) * 100) : 0;
+
+  const offeringOptional = Boolean(requiredComplete && next && !next.required);
+  const allComplete = total > 0 && requiredComplete && optionalComplete;
+
+  return {
+    steps: list.map((s) => ({
+      key: s.key,
+      label: s.label,
+      required: s.required,
+      filled: s.filled,
+      skipped: s.skipped,
+      status: s.filled
+        ? "done"
+        : s.skipped
+          ? "skipped"
+          : next && s.key === next.key
+            ? "active"
+            : "pending",
+    })),
+    total,
+    done: settledCount,
+    progress,
+    next,
+    requiredDone,
+    requiredTotal,
+    requiredComplete,
+    optionalDone,
+    optionalTotal,
+    optionalComplete,
+    offeringOptional,
+    allComplete,
+  };
+}
+
+export function coachMessage(snapshot, fieldTip) {
+  if (!snapshot?.total) return null;
+  if (snapshot.allComplete) {
+    return "All set — required fields filled, optional ones handled. Use the primary button on the form to continue.";
+  }
+
+  const next = snapshot.next;
+  if (!next) return null;
+
+  if (snapshot.offeringOptional || !next.required) {
+    return `Optional next: “${next.label}”. Fill it, or skip.`;
+  }
+
+  const step = snapshot.requiredTotal
+    ? `Step ${snapshot.requiredDone + 1} of ${snapshot.requiredTotal}`
+    : `Field ${snapshot.done + 1} of ${snapshot.total}`;
+
+  const selectMeta = getSelectFieldMeta(next.field);
+  if (selectMeta?.many) {
+    return `${step} — pick “${next.label}” from the form dropdown.`;
+  }
+  if (next.field?.tagName === "SELECT") {
+    return `${step} — choose “${next.label}”.`;
+  }
+  // Keep tip short; avoid repeating the field name three times in the panel.
+  if (fieldTip) return `${step}. ${fieldTip}`;
+  return `${step}: enter “${next.label}”.`;
+}
+
+/** Selects with more than this many options should be filled on the form, not via chips. */
+export const SELECT_CHIP_LIMIT = 4;
+
+export function getSelectFieldMeta(field) {
+  if (!field || field.tagName !== "SELECT") return null;
+  const options = Array.from(field.options || []).filter((opt) => opt.value);
+  return {
+    count: options.length,
+    options,
+    many: options.length > SELECT_CHIP_LIMIT,
+  };
+}

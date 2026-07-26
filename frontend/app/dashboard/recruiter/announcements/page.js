@@ -14,6 +14,10 @@ import {
   updateAnnouncement,
 } from "@/services/authService";
 import { getOrgTaxonomy } from "@/services/learningService";
+import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
 
 const EMPTY_FORM = {
   title: "",
@@ -37,6 +41,15 @@ export default function RecruiterAnnouncementsPage() {
   const [employees, setEmployees] = useState([]);
   const [taxonomy, setTaxonomy] = useState({ departments: [], designations: [] });
   const [employeeSearch, setEmployeeSearch] = useState("");
+
+  useEffect(() => {
+    publishRecruiterContext({
+      section: "announcement_form",
+      hint: "Write title and body, pick audience, optionally target departments/people, then Publish.",
+      fields: ["title", "body", "audience", "send_email", "target_departments", "target_designations"],
+    });
+    return () => clearRecruiterContext();
+  }, []);
 
   const loadAnnouncements = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
@@ -182,7 +195,7 @@ export default function RecruiterAnnouncementsPage() {
           </div>
         </div>
         <div className={styles.sectionBody}>
-          <form onSubmit={handleSubmit} className={styles.announceForm}>
+          <form data-partner-coach onSubmit={handleSubmit} className={styles.announceForm}>
             <label className={styles.field}>
               <span>Title</span>
               <input

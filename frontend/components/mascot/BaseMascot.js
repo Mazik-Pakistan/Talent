@@ -4,6 +4,14 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import styles from "./BaseMascot.module.css";
+import {
+  coachMessage,
+  coachSnapshot,
+  collectFormSteps,
+  getFieldLabel as coachFieldLabel,
+  getSelectFieldMeta,
+} from "@/lib/ai/formCoach";
+import { recruiterFieldHelpFor, recruiterPageSummaryFor } from "@/lib/ai/recruiterFieldHelp";
 
 export const MASCOT_PRIORITY_LEVELS = {
   ERROR: 5,
@@ -61,17 +69,18 @@ function getNextMissingRequiredField() {
   return null;
 }
 
-function getFormGuidance() {
+function getFormGuidance(resolveFieldHelp) {
   const forms = getVisibleForms();
   if (!forms.length) return null;
 
   const nextField = getNextMissingRequiredField();
   if (nextField) {
     const label = getFieldLabel(nextField);
+    const tip = typeof resolveFieldHelp === "function" ? resolveFieldHelp(nextField) : null;
     const key = `form:missing:${nextField.name || nextField.id || label}`;
     return {
       type: "missing",
-      text: `${label} is required.`,
+      text: tip ? `${label} is required. ${tip}` : `${label} is required — fill this next.`,
       key,
       field: nextField,
     };
@@ -147,7 +156,7 @@ export function visibleFormFields() {
   );
 }
 
-export function setNativeFieldValue(field, value) {
+export function setNativeFieldValue(field, value, { trim = true } = {}) {
   const prototype =
     field.tagName === "SELECT"
       ? HTMLSelectElement.prototype
@@ -156,10 +165,13 @@ export function setNativeFieldValue(field, value) {
       : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
   if (!setter) return false;
-  let next = value.trim();
+  let next = value == null ? "" : String(value);
+  if (trim) next = next.trim();
   if (field.tagName === "SELECT") {
     const option = Array.from(field.options).find(
-      (item) => item.value.toLowerCase() === next.toLowerCase() || item.text.trim().toLowerCase() === next.toLowerCase()
+      (item) =>
+        item.value.toLowerCase() === next.toLowerCase() ||
+        item.text.trim().toLowerCase() === next.toLowerCase()
     );
     if (!option) return false;
     next = option.value;
@@ -170,9 +182,33 @@ export function setNativeFieldValue(field, value) {
   return true;
 }
 
+async function typeValueIntoField(field, rawValue) {
+  if (!field) return false;
+  const value = rawValue == null ? "" : String(rawValue);
+  if (!value.trim()) return false;
+
+  if (field.tagName === "SELECT") {
+    return setNativeFieldValue(field, value);
+  }
+
+  const reduced =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+
+  if (reduced || value.length > 80) {
+    return setNativeFieldValue(field, value);
+  }
+
+  const total = Math.min(1200, Math.max(280, value.length * 28));
+  const perChar = Math.max(12, Math.round(total / value.length));
+  for (let index = 1; index <= value.length; index += 1) {
+    setNativeFieldValue(field, value.slice(0, index), { trim: false });
+    await new Promise((resolve) => setTimeout(resolve, perChar));
+  }
+  return true;
+}
+
 export default function BaseMascot({
-  openChat,
-  toggleChat,
   roleLabel = "Assistant",
   contextEvent,
   refreshEvent,
@@ -190,6 +226,12 @@ export default function BaseMascot({
   onFormCommand = null,
   commandPlaceholderFn = null,
   confirmAction = null,
+  /** Optional: return a tip string for a focused form field (partner mode). */
+  resolveFieldHelp = null,
+  /** Optional: return { title, what, why } for the current page intro. */
+  resolvePageSummary = null,
+  /** When false, hide the quick-ask strip (partner tips still show on focus/click). */
+  enableCommands = true,
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -200,7 +242,18 @@ export default function BaseMascot({
   const [formCommand, setFormCommand] = useState("");
   const [showFormCommand, setShowFormCommand] = useState(false);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [insights, setInsights] = useState([]);
   const [insightCount, setInsightCount] = useState(0);
+  const [coach, setCoach] = useState(null);
+  const [activityLog, setActivityLog] = useState([]);
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [statusLine, setStatusLine] = useState(null);
+  const [coachDraft, setCoachDraft] = useState("");
+  const [isTypingIntoField, setIsTypingIntoField] = useState(false);
+  const [skippedOptionalKeys, setSkippedOptionalKeys] = useState([]);
+  const [optionalFillAccepted, setOptionalFillAccepted] = useState(false);
+  const [coachEngaged, setCoachEngaged] = useState(false);
+  const [browsingTips, setBrowsingTips] = useState(false);
 
   const bubbleTimerRef = useRef(null);
   const cooldownTimerRef = useRef(null);
@@ -219,6 +272,21 @@ export default function BaseMascot({
   const suggestionIndexRef = useRef(0);
   const audioContextRef = useRef(null);
   const lastHoverSoundRef = useRef(0);
+  const lastCoachNextKeyRef = useRef(null);
+  const lastFilledKeyRef = useRef(null);
+  const typingLockRef = useRef(false);
+  const coachInputRef = useRef(null);
+  const optionalFillAcceptedRef = useRef(false);
+  const skippedOptionalKeysRef = useRef([]);
+  const coachEngagedRef = useRef(false);
+
+  const pageSummary = useCallback(() => {
+    const context = typeof readContext === "function" ? readContext() || {} : {};
+    if (typeof resolvePageSummary === "function") {
+      return resolvePageSummary(pathname, context);
+    }
+    return recruiterPageSummaryFor(pathname, context);
+  }, [pathname, readContext, resolvePageSummary]);
 
   const isRelevantRoute = useCallback(() => {
     if (!pathname) return false;
@@ -328,7 +396,7 @@ export default function BaseMascot({
   const refreshFormGuidance = useCallback(
     (options = {}) => {
       const { force = false, animation = "statePoint" } = options;
-      const guidance = getFormGuidance();
+      const guidance = getFormGuidance(resolveFieldHelp);
       if (!guidance) {
         clearFieldHighlight();
         if (lastMessageKeyRef.current?.startsWith("form:")) {
@@ -358,8 +426,32 @@ export default function BaseMascot({
         });
       }
     },
-    [clearFieldHighlight, dismissBubble, highlightField, setMessage]
+    [clearFieldHighlight, dismissBubble, highlightField, resolveFieldHelp, setMessage]
   );
+
+  const explainField = useCallback(
+    (field, options = {}) => {
+      if (!field) return false;
+      const label = getFieldLabel(field);
+      const tip =
+        (typeof resolveFieldHelp === "function" && resolveFieldHelp(field)) ||
+        (field.required
+          ? `“${label}” is required — enter it carefully; it becomes part of the record.`
+          : `“${label}” is optional — fill it if you have the detail.`);
+      return setMessage(tip, MASCOT_PRIORITY_LEVELS.SUGGESTION, `field-help:${field.name || field.id || label}`, {
+        force: true,
+        bypassCooldown: true,
+        animation: options.animation || "statePoint",
+        highlightField: field,
+      });
+    },
+    [resolveFieldHelp, setMessage]
+  );
+
+  const pushActivity = useCallback((message, tone = "ok") => {
+    if (!message) return;
+    setActivityLog((prev) => [{ id: `${Date.now()}-${message.slice(0, 24)}`, message, tone, at: Date.now() }, ...prev].slice(0, 4));
+  }, []);
 
   const handleFormCommand = useCallback(
     async (event) => {
@@ -376,64 +468,72 @@ export default function BaseMascot({
           refreshFormGuidance,
           setFormCommand,
           commandFields,
+          explainField,
+          visibleFormFields,
         });
         if (handled) return;
       }
 
-      // Default generic command filler using commandFields
+      // Partner default: explain / highlight a matching field — never auto-fill.
       const fields = visibleFormFields();
-      const allAliases = Object.values(commandFields).flat().join("|");
-      let filled = 0;
-      fields.forEach((field) => {
-        const identifier = `${field.name || ""} ${field.id || ""} ${getFieldLabel(field)}`.toLowerCase().replace(/[_-]/g, " ");
-        const aliases = Object.entries(commandFields)
-          .filter(([key, names]) => identifier.includes(key.replace(/_/g, " ")) || names.some((name) => identifier.includes(name)))
-          .flatMap(([, names]) => names)
-          .sort((a, b) => b.length - a.length);
-        const alias = aliases.find((name) =>
-          new RegExp(`(?:^|[,;\\s])${name.replace(/ /g, "\\s+")}(?:\\s*(?:is|:|=))?\\s+`, "i").test(command)
+      const lowered = command.toLowerCase();
+      const match = fields.find((field) => {
+        const identifier = `${field.name || ""} ${field.id || ""} ${getFieldLabel(field)}`
+          .toLowerCase()
+          .replace(/[_-]/g, " ");
+        return (
+          identifier.includes(lowered) ||
+          Object.entries(commandFields).some(
+            ([key, names]) =>
+              (identifier.includes(key.replace(/_/g, " ")) || names.some((name) => identifier.includes(name))) &&
+              (lowered.includes(key.replace(/_/g, " ")) || names.some((name) => lowered.includes(name)))
+          )
         );
-        if (!alias) return;
-        const value = command
-          .match(
-            new RegExp(
-              `(?:^|[,;\\s])${alias.replace(/ /g, "\\s+")}(?:\\s*(?:is|:|=))?\\s+(.+?)(?=\\s*(?:,|;|\\band\\b)\\s*(?:${allAliases})\\b|$)`,
-              "i"
-            )
-          )?.[1]
-          ?.trim()
-          .replace(/^['\"]|['\"]$/g, "");
-        if (value && setNativeFieldValue(field, value)) filled += 1;
       });
 
-      if (!filled) {
-        const firstField = fields[0] ? getFieldLabel(fields[0]) : "a visible field";
-        setMessage(`Enter ${firstField} followed by its value.`, MASCOT_PRIORITY_LEVELS.SUGGESTION, "form-command-help", {
-          force: true,
-          bypassCooldown: true,
-          animation: "stateThinking",
-        });
+      if (match) {
+        setFormCommand("");
+        explainField(match);
         return;
       }
 
-      setFormCommand("");
-      const required = fields.filter((field) => field.required);
-      const remaining = required.filter(isFieldEmpty).length;
-      const progress = required.length ? ` Step ${required.length - remaining} of ${required.length}; ${remaining} left.` : "";
-      setMessage(`Filled ${filled} field${filled === 1 ? "" : "s"}.${progress}`, MASCOT_PRIORITY_LEVELS.SUGGESTION, `form-command:${Date.now()}`, {
-        force: true,
-        bypassCooldown: true,
-        animation: "stateHappy",
-      });
-      setTimeout(() => refreshFormGuidance({ force: true }), 0);
+      const nextField = getNextMissingRequiredField();
+      if (nextField) {
+        setFormCommand("");
+        explainField(nextField);
+        setMessage(
+          `I guide field-by-field — you type the values. Next up: ${getFieldLabel(nextField)}.`,
+          MASCOT_PRIORITY_LEVELS.SUGGESTION,
+          "partner-guide-next",
+          { force: true, bypassCooldown: true, animation: "statePoint", highlightField: nextField }
+        );
+        return;
+      }
+
+      setMessage(
+        `Ask about a field name, or open AI Assistant for full automation (bulk invite, approvals, reminders).`,
+        MASCOT_PRIORITY_LEVELS.SUGGESTION,
+        "partner-help",
+        { force: true, bypassCooldown: true, animation: "stateThinking" }
+      );
     },
-    [commandFields, formCommand, onFormCommand, pathname, refreshFormGuidance, router, setMessage, triggerState]
+    [
+      commandFields,
+      explainField,
+      formCommand,
+      onFormCommand,
+      pathname,
+      refreshFormGuidance,
+      router,
+      setMessage,
+      triggerState,
+    ]
   );
 
   const getFormCommandPlaceholder = useCallback(() => {
     if (commandPlaceholderFn) return commandPlaceholderFn(visibleFormFields());
     const labels = visibleFormFields().slice(0, 2).map(getFieldLabel).filter(Boolean);
-    return labels.length ? `Fill: ${labels.join(", ")}${labels.length > 1 ? "…" : ""}` : `Ask ${roleLabel}…`;
+    return labels.length ? `Ask about: ${labels.join(", ")}${labels.length > 1 ? "…" : ""}` : `Ask ${roleLabel}…`;
   }, [commandPlaceholderFn, roleLabel]);
 
   const playMascotSound = useCallback((kind) => {
@@ -461,9 +561,384 @@ export default function BaseMascot({
     oscillator.stop(now + (kind === "success" ? 0.26 : 0.12));
   }, []);
 
+  const refreshCoach = useCallback(
+    (options = {}) => {
+      const {
+        announce = false,
+        forceHighlight = false,
+        skippedKeys: skippedOverride,
+        engage = false,
+      } = options;
+      if (!isRelevantRoute()) {
+        setCoach(null);
+        setStatusLine(null);
+        return null;
+      }
+      const skipped = skippedOverride ?? skippedOptionalKeysRef.current;
+      const snapshot = coachSnapshot(collectFormSteps(), skipped);
+      setCoach(snapshot.total ? snapshot : null);
+
+      if (!snapshot.total) {
+        setStatusLine(null);
+        return snapshot;
+      }
+
+      // Intro mode: keep a live progress snapshot, but don't hijack the page with field coaching.
+      if (!coachEngagedRef.current && !engage) {
+        clearFieldHighlight();
+        setStatusLine(
+          snapshot.done
+            ? `${snapshot.done} of ${snapshot.total} fields ready — open tips, or ask me to guide`
+            : `Form on this page — ${snapshot.total} fields`
+        );
+        return snapshot;
+      }
+
+      if (engage && !coachEngagedRef.current) {
+        coachEngagedRef.current = true;
+        setCoachEngaged(true);
+      }
+
+      const tipFn = resolveFieldHelp || recruiterFieldHelpFor;
+      const tip = snapshot.next?.field ? tipFn(snapshot.next.field) : null;
+      const message = coachMessage(snapshot, tip);
+
+      if (snapshot.allComplete) {
+        setStatusLine("Click the primary button on the form");
+        optionalFillAcceptedRef.current = false;
+        setOptionalFillAccepted(false);
+        if (announce) {
+          setMessage(
+            "All set — required filled, optional handled. Continue with the primary button on the form.",
+            MASCOT_PRIORITY_LEVELS.SUGGESTION,
+            "coach:complete",
+            {
+              force: true,
+              bypassCooldown: true,
+              animation: "stateHappy",
+            }
+          );
+          pushActivity("Form ready — submit to continue", "ok");
+          playMascotSound("success");
+          const submitBtn =
+            document.querySelector('form button[type="submit"]') ||
+            Array.from(document.querySelectorAll("form button")).find((btn) =>
+              /create invitation|save|submit|publish|send|assign|post/i.test(btn.textContent || "")
+            );
+          if (submitBtn) {
+            clearFieldHighlight();
+            if (getComputedStyle(submitBtn).position === "static") {
+              submitBtn.style.position = "relative";
+            }
+            submitBtn.classList.add(styles.fieldHighlight);
+            highlightedTargetRef.current = submitBtn;
+            try {
+              submitBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+            } catch {
+              // ignore
+            }
+          }
+        } else {
+          clearFieldHighlight();
+        }
+        lastCoachNextKeyRef.current = "complete";
+        return snapshot;
+      }
+
+      if (snapshot.next) {
+        const nextKey = snapshot.next.key;
+        const selectMeta = getSelectFieldMeta(snapshot.next.field);
+        const isOptional = !snapshot.next.required;
+
+        // Only reset the fill/skip prompt when moving to a *new* optional field.
+        if (isOptional && nextKey !== lastCoachNextKeyRef.current) {
+          optionalFillAcceptedRef.current = false;
+          setOptionalFillAccepted(false);
+        }
+
+        const fillAccepted = optionalFillAcceptedRef.current;
+        setStatusLine(
+          isOptional && !fillAccepted
+            ? `Optional: ${snapshot.next.label} — fill or skip?`
+            : selectMeta?.many
+              ? `Pick “${snapshot.next.label}” on the form (${selectMeta.count} options)`
+              : isOptional
+                ? `Optional now: ${snapshot.next.label}`
+                : `Now: ${snapshot.next.label} (${snapshot.requiredDone + 1}/${snapshot.requiredTotal || snapshot.total})`
+        );
+
+        if (forceHighlight || nextKey !== lastCoachNextKeyRef.current) {
+          highlightField(snapshot.next.field);
+          setCoachDraft("");
+          if (announce || forceHighlight) {
+            setMessage(message, MASCOT_PRIORITY_LEVELS.SUGGESTION, `coach:${nextKey}`, {
+              force: true,
+              bypassCooldown: true,
+              animation: "statePoint",
+              highlightField: snapshot.next.field,
+            });
+          }
+          lastCoachNextKeyRef.current = nextKey;
+          if ((!isOptional || fillAccepted) && !selectMeta?.many) {
+            setTimeout(() => coachInputRef.current?.focus?.(), 80);
+          }
+        }
+      }
+      return snapshot;
+    },
+    [clearFieldHighlight, highlightField, isRelevantRoute, playMascotSound, pushActivity, resolveFieldHelp, setMessage]
+  );
+
+  const showFormIntro = useCallback(
+    (snapshot = null) => {
+      const live = snapshot || coachSnapshot(collectFormSteps(), skippedOptionalKeysRef.current);
+      const summary = pageSummary();
+      const title = summary?.title || "This form";
+      const what = summary?.what || "Fill the form on this page to continue.";
+      const why = summary?.why || "I’ll explain each step when you’re ready.";
+      const progressNote =
+        live?.done > 0
+          ? ` You’ve already completed ${live.done} of ${live.total} fields.`
+          : "";
+      clearFieldHighlight();
+      setBrowsingTips(false);
+      setStatusLine(live?.total ? `Form ready — ${live.total} fields` : null);
+      setMessage(
+        `${title}: ${what} ${why}${progressNote}`,
+        MASCOT_PRIORITY_LEVELS.SUGGESTION,
+        `intro:${pathname}:${title}`,
+        {
+          force: true,
+          bypassCooldown: true,
+          animation: "stateWave",
+        }
+      );
+    },
+    [clearFieldHighlight, pageSummary, pathname, setMessage]
+  );
+
+  const openPageTips = useCallback(() => {
+    // Leave the form overview so the tip carousel can actually show.
+    setBrowsingTips(true);
+    setPanelOpen(true);
+    const deck = insightsRef.current.filter((item) => item?.message && String(item.message).trim());
+    if (!deck.length) {
+      const summary = pageSummary();
+      const seeded = [
+        summary?.what,
+        summary?.why,
+        "Use Guide me through it when you want field-by-field help on this form.",
+      ].filter(Boolean);
+      const fallback = seeded.map((message, index) => ({
+        id: `seed-tip-${index}`,
+        message,
+      }));
+      insightsRef.current = fallback;
+      setInsights(fallback);
+      setInsightCount(fallback.length);
+    }
+    const start = insightsRef.current[0]?.message
+      ? 0
+      : Math.min(suggestionIndexRef.current, Math.max(insightsRef.current.length - 1, 0));
+    suggestionIndexRef.current = start;
+    setSuggestionIndex(start);
+    triggerState("stateWave", 1800);
+  }, [pageSummary, triggerState]);
+
+  const engageCoach = useCallback(
+    (options = {}) => {
+      const { announce = true } = options;
+      coachEngagedRef.current = true;
+      setCoachEngaged(true);
+      setBrowsingTips(false);
+      setPanelOpen(true);
+      lastCoachNextKeyRef.current = null;
+      pushActivity("Started form guidance", "info");
+      const snapshot = refreshCoach({ announce, forceHighlight: true, engage: true });
+      if (snapshot?.allComplete) {
+        setMessage(
+          "Looks complete — use the primary button on the form when you’re ready.",
+          MASCOT_PRIORITY_LEVELS.SUGGESTION,
+          "coach:already-complete",
+          { force: true, bypassCooldown: true, animation: "stateHappy" }
+        );
+      }
+      return snapshot;
+    },
+    [pushActivity, refreshCoach, setMessage]
+  );
+
+  const exitCoachToTips = useCallback(() => {
+    coachEngagedRef.current = false;
+    setCoachEngaged(false);
+    lastCoachNextKeyRef.current = null;
+    optionalFillAcceptedRef.current = false;
+    setOptionalFillAccepted(false);
+    clearFieldHighlight();
+    const snapshot = refreshCoach({ announce: false });
+    showFormIntro(snapshot);
+  }, [clearFieldHighlight, refreshCoach, showFormIntro]);
+
+  const focusCoachField = useCallback((field) => {
+    if (!field) return;
+    highlightField(field);
+    try {
+      field.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    } catch {
+      // ignore
+    }
+    try {
+      field.focus({ preventScroll: true });
+    } catch {
+      try {
+        field.focus();
+      } catch {
+        // ignore
+      }
+    }
+  }, [highlightField]);
+
+  const applyCoachValue = useCallback(
+    async (rawValue) => {
+      if (typingLockRef.current || isTypingIntoField) return;
+      const value = String(rawValue || "").trim();
+      if (!value) return;
+
+      const snapshot = coachSnapshot(collectFormSteps(), skippedOptionalKeysRef.current);
+      const field = snapshot.next?.field;
+      if (!field) {
+        setMessage("Nothing left to fill — save / submit when ready.", MASCOT_PRIORITY_LEVELS.SUGGESTION, "coach:empty", {
+          force: true,
+          bypassCooldown: true,
+          animation: "stateHappy",
+        });
+        return;
+      }
+
+      typingLockRef.current = true;
+      setIsTypingIntoField(true);
+      setPanelOpen(true);
+      focusCoachField(field);
+      setStatusLine(`Typing into “${snapshot.next.label}”…`);
+      setMessage(`Writing into ${snapshot.next.label}…`, MASCOT_PRIORITY_LEVELS.SUGGESTION, `typing:${snapshot.next.key}`, {
+        force: true,
+        bypassCooldown: true,
+        animation: "stateThinking",
+        highlightField: field,
+      });
+      triggerState("stateThinking", 4000);
+
+      try {
+        const ok = await typeValueIntoField(field, value);
+        if (!ok) {
+          setMessage(
+            field.tagName === "SELECT"
+              ? `Couldn't match “${value}” in ${snapshot.next.label}. Pick a chip below or type the exact option.`
+              : `Couldn't fill ${snapshot.next.label}. Try again.`,
+            MASCOT_PRIORITY_LEVELS.ERROR,
+            "coach:type-fail",
+            { force: true, bypassCooldown: true, animation: "stateWarning", highlightField: field }
+          );
+          return;
+        }
+        setCoachDraft("");
+        optionalFillAcceptedRef.current = false;
+        setOptionalFillAccepted(false);
+        pushActivity(`Filled “${snapshot.next.label}” from partner`, "ok");
+        playMascotSound("success");
+        triggerState("stateHappy", 1600);
+        setTimeout(() => refreshCoach({ announce: true, forceHighlight: true }), 200);
+      } finally {
+        typingLockRef.current = false;
+        setIsTypingIntoField(false);
+      }
+    },
+    [focusCoachField, isTypingIntoField, playMascotSound, pushActivity, refreshCoach, setMessage, triggerState]
+  );
+
+  const skipOptionalField = useCallback(
+    (event) => {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      const snapshot = coachSnapshot(collectFormSteps(), skippedOptionalKeysRef.current);
+      const next = snapshot.next;
+      if (!next || next.required) return;
+
+      const nextSkipped = skippedOptionalKeysRef.current.includes(next.key)
+        ? skippedOptionalKeysRef.current
+        : [...skippedOptionalKeysRef.current, next.key];
+      skippedOptionalKeysRef.current = nextSkipped;
+      setSkippedOptionalKeys(nextSkipped);
+      optionalFillAcceptedRef.current = false;
+      setOptionalFillAccepted(false);
+      pushActivity(`Skipped optional “${next.label}”`, "info");
+      setMessage(`Skipped “${next.label}”. Moving on…`, MASCOT_PRIORITY_LEVELS.SUGGESTION, `skip:${next.key}`, {
+        force: true,
+        bypassCooldown: true,
+        animation: "stateWave",
+      });
+      lastCoachNextKeyRef.current = null;
+      refreshCoach({ announce: true, forceHighlight: true, skippedKeys: nextSkipped });
+    },
+    [pushActivity, refreshCoach, setMessage]
+  );
+
+  const acceptOptionalFill = useCallback(
+    (event) => {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      const snapshot = coachSnapshot(collectFormSteps(), skippedOptionalKeysRef.current);
+      if (!snapshot.next || snapshot.next.required) return;
+
+      optionalFillAcceptedRef.current = true;
+      setOptionalFillAccepted(true);
+      focusCoachField(snapshot.next.field);
+
+      const selectMeta = getSelectFieldMeta(snapshot.next.field);
+      setMessage(
+        selectMeta?.many
+          ? `Select “${snapshot.next.label}” from the highlighted dropdown on the form.`
+          : `Enter “${snapshot.next.label}” below — or type it in the highlighted field on the form.`,
+        MASCOT_PRIORITY_LEVELS.SUGGESTION,
+        `optional-fill:${snapshot.next.key}`,
+        {
+          force: true,
+          bypassCooldown: true,
+          animation: "statePoint",
+          highlightField: snapshot.next.field,
+        }
+      );
+      setStatusLine(`Optional now: ${snapshot.next.label}`);
+      if (!selectMeta?.many) {
+        setTimeout(() => coachInputRef.current?.focus?.(), 120);
+      }
+    },
+    [focusCoachField, setMessage]
+  );
+
+  const applyCoachAnswer = useCallback(
+    async (event) => {
+      event?.preventDefault?.();
+      await applyCoachValue(coachDraft);
+    },
+    [applyCoachValue, coachDraft]
+  );
+
   const showPageSuggestion = useCallback(
     (force = false) => {
-      const formGuidance = getFormGuidance();
+      // While guiding a form, keep field coaching. Otherwise prefer page tips / form intro.
+      const liveCoach = coachSnapshot(collectFormSteps(), skippedOptionalKeysRef.current);
+      if (liveCoach.total && coachEngagedRef.current) {
+        refreshCoach({ announce: true, forceHighlight: true });
+        return;
+      }
+      if (liveCoach.total && !coachEngagedRef.current) {
+        refreshCoach({ announce: false });
+        showFormIntro(liveCoach);
+        return;
+      }
+
+      const formGuidance = getFormGuidance(resolveFieldHelp);
       if (formGuidance?.type === "missing") {
         refreshFormGuidance({ force: true, animation: "stateWave" });
         return;
@@ -479,11 +954,15 @@ export default function BaseMascot({
         animation: "stateWave",
       });
     },
-    [refreshFormGuidance, setMessage]
+    [refreshCoach, refreshFormGuidance, resolveFieldHelp, setMessage, showFormIntro]
   );
 
   const showIdleTip = useCallback(() => {
     if (cooldownActiveRef.current) return;
+    // Don't interrupt active field coaching with random page tips.
+    if (coachEngagedRef.current && coachSnapshot(collectFormSteps(), skippedOptionalKeysRef.current).total) {
+      return;
+    }
     const pool = buildIdleInsights(insightsRef.current);
     const pick = pickFromPool(pool, lastIdleMessageRef.current) || pool[0];
     if (!pick) return;
@@ -508,8 +987,18 @@ export default function BaseMascot({
     const context = { ...(readContext() || {}), firstName: getUserFirstName() };
     try {
       const { insights, stats } = await buildInsights(pathname, token, context);
-      insightsRef.current = insights || [];
-      setInsightCount(insightsRef.current.length);
+      const seen = new Set();
+      const cleaned = (insights || []).filter((item) => {
+        const key = String(item?.message || "")
+          .trim()
+          .toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      insightsRef.current = cleaned;
+      setInsights(cleaned);
+      setInsightCount(cleaned.length);
       suggestionIndexRef.current = 0;
       setSuggestionIndex(0);
       statsRef.current = stats || {};
@@ -551,19 +1040,67 @@ export default function BaseMascot({
   const showSuggestion = useCallback(
     (nextIndex) => {
       const deck = insightsRef.current;
-      const item = deck[nextIndex];
+      if (!deck.length) return;
+      // Skip blanks so the pager never lands on an empty tip.
+      let index = ((nextIndex % deck.length) + deck.length) % deck.length;
+      let item = deck[index];
+      let guard = 0;
+      while ((!item?.message || !String(item.message).trim()) && guard < deck.length) {
+        index = (index + 1) % deck.length;
+        item = deck[index];
+        guard += 1;
+      }
       if (!item?.message) return;
-      suggestionIndexRef.current = nextIndex;
-      setSuggestionIndex(nextIndex);
+      suggestionIndexRef.current = index;
+      setSuggestionIndex(index);
       lastPageSuggestionRef.current = item.message;
-      setMessage(item.message, MASCOT_PRIORITY_LEVELS.SUGGESTION, `page:${item.id || item.message}`, {
-        force: true,
-        bypassCooldown: true,
-        animation: "stateWave",
-      });
+      // Keep tip visible in the panel — don't rely on the auto-hiding speech bubble.
+      setPanelOpen(true);
+      triggerState("stateWave", 1800);
     },
-    [setMessage]
+    [triggerState]
   );
+
+  const handlePartnerTap = useCallback(() => {
+    playMascotSound("click");
+    setPanelOpen(true);
+    const snapshot = refreshCoach({ announce: false });
+    if (snapshot?.total && coachEngagedRef.current && !snapshot.allComplete) {
+      refreshCoach({ announce: true, forceHighlight: true });
+      return;
+    }
+    if (snapshot?.total && !coachEngagedRef.current) {
+      // Cycle page suggestions while staying in intro mode.
+      const deck = insightsRef.current;
+      if (deck.length) {
+        const next = (suggestionIndexRef.current + 1) % deck.length;
+        showSuggestion(next);
+        return;
+      }
+      showFormIntro(snapshot);
+      return;
+    }
+    const formGuidance = getFormGuidance(resolveFieldHelp);
+    if (formGuidance?.type === "missing" && formGuidance.field) {
+      explainField(formGuidance.field, { animation: "statePoint" });
+      return;
+    }
+    const deck = insightsRef.current;
+    if (deck.length) {
+      const next = (suggestionIndexRef.current + 1) % deck.length;
+      showSuggestion(next);
+      return;
+    }
+    showPageSuggestion(true);
+  }, [
+    explainField,
+    playMascotSound,
+    refreshCoach,
+    resolveFieldHelp,
+    showFormIntro,
+    showPageSuggestion,
+    showSuggestion,
+  ]);
 
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -575,43 +1112,97 @@ export default function BaseMascot({
 
     lastMessageKeyRef.current = null;
     lastPageSuggestionRef.current = null;
+    lastCoachNextKeyRef.current = null;
+    setActivityLog([]);
+    skippedOptionalKeysRef.current = [];
+    optionalFillAcceptedRef.current = false;
+    coachEngagedRef.current = false;
+    setSkippedOptionalKeys([]);
+    setOptionalFillAccepted(false);
+    setCoachEngaged(false);
+    setBrowsingTips(false);
     clearFieldHighlight();
     resetIdleTimer();
+    setPanelOpen(true);
 
     const animationTimer = setTimeout(() => {
       triggerState("stateWave", 2500);
     }, 0);
 
-    const timer = setTimeout(() => {
-      refreshInsights();
+    const timer = setTimeout(async () => {
+      await refreshInsights();
+      const snapshot = refreshCoach({ announce: false });
+      if (snapshot?.total) {
+        showFormIntro(snapshot);
+      } else {
+        showPageSuggestion(true);
+      }
     }, 800);
 
     return () => {
       clearTimeout(animationTimer);
       clearTimeout(timer);
     };
-  }, [clearFieldHighlight, isRelevantRoute, pathname, refreshInsights, resetIdleTimer, triggerState]);
+  }, [
+    clearFieldHighlight,
+    isRelevantRoute,
+    pathname,
+    refreshCoach,
+    refreshInsights,
+    resetIdleTimer,
+    showFormIntro,
+    showPageSuggestion,
+    triggerState,
+  ]);
 
   useEffect(() => {
-    const refresh = () => refreshInsights();
-    if (contextEvent) window.addEventListener(contextEvent, refresh);
-    if (refreshEvent) window.addEventListener(refreshEvent, refresh);
-    return () => {
-      if (contextEvent) window.removeEventListener(contextEvent, refresh);
-      if (refreshEvent) window.removeEventListener(refreshEvent, refresh);
+    const onContext = () => {
+      // Tab/section changed on the same page — refresh tips + page summary.
+      coachEngagedRef.current = false;
+      setCoachEngaged(false);
+      setBrowsingTips(false);
+      lastCoachNextKeyRef.current = null;
+      optionalFillAcceptedRef.current = false;
+      setOptionalFillAccepted(false);
+      clearFieldHighlight();
+      refreshInsights();
+      const snapshot = refreshCoach({ announce: false });
+      if (snapshot?.total) showFormIntro(snapshot);
+      else showPageSuggestion(true);
     };
-  }, [contextEvent, refreshEvent, refreshInsights]);
+    const onRefresh = () => refreshInsights();
+    if (contextEvent) window.addEventListener(contextEvent, onContext);
+    if (refreshEvent) window.addEventListener(refreshEvent, onRefresh);
+    return () => {
+      if (contextEvent) window.removeEventListener(contextEvent, onContext);
+      if (refreshEvent) window.removeEventListener(refreshEvent, onRefresh);
+    };
+  }, [
+    clearFieldHighlight,
+    contextEvent,
+    refreshCoach,
+    refreshEvent,
+    refreshInsights,
+    showFormIntro,
+    showPageSuggestion,
+  ]);
 
   useEffect(() => {
-    const updateVisibility = () => setShowFormCommand(Boolean(isRelevantRoute()));
+    const updateVisibility = () => setShowFormCommand(Boolean(enableCommands && isRelevantRoute()));
     const initialTimer = setTimeout(updateVisibility, 0);
-    const observer = new MutationObserver(updateVisibility);
+    let coachTimer = null;
+    const observer = new MutationObserver(() => {
+      updateVisibility();
+      if (coachTimer) clearTimeout(coachTimer);
+      coachTimer = setTimeout(() => refreshCoach({ announce: false }), 400);
+    });
     observer.observe(document.body, { childList: true, subtree: true });
     return () => {
       clearTimeout(initialTimer);
+      if (coachTimer) clearTimeout(coachTimer);
       observer.disconnect();
     };
-  }, [isRelevantRoute, pathname]);
+  }, [enableCommands, isRelevantRoute, pathname, refreshCoach]);
 
   useEffect(() => {
     const timer = setInterval(refreshInsights, 45000);
@@ -636,15 +1227,48 @@ export default function BaseMascot({
   useEffect(() => {
     const handleFormInput = (e) => {
       const field = e.target;
-      if (!field.closest("form")) return;
+      if (!field.closest("form") || field.closest("[data-mascot-command]")) return;
       resetIdleTimer();
       refreshFormGuidance({ force: true });
+
+      // User is filling the form themselves → switch into guided mode.
+      if (!coachEngagedRef.current) {
+        engageCoach({ announce: false });
+      }
+
+      const label = coachFieldLabel(field);
+      const key = field.name || field.id || label;
+      const filled = !isFieldEmpty(field);
+      if (filled && key !== lastFilledKeyRef.current) {
+        lastFilledKeyRef.current = key;
+        pushActivity(`Filled “${label}”`, "ok");
+        triggerState("stateHappy", 1200);
+        optionalFillAcceptedRef.current = false;
+        setOptionalFillAccepted(false);
+        refreshCoach({ announce: true });
+      } else {
+        refreshCoach({ announce: false });
+      }
     };
 
     const handleFocus = (e) => {
-      if (!e.target.closest("form")) return;
+      const field = e.target;
+      if (!field.closest?.("form") || field.closest("[data-mascot-command]")) return;
+      if (!["INPUT", "SELECT", "TEXTAREA"].includes(field.tagName)) return;
+      if (["hidden", "submit", "button", "file", "password"].includes(field.type)) return;
       triggerState("stateThinking", 4000);
       resetIdleTimer();
+      if (!coachEngagedRef.current) {
+        // Stay in intro until they ask for guidance — only tip the focused field.
+        explainField(field, { animation: "statePoint" });
+        setStatusLine(`Editing: ${getFieldLabel(field)}`);
+        refreshCoach({ announce: false });
+        return;
+      }
+      explainField(field, { animation: "statePoint" });
+      setStatusLine(`Editing: ${getFieldLabel(field)}`);
+      pushActivity(`Focus on “${getFieldLabel(field)}”`, "info");
+      refreshCoach({ announce: false });
     };
 
     const handleSubmit = (e) => {
@@ -657,7 +1281,7 @@ export default function BaseMascot({
       const field = e.target;
       if (!field.closest("form")) return;
       refreshFormGuidance({ force: true, animation: "stateWarning" });
-      const guidance = getFormGuidance();
+      const guidance = getFormGuidance(resolveFieldHelp);
       if (guidance?.type === "missing") {
         setMessage(guidance.text, MASCOT_PRIORITY_LEVELS.ERROR, `${guidance.key}:invalid`, {
           force: true,
@@ -682,7 +1306,7 @@ export default function BaseMascot({
       window.removeEventListener("submit", handleSubmit);
       window.removeEventListener("invalid", handleInvalid, true);
     };
-  }, [refreshFormGuidance, resetIdleTimer, setMessage, triggerState]);
+  }, [engageCoach, explainField, pushActivity, refreshCoach, refreshFormGuidance, resetIdleTimer, resolveFieldHelp, setMessage, triggerState]);
 
   useEffect(() => {
     const unsubscribe = toast.onChange((payload) => {
@@ -819,70 +1443,515 @@ export default function BaseMascot({
           {confirmAction}
         </div>
       )}
-      {bubbleText && (
-        <div className={styles.speechBubble} role="alert" aria-live="polite">
-          <p className={styles.bubbleText}>{bubbleText}</p>
-          <button
-            type="button"
-            className={styles.closeBubbleBtn}
-            onClick={() => {
-              bubbleRef.current = { text: "", priority: MASCOT_PRIORITY_LEVELS.NONE };
-              setBubbleText("");
-              lastMessageKeyRef.current = null;
-              clearFieldHighlight();
-              if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
-            }}
-            aria-label="Dismiss message"
-          >
-            &times;
-          </button>
-          {insightCount > 1 && (
-            <div className={styles.suggestionPager} aria-label={`Suggestion ${suggestionIndex + 1} of ${insightCount}`}>
-              <button
-                type="button"
-                disabled={suggestionIndex <= 0}
-                onClick={() => showSuggestion(suggestionIndex - 1)}
-                aria-label="Previous suggestion"
+
+      {panelOpen && (bubbleText || coach?.total || statusLine || insightCount > 0)
+        ? (() => {
+            const formComplete = Boolean(coach?.allComplete);
+            const hasForm = Boolean(coach?.total);
+            const introMode = Boolean(hasForm && !coachEngaged && !formComplete && !browsingTips);
+            const coaching = Boolean(hasForm && coachEngaged);
+            const tipMode = !coaching;
+            const summary = pageSummary();
+            const nextOptionalOffer = Boolean(
+              coaching && coach?.next && !coach.next.required && !optionalFillAccepted && !formComplete
+            );
+            const isWorking =
+              isTypingIntoField ||
+              activeState === "stateThinking" ||
+              activeState === "statePoint";
+            const liveLabel = isTypingIntoField
+              ? "Writing into form…"
+              : activeState === "stateThinking"
+                ? "Thinking…"
+                : activeState === "statePoint"
+                  ? "Pointing the next step…"
+                  : formComplete
+                    ? "Ready when you are"
+                    : coaching
+                      ? "Guiding live"
+                      : introMode
+                        ? "Standing by"
+                        : "Watching this page";
+
+            return (
+              <div
+                className={[
+                  styles.partnerPanel,
+                  styles.panelLive,
+                  introMode ? styles.panelIntro : "",
+                  coaching ? styles.panelGuiding : "",
+                  formComplete ? styles.panelReady : "",
+                  isWorking ? styles.panelWorking : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                role="status"
+                aria-live="polite"
               >
-                ‹
-              </button>
-              <span>
-                {suggestionIndex + 1} of {insightCount}
-              </span>
-              <button
-                type="button"
-                disabled={suggestionIndex >= insightCount - 1}
-                onClick={() => showSuggestion(suggestionIndex + 1)}
-                aria-label="Next suggestion"
-              >
-                ›
-              </button>
-            </div>
-          )}
-          <div className={styles.bubbleArrow} />
-        </div>
-      )}
+                <div className={styles.panelSheen} aria-hidden="true" />
+                <button
+                  type="button"
+                  className={styles.closeBubbleBtn}
+                  onClick={() => {
+                    setPanelOpen(false);
+                    bubbleRef.current = { text: "", priority: MASCOT_PRIORITY_LEVELS.NONE };
+                    setBubbleText("");
+                    lastMessageKeyRef.current = null;
+                    clearFieldHighlight();
+                    if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
+                  }}
+                  aria-label="Minimize partner"
+                >
+                  &times;
+                </button>
+
+                <div className={styles.aiLiveBar} aria-hidden="true">
+                  <span className={`${styles.aiLiveDots} ${isWorking ? styles.aiLiveDotsActive : ""}`}>
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <span className={styles.aiLiveLabel}>{liveLabel}</span>
+                </div>
+
+                <div className={`${styles.panelLabel} ${formComplete ? styles.panelLabelOk : ""}`}>
+                  <span className={styles.panelPulse} aria-hidden="true" />
+                  {formComplete
+                    ? "Ready to send"
+                    : nextOptionalOffer
+                      ? "Optional field"
+                      : coaching
+                        ? "Guiding you"
+                        : introMode
+                          ? "AI partner"
+                          : "Page tip"}
+                </div>
+
+                {coaching ? (
+                  <div className={styles.panelProgress} aria-hidden="true">
+                    <div
+                      className={`${styles.panelProgressFill} ${isWorking ? styles.panelProgressBusy : ""}`}
+                      style={{ width: `${coach.progress}%` }}
+                    />
+                  </div>
+                ) : null}
+
+                {introMode ? (
+                  <div className={`${styles.formIntro} ${styles.fadeInUp}`} data-mascot-command>
+                    <p className={styles.bubbleText}>{summary?.title || "Form on this page"}</p>
+                    <p className={styles.formIntroWhat}>{summary?.what || "You can fill this form to continue."}</p>
+                    <p className={styles.formIntroWhy}>{summary?.why || "Ask me to guide you when you’re ready."}</p>
+                    {coach?.done > 0 ? (
+                      <p className={styles.formIntroProgress}>
+                        Progress so far: {coach.done} of {coach.total} fields done.
+                      </p>
+                    ) : null}
+                    <div className={styles.optionalOfferActions}>
+                      <button type="button" className={styles.coachConfirm} onClick={() => engageCoach()}>
+                        Guide me through it
+                      </button>
+                      <button type="button" className={styles.optionalSkip} onClick={openPageTips}>
+                        More tips
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {coaching ? (
+                  <p key={`coach-msg-${coach?.next?.key || "done"}-${formComplete}`} className={`${styles.bubbleText} ${styles.fadeInUp}`}>
+                    {formComplete
+                      ? "All set — required filled, optional handled. Click the primary button on the form."
+                      : nextOptionalOffer
+                        ? `Optional: “${coach.next.label}”. Want to fill it, or skip?`
+                        : bubbleText ||
+                          (coach.next
+                            ? `Next up: “${coach.next.label}”.`
+                            : "Fill the highlighted field.")}
+                  </p>
+                ) : null}
+
+                {!introMode && !coaching && bubbleText && insightCount === 0 ? (
+                  <p key={bubbleText} className={`${styles.bubbleText} ${styles.fadeInUp}`}>
+                    {bubbleText}
+                  </p>
+                ) : null}
+
+                {isTypingIntoField ? (
+                  <div className={styles.typingRail} aria-live="polite">
+                    <span className={styles.typingDots}>
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    <span>AI is typing into the form…</span>
+                  </div>
+                ) : null}
+
+                {coaching && !formComplete && !nextOptionalOffer && statusLine ? (
+                  <p className={`${styles.panelStatus} ${styles.fadeInUp}`}>{statusLine}</p>
+                ) : null}
+
+                {nextOptionalOffer ? (
+                  <div className={`${styles.optionalOffer} ${styles.fadeInUp}`} data-mascot-command>
+                    <p className={styles.optionalOfferHint}>
+                      This field is optional — fill it if you have the detail, or skip to continue.
+                    </p>
+                    <div className={styles.optionalOfferActions}>
+                      <button type="button" className={styles.coachConfirm} onClick={acceptOptionalFill}>
+                        Fill it
+                      </button>
+                      <button type="button" className={styles.optionalSkip} onClick={skipOptionalField}>
+                        Skip
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {coach?.next && coaching && !formComplete && !nextOptionalOffer
+                  ? (() => {
+                      const selectMeta = getSelectFieldMeta(coach.next.field);
+                      const pickOnForm = Boolean(selectMeta?.many);
+
+                      if (pickOnForm) {
+                        return (
+                          <div className={`${styles.coachPickOnForm} ${styles.fadeInUp}`} data-mascot-command>
+                            <p className={styles.coachPickTitle}>
+                              Select “{coach.next.label}” from the dropdown on the form
+                              {!coach.next.required ? " (optional)" : ""}
+                            </p>
+                            <p className={styles.coachPickHint}>
+                              {selectMeta.count} options — too many to list here. Choose it yourself in the
+                              highlighted field; I&apos;ll mark it done when you pick one.
+                            </p>
+                            <div className={styles.optionalOfferActions}>
+                              <button
+                                type="button"
+                                className={styles.coachConfirm}
+                                onClick={() => {
+                                  highlightField(coach.next.field);
+                                  coach.next.field?.focus?.();
+                                  setMessage(
+                                    `Open the “${coach.next.label}” dropdown on the form and pick a value.`,
+                                    MASCOT_PRIORITY_LEVELS.SUGGESTION,
+                                    `pick-on-form:${coach.next.key}`,
+                                    {
+                                      force: true,
+                                      bypassCooldown: true,
+                                      animation: "statePoint",
+                                      highlightField: coach.next.field,
+                                    }
+                                  );
+                                }}
+                              >
+                                Show me the field
+                              </button>
+                              {!coach.next.required ? (
+                                <button type="button" className={styles.optionalSkip} onClick={skipOptionalField}>
+                                  Skip
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <form
+                          className={`${styles.coachInputRow} ${styles.fadeInUp}`}
+                          data-mascot-command
+                          onSubmit={applyCoachAnswer}
+                        >
+                          <label className={styles.coachInputLabel} htmlFor="recruiter-partner-fill">
+                            {selectMeta
+                              ? `Choose “${coach.next.label}”${!coach.next.required ? " (optional)" : ""}`
+                              : `Type here — I'll write it into “${coach.next.label}”${!coach.next.required ? " (optional)" : ""}`}
+                          </label>
+                          {selectMeta ? (
+                            <div className={styles.coachSelectHints}>
+                              {selectMeta.options.map((opt) => (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  className={styles.coachChip}
+                                  disabled={isTypingIntoField}
+                                  onClick={() => applyCoachValue(opt.text?.trim() || opt.value)}
+                                >
+                                  {opt.text?.trim() || opt.value}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          <div className={styles.coachInputControls}>
+                            <input
+                              ref={coachInputRef}
+                              id="recruiter-partner-fill"
+                              className={styles.coachInput}
+                              value={coachDraft}
+                              disabled={isTypingIntoField}
+                              onChange={(event) => setCoachDraft(event.target.value)}
+                              placeholder={
+                                isTypingIntoField
+                                  ? "Writing into the form…"
+                                  : `Enter ${coach.next.label}…`
+                              }
+                              autoComplete="off"
+                            />
+                            <button
+                              type="submit"
+                              className={styles.coachConfirm}
+                              disabled={isTypingIntoField || !coachDraft.trim()}
+                            >
+                              {isTypingIntoField ? "…" : "Fill"}
+                            </button>
+                          </div>
+                          {!coach.next.required ? (
+                            <button
+                              type="button"
+                              className={styles.optionalSkipLink}
+                              onClick={skipOptionalField}
+                            >
+                              Skip this optional field
+                            </button>
+                          ) : null}
+                        </form>
+                      );
+                    })()
+                  : null}
+
+                {coaching && coach.steps?.length ? (
+                  <ul className={`${styles.stepList} ${styles.fadeInUp}`} aria-label="Form progress">
+                    {coach.steps.slice(0, 10).map((step, index) => (
+                      <li
+                        key={`${step.key}-${step.label}`}
+                        className={`${styles.stepItem} ${
+                          step.status === "done"
+                            ? styles.stepDone
+                            : step.status === "skipped"
+                              ? styles.stepSkipped
+                              : step.status === "active"
+                                ? styles.stepActive
+                                : styles.stepPending
+                        }`}
+                        style={{ animationDelay: `${index * 40}ms` }}
+                      >
+                        <span className={styles.stepMark} aria-hidden="true">
+                          {step.status === "done"
+                            ? "✓"
+                            : step.status === "skipped"
+                              ? "–"
+                              : step.status === "active"
+                                ? "●"
+                                : "○"}
+                        </span>
+                        <span>
+                          {step.label}
+                          {!step.required ? <em className={styles.optionalTag}> optional</em> : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                {coaching && !formComplete ? (
+                  <button type="button" className={styles.optionalSkipLink} onClick={exitCoachToTips}>
+                    Back to page tips
+                  </button>
+                ) : null}
+
+                {formComplete ? (
+                  <p className={`${styles.panelCta} ${styles.fadeInUp}`}>
+                    Next action: use the primary button on the form to continue.
+                  </p>
+                ) : null}
+
+                {/* Intro: explain why the page/form helps. Tip mode: only pager — current tip is already the main bubble. */}
+                {introMode && insightCount > 0 ? (
+                  <div className={`${styles.pageTipsBlock} ${styles.fadeInUp}`}>
+                    <div className={styles.pageTipsHead}>Why this helps</div>
+                    <p className={styles.pageTipText}>
+                      {summary?.why ||
+                        insightsRef.current[0]?.message ||
+                        "Ask me to guide you when you’re ready."}
+                    </p>
+                  </div>
+                ) : null}
+
+                {browsingTips && !coaching && !formComplete && insightCount === 0 ? (
+                  <div className={`${styles.pageTipsBlock} ${styles.fadeInUp}`}>
+                    <div className={styles.pageTipsHead}>Tips for this page</div>
+                    <p className={styles.pageTipText}>
+                      {summary?.what || "This page helps you continue your hiring journey."}
+                    </p>
+                    <p className={styles.pageTipText} style={{ marginTop: 6 }}>
+                      {summary?.why || "Fill what’s on screen, then use Guide me through it for field help."}
+                    </p>
+                    <div className={styles.optionalOfferActions} style={{ marginTop: 10 }}>
+                      <button type="button" className={styles.coachConfirm} onClick={() => engageCoach()}>
+                        Guide me through it
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.optionalSkip}
+                        onClick={() => {
+                          setBrowsingTips(false);
+                          showFormIntro(coach);
+                        }}
+                      >
+                        Back to overview
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {tipMode && !introMode && !coaching && !formComplete && insightCount > 0 ? (
+                  <div className={`${styles.pageTipsBlock} ${styles.fadeInUp}`}>
+                    {browsingTips && hasForm ? (
+                      <div className={styles.pageTipsHead}>Tips for this page</div>
+                    ) : null}
+                    <p key={`tip-${suggestionIndex}`} className={`${styles.pageTipText} ${styles.fadeInUp}`}>
+                      {(insights[suggestionIndex] || insights[0])?.message ||
+                        summary?.what ||
+                        "Tips for this page appear here."}
+                    </p>
+                    {insightCount > 1 ? (
+                      <div
+                        className={styles.suggestionPager}
+                        aria-label={`Tip ${suggestionIndex + 1} of ${insightCount}`}
+                      >
+                        <button
+                          type="button"
+                          disabled={suggestionIndex <= 0}
+                          onClick={() => showSuggestion(suggestionIndex - 1)}
+                          aria-label="Previous tip"
+                        >
+                          ‹
+                        </button>
+                        <span>
+                          Tip {suggestionIndex + 1} of {insightCount}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={suggestionIndex >= insightCount - 1}
+                          onClick={() => showSuggestion(suggestionIndex + 1)}
+                          aria-label="Next tip"
+                        >
+                          ›
+                        </button>
+                      </div>
+                    ) : null}
+                    {browsingTips && hasForm ? (
+                      <div className={styles.optionalOfferActions} style={{ marginTop: 10 }}>
+                        <button type="button" className={styles.coachConfirm} onClick={() => engageCoach()}>
+                          Guide me through it
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.optionalSkip}
+                          onClick={() => {
+                            setBrowsingTips(false);
+                            showFormIntro(coach);
+                          }}
+                        >
+                          Back to overview
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {formComplete && insightCount > 0 ? (
+                  <div className={`${styles.pageTipsBlock} ${styles.fadeInUp}`}>
+                    <div className={styles.pageTipsHead}>More tips</div>
+                    <p key={`tip-done-${suggestionIndex}`} className={styles.pageTipText}>
+                      {(insights[suggestionIndex] || insights[0])?.message ||
+                        "This page is ready — tap › if more tips are available."}
+                    </p>
+                    {insightCount > 1 ? (
+                      <div
+                        className={styles.suggestionPager}
+                        aria-label={`Tip ${suggestionIndex + 1} of ${insightCount}`}
+                      >
+                        <button
+                          type="button"
+                          disabled={suggestionIndex <= 0}
+                          onClick={() => showSuggestion(suggestionIndex - 1)}
+                          aria-label="Previous tip"
+                        >
+                          ‹
+                        </button>
+                        <span>
+                          Tip {suggestionIndex + 1} of {insightCount}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={suggestionIndex >= insightCount - 1}
+                          onClick={() => showSuggestion(suggestionIndex + 1)}
+                          aria-label="Next tip"
+                        >
+                          ›
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {activityLog.length > 0 && coaching && !formComplete ? (
+                  <details className={styles.activityDetails}>
+                    <summary>Recent AI activity</summary>
+                    <ul className={styles.activityList}>
+                      {activityLog.slice(0, 3).map((item) => (
+                        <li key={item.id} className={item.tone === "ok" ? styles.activityOk : ""}>
+                          {item.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+
+                <div className={styles.bubbleArrow} />
+              </div>
+            );
+          })()
+        : null}
 
       <button
         ref={mascotBtnRef}
         type="button"
-        className={`${styles.mascotBtn} ${styles[activeState]} ${openChat ? styles.chatOpen : ""}`}
-        onClick={() => {
-          playMascotSound("click");
-          toggleChat();
-        }}
+        className={[
+          styles.mascotBtn,
+          styles[activeState],
+          panelOpen ? styles.mascotBtnActive : "",
+          isTypingIntoField ? styles.mascotBtnWorking : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={handlePartnerTap}
         onMouseEnter={() => playMascotSound("hover")}
-        aria-label={openChat ? `Close ${roleLabel.toLowerCase()} assistant` : `Open ${roleLabel.toLowerCase()} assistant`}
+        aria-label={`${roleLabel} partner — show next tip`}
+        aria-expanded={panelOpen}
       >
+        <span className={styles.auraRing} aria-hidden="true" />
+        <span className={`${styles.auraRing} ${styles.auraRingDelayed}`} aria-hidden="true" />
+        {coach?.total && !panelOpen ? (
+          <span className={styles.avatarBadge}>{Math.max(coach.total - coach.done, 0) || "✓"}</span>
+        ) : null}
         <svg viewBox="0 0 100 100" className={styles.mascotSvg} xmlns="http://www.w3.org/2000/svg">
           <defs>
             <radialGradient id="screenGlow" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="#2563eb" stopOpacity="0.15" />
               <stop offset="100%" stopColor="#1e3a8a" stopOpacity="0" />
             </radialGradient>
+            <linearGradient id="scanGlow" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#22d3ee" stopOpacity="0" />
+              <stop offset="50%" stopColor="#22d3ee" stopOpacity="0.45" />
+              <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+            </linearGradient>
             <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
               <feDropShadow dx="0" dy="4" stdDeviation="3" floodColor="#000" floodOpacity="0.2" />
             </filter>
+            <clipPath id="faceClip">
+              <rect x="28" y="22" width="44" height="34" rx="12" />
+            </clipPath>
           </defs>
 
           <ellipse cx="50" cy="84" rx="12" ry="4" className={styles.thrusterGlow} />
@@ -901,6 +1970,10 @@ export default function BaseMascot({
           <rect x="28" y="22" width="44" height="34" rx="12" className={styles.faceScreen} />
 
           <rect x="28" y="22" width="44" height="34" rx="12" fill="url(#screenGlow)" pointerEvents="none" />
+
+          <g clipPath="url(#faceClip)" pointerEvents="none">
+            <rect x="28" y="22" width="44" height="8" fill="url(#scanGlow)" className={styles.faceScan} />
+          </g>
 
           <ellipse cx={42 + eyeOffset.x} cy={39 + eyeOffset.y} rx="5" ry="7" className={`${styles.eye} ${styles.leftEye}`} />
           <ellipse cx={58 + eyeOffset.x} cy={39 + eyeOffset.y} rx="5" ry="7" className={`${styles.eye} ${styles.rightEye}`} />

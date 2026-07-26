@@ -7,6 +7,10 @@ import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { getApiErrorMessage, getCandidateDetail, remindCandidateOnboarding } from "@/services/authService";
+import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
 
 export default function CandidateProfilePage({ params }) {
   const router = useRouter();
@@ -32,6 +36,20 @@ export default function CandidateProfilePage({ params }) {
     }
     load();
   }, [id, router]);
+
+  useEffect(() => {
+    if (!candidate) {
+      clearRecruiterContext();
+      return undefined;
+    }
+    publishRecruiterContext({
+      section: "candidate_detail",
+      candidateName: candidate.full_name || null,
+      hint: `Review ${candidate.full_name || "this candidate"}'s progress and documents. Send a reminder if onboarding is stalled.`,
+      fields: ["note"],
+    });
+    return () => clearRecruiterContext();
+  }, [candidate]);
 
   async function handleReminder() {
     const accessToken = localStorage.getItem("access_token");

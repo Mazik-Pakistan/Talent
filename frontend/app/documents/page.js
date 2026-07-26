@@ -18,55 +18,11 @@ import {
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
 import { getEmployeeNavItems } from "@/utils/employeeNav";
+import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
 import { COPILOT_DOCUMENTS_ASSIST_EVENT, publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
+import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import candidateStyles from "@/app/dashboard/candidate/candidate-dashboard.module.css";
 import employeeStyles from "@/app/dashboard/employee/employee-dashboard.module.css";
-
-const DOCUMENTS_ICON = (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" />
-  </svg>
-);
-
-const CANDIDATE_NAV = [
-  {
-    key: "dashboard",
-    label: "Dashboard",
-    href: "/dashboard/candidate",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" />
-        <rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
-      </svg>
-    ),
-  },
-  {
-    key: "onboarding",
-    label: "Onboarding",
-    href: "/onboarding",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" />
-      </svg>
-    ),
-  },
-  {
-    key: "documents",
-    label: "Documents",
-    href: "/documents",
-    icon: DOCUMENTS_ICON,
-  },
-  {
-    key: "profile",
-    label: "Profile",
-    href: "/onboarding?edit=true",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
-      </svg>
-    ),
-  },
-];
 
 export default function DocumentsPage() {
   return (
@@ -89,9 +45,10 @@ function DocumentsPageContent() {
   const [notifOpen, setNotifOpen] = useState(false);
 
   const isEmployee = user?.role === "employee";
+  const isCandidate = user?.role === "candidate";
   const styles = isEmployee ? employeeStyles : candidateStyles;
   const profileComplete = profileMeta?.profile_status === "complete";
-  const navItems = isEmployee ? getEmployeeNavItems({ profileComplete }) : CANDIDATE_NAV;
+  const navItems = isEmployee ? getEmployeeNavItems({ profileComplete }) : CANDIDATE_NAV_ITEMS;
   const modules = moduleAccess(user?.role);
 
   useEffect(() => {
@@ -99,13 +56,26 @@ function DocumentsPageContent() {
   }, []);
 
   useEffect(() => {
-    if (!isEmployee) return undefined;
-    publishGuideContext({
-      pathname: "/documents",
-      section: null,
-      formId: "documents",
-    });
-  }, [isEmployee]);
+    if (isEmployee) {
+      publishGuideContext({
+        pathname: "/documents",
+        section: null,
+        formId: "documents",
+        hint: "Upload identity and employment files, then track verification status here.",
+      });
+      return undefined;
+    }
+    if (isCandidate) {
+      publishCandidateContext({
+        pathname: "/documents",
+        section: "documents",
+        hint: "Upload clear identity documents so recruiters can verify you before offer steps.",
+        fields: [],
+      });
+      return () => clearCandidateContext();
+    }
+    return undefined;
+  }, [isEmployee, isCandidate]);
 
   useEffect(() => {
     if (!isEmployee) return registerPageAssist(null);
@@ -242,7 +212,13 @@ function DocumentsPageContent() {
           <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {navItems.map((item) => {
               if (isEmployee && item.module && !modules[item.module]) return null;
-              const isActive = item.href && pathname === item.href;
+              const isActive = isEmployee
+                ? item.href && pathname === item.href
+                : isCandidateNavActive(item, {
+                    pathname,
+                    search: typeof window !== "undefined" ? window.location.search : "",
+                    activeKey: "documents",
+                  });
               return (
                 <li key={item.key}>
                   <button

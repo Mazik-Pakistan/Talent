@@ -11,9 +11,9 @@ export default function EmployeeAIAssistantPage() {
 
   return (
     <AssistantPageShell
-      eyebrow="Employee workspace"
+      eyebrow="Automation workspace"
       title="Your workday assistant"
-      description="Ask for help with employee tasks, onboarding follow-ups, profile completion, and document questions in one polished workspace."
+      description="Chat here for multi-step help. On other employee pages, the Copilot mascot guides you field-by-field — it never runs workflows for you."
       highlights={["HR help", "Onboarding support", "Fast answers"]}
     >
       <AgentChatCore variant="canvas" auth={auth} />
