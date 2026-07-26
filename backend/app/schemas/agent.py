@@ -5,9 +5,26 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class AgentContext(BaseModel):
+    pathname: str | None = None
+    page: str | None = None
+    module: str | None = None
+    search: str | None = None
+    filters: dict | None = None
+    selected_record: dict | None = None
+
+
+class AgentAction(BaseModel):
+    kind: str = Field(default="navigate")
+    label: str
+    route: str | None = None
+    prompt: str | None = None
+
+
 class AgentChatRequest(BaseModel):
     message: str = Field(default="", max_length=4000)
     session_id: str | None = Field(default=None, max_length=64)
+    context: AgentContext | dict | None = None
 
 
 class AgentMessage(BaseModel):
@@ -22,6 +39,7 @@ class AgentChatResponse(BaseModel):
     reply: str
     messages: list[AgentMessage]
     suggested_replies: list[str] = Field(default_factory=list)
+    actions: list[AgentAction] = Field(default_factory=list)
     ui_hint: dict | None = None
     attachment: dict | None = None
     state: dict | None = None

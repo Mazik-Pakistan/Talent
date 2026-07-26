@@ -247,6 +247,43 @@ def _scratchpad_text(scratchpad: list[dict]) -> str:
     return "\n\nObservations so far this turn:\n" + "\n".join(lines)
 
 
+def _compact_context_value(value: Any, *, limit: int = 6) -> Any:
+    if isinstance(value, dict):
+        compact: dict[str, Any] = {}
+        for key in list(value.keys())[:limit]:
+            item = value.get(key)
+            if item in (None, "", [], {}):
+                continue
+            compact[key] = _compact_context_value(item, limit=limit)
+        return compact
+    if isinstance(value, list):
+        return [str(item)[:80] for item in value[:limit] if item not in (None, "")]
+    if isinstance(value, (str, int, float, bool)):
+        text = str(value)
+        return text[:160] if len(text) > 160 else text
+    return str(value)
+
+
+def _context_text(context: dict | None) -> str:
+    if not context:
+        return "(no additional page context)"
+
+    payload: dict[str, Any] = {}
+    for key in ("pathname", "page", "module", "search", "topic"):
+        value = context.get(key)
+        if value:
+            payload[key] = _compact_context_value(value)
+    filters = context.get("filters")
+    if isinstance(filters, dict) and filters:
+        payload["filters"] = _compact_context_value(filters)
+    selected_record = context.get("selected_record")
+    if isinstance(selected_record, dict) and selected_record:
+        payload["selected_record"] = _compact_context_value(selected_record)
+
+    text = json.dumps(payload, default=str, ensure_ascii=True)
+    return text if len(text) <= 1200 else text[:1197] + "…"
+
+
 def _build_prompt(
     user: CurrentUser,
     system_prompt: str,
@@ -254,12 +291,17 @@ def _build_prompt(
     history_text: str,
     scratchpad: list[dict],
     new_message: str,
+    context: dict | None,
 ) -> str:
     scratch_text = _scratchpad_text(scratchpad)
+    context_text = _context_text(context)
 
     return f"""{system_prompt}
 
 Caller: {user.full_name} ({user.email}), role={user.role}.
+
+Current page context:
+{context_text}
 
 Available tools (call by exact name):
 {tool_spec}
@@ -276,6 +318,113 @@ Respond with ONE JSON object only:
 suggested_replies: 3–5 chips matching the current topic (candidate vs employee vs bulk); include the person's name when known.
 ui_hint for recruiters: {{"type":"spreadsheet"}} when they should attach an Excel/CSV roster, otherwise null.
 ui_hint for candidate/employee uploads only: {{"type":"upload","doc_type":"cnic","category":"identity"}}."""
+
+
+def _action(kind: str, label: str, *, route: str | None = None, prompt: str | None = None) -> dict:
+    data = {"kind": kind, "label": label}
+    if route:
+        data["route"] = route
+    if prompt:
+        data["prompt"] = prompt
+    return data
+
+
+def _default_actions_for_role(user: CurrentUser) -> list[dict]:
+    if user.role in ("recruiter", "super_admin"):
+        return [
+            _action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates"),
+            _action("navigate", "Open Employees", route="/dashboard/recruiter/employees"),
+            _action("navigate", "Open Activity", route="/dashboard/recruiter/activity"),
+            _action("navigate", "Open Announcements", route="/dashboard/recruiter/announcements"),
+        ]
+    if user.role == "employee":
+        return [
+            _action("navigate", "Open Profile", route="/dashboard/employee/profile"),
+            _action("navigate", "Open Learning", route="/dashboard/employee/learning"),
+            _action("navigate", "Open Complete Profile", route="/dashboard/employee/complete-profile"),
+            _action("navigate", "Open Talent", route="/dashboard/employee/talent"),
+        ]
+    return [
+        _action("navigate", "Open Profile", route="/dashboard/candidate"),
+        _action("navigate", "Check Onboarding", route="/dashboard/candidate"),
+    ]
+
+
+def _detail_actions(user: CurrentUser, scratchpad: list[dict], context: dict | None) -> list[dict]:
+    actions = _default_actions_for_role(user)
+    selected = (context or {}).get("selected_record") if isinstance(context, dict) else None
+    selected_id = None
+    selected_kind = None
+    if isinstance(selected, dict):
+        selected_id = selected.get("employee_id") or selected.get("candidate_id") or selected.get("id")
+        selected_kind = selected.get("kind") or selected.get("type")
+
+    for entry in reversed(scratchpad):
+        result = entry.get("result") or {}
+        if not result.get("ok"):
+            continue
+        data = result.get("data") or {}
+        tool = entry.get("tool")
+
+        if tool == "get_employee_detail" or data.get("employee_id"):
+            employee_id = data.get("employee_id") or selected_id
+            if employee_id and user.role in ("recruiter", "super_admin"):
+                actions = [
+                    _action("navigate", f"Open {data.get('full_name') or 'Employee'} Profile", route=f"/dashboard/recruiter/employees/{employee_id}"),
+                    _action("navigate", "View Learning", route="/dashboard/recruiter/learning"),
+                    _action("navigate", "View Activity", route="/dashboard/recruiter/activity"),
+                    _action("navigate", "Open Employees", route="/dashboard/recruiter/employees"),
+                ]
+            elif employee_id and user.role == "employee":
+                actions = [
+                    _action("navigate", "Open Profile", route="/dashboard/employee/profile"),
+                    _action("navigate", "Open Learning", route="/dashboard/employee/learning"),
+                    _action("navigate", "Open Complete Profile", route="/dashboard/employee/complete-profile"),
+                ]
+            break
+
+        if tool == "get_candidate_status" or data.get("candidate_id"):
+            candidate_id = data.get("candidate_id") or selected_id
+            if candidate_id and user.role in ("recruiter", "super_admin"):
+                label = data.get("full_name") or "Candidate"
+                actions = [
+                    _action("navigate", f"Open {label} Profile", route=f"/dashboard/recruiter/candidates/{candidate_id}"),
+                    _action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates"),
+                    _action("navigate", "Open Pipeline", route="/dashboard/recruiter/candidates"),
+                    _action("navigate", "Open Employees", route="/dashboard/recruiter/employees"),
+                ]
+            else:
+                actions = [
+                    _action("navigate", "Open Profile", route="/dashboard/candidate"),
+                    _action("navigate", "Check Onboarding", route="/dashboard/candidate"),
+                ]
+            break
+
+        if tool in ("list_person_documents", "list_candidate_documents", "list_documents"):
+            owner = data.get("owner") or {}
+            employee_id = owner.get("employee_id") or data.get("employee_id")
+            candidate_id = owner.get("candidate_id") or data.get("candidate_id")
+            label = data.get("full_name") or owner.get("full_name") or "Profile"
+            if employee_id and user.role in ("recruiter", "super_admin"):
+                actions = [
+                    _action("navigate", f"Open {label} Profile", route=f"/dashboard/recruiter/employees/{employee_id}"),
+                    _action("navigate", "View Learning", route="/dashboard/recruiter/learning"),
+                    _action("navigate", "View Activity", route="/dashboard/recruiter/activity"),
+                ]
+            elif candidate_id and user.role in ("recruiter", "super_admin"):
+                actions = [
+                    _action("navigate", f"Open {label} Profile", route=f"/dashboard/recruiter/candidates/{candidate_id}"),
+                    _action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates"),
+                ]
+            break
+
+    if selected_id and selected_kind and user.role in ("recruiter", "super_admin"):
+        if selected_kind in ("employee", "employees") and not any(a.get("route", "").endswith(f"/employees/{selected_id}") for a in actions):
+            actions.insert(0, _action("navigate", "Open selected employee", route=f"/dashboard/recruiter/employees/{selected_id}"))
+        if selected_kind in ("candidate", "candidates") and not any(a.get("route", "").endswith(f"/candidates/{selected_id}") for a in actions):
+            actions.insert(0, _action("navigate", "Open selected candidate", route=f"/dashboard/recruiter/candidates/{selected_id}"))
+
+    return actions[:4]
 
 
 def _last_renderable_attachment(scratchpad: list[dict]) -> dict | None:
@@ -295,7 +444,7 @@ async def _save_messages(session_id: str, user_id: str, new_msgs: list[dict]) ->
     )
 
 
-async def _fallback_reply(user: CurrentUser) -> dict:
+async def _fallback_reply(user: CurrentUser, context: dict | None = None) -> dict:
     """Deterministic response used only when no LLM key is configured."""
     status_tool = "get_status" if user.role in ("candidate", "employee") else "list_candidates"
     result = await agent_tools.run_tool(user, status_tool, {})
@@ -303,6 +452,7 @@ async def _fallback_reply(user: CurrentUser) -> dict:
         return {
             "message": "I couldn't fetch your status right now — please try the dashboard directly, or try again shortly.",
             "suggested_replies": [],
+            "actions": _default_actions_for_role(user),
             "ui_hint": None,
         }
     if user.role in ("candidate", "employee"):
@@ -312,10 +462,10 @@ async def _fallback_reply(user: CurrentUser) -> dict:
             msg = f"You still need to complete: {', '.join(missing)}. Tell me the details and I'll fill them in, or upload any required documents."
         else:
             msg = "You're all caught up! Nothing outstanding right now."
-        return {"message": msg, "suggested_replies": [], "ui_hint": None}
+        return {"message": msg, "suggested_replies": [], "actions": _default_actions_for_role(user), "ui_hint": None}
     data = result.data
     msg = f"You have {data.get('count', 0)} candidates on file. Tell me who to invite, or paste a list to send multiple invitations."
-    return {"message": msg, "suggested_replies": [], "ui_hint": None}
+    return {"message": msg, "suggested_replies": [], "actions": _default_actions_for_role(user), "ui_hint": None}
 
 
 def _sanitize_ui_hint(user: CurrentUser, ui_hint: dict | None) -> dict | None:
@@ -350,7 +500,7 @@ def _sanitize_ui_hint(user: CurrentUser, ui_hint: dict | None) -> dict | None:
 
 
 class AgentService:
-    async def chat(self, user: CurrentUser, message: str, session_id: str | None) -> dict:
+    async def chat(self, user: CurrentUser, message: str, session_id: str | None, context: dict | None = None) -> dict:
         message = (message or "").strip()
         convo = await _load_or_create_session(user, session_id)
         sid = convo["session_id"]
@@ -359,9 +509,9 @@ class AgentService:
         pending_to_save = [user_msg] if message else []
 
         if not llm_configured():
-            reply = await _fallback_reply(user)
+            reply = await _fallback_reply(user, context)
         else:
-            reply = await self._run_llm_loop(user, convo, message)
+            reply = await self._run_llm_loop(user, convo, message, context)
 
         ui_hint = _sanitize_ui_hint(user, reply.get("ui_hint"))
         assistant_msg = {
@@ -371,6 +521,7 @@ class AgentService:
             "meta": {
                 "ui_hint": ui_hint,
                 "suggested_replies": reply.get("suggested_replies") or [],
+                "actions": reply.get("actions") or [],
                 "attachment": reply.get("attachment"),
             },
         }
@@ -384,23 +535,25 @@ class AgentService:
             "reply": reply["message"],
             "messages": all_messages[-40:],
             "suggested_replies": reply.get("suggested_replies") or [],
+            "actions": reply.get("actions") or [],
             "ui_hint": ui_hint,
             "attachment": reply.get("attachment"),
         }
 
-    async def _run_llm_loop(self, user: CurrentUser, convo: dict, message: str) -> dict:
+    async def _run_llm_loop(self, user: CurrentUser, convo: dict, message: str, context: dict | None = None) -> dict:
         system_prompt = RECRUITER_SYSTEM_PROMPT if user.role in ("recruiter", "super_admin") else SELF_SERVE_SYSTEM_PROMPT
         tool_spec = _tool_spec_text(user.role)
         history_text = _history_text(convo.get("messages") or [])
         scratchpad: list[dict] = []
 
         for _ in range(MAX_TOOL_STEPS):
-            prompt = _build_prompt(user, system_prompt, tool_spec, history_text, scratchpad, message)
+            prompt = _build_prompt(user, system_prompt, tool_spec, history_text, scratchpad, message, context)
             parsed = await call_llm_json(prompt, max_tokens=1200, temperature=0.2)
             if not parsed:
                 return {
                     "message": "I'm having trouble reaching the AI service right now — please try again in a moment.",
                     "suggested_replies": [],
+                    "actions": _default_actions_for_role(user),
                     "ui_hint": None,
                 }
 
@@ -418,12 +571,14 @@ class AgentService:
                     "suggested_replies": parsed.get("suggested_replies") or [],
                     "ui_hint": _sanitize_ui_hint(user, parsed.get("ui_hint")),
                     "attachment": _last_renderable_attachment(scratchpad),
+                    "actions": _detail_actions(user, scratchpad, context),
                 }
 
             # Unrecognized shape — treat whatever text we got as the reply.
             return {
                 "message": parsed.get("message") or "I didn't quite catch that — could you rephrase?",
                 "suggested_replies": [],
+                "actions": _detail_actions(user, scratchpad, context),
                 "ui_hint": None,
                 "attachment": _last_renderable_attachment(scratchpad),
             }
@@ -431,6 +586,7 @@ class AgentService:
         return {
             "message": "I gathered the information but need one more detail from you to finish — could you confirm and try again?",
             "suggested_replies": [],
+            "actions": _detail_actions(user, scratchpad, context),
             "ui_hint": None,
             "attachment": _last_renderable_attachment(scratchpad),
         }

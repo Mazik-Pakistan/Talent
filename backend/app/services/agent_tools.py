@@ -244,6 +244,7 @@ async def _tool_list_candidates(user: CurrentUser, args: dict) -> ToolResult:
     docs = await database.candidates.find(query).sort("created_at", -1).to_list(length=50)
     items = [
         {
+            "candidate_id": d.get("user_id") or str(d.get("_id")),
             "email": d.get("email"),
             "full_name": d.get("full_name"),
             "job_title": d.get("job_title"),
@@ -327,6 +328,7 @@ async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResul
                 ok=True,
                 data={
                     "found_as": "converted_candidate_without_employee_row",
+                    "candidate_id": candidate.get("user_id") or str(candidate.get("_id")),
                     "full_name": candidate.get("full_name"),
                     "email": candidate.get("email"),
                     "conversion_status": conversion,
@@ -348,6 +350,7 @@ async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResul
             ok=True,
             data={
                 "found_as": "candidate",
+                "candidate_id": candidate.get("user_id") or str(candidate.get("_id")),
                 "full_name": candidate.get("full_name"),
                 "email": candidate.get("email"),
                 "conversion_status": conversion,

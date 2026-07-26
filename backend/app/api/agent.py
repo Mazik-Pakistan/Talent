@@ -35,7 +35,8 @@ async def chat(request: AgentChatRequest, current_user: RequireUser):
     _assert_agent_role(current_user)
     if not request.message and not request.session_id:
         raise HTTPException(status_code=400, detail="A message is required to start a conversation.")
-    return await agent_service.chat(current_user, request.message, request.session_id)
+    context = request.context.model_dump(exclude_none=True) if hasattr(request.context, "model_dump") else request.context
+    return await agent_service.chat(current_user, request.message, request.session_id, context)
 
 
 @router.get("/sessions")

@@ -20,11 +20,12 @@ function auth(accessToken) {
  * @param {string} accessToken
  * @param {string} message
  * @param {string|null} sessionId
+ * @param {object|null} context
  */
-export async function sendAgentMessage(accessToken, message, sessionId) {
+export async function sendAgentMessage(accessToken, message, sessionId, context) {
   const { data } = await client.post(
     "/api/agent/chat",
-    { message, session_id: sessionId || null },
+    { message, session_id: sessionId || null, context: context || null },
     auth(accessToken)
   );
   return data;

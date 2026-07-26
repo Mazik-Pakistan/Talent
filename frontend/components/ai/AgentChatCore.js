@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { getApiErrorMessage, uploadDocument, verifyDocument } from "@/services/authService";
 import {
@@ -178,6 +179,62 @@ function docKey(doc) {
 
 function docFileUrl(doc) {
   return doc.file_url || doc.download_url;
+}
+
+function compactAssistantContextValue(value, limit = 6) {
+  if (value == null || value === "") return null;
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => item != null && item !== "")
+      .slice(0, limit)
+      .map((item) => String(item).slice(0, 80));
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value)
+      .filter(([, item]) => item != null && item !== "" && !(Array.isArray(item) && item.length === 0))
+      .slice(0, limit)
+      .map(([key, item]) => [key, compactAssistantContextValue(item, limit)]);
+    return Object.fromEntries(entries);
+  }
+  const text = String(value);
+  return text.length > 160 ? text.slice(0, 160) : text;
+}
+
+function buildAssistantContext({ pathname, searchParams, auth, extraContext }) {
+  const context = { ...(extraContext || {}) };
+  if (pathname) {
+    context.pathname = pathname;
+    context.page = pathname;
+    const segments = pathname.split("/").filter(Boolean);
+    context.module = segments.length > 2 ? segments[segments.length - 1] : segments[1] || segments[0] || pathname;
+  }
+
+  const paramKeys = ["q", "search", "employee_id", "candidate_id", "id", "email", "department", "job_title", "status", "profile_status", "tab", "section", "step"];
+  const filters = {};
+  for (const key of paramKeys) {
+    const value = searchParams?.get?.(key);
+    if (value) filters[key] = value;
+  }
+  if (Object.keys(filters).length > 0) {
+    context.filters = { ...(context.filters || {}), ...filters };
+  }
+
+  const selectedRecord = context.selected_record || null;
+  const selectedId = filters.employee_id || filters.candidate_id || filters.id || null;
+  const selectedEmail = filters.email || null;
+  if (!selectedRecord && (selectedId || selectedEmail)) {
+    context.selected_record = compactAssistantContextValue({
+      employee_id: filters.employee_id || undefined,
+      candidate_id: filters.candidate_id || undefined,
+      id: filters.id || undefined,
+      email: selectedEmail || undefined,
+      kind: auth?.user?.role || undefined,
+    });
+  } else if (selectedRecord) {
+    context.selected_record = compactAssistantContextValue(selectedRecord);
+  }
+
+  return compactAssistantContextValue(context);
 }
 
 /**
@@ -417,7 +474,7 @@ function Attachment({ attachment, auth, onLocalNote }) {
  * launcher panel) or "canvas" (large, embedded, full-height surface used as
  * the default onboarding screen / AI assistant page).
  */
-const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", auth, onEscalate }, ref) {
+const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", auth, onEscalate, context = null }, ref) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -431,6 +488,14 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
   const docInputRef = useRef(null);
   const sheetInputRef = useRef(null);
   const pendingUploadHint = useRef(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const assistantContext = useMemo(
+    () => buildAssistantContext({ pathname, searchParams, auth, extraContext: context }),
+    [auth, context, pathname, searchParams]
+  );
 
   const copy = auth ? ROLE_COPY[auth.user.role] || ROLE_COPY.employee : null;
   const isRecruiter = auth?.user?.role === "recruiter" || auth?.user?.role === "super_admin";
@@ -487,7 +552,7 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
       pushLocalMessages([{ role: "user", content: trimmed, created_at: new Date().toISOString() }]);
       setSending(true);
       try {
-        const data = await sendAgentMessage(auth.accessToken, trimmed, sessionId);
+        const data = await sendAgentMessage(auth.accessToken, trimmed, sessionId, assistantContext);
         persistSession(data.session_id);
         setMessages(data.messages || []);
         setSuggestedReplies(data.suggested_replies || []);
@@ -499,7 +564,7 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
         setSending(false);
       }
     },
-    [auth, sessionId, persistSession, pushLocalMessages]
+    [assistantContext, auth, sessionId, persistSession, pushLocalMessages]
   );
 
   useImperativeHandle(
@@ -525,6 +590,17 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
         meta: isError ? { error: true } : undefined,
       },
     ]);
+  }
+
+  function handleAction(action) {
+    if (!action) return;
+    if (action.kind === "prompt" && action.prompt) {
+      doSend(action.prompt);
+      return;
+    }
+    if (action.route) {
+      router.push(action.route);
+    }
   }
 
   function openDocPicker(hint) {
@@ -632,6 +708,7 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
             const isUser = m.role === "user";
             const uiHint = m.meta?.ui_hint;
             const attachment = m.meta?.attachment;
+            const actions = m.meta?.actions || [];
             const isErrorNote = m.meta?.error;
             return (
               <div key={m.created_at ? `${m.created_at}-${idx}` : idx} className={`${styles.row} ${isUser ? styles.rowUser : styles.rowAgent}`}>
@@ -664,6 +741,20 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
                   {!isUser && attachment ? (
                     <div className={styles.attachmentWrap}>
                       <Attachment attachment={attachment} auth={auth} onLocalNote={onLocalNote} />
+                    </div>
+                  ) : null}
+                  {!isUser && actions.length > 0 ? (
+                    <div className={styles.suggestions}>
+                      {actions.map((action) => (
+                        <button
+                          key={`${action.kind}-${action.label}`}
+                          type="button"
+                          className={styles.suggestionChip}
+                          onClick={() => handleAction(action)}
+                        >
+                          {action.label}
+                        </button>
+                      ))}
                     </div>
                   ) : null}
                 </div>

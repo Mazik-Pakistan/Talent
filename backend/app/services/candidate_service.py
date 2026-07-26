@@ -10,6 +10,7 @@ from app.schemas.invitation import CandidateRegisterRequest, OnboardingSaveReque
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
 from app.services.invitation_service import InvitationService
+from app.services import storage_service
 
 # ------------------------------------------------------------------------
 # PHASE 2 FLOW: pre-offer INTAKE = personal/contact, education, skills,
@@ -546,6 +547,15 @@ class CandidateService:
             raise HTTPException(status_code=400, detail="Unsupported upload purpose.")
 
         if doc_types:
+            active_docs = await database.documents.find(
+                {
+                    "owner_id": current_user.id,
+                    "doc_type": {"$in": doc_types},
+                    "is_active": True,
+                }
+            ).to_list(length=50)
+            for doc in active_docs:
+                await storage_service.delete_file(doc)
             await database.documents.update_many(
                 {
                     "owner_id": current_user.id,
