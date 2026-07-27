@@ -132,7 +132,7 @@
 .navItem {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 12px; border-radius: 11px;
-  color: var(--text-muted);
+  color: var(--navy-2);
   font-size: 13.5px; font-weight: 550;
   cursor: pointer; border-left: 3px solid transparent;
   transition: background .18s var(--ease), color .18s var(--ease), transform .18s var(--ease);
@@ -143,7 +143,7 @@
   text-align: left;
   position: relative;
 }
-.navItem svg { width: 18px; height: 18px; flex-shrink: 0; opacity: .75; transition: transform .25s var(--ease); }
+.navItem svg { width: 20px; height: 20px; flex-shrink: 0; opacity: 1; color: var(--navy-2); transition: transform .25s var(--ease); }
 .navItem:hover { background: var(--blue-lighter); color: var(--navy); transform: translateX(2px); }
 .navItem:hover svg { transform: translateX(1px) scale(1.08); opacity: 1; }
 .navItem.active {

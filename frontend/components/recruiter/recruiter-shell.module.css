@@ -97,14 +97,15 @@
 }
 .nav::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .navItem {
-  display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: none; border-radius: 11px; background: transparent; color: var(--text-muted); cursor: pointer; text-align: left; font-size: 13.3px; font-weight: 550;
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: none; border-radius: 11px; background: transparent; color: var(--navy-2); cursor: pointer; text-align: left; font-size: 13.3px; font-weight: 550;
   transition: background .18s var(--ease), color .18s var(--ease), transform .18s var(--ease);
 }
 .navItem:hover { background: var(--blue-lighter); color: var(--navy); transform: translateX(2px); }
 .navItemActive { background: linear-gradient(90deg, var(--blue-light), rgba(233, 244, 255, .35)); color: var(--blue-strong); font-weight: 700; box-shadow: inset 3px 0 0 var(--blue); }
+.navItemActive .navIcon { color: var(--blue-strong); }
 .navLabelCollapsed { display: none; }
-.navIcon { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.navIcon svg { width: 17px; height: 17px; opacity: .9; }
+.navIcon { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--navy-2); }
+.navIcon svg { width: 20px; height: 20px; opacity: 1; }
 .sidebarFooter { border-top: 1px solid var(--border); padding-top: 12px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .avatarSm {
   width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, var(--blue), var(--navy-2)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0;

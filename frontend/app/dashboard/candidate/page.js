@@ -668,9 +668,4 @@ function formatDate(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-<<<<<<< HEAD
 }
-
-=======
-}
->>>>>>> 4cdafb8596185be8ee28e1272fb8a79b43b83478
