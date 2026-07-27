@@ -192,7 +192,7 @@ function DocumentsPageContent() {
     : `${profileMeta?.job_title || "—"} · ${profileMeta?.department || "—"}`;
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-app-shell>
       <div className={styles.app}>
         <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.collapsed : ""}`}>
           <button

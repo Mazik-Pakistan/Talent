@@ -127,7 +127,7 @@ export default function OnboardingPage() {
   return (
     <Suspense
       fallback={
-        <div className={styles.root}>
+        <div className={styles.root} data-app-shell>
           <div className={styles.content}>
             <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading onboarding…</p>
           </div>
@@ -199,6 +199,10 @@ function OnboardingContent() {
           setFillMode("manual");
         }
         const data = await getOnboarding(accessToken);
+        if (data.offer_signed === false) {
+          router.replace("/offer");
+          return;
+        }
         setCandidate(data.candidate);
         setOnboarding(data.onboarding);
         setProgress(data.progress);
@@ -398,6 +402,29 @@ function OnboardingContent() {
     void savePersonalDraft(nextPersonal, nextGovDocs);
   }
 
+  // Clear fill highlight after the animation finishes.
+  useEffect(() => {
+    if (!autoFilledKeys.length) return undefined;
+    const timer = window.setTimeout(() => setAutoFilledKeys([]), 4200);
+    return () => window.clearTimeout(timer);
+  }, [autoFilledKeys]);
+
+  function fillAnimProps(key) {
+    const i = autoFilledKeys.indexOf(key);
+    if (i < 0) return {};
+    return { fillAnim: true, fillDelay: Math.min(i, 12) * 85 };
+  }
+
+  function fillAnimLabelClass(key) {
+    return autoFilledKeys.includes(key) ? styles.fieldFillAnim : "";
+  }
+
+  function fillAnimLabelStyle(key) {
+    const i = autoFilledKeys.indexOf(key);
+    if (i < 0) return undefined;
+    return { animationDelay: `${Math.min(i, 12) * 85}ms` };
+  }
+
   function autoFillFromOCR(ocrResult, purpose, index) {
     if (!ocrResult || ocrResult.status !== "completed" || ocrResult.accepted === false) return;
     const { category, fields } = ocrResult;
@@ -461,7 +488,6 @@ function OnboardingContent() {
       setSkills((prev) => {
         const tech = joinList(fields.technical_skills || fields.skills);
         const soft = joinList(fields.soft_skills);
-        const langs = joinList(fields.languages);
         const certs = Array.isArray(fields.certifications)
           ? fields.certifications.map((c) => (typeof c === "string" ? { name: c, document_url: null, expiry_date: "" } : { name: c?.name || "", document_url: null, expiry_date: "" }))
           : null;
@@ -474,10 +500,7 @@ function OnboardingContent() {
           next.soft_skills = soft;
           filled.push("soft_skills");
         }
-        if (langs && !prev.languages) {
-          next.languages = langs;
-          filled.push("languages");
-        }
+        // Languages are not shown on this step — skip OCR fill for them.
         if (certs?.length && (!prev.certifications?.[0]?.name)) {
           next.certifications = certs;
           filled.push("certifications");
@@ -509,28 +532,40 @@ function OnboardingContent() {
         });
       }
     } else if (purpose === "education_cert" && (category === "academic_transcript" || category === "certificate")) {
+      const yearRaw = fields.passing_year || fields.year || fields.issue_date || "";
+      const year = String(yearRaw).match(/(19|20)\d{2}/)?.[0] || String(yearRaw).slice(0, 4);
+      const mapped = {
+        institution: fields.institute || fields.institution || fields.university || "",
+        degree: fields.degree || fields.program || fields.qualification || "",
+        field_of_study: fields.major || fields.program || fields.field_of_study || "",
+        year_completed: year || "",
+        cgpa_or_percentage:
+          (fields.cgpa != null ? String(fields.cgpa) : "") ||
+          (fields.gpa != null ? String(fields.gpa) : "") ||
+          (fields.percentage != null ? String(fields.percentage) : "") ||
+          "",
+      };
+      const cur = educationEntries[index] || { ...emptyEducationEntry };
+      const merged = {
+        ...cur,
+        institution: cur.institution || mapped.institution,
+        board_university: "",
+        degree: cur.degree || mapped.degree,
+        field_of_study: cur.field_of_study || mapped.field_of_study,
+        year_completed: cur.year_completed || mapped.year_completed,
+        cgpa_or_percentage: cur.cgpa_or_percentage || mapped.cgpa_or_percentage,
+      };
       setEducationEntries((prev) => {
         const next = [...prev];
-        const cur = next[index] || { ...emptyEducationEntry };
-        const yearRaw = fields.passing_year || fields.year || fields.issue_date || "";
-        const year = String(yearRaw).match(/(19|20)\d{2}/)?.[0] || String(yearRaw).slice(0, 4);
-        next[index] = {
-          ...cur,
-          institution: cur.institution || fields.institute || fields.institution || fields.university || "",
-          board_university: cur.board_university || fields.board_university || fields.institute || fields.university || "",
-          degree: cur.degree || fields.degree || fields.program || fields.qualification || "",
-          field_of_study: cur.field_of_study || fields.major || fields.program || fields.field_of_study || "",
-          year_completed: cur.year_completed || year || "",
-          cgpa_or_percentage:
-            cur.cgpa_or_percentage ||
-            (fields.cgpa != null ? String(fields.cgpa) : "") ||
-            (fields.gpa != null ? String(fields.gpa) : "") ||
-            (fields.percentage != null ? String(fields.percentage) : "") ||
-            "",
-        };
-        filled.push("education_transcript");
+        next[index] = merged;
         return next;
       });
+      const prefix = `edu_${index}_`;
+      if (!cur.institution && merged.institution) filled.push(`${prefix}institution`);
+      if (!cur.degree && merged.degree) filled.push(`${prefix}degree`);
+      if (!cur.field_of_study && merged.field_of_study) filled.push(`${prefix}field_of_study`);
+      if (!cur.year_completed && merged.year_completed) filled.push(`${prefix}year_completed`);
+      if (!cur.cgpa_or_percentage && merged.cgpa_or_percentage) filled.push(`${prefix}cgpa_or_percentage`);
     }
 
     setAutoFilledKeys(filled);
@@ -581,10 +616,9 @@ function OnboardingContent() {
   function isSkillsComplete() {
     const technical_skills = splitTags(skills.technical_skills);
     const soft_skills = splitTags(skills.soft_skills);
-    const languages = splitTags(skills.languages);
     const certifications = (skills.certifications || []).filter((c) => c.name && c.name.trim());
     const hasAnySkillData =
-      technical_skills.length > 0 || soft_skills.length > 0 || languages.length > 0 || certifications.length > 0;
+      technical_skills.length > 0 || soft_skills.length > 0 || certifications.length > 0;
     const hasSummary = !!(resume.summary && resume.summary.length >= 20);
     return hasAnySkillData && hasSummary;
   }
@@ -1048,7 +1082,6 @@ function OnboardingContent() {
     } else if (step === "skills") {
       const technical_skills = splitTags(skills.technical_skills);
       const soft_skills = splitTags(skills.soft_skills);
-      const languages = splitTags(skills.languages);
       const certifications = (skills.certifications || [])
         .filter((c) => c.name && c.name.trim())
         .map((c) => ({
@@ -1056,8 +1089,8 @@ function OnboardingContent() {
           document_url: c.document_url || null,
           expiry_date: c.expiry_date || null,
         }));
-      if (!technical_skills.length && !soft_skills.length && !languages.length && !certifications.length) {
-        showFormError("Add at least one skill, language, or certification.");
+      if (!technical_skills.length && !soft_skills.length && !certifications.length) {
+        showFormError("Add at least one skill or certification.");
         return;
       }
       if (!resume.summary || resume.summary.length < 20) {
@@ -1067,7 +1100,7 @@ function OnboardingContent() {
       setFieldErrors({});
       await persist({
         step: "skills",
-        skills: { technical_skills, soft_skills, languages, certifications },
+        skills: { technical_skills, soft_skills, languages: [], certifications },
         resume,
       });
     } else if (step === "submit") {
@@ -1085,7 +1118,7 @@ function OnboardingContent() {
   const displayName = candidate?.full_name || "…";
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-app-shell>
       <div className={styles.app}>
         {/* Sidebar */}
         <aside className={styles.sidebar}>
@@ -1297,29 +1330,42 @@ function OnboardingContent() {
                       </p>
                     )}
 
-            {extractionPreview && step === "personal" && (
-              <ExtractionPreview result={extractionPreview} onDismiss={() => setExtractionPreview(null)} />
-            )}
-            {extractionPreview && step !== "personal" && extractionPreview.accepted !== false && extractionPreview.status === "completed" && (
-              <ExtractionPreview result={extractionPreview} onDismiss={() => setExtractionPreview(null)} />
+            {extractionPreview && (
+              <ScanFillBanner
+                styles={styles}
+                result={extractionPreview}
+                filledCount={autoFilledKeys.length}
+                onDismiss={() => setExtractionPreview(null)}
+              />
             )}
 
-                    {autoFilledKeys.length > 0 && (
-                      <p className={styles.docHelper} style={{ background: "#ecfdf5", color: "#166534", padding: "8px 10px", borderRadius: 6 }}>
-                        AI auto-filled: {autoFilledKeys.map((key) => key.replace(/_/g, " ")).join(", ")}. All values remain editable.
+                    {autoFilledKeys.length > 0 && !extractionPreview && (
+                      <p className={styles.fillSuccessBanner} role="status">
+                        <span className={styles.fillSuccessIcon} aria-hidden>✓</span>
+                        Filled {autoFilledKeys.length} field{autoFilledKeys.length === 1 ? "" : "s"} from your document — review and edit anytime.
                       </p>
                     )}
 
-                    {progress?.missing_fields?.length > 0 && !submitted && (
-                      <p className={styles.docHelper}>
-                        Missing sections:{" "}
-                        <strong>
-                          {progress.missing_fields
-                            .map((section) => MISSING_SECTION_LABELS[section] || section)
-                            .join(", ")}
-                        </strong>
-                      </p>
-                    )}
+                    {(() => {
+                      // Prefer live form state over server progress — OCR can fill skills
+                      // before Save & Continue, so "missing skills" must not linger falsely.
+                      const stillMissing = (progress?.missing_fields || []).filter((section) => {
+                        if (section === "personal" || section === "government_docs") return !isPersonalComplete();
+                        if (section === "education") return !isEducationComplete();
+                        if (section === "skills" || section === "resume") return !isSkillsComplete();
+                        return true;
+                      });
+                      const labels = [...new Set(
+                        stillMissing.map((section) => MISSING_SECTION_LABELS[section] || section)
+                      )];
+                      if (!labels.length || submitted) return null;
+                      return (
+                        <p className={styles.docHelper}>
+                          Missing sections:{" "}
+                          <strong>{labels.join(", ")}</strong>
+                        </p>
+                      );
+                    })()}
 
                     <form data-partner-coach onSubmit={handleNext}>
                       {step === "personal" && (
@@ -1368,6 +1414,7 @@ function OnboardingContent() {
                                     setFieldErrors((prev) => ({ ...prev, document_number: false }));
                                   }}
                                   wide
+                                  {...fillAnimProps("document_number")}
                                 />
                               </div>
                             </section>
@@ -1390,6 +1437,7 @@ function OnboardingContent() {
                                   setPersonal({ ...personal, first_name: e.target.value });
                                   setFieldErrors((prev) => ({ ...prev, first_name: false }));
                                 }}
+                                {...fillAnimProps("first_name")}
                               />
                               <Field
                                 styles={styles}
@@ -1400,6 +1448,7 @@ function OnboardingContent() {
                                   setPersonal({ ...personal, last_name: e.target.value });
                                   setFieldErrors((prev) => ({ ...prev, last_name: false }));
                                 }}
+                                {...fillAnimProps("last_name")}
                               />
                             </div>
                             <div className={styles.formGrid}>
@@ -1408,6 +1457,7 @@ function OnboardingContent() {
                                 label="Father's name"
                                 value={personal.father_name || ""}
                                 onChange={(e) => setPersonal({ ...personal, father_name: e.target.value })}
+                                {...fillAnimProps("father_name")}
                               />
                               <Field
                                 styles={styles}
@@ -1418,6 +1468,7 @@ function OnboardingContent() {
                                   setPersonal({ ...personal, national_id: e.target.value });
                                   setFieldErrors((prev) => ({ ...prev, national_id: false }));
                                 }}
+                                {...fillAnimProps("national_id")}
                               />
                             </div>
                           </section>
@@ -1440,8 +1491,13 @@ function OnboardingContent() {
                                   setPersonal({ ...personal, date_of_birth: e.target.value });
                                   setFieldErrors((prev) => ({ ...prev, date_of_birth: false }));
                                 }}
+                                {...fillAnimProps("date_of_birth")}
                               />
-                              <label className={`${styles.field} ${fieldErrors.gender ? styles.fieldError : ""}`} data-field-error={fieldErrors.gender ? "true" : undefined}>
+                              <label
+                                className={`${styles.field} ${fieldErrors.gender ? styles.fieldError : ""} ${fillAnimLabelClass("gender")}`}
+                                style={fillAnimLabelStyle("gender")}
+                                data-field-error={fieldErrors.gender ? "true" : undefined}
+                              >
                                 <span>Gender</span>
                                 <select value={personal.gender} onChange={(e) => { setPersonal({ ...personal, gender: e.target.value }); setFieldErrors((prev) => ({ ...prev, gender: false })); }}>
                                   <option value="male">Male</option>
@@ -1450,8 +1506,11 @@ function OnboardingContent() {
                                   <option value="prefer_not_to_say">Prefer not to say</option>
                                 </select>
                               </label>
-                              <Field styles={styles} label="Nationality" value={personal.nationality} error={fieldErrors.nationality} onChange={(e) => { setPersonal({ ...personal, nationality: e.target.value }); setFieldErrors((prev) => ({ ...prev, nationality: false })); }} />
-                              <label className={styles.field}>
+                              <Field styles={styles} label="Nationality" value={personal.nationality} error={fieldErrors.nationality} onChange={(e) => { setPersonal({ ...personal, nationality: e.target.value }); setFieldErrors((prev) => ({ ...prev, nationality: false })); }} {...fillAnimProps("nationality")} />
+                              <label
+                                className={`${styles.field} ${fillAnimLabelClass("marital_status")}`}
+                                style={fillAnimLabelStyle("marital_status")}
+                              >
                                 <span>Marital status</span>
                                 <select value={personal.marital_status} onChange={(e) => setPersonal({ ...personal, marital_status: e.target.value })}>
                                   <option value="single">Single</option>
@@ -1470,8 +1529,8 @@ function OnboardingContent() {
                                 </select>
                               </label>
                               <Field styles={styles} label="Alternate phone" value={personal.alternate_phone} onChange={(e) => setPersonal({ ...personal, alternate_phone: e.target.value })} />
-                              <Field styles={styles} label="ID issue date" value={personal.id_issue_date || ""} onChange={(e) => setPersonal({ ...personal, id_issue_date: e.target.value })} />
-                              <Field styles={styles} label="ID expiry date" value={personal.id_expiry_date || ""} onChange={(e) => setPersonal({ ...personal, id_expiry_date: e.target.value })} />
+                              <Field styles={styles} label="ID issue date" value={personal.id_issue_date || ""} onChange={(e) => setPersonal({ ...personal, id_issue_date: e.target.value })} {...fillAnimProps("id_issue_date")} />
+                              <Field styles={styles} label="ID expiry date" value={personal.id_expiry_date || ""} onChange={(e) => setPersonal({ ...personal, id_expiry_date: e.target.value })} {...fillAnimProps("id_expiry_date")} />
                             </div>
                           </section>
 
@@ -1493,6 +1552,7 @@ function OnboardingContent() {
                                   setFieldErrors((prev) => ({ ...prev, current_address: false }));
                                 }}
                                 wide
+                                {...fillAnimProps("current_address")}
                               />
                               <label className={`${styles.field} ${styles.wide} ${styles.checkRow}`}>
                                 <input
@@ -1624,7 +1684,10 @@ function OnboardingContent() {
                                   hint="PDF, JPG, or PNG"
                                   wide
                                 />
-                                <label className={styles.field}>
+                                <label
+                                  className={`${styles.field} ${fillAnimLabelClass(`edu_${index}_institution`)}`}
+                                  style={fillAnimLabelStyle(`edu_${index}_institution`)}
+                                >
                                   <span>Institute / University</span>
                                   <select
                                     value={otherSelections.institutions[index] || (entry.institution && !universityOptions.includes(entry.institution)) ? "other" : entry.institution}
@@ -1656,31 +1719,26 @@ function OnboardingContent() {
                                     />
                                   )}
                                 </label>
-                                <Field styles={styles} label="Board" value={entry.board_university || ""} onChange={(e) => {
-                                  const next = [...educationEntries];
-                                  next[index] = { ...next[index], board_university: e.target.value };
-                                  setEducationEntries(next);
-                                }} />
                                 <Field styles={styles} label="Degree" value={entry.degree} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], degree: e.target.value };
                                   setEducationEntries(next);
-                                }} />
+                                }} {...fillAnimProps(`edu_${index}_degree`)} />
                                 <Field styles={styles} label="Major / Field of study" value={entry.field_of_study} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], field_of_study: e.target.value };
                                   setEducationEntries(next);
-                                }} />
+                                }} {...fillAnimProps(`edu_${index}_field_of_study`)} />
                                 <Field styles={styles} label="Year completed" value={entry.year_completed} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], year_completed: e.target.value };
                                   setEducationEntries(next);
-                                }} />
+                                }} {...fillAnimProps(`edu_${index}_year_completed`)} />
                                 <Field styles={styles} label="CGPA / Percentage" value={entry.cgpa_or_percentage || ""} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], cgpa_or_percentage: e.target.value };
                                   setEducationEntries(next);
-                                }} />
+                                }} {...fillAnimProps(`edu_${index}_cgpa_or_percentage`)} />
                               </div>
                               {educationEntries.length > 1 && (
                                 <div className={styles.entryActions}>
@@ -1707,7 +1765,9 @@ function OnboardingContent() {
                         <div className={styles.formStack}>
                           <h2 className={styles.stepTitle}>Skills &amp; certifications</h2>
                           <p className={styles.docHelper}>
-                            Summarize your experience and skills. Attach a resume if you have one — it is stored for recruiters without OCR.
+                            {isOcrMode
+                              ? "Upload your resume and we'll extract your summary, skills, and certifications into the fields below. Review and edit anything that needs a tweak."
+                              : "Summarize your experience and skills. Attach a resume if you have one."}
                           </p>
 
                           <section className={styles.sectionCard}>
@@ -1730,7 +1790,10 @@ function OnboardingContent() {
                                 hint="PDF, DOC, or DOCX"
                                 wide
                               />
-                              <label className={`${styles.field} ${styles.wide}`}>
+                              <label
+                                className={`${styles.field} ${styles.wide} ${fillAnimLabelClass("summary")}`}
+                                style={fillAnimLabelStyle("summary")}
+                              >
                                 <span>Professional summary</span>
                                 <textarea
                                   rows={4}
@@ -1751,9 +1814,8 @@ function OnboardingContent() {
                               </div>
                             </div>
                             <div className={styles.formGrid}>
-                              <Field styles={styles} label="Technical skills" value={skills.technical_skills} onChange={(e) => setSkills({ ...skills, technical_skills: e.target.value })} wide />
-                              <Field styles={styles} label="Soft skills" value={skills.soft_skills} onChange={(e) => setSkills({ ...skills, soft_skills: e.target.value })} wide />
-                              <Field styles={styles} label="Languages" value={skills.languages} onChange={(e) => setSkills({ ...skills, languages: e.target.value })} wide />
+                              <Field styles={styles} label="Technical skills" value={skills.technical_skills} onChange={(e) => setSkills({ ...skills, technical_skills: e.target.value })} wide {...fillAnimProps("technical_skills")} />
+                              <Field styles={styles} label="Soft skills" value={skills.soft_skills} onChange={(e) => setSkills({ ...skills, soft_skills: e.target.value })} wide {...fillAnimProps("soft_skills")} />
                             </div>
                           </section>
 
@@ -1894,7 +1956,7 @@ function OnboardingContent() {
                                       {entry.institution ? ` · ${entry.institution}` : ""}
                                     </strong>
                                     <dl className={styles.reviewGrid}>
-                                      <ReviewRow styles={styles} label="Board / University" value={entry.board_university} />
+                                      <ReviewRow styles={styles} label="Institute / University" value={entry.institution} />
                                       <ReviewRow styles={styles} label="Field of study" value={entry.field_of_study} />
                                       <ReviewRow styles={styles} label="Year completed" value={entry.year_completed} />
                                       <ReviewRow styles={styles} label="CGPA / %" value={entry.cgpa_or_percentage} />
@@ -1917,7 +1979,6 @@ function OnboardingContent() {
                               rows={[
                                 ["Technical skills", skills.technical_skills, true],
                                 ["Soft skills", skills.soft_skills, true],
-                                ["Languages", skills.languages, true],
                                 [
                                   "Certifications",
                                   (skills.certifications || [])
@@ -1966,13 +2027,15 @@ function OnboardingContent() {
       </div>
 
       {uploading && (
-        <div className={styles.processOverlay} role="status" aria-live="polite">
+        <div className={styles.processOverlay} role="status" aria-live="polite" data-mascot-busy>
           <div className={styles.processCard}>
             <div className={styles.processSpinner} aria-hidden />
             <strong>
-              {uploadPhase.includes("OCR") || uploadPhase.includes("Scanning") || uploadPhase.includes("Clearing")
-                ? "Scanning National ID"
-                : "Uploading document"}
+              {uploadPhase.includes("Removing")
+                ? "Removing document"
+                : uploadPhase.includes("OCR") || uploadPhase.includes("Scanning") || uploadPhase.includes("Clearing")
+                  ? "Scanning National ID"
+                  : "Uploading document"}
             </strong>
             <p>{uploadPhase || "Please wait…"}</p>
           </div>
@@ -2141,10 +2204,11 @@ function FileUploadField({ styles, label, accept, disabled, onChange, onRemove, 
   );
 }
 
-function Field({ label, name, value, onChange, type = "text", wide, styles, error, hint }) {
+function Field({ label, name, value, onChange, type = "text", wide, styles, error, hint, fillAnim, fillDelay }) {
   return (
     <label
-      className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""}`}
+      className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""} ${fillAnim ? styles.fieldFillAnim : ""}`}
+      style={fillAnim && fillDelay != null ? { animationDelay: `${fillDelay}ms` } : undefined}
       data-field-error={error ? "true" : undefined}
     >
       <span>{label}</span>
@@ -2184,155 +2248,50 @@ function ReviewSection({ styles, title, subtitle, rows, children }) {
   );
 }
 
-// ─── ExtractionPreview ───────────────────────────────────────────────────────
-// Displays extracted text and structured fields immediately after upload.
-// Uses inline styles only so it cannot affect any existing CSS class layout.
-function ExtractionPreview({ result, onDismiss }) {
+// Compact scan result — never dumps raw OCR text or a field dictionary into the form.
+function ScanFillBanner({ styles, result, filledCount = 0, onDismiss }) {
+  // Snapshot count on mount so the message stays stable after fill highlights clear.
+  const [stableCount] = useState(filledCount);
   if (!result) return null;
-  const { category, fields, raw_text: rawText, status, rejection_message: rejectionMessage } = result;
-  const hasFields =
-    fields &&
-    Object.keys(fields).some(
-      (k) => fields[k] !== null && fields[k] !== undefined && fields[k] !== "" && !(Array.isArray(fields[k]) && !fields[k].length)
-    );
-  const rejected = status === "rejected_type" || result.accepted === false;
-  const classConf = result.classification_confidence;
+  const rejected = result.status === "rejected_type" || result.accepted === false;
+  const category = result.category && result.category !== "unknown"
+    ? String(result.category).replace(/_/g, " ")
+    : null;
   const extractConf = result.extraction_confidence;
-  const matchConf = result.matching_confidence;
+  const classConf = result.classification_confidence;
+  const count = stableCount || filledCount;
 
   return (
     <div
-      style={{
-        margin: "16px 0",
-        border: rejected ? "1px solid #fca5a5" : "1px solid #bed0dc",
-        borderRadius: 10,
-        background: rejected ? "#fef2f2" : "#f7fbff",
-        padding: "16px 20px",
-        position: "relative",
-      }}
+      className={`${styles.scanBanner} ${rejected ? styles.scanBannerError : styles.scanBannerOk}`}
+      role="status"
     >
-      <button
-        type="button"
-        onClick={onDismiss}
-        style={{
-          position: "absolute",
-          top: 10,
-          right: 12,
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          fontSize: "1.1rem",
-          color: "#5c7086",
-          lineHeight: 1,
-        }}
-        aria-label="Dismiss extraction preview"
-      >
-        ✕
-      </button>
-
-      <p
-        style={{
-          fontWeight: 600,
-          fontSize: ".85rem",
-          color: rejected ? "#b91c1c" : "#1e40af",
-          textTransform: "uppercase",
-          letterSpacing: ".05em",
-          marginBottom: 10,
-        }}
-      >
-        {rejected ? "Document rejected" : status === "completed" ? "Extracted Information" : "Extraction Incomplete"}
-        {category && category !== "unknown" && (
-          <span
-            style={{
-              marginLeft: 8,
-              background: rejected ? "#fee2e2" : "#dbeafe",
-              borderRadius: 4,
-              padding: "2px 7px",
-              fontSize: ".78rem",
-              color: rejected ? "#b91c1c" : "#1e40af",
-              textTransform: "capitalize",
-            }}
-          >
-            {String(category).replace(/_/g, " ")}
+      <div className={styles.scanBannerGlow} aria-hidden />
+      <div className={styles.scanBannerIcon} aria-hidden>
+        {rejected ? "!" : "✓"}
+      </div>
+      <div className={styles.scanBannerBody}>
+        <strong>{rejected ? "Document not accepted" : "Scan complete — filling your form"}</strong>
+        <p>
+          {rejected
+            ? result.rejection_message || "Please upload a clearer National ID (CNIC) image."
+            : count > 0
+              ? `We extracted details${category ? ` from your ${category}` : ""} and animated them into ${count} field${count === 1 ? "" : "s"} below. Everything stays editable.`
+              : result.quality_warning ||
+                "Document saved. Review the fields below and complete anything missing."}
+        </p>
+        {!rejected && (classConf != null || extractConf != null) && (
+          <span className={styles.scanBannerMeta}>
+            {classConf != null && <>Match {Math.round(classConf * 100)}%</>}
+            {classConf != null && extractConf != null && " · "}
+            {extractConf != null && <>Extract {Math.round(extractConf * 100)}%</>}
           </span>
         )}
-      </p>
-
-      {rejectionMessage && (
-        <p style={{ color: "#b91c1c", marginBottom: 8, fontSize: ".9rem" }}>{rejectionMessage}</p>
-      )}
-      {result.quality_warning && (
-        <p style={{ color: "#9a3412", marginBottom: 8, fontSize: ".9rem" }}>
-          {result.quality_warning}
-        </p>
-      )}
-
-      {(classConf != null || extractConf != null || matchConf != null) && !rejected && (
-        <p style={{ fontSize: ".8rem", color: "#5c7086", marginBottom: 10 }}>
-          {classConf != null && <>Classification: {Math.round(classConf * 100)}% · </>}
-          {extractConf != null && <>Extraction: {Math.round(extractConf * 100)}% · </>}
-          {matchConf != null && <>Matching: {Math.round(matchConf * 100)}%</>}
-        </p>
-      )}
-
-      {hasFields && (
-        <dl
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-            gap: "6px 16px",
-            marginBottom: rawText ? 12 : 0,
-          }}
-        >
-          {Object.entries(fields)
-            .filter(([, v]) => v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && !v.length))
-            .map(([key, value]) => (
-              <div key={key}>
-                <dt style={{ fontSize: ".78rem", color: "#5c7086", textTransform: "capitalize" }}>
-                  {key.replace(/_/g, " ")}
-                </dt>
-                <dd style={{ fontSize: ".88rem", color: "#1a2535", fontWeight: 500, margin: 0 }}>
-                  {Array.isArray(value)
-                    ? value.map((v) => (typeof v === "object" ? JSON.stringify(v) : v)).join(", ")
-                    : typeof value === "object"
-                      ? JSON.stringify(value)
-                      : String(value)}
-                </dd>
-              </div>
-            ))}
-        </dl>
-      )}
-
-      {rawText && !rejected && (
-        <details style={{ marginTop: 8 }}>
-          <summary
-            style={{
-              cursor: "pointer",
-              fontSize: ".82rem",
-              color: "#5c7086",
-              userSelect: "none",
-            }}
-          >
-            Show raw extracted text
-          </summary>
-          <pre
-            style={{
-              marginTop: 8,
-              padding: "10px 12px",
-              background: "#f0f4f8",
-              borderRadius: 6,
-              fontSize: ".78rem",
-              color: "#334155",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              maxHeight: 220,
-              overflowY: "auto",
-            }}
-          >
-            {typeof rawText === "string" ? rawText : JSON.stringify(rawText, null, 2)}
-          </pre>
-        </details>
-      )}
+      </div>
+      <button type="button" className={styles.scanBannerClose} onClick={onDismiss} aria-label="Dismiss">
+        ✕
+      </button>
     </div>
   );
 }
+

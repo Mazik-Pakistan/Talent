@@ -405,7 +405,7 @@ function EmployeeDashboardContent() {
   const photoUrl = employee?.profile_picture || user?.profile_picture || null;
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-app-shell>
       <div className={styles.app}>
         {/* Sidebar */}
         <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.collapsed : ""}`}>
@@ -924,14 +924,14 @@ function EmployeeDashboardContent() {
               </div>
             </div>
 
-            {(employee?.company_email || orientation || assignedAssets.length > 0) && (
+            {(employee?.company_email || orientation || assignedAssets.length > 0 || (employee?.licenses || []).length > 0) && (
               <div className={styles.section} id="workplace-section">
                 <div className={styles.sectionHead}>
                   <div className={styles.sectionHeadLeft}>
                     <div className={`${styles.bar} ${styles.green}`} />
                     <div>
                       <div className={styles.sectionTitle}>Workplace setup</div>
-                      <div className={styles.sectionDesc}>Company email, orientation, and assigned assets from HR.</div>
+                      <div className={styles.sectionDesc}>Company email, assets, and licenses assigned by IT.</div>
                     </div>
                   </div>
                 </div>
@@ -952,11 +952,30 @@ function EmployeeDashboardContent() {
                     {assignedAssets.length > 0 && (
                       <Field
                         label="Assigned assets"
-                        value={assignedAssets.map((asset) => asset.name).filter(Boolean).join(", ")}
+                        value={assignedAssets
+                          .map((asset) => {
+                            const bits = [asset.name];
+                            if (asset.serial_number) bits.push(`SN ${asset.serial_number}`);
+                            return bits.filter(Boolean).join(" · ");
+                          })
+                          .join(", ")}
+                        styles={styles}
+                      />
+                    )}
+                    {(employee?.licenses || []).length > 0 && (
+                      <Field
+                        label="Software licenses"
+                        value={(employee.licenses || []).map((l) => l.name).filter(Boolean).join(", ")}
                         styles={styles}
                       />
                     )}
                   </div>
+                  {employee?.has_company_email_password && (
+                    <p className={styles.sectionDesc} style={{ marginTop: 12 }}>
+                      View your encrypted mailbox password from{" "}
+                      <a href="/dashboard/employee/profile#sec-employment">your profile</a> after confirming an OTP on your personal email.
+                    </p>
+                  )}
                 </div>
               </div>
             )}

@@ -15,6 +15,8 @@ import {
   logout,
   patchLocalUser,
   removeEmployeePhoto,
+  requestCompanyEmailPasswordOtp,
+  revealCompanyEmailPassword,
   saveProfileCompletion,
   uploadEmployeePhoto,
 } from "@/services/authService";
@@ -605,7 +607,7 @@ function EmployeeProfileContent() {
   const photoUrl = employee?.profile_picture || user?.profile_picture || null;
 
   return (
-    <div className={dashStyles.root}>
+    <div className={dashStyles.root} data-app-shell>
       <Toast toast={toast} onDismiss={() => setToast(null)} />
 
       <div className={dashStyles.app}>
@@ -765,6 +767,11 @@ function EmployeeProfileContent() {
                     <Row label="Converted on" value={formatDate(employee?.converted_at)} />
                     <Row label="Work phone" value={formatPhoneDisplay(employee?.phone)} />
                     <Row label="Company email" value={employee?.company_email} />
+                    {employee?.company_email && employee?.has_company_email_password && (
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <CompanyEmailPasswordReveal />
+                      </div>
+                    )}
                     {employee?.orientation?.date && (
                       <Row
                         label="Orientation"
@@ -775,9 +782,26 @@ function EmployeeProfileContent() {
                     {employee?.assets?.length > 0 && (
                       <Row
                         label="Assigned assets"
-                        value={employee.assets.map((a) => a.name).filter(Boolean).join(", ")}
+                        value={employee.assets
+                          .map((a) => {
+                            const bits = [a.name];
+                            if (a.serial_number) bits.push(`SN ${a.serial_number}`);
+                            return bits.join(" · ");
+                          })
+                          .filter(Boolean)
+                          .join(", ")}
                         wide
                       />
+                    )}
+                    {employee?.licenses?.length > 0 && (
+                      <Row
+                        label="Software licenses"
+                        value={employee.licenses.map((l) => l.name).filter(Boolean).join(", ")}
+                        wide
+                      />
+                    )}
+                    {employee?.it_notes && (
+                      <Row label="IT notes" value={employee.it_notes} wide />
                     )}
                   </dl>
                 </ProfileSection>
@@ -1391,6 +1415,101 @@ function EmployeeProfileContent() {
           </div>
         </main>
       </div>
+    </div>
+  );
+}
+
+function CompanyEmailPasswordReveal() {
+  const [otp, setOtp] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [hint, setHint] = useState("");
+  const [password, setPassword] = useState("");
+  const [message, setMessage] = useState("");
+
+  async function sendOtp() {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setBusy(true);
+    setMessage("");
+    setPassword("");
+    try {
+      const data = await requestCompanyEmailPasswordOtp(accessToken);
+      setOtpSent(true);
+      setHint(data.email_hint || "");
+      setMessage(data.message || "Verification code sent.");
+    } catch (err) {
+      setMessage(getApiErrorMessage(err, "Could not send verification code."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reveal() {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    if (!otp.trim()) {
+      setMessage("Enter the verification code from your personal email.");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      const data = await revealCompanyEmailPassword({ otp: otp.trim() }, accessToken);
+      setPassword(data.password || "");
+      setMessage(data.message || "Password revealed.");
+      setOtp("");
+    } catch (err) {
+      setMessage(getApiErrorMessage(err, "Could not reveal password."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        border: "1px solid var(--border, #e2e8f0)",
+        borderRadius: 12,
+        padding: "14px 16px",
+        background: "var(--bg, #f8fafc)",
+        marginTop: 4,
+      }}
+    >
+      <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700 }}>Company email password</p>
+      <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+        For security, the mailbox password is encrypted. Request a one-time code on your personal email, then reveal it here.
+      </p>
+      {!otpSent ? (
+        <button type="button" className={styles.secondaryBtn} disabled={busy} onClick={sendOtp}>
+          {busy ? "Sending…" : "Send OTP to my personal email"}
+        </button>
+      ) : (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+          <label className={styles.field} style={{ margin: 0, minWidth: 160 }}>
+            <span>OTP{hint ? ` (${hint})` : ""}</span>
+            <input
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              placeholder="6-digit code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+            />
+          </label>
+          <button type="button" className={styles.primaryBtn} disabled={busy} onClick={reveal}>
+            {busy ? "Checking…" : "Reveal password"}
+          </button>
+          <button type="button" className={styles.secondaryBtn} disabled={busy} onClick={sendOtp}>
+            Resend OTP
+          </button>
+        </div>
+      )}
+      {password && (
+        <p style={{ margin: "12px 0 0", fontSize: 14 }}>
+          Password: <code style={{ fontSize: 15, letterSpacing: 0.5 }}>{password}</code>
+        </p>
+      )}
+      {message && <p style={{ margin: "10px 0 0", fontSize: 12, color: "#475569" }}>{message}</p>}
     </div>
   );
 }

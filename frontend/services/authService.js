@@ -589,6 +589,20 @@ export async function listOffersForCandidate(candidateId, accessToken) {
   return data;
 }
 
+export async function listPendingNegotiations(accessToken) {
+  const { data } = await apiClient.get("/api/offers/negotiations/pending", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function listAwaitingOfferResponse(accessToken) {
+  const { data } = await apiClient.get("/api/offers/awaiting-response", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
 export async function signOffer(offerId, payload, accessToken) {
   const { data } = await apiClient.post(`/api/offers/${offerId}/sign`, payload, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -596,8 +610,41 @@ export async function signOffer(offerId, payload, accessToken) {
   return data;
 }
 
+export async function uploadOfferSignature(offerId, file, accessToken) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await apiClient.post(`/api/offers/${offerId}/signature-upload`, formData, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return data;
+}
+
 export async function declineOffer(offerId, payload, accessToken) {
   const { data } = await apiClient.post(`/api/offers/${offerId}/decline`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function negotiateOffer(offerId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/offers/${offerId}/negotiate`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function acceptOfferNegotiation(offerId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/offers/${offerId}/negotiation/accept`, payload || {}, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function rejectOfferNegotiation(offerId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/offers/${offerId}/negotiation/reject`, payload || {}, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return data;
@@ -726,6 +773,51 @@ export async function removeEmployeeAsset(employeeId, assetId, accessToken) {
 
 export async function scheduleEmployeeOrientation(employeeId, payload, accessToken) {
   const { data } = await apiClient.put(`/api/employees/detail/${employeeId}/orientation`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+// ─── IT provisioning (pre-activation) ────────────────────────────────────────
+
+export async function sendItProvisioning(payload, accessToken) {
+  const { data } = await apiClient.post("/api/it-provisioning/send", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function remindItProvisioning(payload, accessToken) {
+  const { data } = await apiClient.post("/api/it-provisioning/remind", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getItProvisioningPublic(token) {
+  const { data } = await apiClient.get(`/api/it-provisioning/${encodeURIComponent(token)}`);
+  return data;
+}
+
+export async function submitItProvisioningPublic(token, payload) {
+  const { data } = await apiClient.post(
+    `/api/it-provisioning/${encodeURIComponent(token)}/submit`,
+    payload
+  );
+  return data;
+}
+
+export async function requestCompanyEmailPasswordOtp(accessToken) {
+  const { data } = await apiClient.post(
+    "/api/employees/me/company-email-password/request-otp",
+    {},
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  return data;
+}
+
+export async function revealCompanyEmailPassword(payload, accessToken) {
+  const { data } = await apiClient.post("/api/employees/me/company-email-password/reveal", payload, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return data;

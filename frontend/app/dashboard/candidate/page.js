@@ -190,7 +190,7 @@ function CandidateDashboardContent() {
   }
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-app-shell>
       <div className={styles.app}>
         {/* Sidebar */}
         <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.collapsed : ""}`}>
@@ -421,8 +421,11 @@ function CandidateDashboardContent() {
             {offer && !["signed", "approved", "declined", "expired"].includes(offer.status) && (
               <div className={styles.banner}>
                 <div className={styles.bannerCopy}>
-                  <h3>Offer letter ready to review</h3>
-                  <p>Your recruiter has sent an offer letter. Open it here to review the terms and sign digitally.</p>
+                  <h3>Sign your offer letter first</h3>
+                  <p>
+                    Review compensation and benefits from Mazik Global Pakistan. Accept, negotiate once, or decline.
+                    Document upload unlocks after you sign.
+                  </p>
                 </div>
                 <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer?from=candidate-dashboard")}>
                   Review and sign offer
@@ -431,9 +434,21 @@ function CandidateDashboardContent() {
             )}
 
             {offer && ["signed", "approved"].includes(offer.status) && (
-              <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer?from=candidate-dashboard")}>
-                View Offer Letter
+              <button type="button" className={styles.btnPrimary} onClick={() => router.push("/onboarding")}>
+                Continue documents
               </button>
+            )}
+
+            {!offer && (
+              <div className={styles.banner}>
+                <div className={styles.bannerCopy}>
+                  <h3>Open your offer letter</h3>
+                  <p>Your invitation includes an offer from Mazik Global Pakistan. Sign it before uploading documents.</p>
+                </div>
+                <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer")}>
+                  Open offer letter
+                </button>
+              </div>
             )}
 
             {/* Stats */}

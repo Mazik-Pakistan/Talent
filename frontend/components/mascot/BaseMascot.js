@@ -28,19 +28,29 @@ const COOLDOWN_MS = 12000;
 const IDLE_TIMEOUT_MS = 30000;
 
 function panelOpenStorageKey(roleLabel) {
-  return `mascot_panel_open_${String(roleLabel || "assistant").toLowerCase()}`;
+  // v2: old key defaulted to open; bump so we don't resurrect minimized panels.
+  return `mascot_panel_open_v2_${String(roleLabel || "assistant").toLowerCase()}`;
 }
 
 function readStoredPanelOpen(roleLabel) {
-  if (typeof window === "undefined") return true;
+  if (typeof window === "undefined") return false;
   try {
     const stored = localStorage.getItem(panelOpenStorageKey(roleLabel));
-    // Default open when never set.
-    if (stored === null) return true;
+    // Stay closed until the user opens the FAB — never auto-pop on load.
+    if (stored === null) return false;
     return stored === "1";
   } catch {
-    return true;
+    return false;
   }
+}
+
+function isCoachableFormField(field) {
+  if (!field || !["INPUT", "SELECT", "TEXTAREA"].includes(field.tagName)) return false;
+  // File uploads (OCR), buttons, and secrets must not start live guidance.
+  if (["hidden", "submit", "button", "file", "password", "reset", "image"].includes(field.type)) {
+    return false;
+  }
+  return true;
 }
 
 function writeStoredPanelOpen(roleLabel, open) {
@@ -281,7 +291,7 @@ export default function BaseMascot({
   const [coach, setCoach] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
   // Hydrate from localStorage after mount so minimize/maximize survives page navigation.
-  const [panelOpen, setPanelOpenState] = useState(true);
+  const [panelOpen, setPanelOpenState] = useState(false);
   const [panelHydrated, setPanelHydrated] = useState(false);
   const [statusLine, setStatusLine] = useState(null);
   const [coachDraft, setCoachDraft] = useState("");
@@ -314,10 +324,12 @@ export default function BaseMascot({
   const optionalFillAcceptedRef = useRef(false);
   const skippedOptionalKeysRef = useRef([]);
   const coachEngagedRef = useRef(false);
+  const panelOpenRef = useRef(false);
 
   const setPanelOpen = useCallback(
     (open) => {
       const next = Boolean(open);
+      panelOpenRef.current = next;
       setPanelOpenState(next);
       writeStoredPanelOpen(roleLabel, next);
     },
@@ -325,7 +337,9 @@ export default function BaseMascot({
   );
 
   useEffect(() => {
-    setPanelOpenState(readStoredPanelOpen(roleLabel));
+    const stored = readStoredPanelOpen(roleLabel);
+    panelOpenRef.current = stored;
+    setPanelOpenState(stored);
     setPanelHydrated(true);
   }, [roleLabel]);
 
@@ -1103,11 +1117,10 @@ export default function BaseMascot({
       suggestionIndexRef.current = index;
       setSuggestionIndex(index);
       lastPageSuggestionRef.current = item.message;
-      // Keep tip visible in the panel — don't rely on the auto-hiding speech bubble.
-      setPanelOpen(true);
+      // Tip carousel only — do not force the panel open; user opens via FAB / Guide me.
       triggerState("stateWave", 1800);
     },
-    [setPanelOpen, triggerState]
+    [triggerState]
   );
 
   const handlePartnerTap = useCallback(() => {
@@ -1279,13 +1292,21 @@ export default function BaseMascot({
     const handleFormInput = (e) => {
       const field = e.target;
       if (!field.closest("form") || field.closest("[data-mascot-command]")) return;
-      resetIdleTimer();
-      refreshFormGuidance({ force: true });
-
-      // User is filling the form themselves → switch into guided mode.
-      if (!coachEngagedRef.current) {
-        engageCoach({ announce: false });
+      // OCR / file picks fire `change` on <input type="file"> — never treat that as
+      // "user is filling the form" or the panel jumps into Guiding live mid-scan.
+      if (!isCoachableFormField(field)) return;
+      // Busy overlays (OCR scan, uploads) — stay quiet until the user is free again.
+      if (document.querySelector("[data-mascot-busy]")) return;
+      // Minimized = leave the user alone. Typing must never re-open the panel.
+      if (!panelOpenRef.current) {
+        resetIdleTimer();
+        return;
       }
+
+      resetIdleTimer();
+
+      // Live guidance is opt-in ("Guide me through it") — never auto-open / auto-engage.
+      if (!coachEngagedRef.current) return;
 
       const label = coachFieldLabel(field);
       const key = field.name || field.id || label;
@@ -1305,12 +1326,17 @@ export default function BaseMascot({
     const handleFocus = (e) => {
       const field = e.target;
       if (!field.closest?.("form") || field.closest("[data-mascot-command]")) return;
-      if (!["INPUT", "SELECT", "TEXTAREA"].includes(field.tagName)) return;
-      if (["hidden", "submit", "button", "file", "password"].includes(field.type)) return;
+      if (!isCoachableFormField(field)) return;
+      if (document.querySelector("[data-mascot-busy]")) return;
+      // Don't narrate / flash status while the panel is minimized.
+      if (!panelOpenRef.current) {
+        resetIdleTimer();
+        return;
+      }
       triggerState("stateThinking", 4000);
       resetIdleTimer();
       if (!coachEngagedRef.current) {
-        // Stay in intro until they ask for guidance — only tip the focused field.
+        // Panel already open in intro — tip the focused field without engaging guide mode.
         explainField(field, { animation: "statePoint" });
         setStatusLine(`Editing: ${getFieldLabel(field)}`);
         refreshCoach({ announce: false });
@@ -1331,6 +1357,10 @@ export default function BaseMascot({
     const handleInvalid = (e) => {
       const field = e.target;
       if (!field.closest("form")) return;
+      if (!panelOpenRef.current) {
+        resetIdleTimer();
+        return;
+      }
       refreshFormGuidance({ force: true, animation: "stateWarning" });
       const guidance = getFormGuidance(resolveFieldHelp);
       if (guidance?.type === "missing") {
@@ -1357,7 +1387,7 @@ export default function BaseMascot({
       window.removeEventListener("submit", handleSubmit);
       window.removeEventListener("invalid", handleInvalid, true);
     };
-  }, [engageCoach, explainField, pushActivity, refreshCoach, refreshFormGuidance, resetIdleTimer, resolveFieldHelp, setMessage, triggerState]);
+  }, [explainField, pushActivity, refreshCoach, refreshFormGuidance, resetIdleTimer, resolveFieldHelp, setMessage, triggerState]);
 
   useEffect(() => {
     const unsubscribe = toast.onChange((payload) => {
@@ -1555,6 +1585,12 @@ export default function BaseMascot({
                   className={styles.closeBubbleBtn}
                   onClick={() => {
                     setPanelOpen(false);
+                    coachEngagedRef.current = false;
+                    setCoachEngaged(false);
+                    optionalFillAcceptedRef.current = false;
+                    setOptionalFillAccepted(false);
+                    setBrowsingTips(false);
+                    setStatusLine(null);
                     bubbleRef.current = { text: "", priority: MASCOT_PRIORITY_LEVELS.NONE };
                     setBubbleText("");
                     lastMessageKeyRef.current = null;

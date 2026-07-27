@@ -46,7 +46,7 @@ const NAV_ITEMS = [
   },
   {
     key: "invite",
-    label: "Invite",
+    label: "Invite & offer",
     href: "/dashboard/recruiter/invite",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -365,7 +365,7 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
 
   return (
     <RequireAccess anyOf={["recruitment.view", "recruitment.invite"]} roles={["recruiter", "super_admin"]}>
-      <div className={styles.root}>
+      <div className={styles.root} data-app-shell>
         <div className={styles.app}>
           <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.sidebarCollapsed : ""}`}>
             <button
