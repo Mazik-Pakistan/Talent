@@ -1,3 +1,6 @@
+/* =========================================================
+   THEME TOKENS — unchanged, do not edit colors here
+   ========================================================= */
 :root {
   --navy: #0c2a41;
   --navy-2: #153d5e;
@@ -33,6 +36,9 @@
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* =========================================================
+   BASE / ROOT
+   ========================================================= */
 .root {
   background:
     radial-gradient(1200px 620px at 86% -10%, rgba(56, 162, 255, 0.10), transparent 60%),
@@ -48,9 +54,18 @@
 }
 .root h1, .root h2, .root h3 { font-family: 'Sora', system-ui, sans-serif; }
 
+/* box-sizing fix: prevents padding/border from overflowing fixed widths
+   (search box, stat cards, sidebar) during resize — no visual change on
+   elements that already fit correctly */
+.root, .root *, .root *::before, .root *::after {
+  box-sizing: border-box;
+}
+
 .app { display: flex; height: 100vh; width: 100%; max-width: 100%; overflow: hidden; }
 
-/* Sidebar */
+/* =========================================================
+   SIDEBAR
+   ========================================================= */
 .sidebar {
   width: 248px;
   flex-shrink: 0;
@@ -159,7 +174,9 @@
 .sidebar.collapsed .sidebarFooterText { display: none; }
 .sidebar.collapsed .logoutBtn { margin-left: 0; }
 
-/* Main */
+/* =========================================================
+   MAIN / TOPBAR
+   ========================================================= */
 .main { flex: 1; min-width: 0; max-width: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; }
 .topbar {
   position: sticky; top: 0; z-index: 5;
@@ -195,6 +212,7 @@
 .searchBox input::placeholder { color: var(--text-faint); }
 .searchResults {
   position: absolute; top: calc(100% + 8px); right: 0; width: 320px;
+  max-width: calc(100vw - 32px);
   background: #fff; border: 1px solid var(--border); border-radius: 12px;
   box-shadow: var(--shadow); padding: 8px; z-index: 20; max-height: 340px; overflow-y: auto;
   animation: dropdownIn .18s ease-out;
@@ -264,48 +282,60 @@
 .documentActionBanner strong { font-size: 14px; }
 .documentActionBanner b { flex: 0 0 auto; font-size: 12px; }
 
-.content { padding: 18px 22px 36px 22px; }
+/* content padding now decreases as viewport shrinks (was inverted before:
+   1180px tier previously had MORE padding than the desktop default) */
+.content { padding: 24px 28px 40px 28px; }
 
 /* Page enter / section reveal */
 .pageEnter {
   animation: pageEnter .22s ease-out;
 }
 
-/* Hero */
+/* =========================================================
+   HERO
+   ========================================================= */
 .hero {
   background: linear-gradient(128deg, #eaf4ff 0%, #f6fbff 55%, #ffffff 100%);
   border: 1px solid var(--blue-mid);
   color: var(--navy);
-  box-shadow: 0 26px 60px -38px rgba(56, 162, 255, .55);
-  border-radius: 18px; padding: 20px 22px;
+  box-shadow: 0 30px 70px -34px rgba(56, 162, 255, .65);
+  border-radius: 18px; padding: 28px 32px;
   display: flex; align-items: center; justify-content: space-between; gap: 20px;
-  margin-bottom: 16px; position: relative; overflow: hidden;
+  margin-bottom: 18px; position: relative; overflow: hidden;
   animation: sectionReveal .24s ease-out;
 }
 .hero::after {
   content: ""; position: absolute; right: -60px; top: -60px;
-  width: 220px; height: 220px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(0, 169, 206, .25), transparent 70%);
+  width: 260px; height: 260px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 169, 206, .28), transparent 70%);
 }
-.heroEyebrow { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--blue-strong); font-weight: 700; margin-bottom: 8px; }
-.hero h1 { font-size: 26px; margin: 0 0 6px 0; font-weight: 700; color: var(--navy); }
+.hero::before {
+  content: ""; position: absolute; left: -40px; bottom: -80px;
+  width: 220px; height: 220px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(31, 127, 224, .12), transparent 70%);
+}
+.heroEyebrow { font-size: 11.5px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--blue-strong); font-weight: 800; margin-bottom: 10px; }
+.hero h1 { font-size: 30px; margin: 0 0 8px 0; font-weight: 800; color: var(--navy); letter-spacing: -.3px; }
 .heroMeta { font-size: 13px; color: var(--text-muted); }
 .heroMeta b { color: var(--navy); font-weight: 600; }
-.heroChips { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.heroChips { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 .chip { font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 20px; background: rgba(255, 255, 255, .85); color: var(--navy); border: 1px solid var(--blue-mid); }
 .chip.complete { background: var(--green-light); border-color: rgba(31, 174, 122, .35); color: #0d8a5f; }
 .chip.incomplete { background: var(--orange-light); border-color: rgba(245, 165, 36, .4); color: #b36b08; }
 
-.ringWrap { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 1; }
-.ring { width: 98px; height: 98px; }
-.ringLabel { font-size: 11px; color: var(--text-muted); text-align: center; font-weight: 500; }
-.ringValue { font-size: 20px; font-weight: 800; fill: var(--navy); font-family: 'Sora', system-ui, sans-serif; }
+.ringWrap { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 1; }
+.ring { width: 112px; height: 112px; filter: drop-shadow(0 10px 18px rgba(56, 162, 255, .28)); }
+.ringLabel { font-size: 11px; color: var(--text-muted); text-align: center; font-weight: 600; }
+.ringValue { font-size: 22px; font-weight: 800; fill: var(--navy); font-family: 'Sora', system-ui, sans-serif; }
 
-/* Stat row */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+/* =========================================================
+   STAT CARDS
+   ========================================================= */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
 .statCard {
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 14px 16px; box-shadow: var(--shadow);
+  padding: 16px 18px; box-shadow: var(--shadow);
+  display: flex; align-items: center; gap: 14px;
   transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
   animation: sectionReveal .24s ease-out both;
 }
@@ -318,18 +348,27 @@
   box-shadow: 0 10px 28px -14px rgba(15, 42, 74, 0.22);
   border-color: rgba(0, 169, 206, 0.28);
 }
+/* .statTop kept defined for backward compatibility, no longer used in markup */
 .statTop { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.statIcon { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; }
-.statIcon svg { width: 16px; height: 16px; }
-.statIcon.cyan { background: var(--cyan-light); color: var(--cyan); }
-.statIcon.orange { background: var(--orange-light); color: var(--orange); }
-.statIcon.green { background: var(--green-light); color: var(--green); }
-.statIcon.navy { background: #E7ECF3; color: var(--navy-2); }
-.statIcon.purple { background: var(--purple-light); color: var(--purple); }
-.statValue { font-size: 22px; font-weight: 700; color: var(--navy); font-family: 'Sora', system-ui, sans-serif; text-transform: capitalize; }
+.statIcon {
+  width: 46px; height: 46px; border-radius: 14px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .18s var(--ease);
+}
+.statIcon svg { width: 22px; height: 22px; }
+.statIcon.cyan { background: var(--cyan); color: #fff; box-shadow: 0 10px 20px -10px rgba(56, 162, 255, .6); }
+.statIcon.orange { background: var(--orange); color: #fff; box-shadow: 0 10px 20px -10px rgba(245, 165, 36, .55); }
+.statIcon.green { background: var(--green); color: #fff; box-shadow: 0 10px 20px -10px rgba(31, 174, 122, .5); }
+.statIcon.navy { background: var(--navy-2); color: #fff; box-shadow: 0 10px 20px -10px rgba(21, 61, 94, .45); }
+.statIcon.purple { background: var(--purple); color: #fff; box-shadow: 0 10px 20px -10px rgba(124, 111, 224, .5); }
+.statCard:hover .statIcon { transform: scale(1.08) rotate(-3deg); }
+.statText { min-width: 0; }
+.statValue { font-size: 22px; font-weight: 700; color: var(--navy); font-family: 'Sora', system-ui, sans-serif; text-transform: capitalize; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .statLabel { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
-/* Section card */
+/* =========================================================
+   SECTION CARD (shared shell used by profile / tasks / documents / announcements)
+   ========================================================= */
 .section {
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
   box-shadow: var(--shadow); margin-bottom: 14px; overflow: hidden;
@@ -337,20 +376,31 @@
   animation: sectionReveal .24s ease-out both;
 }
 .section:hover {
-  box-shadow: 0 12px 30px -16px rgba(15, 42, 74, 0.18);
-  border-color: rgba(15, 42, 74, 0.1);
+  box-shadow: 0 14px 34px -16px rgba(15, 42, 74, 0.22);
+  border-color: rgba(15, 42, 74, 0.12);
+  transform: translateY(-1px);
 }
-.sectionHead { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 4px 16px; flex-wrap: wrap; gap: 10px; }
-.sectionHeadLeft { display: flex; align-items: center; gap: 10px; }
-.bar { width: 4px; height: 20px; border-radius: 3px; }
+/* colored top accent reusing each section's own bar tone — adds identity per
+   card without introducing any new color. Falls back gracefully on very old
+   browsers without :has() support (no crash, just no strip). */
+.section:has(.bar.cyan) { border-top: 3px solid var(--cyan); }
+.section:has(.bar.orange) { border-top: 3px solid var(--orange); }
+.section:has(.bar.green) { border-top: 3px solid var(--green); }
+.section:has(.bar.navy) { border-top: 3px solid var(--navy-2); }
+.section:has(.bar.purple) { border-top: 3px solid var(--purple); }
+/* head/body padding rebalanced so the gap between title and content
+   is consistent (8px + 8px) instead of the old 4px/12px mismatch */
+.sectionHead { display: flex; align-items: center; justify-content: space-between; padding: 18px 18px 8px 18px; flex-wrap: wrap; gap: 10px; }
+.sectionHeadLeft { display: flex; align-items: center; gap: 12px; }
+.bar { width: 5px; height: 24px; border-radius: 4px; }
 .bar.cyan { background: var(--cyan); }
 .bar.orange { background: var(--orange); }
 .bar.green { background: var(--green); }
 .bar.navy { background: var(--navy-2); }
 .bar.purple { background: var(--purple); }
-.sectionTitle { font-size: 15.5px; font-weight: 700; color: var(--navy); }
+.sectionTitle { font-size: 16.5px; font-weight: 800; color: var(--navy); letter-spacing: -.1px; }
 .sectionDesc { font-size: 12.5px; color: var(--text-muted); margin: 2px 0 0 0; }
-.sectionBody { padding: 12px 16px 16px 16px; }
+.sectionBody { padding: 8px 18px 18px 18px; }
 
 .fieldGrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px 16px; }
 .profileHero {
@@ -437,6 +487,9 @@
 .banner p { margin: 0; color: #8a7440; font-size: .87rem; }
 .banner .btnPrimary { min-width: 180px; }
 
+/* =========================================================
+   BUTTONS
+   ========================================================= */
 .btnPrimary {
   display: inline-flex; align-items: center; gap: 7px;
   background: linear-gradient(135deg, var(--blue), var(--blue-strong) 60%, var(--navy-2));
@@ -460,13 +513,15 @@
   animation: errorShake .35s ease;
 }
 
-/* ----- Candidate-specific: tasks & announcements ----- */
+/* =========================================================
+   CANDIDATE-SPECIFIC: TASKS & ANNOUNCEMENTS
+   ========================================================= */
 .dashboardStack { display: flex; flex-direction: column; gap: 20px; }
 
 .taskList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .taskItem {
   width: 100%; display: flex; align-items: center; gap: 12px;
-  padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px;
   background: #FBFDFE; cursor: pointer; text-align: left;
   font: inherit; color: var(--text);
   transition: border-color .15s ease, background .15s ease, transform .15s ease, box-shadow .15s ease;
@@ -491,7 +546,7 @@
 
 .announcementStack { display: flex; flex-direction: column; gap: 10px; }
 .announcementCard {
-  border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: #FBFDFE;
+  border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: #FBFDFE;
   transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
 }
 .announcementCard:hover {
@@ -503,7 +558,9 @@
 .announcementCard p { margin: 0; font-size: 12.5px; color: var(--text-muted); line-height: 1.55; }
 .announcementMeta { margin-top: 8px !important; font-size: 11px !important; color: var(--text-faint) !important; }
 
-/* Skeleton loading */
+/* =========================================================
+   SKELETON LOADING
+   ========================================================= */
 .skeleton {
   border-radius: 8px;
   background: linear-gradient(90deg, #eef3f8 0%, #f7fafc 45%, #eef3f8 100%);
@@ -516,7 +573,9 @@
 .skeletonLine { height: 12px; margin-bottom: 8px; }
 .skeletonLine.short { width: 42%; }
 
-/* Motion keyframes */
+/* =========================================================
+   MOTION KEYFRAMES
+   ========================================================= */
 @keyframes pageEnter {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
@@ -556,6 +615,10 @@
   transition: stroke-dashoffset .55s ease;
 }
 
+/* =========================================================
+   REDUCED MOTION — layout/size rules removed from here,
+   this block now only disables animation/transition, as it should
+   ========================================================= */
 @media (prefers-reduced-motion: reduce) {
   .pageEnter,
   .assistantEnter,
@@ -574,6 +637,7 @@
   .iconBtn,
   .btnPrimary,
   .statCard,
+  .statIcon,
   .section,
   .taskItem,
   .announcementCard,
@@ -585,6 +649,7 @@
   }
   .dot { animation: none !important; }
   .statCard:hover,
+  .statCard:hover .statIcon,
   .taskItem:hover:not(.disabled),
   .announcementCard:hover,
   .btnPrimary:hover,
@@ -593,12 +658,13 @@
     transform: none !important;
   }
   .skeleton { animation: none; background: #eef3f8; }
-  .searchBox { width: min(200px, 40vw); }
 }
 
-/* ===== Responsive ===== */
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
 @media (max-width: 1180px) {
-  .content { padding: 26px 24px 50px 24px; }
+  .content { padding: 22px 24px 44px 24px; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .fieldGrid { grid-template-columns: repeat(3, 1fr); }
 }
@@ -620,7 +686,9 @@
   .sidebar.collapsed .sidebarFooter { flex-direction: row; }
   .sidebar.collapsed .sidebarFooterText { display: block; }
   .topbar { padding: 16px 24px; flex-wrap: wrap; gap: 12px; }
-  .searchBox { width: 180px; }
+  /* narrowed search box moved here from the reduced-motion block, where it
+     didn't belong — it's a screen-size concern, not a motion concern */
+  .searchBox { width: min(200px, 30vw); }
   .content { padding: 22px 24px 50px 24px; }
   .hero { flex-direction: column; align-items: flex-start; gap: 20px; }
   .ringWrap { align-self: center; }
@@ -643,10 +711,12 @@
   .heroChips { flex-wrap: wrap; }
   .ring { width: 82px; height: 82px; }
   .stats { grid-template-columns: 1fr 1fr; gap: 12px; }
-  .statCard { padding: 14px 16px; }
+  .statCard { padding: 12px 14px; gap: 10px; }
+  .statIcon { width: 36px; height: 36px; border-radius: 10px; }
+  .statIcon svg { width: 17px; height: 17px; }
   .statValue { font-size: 19px; }
-  .sectionHead { padding: 16px 16px 4px 16px; }
-  .sectionBody { padding: 14px 16px 20px 16px; }
+  .sectionHead { padding: 16px 16px 6px 16px; }
+  .sectionBody { padding: 6px 16px 20px 16px; }
   .fieldGrid { grid-template-columns: 1fr 1fr; gap: 16px 12px; }
   .moduleCard { padding: 16px; }
   .banner { flex-direction: column; align-items: flex-start; }
@@ -660,7 +730,9 @@
   .profileName { font-size: 18px; }
 }
 
-/* AI cues (shared with employee light theme) */
+/* =========================================================
+   AI CUES (shared with employee light theme)
+   ========================================================= */
 .aiChip {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 10.5px; font-weight: 800; letter-spacing: .3px;
@@ -694,4 +766,3 @@
   font-size: 13px; font-weight: 650; padding: 11px 19px; border-radius: 12px; cursor: pointer;
 }
 .btnGhost:hover { border-color: var(--blue-mid); background: var(--blue-lighter); }
-.ringValue { fill: var(--navy); font-size: 18px; font-weight: 800; font-family: 'Sora', system-ui, sans-serif; }
