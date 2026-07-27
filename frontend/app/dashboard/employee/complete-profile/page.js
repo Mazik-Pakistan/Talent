@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -19,6 +19,7 @@ import { useAutoSave } from "@/lib/ai/useAutoSave";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
 import { publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
 import { openAiAssistantChat } from "@/lib/ai/openAiAssistant";
+import { scrollOcrFieldIntoView, typewriterFill } from "@/lib/ai/typewriterFill";
 import {
   formatPkMobileInput,
   isValidPkMobile,
@@ -37,9 +38,9 @@ const STEPS = [
 ];
 
 const SECTION_FIELDS = {
-  emergency: ["Full name", "Relationship", "Phone", "Alternate phone", "Address"],
+  emergency: ["Full name", "Relationship", "Contact", "Alternate contact", "Address"],
   employment: ["Bank name", "Account holder", "Account number", "IBAN", "Branch", "SWIFT"],
-  references: ["Full name", "Relationship", "Email", "Phone", "Company"],
+  references: ["Full name", "Relationship", "Email", "Contact", "Company"],
   documents: ["Code of Conduct", "Privacy Policy", "Employee Handbook"],
   nda: ["Full legal name", "Agreement checkbox", "Signature"],
   submit: ["Review all sections", "Submit profile"],
@@ -52,7 +53,6 @@ const emptyEmployment = {
   bank_name: "",
   account_holder_name: "",
   account_number: "",
-  tax_id: "",
   iban: "",
   branch: "",
   branch_code: "",
@@ -93,6 +93,8 @@ function CompleteProfileContent() {
   const [notice, setNotice] = useState(null);
   const [recruiterNudge, setRecruiterNudge] = useState(null);
   const [showScanner, setShowScanner] = useState(false);
+  const [ocrFillMeta, setOcrFillMeta] = useState({ fields: {}, activeField: null });
+  const ocrFillAbortRef = useRef(null);
 
   const [emergency, setEmergency] = useState(emptyEmergency);
   const [employment, setEmployment] = useState(emptyEmployment);
@@ -131,8 +133,13 @@ function CompleteProfileContent() {
     if (onboarding.employment) {
       setEmployment({
         ...emptyEmployment,
-        ...onboarding.employment,
+        bank_name: onboarding.employment.bank_name || "",
         account_holder_name: onboarding.employment.account_holder_name || emp?.full_name || "",
+        account_number: onboarding.employment.account_number || "",
+        iban: onboarding.employment.iban || "",
+        branch: onboarding.employment.branch || "",
+        branch_code: onboarding.employment.branch_code || "",
+        swift_code: onboarding.employment.swift_code || "",
       });
     } else if (emp?.full_name) {
       setEmployment((current) => ({
@@ -275,7 +282,7 @@ function CompleteProfileContent() {
         };
         return {
           errors,
-          message: `Complete your emergency contact. Phone must be a Pakistan mobile (${PK_MOBILE_HINT}).`,
+          message: `Complete your emergency contact. Contact must be a valid Pakistan number (${PK_MOBILE_HINT}).`,
         };
       },
       employment: () => ({
@@ -286,7 +293,6 @@ function CompleteProfileContent() {
           "employment.iban": !employment.iban?.trim(),
           "employment.branch": !employment.branch?.trim(),
           "employment.branch_code": !employment.branch_code?.trim(),
-          "employment.tax_id": !employment.tax_id?.trim(),
         },
         message: "Complete your banking details including IBAN, branch, and branch code.",
       }),
@@ -330,7 +336,7 @@ function CompleteProfileContent() {
                 isValidPkMobile(reference.phone) &&
                 normalizePkMobile(reference.phone.trim()) === phone
               ) {
-                errors[`references.${index}.phone`] = "Duplicate phone number.";
+                errors[`references.${index}.phone`] = "Duplicate contact.";
               }
             });
           }
@@ -338,10 +344,10 @@ function CompleteProfileContent() {
 
         if (references.length < 2) errors["references.1.full_name"] = true;
 
-        let message = `Provide at least two complete references. Phones: ${PK_MOBILE_HINT}.`;
-        if (duplicateEmail && duplicatePhone) message = "Each reference needs a unique email and phone number.";
+        let message = `Provide at least two complete references. Contacts: ${PK_MOBILE_HINT}.`;
+        if (duplicateEmail && duplicatePhone) message = "Each reference needs a unique email and contact.";
         else if (duplicateEmail) message = "Each reference needs a unique email address.";
-        else if (duplicatePhone) message = "Each reference needs a unique phone number.";
+        else if (duplicatePhone) message = "Each reference needs a unique contact.";
 
         return { errors, message };
       },
@@ -413,8 +419,12 @@ function CompleteProfileContent() {
         return {
           step: "employment",
           employment: {
-            ...employment,
+            bank_name: employment.bank_name,
             account_holder_name: employment.account_holder_name || employee?.full_name || "",
+            account_number: employment.account_number,
+            iban: employment.iban,
+            branch: employment.branch,
+            branch_code: employment.branch_code,
             swift_code: employment.swift_code || null,
           },
         };
@@ -483,16 +493,95 @@ function CompleteProfileContent() {
   function handleScanApplied(result) {
     setShowScanner(false);
     const fields = result?.fields || {};
+    const confidence = result?.field_confidence || {};
+    const order = [
+      "account_holder_name",
+      "iban",
+      "bank_name",
+      "account_number",
+      "branch",
+      "branch_code",
+      "swift_code",
+    ];
+
+    ocrFillAbortRef.current?.abort();
+    const controller = new AbortController();
+    ocrFillAbortRef.current = controller;
+
+    // Clear keys we are about to type so the fill is visible.
     setEmployment((current) => {
       const next = { ...current };
-      for (const key of Object.keys(emptyEmployment)) {
-        if (fields[key]) next[key] = String(fields[key]).trim();
+      for (const key of order) {
+        if (fields[key]) next[key] = "";
       }
       return next;
     });
     setStep("employment");
-    showToast("success", "Bank details filled from your document — review and save when ready.");
+    setOcrFillMeta({ fields: {}, activeField: null });
+
+    const entries = order
+      .filter((key) => fields[key])
+      .map((key) => ({
+        key: `employment.${key}`,
+        value: String(fields[key]).trim(),
+        apply: (partial) => {
+          setEmployment((current) => ({ ...current, [key]: partial }));
+          setOcrFillMeta((meta) => ({
+            activeField: `employment.${key}`,
+            fields: {
+              ...meta.fields,
+              [`employment.${key}`]: {
+                status: "typing",
+                source: "ocr",
+                confidence: confidence[key],
+              },
+            },
+          }));
+        },
+      }));
+
+    void (async () => {
+      await typewriterFill(entries, {
+        signal: controller.signal,
+        onFieldStart: (key) => {
+          setOcrFillMeta((meta) => ({
+            activeField: key,
+            fields: {
+              ...meta.fields,
+              [key]: { ...(meta.fields[key] || {}), status: "typing", source: "ocr" },
+            },
+          }));
+          scrollOcrFieldIntoView(key);
+        },
+        onFieldDone: (key) => {
+          const fieldKey = key.replace(/^employment\./, "");
+          setOcrFillMeta((meta) => ({
+            activeField: null,
+            fields: {
+              ...meta.fields,
+              [key]: {
+                status: "filled",
+                source: "ocr",
+                confidence: confidence[fieldKey],
+                filledAt: Date.now(),
+              },
+            },
+          }));
+        },
+      });
+      if (controller.signal.aborted) return;
+      setEmployment((current) => {
+        const next = { ...current };
+        for (const key of order) {
+          if (fields[key]) next[key] = String(fields[key]).trim();
+        }
+        return next;
+      });
+      showToast("success", "Bank details filled from your document — review and save when ready.");
+    })();
   }
+
+  useEffect(() => () => ocrFillAbortRef.current?.abort(), []);
 
   // ── Submit ───────────────────────────────────────────────────────────
   async function handleNext(event) {
@@ -549,7 +638,7 @@ function CompleteProfileContent() {
             onStepChange={gotoSection}
             fieldErrors={fieldErrors}
             clearFieldError={(key) => setFieldErrors((current) => ({ ...current, [key]: false }))}
-            automation={{ fields: {}, activeField: null }}
+            automation={ocrFillMeta}
             saving={saving}
             complete={complete}
             employee={employee}
@@ -811,14 +900,14 @@ function OnboardingForm({
               </div>
               <div className={styles.fieldRow}>
                 <AiField
-                  label="Phone"
+                  label="Contact"
                   hint={PK_MOBILE_HINT}
                   value={emergency.phone}
                   onChange={(event) => updateEmergency("phone", formatPkMobileInput(event.target.value))}
                   {...fieldProps("emergency.phone", { required: true })}
                 />
                 <AiField
-                  label="Alternate phone (optional)"
+                  label="Alternate contact (optional)"
                   hint={PK_MOBILE_HINT}
                   value={emergency.alternate_phone || ""}
                   onChange={(event) =>
@@ -912,12 +1001,6 @@ function OnboardingForm({
                   onChange={(event) => updateEmployment("swift_code", event.target.value)}
                   {...fieldProps("employment.swift_code")}
                 />
-                <AiField
-                  label="Tax ID"
-                  value={employment.tax_id}
-                  onChange={(event) => updateEmployment("tax_id", event.target.value)}
-                  {...fieldProps("employment.tax_id", { required: true })}
-                />
               </div>
             </div>
           ) : null}
@@ -960,7 +1043,7 @@ function OnboardingForm({
                         {...fieldProps(`references.${index}.email`, { required: true })}
                       />
                       <AiField
-                        label="Phone"
+                        label="Contact"
                         hint={PK_MOBILE_HINT}
                         value={reference.phone}
                         onChange={(event) =>
@@ -1081,8 +1164,8 @@ function OnboardingForm({
                   items={[
                     ["Name", emergency.name],
                     ["Relationship", emergency.relationship],
-                    ["Phone", emergency.phone],
-                    ["Alternate", emergency.alternate_phone],
+                    ["Contact", emergency.phone],
+                    ["Alternate contact", emergency.alternate_phone],
                   ]}
                 />
                 <ReviewBlock
@@ -1172,8 +1255,8 @@ function CompletedRecord({
           <HistoryBlock title="Emergency contact">
             <HistoryRow label="Name" value={emergency.name} />
             <HistoryRow label="Relationship" value={emergency.relationship} />
-            <HistoryRow label="Phone" value={emergency.phone} />
-            <HistoryRow label="Alternate phone" value={emergency.alternate_phone} />
+            <HistoryRow label="Contact" value={emergency.phone} />
+            <HistoryRow label="Alternate contact" value={emergency.alternate_phone} />
             <HistoryRow label="Address" value={emergency.address} />
           </HistoryBlock>
 
@@ -1185,7 +1268,6 @@ function CompletedRecord({
             <HistoryRow label="Branch" value={employment.branch} />
             <HistoryRow label="Branch code" value={employment.branch_code} />
             <HistoryRow label="SWIFT code" value={employment.swift_code} />
-            <HistoryRow label="Tax ID" value={employment.tax_id} />
           </HistoryBlock>
 
           <HistoryBlock title="References">
@@ -1195,7 +1277,7 @@ function CompletedRecord({
                 <HistoryRow label="Name" value={reference.full_name} />
                 <HistoryRow label="Relationship" value={reference.relationship} />
                 <HistoryRow label="Email" value={reference.email} />
-                <HistoryRow label="Phone" value={reference.phone} />
+                <HistoryRow label="Contact" value={reference.phone} />
                 <HistoryRow label="Company" value={reference.company} />
               </div>
             ))}

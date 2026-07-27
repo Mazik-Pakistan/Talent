@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { analyzeBankSlip, getApiErrorMessage } from "@/services/authService";
 import { LOW_CONFIDENCE_THRESHOLD } from "@/lib/ai/sources";
+import { typewriterFill } from "@/lib/ai/typewriterFill";
 import AiOrb, { AiThinkingDots } from "./AiOrb";
 import { IconFile, IconScan, IconUpload } from "./icons";
 import styles from "./AiExperience.module.css";
@@ -16,7 +17,6 @@ const FIELD_LABELS = {
   branch: "Branch",
   branch_code: "Branch code",
   swift_code: "SWIFT code",
-  tax_id: "Tax ID",
 };
 
 const REVEAL_ORDER = [
@@ -27,7 +27,6 @@ const REVEAL_ORDER = [
   "branch",
   "branch_code",
   "swift_code",
-  "tax_id",
 ];
 
 const STAGES = [
@@ -43,11 +42,11 @@ const STAGES = [
  *
  * The animation is tied to a real request: the beam runs while the backend
  * genuinely extracts text and parses the account details, and fields appear
- * one at a time as the parsed result is revealed with its confidence.
+ * letter-by-letter as the parsed result is revealed with its confidence.
  */
 export default function BankSlipScanner({ onApply, disabled = false }) {
   const inputRef = useRef(null);
-  const revealTimersRef = useRef([]);
+  const revealAbortRef = useRef(null);
   const previewUrlRef = useRef(null);
 
   const [file, setFile] = useState(null);
@@ -55,21 +54,23 @@ export default function BankSlipScanner({ onApply, disabled = false }) {
   const [scanning, setScanning] = useState(false);
   const [stage, setStage] = useState(STAGES[0]);
   const [result, setResult] = useState(null);
+  const [typedValues, setTypedValues] = useState({});
   const [revealed, setRevealed] = useState([]);
+  const [typingKey, setTypingKey] = useState(null);
   const [error, setError] = useState(null);
   const [dragging, setDragging] = useState(false);
 
   useEffect(
     () => () => {
-      revealTimersRef.current.forEach(clearTimeout);
+      revealAbortRef.current?.abort();
       if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     },
     []
   );
 
   function reset() {
-    revealTimersRef.current.forEach(clearTimeout);
-    revealTimersRef.current = [];
+    revealAbortRef.current?.abort();
+    revealAbortRef.current = null;
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current);
       previewUrlRef.current = null;
@@ -77,19 +78,39 @@ export default function BankSlipScanner({ onApply, disabled = false }) {
     setFile(null);
     setPreviewUrl(null);
     setResult(null);
+    setTypedValues({});
     setRevealed([]);
+    setTypingKey(null);
     setError(null);
     setScanning(false);
   }
 
-  function revealFields(fields) {
+  async function revealFields(fields) {
+    revealAbortRef.current?.abort();
+    const controller = new AbortController();
+    revealAbortRef.current = controller;
+    setTypedValues({});
+    setRevealed([]);
+    setTypingKey(null);
+
     const keys = REVEAL_ORDER.filter((key) => fields[key]);
-    keys.forEach((key, index) => {
-      const timer = setTimeout(() => {
-        setRevealed((current) => [...current, key]);
-      }, 260 * (index + 1));
-      revealTimersRef.current.push(timer);
-    });
+    await typewriterFill(
+      keys.map((key) => ({
+        key,
+        value: fields[key],
+        apply: (partial) => {
+          setTypedValues((current) => ({ ...current, [key]: partial }));
+        },
+      })),
+      {
+        signal: controller.signal,
+        onFieldStart: (key) => {
+          setTypingKey(key);
+          setRevealed((current) => (current.includes(key) ? current : [...current, key]));
+        },
+        onFieldDone: () => setTypingKey(null),
+      }
+    );
   }
 
   async function handleFile(nextFile) {
@@ -129,7 +150,9 @@ export default function BankSlipScanner({ onApply, disabled = false }) {
       }
 
       setResult(data);
-      revealFields(fields);
+      setScanning(false);
+      clearInterval(stageTimer);
+      await revealFields(fields);
     } catch (requestError) {
       setError(getApiErrorMessage(requestError, "Scanning failed. You can still type your details in."));
     } finally {
@@ -141,12 +164,17 @@ export default function BankSlipScanner({ onApply, disabled = false }) {
   const fields = result?.fields || {};
   const confidence = result?.field_confidence || {};
   const alternatives = result?.alternatives || {};
-  const allRevealed = result && revealed.length === REVEAL_ORDER.filter((key) => fields[key]).length;
+  const expectedKeys = REVEAL_ORDER.filter((key) => fields[key]);
+  const allRevealed =
+    result &&
+    expectedKeys.length > 0 &&
+    expectedKeys.every((key) => revealed.includes(key) && typedValues[key] === String(fields[key])) &&
+    !typingKey;
 
   return (
     <section className={styles.scanner}>
       <header className={styles.scannerHead}>
-        <AiOrb size="md" thinking={scanning} particles />
+        <AiOrb size="md" thinking={scanning || Boolean(typingKey)} particles />
         <div>
           <div className={styles.scannerTitle}>Scan your bank document</div>
           <div className={styles.scannerSub}>
@@ -222,10 +250,18 @@ export default function BankSlipScanner({ onApply, disabled = false }) {
               {REVEAL_ORDER.filter((key) => fields[key] && revealed.includes(key)).map((key) => {
                 const score = confidence[key];
                 const low = score != null && score < LOW_CONFIDENCE_THRESHOLD;
+                const isTyping = typingKey === key;
                 return (
-                  <div key={key} className={`${styles.resultRow} ${low ? styles.resultRowLow : ""}`}>
+                  <div
+                    key={key}
+                    className={`${styles.resultRow} ${low ? styles.resultRowLow : ""} ${isTyping ? styles.resultRowTyping : ""}`}
+                    data-ocr-key={key}
+                  >
                     <span className={styles.resultLabel}>{FIELD_LABELS[key]}</span>
-                    <span className={styles.resultValue}>{fields[key]}</span>
+                    <span className={styles.resultValue}>
+                      {typedValues[key] ?? ""}
+                      {isTyping ? <span className={styles.typeCaret} aria-hidden="true" /> : null}
+                    </span>
                     {score != null ? (
                       <span className={styles.confidenceTrack} title={`${Math.round(score * 100)}% confidence`}>
                         <span

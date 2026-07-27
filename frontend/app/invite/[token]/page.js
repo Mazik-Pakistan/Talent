@@ -27,7 +27,7 @@ function validateForm(form) {
   const errors = {};
   if (form.full_name.trim().length < 2) errors.full_name = "Enter your full name.";
   if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) errors.email = "Enter a valid email address.";
-  if (!isValidPkMobile(form.phone)) errors.phone = `Enter a valid Pakistani mobile number (${PK_MOBILE_HINT}).`;
+  if (!isValidPkMobile(form.phone)) errors.phone = `Enter a valid Pakistani contact number (${PK_MOBILE_HINT}).`;
   if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/.test(form.password)) {
     errors.password = "Use 8+ characters with uppercase, lowercase, number, and special character.";
   }
@@ -158,7 +158,7 @@ export default function InviteRegisterPage() {
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          <FormField label="Full name" name="full_name" value={form.full_name} error={errors.full_name} onChange={updateField} autoComplete="name" />
+          <FormField label="Full name" name="full_name" value={form.full_name} error={errors.full_name} onChange={updateField} autoComplete="name" required />
           <FormField
             label="Work email"
             name="email"
@@ -169,10 +169,11 @@ export default function InviteRegisterPage() {
             autoComplete="email"
             hint="Must match the email on your invitation."
             readOnly
+            required
           />
-          <FormField label="Phone number" name="phone" type="tel" value={form.phone} error={errors.phone} onChange={updateField} autoComplete="tel" hint={PK_MOBILE_HINT} placeholder="0300-1234567" />
-          <PasswordField label="Password" name="password" value={form.password} error={errors.password} onChange={updateField} showPassword={showPassword} onToggle={() => setShowPassword((visible) => !visible)} autoComplete="new-password" />
-          <PasswordField label="Confirm password" name="confirm_password" value={form.confirm_password} error={errors.confirm_password} onChange={updateField} showPassword={showPassword} onToggle={() => setShowPassword((visible) => !visible)} autoComplete="new-password" />
+          <FormField label="Contact" name="phone" type="tel" value={form.phone} error={errors.phone} onChange={updateField} autoComplete="tel" hint={PK_MOBILE_HINT} placeholder="0300-1234567" required />
+          <PasswordField label="Password" name="password" value={form.password} error={errors.password} onChange={updateField} showPassword={showPassword} onToggle={() => setShowPassword((visible) => !visible)} autoComplete="new-password" required />
+          <PasswordField label="Confirm password" name="confirm_password" value={form.confirm_password} error={errors.confirm_password} onChange={updateField} showPassword={showPassword} onToggle={() => setShowPassword((visible) => !visible)} autoComplete="new-password" required />
 
           <label className="checkbox-field">
             <input name="terms_accepted" type="checkbox" checked={form.terms_accepted} onChange={updateField} />
@@ -207,13 +208,17 @@ export default function InviteRegisterPage() {
   );
 }
 
-function FormField({ label, name, type = "text", value, error, hint, onChange, autoComplete, readOnly, placeholder }) {
+function FormField({ label, name, type = "text", value, error, hint, onChange, autoComplete, readOnly, placeholder, required = false }) {
   return (
     <label className="field">
-      <span>{label}</span>
+      <span>
+        {label}
+        {required ? <span style={{ color: "#b42318", marginLeft: 4 }}>*</span> : null}
+      </span>
       <input
         aria-invalid={Boolean(error)}
         aria-describedby={error ? `${name}-error` : undefined}
+        aria-required={required || undefined}
         name={name}
         type={type}
         value={value}
@@ -221,6 +226,7 @@ function FormField({ label, name, type = "text", value, error, hint, onChange, a
         autoComplete={autoComplete}
         readOnly={readOnly}
         placeholder={placeholder}
+        required={required}
       />
       {hint && <small>{hint}</small>}
       {error && <small className="field-error" id={`${name}-error`}>{error}</small>}
@@ -228,19 +234,24 @@ function FormField({ label, name, type = "text", value, error, hint, onChange, a
   );
 }
 
-function PasswordField({ label, name, value, error, onChange, showPassword, onToggle, autoComplete }) {
+function PasswordField({ label, name, value, error, onChange, showPassword, onToggle, autoComplete, required = false }) {
   return (
     <label className="field">
-      <span>{label}</span>
+      <span>
+        {label}
+        {required ? <span style={{ color: "#b42318", marginLeft: 4 }}>*</span> : null}
+      </span>
       <span className="password-control">
         <input
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${name}-error` : undefined}
+          aria-required={required || undefined}
           name={name}
           type={showPassword ? "text" : "password"}
           value={value}
           onChange={onChange}
           autoComplete={autoComplete}
+          required={required}
         />
         <button type="button" className="toggle-button" onClick={onToggle} aria-label={`${showPassword ? "Hide" : "Show"} password`}>
           {showPassword ? "Hide" : "Show"}

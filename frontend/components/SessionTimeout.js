@@ -3,10 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { clearLocalSession, logout } from "@/services/authService";
+import { clearLocalSession, isRememberMeEnabled, logout } from "@/services/authService";
 
 /** Default: 15 minutes idle timeout. Override with NEXT_PUBLIC_SESSION_TIMEOUT_MS. */
 const SESSION_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_SESSION_TIMEOUT_MS || 900000);
+/** Remember me: 7 days idle by default. Override with NEXT_PUBLIC_SESSION_TIMEOUT_REMEMBER_MS. */
+const SESSION_TIMEOUT_REMEMBER_MS = Number(
+  process.env.NEXT_PUBLIC_SESSION_TIMEOUT_REMEMBER_MS || 7 * 24 * 60 * 60 * 1000
+);
 /** Default: warn 60 seconds before the session expires. Override with NEXT_PUBLIC_SESSION_WARNING_MS. */
 const WARNING_BEFORE_MS = Math.min(
   Number(process.env.NEXT_PUBLIC_SESSION_WARNING_MS || 60000),
@@ -15,9 +19,18 @@ const WARNING_BEFORE_MS = Math.min(
 
 const ACTIVITY_EVENTS = ["mousedown", "mousemove", "keydown", "scroll", "touchstart", "click"];
 
+function getIdleTimeoutMs() {
+  return isRememberMeEnabled() ? SESSION_TIMEOUT_REMEMBER_MS : SESSION_TIMEOUT_MS;
+}
+
+function getWarningBeforeMs(idleTimeoutMs) {
+  return Math.min(WARNING_BEFORE_MS, Math.max(idleTimeoutMs - 1000, 1000));
+}
+
 /**
  * US-009: Session Timeout
  * - Idle timer starts as soon as an authenticated user is detected.
+ * - Remember me uses a much longer idle window (still works on localhost).
  * - A warning is displayed before the session expires (acceptance criteria).
  * - The session expires automatically and the user is returned to Login.
  */
@@ -29,6 +42,7 @@ export default function SessionTimeout() {
   const warningTimerRef = useRef(null);
   const countdownIntervalRef = useRef(null);
   const warningActiveRef = useRef(false);
+  const warningBeforeRef = useRef(WARNING_BEFORE_MS);
 
   const [warningVisible, setWarningVisible] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -66,13 +80,14 @@ export default function SessionTimeout() {
     if (!isAuthenticated()) return;
     warningActiveRef.current = true;
     setWarningVisible(true);
-    setSecondsLeft(Math.round(WARNING_BEFORE_MS / 1000));
+    const warningMs = warningBeforeRef.current;
+    setSecondsLeft(Math.round(warningMs / 1000));
 
     countdownIntervalRef.current = setInterval(() => {
       setSecondsLeft((current) => (current > 0 ? current - 1 : 0));
     }, 1000);
 
-    expireTimerRef.current = setTimeout(doExpire, WARNING_BEFORE_MS);
+    expireTimerRef.current = setTimeout(doExpire, warningMs);
   }, [doExpire, isAuthenticated]);
 
   const scheduleTimers = useCallback(() => {
@@ -82,9 +97,13 @@ export default function SessionTimeout() {
 
     if (!isAuthenticated()) return;
 
+    const idleTimeoutMs = getIdleTimeoutMs();
+    const warningMs = getWarningBeforeMs(idleTimeoutMs);
+    warningBeforeRef.current = warningMs;
+
     localStorage.setItem("session_last_active", String(Date.now()));
-    warningTimerRef.current = setTimeout(showWarning, Math.max(SESSION_TIMEOUT_MS - WARNING_BEFORE_MS, 0));
-    expireTimerRef.current = setTimeout(doExpire, SESSION_TIMEOUT_MS);
+    warningTimerRef.current = setTimeout(showWarning, Math.max(idleTimeoutMs - warningMs, 0));
+    expireTimerRef.current = setTimeout(doExpire, idleTimeoutMs);
   }, [clearAllTimers, doExpire, isAuthenticated, showWarning]);
 
   function handleStaySignedIn() {
@@ -93,8 +112,9 @@ export default function SessionTimeout() {
 
   useEffect(() => {
     if (isAuthenticated()) {
+      const idleTimeoutMs = getIdleTimeoutMs();
       const lastActive = Number(localStorage.getItem("session_last_active") || 0);
-      if (lastActive && Date.now() - lastActive >= SESSION_TIMEOUT_MS) {
+      if (lastActive && Date.now() - lastActive >= idleTimeoutMs) {
         // Already idle longer than the timeout (e.g. tab restored) — expire immediately.
         doExpire();
       } else {

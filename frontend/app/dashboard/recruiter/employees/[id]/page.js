@@ -19,6 +19,7 @@ import {
   publishRecruiterContext,
 } from "@/lib/ai/recruiterContext";
 import { EMPLOYEE_TAB_HELP } from "@/lib/ai/recruiterFieldHelp";
+import { formatBloodGroupDisplay, isBloodGroupPending } from "@/lib/bloodGroup";
 
 function toLabel(key) {
   return String(key)
@@ -600,6 +601,11 @@ export default function EmployeeProfilePage({ params }) {
 
   const employeeId      = employee.employee_id || id;
   const careerEvents    = Array.isArray(employee.career) ? employee.career : [];
+  const personal = employee.onboarding?.personal || null;
+  const bloodGroupPending = Boolean(personal) && isBloodGroupPending(personal.blood_group);
+  const bloodGroupLabel = personal
+    ? formatBloodGroupDisplay(personal.blood_group)
+    : null;
   const initials = (employee.full_name || "?")
     .trim()
     .split(/\s+/)
@@ -716,8 +722,26 @@ export default function EmployeeProfilePage({ params }) {
                 <dd>{employee.company_email || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
-                <dt>Phone</dt>
+                <dt>Contact</dt>
                 <dd>{employee.phone || "-"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Blood group</dt>
+                <dd>
+                  {bloodGroupLabel || "-"}
+                  {bloodGroupPending ? (
+                    <span
+                      className={styles.chip}
+                      style={{
+                        marginLeft: 8,
+                        background: "var(--orange-light)",
+                        color: "var(--orange)",
+                      }}
+                    >
+                      Needs update
+                    </span>
+                  ) : null}
+                </dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Job title</dt>

@@ -40,6 +40,19 @@ const DOCUMENT_CONFIG = {
   },
 };
 
+const FIELD_LABELS = {
+  phone_number: "contact",
+  full_name: "full name",
+  cnic_number: "cnic number",
+  date_of_birth: "date of birth",
+  passport_number: "passport number",
+  candidate_name: "candidate name",
+};
+
+function fieldLabel(key) {
+  return FIELD_LABELS[key] || String(key || "").replace(/_/g, " ");
+}
+
 function documentConfig(doc) {
   if (doc.ocr_result?.category === "academic_transcript") return DOCUMENT_CONFIG.transcript;
   return DOCUMENT_CONFIG[doc.doc_type] || {
@@ -236,7 +249,7 @@ export default function RecruiterDocumentReview({ ownerId }) {
                     <p className="review-document-preview">
                       {preview.map(([key, value]) => (
                         <span key={key}>
-                          <b>{key.replace(/_/g, " ")}:</b> {formatFieldValue(value)}
+                          <b>{fieldLabel(key)}:</b> {formatFieldValue(value)}
                         </span>
                       ))}
                     </p>
@@ -258,7 +271,7 @@ export default function RecruiterDocumentReview({ ownerId }) {
                         disabled={busyId === doc.id}
                         onClick={() =>
                           handleVerify(doc.id, "verified", {
-                            approve_despite_mismatch: docFlags.length > 0 || hasMismatch,
+                            approve_despite_mismatch: docFlags.length > 0,
                           })
                         }
                       >
@@ -302,7 +315,7 @@ export default function RecruiterDocumentReview({ ownerId }) {
                         .slice(0, 10)
                         .map(([key, value]) => (
                           <div key={key}>
-                            <dt>{key.replace(/_/g, " ")}</dt>
+                            <dt>{fieldLabel(key)}</dt>
                             <dd>{formatFieldValue(value)}</dd>
                           </div>
                         ))}

@@ -763,6 +763,13 @@ a.fileChip:hover {
   box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
   animation: fieldValuePop 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+.fieldOcrTyping input,
+.fieldOcrTyping select,
+.fieldOcrTyping textarea {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.22);
+  background: #eff6ff;
+}
 
 @keyframes scanBannerIn {
   from { opacity: 0; transform: translateY(-8px); }

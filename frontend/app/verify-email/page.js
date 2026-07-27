@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import AuthAside, { VERIFY_SLIDES } from "@/components/auth/AuthAside";
 import { getApiErrorMessage, verifyOtp, resendOtp } from "@/services/authService";
+import styles from "@/app/styles/auth.module.css";
 
 export default function VerifyEmailPage() {
   const router = useRouter();
@@ -15,22 +17,21 @@ export default function VerifyEmailPage() {
   const [resendMessage, setResendMessage] = useState("");
   const [resending, setResending] = useState(false);
   const [redirectTo, setRedirectTo] = useState(null);
+  const [pendingRole, setPendingRole] = useState(null);
   const inputRefs = useRef([]);
 
-  // Read the pending email from sessionStorage on mount
   useEffect(() => {
     const pending = sessionStorage.getItem("pendingEmail");
     if (pending) setEmail(pending);
+    setPendingRole(sessionStorage.getItem("pendingRole"));
   }, []);
 
-  // Auto-redirect after success
   useEffect(() => {
     if (state.status !== "success" || !redirectTo) return;
     const timer = setTimeout(() => router.push(redirectTo), 1600);
     return () => clearTimeout(timer);
   }, [state.status, redirectTo, router]);
 
-  // OTP digit input handlers
   function handleOtpChange(index, value) {
     const digit = value.replace(/\D/g, "").slice(-1);
     const updated = [...otp];
@@ -55,7 +56,6 @@ export default function VerifyEmailPage() {
       updated[i] = pasted[i];
     }
     setOtp(updated);
-    // Focus the last filled input
     const lastIdx = Math.min(pasted.length, 5);
     inputRefs.current[lastIdx]?.focus();
   }
@@ -78,7 +78,6 @@ export default function VerifyEmailPage() {
       setState({ status: "success", message: response.message });
       sessionStorage.removeItem("pendingEmail");
 
-      // For candidates: store session and redirect to onboarding
       if (response.role === "candidate" && response.session) {
         localStorage.setItem("access_token", response.session.access_token);
         localStorage.setItem("refresh_token", response.session.refresh_token);
@@ -105,7 +104,6 @@ export default function VerifyEmailPage() {
     try {
       const data = await resendOtp(email);
       setResendMessage(data.message);
-      // Reset OTP fields
       setOtp(["", "", "", "", "", ""]);
       inputRefs.current[0]?.focus();
     } catch (error) {
@@ -115,130 +113,136 @@ export default function VerifyEmailPage() {
     }
   }, [email]);
 
-  const pendingRole = typeof window !== "undefined" ? sessionStorage.getItem("pendingRole") : null;
   const returnHref = pendingRole === "candidate" ? "/login" : "/register";
   const isSuccess = state.status === "success";
 
   return (
-    <main className="verification-shell">
-      <section className="verification-card" aria-labelledby="verification-heading">
-        <Image src="/mazikglobal-logo.png" alt="Mazik Global" width={192} height={52} priority />
+    <main className={styles.shell}>
+      <div className={styles.card}>
+        <section className={styles.panel} aria-labelledby="verification-heading">
+          <div className={styles.brandRow}>
+            <Image src="/mazikglobal-logo.png" alt="Mazik Global" width={192} height={52} priority />
+            <span className={styles.brandDivider} aria-hidden="true" />
+            <span className={styles.productName}>Talent</span>
+          </div>
 
-        <div className={`verification-icon ${isSuccess ? "success" : state.status === "error" ? "error" : ""}`} aria-hidden="true">
-          {isSuccess ? "✓" : state.status === "error" ? "!" : "✉"}
-        </div>
+          <div
+            className={`${styles.verifyIcon} ${
+              isSuccess ? styles.verifyIconSuccess : state.status === "error" ? styles.verifyIconError : ""
+            }`}
+            aria-hidden="true"
+          >
+            {isSuccess ? "✓" : state.status === "error" ? "!" : "✉"}
+          </div>
 
-        <p className="eyebrow">Email verification</p>
-        <h1 id="verification-heading">
-          {isSuccess
-            ? "Your account is active"
-            : "Enter verification code"}
-        </h1>
-        <p style={{ fontSize: "0.9rem", color: "#64748b", textAlign: "center", marginTop: "-0.5rem", marginBottom: "1rem" }}>
-          {isSuccess
-            ? null
-            : "Check your inbox for a 6-digit code from TalentAI. It expires in about 10 minutes."}
-        </p>
-
-        {state.message && (
-          <p className="verification-message" role="status">{state.message}</p>
-        )}
-
-        {state.status === "loading" && <span className="loading-dot" aria-label="Loading" />}
-
-        {isSuccess && redirectTo === "/onboarding" && (
-          <p className="verification-message">Redirecting you to onboarding…</p>
-        )}
-
-        {!isSuccess && (
-          <form onSubmit={handleSubmit} noValidate style={{ width: "100%" }}>
-            {email && (
-              <p style={{ fontSize: "0.875rem", color: "#64748b", marginBottom: "1.25rem", textAlign: "center" }}>
-                We sent a 6-digit code to <strong>{email}</strong>
-              </p>
-            )}
-
-            {/* OTP Digit Inputs */}
-            <div
-              style={{
-                display: "flex",
-                gap: "10px",
-                justifyContent: "center",
-                marginBottom: "1.5rem",
-              }}
-              onPaste={handleOtpPaste}
-            >
-              {otp.map((digit, index) => (
-                <input
-                  key={index}
-                  ref={(el) => (inputRefs.current[index] = el)}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={(e) => handleOtpChange(index, e.target.value)}
-                  onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                  aria-label={`OTP digit ${index + 1}`}
-                  style={{
-                    width: "48px",
-                    height: "56px",
-                    textAlign: "center",
-                    fontSize: "1.5rem",
-                    fontWeight: "700",
-                    border: `2px solid ${digit ? "#2d6cdf" : "#cbd5e1"}`,
-                    borderRadius: "8px",
-                    outline: "none",
-                    transition: "border-color 0.2s",
-                    background: "#fff",
-                    color: "#0f172a",
-                  }}
-                />
-              ))}
-            </div>
-
-            <button
-              className="primary-button"
-              type="submit"
-              disabled={state.status === "loading"}
-              style={{ width: "100%" }}
-            >
-              {state.status === "loading" ? "Verifying…" : "Verify Code"}
-            </button>
-          </form>
-        )}
-
-        {/* Resend section */}
-        {!isSuccess && (
-          <div style={{ marginTop: "1.25rem", textAlign: "center" }}>
-            <p style={{ fontSize: "0.875rem", color: "#64748b", marginBottom: "0.5rem" }}>
-              Didn&apos;t receive the code?
-            </p>
-            <button
-              onClick={handleResend}
-              disabled={resending}
-              className="secondary-button"
-              type="button"
-            >
-              {resending ? "Resending…" : "Resend code"}
-            </button>
-            {resendMessage && (
-              <p className="form-message" role="status" style={{ marginTop: "0.5rem" }}>
-                {resendMessage}
+          <div className={styles.intro}>
+            <p className={styles.eyebrow}>Email verification</p>
+            <h1 id="verification-heading" className={styles.heading}>
+              {isSuccess ? "Your account is active" : "Enter verification code"}
+            </h1>
+            {!isSuccess && (
+              <p className={styles.subtext}>
+                Check your inbox for a 6-digit code from TalentAI. It expires in about 10 minutes.
               </p>
             )}
           </div>
-        )}
 
-        {isSuccess && redirectTo ? (
-          <Link className="secondary-link" href={redirectTo}>
-            {redirectTo === "/onboarding" ? "Continue to onboarding" : "Continue to sign in"}
-          </Link>
-        ) : (
-          <Link className="secondary-link" href={returnHref}>
-            {pendingRole === "candidate" ? "Go to sign in" : "Return to registration"}
-          </Link>
-        )}
-      </section>
+          {state.message && (
+            <p
+              className={`${styles.formMessage} ${
+                state.status === "error" ? styles.formMessageError : styles.formMessageSuccess
+              }`}
+              role="status"
+            >
+              {state.message}
+            </p>
+          )}
+
+          {isSuccess && redirectTo === "/onboarding" && (
+            <p className={`${styles.formMessage} ${styles.formMessageSuccess}`}>Redirecting you to onboarding…</p>
+          )}
+
+          {!isSuccess && (
+            <form className={styles.form} onSubmit={handleSubmit} noValidate>
+              {email && (
+                <p className={styles.subtext}>
+                  We sent a 6-digit code to <strong>{email}</strong>
+                </p>
+              )}
+
+              <div className={styles.otpField}>
+                <span className={styles.otpLabel}>Verification code</span>
+                <div className={styles.otpRow} onPaste={handleOtpPaste}>
+                  {otp.map((digit, index) => (
+                    <input
+                      key={index}
+                      ref={(el) => {
+                        inputRefs.current[index] = el;
+                      }}
+                      className={`${styles.otpInput} ${digit ? styles.otpInputFilled : ""}`}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => handleOtpChange(index, e.target.value)}
+                      onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                      aria-label={`OTP digit ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <button
+                className={styles.primaryButton}
+                type="submit"
+                disabled={state.status === "loading"}
+              >
+                {state.status === "loading" && <span className={styles.spinner} />}
+                {state.status === "loading" ? "Verifying…" : "Verify code"}
+              </button>
+            </form>
+          )}
+
+          {!isSuccess && (
+            <div style={{ marginTop: "1rem" }}>
+              <p className={styles.subtext} style={{ marginBottom: "0.55rem" }}>
+                Didn&apos;t receive the code?
+              </p>
+              <button
+                onClick={handleResend}
+                disabled={resending}
+                className={styles.secondaryButton}
+                type="button"
+              >
+                {resending ? "Resending…" : "Resend code"}
+              </button>
+              {resendMessage && (
+                <p className={styles.formMessage} role="status" style={{ marginTop: "0.55rem" }}>
+                  {resendMessage}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className={styles.footer}>
+            {isSuccess && redirectTo ? (
+              <p>
+                <Link href={redirectTo}>
+                  {redirectTo === "/onboarding" ? "Continue to onboarding" : "Continue to sign in"}
+                </Link>
+              </p>
+            ) : (
+              <p>
+                <Link href={returnHref}>
+                  {pendingRole === "candidate" ? "Go to sign in" : "Return to registration"}
+                </Link>
+              </p>
+            )}
+          </div>
+        </section>
+
+        <AuthAside slides={VERIFY_SLIDES} ariaLabel="Email verification help" />
+      </div>
     </main>
   );
 }

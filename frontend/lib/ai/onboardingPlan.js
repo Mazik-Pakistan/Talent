@@ -66,7 +66,7 @@ export function buildOnboardingPlan({ accessToken, onSectionSaved, requestBankSc
         const found = [];
         if (personal.current_address || personal.address_line1) found.push("address");
         if (personal.national_id) found.push("national ID");
-        if (personal.alternate_phone) found.push("alternate phone");
+        if (personal.alternate_phone) found.push("alternate contact");
         ctx.log(found.length ? `Found your ${found.join(", ")}.` : "No prior personal details on file.");
         await ctx.think("Candidate profile read.", 420);
       },
@@ -152,8 +152,8 @@ export function buildOnboardingPlan({ accessToken, onSectionSaved, requestBankSc
              
             const phoneAnswer = await ctx.ask({
               fieldKey: "emergency.phone",
-              question: `What's ${nameAnswer.value.split(" ")[0]}'s mobile number?`,
-              why: `It has to be a Pakistan mobile number (${PK_MOBILE_HINT}) so payroll and HR can reach them.`,
+              question: `What's ${nameAnswer.value.split(" ")[0]}'s contact number?`,
+              why: `It has to be a Pakistan contact number (${PK_MOBILE_HINT}) so payroll and HR can reach them.`,
               placeholder: PK_MOBILE_HINT,
             });
             if (isValidPkMobile(phoneAnswer.value)) {
@@ -161,7 +161,7 @@ export function buildOnboardingPlan({ accessToken, onSectionSaved, requestBankSc
             } else {
               ctx.notify({
                 tone: "error",
-                message: `That doesn't look like a Pakistan mobile number. Expected ${PK_MOBILE_HINT}.`,
+                message: `That doesn't look like a Pakistan contact number. Expected ${PK_MOBILE_HINT}.`,
               });
             }
           }
@@ -386,15 +386,6 @@ export function buildOnboardingPlan({ accessToken, onSectionSaved, requestBankSc
           });
         }
 
-        const taxId = firstNonEmpty(personal.national_id, idFields.cnic_number);
-        if (taxId) {
-          employment.tax_id = await ctx.type("employment.tax_id", taxId, {
-            source: idFields.cnic_number && !personal.national_id ? "governmentId" : "candidateProfile",
-            confidence: 0.78,
-            note: "Salaried employees in Pakistan normally use their CNIC as their tax ID. Replace it if you have a separate NTN.",
-          });
-        }
-
         await ctx.think("I can't guess an IBAN — that has to come off a real document.", 820);
         const choice = await ctx.ask({
           question: "Want me to read your account details off a cheque or bank letter?",
@@ -452,7 +443,6 @@ const BANK_FIELD_ORDER = [
   ["branch", "Branch"],
   ["branch_code", "Branch code"],
   ["swift_code", "SWIFT code"],
-  ["tax_id", "Tax ID"],
 ];
 
 const PK_IBAN = /^PK\d{2}[A-Z]{4}\d{16}$/;
@@ -513,7 +503,6 @@ async function applyBankResult(ctx, result, currentEmployment, onSectionSaved) {
     resolved.bank_name &&
     resolved.account_holder_name &&
     resolved.account_number &&
-    resolved.tax_id &&
     resolved.branch &&
     resolved.branch_code;
 

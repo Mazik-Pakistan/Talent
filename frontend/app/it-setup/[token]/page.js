@@ -598,7 +598,7 @@ export default function ItSetupPublicPage() {
           <p><strong>Designation</strong>{employee.job_title || "—"}</p>
           <p><strong>Department</strong>{employee.department || "—"}</p>
           <p><strong>Personal email</strong>{employee.personal_email || "—"}</p>
-          <p><strong>Phone</strong>{employee.phone || "—"}</p>
+          <p><strong>Contact</strong>{employee.phone || "—"}</p>
           <p><strong>Location</strong>{employee.office_location || "—"}</p>
           <p><strong>Start date</strong>{employee.start_date || "—"}</p>
           <p style={{ gridColumn: "1 / -1" }}>

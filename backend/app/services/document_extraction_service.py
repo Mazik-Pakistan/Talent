@@ -73,7 +73,6 @@ IBAN_TEXT_PATTERN = re.compile(r"\bPK\s?\d{2}(?:[ -]?[A-Z0-9]){16,20}\b", re.I)
 ACCOUNT_NUMBER_PATTERN = re.compile(r"\b\d[\d-]{7,23}\d\b")
 SWIFT_PATTERN = re.compile(r"\b[A-Z]{4}PK[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b")
 BRANCH_CODE_PATTERN = re.compile(r"\b(?:branch\s*(?:code|#|no\.?)\s*[:\-]?\s*)(\d{2,6})\b", re.I)
-NTN_PATTERN = re.compile(r"\b(?:ntn|tax\s*(?:id|number))\s*[:\-]?\s*([\d-]{6,15})\b", re.I)
 
 BANK_DOCUMENT_HINTS = (
     "iban",
@@ -126,7 +125,6 @@ BANK_FIELD_KEYS = (
     "branch",
     "branch_code",
     "swift_code",
-    "tax_id",
 )
 
 
@@ -921,10 +919,6 @@ Document Text:
         if swift_match:
             fields["swift_code"] = swift_match.group(0)
 
-        ntn_match = NTN_PATTERN.search(text)
-        if ntn_match:
-            fields["tax_id"] = ntn_match.group(1)
-
         is_bank_document = bool(
             fields["iban"] or fields["bank_name"] or any(hint in lower for hint in BANK_DOCUMENT_HINTS)
         )
@@ -980,7 +974,6 @@ Never guess an IBAN or account number.
 - branch: branch name or address
 - branch_code: numeric branch code
 - swift_code: SWIFT/BIC code
-- tax_id: NTN / tax number if printed
 
 For every field also return a confidence between 0.0 and 1.0 reflecting how
 clearly it was printed and how sure you are.
@@ -994,7 +987,7 @@ Return JSON only:
 {{
   "is_bank_document": true,
   "fields": {{ "bank_name": null, "account_holder_name": null, "account_number": null,
-               "iban": null, "branch": null, "branch_code": null, "swift_code": null, "tax_id": null }},
+               "iban": null, "branch": null, "branch_code": null, "swift_code": null }},
   "confidence": {{ "bank_name": 0.0 }},
   "alternatives": {{ "account_holder_name": [] }}
 }}

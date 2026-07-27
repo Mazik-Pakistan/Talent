@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
+import AuthAside, { REGISTER_SLIDES } from "@/components/auth/AuthAside";
 import { getApiErrorMessage, register } from "@/services/authService";
 import {
   formatPkMobileInput,
@@ -42,9 +43,9 @@ function validateForm(form) {
   }
 
   if (!form.phone.trim()) {
-    errors.phone = "Phone number is required.";
+    errors.phone = "Contact is required.";
   } else if (!isValidPkMobile(form.phone)) {
-    errors.phone = `Enter a valid Pakistani mobile number (${PK_MOBILE_HINT}).`;
+    errors.phone = `Enter a valid Pakistani contact number (${PK_MOBILE_HINT}).`;
   }
 
   if (!form.password) {
@@ -181,6 +182,7 @@ export default function RegisterPage() {
               onBlur={handleBlur}
               autoComplete="name"
               placeholder="Jane Doe"
+              required
             />
             <FormField
               delay="100ms"
@@ -194,10 +196,11 @@ export default function RegisterPage() {
               autoComplete="email"
               hint="Use your work email address."
               placeholder="jane@company.com"
+              required
             />
             <FormField
               delay="140ms"
-              label="Phone number"
+              label="Contact"
               name="phone"
               type="tel"
               value={form.phone}
@@ -207,10 +210,11 @@ export default function RegisterPage() {
               autoComplete="tel"
               hint={PK_MOBILE_HINT}
               placeholder="0300-1234567"
+              required
             />
 
             <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: "180ms" }}>
-              <span>Password</span>
+              <span>Password <span style={{ color: "#b42318" }}>*</span></span>
               <span className={styles.passwordControl}>
                 <input
                   className={styles.input}
@@ -282,39 +286,25 @@ export default function RegisterPage() {
           <p className={styles.footer}>Already have an account? <Link href="/login">Sign in</Link></p>
         </section>
 
-        <aside className={styles.aside} aria-label="Talent platform introduction">
-          <div>
-            <p className={styles.asideEyebrow}>Mazik Global</p>
-            <h2 className={styles.asideHeading}>People operations, made more connected.</h2>
-            <p className={styles.asideText}>Talent gives recruitment teams a clear, secure path from candidate selection to successful onboarding.</p>
-          </div>
-
-          <div>
-            <div className={styles.metricCard}>
-              <strong>Secure by design</strong>
-              <span>Email verification protects every recruiter account.</span>
-            </div>
-            <div className={styles.dotsRow} aria-hidden="true">
-              <span className={styles.dot} />
-              <span className={`${styles.dot} ${styles.dotActive}`} />
-              <span className={styles.dot} />
-            </div>
-          </div>
-        </aside>
+        <AuthAside slides={REGISTER_SLIDES} ariaLabel="Talent platform introduction" />
       </div>
     </main>
   );
 }
 
-function FormField({ label, name, type = "text", value, error, hint, onChange, onBlur, autoComplete, placeholder, delay }) {
+function FormField({ label, name, type = "text", value, error, hint, onChange, onBlur, autoComplete, placeholder, delay, required = false }) {
   const isTouched = value !== "" || error;
   return (
     <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: delay }}>
-      <span>{label}</span>
+      <span>
+        {label}
+        {required ? <span style={{ color: "#b42318", marginLeft: 4 }}>*</span> : null}
+      </span>
       <input
         className={styles.input}
         aria-invalid={isTouched ? Boolean(error) : undefined}
         aria-describedby={error ? `${name}-error` : undefined}
+        aria-required={required || undefined}
         name={name}
         type={type}
         value={value}
@@ -322,6 +312,7 @@ function FormField({ label, name, type = "text", value, error, hint, onChange, o
         onBlur={onBlur}
         autoComplete={autoComplete}
         placeholder={placeholder}
+        required={required}
       />
       {hint && !error && <small className={styles.hint}>{hint}</small>}
       {error && <small className={styles.fieldError} id={`${name}-error`}>⚠ {error}</small>}

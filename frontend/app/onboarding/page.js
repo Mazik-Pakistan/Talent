@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -21,7 +21,14 @@ import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candida
 import { CANDIDATE_STEP_HELP } from "@/lib/ai/candidateFieldHelp";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
 import { openAiAssistantChat } from "@/lib/ai/openAiAssistant";
+import { scrollOcrFieldIntoView, typewriterFill } from "@/lib/ai/typewriterFill";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
+import {
+  BLOOD_GROUP_HINT,
+  BLOOD_GROUP_OPTIONS,
+  confirmBloodGroupSelection,
+  normalizeBloodGroup,
+} from "@/lib/bloodGroup";
 import styles from "./onboarding.module.css";
 
 const STEPS = [
@@ -76,7 +83,7 @@ const emptyPersonal = {
   gender: "prefer_not_to_say",
   nationality: "Pakistani",
   marital_status: "single",
-  blood_group: "N/A", // changed from "unknown"
+  blood_group: "N/A",
   national_id: "",
   father_name: "",
   id_issue_date: "",
@@ -164,11 +171,13 @@ function OnboardingContent() {
   const [extractionPreview, setExtractionPreview] = useState(null);
   const [documentVerification, setDocumentVerification] = useState(null);
   const [autoFilledKeys, setAutoFilledKeys] = useState([]);
+  const [ocrTypingKey, setOcrTypingKey] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [toast, setToast] = useState(null);
   const [pendingReplace, setPendingReplace] = useState(null);
   const [scanPulse, setScanPulse] = useState(false);
   const [otherSelections, setOtherSelections] = useState({ country: false, city: false, state: false, institutions: {} });
+  const ocrFillAbortRef = useRef(null);
 
   const universityOptions = useMemo(() => UNIVERSITIES_BY_CITY[personal.city] || [], [personal.city]);
   const steps = useMemo(() => (isEditMode ? STEPS.filter((s) => s.id !== "submit") : STEPS), [isEditMode]);
@@ -215,7 +224,11 @@ function OnboardingContent() {
         try {
           const draft = JSON.parse(localStorage.getItem(draftStorageKey()) || "null");
           if (draft?.personal && isPersonalIncomplete(data.onboarding?.personal)) {
-            setPersonal((prev) => ({ ...prev, ...draft.personal }));
+            setPersonal((prev) => ({
+              ...prev,
+              ...draft.personal,
+              blood_group: normalizeBloodGroup(draft.personal.blood_group ?? prev.blood_group),
+            }));
             if (draft.govDocs?.length) setGovDocs(draft.govDocs);
           }
         } catch {
@@ -259,6 +272,7 @@ function OnboardingContent() {
       setPersonal({
         ...emptyPersonal,
         ...p,
+        blood_group: normalizeBloodGroup(p.blood_group),
         current_address: p.current_address || p.address_line1 || "",
         permanent_address: p.permanent_address || p.address_line2 || p.current_address || p.address_line1 || "",
         first_name: p.first_name || "",
@@ -332,7 +346,32 @@ function OnboardingContent() {
     return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
   }
 
-  function applyCnicOcrFill(ocrResult, index = 0, fileMeta = null) {
+  function beginOcrFill() {
+    ocrFillAbortRef.current?.abort();
+    const controller = new AbortController();
+    ocrFillAbortRef.current = controller;
+    setAutoFilledKeys([]);
+    setOcrTypingKey(null);
+    return controller;
+  }
+
+  function ocrFillHandlers(signal) {
+    return {
+      signal,
+      onFieldStart: (key) => {
+        setOcrTypingKey(key);
+        setAutoFilledKeys((prev) => {
+          const next = prev.includes(key) ? prev : [...prev, key];
+          if (key === "national_id" && !next.includes("document_number")) next.push("document_number");
+          return next;
+        });
+        scrollOcrFieldIntoView(key);
+      },
+      onFieldDone: () => setOcrTypingKey(null),
+    };
+  }
+
+  async function applyCnicOcrFill(ocrResult, index = 0, fileMeta = null) {
     if (!ocrResult || ocrResult.status !== "completed" || ocrResult.accepted === false) return;
     const fields = ocrResult.fields || {};
     const first = fields.first_name || (fields.name || fields.full_name || "").toString().split(/\s+/)[0] || "";
@@ -352,6 +391,8 @@ function OnboardingContent() {
       normalizeDateForInput(fields.issue_date || fields.id_issue_date || "") || fields.issue_date || "";
     const expiryDate =
       normalizeDateForInput(fields.expiry_date || fields.id_expiry_date || "") || fields.expiry_date || "";
+    const nationality = fields.nationality || "";
+    const fatherName = fields.father_name || "";
 
     const nextPersonal = {
       ...personal,
@@ -359,10 +400,10 @@ function OnboardingContent() {
       last_name: last || "",
       date_of_birth: dateOfBirth || "",
       gender: gender || personal.gender || "prefer_not_to_say",
-      nationality: fields.nationality || personal.nationality || "Pakistani",
+      nationality: nationality || personal.nationality || "Pakistani",
       marital_status: marital || personal.marital_status || "single",
       national_id: idNumber || "",
-      father_name: fields.father_name || "",
+      father_name: fatherName || "",
       id_issue_date: issueDate || "",
       id_expiry_date: expiryDate || "",
     };
@@ -377,59 +418,151 @@ function OnboardingContent() {
       file_url: fileMeta?.file_url || nextGovDocs[index]?.file_url || null,
     };
 
-    setPersonal(nextPersonal);
-    setGovDocs(nextGovDocs);
+    // File meta + empty typed fields so the user watches AI write them in.
+    setGovDocs((current) => {
+      const next = [...current];
+      next[index] = {
+        ...next[index],
+        ...(fileMeta || {}),
+        doc_type: "cnic",
+        document_number: "",
+        file_name: fileMeta?.file_name || next[index]?.file_name || null,
+        file_url: fileMeta?.file_url || next[index]?.file_url || null,
+      };
+      return next;
+    });
+    setPersonal((prev) => ({
+      ...prev,
+      first_name: "",
+      last_name: "",
+      date_of_birth: "",
+      national_id: "",
+      father_name: "",
+      id_issue_date: "",
+      id_expiry_date: "",
+      ...(nationality ? { nationality: "" } : {}),
+    }));
     setScanPulse(false);
     setFieldErrors({});
 
-    const immediateFilled = [];
-    if (first) immediateFilled.push("first_name");
-    if (last) immediateFilled.push("last_name");
-    if (dateOfBirth) immediateFilled.push("date_of_birth");
-    if (gender) immediateFilled.push("gender");
-    if (fields.nationality) immediateFilled.push("nationality");
-    if (marital) immediateFilled.push("marital_status");
-    if (idNumber) immediateFilled.push("national_id", "document_number");
-    if (fields.father_name) immediateFilled.push("father_name");
-    if (issueDate) immediateFilled.push("id_issue_date");
-    if (expiryDate) immediateFilled.push("id_expiry_date");
-    setAutoFilledKeys(immediateFilled);
+    const controller = beginOcrFill();
+    const entries = [
+      first && {
+        key: "first_name",
+        value: first,
+        apply: (v) => setPersonal((prev) => ({ ...prev, first_name: v })),
+      },
+      last && {
+        key: "last_name",
+        value: last,
+        apply: (v) => setPersonal((prev) => ({ ...prev, last_name: v })),
+      },
+      fatherName && {
+        key: "father_name",
+        value: fatherName,
+        apply: (v) => setPersonal((prev) => ({ ...prev, father_name: v })),
+      },
+      idNumber && {
+        key: "national_id",
+        value: idNumber,
+        apply: (v) => {
+          setPersonal((prev) => ({ ...prev, national_id: v }));
+          setGovDocs((current) => {
+            const next = [...current];
+            next[index] = { ...next[index], document_number: v };
+            return next;
+          });
+        },
+      },
+      dateOfBirth && {
+        key: "date_of_birth",
+        value: dateOfBirth,
+        apply: (v) => setPersonal((prev) => ({ ...prev, date_of_birth: v })),
+      },
+      gender && {
+        key: "gender",
+        value: gender,
+        mode: "instant",
+        apply: (v) => setPersonal((prev) => ({ ...prev, gender: v })),
+      },
+      nationality && {
+        key: "nationality",
+        value: nationality,
+        apply: (v) => setPersonal((prev) => ({ ...prev, nationality: v })),
+      },
+      marital && {
+        key: "marital_status",
+        value: marital,
+        mode: "instant",
+        apply: (v) => setPersonal((prev) => ({ ...prev, marital_status: v })),
+      },
+      issueDate && {
+        key: "id_issue_date",
+        value: issueDate,
+        apply: (v) => setPersonal((prev) => ({ ...prev, id_issue_date: v })),
+      },
+      expiryDate && {
+        key: "id_expiry_date",
+        value: expiryDate,
+        apply: (v) => setPersonal((prev) => ({ ...prev, id_expiry_date: v })),
+      },
+    ].filter(Boolean);
+
+    await typewriterFill(entries, ocrFillHandlers(controller.signal));
+    if (controller.signal.aborted) return;
+
+    setPersonal(nextPersonal);
+    setGovDocs(nextGovDocs);
+    setOcrTypingKey(null);
     void savePersonalDraft(nextPersonal, nextGovDocs);
   }
 
   // Clear fill highlight after the animation finishes.
   useEffect(() => {
-    if (!autoFilledKeys.length) return undefined;
+    if (!autoFilledKeys.length || ocrTypingKey) return undefined;
     const timer = window.setTimeout(() => setAutoFilledKeys([]), 4200);
     return () => window.clearTimeout(timer);
-  }, [autoFilledKeys]);
+  }, [autoFilledKeys, ocrTypingKey]);
+
+  useEffect(() => () => ocrFillAbortRef.current?.abort(), []);
 
   function fillAnimProps(key) {
     const i = autoFilledKeys.indexOf(key);
-    if (i < 0) return {};
-    return { fillAnim: true, fillDelay: Math.min(i, 12) * 85 };
+    if (i < 0 && ocrTypingKey !== key) return { ocrKey: key };
+    return {
+      ocrKey: key,
+      fillAnim: true,
+      fillDelay: 0,
+      ocrTyping: ocrTypingKey === key,
+    };
   }
 
   function fillAnimLabelClass(key) {
-    return autoFilledKeys.includes(key) ? styles.fieldFillAnim : "";
+    const classes = [];
+    if (autoFilledKeys.includes(key) || ocrTypingKey === key) classes.push(styles.fieldFillAnim);
+    if (ocrTypingKey === key) classes.push(styles.fieldOcrTyping);
+    return classes.join(" ");
   }
 
   function fillAnimLabelStyle(key) {
-    const i = autoFilledKeys.indexOf(key);
-    if (i < 0) return undefined;
-    return { animationDelay: `${Math.min(i, 12) * 85}ms` };
+    if (!autoFilledKeys.includes(key) && ocrTypingKey !== key) return undefined;
+    return undefined;
   }
 
-  function autoFillFromOCR(ocrResult, purpose, index) {
+  async function autoFillFromOCR(ocrResult, purpose, index) {
     if (!ocrResult || ocrResult.status !== "completed" || ocrResult.accepted === false) return;
     const { category, fields } = ocrResult;
     if (!fields) return;
-    const filled = [];
 
     if (purpose === "government_doc" && category === "cnic") {
-      // Legacy path — prefer applyCnicOcrFill from upload handler.
       return applyCnicOcrFill(ocrResult, index);
-    } else if (purpose === "resume" && category === "resume") {
+    }
+
+    const controller = beginOcrFill();
+    const signal = controller.signal;
+    const handlers = ocrFillHandlers(signal);
+
+    if (purpose === "resume" && category === "resume") {
       const first = fields.first_name || (fields.full_name || "").toString().split(/\s+/)[0] || "";
       const last =
         fields.last_name ||
@@ -439,92 +572,175 @@ function OnboardingContent() {
           .slice(1)
           .join(" ") ||
         "";
-
-      setPersonal((prev) => {
-        const next = { ...prev };
-        if (first && !prev.first_name) {
-          next.first_name = first;
-          filled.push("first_name");
-        }
-        if (last && !prev.last_name) {
-          next.last_name = last;
-          filled.push("last_name");
-        }
-        if (fields.address && !prev.current_address) {
-          next.current_address = fields.address;
-          filled.push("current_address");
-        }
-        const dateOfBirth = normalizeDateForInput(fields.date_of_birth);
-        if (dateOfBirth && !prev.date_of_birth) {
-          next.date_of_birth = dateOfBirth;
-          filled.push("date_of_birth");
-        }
-        return next;
-      });
-
+      const dateOfBirth = normalizeDateForInput(fields.date_of_birth);
+      const address = fields.address || "";
       const summary =
         fields.professional_summary ||
         [
           fields.full_name ? `Name: ${fields.full_name}` : "",
           fields.email ? `Email: ${fields.email}` : "",
-          fields.phone_number ? `Phone: ${fields.phone_number}` : "",
+          fields.phone_number ? `Contact: ${fields.phone_number}` : "",
           fields.linkedin ? `LinkedIn: ${fields.linkedin}` : "",
           fields.github ? `GitHub: ${fields.github}` : "",
           fields.portfolio ? `Portfolio: ${fields.portfolio}` : "",
         ]
           .filter(Boolean)
           .join(" | ");
+      const tech = joinList(fields.technical_skills || fields.skills);
+      const soft = joinList(fields.soft_skills);
+      const certs = Array.isArray(fields.certifications)
+        ? fields.certifications.map((c) =>
+            typeof c === "string"
+              ? { name: c, document_url: null, expiry_date: "" }
+              : { name: c?.name || "", document_url: null, expiry_date: "" }
+          )
+        : null;
 
-      if (summary) {
-        setResume((prev) => ({ ...prev, summary: prev.summary || summary }));
-        filled.push("summary");
+      const personalSnapshot = personal;
+      const skillsSnapshot = skills;
+      const resumeSnapshot = resume;
+      const educationSnapshot = educationEntries;
+
+      const entries = [];
+      if (first && !personalSnapshot.first_name) {
+        entries.push({
+          key: "first_name",
+          value: first,
+          apply: (v) => setPersonal((prev) => ({ ...prev, first_name: v })),
+        });
+      }
+      if (last && !personalSnapshot.last_name) {
+        entries.push({
+          key: "last_name",
+          value: last,
+          apply: (v) => setPersonal((prev) => ({ ...prev, last_name: v })),
+        });
+      }
+      if (dateOfBirth && !personalSnapshot.date_of_birth) {
+        entries.push({
+          key: "date_of_birth",
+          value: dateOfBirth,
+          apply: (v) => setPersonal((prev) => ({ ...prev, date_of_birth: v })),
+        });
+      }
+      if (address && !personalSnapshot.current_address) {
+        entries.push({
+          key: "current_address",
+          value: address,
+          apply: (v) => setPersonal((prev) => ({ ...prev, current_address: v })),
+        });
+      }
+      if (summary && !resumeSnapshot.summary) {
+        entries.push({
+          key: "summary",
+          value: summary,
+          apply: (v) => setResume((prev) => ({ ...prev, summary: v })),
+        });
+      }
+      if (tech && !skillsSnapshot.technical_skills) {
+        entries.push({
+          key: "technical_skills",
+          value: tech,
+          apply: (v) => setSkills((prev) => ({ ...prev, technical_skills: v })),
+        });
+      }
+      if (soft && !skillsSnapshot.soft_skills) {
+        entries.push({
+          key: "soft_skills",
+          value: soft,
+          apply: (v) => setSkills((prev) => ({ ...prev, soft_skills: v })),
+        });
       }
 
-      setSkills((prev) => {
-        const tech = joinList(fields.technical_skills || fields.skills);
-        const soft = joinList(fields.soft_skills);
-        const certs = Array.isArray(fields.certifications)
-          ? fields.certifications.map((c) => (typeof c === "string" ? { name: c, document_url: null, expiry_date: "" } : { name: c?.name || "", document_url: null, expiry_date: "" }))
-          : null;
-        const next = { ...prev };
-        if (tech && !prev.technical_skills) {
-          next.technical_skills = tech;
-          filled.push("technical_skills");
-        }
-        if (soft && !prev.soft_skills) {
-          next.soft_skills = soft;
-          filled.push("soft_skills");
-        }
-        // Languages are not shown on this step — skip OCR fill for them.
-        if (certs?.length && (!prev.certifications?.[0]?.name)) {
-          next.certifications = certs;
-          filled.push("certifications");
-        }
-        return next;
-      });
+      await typewriterFill(entries, handlers);
+      if (signal.aborted) return;
+
+      if (certs?.length && !skillsSnapshot.certifications?.[0]?.name) {
+        setSkills((prev) => ({ ...prev, certifications: certs }));
+        setAutoFilledKeys((prev) => (prev.includes("certifications") ? prev : [...prev, "certifications"]));
+      }
 
       if (Array.isArray(fields.education) && fields.education.length) {
-        const mapped = fields.education.map((ed) => {
-          if (typeof ed === "string") {
-            return { ...emptyEducationEntry, institution: ed };
+        const isEmpty =
+          educationSnapshot.length === 1 &&
+          !educationSnapshot[0].institution &&
+          !educationSnapshot[0].degree;
+        if (isEmpty) {
+          const mapped = fields.education.map((ed) => {
+            if (typeof ed === "string") {
+              return { ...emptyEducationEntry, institution: ed };
+            }
+            return {
+              ...emptyEducationEntry,
+              institution: ed.institute || ed.institution || "",
+              degree: ed.degree || "",
+              field_of_study: ed.major || ed.program || ed.field_of_study || "",
+              year_completed: String(ed.year || ed.passing_year || "").slice(0, 4),
+              cgpa_or_percentage: ed.cgpa || ed.gpa || ed.percentage || "",
+            };
+          });
+          // Type first education row field-by-field, then snap remaining rows.
+          const firstEd = mapped[0];
+          const eduEntries = [
+            firstEd.institution && {
+              key: "edu_0_institution",
+              value: firstEd.institution,
+              apply: (v) =>
+                setEducationEntries((prev) => {
+                  const next = [...prev];
+                  next[0] = { ...(next[0] || emptyEducationEntry), institution: v };
+                  return next;
+                }),
+            },
+            firstEd.degree && {
+              key: "edu_0_degree",
+              value: firstEd.degree,
+              apply: (v) =>
+                setEducationEntries((prev) => {
+                  const next = [...prev];
+                  next[0] = { ...(next[0] || emptyEducationEntry), degree: v };
+                  return next;
+                }),
+            },
+            firstEd.field_of_study && {
+              key: "edu_0_field_of_study",
+              value: firstEd.field_of_study,
+              apply: (v) =>
+                setEducationEntries((prev) => {
+                  const next = [...prev];
+                  next[0] = { ...(next[0] || emptyEducationEntry), field_of_study: v };
+                  return next;
+                }),
+            },
+            firstEd.year_completed && {
+              key: "edu_0_year_completed",
+              value: firstEd.year_completed,
+              apply: (v) =>
+                setEducationEntries((prev) => {
+                  const next = [...prev];
+                  next[0] = { ...(next[0] || emptyEducationEntry), year_completed: v };
+                  return next;
+                }),
+            },
+            firstEd.cgpa_or_percentage && {
+              key: "edu_0_cgpa_or_percentage",
+              value: firstEd.cgpa_or_percentage,
+              apply: (v) =>
+                setEducationEntries((prev) => {
+                  const next = [...prev];
+                  next[0] = { ...(next[0] || emptyEducationEntry), cgpa_or_percentage: v };
+                  return next;
+                }),
+            },
+          ].filter(Boolean);
+
+          setEducationEntries([{ ...emptyEducationEntry }]);
+          await typewriterFill(eduEntries, handlers);
+          if (!signal.aborted) {
+            setEducationEntries(mapped);
+            setAutoFilledKeys((prev) => (prev.includes("education") ? prev : [...prev, "education"]));
           }
-          return {
-            ...emptyEducationEntry,
-            institution: ed.institute || ed.institution || "",
-            degree: ed.degree || "",
-            field_of_study: ed.major || ed.program || ed.field_of_study || "",
-            year_completed: String(ed.year || ed.passing_year || "").slice(0, 4),
-            cgpa_or_percentage: ed.cgpa || ed.gpa || ed.percentage || "",
-          };
-        });
-        setEducationEntries((prev) => {
-          const isEmpty = prev.length === 1 && !prev[0].institution && !prev[0].degree;
-          if (isEmpty) {
-            filled.push("education");
-            return mapped;
-          }
-          return prev;
-        });
+        }
       }
     } else if (purpose === "education_cert" && (category === "academic_transcript" || category === "certificate")) {
       const yearRaw = fields.passing_year || fields.year || fields.issue_date || "";
@@ -541,29 +757,69 @@ function OnboardingContent() {
           "",
       };
       const cur = educationEntries[index] || { ...emptyEducationEntry };
-      const merged = {
-        ...cur,
-        institution: cur.institution || mapped.institution,
-        board_university: "",
-        degree: cur.degree || mapped.degree,
-        field_of_study: cur.field_of_study || mapped.field_of_study,
-        year_completed: cur.year_completed || mapped.year_completed,
-        cgpa_or_percentage: cur.cgpa_or_percentage || mapped.cgpa_or_percentage,
-      };
-      setEducationEntries((prev) => {
-        const next = [...prev];
-        next[index] = merged;
-        return next;
-      });
       const prefix = `edu_${index}_`;
-      if (!cur.institution && merged.institution) filled.push(`${prefix}institution`);
-      if (!cur.degree && merged.degree) filled.push(`${prefix}degree`);
-      if (!cur.field_of_study && merged.field_of_study) filled.push(`${prefix}field_of_study`);
-      if (!cur.year_completed && merged.year_completed) filled.push(`${prefix}year_completed`);
-      if (!cur.cgpa_or_percentage && merged.cgpa_or_percentage) filled.push(`${prefix}cgpa_or_percentage`);
+      const entries = [
+        !cur.institution &&
+          mapped.institution && {
+            key: `${prefix}institution`,
+            value: mapped.institution,
+            apply: (v) =>
+              setEducationEntries((prev) => {
+                const next = [...prev];
+                next[index] = { ...(next[index] || emptyEducationEntry), institution: v, board_university: "" };
+                return next;
+              }),
+          },
+        !cur.degree &&
+          mapped.degree && {
+            key: `${prefix}degree`,
+            value: mapped.degree,
+            apply: (v) =>
+              setEducationEntries((prev) => {
+                const next = [...prev];
+                next[index] = { ...(next[index] || emptyEducationEntry), degree: v };
+                return next;
+              }),
+          },
+        !cur.field_of_study &&
+          mapped.field_of_study && {
+            key: `${prefix}field_of_study`,
+            value: mapped.field_of_study,
+            apply: (v) =>
+              setEducationEntries((prev) => {
+                const next = [...prev];
+                next[index] = { ...(next[index] || emptyEducationEntry), field_of_study: v };
+                return next;
+              }),
+          },
+        !cur.year_completed &&
+          mapped.year_completed && {
+            key: `${prefix}year_completed`,
+            value: mapped.year_completed,
+            apply: (v) =>
+              setEducationEntries((prev) => {
+                const next = [...prev];
+                next[index] = { ...(next[index] || emptyEducationEntry), year_completed: v };
+                return next;
+              }),
+          },
+        !cur.cgpa_or_percentage &&
+          mapped.cgpa_or_percentage && {
+            key: `${prefix}cgpa_or_percentage`,
+            value: mapped.cgpa_or_percentage,
+            apply: (v) =>
+              setEducationEntries((prev) => {
+                const next = [...prev];
+                next[index] = { ...(next[index] || emptyEducationEntry), cgpa_or_percentage: v };
+                return next;
+              }),
+          },
+      ].filter(Boolean);
+
+      await typewriterFill(entries, handlers);
     }
 
-    setAutoFilledKeys(filled);
+    if (!signal.aborted) setOcrTypingKey(null);
   }
 
   const stepIndex = useMemo(() => steps.findIndex((item) => item.id === step), [step, steps]);
@@ -908,7 +1164,7 @@ function OnboardingContent() {
       } else if (purpose === "government_doc") {
         const fileMeta = { file_name: data.file_name, file_url: data.file_url, doc_type: "cnic" };
         if (willAutofillCnic) {
-          applyCnicOcrFill(ocr, index, fileMeta);
+          void applyCnicOcrFill(ocr, index, fileMeta);
           setExtractionPreview(ocr);
           setMessage(
             "National ID scanned successfully — fields were pre-filled and saved. Review and finish the remaining fields."
@@ -952,13 +1208,13 @@ function OnboardingContent() {
       }
 
       if (ocr && ocr.status === "completed" && ocr.accepted !== false) {
-        autoFillFromOCR(ocr, purpose, index);
+        void autoFillFromOCR(ocr, purpose, index);
         setExtractionPreview(ocr);
         setMessage("File uploaded and fields updated where available.");
         showToast("success", "Document uploaded.");
       } else if (ocr && softOcr) {
         if (ocr.fields && Object.keys(ocr.fields).length) {
-          autoFillFromOCR({ ...ocr, accepted: true, status: "completed", category: ocr.category || "academic_transcript" }, purpose, index);
+          void autoFillFromOCR({ ...ocr, accepted: true, status: "completed", category: ocr.category || "academic_transcript" }, purpose, index);
         }
         const failHint =
           ocr.rejection_message ||
@@ -1490,6 +1746,7 @@ function OnboardingContent() {
                                 className={`${styles.field} ${fieldErrors.gender ? styles.fieldError : ""} ${fillAnimLabelClass("gender")}`}
                                 style={fillAnimLabelStyle("gender")}
                                 data-field-error={fieldErrors.gender ? "true" : undefined}
+                                data-ocr-key="gender"
                               >
                                 <span>Gender <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                 <select value={personal.gender} onChange={(e) => { setPersonal({ ...personal, gender: e.target.value }); setFieldErrors((prev) => ({ ...prev, gender: false })); }}>
@@ -1503,6 +1760,7 @@ function OnboardingContent() {
                               <label
                                 className={`${styles.field} ${fillAnimLabelClass("marital_status")}`}
                                 style={fillAnimLabelStyle("marital_status")}
+                                data-ocr-key="marital_status"
                               >
                                 <span>Marital status <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                 <select value={personal.marital_status} onChange={(e) => setPersonal({ ...personal, marital_status: e.target.value })}>
@@ -1515,15 +1773,22 @@ function OnboardingContent() {
                               </label>
                               <label className={styles.field}>
                                 <span>Blood group</span>
-                                <select value={personal.blood_group} onChange={(e) => setPersonal({ ...personal, blood_group: e.target.value })}>
-                                  {["N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((g) => (
+                                <select
+                                  value={normalizeBloodGroup(personal.blood_group)}
+                                  onChange={(e) => {
+                                    const next = confirmBloodGroupSelection(e.target.value, personal.blood_group);
+                                    setPersonal({ ...personal, blood_group: next });
+                                  }}
+                                >
+                                  {BLOOD_GROUP_OPTIONS.map((g) => (
                                     <option key={g} value={g}>{g}</option>
                                   ))}
                                 </select>
+                                <small style={{ color: "var(--text-muted)", fontWeight: 500 }}>{BLOOD_GROUP_HINT}</small>
                               </label>
                               <Field
                                 styles={styles}
-                                label="Alternate Contact Number"
+                                label="Alternate contact"
                                 value={personal.alternate_phone}
                                 onChange={(e) => setPersonal({ ...personal, alternate_phone: e.target.value })}
                               />
@@ -1687,6 +1952,7 @@ function OnboardingContent() {
                                 <label
                                   className={`${styles.field} ${fillAnimLabelClass(`edu_${index}_institution`)}`}
                                   style={fillAnimLabelStyle(`edu_${index}_institution`)}
+                                  data-ocr-key={`edu_${index}_institution`}
                                 >
                                   <span>Institute / University <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                   <select
@@ -1793,6 +2059,7 @@ function OnboardingContent() {
                               <label
                                 className={`${styles.field} ${styles.wide} ${fillAnimLabelClass("summary")}`}
                                 style={fillAnimLabelStyle("summary")}
+                                data-ocr-key="summary"
                               >
                                 <span>Professional summary <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                 <textarea
@@ -1909,9 +2176,9 @@ function OnboardingContent() {
                                 ["Gender", formatReviewValue(personal.gender)],
                                 ["Nationality", personal.nationality],
                                 ["Marital status", formatReviewValue(personal.marital_status)],
-                                ["Blood group", personal.blood_group === "N/A" ? "" : personal.blood_group],
+                                ["Blood group", normalizeBloodGroup(personal.blood_group)],
                                 ["National ID / CNIC", personal.national_id],
-                                ["Alternate Contact Number", personal.alternate_phone],
+                                ["Alternate contact", personal.alternate_phone],
                                 ["ID issue date", personal.id_issue_date],
                                 ["ID expiry date", personal.id_expiry_date],
                                 ["Current address", personal.current_address, true],
@@ -2182,15 +2449,16 @@ function FileUploadField({ styles, label, accept, disabled, onChange, onRemove, 
   );
 }
 
-function Field({ label, name, value, onChange, type = "text", wide, styles, error, hint, required, fillAnim, fillDelay }) {
+function Field({ label, name, value, onChange, type = "text", wide, styles, error, hint, required, fillAnim, fillDelay, ocrKey, ocrTyping }) {
   return (
     <label
-      className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""} ${fillAnim ? styles.fieldFillAnim : ""}`}
+      className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""} ${fillAnim ? styles.fieldFillAnim : ""} ${ocrTyping ? styles.fieldOcrTyping : ""}`}
       style={fillAnim && fillDelay != null ? { animationDelay: `${fillDelay}ms` } : undefined}
       data-field-error={error ? "true" : undefined}
+      data-ocr-key={ocrKey || undefined}
     >
       <span>{label}{required && <span style={{ color: "red", marginLeft: 4 }}>*</span>}</span>
-      <input name={name} type={type} value={value} onChange={onChange} aria-invalid={!!error} />
+      <input name={name} type={type} value={value} onChange={onChange} aria-invalid={!!error} aria-busy={ocrTyping || undefined} />
       {error && <em className={styles.fieldErrorText}>Required</em>}
       {!error && hint ? <small>{hint}</small> : null}
     </label>

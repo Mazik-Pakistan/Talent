@@ -80,6 +80,12 @@ export default function AiField({
       <div className={styles.fieldHead}>
         <label className={styles.fieldLabel} htmlFor={inputId}>
           {label}
+          {required ? (
+            <span className={styles.requiredMark} aria-hidden="true">
+              {" "}
+              *
+            </span>
+          ) : null}
         </label>
         {status && status !== "typing" && ai?.source ? (
           <AiSourceBadge source={ai.source} confidence={ai.confidence} note={ai.note} />
