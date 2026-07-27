@@ -59,40 +59,34 @@ function formatNumberWithCommas(value) {
   if (value === "" || value === null || value === undefined) return "";
   const num = parseFloat(value);
   if (isNaN(num)) return value;
-  // toLocaleString with max 2 decimals, but no min decimals
   return num.toLocaleString("en-US", {
     maximumFractionDigits: 2,
     minimumFractionDigits: 0,
   });
 }
 
-// Strip commas and non-numeric except dot
 function unformatNumber(formatted) {
   return formatted.replace(/,/g, "");
 }
 
 // ------------------ FormattedNumberInput component ------------------
-const FormattedNumberInput = ({ value, onChange, placeholder, style, className, inputMode = "decimal" }) => {
+const FormattedNumberInput = ({ value, onChange, placeholder, style, className }) => {
   const inputRef = useRef(null);
   const [formatted, setFormatted] = useState(formatNumberWithCommas(value));
 
   useEffect(() => {
-    // Sync external value change (e.g., reset)
     setFormatted(formatNumberWithCommas(value));
   }, [value]);
 
   const handleChange = useCallback(
     (e) => {
       const raw = unformatNumber(e.target.value);
-      // Only allow valid numbers (digits and at most one dot)
       if (raw === "" || /^\d*\.?\d*$/.test(raw)) {
         const newFormatted = formatNumberWithCommas(raw);
         const cursor = e.target.selectionStart;
         const diff = newFormatted.length - e.target.value.length;
         setFormatted(newFormatted);
-        onChange(raw); // pass raw to parent
-
-        // Restore cursor position after state update
+        onChange(raw);
         requestAnimationFrame(() => {
           if (inputRef.current) {
             const newPos = cursor + diff;
@@ -109,7 +103,7 @@ const FormattedNumberInput = ({ value, onChange, placeholder, style, className, 
     <input
       ref={inputRef}
       type="text"
-      inputMode={inputMode}
+      inputMode="decimal"
       value={formatted}
       onChange={handleChange}
       placeholder={placeholder}
@@ -118,6 +112,48 @@ const FormattedNumberInput = ({ value, onChange, placeholder, style, className, 
     />
   );
 };
+
+// ------------------ SVG Icon Components ------------------
+const IconCandidate = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--navy)" }}>
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </svg>
+);
+
+const IconRole = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--navy)" }}>
+    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+    <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+  </svg>
+);
+
+const IconCompensation = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--navy)" }}>
+    <line x1="12" y1="1" x2="12" y2="23" />
+    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+  </svg>
+);
+
+const IconBenefits = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--navy)" }}>
+    <polyline points="20 12 20 22 4 22 4 12" />
+    <rect x="2" y="7" width="20" height="5" />
+    <line x1="12" y1="22" x2="12" y2="7" />
+    <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
+    <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
+  </svg>
+);
+
+const IconTerms = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--navy)" }}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" y1="13" x2="8" y2="13" />
+    <line x1="16" y1="17" x2="8" y2="17" />
+    <polyline points="10 9 9 9 8 9" />
+  </svg>
+);
 
 export default function RecruiterInvitePage() {
   const [inviteForm, setInviteForm] = useState(initialInvite);
@@ -324,7 +360,7 @@ export default function RecruiterInvitePage() {
     color: "var(--navy)",
     display: "flex",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
   };
 
   return (
@@ -353,7 +389,8 @@ export default function RecruiterInvitePage() {
             {/* ---------- Candidate card ---------- */}
             <div style={cardStyle}>
               <div style={sectionHeadStyle}>
-                <span style={{ fontSize: 18 }}>👤</span> Candidate
+                <IconCandidate />
+                Candidate
               </div>
               <div className={styles.formGrid}>
                 <label className={styles.field}>
@@ -405,7 +442,8 @@ export default function RecruiterInvitePage() {
             {/* ---------- Role card ---------- */}
             <div style={cardStyle}>
               <div style={sectionHeadStyle}>
-                <span style={{ fontSize: 18 }}>💼</span> Role
+                <IconRole />
+                Role
               </div>
               <div className={styles.formGrid}>
                 <label className={styles.field}>
@@ -488,7 +526,8 @@ export default function RecruiterInvitePage() {
             {/* ---------- Compensation card ---------- */}
             <div style={cardStyle}>
               <div style={sectionHeadStyle}>
-                <span style={{ fontSize: 18 }}>💰</span> Compensation
+                <IconCompensation />
+                Compensation
               </div>
               <div className={styles.formGrid} style={{ marginBottom: 20 }}>
                 <label className={styles.field}>
@@ -657,7 +696,8 @@ export default function RecruiterInvitePage() {
             {/* ---------- Benefits card ---------- */}
             <div style={cardStyle}>
               <div style={sectionHeadStyle}>
-                <span style={{ fontSize: 18 }}>🎁</span> Benefits
+                <IconBenefits />
+                Benefits
               </div>
               <div
                 style={{
@@ -751,7 +791,8 @@ export default function RecruiterInvitePage() {
             {/* ---------- Terms & message card ---------- */}
             <div style={cardStyle}>
               <div style={sectionHeadStyle}>
-                <span style={{ fontSize: 18 }}>📝</span> Terms & message
+                <IconTerms />
+                Terms & message
               </div>
               <div className={styles.formGrid} style={{ gridTemplateColumns: "1fr" }}>
                 <label className={styles.field}>
