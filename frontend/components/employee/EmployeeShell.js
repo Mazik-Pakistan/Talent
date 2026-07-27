@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 
@@ -184,11 +185,22 @@ function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, c
             onClick={toggleSidebar}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-expanded={!sidebarCollapsed}
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}
           >
-            <div className={styles.brandMark}>MZ</div>
-            <div className={styles.brandText}>
-              <div className={styles.p1}>Talent</div>
-              <div className={styles.p2}>Mazik Global Pakistan</div>
+            <div
+              className={styles.brandMark}
+              aria-hidden="true"
+              style={sidebarCollapsed ? { width: 44, maxWidth: 44 } : { width: "100%", maxWidth: 240 }}
+            >
+              <Image
+                src={sidebarCollapsed ? "/mazikglobal-icon.svg" : "/talentai-logo.png"}
+                alt="Mazik Global TalentAI"
+                width={sidebarCollapsed ? 200 : 1664}
+                height={sidebarCollapsed ? 200 : 992}
+                priority
+                style={{ width: "100%", height: "auto", objectFit: "contain" }}
+                sizes="(max-width: 900px) 100vw, 240px"
+              />
             </div>
           </button>
 
@@ -307,3 +319,5 @@ function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, c
     </div>
   );
 }
+
+

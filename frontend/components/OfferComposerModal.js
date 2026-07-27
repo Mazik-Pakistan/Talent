@@ -5,6 +5,37 @@ import { useState } from "react";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import { createOffer, getApiErrorMessage } from "@/services/authService";
 
+const CURRENCIES = [
+  { code: "PKR", label: "PKR — Pakistani Rupee" },
+  { code: "USD", label: "USD — US Dollar" },
+  { code: "EUR", label: "EUR — Euro" },
+  { code: "GBP", label: "GBP — British Pound" },
+  { code: "AED", label: "AED — UAE Dirham" },
+  { code: "SAR", label: "SAR — Saudi Riyal" },
+];
+
+const CURRENCY_LOCALES = {
+  PKR: "en-PK",
+  USD: "en-US",
+  EUR: "de-DE",
+  GBP: "en-GB",
+  AED: "ar-AE",
+  SAR: "ar-SA",
+};
+
+function formatSalary(raw, currency) {
+  const digits = String(raw).replace(/[^0-9]/g, "");
+  if (!digits) return "";
+  const num = parseInt(digits, 10);
+  if (Number.isNaN(num)) return digits;
+  const locale = CURRENCY_LOCALES[currency] || "en-US";
+  return new Intl.NumberFormat(locale).format(num);
+}
+
+function parseSalary(formatted) {
+  return String(formatted).replace(/[^0-9]/g, "");
+}
+
 const initialForm = {
   job_title: "",
   department: "",
@@ -23,11 +54,28 @@ export default function OfferComposerModal({ candidate, onClose, onSent }) {
     job_title: candidate.job_title || "",
     department: candidate.department || "",
   });
+  // salaryDisplay holds the formatted string shown in the input
+  const [salaryDisplay, setSalaryDisplay] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleSalaryChange(e) {
+    const raw = parseSalary(e.target.value);
+    setForm((current) => ({ ...current, monthly_salary: raw }));
+    setSalaryDisplay(raw ? formatSalary(raw, form.currency) : "");
+  }
+
+  function handleCurrencyChange(e) {
+    const next = e.target.value;
+    update("currency", next);
+    // reformat the displayed salary with the new currency locale
+    if (form.monthly_salary) {
+      setSalaryDisplay(formatSalary(form.monthly_salary, next));
+    }
   }
 
   async function handleSubmit(event) {
@@ -110,12 +158,22 @@ export default function OfferComposerModal({ candidate, onClose, onSent }) {
             <input name="start_date" type="date" value={form.start_date} onChange={(e) => update("start_date", e.target.value)} />
           </label>
           <label className="field">
-            <span>Monthly salary (optional)</span>
-            <input name="monthly_salary" type="number" min="0" value={form.monthly_salary} onChange={(e) => update("monthly_salary", e.target.value)} />
+            <span>Currency</span>
+            <select name="currency" value={form.currency} onChange={handleCurrencyChange}>
+              {CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.label}</option>
+              ))}
+            </select>
           </label>
           <label className="field">
-            <span>Currency</span>
-            <input name="currency" value={form.currency} onChange={(e) => update("currency", e.target.value)} />
+            <span>Monthly salary (optional)</span>
+            <input
+              name="monthly_salary"
+              inputMode="numeric"
+              value={salaryDisplay}
+              onChange={handleSalaryChange}
+              placeholder={`e.g. ${form.currency === "PKR" ? "150,000" : "5,000"}`}
+            />
           </label>
           <label className="field wide">
             <span>Personal message (optional)</span>

@@ -203,7 +203,7 @@ function CandidateDashboardContent() {
             <div className={styles.brandMark}>MZ</div>
             <div className={styles.brandText}>
               <div className={styles.p1}>Talent</div>
-              <div className={styles.p2}>Mazik Global Pakistan</div>
+              <div className={styles.p2}></div>
             </div>
           </button>
 
@@ -401,6 +401,11 @@ function CandidateDashboardContent() {
                   >
                     View full checklist
                   </button>
+                  {offer && ["signed", "approved"].includes(offer.status) && (
+                    <button type="button" className={styles.btnGhost} onClick={() => router.push("/offer?from=candidate-dashboard")}>
+                      View Offer Letter
+                    </button>
+                  )}
                 </div>
                 {nextTask ? (
                   <div className={styles.heroRecommend}>
@@ -433,11 +438,9 @@ function CandidateDashboardContent() {
               </div>
             )}
 
-            {offer && ["signed", "approved"].includes(offer.status) && (
-              <button type="button" className={styles.btnPrimary} onClick={() => router.push("/onboarding")}>
-                Continue documents
-              </button>
-            )}
+            {/* Note: View Offer Letter button for signed/approved offers now lives
+                inside the hero action row above, alongside Continue onboarding —
+                keeps it from floating alone with no visual context. */}
 
             {!offer && (
               <div className={styles.banner}>
@@ -454,28 +457,22 @@ function CandidateDashboardContent() {
             {/* Stats */}
             <div className={styles.stats}>
               <StatCard
-                icon={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>}
+                icon={<><path d="m3 7 2 2 4-4" /><path d="M13 6h8" /><path d="m3 17 2 2 4-4" /><path d="M13 18h8" /><path d="M13 12h8" /></>}
                 tone="cyan"
                 value={tasks.length}
                 label="Onboarding tasks"
               />
               <StatCard
-                icon={<><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></>}
+                icon={<><circle cx="12" cy="12" r="9" /><path d="M9 12l2 2 4-4" /></>}
                 tone="green"
                 value={completedCount}
-                label="Completed"
+                label="Task completed"
               />
               <StatCard
-                icon={<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></>}
+                icon={<><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></>}
                 tone="orange"
                 value={offer?.status || "—"}
                 label="Offer status"
-              />
-              <StatCard
-                icon={<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></>}
-                tone="purple"
-                value={Math.max(0, tasks.length - completedCount)}
-                label="Remaining tasks"
               />
             </div>
 
@@ -634,7 +631,7 @@ function CandidateDashboardContent() {
               </div>
             </div>
 
-            <div className={styles.footerNote}>Talent by Mazik Global Pakistan · Candidate Dashboard</div>
+            <div className={styles.footerNote}>Talent by  · Candidate Dashboard</div>
           </div>
         </main>
       </div>
@@ -654,13 +651,13 @@ function Field({ label, value, styles, wide }) {
 function StatCard({ icon, tone, value, label }) {
   return (
     <div className={styles.statCard}>
-      <div className={styles.statTop}>
-        <div className={`${styles.statIcon} ${styles[tone]}`}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{icon}</svg>
-        </div>
+      <div className={`${styles.statIcon} ${styles[tone]}`}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{icon}</svg>
       </div>
-      <div className={styles.statValue}>{value}</div>
-      <div className={styles.statLabel}>{label}</div>
+      <div className={styles.statText}>
+        <div className={styles.statValue}>{value}</div>
+        <div className={styles.statLabel}>{label}</div>
+      </div>
     </div>
   );
 }

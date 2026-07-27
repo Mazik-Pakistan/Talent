@@ -419,7 +419,7 @@ function EmployeeDashboardContent() {
             <div className={styles.brandMark}>MZ</div>
             <div className={styles.brandText}>
               <div className={styles.p1}>Talent</div>
-              <div className={styles.p2}>Mazik Global Pakistan</div>
+              <div className={styles.p2}></div>
             </div>
           </button>
 
@@ -1125,7 +1125,7 @@ function EmployeeDashboardContent() {
               </div>
             </div>
 
-            <div className={styles.footerNote}>Talent by Mazik Global Pakistan · Employee Dashboard</div>
+            <div className={styles.footerNote}>Talent by  · Employee Dashboard</div>
           </div>
         </main>
       </div>
@@ -1173,16 +1173,16 @@ function ModuleCard({ title, desc, icon, styles }) {
 function StatCard({ icon, iconExtra, tone, value, label, sub }) {
   return (
     <div className={styles.statCard}>
-      <div className={styles.statTop}>
-        <div className={`${styles.statIcon} ${styles[tone]}`}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{icon}{iconExtra}</svg>
+      <div className={`${styles.statIcon} ${styles[tone]}`}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{icon}{iconExtra}</svg>
+      </div>
+      <div className={styles.statText}>
+        <div className={styles.statValue}>
+          <AnimatedNumber value={value} />
         </div>
+        <div className={styles.statLabel}>{label}</div>
+        {sub && <div className={styles.statSub}>{sub}</div>}
       </div>
-      <div className={styles.statValue}>
-        <AnimatedNumber value={value} />
-      </div>
-      <div className={styles.statLabel}>{label}</div>
-      {sub && <div className={styles.statSub}>{sub}</div>}
     </div>
   );
 }
@@ -1231,3 +1231,4 @@ function tenureLabel(startDate) {
   const rem = months % 12;
   return rem ? `${years} yr ${rem} mo` : `${years} yr`;
 }
+

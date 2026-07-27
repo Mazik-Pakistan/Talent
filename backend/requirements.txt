@@ -59,3 +59,4 @@ pymupdf                  # PyMuPDF (fitz) — digital & scanned PDF text extract
 python-docx              # Word DOCX paragraph/table text extraction
 easyocr                  # Image OCR (primary engine)
 pytesseract              # Image OCR (fallback when EasyOCR fails)
+openpyxl

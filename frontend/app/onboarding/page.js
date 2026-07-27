@@ -1126,7 +1126,7 @@ function OnboardingContent() {
             <div className={styles.brandMark}>MZ</div>
             <div className={styles.brandText}>
               <div className={styles.p1}>Talent</div>
-              <div className={styles.p2}>Mazik Global Pakistan</div>
+              <div className={styles.p2}></div>
             </div>
           </button>
 

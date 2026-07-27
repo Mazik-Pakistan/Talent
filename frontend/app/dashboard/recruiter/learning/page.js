@@ -1,8 +1,11 @@
 "use client";
 
+import { Suspense } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { useSearchParams } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
@@ -70,7 +73,7 @@ function sourceBadgeClass(source) {
   return "";
 }
 
-export default function RecruiterLearningPage() {
+function LearningPageContent() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState(() => (searchParams.get("tab") === "certificates" ? "certificates" : "catalog"));
   const [pendingAssign, setPendingAssign] = useState(null);
@@ -135,6 +138,14 @@ export default function RecruiterLearningPage() {
       {tab === "certificates" && <CertificatesTab selectedCertificateId={selectedCertificateId} />}
       {tab === "analytics" && <AnalyticsTab />}
     </RecruiterShell>
+  );
+}
+
+export default function RecruiterLearningPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LearningPageContent />
+    </Suspense>
   );
 }
 
