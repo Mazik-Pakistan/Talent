@@ -5,4 +5,6 @@ export { default as AiActivityPanel } from "./AiActivityPanel";
 export { default as AiConfirmCard } from "./AiConfirmCard";
 export { default as AiSaveToast } from "./AiSaveToast";
 export { default as BankSlipScanner } from "./BankSlipScanner";
+export { default as DocumentOcrPanel } from "./DocumentOcrPanel";
+export { default as OcrScanOverlay } from "./OcrScanOverlay";
 export { default as EmployeeAiGuide } from "./EmployeeAiGuide";

@@ -22,6 +22,11 @@ import { CANDIDATE_STEP_HELP } from "@/lib/ai/candidateFieldHelp";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
 import { openAiAssistantChat } from "@/lib/ai/openAiAssistant";
 import { scrollOcrFieldIntoView, typewriterFill } from "@/lib/ai/typewriterFill";
+import OcrScanOverlay, {
+  CNIC_OCR_FIELDS,
+  EDUCATION_OCR_FIELDS,
+  RESUME_OCR_FIELDS,
+} from "@/components/ai-experience/OcrScanOverlay";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
 import {
   BLOOD_GROUP_HINT,
@@ -177,7 +182,9 @@ function OnboardingContent() {
   const [pendingReplace, setPendingReplace] = useState(null);
   const [scanPulse, setScanPulse] = useState(false);
   const [otherSelections, setOtherSelections] = useState({ country: false, city: false, state: false, institutions: {} });
+  const [ocrSession, setOcrSession] = useState(null);
   const ocrFillAbortRef = useRef(null);
+  const ocrPreviewUrlRef = useRef(null);
 
   const universityOptions = useMemo(() => UNIVERSITIES_BY_CITY[personal.city] || [], [personal.city]);
   const steps = useMemo(() => (isEditMode ? STEPS.filter((s) => s.id !== "submit") : STEPS), [isEditMode]);
@@ -355,7 +362,67 @@ function OnboardingContent() {
     return controller;
   }
 
-  function ocrFillHandlers(signal) {
+  function clearOcrPreview() {
+    if (ocrPreviewUrlRef.current) {
+      URL.revokeObjectURL(ocrPreviewUrlRef.current);
+      ocrPreviewUrlRef.current = null;
+    }
+  }
+
+  function startOcrSession({ file, purpose, index = 0 }) {
+    clearOcrPreview();
+    let previewUrl = null;
+    if (file?.type?.startsWith("image/")) {
+      previewUrl = URL.createObjectURL(file);
+      ocrPreviewUrlRef.current = previewUrl;
+    }
+    const fieldDefs =
+      purpose === "government_doc"
+        ? CNIC_OCR_FIELDS
+        : purpose === "resume"
+          ? RESUME_OCR_FIELDS
+          : purpose === "education_cert"
+            ? EDUCATION_OCR_FIELDS(index)
+            : [];
+    const docLabel =
+      purpose === "government_doc"
+        ? "National ID"
+        : purpose === "resume"
+          ? "Resume"
+          : purpose === "education_cert"
+            ? "Transcript"
+            : "Document";
+    setOcrSession({
+      purpose,
+      index,
+      fileName: file?.name || "Document",
+      previewUrl,
+      docLabel,
+      fieldDefs,
+      scanning: true,
+      stage: "Uploading and extracting text…",
+      typedValues: {},
+      revealed: [],
+      typingKey: null,
+      confidence: {},
+      progress: 0.12,
+      error: null,
+    });
+  }
+
+  function patchOcrSession(patch) {
+    setOcrSession((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  function endOcrSession({ delayMs = 700 } = {}) {
+    window.setTimeout(() => {
+      setOcrSession(null);
+      clearOcrPreview();
+    }, delayMs);
+  }
+
+  function ocrFillHandlers(signal, totalFields = 0) {
+    let doneCount = 0;
     return {
       signal,
       onFieldStart: (key) => {
@@ -366,8 +433,43 @@ function OnboardingContent() {
           return next;
         });
         scrollOcrFieldIntoView(key);
+        setOcrSession((current) => {
+          if (!current) return current;
+          const revealed = current.revealed.includes(key) ? current.revealed : [...current.revealed, key];
+          return {
+            ...current,
+            scanning: false,
+            stage: "Writing extracted fields…",
+            typingKey: key,
+            revealed,
+            progress: totalFields ? Math.min(0.95, (doneCount + 0.35) / totalFields) : current.progress,
+          };
+        });
       },
-      onFieldDone: () => setOcrTypingKey(null),
+      onFieldDone: () => {
+        doneCount += 1;
+        setOcrTypingKey(null);
+        setOcrSession((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            typingKey: null,
+            progress: totalFields ? Math.min(1, doneCount / totalFields) : 1,
+          };
+        });
+      },
+      trackValue: (key, partial) => {
+        setOcrSession((current) =>
+          current ? { ...current, typedValues: { ...current.typedValues, [key]: partial } } : current
+        );
+      },
+    };
+  }
+
+  function withSessionTrack(handlers, key, apply) {
+    return (partial) => {
+      handlers.trackValue?.(key, partial);
+      apply(partial);
     };
   }
 
@@ -446,7 +548,7 @@ function OnboardingContent() {
     setFieldErrors({});
 
     const controller = beginOcrFill();
-    const entries = [
+    const rawEntries = [
       first && {
         key: "first_name",
         value: first,
@@ -508,13 +610,28 @@ function OnboardingContent() {
       },
     ].filter(Boolean);
 
-    await typewriterFill(entries, ocrFillHandlers(controller.signal));
+    const handlers = ocrFillHandlers(controller.signal, rawEntries.length);
+    const entries = rawEntries.map((entry) => ({
+      ...entry,
+      apply: withSessionTrack(handlers, entry.key, entry.apply),
+    }));
+
+    patchOcrSession({
+      scanning: false,
+      stage: "Writing extracted fields…",
+      fieldDefs: CNIC_OCR_FIELDS,
+      progress: 0.2,
+    });
+
+    await typewriterFill(entries, handlers);
     if (controller.signal.aborted) return;
 
     setPersonal(nextPersonal);
     setGovDocs(nextGovDocs);
     setOcrTypingKey(null);
+    patchOcrSession({ progress: 1, typingKey: null, scanning: false, stage: "Done" });
     void savePersonalDraft(nextPersonal, nextGovDocs);
+    endOcrSession();
   }
 
   // Clear fill highlight after the animation finishes.
@@ -524,7 +641,16 @@ function OnboardingContent() {
     return () => window.clearTimeout(timer);
   }, [autoFilledKeys, ocrTypingKey]);
 
-  useEffect(() => () => ocrFillAbortRef.current?.abort(), []);
+  useEffect(
+    () => () => {
+      ocrFillAbortRef.current?.abort();
+      if (ocrPreviewUrlRef.current) {
+        URL.revokeObjectURL(ocrPreviewUrlRef.current);
+        ocrPreviewUrlRef.current = null;
+      }
+    },
+    []
+  );
 
   function fillAnimProps(key) {
     const i = autoFilledKeys.indexOf(key);
@@ -560,7 +686,7 @@ function OnboardingContent() {
 
     const controller = beginOcrFill();
     const signal = controller.signal;
-    const handlers = ocrFillHandlers(signal);
+    let handlers = ocrFillHandlers(signal);
 
     if (purpose === "resume" && category === "resume") {
       const first = fields.first_name || (fields.full_name || "").toString().split(/\s+/)[0] || "";
@@ -652,7 +778,16 @@ function OnboardingContent() {
         });
       }
 
-      await typewriterFill(entries, handlers);
+      handlers = ocrFillHandlers(signal, Math.max(entries.length, 1));
+      patchOcrSession({
+        scanning: false,
+        stage: "Writing extracted fields…",
+        fieldDefs: RESUME_OCR_FIELDS,
+      });
+      await typewriterFill(
+        entries.map((entry) => ({ ...entry, apply: withSessionTrack(handlers, entry.key, entry.apply) })),
+        handlers
+      );
       if (signal.aborted) return;
 
       if (certs?.length && !skillsSnapshot.certifications?.[0]?.name) {
@@ -735,7 +870,15 @@ function OnboardingContent() {
           ].filter(Boolean);
 
           setEducationEntries([{ ...emptyEducationEntry }]);
-          await typewriterFill(eduEntries, handlers);
+          const eduHandlers = ocrFillHandlers(signal, eduEntries.length);
+          patchOcrSession({ fieldDefs: EDUCATION_OCR_FIELDS(0) });
+          await typewriterFill(
+            eduEntries.map((entry) => ({
+              ...entry,
+              apply: withSessionTrack(eduHandlers, entry.key, entry.apply),
+            })),
+            eduHandlers
+          );
           if (!signal.aborted) {
             setEducationEntries(mapped);
             setAutoFilledKeys((prev) => (prev.includes("education") ? prev : [...prev, "education"]));
@@ -816,10 +959,23 @@ function OnboardingContent() {
           },
       ].filter(Boolean);
 
-      await typewriterFill(entries, handlers);
+      handlers = ocrFillHandlers(signal, Math.max(entries.length, 1));
+      patchOcrSession({
+        scanning: false,
+        stage: "Writing extracted fields…",
+        fieldDefs: EDUCATION_OCR_FIELDS(index),
+      });
+      await typewriterFill(
+        entries.map((entry) => ({ ...entry, apply: withSessionTrack(handlers, entry.key, entry.apply) })),
+        handlers
+      );
     }
 
-    if (!signal.aborted) setOcrTypingKey(null);
+    if (!signal.aborted) {
+      setOcrTypingKey(null);
+      patchOcrSession({ progress: 1, typingKey: null, scanning: false, stage: "Done" });
+      endOcrSession();
+    }
   }
 
   const stepIndex = useMemo(() => steps.findIndex((item) => item.id === step), [step, steps]);
@@ -1118,6 +1274,10 @@ function OnboardingContent() {
       clearIdentityForRescan(index);
     }
 
+    if (willScan || softOcr) {
+      startOcrSession({ file, purpose, index });
+    }
+
     setUploading(true);
     setUploadPhase(
       willScan
@@ -1129,6 +1289,9 @@ function OnboardingContent() {
     setMessage(willScan ? "Scanning document…" : "Uploading document…");
     setExtractionPreview(null);
     try {
+      if (willScan || softOcr) {
+        patchOcrSession({ stage: "Running OCR…", progress: 0.25, scanning: true });
+      }
       const formData = new FormData();
       formData.append("file", file);
       formData.append("purpose", purpose);
@@ -1156,6 +1319,8 @@ function OnboardingContent() {
         setMessage(err);
         setExtractionPreview(ocr);
         showToast("error", err);
+        patchOcrSession({ scanning: false, error: err, progress: 1 });
+        endOcrSession({ delayMs: 1600 });
         return;
       }
 
@@ -1183,6 +1348,12 @@ function OnboardingContent() {
           setScanPulse(false);
           setMessage(ocr?.rejection_message || "Could not extract text — please fill the fields manually.");
           if (ocr) setExtractionPreview(ocr);
+          patchOcrSession({
+            scanning: false,
+            error: ocr?.rejection_message || "Could not extract text — please fill the fields manually.",
+            progress: 1,
+          });
+          endOcrSession({ delayMs: 1400 });
         }
         if (data.document_verification) setDocumentVerification(data.document_verification);
         return;
@@ -1215,6 +1386,8 @@ function OnboardingContent() {
       } else if (ocr && softOcr) {
         if (ocr.fields && Object.keys(ocr.fields).length) {
           void autoFillFromOCR({ ...ocr, accepted: true, status: "completed", category: ocr.category || "academic_transcript" }, purpose, index);
+        } else {
+          endOcrSession({ delayMs: 500 });
         }
         const failHint =
           ocr.rejection_message ||
@@ -1229,14 +1402,20 @@ function OnboardingContent() {
       } else if (ocr) {
         setExtractionPreview(ocr);
         setMessage(ocr.rejection_message || "File uploaded. Fill fields manually if needed.");
+        if (willScan || softOcr) endOcrSession({ delayMs: 500 });
       } else {
         setMessage("Document uploaded and saved.");
+        if (willScan || softOcr) endOcrSession({ delayMs: 400 });
       }
     } catch (error) {
       setScanPulse(false);
       const err = getApiErrorMessage(error, "Upload failed.");
       setMessage(err);
       showToast("error", err);
+      if (willScan || softOcr) {
+        patchOcrSession({ scanning: false, error: err, progress: 1 });
+        endOcrSession({ delayMs: 1400 });
+      }
     } finally {
       setUploading(false);
       setUploadPhase("");
@@ -2293,16 +2472,33 @@ function OnboardingContent() {
         </main>
       </div>
 
-      {uploading && (
+      {ocrSession ? (
+        <OcrScanOverlay
+          open
+          title={ocrSession.scanning ? "Reading your document" : "Filling your form"}
+          subtitle={`${ocrSession.docLabel} · ${ocrSession.stage || "extracting fields"}`}
+          previewUrl={ocrSession.previewUrl}
+          fileName={ocrSession.fileName}
+          scanning={ocrSession.scanning}
+          stage={ocrSession.stage}
+          fieldDefs={ocrSession.fieldDefs}
+          typedValues={ocrSession.typedValues}
+          revealed={ocrSession.revealed}
+          typingKey={ocrSession.typingKey}
+          confidence={ocrSession.confidence}
+          progress={ocrSession.progress}
+          error={ocrSession.error}
+        />
+      ) : null}
+
+      {uploading && !ocrSession && (
         <div className={styles.processOverlay} role="status" aria-live="polite" data-mascot-busy>
           <div className={styles.processCard}>
             <div className={styles.processSpinner} aria-hidden />
             <strong>
               {uploadPhase.includes("Removing")
                 ? "Removing document"
-                : uploadPhase.includes("OCR") || uploadPhase.includes("Scanning") || uploadPhase.includes("Clearing")
-                  ? "Scanning National ID"
-                  : "Uploading document"}
+                : "Uploading document"}
             </strong>
             <p>{uploadPhase || "Please wait…"}</p>
           </div>
