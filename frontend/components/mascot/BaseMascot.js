@@ -27,6 +27,31 @@ const BUBBLE_TIMEOUT_MS = 8000;
 const COOLDOWN_MS = 12000;
 const IDLE_TIMEOUT_MS = 30000;
 
+function panelOpenStorageKey(roleLabel) {
+  return `mascot_panel_open_${String(roleLabel || "assistant").toLowerCase()}`;
+}
+
+function readStoredPanelOpen(roleLabel) {
+  if (typeof window === "undefined") return true;
+  try {
+    const stored = localStorage.getItem(panelOpenStorageKey(roleLabel));
+    // Default open when never set.
+    if (stored === null) return true;
+    return stored === "1";
+  } catch {
+    return true;
+  }
+}
+
+function writeStoredPanelOpen(roleLabel, open) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(panelOpenStorageKey(roleLabel), open ? "1" : "0");
+  } catch {
+    // Private mode — in-memory state still works for the tab.
+  }
+}
+
 function isFieldEmpty(field) {
   if (field.type === "checkbox" || field.type === "radio") return !field.checked;
   const value = typeof field.value === "string" ? field.value.trim() : field.value;
@@ -255,7 +280,9 @@ export default function BaseMascot({
   const [insightCount, setInsightCount] = useState(0);
   const [coach, setCoach] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
-  const [panelOpen, setPanelOpen] = useState(true);
+  // Hydrate from localStorage after mount so minimize/maximize survives page navigation.
+  const [panelOpen, setPanelOpenState] = useState(true);
+  const [panelHydrated, setPanelHydrated] = useState(false);
   const [statusLine, setStatusLine] = useState(null);
   const [coachDraft, setCoachDraft] = useState("");
   const [isTypingIntoField, setIsTypingIntoField] = useState(false);
@@ -287,6 +314,20 @@ export default function BaseMascot({
   const optionalFillAcceptedRef = useRef(false);
   const skippedOptionalKeysRef = useRef([]);
   const coachEngagedRef = useRef(false);
+
+  const setPanelOpen = useCallback(
+    (open) => {
+      const next = Boolean(open);
+      setPanelOpenState(next);
+      writeStoredPanelOpen(roleLabel, next);
+    },
+    [roleLabel]
+  );
+
+  useEffect(() => {
+    setPanelOpenState(readStoredPanelOpen(roleLabel));
+    setPanelHydrated(true);
+  }, [roleLabel]);
 
   const pageSummary = useCallback(() => {
     const context = typeof readContext === "function" ? readContext() || {} : {};
@@ -751,7 +792,7 @@ export default function BaseMascot({
     suggestionIndexRef.current = start;
     setSuggestionIndex(start);
     triggerState("stateWave", 1800);
-  }, [pageSummary, triggerState]);
+  }, [pageSummary, setPanelOpen, triggerState]);
 
   const engageCoach = useCallback(
     (options = {}) => {
@@ -773,7 +814,7 @@ export default function BaseMascot({
       }
       return snapshot;
     },
-    [pushActivity, refreshCoach, setMessage]
+    [pushActivity, refreshCoach, setMessage, setPanelOpen]
   );
 
   const exitCoachToTips = useCallback(() => {
@@ -1066,7 +1107,7 @@ export default function BaseMascot({
       setPanelOpen(true);
       triggerState("stateWave", 1800);
     },
-    [triggerState]
+    [setPanelOpen, triggerState]
   );
 
   const handlePartnerTap = useCallback(() => {
@@ -1133,7 +1174,7 @@ export default function BaseMascot({
     setBrowsingTips(false);
     clearFieldHighlight();
     resetIdleTimer();
-    setPanelOpen(true);
+    // Keep user's minimize/maximize preference across page changes.
 
     const animationTimer = setTimeout(() => {
       triggerState("stateWave", 2500);
@@ -1464,7 +1505,7 @@ export default function BaseMascot({
         </div>
       )}
 
-      {panelOpen && (bubbleText || coach?.total || statusLine || insightCount > 0)
+      {panelHydrated && panelOpen && (bubbleText || coach?.total || statusLine || insightCount > 0)
         ? (() => {
             const formComplete = Boolean(coach?.allComplete);
             const hasForm = Boolean(coach?.total);
