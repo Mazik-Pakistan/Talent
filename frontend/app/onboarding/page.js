@@ -75,7 +75,7 @@ const emptyPersonal = {
   gender: "prefer_not_to_say",
   nationality: "Pakistani",
   marital_status: "single",
-  blood_group: "unknown",
+  blood_group: "N/A", // changed from "unknown"
   national_id: "",
   father_name: "",
   id_issue_date: "",
@@ -1330,14 +1330,14 @@ function OnboardingContent() {
                       </p>
                     )}
 
-            {extractionPreview && (
-              <ScanFillBanner
-                styles={styles}
-                result={extractionPreview}
-                filledCount={autoFilledKeys.length}
-                onDismiss={() => setExtractionPreview(null)}
-              />
-            )}
+                    {extractionPreview && (
+                      <ScanFillBanner
+                        styles={styles}
+                        result={extractionPreview}
+                        filledCount={autoFilledKeys.length}
+                        onDismiss={() => setExtractionPreview(null)}
+                      />
+                    )}
 
                     {autoFilledKeys.length > 0 && !extractionPreview && (
                       <p className={styles.fillSuccessBanner} role="status">
@@ -1347,8 +1347,6 @@ function OnboardingContent() {
                     )}
 
                     {(() => {
-                      // Prefer live form state over server progress — OCR can fill skills
-                      // before Save & Continue, so "missing skills" must not linger falsely.
                       const stillMissing = (progress?.missing_fields || []).filter((section) => {
                         if (section === "personal" || section === "government_docs") return !isPersonalComplete();
                         if (section === "education") return !isEducationComplete();
@@ -1405,6 +1403,7 @@ function OnboardingContent() {
                                 <Field
                                   styles={styles}
                                   label="CNIC number"
+                                  required
                                   value={doc.document_number === "pending" ? "" : doc.document_number}
                                   error={fieldErrors.document_number}
                                   onChange={(e) => {
@@ -1431,6 +1430,7 @@ function OnboardingContent() {
                               <Field
                                 styles={styles}
                                 label="First name"
+                                required
                                 value={personal.first_name}
                                 error={fieldErrors.first_name}
                                 onChange={(e) => {
@@ -1442,6 +1442,7 @@ function OnboardingContent() {
                               <Field
                                 styles={styles}
                                 label="Last name"
+                                required
                                 value={personal.last_name}
                                 error={fieldErrors.last_name}
                                 onChange={(e) => {
@@ -1462,6 +1463,7 @@ function OnboardingContent() {
                               <Field
                                 styles={styles}
                                 label="National ID / CNIC"
+                                required
                                 value={personal.national_id}
                                 error={fieldErrors.national_id}
                                 onChange={(e) => {
@@ -1485,6 +1487,7 @@ function OnboardingContent() {
                                 styles={styles}
                                 label="Date of birth"
                                 type="date"
+                                required
                                 value={personal.date_of_birth}
                                 error={fieldErrors.date_of_birth}
                                 onChange={(e) => {
@@ -1498,7 +1501,7 @@ function OnboardingContent() {
                                 style={fillAnimLabelStyle("gender")}
                                 data-field-error={fieldErrors.gender ? "true" : undefined}
                               >
-                                <span>Gender</span>
+                                <span>Gender <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                 <select value={personal.gender} onChange={(e) => { setPersonal({ ...personal, gender: e.target.value }); setFieldErrors((prev) => ({ ...prev, gender: false })); }}>
                                   <option value="male">Male</option>
                                   <option value="female">Female</option>
@@ -1506,12 +1509,12 @@ function OnboardingContent() {
                                   <option value="prefer_not_to_say">Prefer not to say</option>
                                 </select>
                               </label>
-                              <Field styles={styles} label="Nationality" value={personal.nationality} error={fieldErrors.nationality} onChange={(e) => { setPersonal({ ...personal, nationality: e.target.value }); setFieldErrors((prev) => ({ ...prev, nationality: false })); }} {...fillAnimProps("nationality")} />
+                              <Field styles={styles} label="Nationality" required value={personal.nationality} error={fieldErrors.nationality} onChange={(e) => { setPersonal({ ...personal, nationality: e.target.value }); setFieldErrors((prev) => ({ ...prev, nationality: false })); }} {...fillAnimProps("nationality")} />
                               <label
                                 className={`${styles.field} ${fillAnimLabelClass("marital_status")}`}
                                 style={fillAnimLabelStyle("marital_status")}
                               >
-                                <span>Marital status</span>
+                                <span>Marital status <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                 <select value={personal.marital_status} onChange={(e) => setPersonal({ ...personal, marital_status: e.target.value })}>
                                   <option value="single">Single</option>
                                   <option value="married">Married</option>
@@ -1523,12 +1526,17 @@ function OnboardingContent() {
                               <label className={styles.field}>
                                 <span>Blood group</span>
                                 <select value={personal.blood_group} onChange={(e) => setPersonal({ ...personal, blood_group: e.target.value })}>
-                                  {["unknown", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((g) => (
+                                  {["N/A", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((g) => (
                                     <option key={g} value={g}>{g}</option>
                                   ))}
                                 </select>
                               </label>
-                              <Field styles={styles} label="Alternate phone" value={personal.alternate_phone} onChange={(e) => setPersonal({ ...personal, alternate_phone: e.target.value })} />
+                              <Field
+                                styles={styles}
+                                label="Alternate Contact Number"
+                                value={personal.alternate_phone}
+                                onChange={(e) => setPersonal({ ...personal, alternate_phone: e.target.value })}
+                              />
                               <Field styles={styles} label="ID issue date" value={personal.id_issue_date || ""} onChange={(e) => setPersonal({ ...personal, id_issue_date: e.target.value })} {...fillAnimProps("id_issue_date")} />
                               <Field styles={styles} label="ID expiry date" value={personal.id_expiry_date || ""} onChange={(e) => setPersonal({ ...personal, id_expiry_date: e.target.value })} {...fillAnimProps("id_expiry_date")} />
                             </div>
@@ -1545,6 +1553,7 @@ function OnboardingContent() {
                               <Field
                                 styles={styles}
                                 label="Current address"
+                                required
                                 value={personal.current_address}
                                 error={fieldErrors.current_address}
                                 onChange={(e) => {
@@ -1566,6 +1575,7 @@ function OnboardingContent() {
                                 <Field
                                   styles={styles}
                                   label="Permanent address"
+                                  required
                                   value={personal.permanent_address}
                                   error={fieldErrors.permanent_address}
                                   onChange={(e) => {
@@ -1576,7 +1586,7 @@ function OnboardingContent() {
                                 />
                               )}
                               <label className={`${styles.field} ${fieldErrors.country ? styles.fieldError : ""}`} data-field-error={fieldErrors.country ? "true" : undefined}>
-                                <span>Country</span>
+                                <span>Country <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                 <select
                                   value={otherSelections.country || (personal.country && !COUNTRY_OPTIONS.includes(personal.country)) ? "other" : personal.country}
                                   onChange={(e) => {
@@ -1601,7 +1611,7 @@ function OnboardingContent() {
                               </label>
                               {personal.country === "Pakistan" && (
                                 <label className={`${styles.field} ${fieldErrors.city ? styles.fieldError : ""}`} data-field-error={fieldErrors.city ? "true" : undefined}>
-                                  <span>City</span>
+                                  <span>City <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                   <select
                                     value={otherSelections.city || (personal.city && !PAKISTANI_CITIES.includes(personal.city)) ? "other" : personal.city}
                                     onChange={(e) => {
@@ -1631,7 +1641,7 @@ function OnboardingContent() {
                               )}
                               {personal.country === "Pakistan" ? (
                                 <label className={`${styles.field} ${fieldErrors.state ? styles.fieldError : ""}`} data-field-error={fieldErrors.state ? "true" : undefined}>
-                                  <span>State / Province</span>
+                                  <span>State / Province <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                   <select
                                     value={otherSelections.state || (personal.state && !PAKISTANI_PROVINCES.includes(personal.state)) ? "other" : personal.state}
                                     onChange={(e) => {
@@ -1651,9 +1661,9 @@ function OnboardingContent() {
                                   {fieldErrors.state && <em className={styles.fieldErrorText}>Required</em>}
                                 </label>
                               ) : (
-                                <Field styles={styles} label="State / Province" value={personal.state} error={fieldErrors.state} onChange={(e) => { setPersonal({ ...personal, state: e.target.value }); setFieldErrors((prev) => ({ ...prev, state: false })); }} />
+                                <Field styles={styles} label="State / Province" required value={personal.state} error={fieldErrors.state} onChange={(e) => { setPersonal({ ...personal, state: e.target.value }); setFieldErrors((prev) => ({ ...prev, state: false })); }} />
                               )}
-                              <Field styles={styles} label="Postal code" value={personal.postal_code} error={fieldErrors.postal_code} onChange={(e) => { setPersonal({ ...personal, postal_code: e.target.value }); setFieldErrors((prev) => ({ ...prev, postal_code: false })); }} />
+                              <Field styles={styles} label="Postal code" required value={personal.postal_code} error={fieldErrors.postal_code} onChange={(e) => { setPersonal({ ...personal, postal_code: e.target.value }); setFieldErrors((prev) => ({ ...prev, postal_code: false })); }} />
                             </div>
                           </section>
                         </div>
@@ -1688,7 +1698,7 @@ function OnboardingContent() {
                                   className={`${styles.field} ${fillAnimLabelClass(`edu_${index}_institution`)}`}
                                   style={fillAnimLabelStyle(`edu_${index}_institution`)}
                                 >
-                                  <span>Institute / University</span>
+                                  <span>Institute / University <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                   <select
                                     value={otherSelections.institutions[index] || (entry.institution && !universityOptions.includes(entry.institution)) ? "other" : entry.institution}
                                     onChange={(e) => {
@@ -1719,17 +1729,17 @@ function OnboardingContent() {
                                     />
                                   )}
                                 </label>
-                                <Field styles={styles} label="Degree" value={entry.degree} onChange={(e) => {
+                                <Field styles={styles} label="Degree" required value={entry.degree} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], degree: e.target.value };
                                   setEducationEntries(next);
                                 }} {...fillAnimProps(`edu_${index}_degree`)} />
-                                <Field styles={styles} label="Major / Field of study" value={entry.field_of_study} onChange={(e) => {
+                                <Field styles={styles} label="Major / Field of study" required value={entry.field_of_study} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], field_of_study: e.target.value };
                                   setEducationEntries(next);
                                 }} {...fillAnimProps(`edu_${index}_field_of_study`)} />
-                                <Field styles={styles} label="Year completed" value={entry.year_completed} onChange={(e) => {
+                                <Field styles={styles} label="Year completed" required value={entry.year_completed} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], year_completed: e.target.value };
                                   setEducationEntries(next);
@@ -1794,7 +1804,7 @@ function OnboardingContent() {
                                 className={`${styles.field} ${styles.wide} ${fillAnimLabelClass("summary")}`}
                                 style={fillAnimLabelStyle("summary")}
                               >
-                                <span>Professional summary</span>
+                                <span>Professional summary <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                 <textarea
                                   rows={4}
                                   value={resume.summary}
@@ -1909,9 +1919,9 @@ function OnboardingContent() {
                                 ["Gender", formatReviewValue(personal.gender)],
                                 ["Nationality", personal.nationality],
                                 ["Marital status", formatReviewValue(personal.marital_status)],
-                                ["Blood group", personal.blood_group === "unknown" ? "" : personal.blood_group],
+                                ["Blood group", personal.blood_group === "N/A" ? "" : personal.blood_group],
                                 ["National ID / CNIC", personal.national_id],
-                                ["Alternate phone", personal.alternate_phone],
+                                ["Alternate Contact Number", personal.alternate_phone],
                                 ["ID issue date", personal.id_issue_date],
                                 ["ID expiry date", personal.id_expiry_date],
                                 ["Current address", personal.current_address, true],
@@ -2204,14 +2214,14 @@ function FileUploadField({ styles, label, accept, disabled, onChange, onRemove, 
   );
 }
 
-function Field({ label, name, value, onChange, type = "text", wide, styles, error, hint, fillAnim, fillDelay }) {
+function Field({ label, name, value, onChange, type = "text", wide, styles, error, hint, required, fillAnim, fillDelay }) {
   return (
     <label
       className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""} ${fillAnim ? styles.fieldFillAnim : ""}`}
       style={fillAnim && fillDelay != null ? { animationDelay: `${fillDelay}ms` } : undefined}
       data-field-error={error ? "true" : undefined}
     >
-      <span>{label}</span>
+      <span>{label}{required && <span style={{ color: "red", marginLeft: 4 }}>*</span>}</span>
       <input name={name} type={type} value={value} onChange={onChange} aria-invalid={!!error} />
       {error && <em className={styles.fieldErrorText}>Required</em>}
       {!error && hint ? <small>{hint}</small> : null}
@@ -2248,9 +2258,7 @@ function ReviewSection({ styles, title, subtitle, rows, children }) {
   );
 }
 
-// Compact scan result — never dumps raw OCR text or a field dictionary into the form.
 function ScanFillBanner({ styles, result, filledCount = 0, onDismiss }) {
-  // Snapshot count on mount so the message stays stable after fill highlights clear.
   const [stableCount] = useState(filledCount);
   if (!result) return null;
   const rejected = result.status === "rejected_type" || result.accepted === false;
@@ -2294,4 +2302,3 @@ function ScanFillBanner({ styles, result, filledCount = 0, onDismiss }) {
     </div>
   );
 }
-
