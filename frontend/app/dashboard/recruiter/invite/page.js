@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
-import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
+import {
+  RECRUITER_DEPARTMENTS,
+  RECRUITER_DESIGNATIONS,
+} from "@/components/recruiter/recruiterOptions";
 import { createInvitation, getApiErrorMessage } from "@/services/authService";
 import {
   clearRecruiterContext,
@@ -51,6 +54,71 @@ function slugify(label) {
     .replace(/(^-|-$)/g, "");
 }
 
+// ------------------ Comma formatting helpers ------------------
+function formatNumberWithCommas(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const num = parseFloat(value);
+  if (isNaN(num)) return value;
+  // toLocaleString with max 2 decimals, but no min decimals
+  return num.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  });
+}
+
+// Strip commas and non-numeric except dot
+function unformatNumber(formatted) {
+  return formatted.replace(/,/g, "");
+}
+
+// ------------------ FormattedNumberInput component ------------------
+const FormattedNumberInput = ({ value, onChange, placeholder, style, className, inputMode = "decimal" }) => {
+  const inputRef = useRef(null);
+  const [formatted, setFormatted] = useState(formatNumberWithCommas(value));
+
+  useEffect(() => {
+    // Sync external value change (e.g., reset)
+    setFormatted(formatNumberWithCommas(value));
+  }, [value]);
+
+  const handleChange = useCallback(
+    (e) => {
+      const raw = unformatNumber(e.target.value);
+      // Only allow valid numbers (digits and at most one dot)
+      if (raw === "" || /^\d*\.?\d*$/.test(raw)) {
+        const newFormatted = formatNumberWithCommas(raw);
+        const cursor = e.target.selectionStart;
+        const diff = newFormatted.length - e.target.value.length;
+        setFormatted(newFormatted);
+        onChange(raw); // pass raw to parent
+
+        // Restore cursor position after state update
+        requestAnimationFrame(() => {
+          if (inputRef.current) {
+            const newPos = cursor + diff;
+            inputRef.current.selectionStart = newPos;
+            inputRef.current.selectionEnd = newPos;
+          }
+        });
+      }
+    },
+    [onChange]
+  );
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      inputMode={inputMode}
+      value={formatted}
+      onChange={handleChange}
+      placeholder={placeholder}
+      style={style}
+      className={className}
+    />
+  );
+};
+
 export default function RecruiterInvitePage() {
   const [inviteForm, setInviteForm] = useState(initialInvite);
   const [breakdown, setBreakdown] = useState([
@@ -59,7 +127,11 @@ export default function RecruiterInvitePage() {
     { label: "Transport", amount: "" },
   ]);
   const [benefits, setBenefits] = useState(
-    PRESET_BENEFITS.map((label) => ({ id: slugify(label), label, selected: true }))
+    PRESET_BENEFITS.map((label) => ({
+      id: slugify(label),
+      label,
+      selected: true,
+    }))
   );
   const [customBenefit, setCustomBenefit] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
@@ -68,7 +140,8 @@ export default function RecruiterInvitePage() {
   const [isCreating, setIsCreating] = useState(false);
 
   const breakdownTotal = useMemo(
-    () => breakdown.reduce((sum, row) => sum + (Number(row.amount) || 0), 0),
+    () =>
+      breakdown.reduce((sum, row) => sum + (Number(row.amount) || 0), 0),
     [breakdown]
   );
   const gross = Number(inviteForm.monthly_salary) || 0;
@@ -99,7 +172,11 @@ export default function RecruiterInvitePage() {
   }
 
   function updateBreakdown(index, field, value) {
-    setBreakdown((rows) => rows.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+    setBreakdown((rows) =>
+      rows.map((row, i) =>
+        i === index ? { ...row, [field]: value } : row
+      )
+    );
   }
 
   function addBreakdownRow() {
@@ -111,14 +188,21 @@ export default function RecruiterInvitePage() {
   }
 
   function toggleBenefit(id) {
-    setBenefits((rows) => rows.map((b) => (b.id === id ? { ...b, selected: !b.selected } : b)));
+    setBenefits((rows) =>
+      rows.map((b) => (b.id === id ? { ...b, selected: !b.selected } : b))
+    );
   }
 
   function addCustomBenefit() {
     const label = customBenefit.trim();
     if (!label) return;
     const id = slugify(label) || `custom-${Date.now()}`;
-    if (benefits.some((b) => b.id === id || b.label.toLowerCase() === label.toLowerCase())) {
+    if (
+      benefits.some(
+        (b) =>
+          b.id === id || b.label.toLowerCase() === label.toLowerCase()
+      )
+    ) {
       toast.info("That benefit is already listed.");
       return;
     }
@@ -132,8 +216,14 @@ export default function RecruiterInvitePage() {
     setInviteLink("");
     setInviteEmailSent(null);
 
-    if (!inviteForm.reporting_manager.trim() || !inviteForm.start_date || !inviteForm.monthly_salary) {
-      setInviteMessage("Reporting manager, start date, and monthly salary are required for the offer.");
+    if (
+      !inviteForm.reporting_manager.trim() ||
+      !inviteForm.start_date ||
+      !inviteForm.monthly_salary
+    ) {
+      setInviteMessage(
+        "Reporting manager, start date, and monthly salary are required for the offer."
+      );
       return;
     }
     if (breakdownTotal > 0 && gross > 0 && breakdownTotal - gross > 0.01) {
@@ -175,7 +265,8 @@ export default function RecruiterInvitePage() {
           })),
           offer_expiry_days: Number(inviteForm.offer_expiry_days) || 14,
           terms: inviteForm.terms.trim() || DEFAULT_TERMS,
-          message_to_candidate: inviteForm.message_to_candidate.trim() || null,
+          message_to_candidate:
+            inviteForm.message_to_candidate.trim() || null,
         },
       };
 
@@ -189,10 +280,19 @@ export default function RecruiterInvitePage() {
         { label: "Housing", amount: "" },
         { label: "Transport", amount: "" },
       ]);
-      setBenefits(PRESET_BENEFITS.map((label) => ({ id: slugify(label), label, selected: true })));
+      setBenefits(
+        PRESET_BENEFITS.map((label) => ({
+          id: slugify(label),
+          label,
+          selected: true,
+        }))
+      );
       toast.success(data.message || "Offer invitation sent.");
     } catch (error) {
-      const errMsg = getApiErrorMessage(error, "Could not create invitation with offer.");
+      const errMsg = getApiErrorMessage(
+        error,
+        "Could not create invitation with offer."
+      );
       setInviteMessage(errMsg);
       toast.error(errMsg);
     } finally {
@@ -207,6 +307,26 @@ export default function RecruiterInvitePage() {
     toast.info("Link copied.");
   }
 
+  // ---------- Styles ----------
+  const cardStyle = {
+    background: "#f9fafc",
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 20,
+    border: "1px solid var(--border)",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+  };
+
+  const sectionHeadStyle = {
+    margin: "0 0 16px",
+    fontSize: 16,
+    fontWeight: 600,
+    color: "var(--navy)",
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+  };
+
   return (
     <RecruiterShell
       activeKey="invite"
@@ -214,252 +334,498 @@ export default function RecruiterInvitePage() {
       subtitle="Send an invitation with a full offer letter — candidate signs first, then uploads documents"
     >
       <div className={styles.section}>
-        <div className={styles.sectionHead}>
+        <div className={styles.sectionHead} style={{ marginBottom: 24 }}>
           <div className={styles.sectionHeadLeft}>
             <div className={`${styles.bar} ${styles.orange}`} />
             <div>
-              <div className={styles.sectionTitle}>Compose invitation + offer letter</div>
+              <div className={styles.sectionTitle}>
+                Compose invitation + offer letter
+              </div>
               <div className={styles.sectionDesc}>
-                Mazik Global Pakistan offer is emailed with the invite link. Candidate accepts by signing in the portal.
+                Mazik Global Pakistan offer is emailed with the invite link.
+                Candidate accepts by signing in the portal.
               </div>
             </div>
           </div>
         </div>
         <div className={styles.sectionBody}>
           <form data-partner-coach onSubmit={handleCreateInvite}>
-            <h3 style={{ margin: "0 0 12px", fontSize: 15, color: "var(--navy)" }}>Candidate</h3>
-            <div className={styles.formGrid}>
-              <label className={styles.field}>
-                <span>Full name</span>
-                <input name="full_name" value={inviteForm.full_name} onChange={updateInviteField} required />
-              </label>
-              <label className={styles.field}>
-                <span>Email</span>
-                <input name="email" type="email" value={inviteForm.email} onChange={updateInviteField} required />
-              </label>
-              <label className={styles.field}>
-                <span>Invite link expires (days)</span>
-                <input
-                  name="expires_in_days"
-                  type="number"
-                  min="1"
-                  max="30"
-                  value={inviteForm.expires_in_days}
-                  onChange={updateInviteField}
-                />
-              </label>
-              <label className={styles.field}>
-                <span>Offer expires (days)</span>
-                <input
-                  name="offer_expiry_days"
-                  type="number"
-                  min="1"
-                  max="90"
-                  value={inviteForm.offer_expiry_days}
-                  onChange={updateInviteField}
-                />
-              </label>
-            </div>
-
-            <h3 style={{ margin: "28px 0 12px", fontSize: 15, color: "var(--navy)" }}>Role</h3>
-            <div className={styles.formGrid}>
-              <label className={styles.field}>
-                <span>Designation</span>
-                <select name="job_title" value={inviteForm.job_title} onChange={updateInviteField} required>
-                  <option value="">Select designation</option>
-                  {RECRUITER_DESIGNATIONS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.field}>
-                <span>Department</span>
-                <select name="department" value={inviteForm.department} onChange={updateInviteField} required>
-                  <option value="">Select department</option>
-                  {RECRUITER_DEPARTMENTS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.field}>
-                <span>Employment type</span>
-                <select name="employment_type" value={inviteForm.employment_type} onChange={updateInviteField}>
-                  <option>Full-time</option>
-                  <option>Part-time</option>
-                  <option>Contract</option>
-                  <option>Internship</option>
-                </select>
-              </label>
-              <label className={styles.field}>
-                <span>Office location</span>
-                <input name="office_location" value={inviteForm.office_location} onChange={updateInviteField} />
-              </label>
-              <label className={styles.field}>
-                <span>Reporting manager</span>
-                <input
-                  name="reporting_manager"
-                  value={inviteForm.reporting_manager}
-                  onChange={updateInviteField}
-                  required
-                />
-              </label>
-              <label className={styles.field}>
-                <span>Start date</span>
-                <input
-                  name="start_date"
-                  type="date"
-                  value={inviteForm.start_date}
-                  onChange={updateInviteField}
-                  required
-                />
-              </label>
-            </div>
-
-            <h3 style={{ margin: "28px 0 12px", fontSize: 15, color: "var(--navy)" }}>Compensation</h3>
-            <div className={styles.formGrid}>
-              <label className={styles.field}>
-                <span>Currency</span>
-                <select name="currency" value={inviteForm.currency} onChange={updateInviteField}>
-                  {CURRENCIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.field}>
-                <span>Monthly salary (gross)</span>
-                <input
-                  name="monthly_salary"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={inviteForm.monthly_salary}
-                  onChange={updateInviteField}
-                  required
-                />
-              </label>
-            </div>
-
-            <div style={{ marginTop: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                <strong style={{ fontSize: 13 }}>Salary breakdown</strong>
-                <button type="button" className={styles.secondaryButton} onClick={addBreakdownRow}>
-                  + Add line
-                </button>
+            {/* ---------- Candidate card ---------- */}
+            <div style={cardStyle}>
+              <div style={sectionHeadStyle}>
+                <span style={{ fontSize: 18 }}>👤</span> Candidate
               </div>
-              <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+              <div className={styles.formGrid}>
+                <label className={styles.field}>
+                  <span>Full name</span>
+                  <input
+                    name="full_name"
+                    value={inviteForm.full_name}
+                    onChange={updateInviteField}
+                    required
+                    placeholder="As per CNIC"
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>Email</span>
+                  <input
+                    name="email"
+                    type="email"
+                    value={inviteForm.email}
+                    onChange={updateInviteField}
+                    required
+                    placeholder="candidate@example.com"
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>Invite link expires (days)</span>
+                  <input
+                    name="expires_in_days"
+                    type="number"
+                    min="1"
+                    max="30"
+                    value={inviteForm.expires_in_days}
+                    onChange={updateInviteField}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>Offer expires (days)</span>
+                  <input
+                    name="offer_expiry_days"
+                    type="number"
+                    min="1"
+                    max="90"
+                    value={inviteForm.offer_expiry_days}
+                    onChange={updateInviteField}
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* ---------- Role card ---------- */}
+            <div style={cardStyle}>
+              <div style={sectionHeadStyle}>
+                <span style={{ fontSize: 18 }}>💼</span> Role
+              </div>
+              <div className={styles.formGrid}>
+                <label className={styles.field}>
+                  <span>Designation</span>
+                  <select
+                    name="job_title"
+                    value={inviteForm.job_title}
+                    onChange={updateInviteField}
+                    required
+                  >
+                    <option value="">Select designation</option>
+                    {RECRUITER_DESIGNATIONS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span>Department</span>
+                  <select
+                    name="department"
+                    value={inviteForm.department}
+                    onChange={updateInviteField}
+                    required
+                  >
+                    <option value="">Select department</option>
+                    {RECRUITER_DEPARTMENTS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span>Employment type</span>
+                  <select
+                    name="employment_type"
+                    value={inviteForm.employment_type}
+                    onChange={updateInviteField}
+                  >
+                    <option>Full-time</option>
+                    <option>Part-time</option>
+                    <option>Contract</option>
+                    <option>Internship</option>
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span>Office location</span>
+                  <input
+                    name="office_location"
+                    value={inviteForm.office_location}
+                    onChange={updateInviteField}
+                    placeholder="e.g. Karachi"
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>Reporting manager</span>
+                  <input
+                    name="reporting_manager"
+                    value={inviteForm.reporting_manager}
+                    onChange={updateInviteField}
+                    required
+                    placeholder="Full name"
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>Start date</span>
+                  <input
+                    name="start_date"
+                    type="date"
+                    value={inviteForm.start_date}
+                    onChange={updateInviteField}
+                    required
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* ---------- Compensation card ---------- */}
+            <div style={cardStyle}>
+              <div style={sectionHeadStyle}>
+                <span style={{ fontSize: 18 }}>💰</span> Compensation
+              </div>
+              <div className={styles.formGrid} style={{ marginBottom: 20 }}>
+                <label className={styles.field}>
+                  <span>Currency</span>
+                  <select
+                    name="currency"
+                    value={inviteForm.currency}
+                    onChange={updateInviteField}
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span>Monthly salary (gross)</span>
+                  <FormattedNumberInput
+                    value={inviteForm.monthly_salary}
+                    onChange={(raw) =>
+                      setInviteForm((prev) => ({
+                        ...prev,
+                        monthly_salary: raw,
+                      }))
+                    }
+                    placeholder="e.g. 100,000"
+                    style={{ width: "100%" }}
+                  />
+                </label>
+              </div>
+
+              {/* Salary breakdown */}
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 12,
+                  }}
+                >
+                  <span style={{ fontWeight: 600, fontSize: 14, color: "var(--navy)" }}>
+                    Salary breakdown
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={addBreakdownRow}
+                    style={{ padding: "6px 14px", fontSize: 13 }}
+                  >
+                    + Add component
+                  </button>
+                </div>
+
                 {breakdown.map((row, index) => (
-                  <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr 140px auto", gap: 8 }}>
+                  <div
+                    key={index}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      marginBottom: 10,
+                    }}
+                  >
                     <input
+                      style={{
+                        flex: "1 1 200px",
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        border: "1px solid var(--border)",
+                        background: "#fff",
+                      }}
                       placeholder="Component (e.g. Basic)"
                       value={row.label}
-                      onChange={(e) => updateBreakdown(index, "label", e.target.value)}
+                      onChange={(e) =>
+                        updateBreakdown(index, "label", e.target.value)
+                      }
                     />
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Amount"
-                      value={row.amount}
-                      onChange={(e) => updateBreakdown(index, "amount", e.target.value)}
-                    />
-                    <button type="button" className={styles.secondaryButton} onClick={() => removeBreakdownRow(index)}>
-                      Remove
+                    <div style={{ position: "relative", flex: "1 1 180px" }}>
+                      <FormattedNumberInput
+                        value={row.amount}
+                        onChange={(raw) =>
+                          updateBreakdown(index, "amount", raw)
+                        }
+                        placeholder="Amount"
+                        style={{
+                          width: "100%",
+                          padding: "8px 48px 8px 12px",
+                          borderRadius: 8,
+                          border: "1px solid var(--border)",
+                          background: "#fff",
+                        }}
+                      />
+                      <span
+                        style={{
+                          position: "absolute",
+                          right: 12,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          fontSize: 12,
+                          color: "var(--text-muted)",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        {inviteForm.currency}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeBreakdownRow(index)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#c92a2a",
+                        cursor: "pointer",
+                        fontSize: 18,
+                        padding: "4px 6px",
+                        lineHeight: 1,
+                      }}
+                      title="Remove row"
+                    >
+                      ✕
                     </button>
                   </div>
                 ))}
-              </div>
-              <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
-                Breakdown total: {inviteForm.currency} {breakdownTotal.toLocaleString()}
-                {gross > 0 && breakdownTotal - gross > 0.01 ? " — exceeds gross salary" : ""}
-              </p>
-            </div>
 
-            <h3 style={{ margin: "28px 0 12px", fontSize: 15, color: "var(--navy)" }}>Benefits</h3>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                gap: 8,
-              }}
-            >
-              {benefits.map((b) => (
-                <label
-                  key={b.id}
+                <div
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 8,
+                    justifyContent: "space-between",
+                    marginTop: 12,
+                    padding: "10px 14px",
+                    background: "#f0f4f8",
+                    borderRadius: 8,
                     border: "1px solid var(--border)",
-                    borderRadius: 10,
-                    padding: "10px 12px",
-                    background: b.selected ? "var(--blue-lighter)" : "var(--card)",
-                    cursor: "pointer",
                   }}
                 >
-                  <input type="checkbox" checked={b.selected} onChange={() => toggleBenefit(b.id)} />
-                  <span style={{ fontSize: 13 }}>{b.label}</span>
-                </label>
-              ))}
+                  <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                    Breakdown total
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>
+                      {inviteForm.currency}{" "}
+                      {formatNumberWithCommas(breakdownTotal)}
+                    </span>
+                    {gross > 0 && breakdownTotal - gross > 0.01 && (
+                      <span
+                        style={{
+                          color: "#c92a2a",
+                          fontSize: 12,
+                          background: "#ffeef0",
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                        }}
+                      >
+                        ⚠ Exceeds gross
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-              <input
-                style={{ flex: 1, minWidth: 180 }}
-                placeholder="Add custom benefit"
-                value={customBenefit}
-                onChange={(e) => setCustomBenefit(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addCustomBenefit();
-                  }
+
+            {/* ---------- Benefits card ---------- */}
+            <div style={cardStyle}>
+              <div style={sectionHeadStyle}>
+                <span style={{ fontSize: 18 }}>🎁</span> Benefits
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                  gap: 12,
                 }}
-              />
-              <button type="button" className={styles.secondaryButton} onClick={addCustomBenefit}>
-                + Add benefit
-              </button>
-            </div>
+              >
+                {benefits.map((b) => (
+                  <label
+                    key={b.id}
+                    onClick={() => toggleBenefit(b.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "12px 16px",
+                      borderRadius: 12,
+                      border: `1.5px solid ${b.selected ? "var(--blue)" : "var(--border)"}`,
+                      background: b.selected ? "var(--blue-lighter)" : "#fff",
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                      boxShadow: b.selected
+                        ? "0 2px 8px rgba(0,113,194,0.12)"
+                        : "0 1px 2px rgba(0,0,0,0.02)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 5,
+                        border: `2px solid ${b.selected ? "var(--blue)" : "#bbb"}`,
+                        background: b.selected ? "var(--blue)" : "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#fff",
+                        fontSize: 13,
+                        fontWeight: "bold",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {b.selected && "✓"}
+                    </div>
+                    <span style={{ fontSize: 13, lineHeight: 1.4 }}>
+                      {b.label}
+                    </span>
+                  </label>
+                ))}
+              </div>
 
-            <h3 style={{ margin: "28px 0 12px", fontSize: 15, color: "var(--navy)" }}>Terms & message</h3>
-            <div className={styles.formGrid} style={{ gridTemplateColumns: "1fr" }}>
-              <label className={styles.field}>
-                <span>Offer terms</span>
-                <textarea name="terms" rows={4} value={inviteForm.terms} onChange={updateInviteField} />
-              </label>
-              <label className={styles.field}>
-                <span>Personal message (optional)</span>
-                <textarea
-                  name="message_to_candidate"
-                  rows={3}
-                  value={inviteForm.message_to_candidate}
-                  onChange={updateInviteField}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  marginTop: 14,
+                  flexWrap: "wrap",
+                }}
+              >
+                <input
+                  style={{
+                    flex: 1,
+                    minWidth: 200,
+                    padding: "10px 14px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "#fff",
+                  }}
+                  placeholder="Add custom benefit"
+                  value={customBenefit}
+                  onChange={(e) => setCustomBenefit(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addCustomBenefit();
+                    }
+                  }}
                 />
-              </label>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={addCustomBenefit}
+                  style={{ whiteSpace: "nowrap" }}
+                >
+                  + Add benefit
+                </button>
+              </div>
             </div>
 
+            {/* ---------- Terms & message card ---------- */}
+            <div style={cardStyle}>
+              <div style={sectionHeadStyle}>
+                <span style={{ fontSize: 18 }}>📝</span> Terms & message
+              </div>
+              <div className={styles.formGrid} style={{ gridTemplateColumns: "1fr" }}>
+                <label className={styles.field}>
+                  <span>Offer terms</span>
+                  <textarea
+                    name="terms"
+                    rows={4}
+                    value={inviteForm.terms}
+                    onChange={updateInviteField}
+                    style={{ resize: "vertical" }}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>Personal message (optional)</span>
+                  <textarea
+                    name="message_to_candidate"
+                    rows={3}
+                    value={inviteForm.message_to_candidate}
+                    onChange={updateInviteField}
+                    style={{ resize: "vertical" }}
+                    placeholder="A short welcome note..."
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Messages and link */}
             {inviteMessage && (
-              <p className={styles.formMessage} role="status">
+              <p
+                className={styles.formMessage}
+                role="status"
+                style={{
+                  marginTop: 16,
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  background: "#f0f9ff",
+                  border: "1px solid #b6d8f2",
+                }}
+              >
                 {inviteMessage}
               </p>
             )}
             {inviteEmailSent === true && (
-              <p className={styles.formMessage} role="status">
+              <p
+                className={styles.formMessage}
+                role="status"
+                style={{
+                  marginTop: 8,
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  background: "#e6f7e6",
+                  border: "1px solid #b2d8b2",
+                }}
+              >
                 Offer invitation emailed. You can still copy the link as a backup.
               </p>
             )}
             {inviteEmailSent === false && (
-              <p className={styles.formMessage} role="alert">
+              <p
+                className={styles.formMessage}
+                role="alert"
+                style={{
+                  marginTop: 8,
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  background: "#fff0f0",
+                  border: "1px solid #f4c2c2",
+                }}
+              >
                 Email delivery failed. Share the invitation link below manually.
               </p>
             )}
             {inviteLink && (
               <div
-                className="inviteLinkBox"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -469,16 +835,35 @@ export default function RecruiterInvitePage() {
                   border: "1px solid #bfe9f3",
                   padding: 12,
                   borderRadius: 10,
+                  marginTop: 16,
                   flexWrap: "wrap",
                 }}
               >
-                <code style={{ color: "#056280", wordBreak: "break-all" }}>{inviteLink}</code>
-                <button type="button" className={styles.secondaryButton} onClick={copyLink}>
+                <code
+                  style={{
+                    color: "#056280",
+                    wordBreak: "break-all",
+                    flex: 1,
+                  }}
+                >
+                  {inviteLink}
+                </code>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={copyLink}
+                >
                   Copy link
                 </button>
               </div>
             )}
-            <button type="submit" className={styles.primaryButton} disabled={isCreating} style={{ marginTop: 16 }}>
+
+            <button
+              type="submit"
+              className={styles.primaryButton}
+              disabled={isCreating}
+              style={{ marginTop: 20, width: "100%" }}
+            >
               {isCreating ? "Sending…" : "Send invitation & offer letter"}
             </button>
           </form>
