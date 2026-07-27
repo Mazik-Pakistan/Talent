@@ -947,74 +947,120 @@
 .guideTimelineWarn .guideTimelineKind { color: #c2410c; }
 .guideTimelineInfo .guideTimelineMark { background: #eef3ff; color: #1d4ed8; }
 
-/* ── Bank slip scanner ───────────────────────────────────────────────── */
+/* ── Document OCR scanner (light TalentAI theme) ─────────────────────── */
 .scanner {
-  border: 1px solid var(--ai-line);
-  border-radius: var(--ai-r-lg);
-  background: linear-gradient(150deg, #f7faff, #fff 55%);
+  border: 1.5px solid #c3e3ff;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #f6fbff 0%, #fff 48%);
   overflow: hidden;
+  box-shadow: 0 10px 28px -18px rgba(12, 42, 65, 0.28);
 }
 .scannerHead {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 16px 18px;
-  border-bottom: 1px solid var(--ai-line-soft);
+  border-bottom: 1px solid #e2eef9;
+  background: rgba(255, 255, 255, 0.72);
 }
-.scannerTitle { font-size: 14px; font-weight: 700; color: var(--ai-text); }
-.scannerSub { font-size: 12px; color: var(--ai-muted); margin-top: 2px; line-height: 1.5; }
+.scannerTitle { font-size: 14.5px; font-weight: 750; color: #0c2a41; }
+.scannerSub { font-size: 12px; color: #5b6d86; margin-top: 2px; line-height: 1.5; }
 .scannerBody { padding: 18px; }
+
+.scannerSplit {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr);
+  gap: 16px;
+  align-items: stretch;
+}
+@media (max-width: 820px) {
+  .scannerSplit { grid-template-columns: 1fr; }
+}
+
+.scannerSide {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 180px;
+}
+
+.scannerEmpty {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  flex: 1;
+  padding: 28px 16px;
+  border: 1px dashed #c3e3ff;
+  border-radius: 12px;
+  background: #f6fbff;
+  color: #5b6d86;
+  text-align: center;
+}
+.scannerEmpty p { margin: 0; font-size: 12.5px; line-height: 1.5; max-width: 28ch; }
 
 .dropzone {
   display: grid;
   justify-items: center;
   gap: 10px;
   padding: 30px 20px;
-  border: 1.5px dashed #c6d5f4;
-  border-radius: var(--ai-r);
+  border: 1.5px dashed #c3e3ff;
+  border-radius: 12px;
   background: #fbfcff;
   text-align: center;
   cursor: pointer;
   transition: border-color var(--ai-fast), background var(--ai-fast), transform var(--ai-fast);
 }
-.dropzone:hover { border-color: var(--ai-blue); background: #f5f9ff; transform: translateY(-1px); }
-.dropzoneActive { border-color: var(--ai-blue); background: #eff5ff; }
-.dropzoneTitle { font-size: 13.5px; font-weight: 700; color: var(--ai-text); }
-.dropzoneHint { font-size: 11.5px; color: var(--ai-faint); line-height: 1.5; }
+.dropzone:hover { border-color: #38a2ff; background: #f5f9ff; transform: translateY(-1px); }
+.dropzoneActive { border-color: #38a2ff; background: #eff5ff; }
+.dropzoneTitle { font-size: 13.5px; font-weight: 700; color: #0c2a41; }
+.dropzoneHint { font-size: 11.5px; color: #8fa0b8; line-height: 1.5; }
 
 .preview {
   position: relative;
-  border-radius: var(--ai-r);
+  border-radius: 12px;
   overflow: hidden;
-  border: 1px solid var(--ai-line);
+  border: 1.5px solid #c3e3ff;
   background: #0b1631;
-  max-height: 240px;
+  min-height: 220px;
+  max-height: 320px;
   display: grid;
   place-items: center;
 }
-.preview img { display: block; width: 100%; height: auto; max-height: 240px; object-fit: contain; }
+.previewLight {
+  background: #f6fbff;
+}
+.preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 320px;
+  object-fit: contain;
+  background: #fff;
+}
 .previewFile {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 24px;
-  color: #eaf1ff;
+  padding: 28px 20px;
+  color: #0c2a41;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 650;
 }
+.preview:not(.previewLight) .previewFile { color: #eaf1ff; }
+
 .scanOverlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(11, 22, 49, 0.1), rgba(11, 22, 49, 0.45));
+  background: linear-gradient(180deg, rgba(246, 251, 255, 0.08), rgba(57, 162, 255, 0.12));
   pointer-events: none;
 }
 .scanBeam {
   position: absolute;
   left: 0;
   right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, transparent, var(--ai-cyan), transparent);
-  box-shadow: 0 0 22px 4px rgba(34, 211, 238, 0.55);
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #38a2ff, transparent);
+  box-shadow: 0 0 12px 2px rgba(56, 162, 255, 0.35);
   animation: ai-scan-beam 1.9s var(--ai-ease-in-out) infinite;
 }
 @keyframes ai-scan-beam {
@@ -1026,10 +1072,11 @@
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(52, 182, 255, 0.14) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(52, 182, 255, 0.14) 1px, transparent 1px);
-  background-size: 26px 26px;
+    linear-gradient(rgba(56, 162, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 162, 255, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
   animation: ai-fade-in 400ms var(--ai-ease) both;
+  pointer-events: none;
 }
 .scanStatus {
   position: absolute;
@@ -1040,41 +1087,87 @@
   gap: 8px;
   padding: 7px 13px;
   border-radius: 999px;
-  background: rgba(6, 13, 31, 0.72);
-  backdrop-filter: blur(8px);
-  color: #eaf1ff;
+  background: #fff;
+  border: 1px solid #c3e3ff;
+  box-shadow: 0 6px 16px -10px rgba(12, 42, 65, 0.35);
+  color: #0c2a41;
   font-size: 11.5px;
   font-weight: 650;
 }
 
-.scannerActions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
+.scannerActions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 4px; }
 
-.resultList { display: grid; gap: 8px; margin-top: 16px; }
+.resultList { display: grid; gap: 8px; }
 .resultRow {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 13px;
-  border: 1px solid var(--ai-line-soft);
-  border-radius: var(--ai-r-sm);
+  border: 1px solid #e2eef9;
+  border-radius: 10px;
   background: #fff;
   animation: ai-fade-up 300ms var(--ai-ease) both;
 }
-.resultLabel { font-size: 11px; font-weight: 700; color: var(--ai-faint); width: 116px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.03em; }
-.resultValue { font-size: 13px; font-weight: 650; color: var(--ai-text); word-break: break-all; flex: 1; }
-.resultRowLow { border-color: #f7d9a4; background: #fffdf7; }
-.resultRowTyping {
-  border-color: rgba(59, 130, 246, 0.45);
-  background: #eff6ff;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+.resultLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: #8fa0b8;
+  width: 108px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
+.resultValue {
+  font-size: 13px;
+  font-weight: 650;
+  color: #0c2a41;
+  word-break: break-all;
+  flex: 1;
+  min-height: 1.2em;
+}
+.resultRowLow { border-color: #f0d9a8; background: #fffdf7; }
+.resultRowTyping {
+  border-color: rgba(56, 162, 255, 0.55);
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(56, 162, 255, 0.12);
+}
+.resultRowDone {
+  border-color: #a7e3c4;
+  background: #f3fdf8;
+}
+.confidenceChip {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 750;
+  color: #1f7fe0;
+  background: #e9f4ff;
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+.resultRowLow .confidenceChip { color: #9a6700; background: #fff4d6; }
+.confidenceTrack {
+  width: 48px;
+  height: 5px;
+  border-radius: 999px;
+  background: #e9f0f8;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.confidenceFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #38a2ff;
+}
+.confidenceLow { background: #e0a800; }
+
 .typeCaret {
   display: inline-block;
   width: 1.5px;
   height: 0.95em;
   margin-left: 1px;
   vertical-align: text-bottom;
-  background: var(--ai-blue, #3b82f6);
+  background: #38a2ff;
   animation: typeCaretBlink 0.7s steps(1) infinite;
 }
 @keyframes typeCaretBlink {
@@ -1082,19 +1175,58 @@
   50%, 100% { opacity: 0; }
 }
 
+.scannerProgress { margin-top: 2px; }
+.scannerProgressTrack {
+  height: 5px;
+  border-radius: 999px;
+  background: #e2eef9;
+  overflow: hidden;
+}
+.scannerProgressFill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38a2ff, #1f7fe0);
+  transition: width 180ms ease;
+}
+.scannerHelper {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #5b6d86;
+}
+
 .scannerNote {
   display: flex;
   gap: 9px;
-  margin-top: 14px;
   padding: 11px 13px;
-  border-radius: var(--ai-r-sm);
+  border-radius: 10px;
   font-size: 12px;
   line-height: 1.55;
-  font-weight: 500;
+  color: #0c2a41;
+  background: #f6fbff;
+  border: 1px solid #c3e3ff;
 }
-.noteInfo { background: #eff5ff; color: #1d4ed8; }
-.noteWarn { background: #fff8ec; color: #a35d05; }
-.noteError { background: #fff1f3; color: #b32540; }
+.noteError { background: #fff5f5; border-color: #f3c1c1; color: #9b1c1c; }
+.noteWarn { background: #fff8eb; border-color: #f0d9a8; color: #7a5c0a; }
+
+/* Full-screen OCR session (onboarding) */
+.ocrOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(12, 42, 65, 0.28);
+  backdrop-filter: blur(4px);
+}
+.ocrOverlayCard {
+  width: min(920px, 100%);
+  max-height: min(90vh, 760px);
+  overflow: auto;
+}
+
+.noteInfo { background: #eff5ff; color: #1d4ed8; border: 1px solid #c3e3ff; }
 
 /* ── Buttons shared by AI surfaces ───────────────────────────────────── */
 .btn {
