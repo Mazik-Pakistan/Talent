@@ -18,7 +18,6 @@ import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
 
 const OFFER_DRAFT_KEY = "offer_letter_draft";
 
-// Helper to format numbers with commas
 const formatCurrency = (amount, currency = "PKR") => {
   if (amount == null) return "—";
   const num = Number(amount);
@@ -98,9 +97,7 @@ function OfferLetterPageContent() {
           setDeclineReason(draft.declineReason || "");
           setSignatureMethod(draft.signatureMethod || "pad");
         }
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
       draftRestored.current = true;
     });
   }, [offer?.id, offer?.status]);
@@ -280,10 +277,9 @@ function OfferLetterPageContent() {
     router.push("/dashboard/candidate");
   }
 
-  // --------------- Professional PDF Offer Letter ---------------
+  // --------------- PDF generation ---------------
   const handleDownloadPDF = useCallback(() => {
     if (!offer) return;
-
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
       alert("Please allow pop-ups to download the offer letter as PDF.");
@@ -305,15 +301,15 @@ function OfferLetterPageContent() {
     const breakdownTotal = (offer.salary_breakdown || []).reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
     const benefitsList = selectedBenefits.map(b => `<li>${b.label}</li>`).join("");
 
-    // Company info – replace with your actual details
     const companyName = "Mazik Global Pakistan";
     const companyAddress = "Islamabad, Pakistan";
     const companyRepresentative = offer.reporting_manager || "Hiring Manager";
 
     const signedBlock = (offer.status === "signed" || offer.status === "approved") ? `
-      <div class="signature-confirm">
+      <div class="signature-confirm" style="margin-top: 30px; border: 1px dashed #0a2540; padding: 15px; background: #f0f7ff;">
         <p><strong>Accepted by:</strong> ${offer.signature?.full_legal_name || candidateName}</p>
         <p><strong>Date:</strong> ${offer.signed_at ? new Date(offer.signed_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : ""}</p>
+        ${offer.signature?.signature_data_url ? `<img src="${offer.signature.signature_data_url}" alt="Signature" style="max-width: 200px; margin-top: 10px;"/>` : ""}
       </div>
     ` : "";
 
@@ -347,7 +343,6 @@ function OfferLetterPageContent() {
     .subject { font-weight: 600; font-size: 15px; margin-bottom: 15px; color: #0a2540; }
     .salutation { margin-bottom: 20px; }
     .body-text { margin-bottom: 18px; text-align: justify; }
-    h2 { font-size: 20px; color: #0a2540; margin-bottom: 10px; }
     h3 { font-size: 16px; color: #0a2540; margin: 20px 0 10px; border-left: 4px solid #0a2540; padding-left: 10px; }
     table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px; }
     th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
@@ -367,7 +362,6 @@ function OfferLetterPageContent() {
   </style>
 </head>
 <body>
-  <!-- Letterhead -->
   <div class="letterhead">
     <div class="logo">
       <img src="/mazikglobal-logo.png" alt="Mazik Global" />
@@ -383,7 +377,6 @@ function OfferLetterPageContent() {
   <div class="recipient">
     <strong>To:</strong><br>
     ${candidateName}<br>
-    <!-- candidate address can be added if available -->
   </div>
 
   <div class="subject">Re: Employment Offer for the Position of ${offer.job_title}</div>
@@ -433,6 +426,7 @@ function OfferLetterPageContent() {
 
   <p class="body-text">Sincerely,<br><br>${companyRepresentative}<br>${companyName}</p>
 
+  ${offer.signature?.signature_data_url ? `<img src="${offer.signature.signature_data_url}" alt="Signature" style="max-width: 200px; margin-top: 10px;"/>` : ""}
   <div class="signature-block">
     <div class="sig-box">
       <div class="sig-line">${candidateName}</div>
@@ -446,7 +440,6 @@ function OfferLetterPageContent() {
 
   ${signedBlock}
 
-  <!-- Print-only instruction -->
   <p class="no-print" style="margin-top: 30px; font-style: italic; color: #64748b;">
     This document is an electronic copy. To save as PDF, use your browser's <strong>Save as PDF</strong> option in the print dialog.
   </p>
@@ -456,7 +449,6 @@ function OfferLetterPageContent() {
     printWindow.document.write(html);
     printWindow.document.close();
     printWindow.focus();
-    // Wait a moment for image, then open print dialog
     printWindow.onload = () => {
       setTimeout(() => {
         printWindow.print();
@@ -464,7 +456,7 @@ function OfferLetterPageContent() {
     };
   }, [offer, expectedName, fullLegalName, selectedBenefits]);
 
-  // --- professional SVG icons (inherit currentColor – no color override) ---
+  // --- SVG icons ---
   const IconRole = () => (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
@@ -579,7 +571,7 @@ function OfferLetterPageContent() {
               </p>
             )}
 
-            {/* ---- Role Details Section ---- */}
+            {/* ---- Role Details ---- */}
             <section style={{ marginBottom: 28 }}>
               <h3 className="offer-section-title">
                 <span style={{ marginRight: 6 }}><IconRole /></span> Role Details
@@ -612,7 +604,7 @@ function OfferLetterPageContent() {
               </dl>
             </section>
 
-            {/* ---- Compensation Section ---- */}
+            {/* ---- Compensation ---- */}
             <section style={{ marginBottom: 28 }}>
               <h3 className="offer-section-title">
                 <span style={{ marginRight: 6 }}><IconCompensation /></span> Compensation
@@ -637,7 +629,7 @@ function OfferLetterPageContent() {
               )}
             </section>
 
-            {/* ---- Benefits Section ---- */}
+            {/* ---- Benefits ---- */}
             {selectedBenefits.length > 0 && (
               <section style={{ marginBottom: 28 }}>
                 <h3 className="offer-section-title">
@@ -651,7 +643,7 @@ function OfferLetterPageContent() {
               </section>
             )}
 
-            {/* ---- Terms Section ---- */}
+            {/* ---- Terms ---- */}
             <section style={{ marginBottom: 28 }}>
               <h3 className="offer-section-title">
                 <span style={{ marginRight: 6 }}><IconTerms /></span> Terms & Conditions
@@ -661,16 +653,35 @@ function OfferLetterPageContent() {
 
             {/* ---- Signature / Actions ---- */}
             {offer.status === "signed" || offer.status === "approved" ? (
-              <div className="offer-signed-confirmation">
-                <strong>✓ Signed by {offer.signature?.full_legal_name}</strong>
-                <span>
-                  {offer.signed_at ? new Date(offer.signed_at).toLocaleString() : ""}
-                  {" · Next: upload your documents and complete your profile."}
-                </span>
+              <div className="offer-sign-block">
+                <h3>Signed by You</h3>
+                <div style={{ marginBottom: 20 }}>
+                  {offer.signature?.signature_data_url ? (
+                    <img
+                      src={offer.signature.signature_data_url}
+                      alt="Your Signature"
+                      style={{
+                        maxWidth: 300,
+                        maxHeight: 100,
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        padding: 8,
+                        background: "#fff",
+                        display: "block",
+                      }}
+                    />
+                  ) : (
+                    <p><em>Signature recorded electronically.</em></p>
+                  )}
+                  <p style={{ marginTop: 8 }}>
+                    <strong>{offer.signature?.full_legal_name}</strong>
+                    <br />
+                    Signed on {offer.signed_at ? new Date(offer.signed_at).toLocaleString() : ""}
+                  </p>
+                </div>
                 <button
                   type="button"
                   className="primary-button"
-                  style={{ marginTop: 14 }}
                   onClick={() => router.push("/onboarding")}
                 >
                   Continue to documents
