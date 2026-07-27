@@ -28,7 +28,7 @@ const PRESET_BENEFITS = [
 ];
 
 const DEFAULT_TERMS =
-  "This offer is contingent upon verification of the documents you submit after signing. By signing this letter you accept the position, compensation, benefits, and terms described above, and agree to Mazik Global Pakistan's confidentiality and employment policies.";
+  "This offer is contingent upon verification of the documents you submit after signing. By signing this letter you accept the position, Salary, benefits, and terms described above, and agree to Mazik Global Pakistan's confidentiality and employment policies.";
 
 const initialInvite = {
   full_name: "",
@@ -185,7 +185,7 @@ export default function RecruiterInvitePage() {
   useEffect(() => {
     publishRecruiterContext({
       section: "invite_offer_form",
-      hint: "Invite sends the offer letter together. Fill compensation, benefits, and role details.",
+      hint: "Invite sends the offer letter together. Fill Salary, benefits, and role details.",
       fields: [
         "full_name",
         "email",
@@ -527,7 +527,7 @@ export default function RecruiterInvitePage() {
             <div style={cardStyle}>
               <div style={sectionHeadStyle}>
                 <IconCompensation />
-                Compensation
+                Salary
               </div>
               <div className={styles.formGrid} style={{ marginBottom: 20 }}>
                 <label className={styles.field}>

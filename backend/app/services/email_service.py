@@ -826,7 +826,7 @@ class EmailService:
             <div style="background:#f1f5fe;border:2px solid #2d6cdf;border-radius:10px;padding:20px;margin-bottom:22px;">
               <p style="margin:0;color:#475569;font-size:14px;line-height:1.7;">
                 <strong>Start date:</strong> {escape(str(start_date or '—'))}<br/>
-                <strong>Monthly compensation:</strong> {salary_txt}
+                <strong>Monthly Salary:</strong> {salary_txt}
               </p>
             </div>
             <p style="margin:0 0 22px;color:#475569;font-size:15px;line-height:1.6;">
