@@ -78,6 +78,16 @@ function getPasswordStrength(password) {
   return { score: 100, label: "Strong", color: "#16a34a" };
 }
 
+function getPasswordRequirements(password) {
+  return {
+    length: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+    number: /\d/.test(password),
+    special: /[^\w\s]/.test(password),
+  };
+}
+
 export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState(initialForm);
@@ -204,7 +214,7 @@ export default function RegisterPage() {
               <span className={styles.passwordControl}>
                 <input
                   className={styles.input}
-                  aria-invalid={Boolean(showError("password"))}
+                  aria-invalid={form.password ? Boolean(showError("password")) : undefined}
                   aria-describedby={showError("password") ? "password-error" : undefined}
                   name="password"
                   type={showPassword ? "text" : "password"}
@@ -224,6 +234,20 @@ export default function RegisterPage() {
                     <div className={styles.strengthFill} style={{ width: `${strength.score}%`, background: strength.color }} />
                   </div>
                   <small className={styles.strengthLabel} style={{ color: strength.color }}>{strength.label}</small>
+                  <div className={styles.strengthRequirements}>
+                    {Object.entries(getPasswordRequirements(form.password)).map(([key, met]) => (
+                      <div key={key} className={`${styles.requirement} ${met ? styles.met : ""}`}>
+                        <span className={styles.requirementCheck}>{met ? "✓" : ""}</span>
+                        <span>
+                          {key === "length" && "At least 8 characters"}
+                          {key === "uppercase" && "One uppercase letter (A-Z)"}
+                          {key === "lowercase" && "One lowercase letter (a-z)"}
+                          {key === "number" && "One number (0-9)"}
+                          {key === "special" && "One special character (!@#$%^&*)"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </>
               )}
               {!form.password && <small className={styles.hint}>8+ characters, with uppercase, lowercase, number, and special character.</small>}
@@ -283,12 +307,13 @@ export default function RegisterPage() {
 }
 
 function FormField({ label, name, type = "text", value, error, hint, onChange, onBlur, autoComplete, placeholder, delay }) {
+  const isTouched = value !== "" || error;
   return (
     <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: delay }}>
       <span>{label}</span>
       <input
         className={styles.input}
-        aria-invalid={Boolean(error)}
+        aria-invalid={isTouched ? Boolean(error) : undefined}
         aria-describedby={error ? `${name}-error` : undefined}
         name={name}
         type={type}
