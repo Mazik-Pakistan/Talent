@@ -246,7 +246,6 @@ function EmployeeProfileContent() {
     banking: !!(onboarding?.employment?.iban && onboarding?.employment?.bank_name),
     references: (onboarding?.references?.references?.length || 0) >= 2,
     policies: !!(
-      documents.accepted_code_of_conduct &&
       documents.accepted_privacy_policy &&
       documents.accepted_employee_handbook &&
       nda.full_legal_name
@@ -946,7 +945,7 @@ function EmployeeProfileContent() {
                           }}
                         />
                         <Field
-                          label="Phone"
+                          label="Contact number"
                           value={formatPkMobileInput(emergency.phone)}
                           hint={PK_MOBILE_HINT}
                           error={fieldErrors.emergency_phone}
@@ -987,7 +986,7 @@ function EmployeeProfileContent() {
                     <dl className={styles.grid}>
                       <Row label="Name" value={onboarding.emergency.name} />
                       <Row label="Relationship" value={onboarding.emergency.relationship} />
-                      <Row label="Phone" value={formatPhoneDisplay(onboarding.emergency.phone)} />
+                      <Row label="Contact number" value={formatPhoneDisplay(onboarding.emergency.phone)} />
                       <Row label="Alternate phone" value={formatPhoneDisplay(onboarding.emergency.alternate_phone)} />
                       <Row label="Address" value={onboarding.emergency.address} wide />
                     </dl>
@@ -1158,7 +1157,7 @@ function EmployeeProfileContent() {
                               }}
                             />
                             <Field
-                              label="Phone"
+                              label="Contact number"
                               value={formatPkMobileInput(ref.phone)}
                               hint={PK_MOBILE_HINT}
                               error={fieldErrors[`ref_${index}_phone`]}
@@ -1211,7 +1210,7 @@ function EmployeeProfileContent() {
                         <dl className={styles.grid}>
                           <Row label="Relationship" value={ref.relationship} />
                           <Row label="Email" value={ref.email} />
-                          <Row label="Phone" value={formatPhoneDisplay(ref.phone)} />
+                          <Row label="Contact number" value={formatPhoneDisplay(ref.phone)} />
                           <Row label="Company" value={ref.company} wide />
                         </dl>
                       </div>
@@ -1234,10 +1233,6 @@ function EmployeeProfileContent() {
                 >
                   <div className={styles.subBlock} style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
                     <h4>Company policies</h4>
-                    <PolicyStatus
-                      label="Code of Conduct"
-                      accepted={documents.accepted_code_of_conduct}
-                    />
                     <PolicyStatus
                       label="Privacy & IT Security Policy"
                       accepted={documents.accepted_privacy_policy}

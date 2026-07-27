@@ -258,7 +258,7 @@ export default function RecruiterDocumentReview({ ownerId }) {
                         disabled={busyId === doc.id}
                         onClick={() =>
                           handleVerify(doc.id, "verified", {
-                            approve_despite_mismatch: docFlags.length > 0 || hasMismatch,
+                            approve_despite_mismatch: docFlags.length > 0,
                           })
                         }
                       >

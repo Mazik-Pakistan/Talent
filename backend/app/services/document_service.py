@@ -721,49 +721,42 @@ class DocumentService:
 
         # If recruiter approves despite mismatch, clear profile-level mismatch flag
         if approve_despite or payload.status == "verified":
-            if approve_despite:
-                await database.documents.update_many(
-                    {
-                        "owner_id": doc["owner_id"],
-                        "is_active": True,
-                        "ocr_result.status": "completed",
-                    },
+            # Check if ALL documents for this owner are now verified before
+            # clearing the profile-level verification summary flag.
+            remaining_unverified = await database.documents.count_documents(
+                {
+                    "owner_id": doc["owner_id"],
+                    "is_active": True,
+                    "ocr_result.status": "completed",
+                    "verification_status": {"$ne": "verified"},
+                    "_id": {"$ne": doc["_id"]},  # exclude the one we just verified
+                }
+            )
+            if remaining_unverified == 0:
+                await database.candidates.update_one(
+                    {"$or": [{"user_id": doc["owner_id"]}, {"email": doc.get("owner_email")}]},
                     {
                         "$set": {
-                            "status": "verified",
-                            "verification_status": "verified",
-                            "mismatch_approved": True,
-                            "mismatch_approved_by": current_user.id,
-                            "mismatch_approved_at": now,
-                            "mismatch_approval_note": payload.note,
-                            "updated_at": now,
+                            "document_verification.verification_status": "verified",
+                            "document_verification.recruiter_override": True,
+                            "document_verification.recruiter_override_by": current_user.id,
+                            "document_verification.recruiter_override_at": now,
+                            "document_verification.summary": None,
                         }
                     },
                 )
-            await database.candidates.update_one(
-                {"$or": [{"user_id": doc["owner_id"]}, {"email": doc.get("owner_email")}]},
-                {
-                    "$set": {
-                        "document_verification.verification_status": "verified",
-                        "document_verification.recruiter_override": True,
-                        "document_verification.recruiter_override_by": current_user.id,
-                        "document_verification.recruiter_override_at": now,
-                        "document_verification.summary": None,
-                    }
-                },
-            )
-            await database.employees.update_one(
-                {"$or": [{"user_id": doc["owner_id"]}, {"email": doc.get("owner_email")}]},
-                {
-                    "$set": {
-                        "document_verification.verification_status": "verified",
-                        "document_verification.recruiter_override": True,
-                        "document_verification.recruiter_override_by": current_user.id,
-                        "document_verification.recruiter_override_at": now,
-                        "document_verification.summary": None,
-                    }
-                },
-            )
+                await database.employees.update_one(
+                    {"$or": [{"user_id": doc["owner_id"]}, {"email": doc.get("owner_email")}]},
+                    {
+                        "$set": {
+                            "document_verification.verification_status": "verified",
+                            "document_verification.recruiter_override": True,
+                            "document_verification.recruiter_override_by": current_user.id,
+                            "document_verification.recruiter_override_at": now,
+                            "document_verification.summary": None,
+                        }
+                    },
+                )
 
         document_label = DOCUMENT_LABELS.get(doc["doc_type"], doc["doc_type"].replace("_", " ").title())
         candidate_link = "/documents"

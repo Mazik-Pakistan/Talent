@@ -203,7 +203,7 @@ export default function RecruiterProfilePage() {
                   <input name="email" value={profile?.email || ""} disabled readOnly />
                 </label>
                 <label className={styles.field}>
-                  <span>Phone</span>
+                  <span>Contact number</span>
                   <input
                     name="phone"
                     value={form.phone}

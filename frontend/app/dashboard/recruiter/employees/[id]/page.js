@@ -716,7 +716,7 @@ export default function EmployeeProfilePage({ params }) {
                 <dd>{employee.company_email || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
-                <dt>Phone</dt>
+                <dt>Contact number</dt>
                 <dd>{employee.phone || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>

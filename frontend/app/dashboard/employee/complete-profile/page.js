@@ -37,10 +37,10 @@ const STEPS = [
 ];
 
 const SECTION_FIELDS = {
-  emergency: ["Full name", "Relationship", "Phone", "Alternate phone", "Address"],
+  emergency: ["Full name", "Relationship", "Contact number", "Alternate phone", "Address"],
   employment: ["Bank name", "Account holder", "Account number", "IBAN", "Branch", "SWIFT"],
-  references: ["Full name", "Relationship", "Email", "Phone", "Company"],
-  documents: ["Code of Conduct", "Privacy Policy", "Employee Handbook"],
+  references: ["Full name", "Relationship", "Email", "Contact number", "Company"],
+  documents: ["Privacy Policy", "Employee Handbook"],
   nda: ["Full legal name", "Agreement checkbox", "Signature"],
   submit: ["Review all sections", "Submit profile"],
 };
@@ -60,7 +60,6 @@ const emptyEmployment = {
 };
 const emptyReference = { full_name: "", relationship: "", email: "", phone: "", company: "" };
 const emptyDocuments = {
-  accepted_code_of_conduct: false,
   accepted_privacy_policy: false,
   accepted_employee_handbook: false,
 };
@@ -286,7 +285,6 @@ function CompleteProfileContent() {
           "employment.iban": !employment.iban?.trim(),
           "employment.branch": !employment.branch?.trim(),
           "employment.branch_code": !employment.branch_code?.trim(),
-          "employment.tax_id": !employment.tax_id?.trim(),
         },
         message: "Complete your banking details including IBAN, branch, and branch code.",
       }),
@@ -347,11 +345,10 @@ function CompleteProfileContent() {
       },
       documents: () => ({
         errors: {
-          "documents.accepted_code_of_conduct": !documents.accepted_code_of_conduct,
           "documents.accepted_privacy_policy": !documents.accepted_privacy_policy,
           "documents.accepted_employee_handbook": !documents.accepted_employee_handbook,
         },
-        message: "Acknowledge all three policies to continue.",
+        message: "Acknowledge both policies to continue.",
       }),
       nda: () => {
         const expected = employee?.full_name || "";
@@ -708,6 +705,7 @@ function OnboardingForm({
   onExit,
 }) {
   const { fields: aiFields, activeField } = automation;
+  const [ndaSigMethod, setNdaSigMethod] = useState("pad");
 
   const fieldProps = (key, { required = false } = {}) => ({
     fieldKey: key,
@@ -743,8 +741,7 @@ function OnboardingForm({
     employment: Boolean(employment.bank_name && employment.account_number),
     references: Boolean(references[0]?.full_name && references[1]?.full_name),
     documents: Boolean(
-      documents.accepted_code_of_conduct &&
-        documents.accepted_privacy_policy &&
+      documents.accepted_privacy_policy &&
         documents.accepted_employee_handbook
     ),
     nda: Boolean(ndaAgreed),
@@ -811,7 +808,7 @@ function OnboardingForm({
               </div>
               <div className={styles.fieldRow}>
                 <AiField
-                  label="Phone"
+                  label="Contact number"
                   hint={PK_MOBILE_HINT}
                   value={emergency.phone}
                   onChange={(event) => updateEmergency("phone", formatPkMobileInput(event.target.value))}
@@ -890,6 +887,7 @@ function OnboardingForm({
                 />
                 <AiField
                   label="IBAN"
+                  hint="Format: PK36SCBL0000001123456702"
                   value={employment.iban || ""}
                   onChange={(event) => updateEmployment("iban", event.target.value.toUpperCase())}
                   {...fieldProps("employment.iban", { required: true })}
@@ -911,12 +909,6 @@ function OnboardingForm({
                   value={employment.swift_code || ""}
                   onChange={(event) => updateEmployment("swift_code", event.target.value)}
                   {...fieldProps("employment.swift_code")}
-                />
-                <AiField
-                  label="Tax ID"
-                  value={employment.tax_id}
-                  onChange={(event) => updateEmployment("tax_id", event.target.value)}
-                  {...fieldProps("employment.tax_id", { required: true })}
                 />
               </div>
             </div>
@@ -960,7 +952,7 @@ function OnboardingForm({
                         {...fieldProps(`references.${index}.email`, { required: true })}
                       />
                       <AiField
-                        label="Phone"
+                        label="Contact number"
                         hint={PK_MOBILE_HINT}
                         value={reference.phone}
                         onChange={(event) =>
@@ -1003,13 +995,6 @@ function OnboardingForm({
               </div>
               <div style={{ display: "grid", gap: 10 }}>
                 <AiCheckRow
-                  checked={documents.accepted_code_of_conduct}
-                  onChange={(event) => updateDocuments("accepted_code_of_conduct", event.target.checked)}
-                  {...fieldProps("documents.accepted_code_of_conduct", { required: true })}
-                >
-                  I have read and agree to the Code of Conduct.
-                </AiCheckRow>
-                <AiCheckRow
                   checked={documents.accepted_privacy_policy}
                   onChange={(event) => updateDocuments("accepted_privacy_policy", event.target.checked)}
                   {...fieldProps("documents.accepted_privacy_policy", { required: true })}
@@ -1021,7 +1006,7 @@ function OnboardingForm({
                   onChange={(event) => updateDocuments("accepted_employee_handbook", event.target.checked)}
                   {...fieldProps("documents.accepted_employee_handbook", { required: true })}
                 >
-                  I have read and agree to the Employee Handbook (leave &amp; remote work policy).
+                  I have read and agree to the Employee Handbook.
                 </AiCheckRow>
               </div>
             </div>
@@ -1049,7 +1034,45 @@ function OnboardingForm({
                   style={{ marginTop: 18 }}
                   data-field-error={fieldErrors["nda.signature"] ? "true" : undefined}
                 >
-                  <SignaturePad onChange={setNdaSignature} />
+                  <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+                    <button
+                      type="button"
+                      className={ndaSigMethod === "pad" ? styles.btnPrimary : styles.btnSecondary}
+                      onClick={() => { setNdaSigMethod("pad"); setNdaSignature(null); }}
+                    >
+                      Draw signature
+                    </button>
+                    <button
+                      type="button"
+                      className={ndaSigMethod === "upload" ? styles.btnPrimary : styles.btnSecondary}
+                      onClick={() => { setNdaSigMethod("upload"); setNdaSignature(null); }}
+                    >
+                      Upload signature
+                    </button>
+                  </div>
+
+                  {ndaSigMethod === "pad" ? (
+                    <SignaturePad onChange={setNdaSignature} />
+                  ) : (
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted, #5b6d86)", textTransform: "uppercase", letterSpacing: ".4px" }}>
+                        Signature file (PNG, JPG, or PDF)
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,application/pdf"
+                        style={{ fontSize: 13 }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = (ev) => setNdaSignature(ev.target.result);
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </div>
+                  )}
+
                   {fieldErrors["nda.signature"] ? (
                     <em style={{ fontStyle: "normal", fontSize: 11.5, fontWeight: 700, color: "#b42318" }}>
                       Signature required
@@ -1081,7 +1104,7 @@ function OnboardingForm({
                   items={[
                     ["Name", emergency.name],
                     ["Relationship", emergency.relationship],
-                    ["Phone", emergency.phone],
+                    ["Contact number", emergency.phone],
                     ["Alternate", emergency.alternate_phone],
                   ]}
                 />
@@ -1107,7 +1130,6 @@ function OnboardingForm({
                     ["Signed by", employee?.full_name || ndaName || "—"],
                     [
                       "Policies",
-                      documents.accepted_code_of_conduct &&
                       documents.accepted_privacy_policy &&
                       documents.accepted_employee_handbook
                         ? "Acknowledged"
@@ -1172,7 +1194,7 @@ function CompletedRecord({
           <HistoryBlock title="Emergency contact">
             <HistoryRow label="Name" value={emergency.name} />
             <HistoryRow label="Relationship" value={emergency.relationship} />
-            <HistoryRow label="Phone" value={emergency.phone} />
+            <HistoryRow label="Contact number" value={emergency.phone} />
             <HistoryRow label="Alternate phone" value={emergency.alternate_phone} />
             <HistoryRow label="Address" value={emergency.address} />
           </HistoryBlock>
@@ -1195,14 +1217,13 @@ function CompletedRecord({
                 <HistoryRow label="Name" value={reference.full_name} />
                 <HistoryRow label="Relationship" value={reference.relationship} />
                 <HistoryRow label="Email" value={reference.email} />
-                <HistoryRow label="Phone" value={reference.phone} />
+                <HistoryRow label="Contact number" value={reference.phone} />
                 <HistoryRow label="Company" value={reference.company} />
               </div>
             ))}
           </HistoryBlock>
 
           <HistoryBlock title="Policies">
-            <HistoryRow label="Code of conduct" value={documents.accepted_code_of_conduct ? "Accepted" : "—"} />
             <HistoryRow label="Privacy policy" value={documents.accepted_privacy_policy ? "Accepted" : "—"} />
             <HistoryRow label="Employee handbook" value={documents.accepted_employee_handbook ? "Accepted" : "—"} />
           </HistoryBlock>
