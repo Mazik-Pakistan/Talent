@@ -374,14 +374,22 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
               className={styles.brand}
               onClick={() => setSidebarCollapsed((value) => !value)}
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}
             >
               <div
                 className={styles.brandMark}
                 aria-hidden="true"
-                style={sidebarCollapsed ? { width: 112, maxWidth: 112 } : { width: "100%", maxWidth: 240 }}
+                style={sidebarCollapsed ? { width: 44, maxWidth: 44 } : { width: "100%", maxWidth: 240 }}
               >
-                <Image src="/talentai-logo.png" alt="Mazik Global TalentAI" width={1664} height={992} priority style={{ width: "100%", height: "auto", objectFit: "contain" }} sizes="(max-width: 900px) 100vw, 240px" />
+                <Image
+                  src={sidebarCollapsed ? "/mazikglobal-icon.svg" : "/talentai-logo.png"}
+                  alt="Mazik Global TalentAI"
+                  width={sidebarCollapsed ? 200 : 1664}
+                  height={sidebarCollapsed ? 200 : 992}
+                  priority
+                  style={{ width: "100%", height: "auto", objectFit: "contain" }}
+                  sizes="(max-width: 900px) 100vw, 240px"
+                />
               </div>
             </button>
 
