@@ -19,6 +19,7 @@ const ROLES = [
 ];
 
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
 
 function validateForm(values) {
   const errors = {};
@@ -31,8 +32,8 @@ function validateForm(values) {
 
   if (!values.password) {
     errors.password = "Password is required.";
-  } else if (values.password.length < 8) {
-    errors.password = "Password must be at least 8 characters.";
+  } else if (!PASSWORD_REGEX.test(values.password)) {
+    errors.password = "Password must be at least 8 characters with uppercase, lowercase, number, and special character.";
   }
 
   return errors;

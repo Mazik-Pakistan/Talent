@@ -21,6 +21,15 @@ class SendItProvisioningRequest(BaseModel):
             raise ValueError("offer_id is required.")
         return cleaned
 
+    @field_validator("note")
+    @classmethod
+    def sanitize_note(cls, value: str | None) -> str | None:
+        """Basic HTML sanitization for note."""
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+        return sanitize_html(value)
+
 
 class RemindItProvisioningRequest(BaseModel):
     offer_id: str = Field(min_length=1)
@@ -33,6 +42,15 @@ class RemindItProvisioningRequest(BaseModel):
         if not cleaned:
             raise ValueError("offer_id is required.")
         return cleaned
+
+    @field_validator("note")
+    @classmethod
+    def sanitize_note(cls, value: str | None) -> str | None:
+        """Basic HTML sanitization for note."""
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+        return sanitize_html(value)
 
 
 class ItAssetItem(BaseModel):
@@ -56,6 +74,15 @@ class ItAssetItem(BaseModel):
         if lowered not in ASSET_TYPES:
             return "other"
         return lowered
+
+    @field_validator("name", "asset_type", "serial_number", "notes")
+    @classmethod
+    def sanitize_text(cls, value: str | None) -> str | None:
+        """Basic HTML sanitization for text fields."""
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+        return sanitize_html(value)
 
     @field_validator("serial_number", "notes")
     @classmethod

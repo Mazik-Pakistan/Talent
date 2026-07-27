@@ -28,11 +28,6 @@ import OcrScanOverlay, {
   RESUME_OCR_FIELDS,
 } from "@/components/ai-experience/OcrScanOverlay";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
-import {
-  BLOOD_GROUP_HINT,
-  BLOOD_GROUP_OPTIONS,
-  normalizeBloodGroup,
-} from "@/lib/bloodGroup";
 import styles from "./onboarding.module.css";
 
 const STEPS = [
@@ -1418,19 +1413,55 @@ function OnboardingContent() {
 
     if (step === "personal") {
       const errors = {};
-      if (!personal.first_name) errors.first_name = true;
-      if (!personal.last_name) errors.last_name = true;
-      if (!personal.date_of_birth) errors.date_of_birth = true;
-      if (!personal.gender) errors.gender = true;
-      if (!personal.nationality) errors.nationality = true;
-      if (!personal.marital_status) errors.marital_status = true;
-      if (!personal.national_id) errors.national_id = true;
-      if (!personal.current_address) errors.current_address = true;
-      if (!personal.same_as_current && !personal.permanent_address) errors.permanent_address = true;
-      if (!personal.city) errors.city = true;
-      if (!personal.state) errors.state = true;
-      if (!personal.postal_code) errors.postal_code = true;
-      if (!personal.country) errors.country = true;
+      
+      // Validate text fields
+      const firstNameValidation = validateTextField(personal.first_name, 1, 80, "First name");
+      if (!firstNameValidation.isValid) errors.first_name = firstNameValidation.error;
+      
+      const lastNameValidation = validateTextField(personal.last_name, 1, 80, "Last name");
+      if (!lastNameValidation.isValid) errors.last_name = lastNameValidation.error;
+      
+      const nationalityValidation = validateTextField(personal.nationality, 2, 80, "Nationality");
+      if (!nationalityValidation.isValid) errors.nationality = nationalityValidation.error;
+      
+      const cityValidation = validateTextField(personal.city, 2, 100, "City");
+      if (!cityValidation.isValid) errors.city = cityValidation.error;
+      
+      const stateValidation = validateTextField(personal.state, 2, 100, "State");
+      if (!stateValidation.isValid) errors.state = stateValidation.error;
+      
+      const postalCodeValidation = validateTextField(personal.postal_code, 3, 20, "Postal code");
+      if (!postalCodeValidation.isValid) errors.postal_code = postalCodeValidation.error;
+      
+      const countryValidation = validateTextField(personal.country, 2, 100, "Country");
+      if (!countryValidation.isValid) errors.country = countryValidation.error;
+      
+      const currentAddressValidation = validateTextField(personal.current_address, 3, 300, "Current address");
+      if (!currentAddressValidation.isValid) errors.current_address = currentAddressValidation.error;
+      
+      if (!personal.same_as_current) {
+        const permanentAddressValidation = validateTextField(personal.permanent_address, 3, 300, "Permanent address");
+        if (!permanentAddressValidation.isValid) errors.permanent_address = permanentAddressValidation.error;
+      }
+      
+      // Validate date of birth
+      const dobValidation = validateDateNotFuture(personal.date_of_birth, "Date of birth");
+      if (!dobValidation.isValid) errors.date_of_birth = dobValidation.error;
+      
+      // Validate CNIC format
+      const cnicValidation = validateCNIC(personal.national_id);
+      if (!cnicValidation.isValid) errors.national_id = cnicValidation.error;
+      
+      // Validate alternate phone if provided
+      if (personal.alternate_phone && personal.alternate_phone.trim()) {
+        if (!isValidPkMobile(personal.alternate_phone)) {
+          errors.alternate_phone = "Enter a valid Pakistani mobile number.";
+        }
+      }
+      
+      // Validate required dropdowns
+      if (!personal.gender) errors.gender = "Gender is required.";
+      if (!personal.marital_status) errors.marital_status = "Marital status is required.";
 
       const requiredOk = Object.keys(errors).length === 0;
       if (!requiredOk) {
@@ -1439,7 +1470,16 @@ function OnboardingContent() {
       }
       const payload = {
         ...personal,
-        permanent_address: personal.same_as_current ? personal.current_address : personal.permanent_address,
+        first_name: firstNameValidation.normalized,
+        last_name: lastNameValidation.normalized,
+        nationality: nationalityValidation.normalized,
+        city: cityValidation.normalized,
+        state: stateValidation.normalized,
+        postal_code: postalCodeValidation.normalized,
+        country: countryValidation.normalized,
+        current_address: currentAddressValidation.normalized,
+        permanent_address: personal.same_as_current ? currentAddressValidation.normalized : permanentAddressValidation?.normalized || personal.permanent_address,
+        national_id: cnicValidation.normalized,
         alternate_phone: personal.alternate_phone || null,
         profile_picture: personal.profile_picture || null,
       };
@@ -1475,15 +1515,44 @@ function OnboardingContent() {
       });
       localStorage.removeItem(draftStorageKey());
     } else if (step === "education") {
-      const valid = educationEntries.every(
-        (entry) =>
-          entry.institution &&
-          entry.degree &&
-          entry.field_of_study &&
-          entry.year_completed
-      );
-      if (!valid) {
-        showFormError("Complete every education field. Transcript upload is optional.");
+      // Validate education entries
+      let hasErrors = false;
+      const educationErrors = {};
+      
+      educationEntries.forEach((entry, index) => {
+        const entryErrors = {};
+        
+        const institutionValidation = validateTextField(entry.institution, 2, 200, "Institution");
+        if (!institutionValidation.isValid) entryErrors.institution = institutionValidation.error;
+        
+        const degreeValidation = validateTextField(entry.degree, 2, 120, "Degree");
+        if (!degreeValidation.isValid) entryErrors.degree = degreeValidation.error;
+        
+        const fieldValidation = validateTextField(entry.field_of_study, 2, 120, "Field of study");
+        if (!fieldValidation.isValid) entryErrors.field_of_study = fieldValidation.error;
+        
+        const yearValidation = validateTextField(entry.year_completed, 4, 4, "Year completed");
+        if (!yearValidation.isValid) {
+          entryErrors.year_completed = yearValidation.error;
+        } else {
+          // Additional year validation
+          const currentYear = new Date().getFullYear();
+          const yearNum = parseInt(entry.year_completed, 10);
+          if (yearNum > currentYear) {
+            entryErrors.year_completed = "Year completed cannot be in the future.";
+          } else if (yearNum < 1900) {
+            entryErrors.year_completed = "Year completed must be after 1900.";
+          }
+        }
+        
+        if (Object.keys(entryErrors).length > 0) {
+          educationErrors[index] = entryErrors;
+          hasErrors = true;
+        }
+      });
+      
+      if (hasErrors) {
+        showFormError("Please fix the errors in education fields.", educationErrors);
         return;
       }
       setFieldErrors({});

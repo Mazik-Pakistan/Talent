@@ -84,6 +84,45 @@ class CourseAssignRequest(BaseModel):
     def clean_skills(cls, value: list[str]) -> list[str]:
         return list(dict.fromkeys(s.strip() for s in value if s and s.strip()))
 
+    @field_validator("course_url")
+    @classmethod
+    def validate_course_url(cls, value: str) -> str:
+        """Validate course URL format."""
+        from app.schemas.auth import validate_url_format
+        validated = validate_url_format(value, "course URL")
+        if validated is None:
+            raise ValueError("Course URL is required.")
+        return validated
+
+    @field_validator("department", "job_title", "joining_role", "course_title", "note")
+    @classmethod
+    def sanitize_text(cls, value: str | None) -> str | None:
+        """Basic HTML sanitization for text fields."""
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+        return sanitize_html(value)
+
+    @field_validator("due_date")
+    @classmethod
+    def validate_due_date(cls, value: date | None) -> date | None:
+        """Validate due date is not in the past."""
+        if value is None:
+            return None
+        if value < date.today():
+            raise ValueError("Due date cannot be in the past.")
+        return value
+
+    @field_validator("duration_minutes")
+    @classmethod
+    def validate_duration(cls, value: int | None) -> int | None:
+        """Validate duration is positive."""
+        if value is None:
+            return None
+        if value <= 0:
+            raise ValueError("Duration must be positive.")
+        return value
+
     @model_validator(mode="after")
     def require_targets(self):
         # joining_role is an alias for designation / job_title

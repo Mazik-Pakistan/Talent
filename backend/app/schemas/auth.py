@@ -1,4 +1,5 @@
 import re
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
@@ -7,6 +8,10 @@ PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,
 # Accept legacy international-style numbers OR Pakistani mobiles (03XXXXXXXXX / +92…).
 PHONE_PATTERN = re.compile(r"^03\d{9}$")
 PK_MOBILE_DIGITS = re.compile(r"^03\d{9}$")
+# CNIC format: XXXXX-XXXXXXX-X (with or without hyphens)
+CNIC_PATTERN = re.compile(r"^\d{5}-?\d{7}-?\d{1}$")
+# URL validation pattern
+URL_PATTERN = re.compile(r"^https?://[^\s/$.?#].[^\s]*$", re.IGNORECASE)
 
 
 def normalize_pk_mobile(value: str) -> str:
@@ -39,6 +44,64 @@ def names_match(left: str | None, right: str | None) -> bool:
 
     a, b = _norm(left), _norm(right)
     return bool(a) and a == b
+
+
+def validate_cnic_format(value: str) -> str:
+    """Validate Pakistani CNIC/NIC format (XXXXX-XXXXXXX-X)."""
+    raw = (value or "").strip()
+    if not raw:
+        raise ValueError("National ID (CNIC) is required.")
+    
+    # Remove any spaces or extra hyphens for validation
+    normalized = re.sub(r"[^\d]", "", raw)
+    
+    # Check if it matches the CNIC pattern with or without hyphens
+    if not CNIC_PATTERN.fullmatch(raw):
+        raise ValueError("Enter a valid Pakistani CNIC/NIC (format: XXXXX-XXXXXXX-X).")
+    
+    # Format with hyphens for consistency: XXXXX-XXXXXXX-X
+    if len(normalized) == 13:
+        return f"{normalized[:5]}-{normalized[5:12]}-{normalized[12:]}"
+    return raw
+
+
+def validate_date_not_future(value: date, field_name: str = "date") -> date:
+    """Validate that a date is not in the future."""
+    if value > date.today():
+        raise ValueError(f"{field_name.title()} cannot be in the future.")
+    return value
+
+
+def validate_date_not_past(value: date, field_name: str = "date") -> date:
+    """Validate that a date is not in the past (for future dates like start dates)."""
+    if value < date.today():
+        raise ValueError(f"{field_name.title()} cannot be in the past.")
+    return value
+
+
+def validate_url_format(value: str | None, field_name: str = "URL") -> str | None:
+    """Validate URL format."""
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if not URL_PATTERN.fullmatch(cleaned):
+        raise ValueError(f"Enter a valid {field_name} (must start with http:// or https://).")
+    return cleaned
+
+
+def sanitize_html(value: str) -> str:
+    """Basic HTML sanitization to prevent XSS."""
+    # Remove script tags and event handlers
+    value = re.sub(r"<script.*?>.*?</script>", "", value, flags=re.IGNORECASE | re.DOTALL)
+    value = re.sub(r"on\w+=\".*?\"", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"javascript:", "", value, flags=re.IGNORECASE)
+    # Remove other potentially dangerous tags
+    dangerous_tags = ["iframe", "object", "embed", "link", "meta", "base"]
+    for tag in dangerous_tags:
+        value = re.sub(f"<{tag}.*?>.*?</{tag}>", "", value, flags=re.IGNORECASE | re.DOTALL)
+    return value.strip()
 
 
 class RegisterRequest(BaseModel):

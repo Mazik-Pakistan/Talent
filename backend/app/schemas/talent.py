@@ -52,6 +52,30 @@ class InternalOpportunityCreateRequest(BaseModel):
     def _clean_skills(cls, value: list[str]) -> list[str]:
         return [s.strip() for s in value if s and s.strip()]
 
+    @field_validator("closes_at")
+    @classmethod
+    def validate_closes_at(cls, value: date | None) -> date | None:
+        """Validate closing date is not in the past."""
+        if value is None:
+            return None
+        if value < date.today():
+            raise ValueError("Closing date cannot be in the past.")
+        return value
+
+    @field_validator("title", "description", "department", "location", "commitment")
+    @classmethod
+    def sanitize_text(cls, value: str | None) -> str | None:
+        """Basic HTML sanitization for text fields."""
+        if value is None:
+            return None
+        # Import here to avoid circular dependency
+        import re
+        # Remove script tags and event handlers
+        value = re.sub(r"<script.*?>.*?</script>", "", value, flags=re.IGNORECASE | re.DOTALL)
+        value = re.sub(r"on\w+=\".*?\"", "", value, flags=re.IGNORECASE)
+        value = re.sub(r"javascript:", "", value, flags=re.IGNORECASE)
+        return value.strip()
+
 
 class InternalOpportunityUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=2, max_length=160)
@@ -75,11 +99,17 @@ class CompetencyEvaluationRequest(BaseModel):
 
     @field_validator("comments")
     @classmethod
-    def _strip_comments(cls, value: str | None) -> str | None:
+    def sanitize_comments(cls, value: str | None) -> str | None:
+        """Basic HTML sanitization for comments."""
         if value is None:
             return None
-        cleaned = value.strip()
-        return cleaned or None
+        # Import here to avoid circular dependency
+        import re
+        # Remove script tags and event handlers
+        value = re.sub(r"<script.*?>.*?</script>", "", value, flags=re.IGNORECASE | re.DOTALL)
+        value = re.sub(r"on\w+=\".*?\"", "", value, flags=re.IGNORECASE)
+        value = re.sub(r"javascript:", "", value, flags=re.IGNORECASE)
+        return value.strip()
 
 
 # ---------------------------------------------------------------------- #
@@ -91,6 +121,30 @@ class DevelopmentMilestoneUpdate(BaseModel):
     status: Literal["pending", "in_progress", "completed"] | None = None
     due_date: date | None = None
     note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("due_date")
+    @classmethod
+    def validate_due_date(cls, value: date | None) -> date | None:
+        """Validate due date is not in the past."""
+        if value is None:
+            return None
+        if value < date.today():
+            raise ValueError("Due date cannot be in the past.")
+        return value
+
+    @field_validator("note")
+    @classmethod
+    def sanitize_note(cls, value: str | None) -> str | None:
+        """Basic HTML sanitization for note."""
+        if value is None:
+            return None
+        # Import here to avoid circular dependency
+        import re
+        # Remove script tags and event handlers
+        value = re.sub(r"<script.*?>.*?</script>", "", value, flags=re.IGNORECASE | re.DOTALL)
+        value = re.sub(r"on\w+=\".*?\"", "", value, flags=re.IGNORECASE)
+        value = re.sub(r"javascript:", "", value, flags=re.IGNORECASE)
+        return value.strip()
 
 
 class DevelopmentPlanUpdateRequest(BaseModel):

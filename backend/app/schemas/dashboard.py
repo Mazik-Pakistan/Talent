@@ -43,6 +43,16 @@ class CreateAnnouncementRequest(BaseModel):
             raise ValueError("Employee-targeted announcements must use the employees audience.")
         if self.target_candidate_ids and self.audience != "candidates":
             raise ValueError("Candidate-targeted announcements must use the candidates audience.")
+        
+        # HTML sanitization for announcement content
+        import re
+        self.title = re.sub(r"<script.*?>.*?</script>", "", self.title, flags=re.IGNORECASE | re.DOTALL)
+        self.title = re.sub(r"on\w+=\".*?\"", "", self.title, flags=re.IGNORECASE)
+        self.title = re.sub(r"javascript:", "", self.title, flags=re.IGNORECASE)
+        self.body = re.sub(r"<script.*?>.*?</script>", "", self.body, flags=re.IGNORECASE | re.DOTALL)
+        self.body = re.sub(r"on\w+=\".*?\"", "", self.body, flags=re.IGNORECASE)
+        self.body = re.sub(r"javascript:", "", self.body, flags=re.IGNORECASE)
+        
         return self
 
 
@@ -89,11 +99,24 @@ class UpdateRecruiterProfileRequest(BaseModel):
 
     @field_validator("phone")
     @classmethod
-    def normalize_phone(cls, value: str | None) -> str | None:
+    def validate_phone(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        cleaned = value.strip()
-        return cleaned or None
+        from app.schemas.auth import normalize_optional_pk_mobile
+        return normalize_optional_pk_mobile(value)
+
+    @field_validator("full_name", "department", "job_title", "office_location")
+    @classmethod
+    def sanitize_text(cls, value: str | None) -> str | None:
+        """Basic HTML sanitization for text fields."""
+        if value is None:
+            return None
+        import re
+        # Remove script tags and event handlers
+        value = re.sub(r"<script.*?>.*?</script>", "", value, flags=re.IGNORECASE | re.DOTALL)
+        value = re.sub(r"on\w+=\".*?\"", "", value, flags=re.IGNORECASE)
+        value = re.sub(r"javascript:", "", value, flags=re.IGNORECASE)
+        return " ".join(value.split())
 
 
 class RecruiterMascotBriefRequest(BaseModel):

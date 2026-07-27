@@ -5,8 +5,12 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 
 from app.schemas.auth import (
     PASSWORD_PATTERN,
+    CNIC_PATTERN,
     normalize_optional_pk_mobile,
     normalize_pk_mobile,
+    validate_cnic_format,
+    validate_date_not_future,
+    validate_url_format,
 )
 from app.schemas.offer import OfferTermsPayload
 
@@ -45,6 +49,25 @@ class CreateInvitationRequest(BaseModel):
     @classmethod
     def normalize_email(cls, value: EmailStr) -> str:
         return value.lower()
+
+    @field_validator("start_date")
+    @classmethod
+    def validate_start_date(cls, value: date | None) -> date | None:
+        """Validate start date is not in the past."""
+        if value is None:
+            return None
+        if value < date.today():
+            raise ValueError("Start date cannot be in the past.")
+        return value
+
+    @field_validator("full_name", "job_title", "department", "office_location")
+    @classmethod
+    def sanitize_text(cls, value: str | None) -> str | None:
+        """Basic HTML sanitization for text fields."""
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+        return sanitize_html(value)
 
     @model_validator(mode="after")
     def _sync_offer_role_fields(self) -> "CreateInvitationRequest":
@@ -156,6 +179,31 @@ class OnboardingPersonalInfo(BaseModel):
     def validate_alternate_phone(cls, value: str | None) -> str | None:
         return _optional_phone(value)
 
+    @field_validator("national_id")
+    @classmethod
+    def validate_national_id(cls, value: str) -> str:
+        """Validate Pakistani CNIC/NIC format."""
+        return validate_cnic_format(value)
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def validate_date_of_birth(cls, value: date) -> date:
+        """Validate date of birth is not in the future."""
+        return validate_date_not_future(value, "date of birth")
+
+    @field_validator("profile_picture")
+    @classmethod
+    def validate_profile_picture(cls, value: str | None) -> str | None:
+        """Validate profile picture URL format."""
+        return validate_url_format(value, "profile picture URL")
+
+    @field_validator("current_address", "permanent_address")
+    @classmethod
+    def sanitize_address(cls, value: str) -> str:
+        """Basic HTML sanitization for address fields."""
+        from app.schemas.auth import sanitize_html
+        return sanitize_html(value)
+
     @model_validator(mode="after")
     def apply_address_defaults(self):
         if self.same_as_current:
@@ -221,6 +269,78 @@ class EducationEntry(BaseModel):
     cgpa_or_percentage: str | None = Field(default=None, max_length=20)
     certificate_file: str | None = None
 
+    @field_validator("year_completed")
+    @classmethod
+    def validate_year_completed(cls, value: str) -> str:
+        """Validate year completed is not in the future."""
+        current_year = date.today().year
+        try:
+            year = int(value)
+            if year > current_year:
+                raise ValueError("Year completed cannot be in the future.")
+            if year < 1900:
+                raise ValueError("Year completed must be after 1900.")
+        except ValueError:
+            raise ValueError("Year completed must be a valid 4-digit year.")
+        return value
+
+    @field_validator("cgpa_or_percentage")
+    @classmethod
+    def validate_cgpa_or_percentage(cls, value: str | None) -> str | None:
+        """Validate CGPA or percentage format."""
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        
+        # Check if it's a percentage (e.g., "85%", "85", "85.5%")
+        if re.match(r"^\d+(\.\d+)?%?$", cleaned):
+            # Extract numeric value
+            num_str = cleaned.rstrip("%")
+            try:
+                num = float(num_str)
+                if num < 0 or num > 100:
+                    raise ValueError("Percentage must be between 0 and 100.")
+            except ValueError:
+                raise ValueError("Invalid percentage format.")
+        # Could be CGPA (e.g., "3.5/4.0", "3.5")
+        elif re.match(r"^\d+(\.\d+)?(/\d+(\.\d+)?)?$", cleaned):
+            # Basic CGPA validation
+            try:
+                if "/" in cleaned:
+                    parts = cleaned.split("/")
+                    if len(parts) == 2:
+                        cgpa = float(parts[0])
+                        max_cgpa = float(parts[1])
+                        if cgpa < 0 or cgpa > max_cgpa:
+                            raise ValueError(f"CGPA must be between 0 and {max_cgpa}.")
+                else:
+                    cgpa = float(cleaned)
+                    if cgpa < 0 or cgpa > 4.0:
+                        raise ValueError("CGPA must be between 0 and 4.0.")
+            except ValueError:
+                raise ValueError("Invalid CGPA format.")
+        else:
+            raise ValueError("Enter a valid percentage (e.g., 85%) or CGPA (e.g., 3.5/4.0).")
+        
+        return cleaned
+
+    @field_validator("certificate_file")
+    @classmethod
+    def validate_certificate_file(cls, value: str | None) -> str | None:
+        """Validate certificate file URL format."""
+        return validate_url_format(value, "certificate file URL")
+
+    @field_validator("institution", "degree", "field_of_study", "board_university")
+    @classmethod
+    def sanitize_text(cls, value: str | None) -> str | None:
+        """Basic HTML sanitization for text fields."""
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+        return sanitize_html(value)
+
 
 class OnboardingEducationInfo(BaseModel):
     entries: list[EducationEntry] = Field(min_length=1)
@@ -230,6 +350,29 @@ class CertificationEntry(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     document_url: str | None = None
     expiry_date: date | None = None
+
+    @field_validator("name")
+    @classmethod
+    def sanitize_name(cls, value: str) -> str:
+        """Basic HTML sanitization for certification name."""
+        from app.schemas.auth import sanitize_html
+        return sanitize_html(value)
+
+    @field_validator("document_url")
+    @classmethod
+    def validate_document_url(cls, value: str | None) -> str | None:
+        """Validate certification document URL format."""
+        return validate_url_format(value, "certification document URL")
+
+    @field_validator("expiry_date")
+    @classmethod
+    def validate_expiry_date(cls, value: date | None) -> date | None:
+        """Validate expiry date is not in the past."""
+        if value is None:
+            return None
+        if value < date.today():
+            raise ValueError("Certification expiry date cannot be in the past.")
+        return value
 
 
 class OnboardingSkillsInfo(BaseModel):
@@ -257,6 +400,25 @@ class GovernmentDocument(BaseModel):
     file_name: str | None = None
     file_url: str | None = None
 
+    @field_validator("document_number")
+    @classmethod
+    def validate_document_number(cls, value: str, info) -> str:
+        """Validate document number based on document type."""
+        doc_type = info.data.get("doc_type")
+        if doc_type == "cnic":
+            return validate_cnic_format(value)
+        # For passport, basic validation - at least 5 characters
+        cleaned = value.strip()
+        if len(cleaned) < 5:
+            raise ValueError("Passport number must be at least 5 characters.")
+        return cleaned
+
+    @field_validator("file_url")
+    @classmethod
+    def validate_file_url(cls, value: str | None) -> str | None:
+        """Validate file URL format."""
+        return validate_url_format(value, "file URL")
+
 
 class OnboardingGovernmentDocs(BaseModel):
     documents: list[GovernmentDocument] = Field(min_length=1)
@@ -278,6 +440,13 @@ class ReferenceEntry(BaseModel):
     @classmethod
     def normalize_email(cls, value: EmailStr) -> str:
         return str(value).lower()
+
+    @field_validator("full_name", "relationship", "company")
+    @classmethod
+    def sanitize_text(cls, value: str) -> str:
+        """Basic HTML sanitization for text fields."""
+        from app.schemas.auth import sanitize_html
+        return sanitize_html(value)
 
 
 class OnboardingReferences(BaseModel):
