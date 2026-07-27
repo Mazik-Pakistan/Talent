@@ -438,10 +438,6 @@ function CandidateDashboardContent() {
               </div>
             )}
 
-            {/* Note: View Offer Letter button for signed/approved offers now lives
-                inside the hero action row above, alongside Continue onboarding —
-                keeps it from floating alone with no visual context. */}
-
             {!offer && (
               <div className={styles.banner}>
                 <div className={styles.bannerCopy}>
@@ -457,70 +453,43 @@ function CandidateDashboardContent() {
             {/* Stats */}
             <div className={styles.stats}>
               <StatCard
-                icon={<><path d="m3 7 2 2 4-4" /><path d="M13 6h8" /><path d="m3 17 2 2 4-4" /><path d="M13 18h8" /><path d="M13 12h8" /></>}
+                icon={
+                  <>
+                    <rect x="8" y="2" width="8" height="4" rx="1" />
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                    <line x1="9" y1="10" x2="15" y2="10" />
+                    <line x1="9" y1="14" x2="15" y2="14" />
+                    <line x1="9" y1="18" x2="12" y2="18" />
+                  </>
+                }
                 tone="cyan"
                 value={tasks.length}
                 label="Onboarding tasks"
               />
               <StatCard
-                icon={<><circle cx="12" cy="12" r="9" /><path d="M9 12l2 2 4-4" /></>}
+                icon={
+                  <>
+                    <circle cx="12" cy="12" r="9" />
+                    <polyline points="9 12 11 14 15 10" />
+                  </>
+                }
                 tone="green"
                 value={completedCount}
                 label="Task completed"
               />
               <StatCard
-                icon={<><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></>}
+                icon={
+                  <>
+                    <path d="M4 4v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6a2 2 0 0 0-2 2z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <path d="M9 15l2 2 4-4" />
+                  </>
+                }
                 tone="orange"
                 value={offer?.status || "—"}
                 label="Offer status"
               />
             </div>
-
-            {/* Hiring profile */}
-            {/* <div className={styles.section} id="profile-section">
-              <div className={styles.sectionHead}>
-                <div className={styles.sectionHeadLeft}>
-                  <div className={`${styles.bar} ${styles.navy}`} />
-                  <div>
-                    <div className={styles.sectionTitle}>Hiring profile</div>
-                    <div className={styles.sectionDesc}>Core profile record synced from onboarding.</div>
-                  </div>
-                </div>
-              </div>
-              <div className={styles.sectionBody}>
-                {loading ? (
-                  <div aria-hidden="true">
-                    <div className={`${styles.skeleton} ${styles.skeletonBlock}`} style={{ marginBottom: 16 }} />
-                    <div className={`${styles.skeleton} ${styles.skeletonLine}`} />
-                    <div className={`${styles.skeleton} ${styles.skeletonLine} ${styles.short}`} />
-                  </div>
-                ) : (
-                  <>
-                    <div className={styles.profileHero}>
-                      <ProfileAvatar
-                        src={user?.profile_picture}
-                        name={profile?.full_name || user.full_name}
-                        size="lg"
-                        fallback="CA"
-                      />
-                      <div>
-                        <div className={styles.profileName}>{profile?.full_name || user.full_name}</div>
-                        <div className={styles.profileSubline}>
-                          {[profile?.job_title, profile?.department].filter(Boolean).join(" · ") || "Candidate profile"}
-                        </div>
-                      </div>
-                    </div>
-                    <div className={styles.profileGrid}>
-                      <Field label="Designation" value={profile?.job_title} styles={styles} />
-                      <Field label="Department" value={profile?.department} styles={styles} />
-                      <Field label="Office location" value={profile?.office_location} styles={styles} />
-                      <Field label="Joining date" value={formatDate(profile?.start_date)} styles={styles} />
-                      <Field label="Recruiter" value={profile?.recruiter?.full_name} styles={styles} wide />
-                    </div>
-                  </>
-                )}
-              </div>
-            </div> */}
 
             <div className={styles.cols2}>
               <div className={styles.dashboardStack}>
