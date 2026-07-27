@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import AnimatedNumber from "@/components/ai-experience/AnimatedNumber";
+import SidebarBrand from "@/components/SidebarBrand";
 import { publishGuideContext } from "@/lib/ai/guideContext";
 import {
   clearLocalSession,
@@ -21,7 +22,7 @@ import {
   patchLocalUser,
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
-import { getEmployeeNavItems } from "@/utils/employeeNav";
+import { getEmployeeNavItems, isEmployeeNavActive } from "@/utils/employeeNav";
 import styles from "./employee-dashboard.module.css";
 
 const ANNOUNCEMENTS_POLL_MS = 30000;
@@ -409,26 +410,19 @@ function EmployeeDashboardContent() {
       <div className={styles.app}>
         {/* Sidebar */}
         <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.collapsed : ""}`}>
-          <button
-            type="button"
+          <SidebarBrand
+            collapsed={sidebarCollapsed}
             className={styles.brand}
+            markClassName={styles.brandMark}
             onClick={toggleSidebar}
-            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!sidebarCollapsed}
-          >
-            <div className={styles.brandMark}>MZ</div>
-            <div className={styles.brandText}>
-              <div className={styles.p1}>Talent</div>
-              <div className={styles.p2}></div>
-            </div>
-          </button>
+          />
 
           <div className={styles.navSectionLabel}>Workspace</div>
           <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {navItems.map((item) => {
               const enabled = item.module ? modules[item.module] : true;
               if (!enabled) return null;
-              const isActive = item.href && (pathname === item.href || (item.href !== "/dashboard/employee" && pathname.startsWith(item.href)));
+              const isActive = isEmployeeNavActive(item, { pathname, activeKey: "dashboard" });
               const disabled = !item.href;
               return (
                 <li key={item.key}>

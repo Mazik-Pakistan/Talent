@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import AgentChatCore, { readAuth } from "@/components/ai/AgentChatCore";
 import AssistantPageShell from "@/components/ai/AssistantPageShell";
 import CandidateShell from "@/components/candidate/CandidateShell";
+import { consumeAiAssistantSeedPrompt } from "@/lib/ai/openAiAssistant";
 
 const QUICK_ACTIONS = [
   {
@@ -27,9 +28,18 @@ const QUICK_ACTIONS = [
 
 export default function CandidateAIAssistantPage() {
   const agentRef = useRef(null);
-  const [auth, setAuth] = useState(null);
+  const [auth] = useState(() => readAuth());
 
-  useEffect(() => setAuth(readAuth()), []);
+  // One-shot seed from redirects (e.g. onboarding → Ask AI Assistant).
+  useEffect(() => {
+    if (!auth) return;
+    const seed = consumeAiAssistantSeedPrompt();
+    if (!seed) return;
+    const timer = window.setTimeout(() => {
+      agentRef.current?.sendPrompt?.(seed);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [auth]);
 
   function handleQuickAction(prompt) {
     agentRef.current?.sendPrompt?.(prompt);
@@ -42,7 +52,7 @@ export default function CandidateAIAssistantPage() {
       subtitle="Onboarding help · documents · next steps"
     >
       <AssistantPageShell
-        eyebrow="Automation workspace"
+        eyebrow="Chat workspace"
         title="Your onboarding assistant"
         description="Chat here for multi-step help. Elsewhere, the floating mascot is your partner — tips and field guidance while you complete each step yourself."
         highlights={QUICK_ACTIONS}

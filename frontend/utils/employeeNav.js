@@ -116,3 +116,17 @@ export function getEmployeeNavItems({ profileComplete = false } = {}) {
     },
   ];
 }
+
+/**
+ * Exclusive active matching for employee nav.
+ * Dashboard is exact-match only so /dashboard/employee/* does not keep it lit.
+ */
+export function isEmployeeNavActive(item, { pathname, activeKey } = {}) {
+  if (activeKey) return item.key === activeKey;
+  if (!item.href || !pathname) return false;
+
+  if (item.key === "dashboard") {
+    return pathname === item.href || pathname === `${item.href}/`;
+  }
+  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+}

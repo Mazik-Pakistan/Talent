@@ -5,6 +5,8 @@
  * Mascot explains — recruiter types. Automation stays on AI Assistant.
  */
 
+import { getFieldLabel, isOpaqueDomId } from "@/lib/ai/formCoach";
+
 export const RECRUITER_FIELD_HELP = {
   // Invite
   full_name: "Legal full name of the candidate — shown on the invite and later on the offer.",
@@ -301,24 +303,22 @@ export const EMPLOYEE_TAB_HELP = {
 };
 
 function fieldLabel(field) {
-  const labelEl = field?.closest?.("label");
-  return (labelEl?.querySelector("span")?.textContent || labelEl?.textContent || field?.placeholder || "")
-    .trim()
-    .replace(/\*$/, "")
-    .trim();
+  return getFieldLabel(field);
 }
 
 export function recruiterFieldHelpFor(field) {
   if (!field) return null;
-  const name = (field.name || field.id || "").toLowerCase().replace(/-/g, "_");
+  const dataKey = field.getAttribute?.("data-field-key") || "";
+  const raw = dataKey || field.name || (isOpaqueDomId(field.id) ? "" : field.id) || "";
+  const name = String(raw).toLowerCase().replace(/-/g, "_");
   if (name && RECRUITER_FIELD_HELP[name]) return RECRUITER_FIELD_HELP[name];
 
   // camelCase ids used in some React state-bound inputs without name=
-  const camel = (field.name || field.id || "").replace(/-/g, "");
+  const camel = String(raw).replace(/-/g, "");
   if (camel && RECRUITER_FIELD_HELP[camel]) return RECRUITER_FIELD_HELP[camel];
 
   const label = fieldLabel(field);
-  if (label) {
+  if (label && label !== "This field") {
     for (const [re, key] of LABEL_ALIASES) {
       if (re.test(label) && RECRUITER_FIELD_HELP[key]) return RECRUITER_FIELD_HELP[key];
     }

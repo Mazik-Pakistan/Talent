@@ -452,8 +452,10 @@ function OpportunitiesMgmtTab() {
   async function toggleStatus(opp) {
     const token = localStorage.getItem("access_token");
     try {
-      await updateOpportunity(token, opp.id, { status: opp.status === "open" ? "closed" : "open" });
+      const nextStatus = opp.status === "open" ? "closed" : "open";
+      await updateOpportunity(token, opp.id, { status: nextStatus });
       load();
+      toast.success(nextStatus === "open" ? "Opportunity opened." : "Opportunity closed.");
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not update opportunity."));
     }

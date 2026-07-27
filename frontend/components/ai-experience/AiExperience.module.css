@@ -534,7 +534,7 @@
   position: fixed;
   left: 50%;
   bottom: 28px;
-  z-index: 70;
+  z-index: 10050;
   transform: translateX(-50%);
   pointer-events: none;
 }

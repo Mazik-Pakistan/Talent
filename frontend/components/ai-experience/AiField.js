@@ -27,6 +27,7 @@ export default function AiField({
   error,
   hint,
   readOnly = false,
+  required = false,
   placeholder,
   ai,
   active = false,
@@ -75,7 +76,7 @@ export default function AiField({
     .join(" ");
 
   return (
-    <div className={className} ref={wrapRef} data-field-error={error ? "true" : undefined}>
+    <div className={className} ref={wrapRef} data-field-root data-field-error={error ? "true" : undefined} data-field-label={label || undefined} data-field-key={fieldKey || undefined}>
       <div className={styles.fieldHead}>
         <label className={styles.fieldLabel} htmlFor={inputId}>
           {label}
@@ -89,13 +90,20 @@ export default function AiField({
         <input
           id={inputId}
           ref={inputRef}
+          name={fieldKey || undefined}
           type={type}
           value={value ?? ""}
           onChange={onChange}
           readOnly={readOnly}
+          required={required}
           placeholder={placeholder}
+          data-field-key={fieldKey || undefined}
+          data-field-label={label || undefined}
+          data-required={required ? "true" : undefined}
+          aria-label={label || undefined}
           aria-invalid={!!error}
           aria-busy={status === "typing"}
+          aria-required={required || undefined}
           onFocus={() => {
             if (fieldKey || label) publishFieldFocus({ path: fieldKey, label });
           }}
@@ -116,9 +124,19 @@ export default function AiField({
 }
 
 /** Checkbox row with the same AI states — used for policy acknowledgements. */
-export function AiCheckRow({ checked, onChange, error, ai, active = false, children }) {
+export function AiCheckRow({
+  checked,
+  onChange,
+  error,
+  ai,
+  active = false,
+  fieldKey,
+  label,
+  children,
+}) {
   const wrapRef = useRef(null);
   const status = ai?.status;
+  const resolvedLabel = label || (typeof children === "string" ? children : undefined);
 
   useEffect(() => {
     if (!active) return;
@@ -135,8 +153,23 @@ export function AiCheckRow({ checked, onChange, error, ai, active = false, child
     .join(" ");
 
   return (
-    <label className={className} ref={wrapRef} data-field-error={error ? "true" : undefined}>
-      <input type="checkbox" checked={!!checked} onChange={onChange} />
+    <label
+      className={className}
+      ref={wrapRef}
+      data-field-root
+      data-field-error={error ? "true" : undefined}
+      data-field-label={resolvedLabel || undefined}
+      data-field-key={fieldKey || undefined}
+    >
+      <input
+        type="checkbox"
+        checked={!!checked}
+        onChange={onChange}
+        name={fieldKey || undefined}
+        data-field-key={fieldKey || undefined}
+        data-field-label={resolvedLabel || undefined}
+        aria-label={resolvedLabel || undefined}
+      />
       <span className={styles.checkRowText}>{children}</span>
       {status === "filled" && ai?.source ? (
         <AiSourceBadge source={ai.source} confidence={ai.confidence} note={ai.note} />

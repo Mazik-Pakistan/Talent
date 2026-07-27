@@ -74,7 +74,9 @@ export const CANDIDATE_NAV_ITEMS = [
 ];
 
 export function isCandidateNavActive(item, { pathname, search = "", activeKey } = {}) {
-  if (activeKey && item.key === activeKey) return true;
+  // When a page declares an activeKey, only that item is active — never combine
+  // with pathname rules (that caused dual highlights, e.g. Profile + Onboarding).
+  if (activeKey) return item.key === activeKey;
   if (!item.href || !pathname) return false;
 
   const pathOnly = item.href.split("?")[0];

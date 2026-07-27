@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import AgentChatCore, { readAuth } from "@/components/ai/AgentChatCore";
 import AssistantPageShell from "@/components/ai/AssistantPageShell";
 import EmployeeShell from "@/components/employee/EmployeeShell";
+import { consumeAiAssistantSeedPrompt } from "@/lib/ai/openAiAssistant";
 
 const QUICK_ACTIONS = [
   {
@@ -27,9 +28,18 @@ const QUICK_ACTIONS = [
 
 export default function EmployeeAIAssistantPage() {
   const agentRef = useRef(null);
-  const [auth, setAuth] = useState(null);
+  const [auth] = useState(() => readAuth());
 
-  useEffect(() => setAuth(readAuth()), []);
+  // One-shot seed from redirects (e.g. post-hire onboarding → Ask AI Assistant).
+  useEffect(() => {
+    if (!auth) return;
+    const seed = consumeAiAssistantSeedPrompt();
+    if (!seed) return;
+    const timer = window.setTimeout(() => {
+      agentRef.current?.sendPrompt?.(seed);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [auth]);
 
   function handleQuickAction(prompt) {
     agentRef.current?.sendPrompt?.(prompt);
@@ -43,9 +53,9 @@ export default function EmployeeAIAssistantPage() {
       permissions={["onboarding.self", "profile.view"]}
     >
       <AssistantPageShell
-        eyebrow="Automation workspace"
+        eyebrow="Chat workspace"
         title="Your workday assistant"
-        description="Chat here for multi-step help. On other employee pages, the Copilot mascot guides you field-by-field — it never runs workflows for you."
+        description="Chat here for multi-step help. On other employee pages, the Copilot mascot guides you field-by-field — it never fills forms for you."
         highlights={QUICK_ACTIONS}
         onHighlightClick={handleQuickAction}
       >

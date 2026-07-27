@@ -86,7 +86,7 @@ export default function EmployeeMascot() {
       if (/(?:do it for me|fill (?:all|everything)|run (?:the )?agent)/i.test(command)) {
         setFormCommand("");
         setMessage(
-          "I guide you field by field — you confirm each change. For multi-step help, open AI Assistant.",
+          "I highlight fields and explain them — you type the values yourself on the form. For multi-step help, open AI Assistant.",
           2,
           "partner-not-agent",
           { force: true, bypassCooldown: true, animation: "stateWave" }

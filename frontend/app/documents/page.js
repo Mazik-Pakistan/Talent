@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import RequireAccess from "@/components/RequireAccess";
 import DocumentManager from "@/components/DocumentManager";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import SidebarBrand from "@/components/SidebarBrand";
 import {
   clearLocalSession,
   getApiErrorMessage,
@@ -17,12 +18,15 @@ import {
   markNotificationsRead,
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
-import { getEmployeeNavItems } from "@/utils/employeeNav";
+import { getEmployeeNavItems, isEmployeeNavActive } from "@/utils/employeeNav";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
 import { COPILOT_DOCUMENTS_ASSIST_EVENT, publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import candidateStyles from "@/app/dashboard/candidate/candidate-dashboard.module.css";
 import employeeStyles from "@/app/dashboard/employee/employee-dashboard.module.css";
+
+const CANDIDATE_COLLAPSE_KEY = "candidate_sidebar_collapsed";
+const EMPLOYEE_COLLAPSE_KEY = "employee_sidebar_collapsed";
 
 export default function DocumentsPage() {
   return (
@@ -54,6 +58,21 @@ function DocumentsPageContent() {
   useEffect(() => {
     setUser(JSON.parse(localStorage.getItem("user")));
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const key = user.role === "employee" ? EMPLOYEE_COLLAPSE_KEY : CANDIDATE_COLLAPSE_KEY;
+    setSidebarCollapsed(localStorage.getItem(key) === "1");
+  }, [user]);
+
+  function toggleSidebar() {
+    setSidebarCollapsed((value) => {
+      const next = !value;
+      const key = user?.role === "employee" ? EMPLOYEE_COLLAPSE_KEY : CANDIDATE_COLLAPSE_KEY;
+      localStorage.setItem(key, next ? "1" : "0");
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (isEmployee) {
@@ -195,25 +214,19 @@ function DocumentsPageContent() {
     <div className={styles.root} data-app-shell>
       <div className={styles.app}>
         <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.collapsed : ""}`}>
-          <button
-            type="button"
+          <SidebarBrand
+            collapsed={sidebarCollapsed}
             className={styles.brand}
-            onClick={() => setSidebarCollapsed((value) => !value)}
-            title="Click to collapse sidebar"
-          >
-            <div className={styles.brandMark}>MZ</div>
-            <div className={styles.brandText}>
-              <div className={styles.p1}>Talent</div>
-              <div className={styles.p2}></div>
-            </div>
-          </button>
+            markClassName={styles.brandMark}
+            onClick={toggleSidebar}
+          />
 
           <div className={styles.navSectionLabel}>Workspace</div>
           <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {navItems.map((item) => {
               if (isEmployee && item.module && !modules[item.module]) return null;
               const isActive = isEmployee
-                ? item.href && pathname === item.href
+                ? isEmployeeNavActive(item, { pathname, activeKey: "documents" })
                 : isCandidateNavActive(item, {
                     pathname,
                     search: typeof window !== "undefined" ? window.location.search : "",

@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import SidebarBrand from "@/components/SidebarBrand";
 import {
   clearLocalSession,
   getNotifications,
@@ -17,6 +17,7 @@ import {
 import styles from "./recruiter-shell.module.css";
 
 const SEARCH_DEBOUNCE_MS = 350;
+const COLLAPSE_KEY = "recruiter_sidebar_collapsed";
 
 const NAV_ITEMS = [
   {
@@ -175,6 +176,10 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
   }, [pathname, refreshUser]);
 
   useEffect(() => {
+    setSidebarCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+  }, []);
+
+  useEffect(() => {
     const onUserUpdated = () => refreshUser();
     window.addEventListener("talent-user-updated", onUserUpdated);
     window.addEventListener("storage", onUserUpdated);
@@ -183,6 +188,14 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
       window.removeEventListener("storage", onUserUpdated);
     };
   }, [refreshUser]);
+
+  function toggleSidebar() {
+    setSidebarCollapsed((value) => {
+      const next = !value;
+      localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
 
   const refreshNotifications = useCallback(async (silent = true) => {
     const accessToken = localStorage.getItem("access_token");
@@ -369,37 +382,24 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
       <div className={styles.root} data-app-shell>
         <div className={styles.app}>
           <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.sidebarCollapsed : ""}`}>
-            <button
-              type="button"
+            <SidebarBrand
+              collapsed={sidebarCollapsed}
               className={styles.brand}
-              onClick={() => setSidebarCollapsed((value) => !value)}
-              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}
-            >
-              <div
-                className={styles.brandMark}
-                aria-hidden="true"
-                style={sidebarCollapsed ? { width: 44, maxWidth: 44 } : { width: "100%", maxWidth: 240 }}
-              >
-                <Image
-                  src={sidebarCollapsed ? "/mazikglobal-icon.svg" : "/talentai-logo.png"}
-                  alt="Mazik Global TalentAI"
-                  width={sidebarCollapsed ? 200 : 1664}
-                  height={sidebarCollapsed ? 200 : 992}
-                  priority
-                  style={{ width: "100%", height: "auto", objectFit: "contain" }}
-                  sizes="(max-width: 900px) 100vw, 240px"
-                />
-              </div>
-            </button>
+              markClassName={styles.brandMark}
+              onClick={toggleSidebar}
+            />
 
             <div className={styles.navSectionLabel}>Recruiting</div>
             <ul className={styles.nav}>
-              {NAV_ITEMS.map((item) => (
+              {NAV_ITEMS.map((item) => {
+                const isActive = activeKey
+                  ? activeKey === item.key
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
                 <li key={item.key}>
                   <button
                     type="button"
-                    className={`${styles.navItem} ${activeKey === item.key ? styles.navItemActive : ""}`}
+                    className={`${styles.navItem} ${isActive ? styles.navItemActive : ""}`}
                     onClick={() => router.push(item.href)}
                     title={item.label}
                   >
@@ -407,7 +407,8 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                     <span className={styles.navLabel}>{item.label}</span>
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
 
             <div className={styles.sidebarFooter}>

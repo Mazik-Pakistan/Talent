@@ -12,6 +12,24 @@
   --surface: #f2f7fd;
   --danger: #b42318;
   --cta-gradient: linear-gradient(135deg, #38a2ff, #1f7fe0 60%, #153d5e);
+  --toastify-z-index: 10050;
+}
+
+/* Ensure react-toastify stays above app chrome / mascot (z-index ~950) */
+.Toastify {
+  z-index: 10050 !important;
+  pointer-events: none;
+}
+.Toastify__toast-container {
+  z-index: 10050 !important;
+  pointer-events: none;
+}
+.Toastify__toast {
+  pointer-events: auto;
+  min-height: 52px;
+  border-radius: 12px !important;
+  box-shadow: 0 12px 40px rgba(15, 42, 74, 0.22) !important;
+  font-weight: 600;
 }
 * { box-sizing: border-box; }
 html { height: 100%; }

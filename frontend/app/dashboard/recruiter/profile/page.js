@@ -82,7 +82,10 @@ export default function RecruiterProfilePage() {
   async function handleSave(event) {
     event.preventDefault();
     const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
+    if (!accessToken) {
+      toast.error("Your session expired. Please sign in again.");
+      return;
+    }
     setSaving(true);
     try {
       const data = await updateRecruiterProfile(
@@ -95,9 +98,12 @@ export default function RecruiterProfilePage() {
         },
         accessToken
       );
-      setProfile(data.profile);
-      syncLocalUser(data.profile);
-      toast.success("Profile updated.");
+      const nextProfile = data?.profile || data;
+      if (nextProfile) {
+        setProfile(nextProfile);
+        syncLocalUser(nextProfile);
+      }
+      toast.success(data?.message || "Profile saved successfully.");
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not save profile."));
     } finally {

@@ -192,58 +192,6 @@ export function visibleFormFields() {
   );
 }
 
-export function setNativeFieldValue(field, value, { trim = true } = {}) {
-  const prototype =
-    field.tagName === "SELECT"
-      ? HTMLSelectElement.prototype
-      : field.tagName === "TEXTAREA"
-      ? HTMLTextAreaElement.prototype
-      : HTMLInputElement.prototype;
-  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-  if (!setter) return false;
-  let next = value == null ? "" : String(value);
-  if (trim) next = next.trim();
-  if (field.tagName === "SELECT") {
-    const option = Array.from(field.options).find(
-      (item) =>
-        item.value.toLowerCase() === next.toLowerCase() ||
-        item.text.trim().toLowerCase() === next.toLowerCase()
-    );
-    if (!option) return false;
-    next = option.value;
-  }
-  setter.call(field, next);
-  field.dispatchEvent(new Event("input", { bubbles: true }));
-  field.dispatchEvent(new Event("change", { bubbles: true }));
-  return true;
-}
-
-async function typeValueIntoField(field, rawValue) {
-  if (!field) return false;
-  const value = rawValue == null ? "" : String(rawValue);
-  if (!value.trim()) return false;
-
-  if (field.tagName === "SELECT") {
-    return setNativeFieldValue(field, value);
-  }
-
-  const reduced =
-    typeof window !== "undefined" &&
-    window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-
-  if (reduced || value.length > 80) {
-    return setNativeFieldValue(field, value);
-  }
-
-  const total = Math.min(1200, Math.max(280, value.length * 28));
-  const perChar = Math.max(12, Math.round(total / value.length));
-  for (let index = 1; index <= value.length; index += 1) {
-    setNativeFieldValue(field, value.slice(0, index), { trim: false });
-    await new Promise((resolve) => setTimeout(resolve, perChar));
-  }
-  return true;
-}
-
 export default function BaseMascot({
   roleLabel = "Assistant",
   contextEvent,
@@ -275,10 +223,6 @@ export default function BaseMascot({
   const router = useRouter();
   const mascotBtnRef = useRef(null);
   const resolvedFabKey = fabStorageKey || `mascot_fab_pos_${String(roleLabel || "assistant").toLowerCase()}`;
-  const { wrapRef, style: fabStyle, dragging, didDrag, handleProps, alignH, alignV } = useDraggableFab(
-    resolvedFabKey,
-    { fabRef: mascotBtnRef }
-  );
 
   const [activeState, setActiveState] = useState("stateIdle");
   const [bubbleText, setBubbleText] = useState("");
@@ -294,12 +238,17 @@ export default function BaseMascot({
   const [panelOpen, setPanelOpenState] = useState(false);
   const [panelHydrated, setPanelHydrated] = useState(false);
   const [statusLine, setStatusLine] = useState(null);
-  const [coachDraft, setCoachDraft] = useState("");
-  const [isTypingIntoField, setIsTypingIntoField] = useState(false);
   const [skippedOptionalKeys, setSkippedOptionalKeys] = useState([]);
-  const [optionalFillAccepted, setOptionalFillAccepted] = useState(false);
   const [coachEngaged, setCoachEngaged] = useState(false);
   const [browsingTips, setBrowsingTips] = useState(false);
+
+  const { wrapRef, style: fabStyle, dragging, didDrag, handleProps, alignH, alignV, panelMaxHeight } =
+    useDraggableFab(resolvedFabKey, {
+      fabRef: mascotBtnRef,
+      panelOpen,
+      // Reflow when guide expands (Guide me through it) or tip browsing changes height.
+      panelLayoutKey: `${coachEngaged ? "guide" : "idle"}:${browsingTips ? "tips" : "home"}`,
+    });
 
   const bubbleTimerRef = useRef(null);
   const cooldownTimerRef = useRef(null);
@@ -319,9 +268,6 @@ export default function BaseMascot({
   const lastHoverSoundRef = useRef(0);
   const lastCoachNextKeyRef = useRef(null);
   const lastFilledKeyRef = useRef(null);
-  const typingLockRef = useRef(false);
-  const coachInputRef = useRef(null);
-  const optionalFillAcceptedRef = useRef(false);
   const skippedOptionalKeysRef = useRef([]);
   const coachEngagedRef = useRef(false);
   const panelOpenRef = useRef(false);
@@ -369,7 +315,10 @@ export default function BaseMascot({
     (field) => {
       clearFieldHighlight();
       if (!field) return;
-      const target = field.closest("label") || field;
+      const target =
+        field.closest("[data-field-root]") ||
+        field.closest("label") ||
+        field;
       if (getComputedStyle(target).position === "static") {
         target.style.position = "relative";
       }
@@ -565,7 +514,7 @@ export default function BaseMascot({
         setFormCommand("");
         explainField(nextField);
         setMessage(
-          `I guide field-by-field — you type the values. Next up: ${getFieldLabel(nextField)}.`,
+          `I highlight the next field — you type the value. Next up: ${getFieldLabel(nextField)}.`,
           MASCOT_PRIORITY_LEVELS.SUGGESTION,
           "partner-guide-next",
           { force: true, bypassCooldown: true, animation: "statePoint", highlightField: nextField }
@@ -668,8 +617,6 @@ export default function BaseMascot({
 
       if (snapshot.allComplete) {
         setStatusLine("Click the primary button on the form");
-        optionalFillAcceptedRef.current = false;
-        setOptionalFillAccepted(false);
         if (announce) {
           setMessage(
             "All set — required filled, optional handled. Continue with the primary button on the form.",
@@ -713,26 +660,16 @@ export default function BaseMascot({
         const selectMeta = getSelectFieldMeta(snapshot.next.field);
         const isOptional = !snapshot.next.required;
 
-        // Only reset the fill/skip prompt when moving to a *new* optional field.
-        if (isOptional && nextKey !== lastCoachNextKeyRef.current) {
-          optionalFillAcceptedRef.current = false;
-          setOptionalFillAccepted(false);
-        }
-
-        const fillAccepted = optionalFillAcceptedRef.current;
         setStatusLine(
-          isOptional && !fillAccepted
-            ? `Optional: ${snapshot.next.label} — fill or skip?`
-            : selectMeta?.many
-              ? `Pick “${snapshot.next.label}” on the form (${selectMeta.count} options)`
-              : isOptional
-                ? `Optional now: ${snapshot.next.label}`
-                : `Now: ${snapshot.next.label} (${snapshot.requiredDone + 1}/${snapshot.requiredTotal || snapshot.total})`
+          selectMeta?.many
+            ? `Pick “${snapshot.next.label}” on the form (${selectMeta.count} options)`
+            : isOptional
+              ? `Optional: ${snapshot.next.label} — enter it on the form, or skip`
+              : `Now: ${snapshot.next.label} (${snapshot.requiredDone + 1}/${snapshot.requiredTotal || snapshot.total})`
         );
 
         if (forceHighlight || nextKey !== lastCoachNextKeyRef.current) {
           highlightField(snapshot.next.field);
-          setCoachDraft("");
           if (announce || forceHighlight) {
             setMessage(message, MASCOT_PRIORITY_LEVELS.SUGGESTION, `coach:${nextKey}`, {
               force: true,
@@ -742,9 +679,6 @@ export default function BaseMascot({
             });
           }
           lastCoachNextKeyRef.current = nextKey;
-          if ((!isOptional || fillAccepted) && !selectMeta?.many) {
-            setTimeout(() => coachInputRef.current?.focus?.(), 80);
-          }
         }
       }
       return snapshot;
@@ -835,8 +769,6 @@ export default function BaseMascot({
     coachEngagedRef.current = false;
     setCoachEngaged(false);
     lastCoachNextKeyRef.current = null;
-    optionalFillAcceptedRef.current = false;
-    setOptionalFillAccepted(false);
     clearFieldHighlight();
     const snapshot = refreshCoach({ announce: false });
     showFormIntro(snapshot);
@@ -861,64 +793,6 @@ export default function BaseMascot({
     }
   }, [highlightField]);
 
-  const applyCoachValue = useCallback(
-    async (rawValue) => {
-      if (typingLockRef.current || isTypingIntoField) return;
-      const value = String(rawValue || "").trim();
-      if (!value) return;
-
-      const snapshot = coachSnapshot(collectFormSteps(), skippedOptionalKeysRef.current);
-      const field = snapshot.next?.field;
-      if (!field) {
-        setMessage("Nothing left to fill — save / submit when ready.", MASCOT_PRIORITY_LEVELS.SUGGESTION, "coach:empty", {
-          force: true,
-          bypassCooldown: true,
-          animation: "stateHappy",
-        });
-        return;
-      }
-
-      typingLockRef.current = true;
-      setIsTypingIntoField(true);
-      setPanelOpen(true);
-      focusCoachField(field);
-      setStatusLine(`Typing into “${snapshot.next.label}”…`);
-      setMessage(`Writing into ${snapshot.next.label}…`, MASCOT_PRIORITY_LEVELS.SUGGESTION, `typing:${snapshot.next.key}`, {
-        force: true,
-        bypassCooldown: true,
-        animation: "stateThinking",
-        highlightField: field,
-      });
-      triggerState("stateThinking", 4000);
-
-      try {
-        const ok = await typeValueIntoField(field, value);
-        if (!ok) {
-          setMessage(
-            field.tagName === "SELECT"
-              ? `Couldn't match “${value}” in ${snapshot.next.label}. Pick a chip below or type the exact option.`
-              : `Couldn't fill ${snapshot.next.label}. Try again.`,
-            MASCOT_PRIORITY_LEVELS.ERROR,
-            "coach:type-fail",
-            { force: true, bypassCooldown: true, animation: "stateWarning", highlightField: field }
-          );
-          return;
-        }
-        setCoachDraft("");
-        optionalFillAcceptedRef.current = false;
-        setOptionalFillAccepted(false);
-        pushActivity(`Filled “${snapshot.next.label}” from partner`, "ok");
-        playMascotSound("success");
-        triggerState("stateHappy", 1600);
-        setTimeout(() => refreshCoach({ announce: true, forceHighlight: true }), 200);
-      } finally {
-        typingLockRef.current = false;
-        setIsTypingIntoField(false);
-      }
-    },
-    [focusCoachField, isTypingIntoField, playMascotSound, pushActivity, refreshCoach, setMessage, triggerState]
-  );
-
   const skipOptionalField = useCallback(
     (event) => {
       event?.preventDefault?.();
@@ -932,8 +806,6 @@ export default function BaseMascot({
         : [...skippedOptionalKeysRef.current, next.key];
       skippedOptionalKeysRef.current = nextSkipped;
       setSkippedOptionalKeys(nextSkipped);
-      optionalFillAcceptedRef.current = false;
-      setOptionalFillAccepted(false);
       pushActivity(`Skipped optional “${next.label}”`, "info");
       setMessage(`Skipped “${next.label}”. Moving on…`, MASCOT_PRIORITY_LEVELS.SUGGESTION, `skip:${next.key}`, {
         force: true,
@@ -944,47 +816,6 @@ export default function BaseMascot({
       refreshCoach({ announce: true, forceHighlight: true, skippedKeys: nextSkipped });
     },
     [pushActivity, refreshCoach, setMessage]
-  );
-
-  const acceptOptionalFill = useCallback(
-    (event) => {
-      event?.preventDefault?.();
-      event?.stopPropagation?.();
-      const snapshot = coachSnapshot(collectFormSteps(), skippedOptionalKeysRef.current);
-      if (!snapshot.next || snapshot.next.required) return;
-
-      optionalFillAcceptedRef.current = true;
-      setOptionalFillAccepted(true);
-      focusCoachField(snapshot.next.field);
-
-      const selectMeta = getSelectFieldMeta(snapshot.next.field);
-      setMessage(
-        selectMeta?.many
-          ? `Select “${snapshot.next.label}” from the highlighted dropdown on the form.`
-          : `Enter “${snapshot.next.label}” below — or type it in the highlighted field on the form.`,
-        MASCOT_PRIORITY_LEVELS.SUGGESTION,
-        `optional-fill:${snapshot.next.key}`,
-        {
-          force: true,
-          bypassCooldown: true,
-          animation: "statePoint",
-          highlightField: snapshot.next.field,
-        }
-      );
-      setStatusLine(`Optional now: ${snapshot.next.label}`);
-      if (!selectMeta?.many) {
-        setTimeout(() => coachInputRef.current?.focus?.(), 120);
-      }
-    },
-    [focusCoachField, setMessage]
-  );
-
-  const applyCoachAnswer = useCallback(
-    async (event) => {
-      event?.preventDefault?.();
-      await applyCoachValue(coachDraft);
-    },
-    [applyCoachValue, coachDraft]
   );
 
   const showPageSuggestion = useCallback(
@@ -1179,10 +1010,8 @@ export default function BaseMascot({
     lastCoachNextKeyRef.current = null;
     setActivityLog([]);
     skippedOptionalKeysRef.current = [];
-    optionalFillAcceptedRef.current = false;
     coachEngagedRef.current = false;
     setSkippedOptionalKeys([]);
-    setOptionalFillAccepted(false);
     setCoachEngaged(false);
     setBrowsingTips(false);
     clearFieldHighlight();
@@ -1226,8 +1055,6 @@ export default function BaseMascot({
       setCoachEngaged(false);
       setBrowsingTips(false);
       lastCoachNextKeyRef.current = null;
-      optionalFillAcceptedRef.current = false;
-      setOptionalFillAccepted(false);
       clearFieldHighlight();
       refreshInsights();
       const snapshot = refreshCoach({ announce: false });
@@ -1315,8 +1142,6 @@ export default function BaseMascot({
         lastFilledKeyRef.current = key;
         pushActivity(`Filled “${label}”`, "ok");
         triggerState("stateHappy", 1200);
-        optionalFillAcceptedRef.current = false;
-        setOptionalFillAccepted(false);
         refreshCoach({ announce: true });
       } else {
         refreshCoach({ announce: false });
@@ -1543,16 +1368,11 @@ export default function BaseMascot({
             const coaching = Boolean(hasForm && coachEngaged);
             const tipMode = !coaching;
             const summary = pageSummary();
-            const nextOptionalOffer = Boolean(
-              coaching && coach?.next && !coach.next.required && !optionalFillAccepted && !formComplete
-            );
+            const isOptionalNext = Boolean(coaching && coach?.next && !coach.next.required && !formComplete);
             const isWorking =
-              isTypingIntoField ||
               activeState === "stateThinking" ||
               activeState === "statePoint";
-            const liveLabel = isTypingIntoField
-              ? "Writing into form…"
-              : activeState === "stateThinking"
+            const liveLabel = activeState === "stateThinking"
                 ? "Thinking…"
                 : activeState === "statePoint"
                   ? "Pointing the next step…"
@@ -1576,8 +1396,14 @@ export default function BaseMascot({
                 ]
                   .filter(Boolean)
                   .join(" ")}
+                data-mascot-panel
                 role="status"
                 aria-live="polite"
+                style={
+                  panelMaxHeight
+                    ? { maxHeight: panelMaxHeight, overflowX: "hidden", overflowY: "auto" }
+                    : undefined
+                }
               >
                 <div className={styles.panelSheen} aria-hidden="true" />
                 <button
@@ -1587,8 +1413,6 @@ export default function BaseMascot({
                     setPanelOpen(false);
                     coachEngagedRef.current = false;
                     setCoachEngaged(false);
-                    optionalFillAcceptedRef.current = false;
-                    setOptionalFillAccepted(false);
                     setBrowsingTips(false);
                     setStatusLine(null);
                     bubbleRef.current = { text: "", priority: MASCOT_PRIORITY_LEVELS.NONE };
@@ -1615,7 +1439,7 @@ export default function BaseMascot({
                   <span className={styles.panelPulse} aria-hidden="true" />
                   {formComplete
                     ? "Ready to send"
-                    : nextOptionalOffer
+                    : isOptionalNext
                       ? "Optional field"
                       : coaching
                         ? "Guiding you"
@@ -1658,12 +1482,12 @@ export default function BaseMascot({
                   <p key={`coach-msg-${coach?.next?.key || "done"}-${formComplete}`} className={`${styles.bubbleText} ${styles.fadeInUp}`}>
                     {formComplete
                       ? "All set — required filled, optional handled. Click the primary button on the form."
-                      : nextOptionalOffer
-                        ? `Optional: “${coach.next.label}”. Want to fill it, or skip?`
-                        : bubbleText ||
-                          (coach.next
-                            ? `Next up: “${coach.next.label}”.`
-                            : "Fill the highlighted field.")}
+                      : bubbleText ||
+                        (coach.next
+                          ? isOptionalNext
+                            ? `Optional: “${coach.next.label}”. Enter it in the highlighted field, or skip.`
+                            : `Next up: “${coach.next.label}”. Enter it in the highlighted field.`
+                          : "Enter the highlighted field on the form.")}
                   </p>
                 ) : null}
 
@@ -1673,64 +1497,40 @@ export default function BaseMascot({
                   </p>
                 ) : null}
 
-                {isTypingIntoField ? (
-                  <div className={styles.typingRail} aria-live="polite">
-                    <span className={styles.typingDots}>
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                    <span>AI is typing into the form…</span>
-                  </div>
-                ) : null}
-
-                {coaching && !formComplete && !nextOptionalOffer && statusLine ? (
+                {coaching && !formComplete && statusLine ? (
                   <p className={`${styles.panelStatus} ${styles.fadeInUp}`}>{statusLine}</p>
                 ) : null}
 
-                {nextOptionalOffer ? (
-                  <div className={`${styles.optionalOffer} ${styles.fadeInUp}`} data-mascot-command>
-                    <p className={styles.optionalOfferHint}>
-                      This field is optional — fill it if you have the detail, or skip to continue.
-                    </p>
-                    <div className={styles.optionalOfferActions}>
-                      <button type="button" className={styles.coachConfirm} onClick={acceptOptionalFill}>
-                        Fill it
-                      </button>
-                      <button type="button" className={styles.optionalSkip} onClick={skipOptionalField}>
-                        Skip
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-                {coach?.next && coaching && !formComplete && !nextOptionalOffer
+                {coach?.next && coaching && !formComplete
                   ? (() => {
                       const selectMeta = getSelectFieldMeta(coach.next.field);
                       const pickOnForm = Boolean(selectMeta?.many);
 
-                      if (pickOnForm) {
-                        return (
+                      return (
                           <div className={`${styles.coachPickOnForm} ${styles.fadeInUp}`} data-mascot-command>
                             <p className={styles.coachPickTitle}>
-                              Select “{coach.next.label}” from the dropdown on the form
+                              {pickOnForm
+                                ? `Select “${coach.next.label}” from the dropdown on the form`
+                                : `Enter “${coach.next.label}” in the highlighted field`}
                               {!coach.next.required ? " (optional)" : ""}
                             </p>
                             <p className={styles.coachPickHint}>
-                              {selectMeta.count} options — too many to list here. Choose it yourself in the
-                              highlighted field; I&apos;ll mark it done when you pick one.
+                              {pickOnForm
+                                ? `${selectMeta.count} options — choose it yourself in the highlighted field; I’ll mark it done when you pick one.`
+                                : "I highlight the field and explain it — you type the value on the form yourself."}
                             </p>
                             <div className={styles.optionalOfferActions}>
                               <button
                                 type="button"
                                 className={styles.coachConfirm}
                                 onClick={() => {
-                                  highlightField(coach.next.field);
-                                  coach.next.field?.focus?.();
+                                  focusCoachField(coach.next.field);
                                   setMessage(
-                                    `Open the “${coach.next.label}” dropdown on the form and pick a value.`,
+                                    pickOnForm
+                                      ? `Open the “${coach.next.label}” dropdown on the form and pick a value.`
+                                      : `Type “${coach.next.label}” in the highlighted field on the form.`,
                                     MASCOT_PRIORITY_LEVELS.SUGGESTION,
-                                    `pick-on-form:${coach.next.key}`,
+                                    `show-field:${coach.next.key}`,
                                     {
                                       force: true,
                                       bypassCooldown: true,
@@ -1749,68 +1549,6 @@ export default function BaseMascot({
                               ) : null}
                             </div>
                           </div>
-                        );
-                      }
-
-                      return (
-                        <form
-                          className={`${styles.coachInputRow} ${styles.fadeInUp}`}
-                          data-mascot-command
-                          onSubmit={applyCoachAnswer}
-                        >
-                          <label className={styles.coachInputLabel} htmlFor="recruiter-partner-fill">
-                            {selectMeta
-                              ? `Choose “${coach.next.label}”${!coach.next.required ? " (optional)" : ""}`
-                              : `Type here — I'll write it into “${coach.next.label}”${!coach.next.required ? " (optional)" : ""}`}
-                          </label>
-                          {selectMeta ? (
-                            <div className={styles.coachSelectHints}>
-                              {selectMeta.options.map((opt) => (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  className={styles.coachChip}
-                                  disabled={isTypingIntoField}
-                                  onClick={() => applyCoachValue(opt.text?.trim() || opt.value)}
-                                >
-                                  {opt.text?.trim() || opt.value}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-                          <div className={styles.coachInputControls}>
-                            <input
-                              ref={coachInputRef}
-                              id="recruiter-partner-fill"
-                              className={styles.coachInput}
-                              value={coachDraft}
-                              disabled={isTypingIntoField}
-                              onChange={(event) => setCoachDraft(event.target.value)}
-                              placeholder={
-                                isTypingIntoField
-                                  ? "Writing into the form…"
-                                  : `Enter ${coach.next.label}…`
-                              }
-                              autoComplete="off"
-                            />
-                            <button
-                              type="submit"
-                              className={styles.coachConfirm}
-                              disabled={isTypingIntoField || !coachDraft.trim()}
-                            >
-                              {isTypingIntoField ? "…" : "Fill"}
-                            </button>
-                          </div>
-                          {!coach.next.required ? (
-                            <button
-                              type="button"
-                              className={styles.optionalSkipLink}
-                              onClick={skipOptionalField}
-                            >
-                              Skip this optional field
-                            </button>
-                          ) : null}
-                        </form>
                       );
                     })()
                   : null}
@@ -2018,7 +1756,6 @@ export default function BaseMascot({
           styles.mascotBtn,
           styles[activeState],
           panelOpen ? styles.mascotBtnActive : "",
-          isTypingIntoField ? styles.mascotBtnWorking : "",
           dragging ? styles.mascotBtnDragging : "",
         ]
           .filter(Boolean)
@@ -2038,13 +1775,13 @@ export default function BaseMascot({
         <svg viewBox="0 0 100 100" className={styles.mascotSvg} xmlns="http://www.w3.org/2000/svg">
           <defs>
             <radialGradient id="screenGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#2563eb" stopOpacity="0.15" />
-              <stop offset="100%" stopColor="#1e3a8a" stopOpacity="0" />
+              <stop offset="0%" stopColor="#38a2ff" stopOpacity="0.18" />
+              <stop offset="100%" stopColor="#153d5e" stopOpacity="0" />
             </radialGradient>
             <linearGradient id="scanGlow" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#22d3ee" stopOpacity="0" />
-              <stop offset="50%" stopColor="#22d3ee" stopOpacity="0.45" />
-              <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+              <stop offset="0%" stopColor="#38a2ff" stopOpacity="0" />
+              <stop offset="50%" stopColor="#38a2ff" stopOpacity="0.45" />
+              <stop offset="100%" stopColor="#38a2ff" stopOpacity="0" />
             </linearGradient>
             <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
               <feDropShadow dx="0" dy="4" stdDeviation="3" floodColor="#000" floodOpacity="0.2" />

@@ -7,6 +7,7 @@ import RequireAccess from "@/components/RequireAccess";
 import Toast from "@/components/Toast";
 import ProfilePhotoEditor from "@/components/ProfilePhotoEditor";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import SidebarBrand from "@/components/SidebarBrand";
 import {
   clearLocalSession,
   getApiErrorMessage,
@@ -21,7 +22,7 @@ import {
   uploadEmployeePhoto,
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
-import { getEmployeeNavItems } from "@/utils/employeeNav";
+import { getEmployeeNavItems, isEmployeeNavActive } from "@/utils/employeeNav";
 import { publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
 import {
@@ -32,6 +33,8 @@ import {
 } from "@/utils/phone";
 import dashStyles from "../employee-dashboard.module.css";
 import styles from "./profile.module.css";
+
+const COLLAPSE_KEY = "employee_sidebar_collapsed";
 
 const INTAKE_SUBTITLE =
   "This information was captured during candidate onboarding and cannot be edited here.";
@@ -134,6 +137,18 @@ function EmployeeProfileContent() {
     setUser(JSON.parse(localStorage.getItem("user") || "null"));
   }, []);
 
+  useEffect(() => {
+    setSidebarCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+  }, []);
+
+  function toggleSidebar() {
+    setSidebarCollapsed((value) => {
+      const next = !value;
+      localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
+
   // Tell the floating AI guide which profile subsection is being edited.
   useEffect(() => {
     publishGuideContext({
@@ -144,89 +159,10 @@ function EmployeeProfileContent() {
     });
   }, [editingSection]);
 
-  // Page-scoped Copilot assist — fill/format fields on the section being edited only.
+  // Page-scoped Copilot assist — guidance only (no auto-fill). Mascot highlights fields.
   useEffect(() => {
-    if (!editingSection) return registerPageAssist(null);
-
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    async function typeDraft(setter, key, value) {
-      const text = String(value ?? "");
-      let built = "";
-      for (const ch of text) {
-        built += ch;
-        setter((current) => ({ ...current, [key]: built }));
-        await sleep(18);
-      }
-    }
-
-    return registerPageAssist({
-      propose: () => {
-        const fields = [];
-        if (editingSection === "personal") {
-          const nameParts = String(employee?.full_name || "").trim().split(/\s+/).filter(Boolean);
-          if (!String(personalDraft.first_name || "").trim() && nameParts[0]) {
-            fields.push({ key: "first_name", value: nameParts[0], label: "First name", setter: "personal" });
-          }
-          if (!String(personalDraft.last_name || "").trim() && nameParts.length > 1) {
-            fields.push({ key: "last_name", value: nameParts.slice(1).join(" "), label: "Last name", setter: "personal" });
-          }
-          if (personalDraft.alternate_phone) {
-            const formatted = formatPkMobileInput(personalDraft.alternate_phone);
-            if (formatted !== personalDraft.alternate_phone) {
-              fields.push({ key: "alternate_phone", value: formatted, label: "Alternate phone (formatted)", setter: "personal" });
-            }
-          }
-        }
-        if (editingSection === "employment") {
-          if (!String(employment.account_holder_name || "").trim() && employee?.full_name) {
-            fields.push({
-              key: "account_holder_name",
-              value: employee.full_name,
-              label: "Account holder",
-              setter: "employment",
-            });
-          }
-          if (employment.iban) {
-            const cleaned = String(employment.iban).replace(/\s+/g, "").toUpperCase();
-            if (cleaned !== employment.iban) {
-              fields.push({ key: "iban", value: cleaned, label: "IBAN (formatted)", setter: "employment" });
-            }
-          }
-        }
-        if (editingSection === "emergency") {
-          if (emergency.phone) {
-            const formatted = formatPkMobileInput(emergency.phone);
-            if (formatted !== emergency.phone) {
-              fields.push({ key: "phone", value: formatted, label: "Phone (formatted)", setter: "emergency" });
-            }
-          }
-          if (emergency.alternate_phone) {
-            const formatted = formatPkMobileInput(emergency.alternate_phone);
-            if (formatted !== emergency.alternate_phone) {
-              fields.push({ key: "alternate_phone", value: formatted, label: "Alternate phone (formatted)", setter: "emergency" });
-            }
-          }
-        }
-        if (!fields.length) return null;
-        return {
-          message: `I can complete ${fields.length} field${fields.length === 1 ? "" : "s"} in this ${editingSection} section. You'll see me type them in — I won't leave this page.`,
-          items: fields.map((f) => f.label),
-          applyLabel: "Yes, fill these fields",
-          busyMessage: `Filling ${fields.length} field${fields.length === 1 ? "" : "s"}…`,
-          doneMessage: "✓ Fields updated on this section — review and save when ready.",
-          fields,
-        };
-      },
-      apply: async (offer) => {
-        for (const field of offer.fields || []) {
-          if (field.setter === "personal") await typeDraft(setPersonalDraft, field.key, field.value);
-          else if (field.setter === "employment") await typeDraft(setEmployment, field.key, field.value);
-          else if (field.setter === "emergency") await typeDraft(setEmergency, field.key, field.value);
-          await sleep(120);
-        }
-      },
-    });
-  }, [editingSection, personalDraft, employment, emergency, employee]);
+    return registerPageAssist(null);
+  }, []);
 
   const hydrateEditable = useCallback((data) => {
     if (!data) return;
@@ -612,25 +548,19 @@ function EmployeeProfileContent() {
 
       <div className={dashStyles.app}>
         <aside className={`${dashStyles.sidebar} ${sidebarCollapsed ? dashStyles.collapsed : ""}`}>
-          <button
-            type="button"
+          <SidebarBrand
+            collapsed={sidebarCollapsed}
             className={dashStyles.brand}
-            onClick={() => setSidebarCollapsed((v) => !v)}
-            title="Click to collapse sidebar"
-          >
-            <div className={dashStyles.brandMark}>MZ</div>
-            <div className={dashStyles.brandText}>
-              <div className={dashStyles.p1}>Talent</div>
-              <div className={dashStyles.p2}></div>
-            </div>
-          </button>
+            markClassName={dashStyles.brandMark}
+            onClick={toggleSidebar}
+          />
 
           <div className={dashStyles.navSectionLabel}>Workspace</div>
           <ul className={dashStyles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {navItems.map((item) => {
               const enabled = item.module ? modules[item.module] : true;
               if (!enabled) return null;
-              const isActive = item.href && pathname === item.href;
+              const isActive = isEmployeeNavActive(item, { pathname, activeKey: "profile" });
               const disabled = !item.href;
               return (
                 <li key={item.key}>

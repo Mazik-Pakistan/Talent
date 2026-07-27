@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import SidebarBrand from "@/components/SidebarBrand";
 import {
   clearLocalSession,
   getMyEmployeeProfile,
@@ -15,7 +15,7 @@ import {
   markNotificationsRead,
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
-import { getEmployeeNavItems } from "@/utils/employeeNav";
+import { getEmployeeNavItems, isEmployeeNavActive } from "@/utils/employeeNav";
 import { publishCopilotNotification, publishHover } from "@/lib/ai/guideContext";
 import styles from "@/app/dashboard/employee/employee-dashboard.module.css";
 
@@ -179,37 +179,19 @@ function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, c
     <div className={styles.root} data-app-shell>
       <div className={styles.app}>
         <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.collapsed : ""}`}>
-          <button
-            type="button"
+          <SidebarBrand
+            collapsed={sidebarCollapsed}
             className={styles.brand}
+            markClassName={styles.brandMark}
             onClick={toggleSidebar}
-            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!sidebarCollapsed}
-            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}
-          >
-            <div
-              className={styles.brandMark}
-              aria-hidden="true"
-              style={sidebarCollapsed ? { width: 44, maxWidth: 44 } : { width: "100%", maxWidth: 240 }}
-            >
-              <Image
-                src={sidebarCollapsed ? "/mazikglobal-icon.svg" : "/talentai-logo.png"}
-                alt="Mazik Global TalentAI"
-                width={sidebarCollapsed ? 200 : 1664}
-                height={sidebarCollapsed ? 200 : 992}
-                priority
-                style={{ width: "100%", height: "auto", objectFit: "contain" }}
-                sizes="(max-width: 900px) 100vw, 240px"
-              />
-            </div>
-          </button>
+          />
 
           <div className={styles.navSectionLabel}>Workspace</div>
           <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {navItems.map((item) => {
               const enabled = item.module ? modules[item.module] : true;
               if (!enabled) return null;
-              const isActive = item.key === activeKey || (item.href && pathname.startsWith(item.href));
+              const isActive = isEmployeeNavActive(item, { pathname, activeKey });
               const disabled = !item.href;
               return (
                 <li key={item.key}>

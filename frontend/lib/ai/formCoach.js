@@ -1,9 +1,43 @@
 "use client";
 
 /**
- * Shared form-coaching helpers for partner mascots (recruiter / candidate).
+ * Shared form-coaching helpers for partner mascots (all roles).
  * Guides required fields, then offers optional ones (fill or skip).
  */
+
+/** React useId() values look like `:r1:`, `:R1f:`, `_R_abc` — never show those as labels. */
+export function isOpaqueDomId(value) {
+  const id = String(value || "").trim();
+  if (!id) return true;
+  if (id.startsWith(":") || id.endsWith(":")) return true;
+  if (id.includes("«") || id.includes("»")) return true;
+  if (/^_?R[_:]/i.test(id)) return true;
+  // e.g. "r 1f" / "R1f" after underscore→space mangling
+  if (/^[rR][\s_]?\d/.test(id) && id.length < 12) return true;
+  return false;
+}
+
+function cleanLabelText(raw) {
+  return String(raw || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\*$/, "")
+    .trim()
+    .slice(0, 48);
+}
+
+function labelTextFromElement(labelEl, field) {
+  if (!labelEl) return "";
+  // Clone and strip controls so we don't pick up input values as the "label".
+  try {
+    const clone = labelEl.cloneNode(true);
+    clone.querySelectorAll("input, select, textarea, button, svg, [aria-hidden='true']").forEach((el) => el.remove());
+    const span = clone.querySelector("span");
+    return cleanLabelText(span?.textContent || clone.textContent);
+  } catch {
+    return cleanLabelText(labelEl.textContent);
+  }
+}
 
 export function isCoachableField(field) {
   if (!field || field.disabled || field.readOnly) return false;
@@ -46,20 +80,71 @@ function collectCoachableContainers(root) {
 }
 
 export function fieldKey(field) {
-  return field.name || field.id || getFieldLabel(field) || "field";
+  const dataKey = field?.getAttribute?.("data-field-key");
+  if (dataKey) return dataKey;
+  if (field?.name) return field.name;
+  if (field?.id && !isOpaqueDomId(field.id)) return field.id;
+  const label = getFieldLabel(field);
+  if (label && label !== "This field") return label;
+  return "field";
 }
 
+/**
+ * Resolve a human-readable label for any role's form controls.
+ * Supports htmlFor labels (AiField), wrapping labels, data-field-label, aria-label.
+ */
 export function getFieldLabel(field) {
-  const labelEl = field?.closest?.("label");
-  if (labelEl) {
-    const span = labelEl.querySelector("span");
-    const text = (span?.textContent || labelEl.textContent || "").trim();
-    if (text) return text.replace(/\*$/, "").trim().slice(0, 48);
+  if (!field) return "This field";
+
+  const dataLabel =
+    field.getAttribute?.("data-field-label") ||
+    field.closest?.("[data-field-label]")?.getAttribute("data-field-label");
+  if (dataLabel) {
+    const text = cleanLabelText(dataLabel);
+    if (text) return text;
   }
-  const placeholder = field?.getAttribute?.("placeholder");
-  if (placeholder) return placeholder.trim().slice(0, 48);
-  const name = field?.name || field?.id;
-  if (name) return String(name).replace(/_/g, " ");
+
+  const aria = field.getAttribute?.("aria-label");
+  if (aria) {
+    const text = cleanLabelText(aria);
+    if (text) return text;
+  }
+
+  if (field.id && field.ownerDocument) {
+    try {
+      const byFor = field.ownerDocument.querySelector(`label[for="${CSS.escape(field.id)}"]`);
+      const text = labelTextFromElement(byFor, field);
+      if (text) return text;
+    } catch {
+      // CSS.escape / querySelector failures — fall through
+    }
+  }
+
+  const wrapLabel = field.closest?.("label");
+  if (wrapLabel) {
+    const text = labelTextFromElement(wrapLabel, field);
+    if (text) return text;
+  }
+
+  // Common field shells: label sits in a sibling header (AiField layout).
+  const shell = field.closest?.("[data-field-root]");
+  if (shell) {
+    const headLabel = shell.querySelector("label");
+    const text = labelTextFromElement(headLabel, field);
+    if (text) return text;
+  }
+
+  const placeholder = field.getAttribute?.("placeholder");
+  if (placeholder) {
+    const text = cleanLabelText(placeholder);
+    if (text) return text;
+  }
+
+  if (field.name && !isOpaqueDomId(field.name)) {
+    return cleanLabelText(String(field.name).replace(/_/g, " ")) || "This field";
+  }
+
+  // Never surface React useId() as a label.
   return "This field";
 }
 
@@ -102,7 +187,7 @@ export function collectFormSteps(root = typeof document !== "undefined" ? docume
       steps.push({
         key,
         label: getFieldLabel(field),
-        required: Boolean(field.required),
+        required: Boolean(field.required) || field.getAttribute?.("data-required") === "true" || field.getAttribute?.("aria-required") === "true",
         filled: isFieldFilled(field),
         field,
       });
@@ -184,7 +269,7 @@ export function coachMessage(snapshot, fieldTip) {
   if (!next) return null;
 
   if (snapshot.offeringOptional || !next.required) {
-    return `Optional next: “${next.label}”. Fill it, or skip.`;
+    return `Optional next: “${next.label}”. Enter it in the highlighted field, or skip.`;
   }
 
   const step = snapshot.requiredTotal
@@ -196,11 +281,11 @@ export function coachMessage(snapshot, fieldTip) {
     return `${step} — pick “${next.label}” from the form dropdown.`;
   }
   if (next.field?.tagName === "SELECT") {
-    return `${step} — choose “${next.label}”.`;
+    return `${step} — choose “${next.label}” on the form.`;
   }
   // Keep tip short; avoid repeating the field name three times in the panel.
   if (fieldTip) return `${step}. ${fieldTip}`;
-  return `${step}: enter “${next.label}”.`;
+  return `${step}: enter “${next.label}” in the highlighted field.`;
 }
 
 /** Selects with more than this many options should be filled on the form, not via chips. */
@@ -215,3 +300,4 @@ export function getSelectFieldMeta(field) {
     many: options.length > SELECT_CHIP_LIMIT,
   };
 }
+

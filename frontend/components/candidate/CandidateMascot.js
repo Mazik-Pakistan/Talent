@@ -43,7 +43,7 @@ export default function CandidateMascot() {
       if (/(?:sign|accept).*(?:offer|letter)|(?:offer|letter).*(?:sign|accept)|do it for me|fill (?:all|everything)/i.test(command)) {
         setFormCommand("");
         setMessage(
-          "I guide you step by step — you confirm each action. For multi-step automation, open AI Assistant.",
+          "I highlight fields and explain them — you type the values yourself on the form. For multi-step automation, open AI Assistant.",
           2,
           "partner-not-agent",
           { force: true, bypassCooldown: true, animation: "stateWave" }

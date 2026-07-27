@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import SidebarBrand from "@/components/SidebarBrand";
 import {
   clearLocalSession,
   getApiErrorMessage,
@@ -20,6 +21,7 @@ import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav"
 import styles from "./candidate-dashboard.module.css";
 
 const DASHBOARD_REFRESH_MS = 60000;
+const COLLAPSE_KEY = "candidate_sidebar_collapsed";
 
 const SparkleIcon = (props) => (
   <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -69,6 +71,18 @@ function CandidateDashboardContent() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUser(JSON.parse(localStorage.getItem("user")));
   }, []);
+
+  useEffect(() => {
+    setSidebarCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+  }, []);
+
+  function toggleSidebar() {
+    setSidebarCollapsed((value) => {
+      const next = !value;
+      localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
 
   useEffect(() => {
     publishCandidateContext({
@@ -194,18 +208,12 @@ function CandidateDashboardContent() {
       <div className={styles.app}>
         {/* Sidebar */}
         <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.collapsed : ""}`}>
-          <button
-            type="button"
+          <SidebarBrand
+            collapsed={sidebarCollapsed}
             className={styles.brand}
-            onClick={() => setSidebarCollapsed((v) => !v)}
-            title="Click to collapse sidebar"
-          >
-            <div className={styles.brandMark}>MZ</div>
-            <div className={styles.brandText}>
-              <div className={styles.p1}>Talent</div>
-              <div className={styles.p2}></div>
-            </div>
-          </button>
+            markClassName={styles.brandMark}
+            onClick={toggleSidebar}
+          />
 
           <div className={styles.navSectionLabel}>Workspace</div>
           <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>

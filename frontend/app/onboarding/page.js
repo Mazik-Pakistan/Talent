@@ -16,10 +16,11 @@ import { can, ROLE_HOME } from "@/services/rbac";
 import Toast from "@/components/Toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ProfileAvatar from "@/components/ProfileAvatar";
-import AgentChatCore, { readAuth } from "@/components/ai/AgentChatCore";
+import SidebarBrand from "@/components/SidebarBrand";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { CANDIDATE_STEP_HELP } from "@/lib/ai/candidateFieldHelp";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
+import { openAiAssistantChat } from "@/lib/ai/openAiAssistant";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
 import styles from "./onboarding.module.css";
 
@@ -193,7 +194,10 @@ function OnboardingContent() {
     Promise.resolve().then(async () => {
       try {
         const storedMode = sessionStorage.getItem(FILL_MODE_KEY);
-        if (storedMode === "ocr" || storedMode === "manual" || storedMode === "agent") {
+        // Legacy "agent" fill mode removed — only OCR / manual stay on this page.
+        if (storedMode === "agent") {
+          sessionStorage.removeItem(FILL_MODE_KEY);
+        } else if (storedMode === "ocr" || storedMode === "manual") {
           setFillMode(storedMode);
         } else if (isEditMode) {
           setFillMode("manual");
@@ -207,15 +211,6 @@ function OnboardingContent() {
         setOnboarding(data.onboarding);
         setProgress(data.progress);
         hydrateForms(data.onboarding);
-        // First-ever visit (nothing chosen, nothing started yet): default straight
-        // into the AI onboarding agent instead of the mode-picker screen.
-        if (!storedMode && !isEditMode) {
-          const neverStarted = !data.onboarding?.current_step && isPersonalIncomplete(data.onboarding?.personal);
-          if (neverStarted) {
-            setFillMode("agent");
-            sessionStorage.setItem(FILL_MODE_KEY, "agent");
-          }
-        }
         // Restore local draft if server personal is empty/partial after an OCR fill that wasn't fully saved.
         try {
           const draft = JSON.parse(localStorage.getItem(draftStorageKey()) || "null");
@@ -574,8 +569,6 @@ function OnboardingContent() {
   const stepIndex = useMemo(() => steps.findIndex((item) => item.id === step), [step, steps]);
   const submitted = onboarding?.status === "submitted";
   const isOcrMode = fillMode === "ocr";
-  const isManualMode = fillMode === "manual";
-  const isAgentMode = fillMode === "agent";
   const showModeChooser = !loading && !submitted && !isEditMode && !fillMode;
 
   useEffect(() => {
@@ -731,32 +724,24 @@ function OnboardingContent() {
   }
 
   function chooseFillMode(mode) {
+    if (mode === "agent") {
+      openOnboardingAssistant();
+      return;
+    }
     setFillMode(mode);
     sessionStorage.setItem(FILL_MODE_KEY, mode);
     setMessage("");
   }
 
-  // Used when leaving agent mode (explicit toggle, or auto-fallback on repeated
-  // agent errors). Re-fetches from the server first so any fields the agent
-  // already saved via save_step show up pre-filled in the manual form —
-  // nothing typed to the agent is lost.
-  async function switchToManual() {
-    const accessToken = localStorage.getItem("access_token");
-    if (accessToken) {
-      try {
-        const data = await getOnboarding(accessToken);
-        setCandidate(data.candidate);
-        setOnboarding(data.onboarding);
-        setProgress(data.progress);
-        hydrateForms(data.onboarding);
-        const stepAliases = { government_docs: "personal", resume: "skills", complete: "submit" };
-        const nextStep = stepAliases[data.onboarding?.current_step] || data.onboarding?.current_step || "personal";
-        setStep(isPersonalIncomplete(data.onboarding?.personal) ? "personal" : nextStep);
-      } catch {
-        /* fall through to manual mode with whatever we already have locally */
-      }
-    }
-    chooseFillMode("manual");
+  function openOnboardingAssistant() {
+    const label = steps.find((item) => item.id === step)?.label || "onboarding";
+    openAiAssistantChat(router, {
+      href: "/dashboard/candidate/ai-assistant",
+      prompt:
+        `I was redirected from candidate onboarding (currently on “${label}”). ` +
+        "Help me finish my profile — tell me what’s left and guide me step by step. " +
+        "Do not fill form fields for me; I’ll enter the values myself on the onboarding page.",
+    });
   }
 
   async function persist(payload) {
@@ -1122,13 +1107,13 @@ function OnboardingContent() {
       <div className={styles.app}>
         {/* Sidebar */}
         <aside className={styles.sidebar}>
-          <button type="button" className={styles.brand}>
-            <div className={styles.brandMark}>MZ</div>
-            <div className={styles.brandText}>
-              <div className={styles.p1}>Talent</div>
-              <div className={styles.p2}></div>
-            </div>
-          </button>
+          <SidebarBrand
+            collapsed={false}
+            className={styles.brand}
+            markClassName={styles.brandMark}
+            onClick={() => router.push("/dashboard/candidate")}
+            title="TalentAI"
+          />
 
           <div className={styles.navSectionLabel}>Workspace</div>
           <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
@@ -1228,14 +1213,14 @@ function OnboardingContent() {
                       to save time; other documents are stored without scanning.
                     </p>
                     <div className={styles.modeGrid}>
-                      <button type="button" className={styles.modeCard} onClick={() => chooseFillMode("agent")}>
+                      <button type="button" className={styles.modeCard} onClick={openOnboardingAssistant}>
                         <span className={styles.modeIcon} aria-hidden>
                           <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.8">
                             <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
                           </svg>
                         </span>
-                        <strong>Let the AI Agent do it</strong>
-                        <span>Chat through your profile — upload your CNIC and the agent reads it, fills your details, and confirms everything with you.</span>
+                        <strong>Ask AI Assistant</strong>
+                        <span>Open the AI Assistant chat for guidance. You still fill every field yourself on this page.</span>
                       </button>
                       <button type="button" className={styles.modeCard} onClick={() => chooseFillMode("ocr")}>
                         <span className={styles.modeIcon} aria-hidden>
@@ -1259,8 +1244,6 @@ function OnboardingContent() {
                       </button>
                     </div>
                   </div>
-                ) : isAgentMode ? (
-                  <AgentOnboardingPanel styles={styles} onSwitchToManual={switchToManual} onChangeMode={() => { sessionStorage.removeItem(FILL_MODE_KEY); setFillMode(null); }} />
                 ) : (
                   <>
                     <div className={styles.modeBanner}>
@@ -1269,6 +1252,13 @@ function OnboardingContent() {
                           ? "OCR mode — National ID scan pre-fills personal details"
                           : "Manual mode — enter details yourself"}
                       </span>
+                      <button
+                        type="button"
+                        className={styles.modeSwitch}
+                        onClick={openOnboardingAssistant}
+                      >
+                        Ask AI Assistant
+                      </button>
                       {!isEditMode && (
                         <button
                           type="button"
@@ -2078,28 +2068,6 @@ function OnboardingContent() {
       />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
-    </div>
-  );
-}
-
-function AgentOnboardingPanel({ styles, onSwitchToManual, onChangeMode }) {
-  const [auth, setAuth] = useState(null);
-  useEffect(() => setAuth(readAuth()), []);
-
-  return (
-    <div>
-      <div className={styles.modeBanner}>
-        <span>AI Agent mode — chat through personal, education, skills & documents together</span>
-        <button type="button" className={styles.modeSwitch} onClick={onSwitchToManual}>
-          Switch to manual form
-        </button>
-        <button type="button" className={styles.modeSwitch} onClick={onChangeMode} style={{ marginLeft: 8 }}>
-          Change mode
-        </button>
-      </div>
-      <div style={{ height: "min(72vh, 700px)", minHeight: 480, marginTop: 16 }}>
-        <AgentChatCore variant="canvas" auth={auth} onEscalate={onSwitchToManual} />
-      </div>
     </div>
   );
 }
