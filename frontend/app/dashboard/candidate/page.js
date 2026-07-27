@@ -477,7 +477,7 @@ function CandidateDashboardContent() {
             </div>
 
             {/* Hiring profile */}
-            <div className={styles.section} id="profile-section">
+            {/* <div className={styles.section} id="profile-section">
               <div className={styles.sectionHead}>
                 <div className={styles.sectionHeadLeft}>
                   <div className={`${styles.bar} ${styles.navy}`} />
@@ -520,7 +520,7 @@ function CandidateDashboardContent() {
                   </>
                 )}
               </div>
-            </div>
+            </div> */}
 
             <div className={styles.cols2}>
               <div className={styles.dashboardStack}>
