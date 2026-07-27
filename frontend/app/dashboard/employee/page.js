@@ -1154,16 +1154,16 @@ function ModuleCard({ title, desc, icon, styles }) {
 function StatCard({ icon, iconExtra, tone, value, label, sub }) {
   return (
     <div className={styles.statCard}>
-      <div className={styles.statTop}>
-        <div className={`${styles.statIcon} ${styles[tone]}`}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{icon}{iconExtra}</svg>
+      <div className={`${styles.statIcon} ${styles[tone]}`}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{icon}{iconExtra}</svg>
+      </div>
+      <div className={styles.statText}>
+        <div className={styles.statValue}>
+          <AnimatedNumber value={value} />
         </div>
+        <div className={styles.statLabel}>{label}</div>
+        {sub && <div className={styles.statSub}>{sub}</div>}
       </div>
-      <div className={styles.statValue}>
-        <AnimatedNumber value={value} />
-      </div>
-      <div className={styles.statLabel}>{label}</div>
-      {sub && <div className={styles.statSub}>{sub}</div>}
     </div>
   );
 }

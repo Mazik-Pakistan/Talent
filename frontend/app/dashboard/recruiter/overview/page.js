@@ -360,11 +360,11 @@ export default function RecruiterOverviewPage() {
 function StatCard({ icon, tone, value, label }) {
   return (
     <div className={styles.statCard}>
-      <div className={styles.statTop}>
-        <div className={`${styles.statIcon} ${styles[tone]}`}>{icon}</div>
+      <div className={`${styles.statIcon} ${styles[tone]}`}>{icon}</div>
+      <div className={styles.statText}>
+        <div className={styles.statValue}>{value}</div>
+        <div className={styles.statLabel}>{label}</div>
       </div>
-      <div className={styles.statValue}>{value}</div>
-      <div className={styles.statLabel}>{label}</div>
     </div>
   );
 }
