@@ -700,5 +700,237 @@ class EmailService:
 """
         self._send(to_email, subject, self._branded_shell("New message", subject_line, body))
 
+    def send_it_provisioning_request(
+        self,
+        *,
+        to_email: str,
+        recruiter_name: str,
+        employee: dict,
+        form_link: str,
+        expires_at: str,
+        note: str | None = None,
+        is_reminder: bool = False,
+    ) -> None:
+        name = escape(employee.get("full_name") or "New hire")
+        title = escape(employee.get("job_title") or "—")
+        dept = escape(employee.get("department") or "—")
+        personal = escape(employee.get("email") or "—")
+        location = escape(employee.get("office_location") or "—")
+        start = escape(str(employee.get("start_date") or "—"))
+        manager = escape(employee.get("reporting_manager") or "—")
+        phone = escape(employee.get("phone") or "—")
+        safe_link = escape(form_link, quote=True)
+        eyebrow = "IT follow-up" if is_reminder else "IT provisioning"
+        subject = (
+            f"Reminder: Assign email & assets for {employee.get('full_name') or 'new hire'}"
+            if is_reminder
+            else f"Action required: Assign company email & assets for {employee.get('full_name') or 'new hire'}"
+        )
+        note_html = ""
+        if note:
+            note_html = f"""
+            <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:14px 16px;margin:0 0 20px;">
+              <p style="margin:0 0 6px;color:#9a3412;font-size:12px;font-weight:700;text-transform:uppercase;">Recruiter note</p>
+              <p style="margin:0;color:#7c2d12;font-size:14px;line-height:1.5;white-space:pre-wrap;">{escape(note)}</p>
+            </div>
+"""
+        body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              {escape(recruiter_name or 'A recruiter')} requested IT setup for a new hire.
+              Please create their <strong>company email</strong>, assign <strong>hardware/licenses</strong>,
+              and submit the form before the recruiter can activate the account.
+            </p>
+            <div style="background:#f1f5fe;border:2px solid #2d6cdf;border-radius:10px;padding:20px;margin-bottom:22px;">
+              <p style="margin:0 0 10px;color:#64748b;font-size:12px;font-weight:600;text-transform:uppercase;">Employee</p>
+              <p style="margin:0 0 6px;color:#0f172a;font-size:18px;font-weight:800;">{name}</p>
+              <p style="margin:0;color:#475569;font-size:14px;line-height:1.7;">
+                <strong>Designation:</strong> {title}<br/>
+                <strong>Department:</strong> {dept}<br/>
+                <strong>Personal email:</strong> {personal}<br/>
+                <strong>Phone:</strong> {phone}<br/>
+                <strong>Location:</strong> {location}<br/>
+                <strong>Start date:</strong> {start}<br/>
+                <strong>Reporting manager:</strong> {manager}
+              </p>
+            </div>
+            {note_html}
+            <div style="text-align:center;margin-bottom:18px;">
+              <a href="{safe_link}" style="display:inline-block;background:linear-gradient(135deg,#1e3a5f 0%,#2d6cdf 100%);color:#ffffff;text-decoration:none;padding:16px 36px;border-radius:8px;font-size:16px;font-weight:700;">Open IT setup form</a>
+            </div>
+            <p style="margin:0 0 8px;color:#94a3b8;font-size:13px;">Link expires: <strong>{escape(str(expires_at))}</strong></p>
+            <p style="margin:0;background:#f1f5f9;border-radius:6px;padding:10px 14px;font-family:monospace;font-size:12px;color:#475569;word-break:break-all;">{escape(form_link)}</p>
+"""
+        self._send(to_email, subject, self._branded_shell(eyebrow, "Assign email & assets", body))
+
+    def send_it_provisioning_complete(
+        self,
+        *,
+        to_email: str,
+        employee_name: str,
+        company_email: str,
+        assets_count: int,
+        licenses_count: int,
+    ) -> None:
+        subject = f"IT setup complete — {employee_name} ready to activate"
+        body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              IT submitted provisioning for <strong>{escape(employee_name)}</strong>.
+              You can now <strong>Approve &amp; activate</strong> their employee account.
+            </p>
+            <div style="background:#ecfdf5;border:2px solid #10b981;border-radius:10px;padding:20px;margin-bottom:8px;">
+              <p style="margin:0;color:#065f46;font-size:14px;line-height:1.7;">
+                <strong>Company email:</strong> {escape(company_email)}<br/>
+                <strong>Assets:</strong> {assets_count}<br/>
+                <strong>Licenses:</strong> {licenses_count}
+              </p>
+            </div>
+"""
+        self._send(to_email, subject, self._branded_shell("IT complete", "Ready to activate", body))
+
+    def send_company_email_password_otp(self, to_email: str, full_name: str, otp: str) -> None:
+        subject = "Your company email password verification code – TalentAI"
+        body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {escape(full_name)}, use this code to view your company email password.
+              It expires in <strong>10 minutes</strong>.
+            </p>
+            <div style="background:#f1f5fe;border:2px solid #2d6cdf;border-radius:10px;padding:28px;text-align:center;margin-bottom:8px;">
+              <p style="margin:0 0 8px;color:#64748b;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Verification code</p>
+              <p style="margin:0;color:#1e3a5f;font-size:42px;font-weight:800;letter-spacing:12px;">{escape(otp)}</p>
+            </div>
+"""
+        self._send(to_email, subject, self._branded_shell("Security", "View company email password", body))
+
+    def send_offer_invitation_email(
+        self,
+        *,
+        to_email: str,
+        full_name: str,
+        job_title: str,
+        department: str,
+        start_date: str,
+        currency: str,
+        monthly_salary: float,
+        invite_link: str,
+        expires_at: str,
+    ) -> None:
+        subject = f"You've been offered a role at Mazik Global Pakistan — {job_title}"
+        safe_link = escape(invite_link, quote=True)
+        salary_txt = f"{escape(currency)} {monthly_salary:,.0f}" if monthly_salary is not None else "—"
+        body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {escape(full_name)}, congratulations — you have been offered the position of
+              <strong>{escape(job_title)}</strong> in <strong>{escape(department)}</strong>
+              at <strong>Mazik Global Pakistan</strong>.
+            </p>
+            <div style="background:#f1f5fe;border:2px solid #2d6cdf;border-radius:10px;padding:20px;margin-bottom:22px;">
+              <p style="margin:0;color:#475569;font-size:14px;line-height:1.7;">
+                <strong>Start date:</strong> {escape(str(start_date or '—'))}<br/>
+                <strong>Monthly compensation:</strong> {salary_txt}
+              </p>
+            </div>
+            <p style="margin:0 0 22px;color:#475569;font-size:15px;line-height:1.6;">
+              Create your account using the link below, then review and sign your offer letter in the portal.
+              You may accept, negotiate once, or decline. This invitation expires on <strong>{escape(expires_at)}</strong>.
+            </p>
+            <div style="text-align:center;margin-bottom:18px;">
+              <a href="{safe_link}" style="display:inline-block;background:linear-gradient(135deg,#1e3a5f 0%,#2d6cdf 100%);color:#ffffff;text-decoration:none;padding:16px 36px;border-radius:8px;font-size:16px;font-weight:700;">Accept invitation &amp; view offer</a>
+            </div>
+            <p style="margin:0;background:#f1f5f9;border-radius:6px;padding:10px 14px;font-family:monospace;font-size:12px;color:#475569;word-break:break-all;">{escape(invite_link)}</p>
+"""
+        self._send(to_email, subject, self._branded_shell("Offer", "Mazik Global Pakistan", body))
+
+    def send_offer_negotiation_request(
+        self,
+        *,
+        to_email: str,
+        recruiter_name: str,
+        candidate_name: str,
+        job_title: str,
+        current_salary,
+        proposed_salary,
+        currency: str,
+        current_start_date: str,
+        proposed_start_date: str,
+        note: str | None = None,
+    ) -> None:
+        subject = f"Negotiation request — {candidate_name} ({job_title})"
+        note_html = ""
+        if note:
+            note_html = f"""
+            <p style="margin:12px 0 0;color:#7c2d12;font-size:14px;line-height:1.5;"><strong>Candidate note:</strong> {escape(note)}</p>
+"""
+        body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {escape(recruiter_name or 'Recruiter')}, <strong>{escape(candidate_name)}</strong> requested a one-time negotiation on their offer.
+            </p>
+            <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:18px;margin-bottom:8px;">
+              <p style="margin:0;color:#7c2d12;font-size:14px;line-height:1.7;">
+                <strong>Salary:</strong> {escape(currency)} {float(current_salary or 0):,.0f} → {escape(currency)} {float(proposed_salary or 0):,.0f}<br/>
+                <strong>Start date:</strong> {escape(str(current_start_date or '—'))} → {escape(str(proposed_start_date or '—'))}
+              </p>
+              {note_html}
+            </div>
+            <p style="margin:16px 0 0;color:#475569;font-size:14px;">Open the Candidates pipeline to accept (issues offer v2) or reject.</p>
+"""
+        self._send(to_email, subject, self._branded_shell("Negotiation", "Offer negotiation", body))
+
+    def send_offer_negotiation_result(
+        self,
+        *,
+        to_email: str,
+        full_name: str,
+        accepted: bool,
+        job_title: str,
+        recruiter_note: str | None = None,
+    ) -> None:
+        if accepted:
+            subject = f"Negotiation accepted — sign your updated offer ({job_title})"
+            body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {escape(full_name)}, your negotiation was <strong>accepted</strong>. A revised offer letter (v2) is ready — please sign it in the portal before uploading documents.
+            </p>
+"""
+        else:
+            subject = f"Negotiation declined — {job_title}"
+            body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {escape(full_name)}, your negotiation was <strong>declined</strong>. You may accept the original offer or decline it. No further negotiation is available.
+            </p>
+"""
+        if recruiter_note:
+            body += f"""
+            <div style="background:#f1f5f9;border-radius:8px;padding:14px;margin-top:8px;">
+              <p style="margin:0;color:#475569;font-size:14px;"><strong>Recruiter note:</strong> {escape(recruiter_note)}</p>
+            </div>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("Negotiation", "Accepted" if accepted else "Declined", body),
+        )
+
+    def send_profile_complete_for_it(
+        self,
+        *,
+        to_email: str,
+        recruiter_name: str,
+        candidate_name: str,
+        candidate_email: str,
+        job_title: str,
+    ) -> None:
+        subject = f"Profile complete — start IT provisioning for {candidate_name}"
+        body = f"""
+            <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.6;">
+              Hello {escape(recruiter_name or 'Recruiter')}, <strong>{escape(candidate_name)}</strong>
+              ({escape(candidate_email)}) completed their documents and profile for
+              <strong>{escape(job_title)}</strong>.
+            </p>
+            <p style="margin:0;color:#475569;font-size:15px;line-height:1.6;">
+              You can now send the <strong>IT provisioning</strong> request, then activate their employee account when IT submits.
+            </p>
+"""
+        self._send(to_email, subject, self._branded_shell("Ready for IT", "Profile complete", body))
+
 
 email_service = EmailService()

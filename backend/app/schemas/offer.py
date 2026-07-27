@@ -1,41 +1,104 @@
-"""Offer Letter cycle schemas — sits between candidate intake and employee activation.
+"""Offer Letter cycle schemas.
 
-Flow: Recruiter reviews submitted intake -> creates & sends Offer Letter ->
-Candidate digitally signs -> Recruiter/HR approves -> candidate becomes Employee.
+Flow: Recruiter invites with offer -> candidate signs (or one-round negotiate -> v2) ->
+documents -> IT provisioning -> activate employee.
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-OFFER_STATUSES = ("draft", "sent", "viewed", "signed", "approved", "declined", "expired", "withdrawn")
+OFFER_STATUSES = (
+    "draft",
+    "sent",
+    "viewed",
+    "signed",
+    "approved",
+    "declined",
+    "expired",
+    "withdrawn",
+)
+
+DEFAULT_OFFER_TERMS = (
+    "This offer is contingent upon verification of the documents you submit after signing. "
+    "By signing this letter you accept the position, compensation, benefits, and terms described above, "
+    "and agree to Mazik Global Pakistan's confidentiality and employment policies."
+)
+
+DEFAULT_BENEFITS = (
+    "Medical insurance",
+    "Provident fund",
+    "Annual leave",
+    "Hybrid / remote flexibility",
+    "Company laptop",
+    "Learning & training budget",
+    "Fuel / conveyance allowance",
+    "Performance bonus eligibility",
+)
 
 
-class OfferCreateRequest(BaseModel):
-    candidate_id: str
-    job_title: str = Field(..., min_length=2)
-    department: str = Field(..., min_length=2)
-    employment_type: str = Field(default="Full-time")
-    office_location: str | None = None
+class SalaryBreakdownItem(BaseModel):
+    label: str = Field(..., min_length=1, max_length=120)
+    amount: float = Field(..., ge=0)
+
+    @field_validator("label")
+    @classmethod
+    def _strip_label(cls, value: str) -> str:
+        return " ".join(value.split())
+
+
+class BenefitItem(BaseModel):
+    id: str | None = Field(default=None, max_length=64)
+    label: str = Field(..., min_length=1, max_length=160)
+    selected: bool = True
+
+    @field_validator("label")
+    @classmethod
+    def _strip_label(cls, value: str) -> str:
+        return " ".join(value.split())
+
+
+class OfferTermsPayload(BaseModel):
+    """Shared offer fields used at invite time and for legacy create_offer."""
+
+    job_title: str = Field(..., min_length=2, max_length=120)
+    department: str = Field(..., min_length=2, max_length=120)
+    employment_type: str = Field(default="Full-time", max_length=80)
+    office_location: str | None = Field(default=None, max_length=120)
     reporting_manager: str = Field(..., min_length=2, max_length=120)
-    start_date: str
-    monthly_salary: float | None = Field(default=None, ge=0)
-    currency: str = Field(default="PKR")
+    start_date: str = Field(..., min_length=4, max_length=40)
+    monthly_salary: float = Field(..., ge=0)
+    currency: str = Field(default="PKR", max_length=8)
+    salary_breakdown: list[SalaryBreakdownItem] = Field(default_factory=list)
+    benefits: list[BenefitItem] = Field(default_factory=list)
     offer_expiry_days: int | None = Field(default=None, ge=1, le=90)
-    terms: str = Field(
-        default=(
-            "This offer is contingent upon verification of the documents you have submitted. "
-            "By signing this letter you accept the position, compensation, and terms described above, "
-            "and agree to Team Talent's confidentiality and employment policies."
-        ),
-        max_length=8000,
-    )
+    terms: str = Field(default=DEFAULT_OFFER_TERMS, max_length=8000)
     message_to_candidate: str | None = Field(default=None, max_length=2000)
 
-    @field_validator("job_title", "department", "reporting_manager")
+    @field_validator("job_title", "department", "reporting_manager", "employment_type", "currency")
     @classmethod
     def _strip(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("office_location")
+    @classmethod
+    def _strip_opt(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        return normalized or None
+
+    @model_validator(mode="after")
+    def _validate_breakdown(self) -> OfferTermsPayload:
+        if self.salary_breakdown:
+            total = sum(item.amount for item in self.salary_breakdown)
+            if total - self.monthly_salary > 0.01:
+                raise ValueError("Salary breakdown total cannot exceed monthly salary.")
+        return self
+
+
+class OfferCreateRequest(OfferTermsPayload):
+    candidate_id: str
 
 
 class OfferSignRequest(BaseModel):
@@ -43,6 +106,10 @@ class OfferSignRequest(BaseModel):
     signature_data_url: str | None = Field(
         default=None, description="Base64 PNG data URL captured from the signature pad."
     )
+    signature_upload_url: str | None = Field(
+        default=None, description="Cloud storage URL for an uploaded signature image/PDF."
+    )
+    signature_method: str = Field(default="pad", pattern="^(pad|upload)$")
     agreed: bool
 
     @field_validator("agreed")
@@ -52,6 +119,14 @@ class OfferSignRequest(BaseModel):
             raise ValueError("You must agree to the offer terms to sign.")
         return value
 
+    @model_validator(mode="after")
+    def _require_signature(self) -> OfferSignRequest:
+        if self.signature_method == "pad" and not self.signature_data_url:
+            raise ValueError("Draw your signature on the pad, or switch to upload.")
+        if self.signature_method == "upload" and not self.signature_upload_url:
+            raise ValueError("Upload a signature file (PNG, JPG, or PDF).")
+        return self
+
 
 class OfferDeclineRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=1000)
@@ -59,3 +134,14 @@ class OfferDeclineRequest(BaseModel):
 
 class OfferApproveRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
+
+
+class OfferNegotiateRequest(BaseModel):
+    proposed_salary: float = Field(..., ge=0)
+    proposed_start_date: str = Field(..., min_length=4, max_length=40)
+    proposed_benefits: list[BenefitItem] = Field(default_factory=list)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class NegotiationRespondRequest(BaseModel):
+    recruiter_note: str | None = Field(default=None, max_length=2000)

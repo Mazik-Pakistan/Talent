@@ -52,6 +52,17 @@ async def create_database_indexes() -> None:
     await database.offer_letters.create_index("candidate_id")
     await database.offer_letters.create_index([("status", 1), ("recruiter_id", 1)])
     await database.offer_letters.create_index("candidate_email")
+    await database.offer_letters.create_index("invitation_token")
+    await database.offer_letters.create_index([("negotiation.status", 1), ("recruiter_id", 1)])
+    await database.offer_letters.create_index([("version", -1), ("created_at", -1)])
+
+    # IT provisioning (pre-activation company email + assets)
+    await database.it_provisioning_requests.create_index("token", unique=True)
+    await database.it_provisioning_requests.create_index([("offer_id", 1), ("status", 1)])
+    await database.it_provisioning_requests.create_index([("candidate_id", 1), ("status", 1)])
+    await database.it_provisioning_requests.create_index("expires_at")
+    await database.company_email_password_otps.create_index("user_id", unique=True)
+    await database.company_email_password_otps.create_index("otp_expires_at")
 
     await database.documents.create_index([("owner_id", 1), ("is_active", 1)])
     await database.documents.create_index([("owner_id", 1), ("doc_type", 1)])

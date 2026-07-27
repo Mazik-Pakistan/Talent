@@ -160,6 +160,27 @@ async def get_my_employee_profile(current_user: RequireEmployee):
     return await service.get_my_profile(current_user)
 
 
+@router.post("/me/company-email-password/request-otp")
+async def request_company_email_password_otp(current_user: RequireEmployee):
+    """Send OTP to the employee's personal email to unlock company email password."""
+    from app.services.it_provisioning_service import it_provisioning_service
+
+    return await it_provisioning_service.request_password_otp(current_user)
+
+
+@router.post("/me/company-email-password/reveal")
+async def reveal_company_email_password(
+    payload: dict,
+    current_user: RequireEmployee,
+):
+    """Reveal encrypted company email password after OTP verification."""
+    from app.schemas.it_provisioning import RevealCompanyEmailPasswordRequest
+    from app.services.it_provisioning_service import it_provisioning_service
+
+    request = RevealCompanyEmailPasswordRequest.model_validate(payload)
+    return await it_provisioning_service.reveal_password(current_user, request.otp)
+
+
 @router.post("/me/photo")
 async def upload_my_employee_photo(
     current_user: RequireEmployee,

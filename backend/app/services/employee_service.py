@@ -84,11 +84,11 @@ class EmployeeService:
         }
 
     async def list_pending_review(self, current_user: CurrentUser) -> dict:
-        """Candidates who submitted their intake and are awaiting an offer letter."""
+        """Candidates who signed and submitted docs — ready for IT (formerly pending offer)."""
         query: dict = {
             "onboarding.status": "submitted",
             "status": {"$ne": "converted"},
-            "conversion_status": {"$in": ["intake_submitted", None, "offer_sent"]},
+            "conversion_status": {"$in": ["intake_submitted", "offer_signed"]},
         }
         if current_user.role != "super_admin":
             query["recruiter_id"] = current_user.id
@@ -97,19 +97,23 @@ class EmployeeService:
         pending = []
         for candidate in docs:
             candidate_id = candidate.get("user_id") or str(candidate["_id"])
-            if candidate.get("conversion_status") in {"offer_declined", "declined"}:
+            if candidate.get("conversion_status") in {"offer_declined", "declined", "converted"}:
                 continue
 
-            offer_query = {
-                "candidate_id": {
-                    "$in": [candidate_id, candidate.get("email"), str(candidate.get("_id"))]
+            offer = await database.offer_letters.find_one(
+                {
+                    "$or": [
+                        {"candidate_id": candidate_id},
+                        {"candidate_email": candidate.get("email")},
+                    ],
+                    "status": "signed",
                 },
-                "status": {"$in": ["sent", "viewed", "signed", "approved", "declined", "expired", "withdrawn"]},
-            }
-            offer = await database.offer_letters.find_one(offer_query)
-            if offer:
+                sort=[("version", -1), ("created_at", -1)],
+            )
+            if not offer:
                 continue
 
+            # Exclude those already in ready-for-conversion list (signed is enough; IT handled there)
             pending.append(
                 {
                     "id": candidate_id,
@@ -117,21 +121,29 @@ class EmployeeService:
                     "email": candidate.get("email"),
                     "job_title": candidate.get("job_title"),
                     "department": candidate.get("department"),
+                    "offer_id": str(offer["_id"]),
+                    "offer_signed_at": (
+                        offer.get("signed_at").isoformat()
+                        if hasattr(offer.get("signed_at"), "isoformat")
+                        else offer.get("signed_at")
+                    ),
                     "submitted_at": (
                         candidate.get("onboarding", {}).get("submitted_at").isoformat()
                         if hasattr(candidate.get("onboarding", {}).get("submitted_at"), "isoformat")
                         else candidate.get("onboarding", {}).get("submitted_at")
                     ),
+                    "stage": "ready_for_it",
                 }
             )
         return {"candidates": pending, "count": len(pending)}
 
     async def list_onboarding_in_progress(self, current_user: CurrentUser) -> dict:
-        """Newly registered candidates who are active but have not submitted onboarding yet."""
+        """Candidates who signed the offer but have not finished documents yet."""
         query: dict = {
             "status": "active",
             "role": "candidate",
             "onboarding.status": {"$in": ["in_progress", "not_started", None]},
+            "conversion_status": {"$in": ["offer_signed", "offer_sent"]},
         }
         if current_user.role != "super_admin":
             query["recruiter_id"] = current_user.id
@@ -140,14 +152,25 @@ class EmployeeService:
         in_progress = []
         candidate_service = CandidateService()
         for candidate in docs:
-            if candidate.get("conversion_status") in {"converted", "offer_sent", "offer_declined", "declined"}:
+            if candidate.get("conversion_status") in {"converted", "offer_declined", "declined"}:
                 continue
 
+            candidate_id = candidate.get("user_id") or str(candidate["_id"])
+            offer = await database.offer_letters.find_one(
+                {
+                    "$or": [
+                        {"candidate_id": candidate_id},
+                        {"candidate_email": candidate.get("email")},
+                    ],
+                    "status": {"$in": ["sent", "viewed", "signed"]},
+                },
+                sort=[("version", -1), ("created_at", -1)],
+            )
             onboarding = candidate.get("onboarding") or {}
             progress = candidate_service._progress_payload(candidate)
             in_progress.append(
                 {
-                    "id": candidate.get("user_id") or str(candidate["_id"]),
+                    "id": candidate_id,
                     "full_name": candidate.get("full_name"),
                     "email": candidate.get("email"),
                     "job_title": candidate.get("job_title"),
@@ -155,6 +178,8 @@ class EmployeeService:
                     "current_step": onboarding.get("current_step") or "personal",
                     "onboarding_status": onboarding.get("status") or "not_started",
                     "progress": progress,
+                    "offer_status": (offer or {}).get("status"),
+                    "offer_id": str(offer["_id"]) if offer else None,
                     "created_at": (
                         candidate.get("created_at").isoformat()
                         if hasattr(candidate.get("created_at"), "isoformat")
@@ -308,6 +333,8 @@ class EmployeeService:
 
     async def list_ready_for_conversion(self, current_user: CurrentUser) -> dict:
         """Candidates whose offer has been signed and is awaiting HR approval/activation."""
+        from app.services.it_provisioning_service import it_provisioning_service
+
         query: dict = {"status": "signed"}
         if current_user.role != "super_admin":
             query["recruiter_id"] = current_user.id
@@ -318,6 +345,11 @@ class EmployeeService:
             candidate = await self._find_candidate(offer["candidate_id"])
             if not candidate or candidate.get("status") == "converted":
                 continue
+            onboarding = candidate.get("onboarding") or {}
+            if onboarding.get("status") != "submitted":
+                continue
+            it_status = await it_provisioning_service.get_for_offer(str(offer["_id"]))
+            docs_complete = True
             ready.append(
                 {
                     "id": candidate.get("user_id") or str(candidate["_id"]),
@@ -331,6 +363,9 @@ class EmployeeService:
                     "signed_at": offer.get("signed_at").isoformat() if hasattr(offer.get("signed_at"), "isoformat") else offer.get("signed_at"),
                     "monthly_salary": offer.get("monthly_salary"),
                     "reporting_manager": offer.get("reporting_manager"),
+                    "docs_complete": docs_complete,
+                    "it_provisioning": it_status,
+                    "can_activate": bool(it_status and it_status.get("is_complete")),
                 }
             )
         return {"candidates": ready, "count": len(ready)}
@@ -389,10 +424,21 @@ class EmployeeService:
                 detail="This candidate does not have a signed offer letter yet. Send and get the offer signed before activation.",
             )
 
+        from app.services.it_provisioning_service import it_provisioning_service
+
+        it_doc = await it_provisioning_service.require_submitted_for_candidate(
+            candidate.get("user_id") or str(candidate["_id"]),
+            offer_id=str(offer["_id"]),
+        )
+
         id_payload = await self.generate_employee_id(allocate=True)
         employee_id = id_payload["employee_id"]
         now = datetime.now(UTC)
         user_id = candidate.get("user_id")
+
+        it_assets = list(it_doc.get("assets") or [])
+        it_licenses = list(it_doc.get("licenses") or [])
+        company_email = (it_doc.get("company_email") or "").strip().lower() or None
 
         employee_doc = {
             "user_id": user_id,
@@ -415,6 +461,15 @@ class EmployeeService:
             "candidate_id": user_id or str(candidate["_id"]),
             "invitation_token": candidate.get("invitation_token"),
             "offer_id": str(offer["_id"]),
+            "company_email": company_email,
+            "company_email_assigned_at": it_doc.get("submitted_at") or now,
+            "company_email_assigned_by": "it",
+            "company_email_password_encrypted": it_doc.get("company_email_password_encrypted"),
+            "has_company_email_password": bool(it_doc.get("company_email_password_encrypted")),
+            "assets": it_assets,
+            "licenses": it_licenses,
+            "it_provisioning_id": str(it_doc.get("_id")),
+            "it_notes": it_doc.get("it_notes"),
             # Intake fields carry over as-is; post-hire fields start empty and
             # drive the "Profile incomplete" banner until completed.
             "onboarding": onboarding,
@@ -427,6 +482,8 @@ class EmployeeService:
             "updated_at": now,
         }
         await database.employees.insert_one(employee_doc)
+
+        await it_provisioning_service.mark_applied(it_doc["_id"], employee_id)
 
         await database.offer_letters.update_one(
             {"_id": offer["_id"]}, {"$set": {"status": "approved", "approved_at": now, "approved_by": current_user.id}}
@@ -1244,6 +1301,9 @@ class EmployeeService:
             "full_name": doc.get("full_name"),
             "email": doc.get("email"),
             "company_email": doc.get("company_email"),
+            "has_company_email_password": bool(
+                doc.get("has_company_email_password") or doc.get("company_email_password_encrypted")
+            ),
             "phone": doc.get("phone"),
             "job_title": doc.get("job_title"),
             "department": doc.get("department"),
@@ -1258,6 +1318,8 @@ class EmployeeService:
             else doc.get("converted_at"),
             "candidate_id": doc.get("candidate_id"),
             "assets": doc.get("assets") or [],
+            "licenses": doc.get("licenses") or [],
+            "it_notes": doc.get("it_notes"),
             "orientation": doc.get("orientation"),
             "profile_picture": doc.get("profile_picture"),
         }

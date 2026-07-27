@@ -8,6 +8,7 @@ from app.schemas.auth import (
     normalize_optional_pk_mobile,
     normalize_pk_mobile,
 )
+from app.schemas.offer import OfferTermsPayload
 
 # Pakistani IBAN: PK + 2 check digits + 4-letter bank code + 16 digits = 24 chars
 IBAN_PATTERN = __import__("re").compile(r"^PK\d{2}[A-Z]{4}\d{16}$", __import__("re").IGNORECASE)
@@ -21,6 +22,8 @@ class CreateInvitationRequest(BaseModel):
     office_location: str | None = Field(default=None, max_length=120)
     start_date: date | None = None
     expires_in_days: int = Field(default=7, ge=1, le=30)
+    # When present, invitation email includes the offer letter (new primary flow).
+    offer: OfferTermsPayload | None = None
 
     @field_validator("full_name", "job_title", "department")
     @classmethod
@@ -42,6 +45,18 @@ class CreateInvitationRequest(BaseModel):
     @classmethod
     def normalize_email(cls, value: EmailStr) -> str:
         return value.lower()
+
+    @model_validator(mode="after")
+    def _sync_offer_role_fields(self) -> "CreateInvitationRequest":
+        if self.offer is None:
+            return self
+        self.offer.job_title = self.job_title
+        self.offer.department = self.department
+        if self.office_location and not self.offer.office_location:
+            self.offer.office_location = self.office_location
+        if self.start_date and (not self.offer.start_date or self.offer.start_date in ("", "—")):
+            self.offer.start_date = self.start_date.isoformat()
+        return self
 
 
 class CandidateRegisterRequest(BaseModel):

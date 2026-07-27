@@ -9,10 +9,17 @@ from app.core.rbac import CurrentUser
 from app.schemas.invitation import CreateInvitationRequest
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
+from app.services.offer_service import offer_service
 
 
 class InvitationService:
     async def create_invitation(self, request: CreateInvitationRequest, actor: CurrentUser) -> dict:
+        if request.offer is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An offer letter is required when inviting a candidate. Include salary, start date, benefits, and reporting manager.",
+            )
+
         existing_candidate = await database.candidates.find_one(
             {"email": request.email.lower().strip(), "status": "active"}
         )
@@ -25,7 +32,6 @@ class InvitationService:
         now = datetime.now(UTC)
         email = request.email.lower().strip()
 
-        # Expire stale pending invites and repair stuck "accepted" invites from the old flow
         await database.invitations.update_many(
             {
                 "email": email,
@@ -36,14 +42,19 @@ class InvitationService:
 
         token = token_urlsafe(32)
         expires_at = now + timedelta(days=request.expires_in_days)
+        start_date = (
+            request.offer.start_date
+            if request.offer.start_date
+            else (request.start_date.isoformat() if request.start_date else None)
+        )
         invitation = {
             "token": token,
             "email": email,
             "full_name": request.full_name,
             "job_title": request.job_title,
             "department": request.department,
-            "office_location": request.office_location,
-            "start_date": request.start_date.isoformat() if request.start_date else None,
+            "office_location": request.offer.office_location or request.office_location,
+            "start_date": start_date,
             "recruiter_id": actor.id,
             "recruiter_email": actor.email,
             "created_by_role": actor.role,
@@ -52,19 +63,31 @@ class InvitationService:
             "used_at": None,
             "created_at": now,
             "updated_at": now,
+            "has_offer": True,
         }
         await database.invitations.insert_one(invitation)
+
+        offer_doc = await offer_service.create_with_invitation(
+            terms=request.offer,
+            recruiter=actor,
+            candidate_name=request.full_name,
+            candidate_email=email,
+            invitation_token=token,
+        )
 
         invite_link = settings.invitation_link(token)
         expires_display = expires_at.strftime("%B %d, %Y at %H:%M UTC")
         email_sent = False
         email_error = None
         try:
-            email_service.send_invitation_email(
+            email_service.send_offer_invitation_email(
                 to_email=email,
                 full_name=request.full_name,
                 job_title=request.job_title,
                 department=request.department,
+                start_date=str(request.offer.start_date),
+                currency=request.offer.currency,
+                monthly_salary=request.offer.monthly_salary,
                 invite_link=invite_link,
                 expires_at=expires_display,
             )
@@ -79,8 +102,9 @@ class InvitationService:
                 "email": email,
                 "role": actor.role,
                 "module": "recruitment",
-                "action": "invitation_created",
+                "action": "invitation_with_offer_created",
                 "outcome": "success" if email_sent else "partial",
+                "offer_id": str(offer_doc.get("_id")),
                 "created_at": now,
             }
         )
@@ -89,20 +113,20 @@ class InvitationService:
             recipient_id=actor.id,
             recipient_role=actor.role if actor.role in ("recruiter", "super_admin") else "recruiter",
             notif_type="invitation_sent",
-            title="Invitation sent" if email_sent else "Invitation created",
+            title="Offer invitation sent" if email_sent else "Offer invitation created",
             message=(
-                f"Invitation for {request.full_name} ({email}) was emailed."
+                f"Offer invitation for {request.full_name} ({email}) was emailed."
                 if email_sent
-                else f"Invitation for {request.full_name} created. Email could not be sent — copy the link."
+                else f"Offer invitation for {request.full_name} created. Email could not be sent — copy the link."
             ),
-            link="/dashboard/recruiter#invite-section",
+            link="/dashboard/recruiter/invite",
             related_id=token,
         )
 
         message = (
-            "Invitation created and emailed to the candidate."
+            "Invitation and offer letter created and emailed to the candidate."
             if email_sent
-            else "Invitation created, but the email could not be sent. Copy the link below to share it manually."
+            else "Invitation and offer letter created, but the email could not be sent. Copy the link below to share it manually."
         )
 
         return {
@@ -120,11 +144,17 @@ class InvitationService:
                 "status": "pending",
                 "expires_at": invitation["expires_at"].isoformat(),
                 "invite_link": invite_link,
+                "has_offer": True,
             },
+            "offer": offer_service._public(offer_doc),
         }
 
     async def get_invitation(self, token: str) -> dict:
         invitation = await self._get_valid_invitation(token)
+        offer = await database.offer_letters.find_one(
+            {"invitation_token": token, "status": {"$in": ["sent", "viewed"]}},
+            sort=[("version", -1), ("created_at", -1)],
+        )
         return {
             "invitation": {
                 "token": invitation["token"],
@@ -138,7 +168,9 @@ class InvitationService:
                 if isinstance(invitation["expires_at"], datetime)
                 else invitation["expires_at"],
                 "status": invitation["status"],
-            }
+                "has_offer": bool(offer or invitation.get("has_offer")),
+            },
+            "offer": offer_service._public(offer) if offer else None,
         }
 
     async def _get_valid_invitation(self, token: str) -> dict:
