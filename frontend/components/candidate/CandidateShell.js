@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import SidebarBrand from "@/components/SidebarBrand";
 import {
   clearLocalSession,
   getNotifications,
@@ -18,10 +18,6 @@ import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav"
 
 const COLLAPSE_KEY = "candidate_sidebar_collapsed";
 const NOTIFICATIONS_POLL_MS = 60000;
-
-function isNavActive(item, activeKey, pathname, search = "") {
-  return isCandidateNavActive(item, { activeKey, pathname, search });
-}
 
 /**
  * Shared chrome (sidebar + topbar) for candidate pages so the AI Assistant
@@ -53,12 +49,17 @@ export default function CandidateShell({
 function CandidateShellInner({ activeKey, title, subtitle, jobTitle, actions, children }) {
   const router = useRouter();
   const pathname = usePathname();
+  const [search, setSearch] = useState("");
   const [user, setUser] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const lastUnreadRef = useRef(null);
+
+  useEffect(() => {
+    setSearch(typeof window !== "undefined" ? window.location.search : "");
+  }, [pathname]);
 
   useEffect(() => {
     const stored = localStorage.getItem("user");
@@ -135,36 +136,17 @@ function CandidateShellInner({ activeKey, title, subtitle, jobTitle, actions, ch
     <div className={styles.root} data-app-shell>
       <div className={styles.app}>
         <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.collapsed : ""}`}>
-          <button
-            type="button"
+          <SidebarBrand
+            collapsed={sidebarCollapsed}
             className={styles.brand}
+            markClassName={styles.brandMark}
             onClick={toggleSidebar}
-            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!sidebarCollapsed}
-            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}
-          >
-            <div
-              className={styles.brandMark}
-              aria-hidden="true"
-              style={sidebarCollapsed ? { width: 44, maxWidth: 44 } : { width: "100%", maxWidth: 240 }}
-            >
-              <Image
-                src={sidebarCollapsed ? "/mazikglobal-icon.svg" : "/talentai-logo.png"}
-                alt="Mazik Global TalentAI"
-                width={sidebarCollapsed ? 200 : 1664}
-                height={sidebarCollapsed ? 200 : 992}
-                priority
-                style={{ width: "100%", height: "auto", objectFit: "contain" }}
-                sizes="(max-width: 900px) 100vw, 240px"
-              />
-            </div>
-          </button>
+          />
 
           <div className={styles.navSectionLabel}>Workspace</div>
           <ul className={styles.nav} style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {CANDIDATE_NAV_ITEMS.map((item) => {
-              const search = typeof window !== "undefined" ? window.location.search : "";
-              const isActive = isNavActive(item, activeKey, pathname, search);
+              const isActive = isCandidateNavActive(item, { activeKey, pathname, search });
               return (
                 <li key={item.key}>
                   <button

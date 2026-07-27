@@ -126,16 +126,21 @@ export default function RecruiterEmployeesPage() {
   async function handleSaveCareerEvent() {
     const accessToken = localStorage.getItem("access_token");
     if (!selectedEmployee) return;
-    const data = await addCareerEvent(selectedEmployee.employee_id, {
-      event_type: careerForm.event_type,
-      effective_date: careerForm.effective_date,
-      to_title: careerForm.to_title || null,
-      to_department: careerForm.to_department || null,
-      to_manager: careerForm.to_manager || null,
-      note: careerForm.note || null,
-    }, accessToken);
-    setSelectedEmployee({ ...selectedEmployee, career: data.events });
-    await loadEmployees(employeePage);
+    try {
+      const data = await addCareerEvent(selectedEmployee.employee_id, {
+        event_type: careerForm.event_type,
+        effective_date: careerForm.effective_date,
+        to_title: careerForm.to_title || null,
+        to_department: careerForm.to_department || null,
+        to_manager: careerForm.to_manager || null,
+        note: careerForm.note || null,
+      }, accessToken);
+      setSelectedEmployee({ ...selectedEmployee, career: data.events });
+      await loadEmployees(employeePage);
+      toast.success(data?.message || "Career event saved successfully.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not save career event."));
+    }
   }
 
   return (

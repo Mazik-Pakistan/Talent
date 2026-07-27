@@ -137,6 +137,10 @@ export default function DocumentStatusList({ refreshKey, onChanged }) {
       setFileByDoc((current) => ({ ...current, [doc.id]: null }));
       if (fileInputRefs.current[doc.id]) fileInputRefs.current[doc.id].value = "";
       setEditingId(null);
+      setUploadMessageByDoc((current) => ({
+        ...current,
+        [doc.id]: { type: "success", text: data?.message || "Document uploaded successfully." },
+      }));
       loadDocuments();
       onChanged?.();
     } catch (err) {

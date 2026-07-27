@@ -338,7 +338,7 @@ export async function buildEmployeeInsights(pathname, accessToken, rawContext = 
           id: "onboarding-next-step",
           priority: COPILOT_PRIORITY.task,
           section: next.id,
-          message: `You're on ${next.label}. Complete this step before moving on — I can help fill fields on this page after you approve.`,
+          message: `You're on ${next.label}. Complete this step before moving on — I can highlight the next field so you can enter it yourself.`,
         });
       } else if (ONBOARDING_WORKFLOW.findIndex((s) => s.id === currentSection) > ONBOARDING_WORKFLOW.findIndex((s) => s.id === next.id)) {
         push(insights, {

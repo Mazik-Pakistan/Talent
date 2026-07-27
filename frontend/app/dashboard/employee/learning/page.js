@@ -211,6 +211,7 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
       if (data.redirect_url) window.open(data.redirect_url, "_blank", "noopener,noreferrer");
       onRefresh?.();
       onGo("my-courses");
+      toast.success("Course started — tracking your progress.");
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not start this course."));
     } finally {
@@ -689,6 +690,7 @@ function MyCoursesTab({ onChange }) {
       if (data.redirect_url) window.open(data.redirect_url, "_blank", "noopener,noreferrer");
       load();
       onChange?.();
+      toast.success("Course started — tracking your progress.");
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not start this course."));
     } finally {
@@ -1053,6 +1055,7 @@ function CareerTab() {
       const gapData = await getSkillGap(token, target.trim(), true);
       setGap(gapData);
       loadRecommendations(true);
+      toast.success(`Career goal set to “${target.trim()}”.`);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not set your career goal."));
     } finally {

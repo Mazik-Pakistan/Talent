@@ -2,7 +2,7 @@
   position: fixed;
   top: 20px;
   right: 20px;
-  z-index: 1200;
+  z-index: 10050;
   max-width: min(400px, calc(100vw - 32px));
   pointer-events: none;
 }

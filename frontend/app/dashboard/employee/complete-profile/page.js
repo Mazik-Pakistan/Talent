@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   getApiErrorMessage,
@@ -11,19 +11,14 @@ import {
 } from "@/services/authService";
 import EmployeeShell from "@/components/employee/EmployeeShell";
 import SignaturePad from "@/components/SignaturePad";
-import AgentChatCore, { readAuth } from "@/components/ai/AgentChatCore";
-import AiActivityPanel from "@/components/ai-experience/AiActivityPanel";
 import AiField, { AiCheckRow } from "@/components/ai-experience/AiField";
-import AiOrb from "@/components/ai-experience/AiOrb";
 import AiSaveToast from "@/components/ai-experience/AiSaveToast";
 import BankSlipScanner from "@/components/ai-experience/BankSlipScanner";
 import { IconCheck, IconScan, IconSparkle } from "@/components/ai-experience/icons";
-import { useAiAutomation } from "@/lib/ai/useAiAutomation";
 import { useAutoSave } from "@/lib/ai/useAutoSave";
-import { buildBankFillPlan, buildOnboardingPlan } from "@/lib/ai/onboardingPlan";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
 import { publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
-import { AI_SOURCES } from "@/lib/ai/sources";
+import { openAiAssistantChat } from "@/lib/ai/openAiAssistant";
 import {
   formatPkMobileInput,
   isValidPkMobile,
@@ -81,16 +76,13 @@ export default function CompleteProfilePage() {
       subtitle="Post-hire profile completion"
       permissions={["onboarding.self", "profile.view"]}
     >
-      <Suspense fallback={<LoadingSkeleton />}>
-        <CompleteProfileContent />
-      </Suspense>
+      <CompleteProfileContent />
     </EmployeeShell>
   );
 }
 
 function CompleteProfileContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -98,8 +90,7 @@ function CompleteProfileContent() {
   const [employee, setEmployee] = useState(null);
   const [progress, setProgress] = useState(null);
   const [step, setStep] = useState("emergency");
-  const [uiMode, setUiMode] = useState(null);
-  const [auth, setAuth] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [recruiterNudge, setRecruiterNudge] = useState(null);
   const [showScanner, setShowScanner] = useState(false);
 
@@ -111,14 +102,8 @@ function CompleteProfileContent() {
   const [ndaAgreed, setNdaAgreed] = useState(false);
   const [ndaSignature, setNdaSignature] = useState(null);
 
-  // Resolves when the employee finishes (or abandons) a bank document scan, so
-  // the agentic run can genuinely wait on it.
-  const bankScanResolverRef = useRef(null);
-
   const complete = progress?.profile_status === "complete";
   const stepIndex = useMemo(() => STEPS.findIndex((item) => item.id === step), [step]);
-
-  useEffect(() => setAuth(readAuth()), []);
 
   // Keep the Copilot synced with the active onboarding section (do not wipe on
   // step change — the next page will publish its own context).
@@ -129,33 +114,10 @@ function CompleteProfileContent() {
       label: STEPS.find((item) => item.id === step)?.label || step,
       fields: SECTION_FIELDS[step] || [],
       progress: progress || null,
-      mode: uiMode,
+      mode: "manual",
       formId: "complete-profile",
     });
-  }, [step, progress, uiMode]);
-
-  // ── Writing values (used by both the employee and the AI) ────────────
-  const applyField = useCallback((path, value) => {
-    const [group, key, subKey] = path.split(".");
-    if (group === "emergency") {
-      setEmergency((current) => ({ ...current, [key]: value }));
-    } else if (group === "employment") {
-      setEmployment((current) => ({ ...current, [key]: value }));
-    } else if (group === "references") {
-      const index = Number(key);
-      setReferences((current) => {
-        const next = [...current];
-        while (next.length <= index) next.push({ ...emptyReference });
-        next[index] = { ...next[index], [subKey]: value };
-        return next;
-      });
-    } else if (group === "documents") {
-      setDocuments((current) => ({ ...current, [key]: value }));
-    } else if (group === "nda") {
-      if (key === "agreed") setNdaAgreed(!!value);
-      else setNdaName(value);
-    }
-  }, []);
+  }, [step, progress]);
 
   const gotoSection = useCallback((sectionId) => {
     setFieldErrors({});
@@ -219,73 +181,13 @@ function CompleteProfileContent() {
     [hydrate]
   );
 
-  // ── AI runtime ───────────────────────────────────────────────────────
-  const automation = useAiAutomation({
-    applyField,
-    gotoSection,
-    persist: (payload) => persistPayload(payload, { silent: true }),
-  });
+  // ── Form is always manual; chat help opens AI Assistant (no on-page fill).
+  const pushNotice = useCallback((next) => setNotice(next), []);
 
-  const { pushNotice, run: runPlan, reset: resetAutomation, isRunning, typeField } = automation;
-
-  // Page-scoped Copilot assist — fill empty fields on THIS step only, with
-  // visible typing. Never navigates or changes steps.
+  // Page-scoped Copilot assist — guidance only; no auto-fill into form fields.
   useEffect(() => {
-    if (complete || isRunning) {
-      return registerPageAssist(null);
-    }
-
-    return registerPageAssist({
-      propose: () => {
-        const fields = [];
-        if (step === "employment") {
-          if (!String(employment.account_holder_name || "").trim() && employee?.full_name) {
-            fields.push({
-              path: "employment.account_holder_name",
-              value: employee.full_name,
-              label: "Account holder name",
-              source: AI_SOURCES.employeeRecord,
-            });
-          }
-          if (employment.iban) {
-            const cleaned = String(employment.iban).replace(/\s+/g, "").toUpperCase();
-            if (cleaned !== employment.iban) {
-              fields.push({
-                path: "employment.iban",
-                value: cleaned,
-                label: "IBAN (formatted)",
-                source: AI_SOURCES.previousStep,
-              });
-            }
-          }
-        }
-        if (step === "nda") {
-          if (!String(ndaName || "").trim() && employee?.full_name) {
-            fields.push({
-              path: "nda.full_legal_name",
-              value: employee.full_name,
-              label: "Full legal name",
-              source: AI_SOURCES.employeeRecord,
-            });
-          }
-        }
-        if (!fields.length) return null;
-        return {
-          message: `I can complete ${fields.length} field${fields.length === 1 ? "" : "s"} on this page from your record. You'll see me type them in — nothing leaves this step.`,
-          fields,
-        };
-      },
-      apply: async (offer) => {
-        for (const field of offer.fields || []) {
-          await typeField(field.path, field.value, {
-            source: field.source,
-            confidence: 0.92,
-            note: "Suggested by Copilot from your employee record",
-          });
-        }
-      },
-    });
-  }, [complete, isRunning, step, employment, employee, ndaName, typeField]);
+    return registerPageAssist(null);
+  }, []);
 
   const showToast = useCallback(
     (tone, message) => pushNotice({ tone, message, duration: tone === "error" ? 5200 : 3200 }),
@@ -306,20 +208,11 @@ function CompleteProfileContent() {
         } else if (data.progress?.current_step) {
           setStep(data.progress.current_step);
         }
-
-        const requested = searchParams.get("mode");
-        const stored = sessionStorage.getItem(MODE_KEY);
-        const initial = ["agent", "assist", "manual"].includes(requested)
-          ? requested
-          : ["agent", "assist", "manual"].includes(stored)
-            ? stored
-            : null;
-
-        if (data.progress?.profile_status === "complete") {
-          setUiMode("manual");
-        } else if (initial) {
-          setUiMode(initial);
-          sessionStorage.setItem(MODE_KEY, initial);
+        // Clear any legacy agentic mode preference — form is always manual now.
+        try {
+          sessionStorage.removeItem(MODE_KEY);
+        } catch {
+          // ignore
         }
       } catch (error) {
         showToast("error", getApiErrorMessage(error, "Unable to load your profile."));
@@ -327,7 +220,7 @@ function CompleteProfileContent() {
         setLoading(false);
       }
     },
-    [hydrate, searchParams, showToast]
+    [hydrate, showToast]
   );
 
   useEffect(() => {
@@ -562,7 +455,7 @@ function CompleteProfileContent() {
   useAutoSave({
     value: autoSaveValue,
     resetKey: step,
-    enabled: AUTOSAVE_SECTIONS.includes(step) && !complete && !isRunning,
+    enabled: AUTOSAVE_SECTIONS.includes(step) && !complete,
     isReady: () => isSectionValid(step),
     buildPayload: () => buildSectionPayload(step),
     save: async (payload) => {
@@ -575,59 +468,30 @@ function CompleteProfileContent() {
     },
   });
 
-  // ── Mode handling ────────────────────────────────────────────────────
-  function chooseMode(mode) {
-    setUiMode(mode);
-    sessionStorage.setItem(MODE_KEY, mode);
-    if (mode !== "agent") resetAutomation();
-    if (mode === "agent") startAgenticRun();
-  }
-
-  const waitForBankScan = useCallback(
-    () =>
-      new Promise((resolve) => {
-        bankScanResolverRef.current = resolve;
-      }),
-    []
-  );
-
-  function resolveBankScan(result) {
-    const resolve = bankScanResolverRef.current;
-    bankScanResolverRef.current = null;
-    resolve?.(result);
-  }
-
-  function startAgenticRun() {
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-    setShowScanner(false);
-    runPlan(
-      buildOnboardingPlan({
-        accessToken,
-        onSectionSaved: () => invalidateInsightCache(),
-        requestBankScan: () => {
-          setStep("employment");
-          setShowScanner(true);
-        },
-        waitForBankScan,
-      })
-    );
+  // ── AI Assistant redirect (no on-page agentic fill) ──────────────────
+  function openOnboardingAssistant() {
+    const label = STEPS.find((item) => item.id === step)?.label || "onboarding";
+    openAiAssistantChat(router, {
+      href: "/dashboard/employee/ai-assistant",
+      prompt:
+        `I was redirected from post-hire onboarding (currently on “${label}”). ` +
+        "Help me finish my profile checklist — tell me what’s left and guide me step by step. " +
+        "Do not fill form fields for me; I’ll enter the values myself on the onboarding page.",
+    });
   }
 
   function handleScanApplied(result) {
     setShowScanner(false);
-    if (bankScanResolverRef.current) {
-      // An agentic run is waiting on this document — let it do the typing.
-      resolveBankScan(result);
-      return;
-    }
-    runPlan(
-      buildBankFillPlan({
-        result,
-        currentEmployment: employment,
-        onSectionSaved: () => invalidateInsightCache(),
-      })
-    );
+    const fields = result?.fields || {};
+    setEmployment((current) => {
+      const next = { ...current };
+      for (const key of Object.keys(emptyEmployment)) {
+        if (fields[key]) next[key] = String(fields[key]).trim();
+      }
+      return next;
+    });
+    setStep("employment");
+    showToast("success", "Bank details filled from your document — review and save when ready.");
   }
 
   // ── Submit ───────────────────────────────────────────────────────────
@@ -648,7 +512,7 @@ function CompleteProfileContent() {
     <>
       {!complete && recruiterNudge ? (
         <div className={styles.nudge} role="status">
-          <AiOrb size="sm" />
+          <IconSparkle width={16} height={16} />
           <div>
             <strong>Reminder from your recruiter</strong>
             {recruiterNudge.message || "Please finish your post-hire profile checklist."}
@@ -661,8 +525,6 @@ function CompleteProfileContent() {
         percentage={percentage}
         complete={complete}
         remaining={remaining}
-        mode={uiMode}
-        automationStatus={automation.status}
       />
 
       {complete && step === "submit" ? (
@@ -677,100 +539,50 @@ function CompleteProfileContent() {
           onViewProfile={() => router.push("/dashboard/employee/profile")}
           onDashboard={() => router.push("/dashboard/employee")}
         />
-      ) : !uiMode ? (
-        <ModeChooser onChoose={chooseMode} remaining={remaining} />
       ) : (
         <>
-          <ModeStrip
-            mode={uiMode}
-            automation={automation}
-            onSwitch={chooseMode}
-            onRestart={startAgenticRun}
+          <AssistStrip onOpenAssistant={openOnboardingAssistant} />
+
+          <OnboardingForm
+            step={step}
+            stepIndex={stepIndex}
+            onStepChange={gotoSection}
+            fieldErrors={fieldErrors}
+            clearFieldError={(key) => setFieldErrors((current) => ({ ...current, [key]: false }))}
+            automation={{ fields: {}, activeField: null }}
+            saving={saving}
+            complete={complete}
+            employee={employee}
+            emergency={emergency}
+            setEmergency={setEmergency}
+            employment={employment}
+            setEmployment={setEmployment}
+            references={references}
+            setReferences={setReferences}
+            documents={documents}
+            setDocuments={setDocuments}
+            ndaName={ndaName}
+            ndaAgreed={ndaAgreed}
+            setNdaAgreed={setNdaAgreed}
+            setNdaSignature={setNdaSignature}
+            showScanner={showScanner}
+            onToggleScanner={() => setShowScanner((value) => !value)}
+            onScanApplied={handleScanApplied}
+            onScanDismissed={() => setShowScanner(false)}
+            onSubmit={handleNext}
+            onExit={() => router.push("/dashboard/employee")}
           />
-
-          {automation.summary ? (
-            <div className={styles.runSummary}>
-              <AiOrb size="md" />
-              <div className={styles.runSummaryText}>
-                <strong>I&apos;ve done everything I can verify.</strong>
-                {automation.summary.filled.length
-                  ? `I filled ${automation.summary.filled.length} field${
-                      automation.summary.filled.length === 1 ? "" : "s"
-                    } and saved every section that was complete. `
-                  : "I couldn't find enough source data to fill anything on your behalf. "}
-                Anything left is either yours to confirm or needs a document I don&apos;t have yet.
-              </div>
-            </div>
-          ) : null}
-
-          {uiMode === "assist" ? (
-            <div className={`${styles.section} ${styles.sectionFlush}`}>
-              <div style={{ height: "min(74vh, 720px)", minHeight: 480 }}>
-                <AgentChatCore variant="canvas" auth={auth} onEscalate={() => chooseMode("manual")} />
-              </div>
-            </div>
-          ) : (
-            <OnboardingForm
-              step={step}
-              stepIndex={stepIndex}
-              onStepChange={gotoSection}
-              fieldErrors={fieldErrors}
-              clearFieldError={(key) => setFieldErrors((current) => ({ ...current, [key]: false }))}
-              automation={automation}
-              saving={saving}
-              complete={complete}
-              employee={employee}
-              emergency={emergency}
-              setEmergency={setEmergency}
-              employment={employment}
-              setEmployment={setEmployment}
-              references={references}
-              setReferences={setReferences}
-              documents={documents}
-              setDocuments={setDocuments}
-              ndaName={ndaName}
-              ndaAgreed={ndaAgreed}
-              setNdaAgreed={setNdaAgreed}
-              setNdaSignature={setNdaSignature}
-              showScanner={showScanner}
-              onToggleScanner={() => setShowScanner((value) => !value)}
-              onScanApplied={handleScanApplied}
-              onScanDismissed={() => {
-                setShowScanner(false);
-                resolveBankScan(null);
-              }}
-              onSubmit={handleNext}
-              onExit={() => router.push("/dashboard/employee")}
-            />
-          )}
         </>
       )}
 
-      {automation.tasks.length > 0 && automation.status !== "idle" ? (
-        <AiActivityPanel
-          status={automation.status}
-          tasks={automation.tasks}
-          progress={automation.progress}
-          thought={automation.thought}
-          question={automation.question}
-          onPause={automation.pause}
-          onResume={automation.resume}
-          onSkip={automation.skip}
-          onStop={automation.stop}
-          onAnswer={automation.answer}
-          onClose={resetAutomation}
-        />
-      ) : null}
-
-      <AiSaveToast notice={automation.notice} />
+      <AiSaveToast notice={notice} />
     </>
   );
 }
 
 /* ── Hero ─────────────────────────────────────────────────────────────── */
 
-function Hero({ employee, percentage, complete, remaining, mode, automationStatus }) {
-  const working = automationStatus === "running" || automationStatus === "waiting";
+function Hero({ employee, percentage, complete, remaining }) {
   return (
     <section className={styles.hero}>
       <div className={styles.heroLeft}>
@@ -797,12 +609,6 @@ function Hero({ employee, percentage, complete, remaining, mode, automationStatu
               {remaining} step{remaining === 1 ? "" : "s"} remaining
             </span>
           )}
-          {mode === "agent" ? (
-            <span className={`${styles.heroChip} ${styles.heroChipAi}`}>
-              <AiOrb size="sm" thinking={working} />
-              {working ? "AI is working" : "Agentic mode"}
-            </span>
-          ) : null}
         </div>
       </div>
 
@@ -849,116 +655,22 @@ function ProgressRing({ percentage = 0 }) {
   );
 }
 
-/* ── Mode chooser ─────────────────────────────────────────────────────── */
+/* ── Ask AI Assistant (redirects to chat — does not fill the form) ───── */
 
-const MODES = [
-  {
-    id: "agent",
-    tag: "Recommended",
-    featured: true,
-    title: "Agentic mode",
-    description: "Watch the AI read your records and complete the form in front of you.",
-    bullets: [
-      "Fills each field live, with the source shown",
-      "Scans your bank document with OCR",
-      "Pauses to ask whenever it isn't sure",
-    ],
-  },
-  {
-    id: "assist",
-    title: "Assisted mode",
-    description: "Talk it through with the onboarding agent and let it save each step as you go.",
-    bullets: ["Conversational, at your pace", "Ask questions about any step", "Switch to the form anytime"],
-  },
-  {
-    id: "manual",
-    title: "Manual mode",
-    description: "Fill the form yourself. Autosave and document scanning are still there if you want them.",
-    bullets: ["Full control over every value", "Progress saves as you type", "Optional bank document scan"],
-  },
-];
-
-function ModeChooser({ onChoose, remaining }) {
-  return (
-    <section className={`${styles.section} ${styles.chooser}`}>
-      <div className={styles.sectionBody}>
-        <div className={styles.chooserHead}>
-          <h2>How would you like to finish?</h2>
-          <p>
-            You have {remaining} section{remaining === 1 ? "" : "s"} left. Whichever you pick, the same checks
-            run and you can switch at any point.
-          </p>
-        </div>
-
-        <div className={styles.modeGrid}>
-          {MODES.map((mode) => (
-            <button
-              key={mode.id}
-              type="button"
-              className={`${styles.modeCard} ${mode.featured ? styles.modeCardFeatured : ""}`}
-              onClick={() => onChoose(mode.id)}
-            >
-              {mode.tag ? <span className={styles.modeTag}>{mode.tag}</span> : null}
-              <span className={`${styles.modeIcon} ${mode.featured ? styles.modeIconAi : ""}`}>
-                {mode.id === "agent" ? <IconSparkle /> : mode.id === "assist" ? <ChatIcon /> : <PenIcon />}
-              </span>
-              <span className={styles.modeTitle}>{mode.title}</span>
-              <span className={styles.modeDesc}>{mode.description}</span>
-              <ul className={styles.modeBullets}>
-                {mode.bullets.map((bullet) => (
-                  <li key={bullet}>
-                    <IconCheck />
-                    {bullet}
-                  </li>
-                ))}
-              </ul>
-            </button>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ModeStrip({ mode, automation, onSwitch, onRestart }) {
-  const labels = {
-    agent: { title: "Agentic mode", sub: "The AI fills what it can verify and asks you about the rest." },
-    assist: { title: "Assisted mode", sub: "Chat with the onboarding agent — it saves each step for you." },
-    manual: { title: "Manual mode", sub: "You're filling this in. Progress saves automatically as you type." },
-  };
-  const label = labels[mode] || labels.manual;
-  const canRestart = mode === "agent" && !automation.isRunning;
-
+function AssistStrip({ onOpenAssistant }) {
   return (
     <div className={styles.modeStrip}>
-      <AiOrb size="md" thinking={automation.isRunning} particles={automation.isRunning} />
       <div className={styles.modeStripText}>
-        <div className={styles.modeStripTitle}>{label.title}</div>
-        <div className={styles.modeStripSub}>{label.sub}</div>
+        <div className={styles.modeStripTitle}>Need help with onboarding?</div>
+        <div className={styles.modeStripSub}>
+          Open AI Assistant chat for guidance. You still fill every field yourself on this page.
+        </div>
       </div>
       <div className={styles.modeStripActions}>
-        {canRestart ? (
-          <button type="button" className={styles.btnSecondary} onClick={onRestart}>
-            <IconSparkle />
-            Run the AI again
-          </button>
-        ) : null}
-        {mode !== "agent" ? (
-          <button type="button" className={styles.btnSecondary} onClick={() => onSwitch("agent")}>
-            <IconSparkle />
-            Let the AI do it
-          </button>
-        ) : null}
-        {mode !== "manual" ? (
-          <button type="button" className={styles.btnSecondary} onClick={() => onSwitch("manual")}>
-            Fill it myself
-          </button>
-        ) : null}
-        {mode !== "assist" ? (
-          <button type="button" className={styles.btnGhost} onClick={() => onSwitch("assist")}>
-            Chat instead
-          </button>
-        ) : null}
+        <button type="button" className={styles.btnSecondary} onClick={onOpenAssistant}>
+          <IconSparkle />
+          Ask AI Assistant
+        </button>
       </div>
     </div>
   );
@@ -997,8 +709,9 @@ function OnboardingForm({
 }) {
   const { fields: aiFields, activeField } = automation;
 
-  const fieldProps = (key) => ({
+  const fieldProps = (key, { required = false } = {}) => ({
     fieldKey: key,
+    required,
     ai: aiFields[key],
     active: activeField === key,
     error: fieldErrors[key],
@@ -1087,13 +800,13 @@ function OnboardingForm({
                   label="Full name"
                   value={emergency.name}
                   onChange={(event) => updateEmergency("name", event.target.value)}
-                  {...fieldProps("emergency.name")}
+                  {...fieldProps("emergency.name", { required: true })}
                 />
                 <AiField
                   label="Relationship"
                   value={emergency.relationship}
                   onChange={(event) => updateEmergency("relationship", event.target.value)}
-                  {...fieldProps("emergency.relationship")}
+                  {...fieldProps("emergency.relationship", { required: true })}
                 />
               </div>
               <div className={styles.fieldRow}>
@@ -1102,7 +815,7 @@ function OnboardingForm({
                   hint={PK_MOBILE_HINT}
                   value={emergency.phone}
                   onChange={(event) => updateEmergency("phone", formatPkMobileInput(event.target.value))}
-                  {...fieldProps("emergency.phone")}
+                  {...fieldProps("emergency.phone", { required: true })}
                 />
                 <AiField
                   label="Alternate phone (optional)"
@@ -1161,37 +874,37 @@ function OnboardingForm({
                   label="Bank name"
                   value={employment.bank_name}
                   onChange={(event) => updateEmployment("bank_name", event.target.value)}
-                  {...fieldProps("employment.bank_name")}
+                  {...fieldProps("employment.bank_name", { required: true })}
                 />
                 <AiField
                   label="Account title"
                   value={employment.account_holder_name}
                   onChange={(event) => updateEmployment("account_holder_name", event.target.value)}
-                  {...fieldProps("employment.account_holder_name")}
+                  {...fieldProps("employment.account_holder_name", { required: true })}
                 />
                 <AiField
                   label="Account number"
                   value={employment.account_number}
                   onChange={(event) => updateEmployment("account_number", event.target.value)}
-                  {...fieldProps("employment.account_number")}
+                  {...fieldProps("employment.account_number", { required: true })}
                 />
                 <AiField
                   label="IBAN"
                   value={employment.iban || ""}
                   onChange={(event) => updateEmployment("iban", event.target.value.toUpperCase())}
-                  {...fieldProps("employment.iban")}
+                  {...fieldProps("employment.iban", { required: true })}
                 />
                 <AiField
                   label="Branch"
                   value={employment.branch || ""}
                   onChange={(event) => updateEmployment("branch", event.target.value)}
-                  {...fieldProps("employment.branch")}
+                  {...fieldProps("employment.branch", { required: true })}
                 />
                 <AiField
                   label="Branch code"
                   value={employment.branch_code || ""}
                   onChange={(event) => updateEmployment("branch_code", event.target.value)}
-                  {...fieldProps("employment.branch_code")}
+                  {...fieldProps("employment.branch_code", { required: true })}
                 />
                 <AiField
                   label="SWIFT code (optional)"
@@ -1203,7 +916,7 @@ function OnboardingForm({
                   label="Tax ID"
                   value={employment.tax_id}
                   onChange={(event) => updateEmployment("tax_id", event.target.value)}
-                  {...fieldProps("employment.tax_id")}
+                  {...fieldProps("employment.tax_id", { required: true })}
                 />
               </div>
             </div>
@@ -1229,13 +942,13 @@ function OnboardingForm({
                         label="Full name"
                         value={reference.full_name}
                         onChange={(event) => updateReference(index, "full_name", event.target.value)}
-                        {...fieldProps(`references.${index}.full_name`)}
+                        {...fieldProps(`references.${index}.full_name`, { required: true })}
                       />
                       <AiField
                         label="Relationship"
                         value={reference.relationship}
                         onChange={(event) => updateReference(index, "relationship", event.target.value)}
-                        {...fieldProps(`references.${index}.relationship`)}
+                        {...fieldProps(`references.${index}.relationship`, { required: true })}
                       />
                     </div>
                     <div className={styles.fieldRow}>
@@ -1244,7 +957,7 @@ function OnboardingForm({
                         type="email"
                         value={reference.email}
                         onChange={(event) => updateReference(index, "email", event.target.value)}
-                        {...fieldProps(`references.${index}.email`)}
+                        {...fieldProps(`references.${index}.email`, { required: true })}
                       />
                       <AiField
                         label="Phone"
@@ -1253,7 +966,7 @@ function OnboardingForm({
                         onChange={(event) =>
                           updateReference(index, "phone", formatPkMobileInput(event.target.value))
                         }
-                        {...fieldProps(`references.${index}.phone`)}
+                        {...fieldProps(`references.${index}.phone`, { required: true })}
                       />
                     </div>
                     <AiField
@@ -1261,7 +974,7 @@ function OnboardingForm({
                       label="Company"
                       value={reference.company}
                       onChange={(event) => updateReference(index, "company", event.target.value)}
-                      {...fieldProps(`references.${index}.company`)}
+                      {...fieldProps(`references.${index}.company`, { required: true })}
                     />
                   </div>
                 </div>
@@ -1292,21 +1005,21 @@ function OnboardingForm({
                 <AiCheckRow
                   checked={documents.accepted_code_of_conduct}
                   onChange={(event) => updateDocuments("accepted_code_of_conduct", event.target.checked)}
-                  {...fieldProps("documents.accepted_code_of_conduct")}
+                  {...fieldProps("documents.accepted_code_of_conduct", { required: true })}
                 >
                   I have read and agree to the Code of Conduct.
                 </AiCheckRow>
                 <AiCheckRow
                   checked={documents.accepted_privacy_policy}
                   onChange={(event) => updateDocuments("accepted_privacy_policy", event.target.checked)}
-                  {...fieldProps("documents.accepted_privacy_policy")}
+                  {...fieldProps("documents.accepted_privacy_policy", { required: true })}
                 >
                   I have read and agree to the Privacy &amp; IT Security Policy.
                 </AiCheckRow>
                 <AiCheckRow
                   checked={documents.accepted_employee_handbook}
                   onChange={(event) => updateDocuments("accepted_employee_handbook", event.target.checked)}
-                  {...fieldProps("documents.accepted_employee_handbook")}
+                  {...fieldProps("documents.accepted_employee_handbook", { required: true })}
                 >
                   I have read and agree to the Employee Handbook (leave &amp; remote work policy).
                 </AiCheckRow>
@@ -1330,7 +1043,7 @@ function OnboardingForm({
                   value={employee?.full_name || ndaName}
                   hint={`Must match: ${employee?.full_name || "your registered name"}`}
                   onChange={() => {}}
-                  {...fieldProps("nda.full_legal_name")}
+                  {...fieldProps("nda.full_legal_name", { required: true })}
                 />
                 <div
                   style={{ marginTop: 18 }}
@@ -1556,23 +1269,6 @@ function LoadingSkeleton() {
       <div className={`ai-skeleton ${styles.skelRow}`} />
       <div className={`ai-skeleton ${styles.skelCard}`} />
     </div>
-  );
-}
-
-function ChatIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.5 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7A8.4 8.4 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.5 8.5 0 0 1 21 11.5z" />
-    </svg>
-  );
-}
-
-function PenIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
-    </svg>
   );
 }
 

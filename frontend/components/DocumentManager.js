@@ -332,6 +332,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       setReplacementDocId(null);
       setReplacementFile(null);
       if (replacementInputRef.current) replacementInputRef.current.value = "";
+      setReplacementMessage({ type: "success", text: "Replacement uploaded successfully." });
       loadDocuments();
       refreshPartnerInsights();
       onChanged?.();

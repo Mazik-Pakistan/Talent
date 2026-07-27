@@ -1,6 +1,7 @@
 "use client";
 
 import { FIELD_HELP, HOVER_HELP, fieldHelpFor as pathFieldHelp } from "@/lib/ai/fieldHelp";
+import { getFieldLabel, isOpaqueDomId } from "@/lib/ai/formCoach";
 
 /** Page briefs for employee partner intro (what + why). */
 export const EMPLOYEE_PAGE_SUMMARIES = {
@@ -41,19 +42,13 @@ export const EMPLOYEE_PAGE_SUMMARIES = {
   },
 };
 
-function fieldLabel(field) {
-  const labelEl = field?.closest?.("label");
-  return (labelEl?.querySelector("span")?.textContent || labelEl?.textContent || field?.placeholder || "")
-    .trim()
-    .replace(/\*$/, "")
-    .trim();
-}
-
 /** Adapter: BaseMascot passes a DOM field; employee FIELD_HELP is path-keyed. */
 export function employeeFieldHelpFor(field) {
   if (!field) return null;
-  const name = (field.name || field.id || "").replace(/-/g, "_");
-  const label = fieldLabel(field);
+  const dataKey = field.getAttribute?.("data-field-key") || "";
+  const rawName = dataKey || field.name || (isOpaqueDomId(field.id) ? "" : field.id) || "";
+  const name = String(rawName).replace(/-/g, "_");
+  const label = getFieldLabel(field);
 
   if (name && FIELD_HELP[name]) return FIELD_HELP[name];
 
@@ -73,7 +68,7 @@ export function employeeFieldHelpFor(field) {
     if (tip && !tip.startsWith("You're editing")) return tip;
   }
 
-  if (label) {
+  if (label && label !== "This field") {
     for (const [key, tip] of Object.entries(FIELD_HELP)) {
       const leaf = key.split(".").pop().replace(/_/g, " ");
       if (label.toLowerCase().includes(leaf)) return tip;

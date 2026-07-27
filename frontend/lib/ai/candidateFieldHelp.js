@@ -1,5 +1,7 @@
 "use client";
 
+import { getFieldLabel, isOpaqueDomId } from "@/lib/ai/formCoach";
+
 /** Field tips when a candidate focuses an input. */
 export const CANDIDATE_FIELD_HELP = {
   full_name: "Use your legal full name as it appears on your CNIC / passport.",
@@ -75,29 +77,24 @@ export const CANDIDATE_STEP_HELP = {
   },
 };
 
-function fieldLabel(field) {
-  const labelEl = field?.closest?.("label");
-  return (labelEl?.querySelector("span")?.textContent || labelEl?.textContent || field?.placeholder || "")
-    .trim()
-    .replace(/\*$/, "")
-    .trim();
-}
-
 export function candidateFieldHelpFor(field) {
   if (!field) return null;
-  const name = (field.name || field.id || "").toLowerCase().replace(/-/g, "_");
+  const dataKey = field.getAttribute?.("data-field-key") || "";
+  const rawName = dataKey || field.name || (isOpaqueDomId(field.id) ? "" : field.id) || "";
+  const name = String(rawName).toLowerCase().replace(/-/g, "_");
   if (name && CANDIDATE_FIELD_HELP[name]) return CANDIDATE_FIELD_HELP[name];
 
   const short = name.split(".").pop();
   if (short && CANDIDATE_FIELD_HELP[short]) return CANDIDATE_FIELD_HELP[short];
 
-  const label = fieldLabel(field);
-  if (label) {
+  const label = getFieldLabel(field);
+  if (label && label !== "This field") {
     for (const [key, tip] of Object.entries(CANDIDATE_FIELD_HELP)) {
       if (label.toLowerCase().includes(key.replace(/_/g, " "))) return tip;
     }
     return `“${label}” — fill this carefully; it becomes part of your hiring record.`;
   }
+
   return null;
 }
 

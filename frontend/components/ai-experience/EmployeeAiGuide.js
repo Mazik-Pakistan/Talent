@@ -80,10 +80,11 @@ export default function EmployeeAiGuide() {
   const pageTipKeysRef = useRef([]);
   const mascotBtnRef = useRef(null);
   const waveTimerRef = useRef(null);
-  const { wrapRef, style: fabStyle, dragging, didDrag, handleProps, alignH, alignV } = useDraggableFab(
-    FAB_POS_KEY,
-    { fabRef: mascotBtnRef }
-  );
+  const { wrapRef, style: fabStyle, dragging, didDrag, handleProps, alignH, alignV, panelMaxHeight } =
+    useDraggableFab(FAB_POS_KEY, {
+      fabRef: mascotBtnRef,
+      panelOpen: hydrated && !minimized,
+    });
   // Eligible on every page — actual visibility is still gated by the
   // employee-role/auth-token check below, so non-employee users never see it.
   const eligible = true;
@@ -401,7 +402,17 @@ export default function EmployeeAiGuide() {
       style={fabStyle}
     >
       {!minimized && current?.message ? (
-        <div className={styles.speechBubble} role="status" aria-live="polite">
+        <div
+          className={styles.speechBubble}
+          role="status"
+          aria-live="polite"
+          data-mascot-panel
+          style={
+            panelMaxHeight
+              ? { maxHeight: panelMaxHeight, overflowX: "hidden", overflowY: "auto" }
+              : undefined
+          }
+        >
           <button
             type="button"
             className={styles.closeBubbleBtn}
