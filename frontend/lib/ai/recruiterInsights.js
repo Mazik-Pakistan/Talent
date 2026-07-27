@@ -896,7 +896,7 @@ function profileInsights() {
     {
       id: "profile-fill",
       priority: MASCOT_PRIORITY.task,
-      message: "Update your name, phone, designation, department, and office — email is fixed to your account.",
+      message: "Update your name, contact, designation, department, and office — email is fixed to your account.",
     },
     {
       id: "profile-photo",

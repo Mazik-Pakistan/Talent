@@ -7,7 +7,8 @@ import { Suspense, useEffect, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-import { getApiErrorMessage, login } from "@/services/authService";
+import AuthAside, { LOGIN_SLIDES } from "@/components/auth/AuthAside";
+import { getApiErrorMessage, login, persistLoginSession } from "@/services/authService";
 import styles from "@/app/styles/auth.module.css";
 
 const ROLES = [
@@ -58,6 +59,13 @@ function LoginForm() {
   const [touched, setTouched] = useState({});
 
   useEffect(() => {
+    const savedEmail = localStorage.getItem("remembered_email");
+    const savedRemember = localStorage.getItem("remember_me") === "true";
+    if (savedEmail) setEmail(savedEmail);
+    if (savedRemember) setRememberMe(true);
+  }, []);
+
+  useEffect(() => {
     if (searchParams.get("reason") === "session_timeout") {
       toast.info("Your session expired after inactivity. Please sign in again.");
     }
@@ -101,10 +109,10 @@ function LoginForm() {
         role,
         remember_me: rememberMe,
       });
-      localStorage.setItem("access_token", data.session.access_token);
-      localStorage.setItem("refresh_token", data.session.refresh_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      localStorage.setItem("session_last_active", String(Date.now()));
+      persistLoginSession(data.session, data.user, {
+        rememberMe,
+        email: email.trim(),
+      });
       toast.success("Signed in successfully. Redirecting…");
       router.push(data.redirect_to);
     } catch (error) {
@@ -162,7 +170,7 @@ function LoginForm() {
             </fieldset>
 
             <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: "80ms" }}>
-              <span>Email</span>
+              <span>Email <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
               <input
                 className={styles.input}
                 type="email"
@@ -182,7 +190,7 @@ function LoginForm() {
             </label>
 
             <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: "130ms" }}>
-              <span>Password</span>
+              <span>Password <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
               <span className={styles.passwordControl}>
                 <input
                   className={styles.input}
@@ -232,25 +240,7 @@ function LoginForm() {
           </div>
         </section>
 
-        <aside className={styles.aside} aria-label="Talent platform introduction">
-          <div>
-            <p className={styles.asideEyebrow}>Mazik Global</p>
-            <h2 className={styles.asideHeading}>One platform. Four role-based workspaces.</h2>
-            <p className={styles.asideText}>Recruiters, candidates, employees, and admins each land in the dashboard built for their work.</p>
-          </div>
-
-          <div>
-            <div className={styles.metricCard}>
-              <strong>Role-based access</strong>
-              <span>Your selected role must match your account to continue.</span>
-            </div>
-            <div className={styles.dotsRow} aria-hidden="true">
-              <span className={`${styles.dot} ${styles.dotActive}`} />
-              <span className={styles.dot} />
-              <span className={styles.dot} />
-            </div>
-          </div>
-        </aside>
+        <AuthAside slides={LOGIN_SLIDES} ariaLabel="Talent platform introduction" />
       </div>
     </main>
   );

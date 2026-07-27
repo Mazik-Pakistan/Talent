@@ -117,7 +117,7 @@ class OnboardingPersonalInfo(BaseModel):
     gender: Literal["male", "female", "other", "prefer_not_to_say"]
     nationality: str = Field(min_length=2, max_length=80)
     marital_status: Literal["single", "married", "divorced", "widowed", "other"]
-    blood_group: Literal["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "unknown"] = "unknown"
+    blood_group: Literal["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "N/A"] = "N/A"
     national_id: str = Field(min_length=5, max_length=40)
     profile_picture: str | None = None
     # Optional fields populated from CNIC/Passport OCR (editable by candidate)
@@ -141,6 +141,15 @@ class OnboardingPersonalInfo(BaseModel):
     @classmethod
     def normalize_text(cls, value: str) -> str:
         return " ".join(value.split())
+
+    @field_validator("blood_group", mode="before")
+    @classmethod
+    def normalize_blood_group(cls, value: str | None) -> str:
+        """Map legacy 'unknown' / empty values to N/A."""
+        raw = (value or "").strip()
+        if not raw or raw.lower() == "unknown":
+            return "N/A"
+        return raw
 
     @field_validator("alternate_phone")
     @classmethod
@@ -181,7 +190,6 @@ class OnboardingEmploymentInfo(BaseModel):
     bank_name: str = Field(min_length=2, max_length=100)
     account_holder_name: str = Field(min_length=2, max_length=100)
     account_number: str = Field(min_length=4, max_length=40)
-    tax_id: str = Field(min_length=4, max_length=40)
     iban: str = Field(min_length=15, max_length=34)
     branch: str = Field(min_length=2, max_length=120)
     branch_code: str = Field(min_length=1, max_length=40)

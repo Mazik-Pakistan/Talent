@@ -425,8 +425,12 @@ class AuthService:
             redirect_to = "/dashboard/employee"
 
         access_token = create_access_token({"user_id": user_id, "email": email, "role": request.role})
-        refresh_token_str = create_refresh_token({"user_id": user_id, "email": email, "role": request.role})
-        await self._store_refresh_token(user_id, refresh_token_str)
+        refresh_days = 30 if request.remember_me else 7
+        refresh_token_str = create_refresh_token(
+            {"user_id": user_id, "email": email, "role": request.role},
+            expires_days=refresh_days,
+        )
+        await self._store_refresh_token(user_id, refresh_token_str, remember_me=request.remember_me)
 
         await database.audit_logs.insert_one(
             {
@@ -457,6 +461,7 @@ class AuthService:
                 "refresh_token": refresh_token_str,
                 "expires_in": settings.JWT_EXPIRE_MINUTES * 60,
                 "token_type": "bearer",
+                "remember_me": request.remember_me,
             },
             "redirect_to": redirect_to,
         }
@@ -517,13 +522,18 @@ class AuthService:
         user_id = payload.get("user_id")
         email = payload.get("email")
         role = payload.get("role")
+        remember_me = bool(stored.get("remember_me"))
+        refresh_days = 30 if remember_me else 7
 
         new_access_token = create_access_token({"user_id": user_id, "email": email, "role": role})
-        new_refresh_token = create_refresh_token({"user_id": user_id, "email": email, "role": role})
+        new_refresh_token = create_refresh_token(
+            {"user_id": user_id, "email": email, "role": role},
+            expires_days=refresh_days,
+        )
 
         # Rotate: delete old, store new
         await database.refresh_tokens.delete_one({"token": refresh_token_str})
-        await self._store_refresh_token(user_id, new_refresh_token)
+        await self._store_refresh_token(user_id, new_refresh_token, remember_me=remember_me)
 
         return {
             "message": "Session refreshed.",
@@ -532,6 +542,7 @@ class AuthService:
                 "refresh_token": new_refresh_token,
                 "expires_in": settings.JWT_EXPIRE_MINUTES * 60,
                 "token_type": "bearer",
+                "remember_me": remember_me,
             },
         }
 
@@ -780,12 +791,14 @@ class AuthService:
             return None
         return profile
 
-    async def _store_refresh_token(self, user_id: str, token: str) -> None:
+    async def _store_refresh_token(self, user_id: str, token: str, remember_me: bool = False) -> None:
+        days = 30 if remember_me else 7
         await database.refresh_tokens.insert_one(
             {
                 "user_id": user_id,
                 "token": token,
-                "expires_at": datetime.now(UTC) + timedelta(days=7),
+                "remember_me": remember_me,
+                "expires_at": datetime.now(UTC) + timedelta(days=days),
                 "created_at": datetime.now(UTC),
             }
         )

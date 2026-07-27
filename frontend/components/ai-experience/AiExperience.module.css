@@ -159,6 +159,10 @@
   color: #23324f;
   letter-spacing: 0.01em;
 }
+.requiredMark {
+  color: #b42318;
+  font-weight: 700;
+}
 .fieldControl { position: relative; }
 .field input,
 .field textarea {
@@ -1059,6 +1063,24 @@
 .resultLabel { font-size: 11px; font-weight: 700; color: var(--ai-faint); width: 116px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.03em; }
 .resultValue { font-size: 13px; font-weight: 650; color: var(--ai-text); word-break: break-all; flex: 1; }
 .resultRowLow { border-color: #f7d9a4; background: #fffdf7; }
+.resultRowTyping {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+.typeCaret {
+  display: inline-block;
+  width: 1.5px;
+  height: 0.95em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--ai-blue, #3b82f6);
+  animation: typeCaretBlink 0.7s steps(1) infinite;
+}
+@keyframes typeCaretBlink {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
 
 .scannerNote {
   display: flex;

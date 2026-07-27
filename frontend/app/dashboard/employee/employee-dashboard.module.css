@@ -718,6 +718,12 @@
   padding: 22px 26px; margin-bottom: 24px;
   background: linear-gradient(120deg, var(--blue-light), #fff); border: 1.5px solid var(--blue-mid);
 }
+.banner.bannerWarn {
+  background: linear-gradient(120deg, #fff8eb, #fff);
+  border-color: #f0d9a8;
+}
+.banner.bannerWarn h3 { color: #7a5c0a; }
+.banner.bannerWarn p { color: #8a7440; }
 .banner .bannerCopy { flex: 1; }
 .banner h3 { margin: 0 0 4px; color: var(--navy); font-size: 1.08rem; }
 .banner p { margin: 0; color: var(--text-muted); font-size: .87rem; }

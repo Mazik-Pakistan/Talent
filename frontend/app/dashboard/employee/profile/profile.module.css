@@ -658,6 +658,35 @@
   font-size: 14px;
 }
 
+.inlineNotice {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #f0d9a8;
+  background: linear-gradient(120deg, #fff8eb, #fff);
+}
+
+.inlineNotice strong {
+  display: block;
+  color: #7a5c0a;
+  font-size: 13.5px;
+  margin-bottom: 2px;
+}
+
+.inlineNotice p {
+  margin: 0;
+  color: #8a7440;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.inlineNotice .linkBtn {
+  flex-shrink: 0;
+}
+
 .linkBtn {
   background: var(--blue-light, #e9f4ff);
   border: 1px solid var(--blue-mid, #c3e3ff);

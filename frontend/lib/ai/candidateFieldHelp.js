@@ -8,7 +8,7 @@ export const CANDIDATE_FIELD_HELP = {
   first_name: "Legal first name — must match your ID documents.",
   last_name: "Legal last / family name — must match your ID documents.",
   email: "Use an email you check often — offer and interview updates go here.",
-  phone: "Primary mobile number with country code if possible.",
+  phone: "Primary contact number with country code if possible.",
   cnic: "CNIC / national ID in the format XXXXX-XXXXXXX-X.",
   date_of_birth: "Date of birth exactly as on your national ID.",
   gender: "Select the option that matches your official records.",

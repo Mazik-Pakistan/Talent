@@ -657,6 +657,13 @@ class DocumentService:
         cross = compare_extractions(docs)
 
         enriched = []
+        source_label_by_type = {
+            "cnic": "National ID",
+            "passport": "Passport",
+            "resume": "Resume",
+            "academic_transcript": "Transcript",
+            "certificate": "Transcript",
+        }
         for d in docs:
             payload = self._public(d)
             ocr_fields = (d.get("ocr_result") or {}).get("fields") or {}
@@ -672,8 +679,24 @@ class DocumentService:
                     mapped["cnic_number"] = mapped["cnic_number"]
                 profile_mismatches = ocr_service.compare_with_profile(mapped, profile)
             payload["mismatches"] = profile_mismatches
-            # Prefer live cross-document result over stale stored reasons.
-            payload["cross_document_mismatches"] = cross.get("mismatches") or []
+            # Prefer live cross-document result, but only flags that involve this document.
+            doc_type = d.get("doc_type") or ""
+            category = ((d.get("ocr_result") or {}).get("category") or doc_type)
+            if category == "certificate":
+                category = "academic_transcript"
+            own_label = source_label_by_type.get(doc_type) or source_label_by_type.get(category)
+            own_cross = []
+            for m in cross.get("mismatches") or []:
+                sources = m.get("sources") or []
+                involved_types = m.get("documents") or []
+                if own_label and sources and own_label in sources:
+                    own_cross.append(m)
+                elif doc_type and involved_types and doc_type in involved_types:
+                    own_cross.append(m)
+                elif not sources and not involved_types:
+                    # Legacy mismatch shape with no source metadata — keep visible.
+                    own_cross.append(m)
+            payload["cross_document_mismatches"] = own_cross
             enriched.append(payload)
 
         return {
@@ -719,10 +742,9 @@ class DocumentService:
 
         await database.documents.update_one({"_id": doc["_id"]}, {"$set": update})
 
-        # If recruiter approves despite mismatch, clear profile-level mismatch flag
+        # Update profile-level verification only when every active OCR document
+        # for this owner is verified — never batch-verify siblings.
         if approve_despite or payload.status == "verified":
-            # Check if ALL documents for this owner are now verified before
-            # clearing the profile-level verification summary flag.
             remaining_unverified = await database.documents.count_documents(
                 {
                     "owner_id": doc["owner_id"],
@@ -733,29 +755,26 @@ class DocumentService:
                 }
             )
             if remaining_unverified == 0:
-                await database.candidates.update_one(
-                    {"$or": [{"user_id": doc["owner_id"]}, {"email": doc.get("owner_email")}]},
-                    {
-                        "$set": {
-                            "document_verification.verification_status": "verified",
+                profile_set = {
+                    "document_verification.verification_status": "verified",
+                    "document_verification.summary": None,
+                    "document_verification_updated_at": now,
+                }
+                if approve_despite:
+                    profile_set.update(
+                        {
                             "document_verification.recruiter_override": True,
                             "document_verification.recruiter_override_by": current_user.id,
                             "document_verification.recruiter_override_at": now,
-                            "document_verification.summary": None,
                         }
-                    },
+                    )
+                await database.candidates.update_one(
+                    {"$or": [{"user_id": doc["owner_id"]}, {"email": doc.get("owner_email")}]},
+                    {"$set": profile_set},
                 )
                 await database.employees.update_one(
                     {"$or": [{"user_id": doc["owner_id"]}, {"email": doc.get("owner_email")}]},
-                    {
-                        "$set": {
-                            "document_verification.verification_status": "verified",
-                            "document_verification.recruiter_override": True,
-                            "document_verification.recruiter_override_by": current_user.id,
-                            "document_verification.recruiter_override_at": now,
-                            "document_verification.summary": None,
-                        }
-                    },
+                    {"$set": profile_set},
                 )
 
         document_label = DOCUMENT_LABELS.get(doc["doc_type"], doc["doc_type"].replace("_", " ").title())

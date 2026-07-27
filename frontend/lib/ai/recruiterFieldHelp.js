@@ -116,7 +116,7 @@ export const RECRUITER_FIELD_HELP = {
   actionNote: "Optional detail for the candidate/employee about what to fix.",
 
   // Recruiter profile
-  phone: "Your contact phone for teammates and escalation.",
+  phone: "Your contact number for teammates and escalation.",
   // full_name / job_title / department / office_location reused above
 };
 
@@ -147,7 +147,7 @@ const LABEL_ALIASES = [
   [/body|message/i, "body"],
   [/reject/i, "rejectNote"],
   [/reason/i, "actionReason"],
-  [/phone/i, "phone"],
+  [/phone|contact(?!s\b)/i, "phone"],
   [/skill/i, "required_skills"],
   [/certification/i, "required_certifications"],
   [/difficulty/i, "difficulty"],

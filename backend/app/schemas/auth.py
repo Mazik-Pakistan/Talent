@@ -13,14 +13,14 @@ def normalize_pk_mobile(value: str) -> str:
     """Normalize a Pakistan mobile number to 03XXXXXXXXX (11 digits)."""
     raw = (value or "").strip()
     if not raw:
-        raise ValueError("Enter a valid Pakistani mobile number starting with 03 (e.g. 03001234567).")
+        raise ValueError("Enter a valid Pakistani contact number starting with 03 (e.g. 03001234567).")
     digits = re.sub(r"[^\d]", "", raw)
     if digits.startswith("92") and len(digits) == 12:
         digits = "0" + digits[2:]
     elif digits.startswith("3") and len(digits) == 10:
         digits = "0" + digits
     if not PK_MOBILE_DIGITS.fullmatch(digits):
-        raise ValueError("Enter a valid Pakistani mobile number starting with 03 (e.g. 03001234567).")
+        raise ValueError("Enter a valid Pakistani contact number starting with 03 (e.g. 03001234567).")
     return digits
 
 

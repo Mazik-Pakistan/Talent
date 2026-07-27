@@ -5,8 +5,8 @@ export const FIELD_HELP = {
   // Emergency
   "emergency.name": "Enter the full name of someone we can reach if we cannot contact you at work.",
   "emergency.relationship": "How this person relates to you — spouse, parent, sibling, friend…",
-  "emergency.phone": "Primary mobile number that answers outside work hours.",
-  "emergency.alternate_phone": "Optional backup number for the same contact.",
+  "emergency.phone": "Primary contact number that answers outside work hours.",
+  "emergency.alternate_phone": "Optional alternate contact for the same person.",
   "emergency.address": "Where this person can usually be reached.",
 
   // Banking
@@ -17,13 +17,12 @@ export const FIELD_HELP = {
   "employment.branch": "Branch name or city where the account was opened.",
   "employment.branch_code": "Numeric branch code from your cheque or bank letter.",
   "employment.swift_code": "SWIFT / BIC if your bank provides one (optional for local payroll).",
-  "employment.tax_id": "NTN or tax ID if you have one (optional).",
 
   // References
   "references.full_name": "Full name of a professional reference who can vouch for your work.",
   "references.relationship": "How you know them — manager, colleague, mentor…",
   "references.email": "Unique work email for this reference. Each reference needs a different address.",
-  "references.phone": "Phone number HR can use to reach them.",
+  "references.phone": "Contact number HR can use to reach them.",
   "references.company": "Company where they work (or worked with you).",
 
   // Personal (profile)
@@ -31,7 +30,7 @@ export const FIELD_HELP = {
   "personal.last_name": "Your legal last name / family name.",
   "personal.date_of_birth": "Date of birth from your National ID.",
   "personal.national_id": "CNIC / NIC format: XXXXX-XXXXXXX-X.",
-  "personal.phone": "Your primary mobile number for company communication.",
+  "personal.phone": "Your primary contact number for company communication.",
   "personal.email": "This email will be used for company communication.",
   "personal.current_address": "Where you currently live.",
   "personal.permanent_address": "Your permanent / home address if different.",

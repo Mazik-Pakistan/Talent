@@ -378,7 +378,7 @@ function pageInsights(page, snapshot, context = {}) {
       push(insights, {
         id: "onboarding-personal",
         priority: CANDIDATE_MASCOT_PRIORITY.task,
-        message: "Start with legal name, CNIC, phone, and address — recruiters verify these first.",
+        message: "Start with legal name, CNIC, contact, and address — recruiters verify these first.",
       });
       push(insights, {
         id: "onboarding-personal-id",

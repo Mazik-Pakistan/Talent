@@ -35,7 +35,7 @@ export default function RecruiterProfilePage() {
   useEffect(() => {
     publishRecruiterContext({
       section: "recruiter_profile",
-      hint: "Update your name, phone, designation, department, and office. Focus each field for a tip.",
+      hint: "Update your name, contact, designation, department, and office. Focus each field for a tip.",
       fields: ["full_name", "phone", "job_title", "department", "office_location"],
     });
     return () => clearRecruiterContext();
@@ -189,7 +189,7 @@ export default function RecruiterProfilePage() {
             <div className={styles.sectionBody}>
               <form data-partner-coach onSubmit={handleSave} className={styles.profileForm}>
                 <label className={styles.field}>
-                  <span>Full name</span>
+                  <span>Full name <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
                   <input
                     name="full_name"
                     value={form.full_name}
@@ -203,7 +203,7 @@ export default function RecruiterProfilePage() {
                   <input name="email" value={profile?.email || ""} disabled readOnly />
                 </label>
                 <label className={styles.field}>
-                  <span>Contact number</span>
+                  <span>Contact</span>
                   <input
                     name="phone"
                     value={form.phone}

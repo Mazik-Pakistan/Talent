@@ -570,7 +570,7 @@ class EmailService:
                 <strong>Designation:</strong> {title}<br/>
                 <strong>Department:</strong> {dept}<br/>
                 <strong>Personal email:</strong> {personal}<br/>
-                <strong>Phone:</strong> {phone}<br/>
+                <strong>Contact:</strong> {phone}<br/>
                 <strong>Location:</strong> {location}<br/>
                 <strong>Start date:</strong> {start}<br/>
                 <strong>Reporting manager:</strong> {manager}

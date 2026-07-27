@@ -31,6 +31,14 @@ import {
   normalizePkMobile,
   PK_MOBILE_HINT,
 } from "@/utils/phone";
+import {
+  BLOOD_GROUP_HINT,
+  BLOOD_GROUP_OPTIONS,
+  confirmBloodGroupSelection,
+  formatBloodGroupDisplay,
+  isBloodGroupPending,
+  normalizeBloodGroup,
+} from "@/lib/bloodGroup";
 import dashStyles from "../employee-dashboard.module.css";
 import styles from "./profile.module.css";
 
@@ -54,7 +62,7 @@ const emptyPersonal = {
   gender: "prefer_not_to_say",
   nationality: "Pakistani",
   marital_status: "single",
-  blood_group: "unknown",
+  blood_group: "N/A",
   national_id: "",
   profile_picture: null,
   father_name: "",
@@ -86,7 +94,6 @@ const emptyEmployment = {
   bank_name: "",
   account_holder_name: "",
   account_number: "",
-  tax_id: "",
   iban: "",
   branch: "",
   branch_code: "",
@@ -166,7 +173,12 @@ function EmployeeProfileContent() {
 
   const hydrateEditable = useCallback((data) => {
     if (!data) return;
-    setPersonalDraft({ ...emptyPersonal, ...(data.personal || {}) });
+    const personalData = data.personal || {};
+    setPersonalDraft({
+      ...emptyPersonal,
+      ...personalData,
+      blood_group: normalizeBloodGroup(personalData.blood_group),
+    });
     setEducationDrafts((data.education?.entries || []).map((entry) => ({ ...emptyEducationEntry, ...entry })));
     if (data.emergency) {
       setEmergency({
@@ -179,7 +191,12 @@ function EmployeeProfileContent() {
     if (data.employment) {
       setEmployment({
         ...emptyEmployment,
-        ...data.employment,
+        bank_name: data.employment.bank_name || "",
+        account_holder_name: data.employment.account_holder_name || "",
+        account_number: data.employment.account_number || "",
+        iban: data.employment.iban || "",
+        branch: data.employment.branch || "",
+        branch_code: data.employment.branch_code || "",
         swift_code: data.employment.swift_code || "",
       });
     }
@@ -229,6 +246,8 @@ function EmployeeProfileContent() {
   const percentage = progress?.percentage ?? (profileIncomplete ? 0 : 100);
 
   const personal = onboarding?.personal || {};
+  const bloodGroupPending =
+    Boolean(onboarding?.personal) && isBloodGroupPending(personal.blood_group);
   const govDocs = onboarding?.government_docs?.documents || [];
   const educationEntries = onboarding?.education?.entries || [];
   const skills = onboarding?.skills || {};
@@ -407,7 +426,7 @@ function EmployeeProfileContent() {
     }
     if (Object.values(errors).some(Boolean)) {
       showFormError(
-        "Complete emergency contact with a valid primary phone (" + PK_MOBILE_HINT + ").",
+        "Complete emergency contact with a valid primary contact (" + PK_MOBILE_HINT + ").",
         errors
       );
       return false;
@@ -423,7 +442,6 @@ function EmployeeProfileContent() {
       employment_iban: !employment.iban?.trim(),
       employment_branch: !employment.branch?.trim(),
       employment_branch_code: !employment.branch_code?.trim(),
-      employment_tax_id: !employment.tax_id?.trim(),
     };
     if (Object.values(errors).some(Boolean)) {
       showFormError("Complete your banking details including IBAN, branch, and branch code.", errors);
@@ -452,7 +470,7 @@ function EmployeeProfileContent() {
     }
 
     if (references.length < 2 || Object.keys(errors).length > 0) {
-      showFormError("Provide at least two complete references with unique emails and valid PK phones.", errors);
+      showFormError("Provide at least two complete references with unique emails and valid PK contacts.", errors);
       return false;
     }
     return true;
@@ -477,6 +495,7 @@ function EmployeeProfileContent() {
     await persistSection("personal", {
       personal: {
         ...personalDraft,
+        blood_group: normalizeBloodGroup(personalDraft.blood_group),
         alternate_phone: personalDraft.alternate_phone?.trim()
           ? normalizePkMobile(personalDraft.alternate_phone)
           : null,
@@ -510,7 +529,6 @@ function EmployeeProfileContent() {
         bank_name: employment.bank_name.trim(),
         account_holder_name: employment.account_holder_name.trim(),
         account_number: employment.account_number.trim(),
-        tax_id: employment.tax_id.trim(),
         iban: employment.iban.replace(/\s/g, "").toUpperCase(),
         branch: employment.branch.trim(),
         branch_code: employment.branch_code.trim(),
@@ -694,7 +712,7 @@ function EmployeeProfileContent() {
                     <Row label="Office location" value={employee?.office_location} />
                     <Row label="Joining date" value={formatDate(employee?.start_date)} />
                     <Row label="Converted on" value={formatDate(employee?.converted_at)} />
-                    <Row label="Work phone" value={formatPhoneDisplay(employee?.phone)} />
+                    <Row label="Work contact" value={formatPhoneDisplay(employee?.phone)} />
                     <Row label="Company email" value={employee?.company_email} />
                     {employee?.company_email && employee?.has_company_email_password && (
                       <div style={{ gridColumn: "1 / -1" }}>
@@ -754,10 +772,20 @@ function EmployeeProfileContent() {
                         <SelectField label="Gender" value={personalDraft.gender} options={["male", "female", "other", "prefer_not_to_say"]} onChange={(e) => setPersonalDraft({ ...personalDraft, gender: e.target.value })} />
                         <Field label="Nationality" value={personalDraft.nationality} onChange={(e) => setPersonalDraft({ ...personalDraft, nationality: e.target.value })} />
                         <SelectField label="Marital status" value={personalDraft.marital_status} options={["single", "married", "divorced", "widowed", "other"]} onChange={(e) => setPersonalDraft({ ...personalDraft, marital_status: e.target.value })} />
-                        <SelectField label="Blood group" value={personalDraft.blood_group} options={["unknown", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]} onChange={(e) => setPersonalDraft({ ...personalDraft, blood_group: e.target.value })} />
+                        <SelectField
+                          label="Blood group"
+                          value={normalizeBloodGroup(personalDraft.blood_group)}
+                          options={BLOOD_GROUP_OPTIONS}
+                          formatOption={(option) => option}
+                          hint={BLOOD_GROUP_HINT}
+                          onChange={(e) => {
+                            const next = confirmBloodGroupSelection(e.target.value, personalDraft.blood_group);
+                            setPersonalDraft({ ...personalDraft, blood_group: next });
+                          }}
+                        />
                         <Field label="National ID" value={personalDraft.national_id} onChange={(e) => setPersonalDraft({ ...personalDraft, national_id: e.target.value })} />
                         <Field label="Father's name" value={personalDraft.father_name || ""} onChange={(e) => setPersonalDraft({ ...personalDraft, father_name: e.target.value })} />
-                        <Field label="Alternate phone" value={formatPkMobileInput(personalDraft.alternate_phone)} hint={PK_MOBILE_HINT} onChange={(e) => setPersonalDraft({ ...personalDraft, alternate_phone: formatPkMobileInput(e.target.value) })} />
+                        <Field label="Alternate contact" value={formatPkMobileInput(personalDraft.alternate_phone)} hint={PK_MOBILE_HINT} onChange={(e) => setPersonalDraft({ ...personalDraft, alternate_phone: formatPkMobileInput(e.target.value) })} />
                         <Field label="ID issue date" type="date" value={personalDraft.id_issue_date || ""} onChange={(e) => setPersonalDraft({ ...personalDraft, id_issue_date: e.target.value })} />
                         <Field label="ID expiry date" type="date" value={personalDraft.id_expiry_date || ""} onChange={(e) => setPersonalDraft({ ...personalDraft, id_expiry_date: e.target.value })} />
                         <Field label="City" value={personalDraft.city} onChange={(e) => setPersonalDraft({ ...personalDraft, city: e.target.value })} />
@@ -774,6 +802,20 @@ function EmployeeProfileContent() {
                     </div>
                   }
                 >
+                  {bloodGroupPending && editingSection !== "personal" ? (
+                    <div className={styles.inlineNotice} role="status">
+                      <div>
+                        <strong>Blood group needs verification</strong>
+                        <p>
+                          You saved N/A for now. Please confirm your blood group as soon as you can —
+                          it is used in emergencies.
+                        </p>
+                      </div>
+                      <button type="button" className={styles.linkBtn} onClick={() => startEdit("personal")}>
+                        Update now
+                      </button>
+                    </div>
+                  ) : null}
                   {personal.first_name || personal.last_name ? (
                     <>
                       <dl className={styles.grid}>
@@ -783,12 +825,19 @@ function EmployeeProfileContent() {
                         <Row label="Gender" value={titleCase(personal.gender)} />
                         <Row label="Nationality" value={personal.nationality} />
                         <Row label="Marital status" value={titleCase(personal.marital_status)} />
-                        <Row label="Blood group" value={personal.blood_group === "unknown" ? "—" : personal.blood_group} />
+                        <Row
+                          label="Blood group"
+                          value={
+                            bloodGroupPending
+                              ? formatBloodGroupDisplay(personal.blood_group)
+                              : normalizeBloodGroup(personal.blood_group)
+                          }
+                        />
                         <Row label="National ID" value={personal.national_id} />
                         <Row label="Father's name" value={personal.father_name} />
                         <Row label="ID issue date" value={personal.id_issue_date} />
                         <Row label="ID expiry date" value={personal.id_expiry_date} />
-                        <Row label="Alternate phone" value={formatPhoneDisplay(personal.alternate_phone)} />
+                        <Row label="Alternate contact" value={formatPhoneDisplay(personal.alternate_phone)} />
                         <Row label="City" value={personal.city} />
                         <Row label="State / province" value={personal.state} />
                         <Row label="Postal code" value={personal.postal_code} />
@@ -928,6 +977,7 @@ function EmployeeProfileContent() {
                       <div className={styles.formGrid}>
                         <Field
                           label="Full name"
+                          required
                           value={emergency.name}
                           error={fieldErrors.emergency_name}
                           onChange={(e) => {
@@ -937,6 +987,7 @@ function EmployeeProfileContent() {
                         />
                         <Field
                           label="Relationship"
+                          required
                           value={emergency.relationship}
                           error={fieldErrors.emergency_relationship}
                           onChange={(e) => {
@@ -945,7 +996,8 @@ function EmployeeProfileContent() {
                           }}
                         />
                         <Field
-                          label="Contact number"
+                          label="Contact"
+                          required
                           value={formatPkMobileInput(emergency.phone)}
                           hint={PK_MOBILE_HINT}
                           error={fieldErrors.emergency_phone}
@@ -955,7 +1007,7 @@ function EmployeeProfileContent() {
                           }}
                         />
                         <Field
-                          label="Alternate phone (optional)"
+                          label="Alternate contact (optional)"
                           value={formatPkMobileInput(emergency.alternate_phone || "")}
                           hint={PK_MOBILE_HINT}
                           error={fieldErrors.emergency_alternate_phone}
@@ -986,8 +1038,8 @@ function EmployeeProfileContent() {
                     <dl className={styles.grid}>
                       <Row label="Name" value={onboarding.emergency.name} />
                       <Row label="Relationship" value={onboarding.emergency.relationship} />
-                      <Row label="Contact number" value={formatPhoneDisplay(onboarding.emergency.phone)} />
-                      <Row label="Alternate phone" value={formatPhoneDisplay(onboarding.emergency.alternate_phone)} />
+                      <Row label="Contact" value={formatPhoneDisplay(onboarding.emergency.phone)} />
+                      <Row label="Alternate contact" value={formatPhoneDisplay(onboarding.emergency.alternate_phone)} />
                       <Row label="Address" value={onboarding.emergency.address} wide />
                     </dl>
                   ) : (
@@ -1010,6 +1062,7 @@ function EmployeeProfileContent() {
                       <div className={styles.formGrid}>
                         <Field
                           label="Bank name"
+                          required
                           value={employment.bank_name}
                           error={fieldErrors.employment_bank_name}
                           onChange={(e) => {
@@ -1019,6 +1072,7 @@ function EmployeeProfileContent() {
                         />
                         <Field
                           label="Account title"
+                          required
                           value={employment.account_holder_name}
                           error={fieldErrors.employment_account_holder_name}
                           onChange={(e) => {
@@ -1028,6 +1082,7 @@ function EmployeeProfileContent() {
                         />
                         <Field
                           label="Account number"
+                          required
                           value={employment.account_number}
                           error={fieldErrors.employment_account_number}
                           onChange={(e) => {
@@ -1037,6 +1092,7 @@ function EmployeeProfileContent() {
                         />
                         <Field
                           label="IBAN"
+                          required
                           value={employment.iban}
                           error={fieldErrors.employment_iban}
                           onChange={(e) => {
@@ -1046,6 +1102,7 @@ function EmployeeProfileContent() {
                         />
                         <Field
                           label="Branch"
+                          required
                           value={employment.branch}
                           error={fieldErrors.employment_branch}
                           onChange={(e) => {
@@ -1055,6 +1112,7 @@ function EmployeeProfileContent() {
                         />
                         <Field
                           label="Branch code"
+                          required
                           value={employment.branch_code}
                           error={fieldErrors.employment_branch_code}
                           onChange={(e) => {
@@ -1066,15 +1124,6 @@ function EmployeeProfileContent() {
                           label="Swift code (optional)"
                           value={employment.swift_code || ""}
                           onChange={(e) => setEmployment({ ...employment, swift_code: e.target.value })}
-                        />
-                        <Field
-                          label="Tax ID"
-                          value={employment.tax_id}
-                          error={fieldErrors.employment_tax_id}
-                          onChange={(e) => {
-                            setEmployment({ ...employment, tax_id: e.target.value });
-                            clearFieldError("employment_tax_id");
-                          }}
                         />
                       </div>
                       <div className={styles.editActions}>
@@ -1097,7 +1146,6 @@ function EmployeeProfileContent() {
                       <Row label="Branch" value={onboarding.employment.branch} />
                       <Row label="Branch code" value={onboarding.employment.branch_code} />
                       <Row label="Swift code" value={onboarding.employment.swift_code} />
-                      <Row label="Tax ID" value={onboarding.employment.tax_id} />
                     </dl>
                   ) : (
                     <p className={styles.empty}>Not provided yet.</p>
@@ -1124,6 +1172,7 @@ function EmployeeProfileContent() {
                           <div className={styles.formGrid}>
                             <Field
                               label="Full name"
+                              required
                               value={ref.full_name}
                               error={fieldErrors[`ref_${index}_full_name`]}
                               onChange={(e) => {
@@ -1135,6 +1184,7 @@ function EmployeeProfileContent() {
                             />
                             <Field
                               label="Relationship"
+                              required
                               value={ref.relationship}
                               error={fieldErrors[`ref_${index}_relationship`]}
                               onChange={(e) => {
@@ -1146,6 +1196,7 @@ function EmployeeProfileContent() {
                             />
                             <Field
                               label="Email"
+                              required
                               type="email"
                               value={ref.email}
                               error={fieldErrors[`ref_${index}_email`]}
@@ -1157,7 +1208,8 @@ function EmployeeProfileContent() {
                               }}
                             />
                             <Field
-                              label="Contact number"
+                              label="Contact"
+                              required
                               value={formatPkMobileInput(ref.phone)}
                               hint={PK_MOBILE_HINT}
                               error={fieldErrors[`ref_${index}_phone`]}
@@ -1171,6 +1223,7 @@ function EmployeeProfileContent() {
                             <Field
                               wide
                               label="Company"
+                              required
                               value={ref.company}
                               error={fieldErrors[`ref_${index}_company`]}
                               onChange={(e) => {
@@ -1210,7 +1263,7 @@ function EmployeeProfileContent() {
                         <dl className={styles.grid}>
                           <Row label="Relationship" value={ref.relationship} />
                           <Row label="Email" value={ref.email} />
-                          <Row label="Contact number" value={formatPhoneDisplay(ref.phone)} />
+                          <Row label="Contact" value={formatPhoneDisplay(ref.phone)} />
                           <Row label="Company" value={ref.company} wide />
                         </dl>
                       </div>
@@ -1595,29 +1648,35 @@ function Row({ label, value, wide }) {
   );
 }
 
-function Field({ label, value, onChange, type = "text", wide, error, hint }) {
+function Field({ label, value, onChange, type = "text", wide, error, hint, required }) {
   return (
     <label
       className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""}`}
       data-field-error={error ? "true" : undefined}
     >
-      <span>{label}</span>
-      <input type={type} value={value} onChange={onChange} aria-invalid={!!error} />
+      <span>
+        {label}
+        {required ? <span style={{ color: "#b42318", marginLeft: 4 }}>*</span> : null}
+      </span>
+      <input type={type} value={value} onChange={onChange} aria-invalid={!!error} required={required} />
       {hint && <small>{hint}</small>}
       {error && <em className={styles.fieldErrorText}>{error === true ? "Required" : error}</em>}
     </label>
   );
 }
 
-function SelectField({ label, value, options, onChange }) {
+function SelectField({ label, value, options, onChange, hint, formatOption }) {
   return (
     <label className={styles.field}>
       <span>{label}</span>
       <select value={value} onChange={onChange}>
         {options.map((option) => (
-          <option key={option} value={option}>{titleCase(option)}</option>
+          <option key={option} value={option}>
+            {formatOption ? formatOption(option) : titleCase(option)}
+          </option>
         ))}
       </select>
+      {hint ? <small>{hint}</small> : null}
     </label>
   );
 }

@@ -48,7 +48,6 @@ def iban_fingerprint(iban: str) -> str:
 SENSITIVE_BANKING_FIELDS = (
     "account_number",
     "iban",
-    "tax_id",
     "swift_code",
 )
 

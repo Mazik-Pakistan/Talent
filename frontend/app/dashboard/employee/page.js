@@ -23,6 +23,7 @@ import {
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
 import { getEmployeeNavItems, isEmployeeNavActive } from "@/utils/employeeNav";
+import { isBloodGroupPending } from "@/lib/bloodGroup";
 import styles from "./employee-dashboard.module.css";
 
 const ANNOUNCEMENTS_POLL_MS = 30000;
@@ -298,6 +299,8 @@ function EmployeeDashboardContent() {
   const modules = useMemo(() => moduleAccess(user?.role), [user?.role]);
 
   const onboarding = useMemo(() => employee?.onboarding || {}, [employee]);
+  const bloodGroupPending =
+    Boolean(onboarding?.personal) && isBloodGroupPending(onboarding?.personal?.blood_group);
   const profileIncomplete = employee?.profile_status === "incomplete";
   const profileComplete = employee?.profile_status === "complete";
   // Start at zero while loading: the ring then sweeps up to the real figure
@@ -562,6 +565,25 @@ function EmployeeDashboardContent() {
 
           <div className={styles.content}>
             {loadError && <div className={styles.loadError} role="alert">{loadError}</div>}
+
+            {bloodGroupPending && !loading ? (
+              <div className={`${styles.banner} ${styles.bannerWarn}`} role="status">
+                <div className={styles.bannerCopy}>
+                  <h3>Confirm your blood group</h3>
+                  <p>
+                    You marked blood group as N/A. Please verify and update it on your profile as soon as
+                    you can — this information is used in emergencies.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={styles.btnPrimary}
+                  onClick={() => router.push("/dashboard/employee/profile#sec-personal")}
+                >
+                  Update blood group
+                </button>
+              </div>
+            ) : null}
 
             {/* AI Assistant hero */}
             <div className={styles.hero}>

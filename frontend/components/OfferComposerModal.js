@@ -119,7 +119,7 @@ export default function OfferComposerModal({ candidate, onClose, onSent }) {
 
         <form onSubmit={handleSubmit} className="form-grid">
           <label className="field">
-            <span>Job title</span>
+            <span>Job title <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
             <select name="job_title" value={form.job_title} onChange={(e) => update("job_title", e.target.value)}>
               <option value="">Select designation</option>
               {RECRUITER_DESIGNATIONS.map((designation) => (
@@ -128,7 +128,7 @@ export default function OfferComposerModal({ candidate, onClose, onSent }) {
             </select>
           </label>
           <label className="field">
-            <span>Department</span>
+            <span>Department <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
             <select name="department" value={form.department} onChange={(e) => update("department", e.target.value)}>
               <option value="">Select department</option>
               {RECRUITER_DEPARTMENTS.map((department) => (
@@ -150,11 +150,11 @@ export default function OfferComposerModal({ candidate, onClose, onSent }) {
             <input name="office_location" value={form.office_location} onChange={(e) => update("office_location", e.target.value)} />
           </label>
           <label className="field">
-            <span>Reporting manager *</span>
+            <span>Reporting manager <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
             <input name="reporting_manager" value={form.reporting_manager} onChange={(e) => update("reporting_manager", e.target.value)} required />
           </label>
           <label className="field">
-            <span>Start date</span>
+            <span>Start date <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
             <input name="start_date" type="date" value={form.start_date} onChange={(e) => update("start_date", e.target.value)} />
           </label>
           <label className="field">

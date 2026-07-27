@@ -92,6 +92,28 @@ export function clearLocalSession() {
   localStorage.removeItem("refresh_token");
   localStorage.removeItem("user");
   localStorage.removeItem("session_last_active");
+  localStorage.removeItem("remember_me");
+}
+
+/** Persist login session + remember-me preference. */
+export function persistLoginSession(session, user, { rememberMe = false, email = "" } = {}) {
+  localStorage.setItem("access_token", session.access_token);
+  localStorage.setItem("refresh_token", session.refresh_token);
+  localStorage.setItem("user", JSON.stringify(user));
+  localStorage.setItem("session_last_active", String(Date.now()));
+
+  const remembered = Boolean(rememberMe || session?.remember_me);
+  if (remembered) {
+    localStorage.setItem("remember_me", "true");
+    if (email) localStorage.setItem("remembered_email", email);
+  } else {
+    localStorage.removeItem("remember_me");
+    localStorage.removeItem("remembered_email");
+  }
+}
+
+export function isRememberMeEnabled() {
+  return localStorage.getItem("remember_me") === "true";
 }
 
 // ─── Super Admin Bootstrap ───────────────────────────────────────────────────

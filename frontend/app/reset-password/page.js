@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import AuthAside, { RECOVERY_SLIDES } from "@/components/auth/AuthAside";
 import { getApiErrorMessage, resetPassword } from "@/services/authService";
+import styles from "@/app/styles/auth.module.css";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -19,13 +21,11 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState("");
   const inputRefs = useRef([]);
 
-  // Pre-fill email from sessionStorage if navigating from forgot-password
   useEffect(() => {
     const stored = sessionStorage.getItem("resetEmail");
     if (stored) setEmail(stored);
   }, []);
 
-  // OTP input handlers
   function handleOtpChange(index, value) {
     const digit = value.replace(/\D/g, "").slice(-1);
     const updated = [...otp];
@@ -95,135 +95,107 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="auth-shell">
-      <section className="auth-panel" aria-labelledby="reset-heading">
-        <div className="brand-row">
-          <Image src="/mazikglobal-logo.png" alt="Mazik Global" width={192} height={52} priority />
-          <span className="brand-divider" aria-hidden="true" />
-          <span className="product-name">Talent</span>
-        </div>
-
-        <div className="auth-intro">
-          <p className="eyebrow">Account recovery</p>
-          <h1 id="reset-heading">Set a new password</h1>
-          <p>Enter the reset code sent to your email and choose a strong new password.</p>
-        </div>
-
-        <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          {/* Email field */}
-          <label className="field">
-            <span>Email address</span>
-            <input
-              type="email"
-              name="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-            />
-          </label>
-
-          {/* OTP Digits */}
-          <div>
-            <span
-              style={{
-                display: "block",
-                fontSize: "0.875rem",
-                fontWeight: 500,
-                marginBottom: "0.625rem",
-                color: "#374151",
-              }}
-            >
-              Reset code
-            </span>
-            <div
-              style={{ display: "flex", gap: "10px", marginBottom: "1.25rem" }}
-              onPaste={handleOtpPaste}
-            >
-              {otp.map((digit, index) => (
-                <input
-                  key={index}
-                  ref={(el) => (inputRefs.current[index] = el)}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={(e) => handleOtpChange(index, e.target.value)}
-                  onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                  aria-label={`Reset code digit ${index + 1}`}
-                  style={{
-                    width: "46px",
-                    height: "52px",
-                    textAlign: "center",
-                    fontSize: "1.4rem",
-                    fontWeight: "700",
-                    border: `2px solid ${digit ? "#2d6cdf" : "#cbd5e1"}`,
-                    borderRadius: "8px",
-                    outline: "none",
-                    background: "#fff",
-                    color: "#0f172a",
-                    transition: "border-color 0.2s",
-                  }}
-                />
-              ))}
-            </div>
+    <main className={styles.shell}>
+      <div className={styles.card}>
+        <section className={styles.panel} aria-labelledby="reset-heading">
+          <div className={styles.brandRow}>
+            <Image src="/mazikglobal-logo.png" alt="Mazik Global" width={192} height={52} priority />
+            <span className={styles.brandDivider} aria-hidden="true" />
+            <span className={styles.productName}>Talent</span>
           </div>
 
-          {/* New password */}
-          <label className="field">
-            <span>New password</span>
-            <span className="password-control">
+          <div className={styles.intro}>
+            <p className={styles.eyebrow}>Account recovery</p>
+            <h1 id="reset-heading" className={styles.heading}>Set a new password</h1>
+            <p className={styles.subtext}>Enter the reset code sent to your email and choose a strong new password.</p>
+          </div>
+
+          <form className={styles.form} onSubmit={handleSubmit} noValidate>
+            <label className={styles.field}>
+              <span>Email address <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
               <input
+                className={styles.input}
+                type="email"
+                name="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+              />
+            </label>
+
+            <div className={styles.otpField}>
+              <span className={styles.otpLabel}>Reset code <span style={{ color: "#b42318" }}>*</span></span>
+              <div className={styles.otpRow} onPaste={handleOtpPaste}>
+                {otp.map((digit, index) => (
+                  <input
+                    key={index}
+                    ref={(el) => {
+                      inputRefs.current[index] = el;
+                    }}
+                    className={`${styles.otpInput} ${digit ? styles.otpInputFilled : ""}`}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleOtpChange(index, e.target.value)}
+                    onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                    aria-label={`Reset code digit ${index + 1}`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <label className={styles.field}>
+              <span>New password <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
+              <span className={styles.passwordControl}>
+                <input
+                  className={styles.input}
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                  required
+                />
+                <button
+                  type="button"
+                  className={styles.toggleButton}
+                  onClick={() => setShowPassword((v) => !v)}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </span>
+            </label>
+
+            <label className={styles.field}>
+              <span>Confirm password <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
+              <input
+                className={styles.input}
                 type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
                 autoComplete="new-password"
                 required
               />
-              <button
-                type="button"
-                className="toggle-button"
-                onClick={() => setShowPassword((v) => !v)}
-              >
-                {showPassword ? "Hide" : "Show"}
-              </button>
-            </span>
-          </label>
+            </label>
 
-          {/* Confirm password */}
-          <label className="field">
-            <span>Confirm password</span>
-            <input
-              type={showPassword ? "text" : "password"}
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              autoComplete="new-password"
-              required
-            />
-          </label>
+            {error && <p className={`${styles.formMessage} ${styles.formMessageError}`} role="alert">{error}</p>}
+            {message && <p className={`${styles.formMessage} ${styles.formMessageSuccess}`} role="status">{message}</p>}
 
-          {error && <p className="form-message" role="alert">{error}</p>}
-          {message && <p className="form-message" role="status">{message}</p>}
+            <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
+              {isSubmitting && <span className={styles.spinner} />}
+              {isSubmitting ? "Updating…" : "Update password"}
+            </button>
+          </form>
 
-          <button className="primary-button" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Updating…" : "Update password"}
-          </button>
-        </form>
+          <div className={styles.footer}>
+            <p><Link href="/forgot-password">Request a new code</Link></p>
+            <p><Link href="/login">Back to sign in</Link></p>
+          </div>
+        </section>
 
-        <p className="auth-footer">
-          <Link href="/forgot-password">Request a new code</Link>
-          {" · "}
-          <Link href="/login">Back to sign in</Link>
-        </p>
-      </section>
-
-      <aside className="auth-aside" aria-label="Password reset help">
-        <div>
-          <p className="eyebrow">Mazik Global</p>
-          <h2>Secure password recovery.</h2>
-          <p>Enter the 6-digit code from your email once, choose a new password, then sign in.</p>
-        </div>
-      </aside>
+        <AuthAside slides={RECOVERY_SLIDES} ariaLabel="Password reset help" />
+      </div>
     </main>
   );
 }

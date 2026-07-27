@@ -80,23 +80,23 @@ export default function SuperAdminDashboardPage() {
           <p>No super admin exists yet. Create the first one, verify email, then sign in with the Super Admin role.</p>
           <form className="auth-form" onSubmit={handleBootstrap}>
             <label className="field">
-              <span>Full name</span>
+              <span>Full name <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
               <input name="full_name" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required />
             </label>
             <label className="field">
-              <span>Email</span>
+              <span>Email <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
               <input name="email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
             </label>
             <label className="field">
-              <span>Phone</span>
+              <span>Contact <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
               <input name="phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
             </label>
             <label className="field">
-              <span>Password</span>
+              <span>Password <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
               <input name="password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
             </label>
             <label className="field">
-              <span>Confirm password</span>
+              <span>Confirm password <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
               <input name="confirm_password" type="password" value={form.confirm_password} onChange={(e) => setForm({ ...form, confirm_password: e.target.value })} required />
             </label>
             {message && <p className="form-message" role="status">{message}</p>}

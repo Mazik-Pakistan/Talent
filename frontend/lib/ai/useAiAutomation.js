@@ -21,8 +21,8 @@ import { LOW_CONFIDENCE_THRESHOLD } from "./sources";
 const SKIP = Symbol("ai-skip-step");
 const STOP = Symbol("ai-stop-run");
 
-const TYPING_MS_PER_CHAR = 32;
-const TYPING_MIN_MS = 280;
+const TYPING_MS_PER_CHAR = 16;
+const TYPING_MIN_MS = 180;
 
 class ControlSignal extends Error {
   constructor(kind) {
@@ -120,8 +120,8 @@ export function useAiAutomation({ applyField, gotoSection, persist } = {}) {
       if (reducedMotion) {
         applyFieldRef.current?.(key, value);
       } else {
-        const total = Math.min(1400, Math.max(TYPING_MIN_MS, value.length * TYPING_MS_PER_CHAR));
-        const perChar = Math.max(10, Math.round(total / value.length));
+        const total = Math.min(1000, Math.max(TYPING_MIN_MS, value.length * TYPING_MS_PER_CHAR));
+        const perChar = Math.max(8, Math.round(total / value.length));
         for (let index = 1; index <= value.length; index += 1) {
           applyFieldRef.current?.(key, value.slice(0, index));
           await new Promise((resolve) => setTimeout(resolve, perChar));

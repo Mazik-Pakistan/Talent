@@ -53,8 +53,8 @@ const SECTION_LABELS = {
 const ONBOARDING_SECTION_HELP = {
   emergency: {
     message:
-      "You're on Emergency contact. Fill name, relationship, and a reachable phone — this is who we call if we can't reach you at work.",
-    fields: ["Full name", "Relationship", "Phone", "Alternate phone", "Address"],
+      "You're on Emergency contact. Fill name, relationship, and a reachable contact — this is who we call if we can't reach you at work.",
+    fields: ["Full name", "Relationship", "Contact", "Alternate contact", "Address"],
   },
   employment: {
     message:
@@ -64,7 +64,7 @@ const ONBOARDING_SECTION_HELP = {
   references: {
     message:
       "You're on References. Add at least two professional contacts with unique email addresses so HR can verify your background.",
-    fields: ["Full name", "Relationship", "Email", "Phone", "Company"],
+    fields: ["Full name", "Relationship", "Email", "Contact", "Company"],
   },
   documents: {
     message:
@@ -96,8 +96,8 @@ const PROFILE_SECTION_HELP = {
   },
   emergency: {
     message:
-      "You're editing Emergency contact. Make sure the phone number is one that answers outside work hours.",
-    fields: ["Name", "Relationship", "Phone", "Address"],
+      "You're editing Emergency contact. Make sure the contact number is one that answers outside work hours.",
+    fields: ["Name", "Relationship", "Contact", "Address"],
   },
   employment: {
     message:
@@ -107,7 +107,7 @@ const PROFILE_SECTION_HELP = {
   references: {
     message:
       "You're editing References. Each reference needs a unique email so HR can contact them independently.",
-    fields: ["Name", "Email", "Phone", "Company", "Relationship"],
+    fields: ["Name", "Email", "Contact", "Company", "Relationship"],
   },
 };
 

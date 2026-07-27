@@ -394,7 +394,7 @@ export default function RecruiterInvitePage() {
               </div>
               <div className={styles.formGrid}>
                 <label className={styles.field}>
-                  <span>Full name</span>
+                  <span>Full name <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
                   <input
                     name="full_name"
                     value={inviteForm.full_name}
@@ -404,7 +404,7 @@ export default function RecruiterInvitePage() {
                   />
                 </label>
                 <label className={styles.field}>
-                  <span>Email</span>
+                  <span>Email <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
                   <input
                     name="email"
                     type="email"
@@ -447,7 +447,7 @@ export default function RecruiterInvitePage() {
               </div>
               <div className={styles.formGrid}>
                 <label className={styles.field}>
-                  <span>Designation</span>
+                  <span>Designation <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
                   <select
                     name="job_title"
                     value={inviteForm.job_title}
@@ -463,7 +463,7 @@ export default function RecruiterInvitePage() {
                   </select>
                 </label>
                 <label className={styles.field}>
-                  <span>Department</span>
+                  <span>Department <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
                   <select
                     name="department"
                     value={inviteForm.department}
@@ -501,7 +501,7 @@ export default function RecruiterInvitePage() {
                   />
                 </label>
                 <label className={styles.field}>
-                  <span>Reporting manager</span>
+                  <span>Reporting manager <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
                   <input
                     name="reporting_manager"
                     value={inviteForm.reporting_manager}
@@ -511,7 +511,7 @@ export default function RecruiterInvitePage() {
                   />
                 </label>
                 <label className={styles.field}>
-                  <span>Start date</span>
+                  <span>Start date <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
                   <input
                     name="start_date"
                     type="date"
