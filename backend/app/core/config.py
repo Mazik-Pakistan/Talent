@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     SIGNED_URL_EXPIRE_SECONDS: int = 3600
     OFFER_EXPIRE_DAYS: int = 14
 
+    # IT provisioning (pre-activation): default IT inbox + public form lifetime.
+    IT_MANAGER_EMAIL: str = ""
+    IT_PROVISIONING_EXPIRE_DAYS: int = 90
+
     # US-031: Fernet key (url-safe base64 32-byte). If empty, derived from SECRET_KEY.
     BANKING_ENCRYPTION_KEY: str = ""
 
@@ -109,6 +113,9 @@ class Settings(BaseSettings):
 
     def invitation_link(self, token: str) -> str:
         return f"{self.frontend_base_url}/invite/{token}"
+
+    def it_provisioning_link(self, token: str) -> str:
+        return f"{self.frontend_base_url}/it-setup/{token}"
 
 
 settings = Settings()

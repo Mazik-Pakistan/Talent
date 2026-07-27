@@ -290,9 +290,14 @@ export default function RecruiterOverviewPage() {
                     <li className={styles.miniListItem} key={candidate.offer_id}>
                       <div>
                         <strong>{candidate.full_name}</strong>
-                        <div className={styles.mutedText}>{candidate.email} · {candidate.department || "—"}</div>
+                        <div className={styles.mutedText}>
+                          {candidate.email} · {candidate.department || "—"}
+                          {candidate.can_activate ? " · IT complete" : " · awaiting IT"}
+                        </div>
                       </div>
-                      <button type="button" className={styles.secondaryButton} onClick={() => router.push("/dashboard/recruiter/candidates")}>Approve</button>
+                      <button type="button" className={styles.secondaryButton} onClick={() => router.push("/dashboard/recruiter/candidates")}>
+                        {candidate.can_activate ? "Approve" : "Open"}
+                      </button>
                     </li>
                   ))}
                 </ul>

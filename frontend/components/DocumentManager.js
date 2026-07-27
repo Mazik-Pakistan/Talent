@@ -358,7 +358,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
   return (
     <div className="document-manager-shell">
       {(isCnicUploadBusy || isCnicReplacementBusy) && (
-        <div className="document-upload-overlay" role="status" aria-live="polite">
+        <div className="document-upload-overlay" role="status" aria-live="polite" data-mascot-busy>
           <div className="document-upload-overlay-card">
             <strong>Scanning CNIC with OCR…</strong>
             <p>We are extracting identity fields from your national ID. This may take a few seconds.</p>

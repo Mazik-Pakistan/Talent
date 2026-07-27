@@ -176,7 +176,7 @@ function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, c
   const photoUrl = employee?.profile_picture || user?.profile_picture || null;
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-app-shell>
       <div className={styles.app}>
         <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.collapsed : ""}`}>
           <button

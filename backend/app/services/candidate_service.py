@@ -192,13 +192,18 @@ class CandidateService:
 
     async def get_onboarding(self, current_user: CurrentUser) -> dict:
         candidate = await self._require_active_candidate(current_user)
+        from app.services.offer_service import offer_service
+
+        offer_signed = await offer_service.has_signed_offer(
+            candidate.get("user_id") or str(candidate["_id"]),
+            candidate.get("email"),
+        )
         onboarding = await self._backfill_onboarding_files(current_user, candidate)
         return {
             "candidate": self._public_user(candidate),
             "onboarding": onboarding,
-            "progress": self._progress_payload(
-                {**candidate, "onboarding": onboarding}
-            ),
+            "progress": self._progress_payload({**candidate, "onboarding": onboarding}),
+            "offer_signed": offer_signed,
         }
 
     async def _backfill_onboarding_files(self, current_user: CurrentUser, candidate: dict) -> dict:
@@ -291,6 +296,15 @@ class CandidateService:
         candidate = await self._require_active_candidate(current_user)
         onboarding = candidate.get("onboarding") or {}
 
+        from app.services.offer_service import offer_service
+
+        candidate_id_early = candidate.get("user_id") or str(candidate["_id"])
+        if not await offer_service.has_signed_offer(candidate_id_early, candidate.get("email")):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Sign your offer letter before uploading documents and completing your profile.",
+            )
+
         # ✅ MODIFIED: Only block if already submitted AND trying to resubmit
         if onboarding.get("status") == "submitted" and request.step == "submit":
             raise HTTPException(
@@ -381,14 +395,27 @@ class CandidateService:
                     recipient_id=candidate["recruiter_id"],
                     recipient_role="recruiter",
                     notif_type="intake_submitted",
-                    title="Candidate ready for offer review",
+                    title="Candidate ready for IT provisioning",
                     message=(
-                        f"{candidate['full_name']} submitted their profile, resume, and documents. "
-                        "Review and send an offer letter."
+                        f"{candidate['full_name']} completed their profile and documents. "
+                        "Send IT provisioning, then activate their employee account."
                     ),
-                    link="/dashboard/recruiter#pending-review-section",
+                    link="/dashboard/recruiter/candidates",
                     related_id=candidate_id,
                 )
+                recruiter = await database.recruiters.find_one({"user_id": candidate["recruiter_id"]}) or {}
+                to_email = recruiter.get("email")
+                if to_email:
+                    try:
+                        email_service.send_profile_complete_for_it(
+                            to_email=to_email,
+                            recruiter_name=recruiter.get("full_name") or "Recruiter",
+                            candidate_name=candidate.get("full_name") or "Candidate",
+                            candidate_email=candidate.get("email") or "",
+                            job_title=candidate.get("job_title") or "",
+                        )
+                    except Exception:
+                        pass
         else:
             raise HTTPException(status_code=400, detail="Unknown onboarding step.")
 
@@ -397,7 +424,7 @@ class CandidateService:
         return {
             "message": "Onboarding progress saved."
             if request.step != "submit"
-            else "Profile submitted. Your recruiter will review it and send your offer letter.",
+            else "Profile submitted. Your recruiter has been notified to start IT provisioning.",
             "onboarding": refreshed.get("onboarding"),
             "candidate": self._public_user(refreshed),
             "progress": self._progress_payload(refreshed),
@@ -415,6 +442,16 @@ class CandidateService:
     ) -> dict:
         """Store uploaded file path on the candidate draft (or return URL for the wizard)."""
         candidate = await self._require_active_candidate(current_user)
+        from app.services.offer_service import offer_service
+
+        if not await offer_service.has_signed_offer(
+            candidate.get("user_id") or str(candidate["_id"]),
+            candidate.get("email"),
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Sign your offer letter before uploading documents.",
+            )
         onboarding = candidate.get("onboarding") or {}
         now = datetime.now(UTC)
 

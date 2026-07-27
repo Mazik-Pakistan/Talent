@@ -148,12 +148,12 @@ export default function InviteRegisterPage() {
         </div>
 
         <div className="auth-intro">
-          <p className="eyebrow">Candidate onboarding</p>
+          <p className="eyebrow">Offer invitation</p>
           <h1 id="candidate-register-heading">Create your account</h1>
           <p>
-            You&apos;ve been invited for <strong>{invitation.job_title}</strong> in{" "}
-            <strong>{invitation.department}</strong>. Create your account, then enter the
-            6-digit code we email you to verify and start onboarding.
+            You&apos;ve been offered <strong>{invitation.job_title}</strong> in{" "}
+            <strong>{invitation.department}</strong> at <strong>Mazik Global Pakistan</strong>.
+            Create your account, verify your email, then review and sign your offer letter.
           </p>
         </div>
 
@@ -192,8 +192,11 @@ export default function InviteRegisterPage() {
       <aside className="auth-aside" aria-label="Onboarding introduction">
         <div>
           <p className="eyebrow">Mazik Global</p>
-          <h2>Your offer is ready. Let&apos;s get you onboarded.</h2>
-          <p>Register with this invitation, verify your email, then complete your employee onboarding profile.</p>
+          <h2>You&apos;ve been offered a role at Mazik Global Pakistan.</h2>
+          <p>
+            Register with this invitation, verify your email, then sign your offer letter. Documents unlock after
+            you accept.
+          </p>
         </div>
         <div className="aside-metric">
           <strong>Secure invitation</strong>

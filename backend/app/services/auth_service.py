@@ -198,13 +198,22 @@ class AuthService:
                 "redirect_to": "/login",
             }
 
-        # Candidate: mark invitation used, notify recruiter, issue JWT for onboarding
+        # Candidate: mark invitation used, bind offer, notify recruiter, issue JWT
         invite_token = extra.get("invitation_token")
         if invite_token:
             await database.invitations.update_one(
                 {"token": invite_token},
                 {"$set": {"status": "used", "used_at": now, "updated_at": now}},
             )
+
+        from app.services.offer_service import offer_service
+
+        bound_offer = await offer_service.bind_to_candidate(
+            user_id=user_id,
+            email=email,
+            invitation_token=invite_token,
+            full_name=pending["full_name"],
+        )
 
         recruiter_id = extra.get("recruiter_id")
         if recruiter_id:
@@ -215,8 +224,12 @@ class AuthService:
                 recipient_role="recruiter",
                 notif_type="candidate_registered",
                 title="Candidate registered",
-                message=f"{pending['full_name']} verified their email and started onboarding.",
-                link="/dashboard/recruiter#approvals-section",
+                message=(
+                    f"{pending['full_name']} verified their email and can now review their offer letter."
+                    if bound_offer
+                    else f"{pending['full_name']} verified their email and started onboarding."
+                ),
+                link="/dashboard/recruiter/candidates",
                 related_id=user_id,
             )
 
@@ -224,11 +237,16 @@ class AuthService:
         refresh_token_str = create_refresh_token({"user_id": user_id, "email": email, "role": role})
         await self._store_refresh_token(user_id, refresh_token_str)
 
+        redirect_to = "/offer" if bound_offer else "/onboarding"
         return {
-            "message": "Your email has been verified. Continue to onboarding.",
+            "message": (
+                "Your email has been verified. Review and sign your offer letter."
+                if bound_offer
+                else "Your email has been verified. Continue to onboarding."
+            ),
             "already_verified": False,
             "role": role,
-            "redirect_to": "/onboarding",
+            "redirect_to": redirect_to,
             "user": {
                 "id": user_id,
                 "full_name": pending["full_name"],
@@ -393,9 +411,16 @@ class AuthService:
 
         redirect_to = self.ROLE_REDIRECTS[request.role]
         if request.role == "candidate":
-            onboarding_status = (profile.get("onboarding") or {}).get("status")
-            if onboarding_status != "submitted":
-                redirect_to = "/onboarding"
+            from app.services.offer_service import offer_service
+
+            has_signed = await offer_service.has_signed_offer(user_id, email)
+            if not has_signed:
+                redirect_to = "/offer"
+            else:
+                onboarding_status = (profile.get("onboarding") or {}).get("status")
+                redirect_to = (
+                    "/dashboard/candidate" if onboarding_status == "submitted" else "/onboarding"
+                )
         if request.role == "employee":
             redirect_to = "/dashboard/employee"
 

@@ -81,6 +81,8 @@ bulk_* tools (bulk_invite, bulk_approve_offers, bulk_remind_profiles, bulk_remin
 bulk_assign_assets, bulk_schedule_orientation, bulk_set_company_email, bulk_verify_documents). Cap is handled by tools.
 - When a user pastes a list of candidates (from chat or a spreadsheet already parsed for you), use bulk_invite \
 only if every person has email, full_name, job_title/designation, and department (same as Create invitation). \
+Note: the Invite page now requires a full offer (salary, reporting manager, start date, benefits). Prefer directing \
+recruiters to /dashboard/recruiter/invite for complete offer invitations; bulk_invite without offer fields will fail.
 If any required field is missing, do NOT call bulk_invite and do NOT invent values like "Not specified" — \
 list what is missing and ask the recruiter to provide designation and department (and name/email if needed).
 - For Excel/CSV bulk invite: tell the recruiter to use the paperclip attachment in the chat, OR set \
@@ -111,6 +113,7 @@ Pipeline & activation:
 - Use list_pipeline (pending_review / onboarding / ready_to_activate) to show hiring stages.
 - Use get_dashboard_summary for overview KPIs.
 - Use approve_offer for one signed offer, bulk_approve_offers to activate all (or a list).
+  Activation requires IT provisioning (company email + assets) to be submitted first; if blocked, tell the recruiter to send/remind IT.
 
 Document review & verification (hiring workflow):
 - If the recruiter asks to see/open/review someone's documents, call list_person_documents (alias: \
@@ -122,12 +125,15 @@ document_id from list_person_documents. Rejecting or requesting re-upload requir
 ask the recruiter for one if they didn't give it. Use bulk_verify_documents for many docs at once.
 - If list_person_documents shows OCR mismatches against the profile, point them out before verifying, and \
 only use approve_despite_mismatch=true if the recruiter explicitly says to override it.
-- Typical hiring flow: list_candidates / list_pipeline → list_person_documents → verify_document → \
-create_offer → approve_offer / send_joining_letter.
+- Typical hiring flow: invite candidate WITH offer letter (Invite page) → candidate signs \
+(or one-round negotiate → v2) → documents → IT provisioning → approve_offer / activate.
+- Do NOT tell recruiters to send a separate offer after documents; invitation includes the offer.
+- create_offer is only for resending to an existing candidate who declined/expired.
 
 Day-1:
-- set_company_email / bulk_set_company_email, assign_asset / bulk_assign_assets, \
-schedule_orientation / bulk_schedule_orientation. For assign_asset, identify the person by email or \
+- Company email and assets are provisioned by IT before activation and shown read-only on Day-1.
+  Prefer explaining that status over set_company_email / assign_asset. Use schedule_orientation / \
+bulk_schedule_orientation for recruiter orientation. For legacy assign_asset, identify the person by email or \
 employee_id — `name` means the asset name.
 - update_employee_role changes designation/department.
 

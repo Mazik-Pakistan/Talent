@@ -8,9 +8,6 @@ import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
   getEmployeeDetail,
   getApiErrorMessage,
-  setEmployeeCompanyEmail,
-  assignEmployeeAsset,
-  removeEmployeeAsset,
   scheduleEmployeeOrientation,
 } from "@/services/authService";
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
@@ -49,15 +46,9 @@ const ASSET_TYPES = [
   { value: "phone", label: "Phone" },
   { value: "headset", label: "Headset" },
   { value: "badge", label: "Badge" },
+  { value: "license", label: "Software license" },
   { value: "other", label: "Other" },
 ];
-
-const EMPTY_ASSET_FORM = {
-  name: "",
-  asset_type: "laptop",
-  serial_number: "",
-  notes: "",
-};
 
 function orientationDefaults(orientation) {
   return {
@@ -169,129 +160,158 @@ function ProfileCompletionSection({ employee, employeeId, onEmployeeUpdate }) {
 }
 
 /**
- * Recruiter Day-1 onboarding assignments: company email, assets, orientation.
+ * IT-provisioned company email (read-only) — shown on Overview.
+ */
+function CompanyEmailSection({ employee }) {
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionHead}>
+        <div className={styles.sectionHeadLeft}>
+          <div className={`${styles.bar} ${styles.navy}`} />
+          <div>
+            <div className={styles.sectionTitle}>Company email</div>
+            <div className={styles.sectionDesc}>Assigned by IT · not editable by recruiter</div>
+          </div>
+        </div>
+      </div>
+      <div className={styles.sectionBody}>
+        {employee.company_email ? (
+          <p className={styles.instruction} style={{ margin: 0 }}>
+            <strong>{employee.company_email}</strong>
+            {employee.has_company_email_password ? (
+              <span className={styles.mutedText}> · mailbox password on file (employee can reveal via OTP)</span>
+            ) : null}
+          </p>
+        ) : (
+          <p className={styles.emptySub} style={{ margin: 0 }}>
+            No company email on file. IT should complete provisioning before activation.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * IT-provisioned hardware / licenses (read-only) — shown on Overview.
+ */
+function CompanyAssetsSection({ employee }) {
+  const assets = Array.isArray(employee.assets) ? employee.assets : [];
+  const licenses = Array.isArray(employee.licenses) ? employee.licenses : [];
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionHead}>
+        <div className={styles.sectionHeadLeft}>
+          <div className={`${styles.bar} ${styles.orange}`} />
+          <div>
+            <div className={styles.sectionTitle}>Company assets</div>
+            <div className={styles.sectionDesc}>
+              {assets.length
+                ? `${assets.length} asset${assets.length !== 1 ? "s" : ""} from IT`
+                : "Hardware and licenses assigned by IT"}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className={styles.sectionBody}>
+        {assets.length > 0 ? (
+          <ul className={styles.miniList} style={{ marginBottom: licenses.length ? "16px" : 0 }}>
+            {assets.map((asset) => {
+              const typeLabel =
+                ASSET_TYPES.find((t) => t.value === asset.asset_type)?.label ||
+                toLabel(asset.asset_type || "other");
+              const assignedDate = fmtDate(asset.assigned_at);
+              return (
+                <li key={asset.id} className={styles.miniListItem}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <strong>{asset.name}</strong>
+                      <span className={styles.typePill}>{typeLabel}</span>
+                      {asset.status && (
+                        <span
+                          style={{
+                            fontSize: "10px",
+                            fontWeight: 600,
+                            textTransform: "capitalize",
+                            color: "var(--green)",
+                            background: "var(--green-light)",
+                            padding: "2px 8px",
+                            borderRadius: "20px",
+                          }}
+                        >
+                          {asset.status}
+                        </span>
+                      )}
+                    </div>
+                    <div className={styles.mutedText}>
+                      {asset.serial_number ? `Serial: ${asset.serial_number}` : "No serial on file"}
+                      {assignedDate ? ` | Assigned ${assignedDate}` : ""}
+                      {asset.notes ? ` | ${asset.notes}` : ""}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className={styles.emptySub} style={{ margin: licenses.length ? "0 0 14px" : 0 }}>
+            No assets assigned by IT yet.
+          </p>
+        )}
+
+        {licenses.length > 0 && (
+          <>
+            <p
+              style={{
+                fontSize: "10.5px",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+                color: "var(--text-faint)",
+                margin: "0 0 10px",
+              }}
+            >
+              Licenses
+            </p>
+            <ul className={styles.miniList}>
+              {licenses.map((license) => (
+                <li key={license.id} className={styles.miniListItem}>
+                  <div>
+                    <strong>{license.name}</strong>
+                    <div className={styles.mutedText}>
+                      {[license.vendor, license.notes].filter(Boolean).join(" · ") || "Software license"}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {employee.it_notes && (
+          <p className={styles.instruction} style={{ marginTop: 14, marginBottom: 0 }}>
+            <strong>IT notes:</strong> {employee.it_notes}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Day-1: recruiter schedules orientation (IT email/assets live on Overview).
  */
 function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
-  const [companyEmail, setCompanyEmail] = useState(employee.company_email || "");
-  const [emailMessage, setEmailMessage] = useState("");
-  const [emailSaving, setEmailSaving] = useState(false);
-
-  const [assetForm, setAssetForm] = useState(EMPTY_ASSET_FORM);
-  const [assetMessage, setAssetMessage] = useState("");
-  const [assetSaving, setAssetSaving] = useState(false);
-  const [removingAssetId, setRemovingAssetId] = useState(null);
-
   const [orientationForm, setOrientationForm] = useState(() => orientationDefaults(employee.orientation));
   const [orientationMessage, setOrientationMessage] = useState("");
   const [orientationSaving, setOrientationSaving] = useState(false);
 
   useEffect(() => {
-    setCompanyEmail(employee.company_email || "");
-  }, [employee.company_email]);
-
-  useEffect(() => {
     setOrientationForm(orientationDefaults(employee.orientation));
   }, [employee.orientation]);
 
-  const assets = Array.isArray(employee.assets) ? employee.assets : [];
   const orientation = employee.orientation || null;
-
-  async function handleSaveCompanyEmail(event) {
-    event.preventDefault();
-    setEmailMessage("");
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-
-    const trimmed = companyEmail.trim();
-    if (!trimmed) {
-      const msg = "Enter a valid company email address.";
-      setEmailMessage(msg);
-      toast.error(msg);
-      return;
-    }
-
-    setEmailSaving(true);
-    try {
-      const data = await setEmployeeCompanyEmail(employeeId, { company_email: trimmed }, accessToken);
-      if (data.employee) onEmployeeUpdate(data.employee);
-      const msg = data.message || "Company email saved.";
-      setEmailMessage(msg);
-      toast.success(msg);
-    } catch (err) {
-      const msg = getApiErrorMessage(err, "Could not save company email.");
-      setEmailMessage(msg);
-      toast.error(msg);
-    } finally {
-      setEmailSaving(false);
-    }
-  }
-
-  function updateAssetField(event) {
-    const { name, value } = event.target;
-    setAssetForm((current) => ({ ...current, [name]: value }));
-    setAssetMessage("");
-  }
-
-  async function handleAssignAsset(event) {
-    event.preventDefault();
-    setAssetMessage("");
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-
-    const name = assetForm.name.trim();
-    if (!name) {
-      const msg = "Asset name is required.";
-      setAssetMessage(msg);
-      toast.error(msg);
-      return;
-    }
-
-    const payload = {
-      name,
-      asset_type: assetForm.asset_type,
-    };
-    const serial = assetForm.serial_number.trim();
-    const notes = assetForm.notes.trim();
-    if (serial) payload.serial_number = serial;
-    if (notes) payload.notes = notes;
-
-    setAssetSaving(true);
-    try {
-      const data = await assignEmployeeAsset(employeeId, payload, accessToken);
-      if (data.employee) onEmployeeUpdate(data.employee);
-      setAssetForm(EMPTY_ASSET_FORM);
-      const msg = data.message || "Asset assigned.";
-      setAssetMessage(msg);
-      toast.success(msg);
-    } catch (err) {
-      const msg = getApiErrorMessage(err, "Could not assign asset.");
-      setAssetMessage(msg);
-      toast.error(msg);
-    } finally {
-      setAssetSaving(false);
-    }
-  }
-
-  async function handleRemoveAsset(assetId) {
-    setAssetMessage("");
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-
-    setRemovingAssetId(assetId);
-    try {
-      const data = await removeEmployeeAsset(employeeId, assetId, accessToken);
-      if (data.employee) onEmployeeUpdate(data.employee);
-      const msg = data.message || "Asset removed.";
-      setAssetMessage(msg);
-      toast.success(msg);
-    } catch (err) {
-      const msg = getApiErrorMessage(err, "Could not remove asset.");
-      setAssetMessage(msg);
-      toast.error(msg);
-    } finally {
-      setRemovingAssetId(null);
-    }
-  }
 
   function updateOrientationField(event) {
     const { name, value } = event.target;
@@ -349,205 +369,13 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
               Day-1 onboarding assignment
             </h3>
             <p className={styles.sectionDesc} style={{ margin: "2px 0 0" }}>
-              Set up company email, hardware, and orientation before start date.
+              Schedule orientation here. Company email and assets are on Overview (from IT).
             </p>
           </div>
         </div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-        {/* â”€â”€ Company email â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        <div
-          style={{
-            border: "1px solid var(--border)",
-            borderRadius: "12px",
-            overflow: "hidden",
-            background: "var(--card)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              padding: "14px 18px",
-              borderBottom: "1px solid var(--border)",
-              background: "var(--bg)",
-            }}
-          >
-            <div className={`${styles.bar} ${styles.navy}`} />
-            <div>
-              <div className={styles.sectionTitle} style={{ fontSize: "14px" }}>Company email</div>
-              <div className={styles.sectionDesc}>Official work address for this employee.</div>
-            </div>
-          </div>
-          <div className={styles.sectionBody} style={{ padding: "16px 18px 18px" }}>
-            {employee.company_email && (
-              <p className={styles.instruction} style={{ margin: "0 0 14px" }}>
-                <strong>Current:</strong>{" "}
-                <span style={{ color: "var(--navy)" }}>{employee.company_email}</span>
-              </p>
-            )}
-            <form onSubmit={handleSaveCompanyEmail}>
-              <div className={styles.formGrid} style={{ marginBottom: "12px" }}>
-                <label className={styles.field} style={{ gridColumn: "1 / -1" }}>
-                  <span>{employee.company_email ? "Update company email" : "Company email"}</span>
-                  <input
-                    type="email"
-                    name="company_email"
-                    value={companyEmail}
-                    onChange={(e) => {
-                      setCompanyEmail(e.target.value);
-                      setEmailMessage("");
-                    }}
-                    placeholder="name@company.com"
-                    required
-                  />
-                </label>
-              </div>
-              {emailMessage && (
-                <p className={styles.formMessage} role="status" style={{ marginTop: 0 }}>
-                  {emailMessage}
-                </p>
-              )}
-              <button type="submit" className={styles.primaryButton} disabled={emailSaving}>
-                {emailSaving ? "Saving..." : "Save company email"}
-              </button>
-            </form>
-          </div>
-        </div>
-
-        {/* â”€â”€ Company assets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        <div
-          style={{
-            border: "1px solid var(--border)",
-            borderRadius: "12px",
-            overflow: "hidden",
-            background: "var(--card)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              padding: "14px 18px",
-              borderBottom: "1px solid var(--border)",
-              background: "var(--bg)",
-            }}
-          >
-            <div className={`${styles.bar} ${styles.orange}`} />
-            <div style={{ flex: 1 }}>
-              <div className={styles.sectionTitle} style={{ fontSize: "14px" }}>Company assets</div>
-              <div className={styles.sectionDesc}>
-                {assets.length
-                  ? `${assets.length} asset${assets.length !== 1 ? "s" : ""} assigned`
-                  : "No assets assigned yet"}
-              </div>
-            </div>
-          </div>
-          <div className={styles.sectionBody} style={{ padding: "16px 18px 18px" }}>
-            {assets.length > 0 ? (
-              <ul className={styles.miniList} style={{ marginBottom: "16px" }}>
-                {assets.map((asset) => {
-                  const typeLabel =
-                    ASSET_TYPES.find((t) => t.value === asset.asset_type)?.label ||
-                    toLabel(asset.asset_type || "other");
-                  const assignedDate = fmtDate(asset.assigned_at);
-                  return (
-                    <li key={asset.id} className={styles.miniListItem}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                          <strong>{asset.name}</strong>
-                          <span className={styles.typePill}>{typeLabel}</span>
-                          {asset.status && (
-                            <span
-                              style={{
-                                fontSize: "10px",
-                                fontWeight: 600,
-                                textTransform: "capitalize",
-                                color: "var(--green)",
-                                background: "var(--green-light)",
-                                padding: "2px 8px",
-                                borderRadius: "20px",
-                              }}
-                            >
-                              {asset.status}
-                            </span>
-                          )}
-                        </div>
-                        <div className={styles.mutedText}>
-                          {asset.serial_number ? `Serial: ${asset.serial_number}` : "No serial on file"}
-                          {assignedDate ? ` | Assigned ${assignedDate}` : ""}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className={styles.secondaryButton}
-                        style={{ fontSize: "11.5px", padding: "6px 12px", color: "var(--red)", borderColor: "#f0c4c2" }}
-                        disabled={removingAssetId === asset.id}
-                        onClick={() => handleRemoveAsset(asset.id)}
-                      >
-                        {removingAssetId === asset.id ? "Removing..." : "Remove"}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className={styles.emptySub} style={{ margin: "0 0 14px" }}>
-                Assign laptops, badges, and other equipment for day one.
-              </p>
-            )}
-
-            <form onSubmit={handleAssignAsset}>
-              <p
-                style={{
-                  fontSize: "10.5px",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                  color: "var(--text-faint)",
-                  margin: "0 0 10px",
-                }}
-              >
-                Add asset
-              </p>
-              <div className={styles.formGrid} style={{ marginBottom: "12px" }}>
-                <label className={styles.field}>
-                  <span>Asset name</span>
-                  <input name="name" value={assetForm.name} onChange={updateAssetField} placeholder="MacBook Pro 14" required />
-                </label>
-                <label className={styles.field}>
-                  <span>Asset type</span>
-                  <select name="asset_type" value={assetForm.asset_type} onChange={updateAssetField}>
-                    {ASSET_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className={styles.field}>
-                  <span>Serial number (optional)</span>
-                  <input name="serial_number" value={assetForm.serial_number} onChange={updateAssetField} placeholder="SN-12345" />
-                </label>
-                <label className={styles.field}>
-                  <span>Notes (optional)</span>
-                  <input name="notes" value={assetForm.notes} onChange={updateAssetField} placeholder="Dock included" />
-                </label>
-              </div>
-              {assetMessage && (
-                <p className={styles.formMessage} role="status" style={{ marginTop: 0 }}>
-                  {assetMessage}
-                </p>
-              )}
-              <button type="submit" className={styles.primaryButton} disabled={assetSaving}>
-                {assetSaving ? "Assigning..." : "Assign asset"}
-              </button>
-            </form>
-          </div>
-        </div>
-
-        {/* â”€â”€ Orientation session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div
           style={{
             border: "1px solid var(--border)",
@@ -923,6 +751,8 @@ export default function EmployeeProfilePage({ params }) {
             </dl>
           </div>
         </div>
+          <CompanyEmailSection employee={employee} />
+          <CompanyAssetsSection employee={employee} />
         </>
       )}
 

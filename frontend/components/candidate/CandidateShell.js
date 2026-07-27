@@ -132,7 +132,7 @@ function CandidateShellInner({ activeKey, title, subtitle, jobTitle, actions, ch
   const roleLabel = jobTitle || "Candidate";
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-app-shell>
       <div className={styles.app}>
         <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.collapsed : ""}`}>
           <button
