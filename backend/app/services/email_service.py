@@ -59,7 +59,7 @@ class EmailService:
         <tr>
           <td style="background:linear-gradient(135deg,#1e3a5f 0%,#2d6cdf 100%);padding:36px 40px;">
             <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">TalentAI</h1>
-            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global</p>
+            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global Pakistan</p>
           </td>
         </tr>
         <!-- Body -->
@@ -84,7 +84,7 @@ class EmailService:
         <!-- Footer -->
         <tr>
           <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
-            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2025 Mazik Global – TalentAI. All rights reserved.</p>
+            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2025 Mazik Global Pakistan – TalentAI. All rights reserved.</p>
           </td>
         </tr>
       </table>
@@ -112,7 +112,7 @@ class EmailService:
         <tr>
           <td style="background:linear-gradient(135deg,#1e3a5f 0%,#2d6cdf 100%);padding:36px 40px;">
             <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">TalentAI</h1>
-            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global</p>
+            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global Pakistan</p>
           </td>
         </tr>
         <tr>
@@ -134,7 +134,7 @@ class EmailService:
         </tr>
         <tr>
           <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
-            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2025 Mazik Global – TalentAI. All rights reserved.</p>
+            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2025 Mazik Global Pakistan – TalentAI. All rights reserved.</p>
           </td>
         </tr>
       </table>
@@ -170,7 +170,7 @@ class EmailService:
         <tr>
           <td style="background:linear-gradient(135deg,#1e3a5f 0%,#2d6cdf 100%);padding:36px 40px;">
             <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">TalentAI</h1>
-            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global</p>
+            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Globa Pakistan</p>
           </td>
         </tr>
         <tr>
@@ -194,7 +194,7 @@ class EmailService:
         </tr>
         <tr>
           <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
-            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2025 Mazik Global – TalentAI. All rights reserved.</p>
+            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2025 Mazik Global Pakistan – TalentAI. All rights reserved.</p>
           </td>
         </tr>
       </table>
@@ -229,7 +229,7 @@ class EmailService:
         <tr>
           <td style="background:linear-gradient(135deg,#1e3a5f 0%,#2d6cdf 100%);padding:36px 40px;">
             <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">TalentAI</h1>
-            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global</p>
+            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global Pakistan</p>
           </td>
         </tr>
         <tr>
@@ -237,7 +237,7 @@ class EmailService:
             <p style="margin:0 0 8px;color:#64748b;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;">Congratulations</p>
             <h2 style="margin:0 0 20px;color:#0f172a;font-size:22px;font-weight:700;">Welcome aboard, {full_name}!</h2>
             <p style="margin:0 0 20px;color:#475569;font-size:15px;line-height:1.6;">
-              Your onboarding has been approved and you are now an official employee at Mazik Global.
+              Your onboarding has been approved and you are now an official employee at Mazik Global Pakistan.
             </p>
             <div style="background:#f1f5fe;border:2px solid #2d6cdf;border-radius:10px;padding:20px;margin-bottom:28px;">
               <p style="margin:0 0 8px;color:#64748b;font-size:12px;font-weight:600;text-transform:uppercase;">Your Employee ID</p>
@@ -254,7 +254,7 @@ class EmailService:
         </tr>
         <tr>
           <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
-            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mazik Global – TalentAI. All rights reserved.</p>
+            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mazik Global Pakistan – TalentAI. All rights reserved.</p>
           </td>
         </tr>
       </table>
@@ -289,7 +289,7 @@ class EmailService:
         <tr>
           <td style="background:linear-gradient(135deg,#123a63 0%,#32a6ae 100%);padding:36px 40px;">
             <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">TalentAI</h1>
-            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global</p>
+            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global Pakistan</p>
           </td>
         </tr>
         <tr>
@@ -310,7 +310,7 @@ class EmailService:
         </tr>
         <tr>
           <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
-            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mazik Global – TalentAI. All rights reserved.</p>
+            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mazik Global Pakistan – TalentAI. All rights reserved.</p>
           </td>
         </tr>
       </table>
@@ -404,7 +404,7 @@ class EmailService:
         <tr>
           <td style="background:linear-gradient(135deg,#123a63 0%,#32a6ae 100%);padding:32px 40px;">
             <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;">TalentAI</h1>
-            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global</p>
+            <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">by Mazik Global Pakistan</p>
           </td>
         </tr>
         <tr>
@@ -416,7 +416,7 @@ class EmailService:
         </tr>
         <tr>
           <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
-            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mazik Global – TalentAI. All rights reserved.</p>
+            <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mazik Global Pakistan – TalentAI. All rights reserved.</p>
           </td>
         </tr>
       </table>
