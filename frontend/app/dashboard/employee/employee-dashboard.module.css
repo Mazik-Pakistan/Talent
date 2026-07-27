@@ -87,10 +87,11 @@
 .brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 11px;
-  padding: 4px 8px 16px 8px;
+  padding: 6px 8px 6px 8px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 12px;
+  margin-bottom: 6px;
   cursor: pointer;
   border-radius: 10px;
   transition: background .18s var(--ease);
@@ -101,19 +102,24 @@
 }
 .brand:hover { background: var(--blue-lighter); }
 .brandMark {
-  width: 36px; height: 36px; border-radius: 11px;
-  background: linear-gradient(135deg, var(--blue), var(--navy-2));
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 14px; color: #fff;
+  width: 100%;
+  max-width: 210px;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  font-family: 'Sora', system-ui, sans-serif;
-  box-shadow: 0 10px 22px -10px rgba(56, 162, 255, 0.85);
-  transition: transform .35s var(--ease);
 }
-.brand:hover .brandMark { transform: rotate(-6deg) scale(1.05); }
+.brandMark img {
+  width: 100%;
+  height: auto;
+  max-height: 96px;
+  object-fit: contain;
+  display: block;
+}
 .brandText { line-height: 1.22; }
 .p1 { font-size: 15px; font-weight: 700; letter-spacing: .2px; font-family: 'Sora', system-ui, sans-serif; color: var(--navy); }
-.p2 { font-size: 11px; color: var(--text-faint); letter-spacing: .3px; }
+.p2 { font-size: 12px; color: var(--blue-strong); letter-spacing: .3px; }
 
 .navSectionLabel { font-size: 10.5px; text-transform: uppercase; letter-spacing: .9px; color: var(--text-faint); padding: 12px 12px 6px 12px; font-weight: 700; }
 
@@ -172,7 +178,8 @@
 .logoutBtn:hover { background: var(--red-light); color: var(--red); }
 
 .sidebar.collapsed { width: 72px; padding: 16px 10px; }
-.sidebar.collapsed .brand { justify-content: center; padding: 4px 0 14px 0; }
+.sidebar.collapsed .brand { justify-content: center; padding: 16px 0 20px 0; }
+.sidebar.collapsed .brandMark { width: 50px; max-width: 50px; height: auto; }
 .sidebar.collapsed .brandText { display: none; }
 .sidebar.collapsed .navSectionLabel { display: none; }
 .sidebar.collapsed .navItem { justify-content: center; padding: 10px 0; border-left-color: transparent; }

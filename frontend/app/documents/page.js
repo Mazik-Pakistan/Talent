@@ -204,7 +204,7 @@ function DocumentsPageContent() {
             <div className={styles.brandMark}>MZ</div>
             <div className={styles.brandText}>
               <div className={styles.p1}>Talent</div>
-              <div className={styles.p2}>Mazik Global Pakistan</div>
+              <div className={styles.p2}></div>
             </div>
           </button>
 
@@ -320,7 +320,7 @@ function DocumentsPageContent() {
             </div>
 
             <div className={styles.footerNote}>
-              Talent by Mazik Global Pakistan · {isEmployee ? "Employee" : "Candidate"} Documents
+              Talent by  · {isEmployee ? "Employee" : "Candidate"} Documents
             </div>
           </div>
         </main>
@@ -328,3 +328,4 @@ function DocumentsPageContent() {
     </div>
   );
 }
+

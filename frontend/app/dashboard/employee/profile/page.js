@@ -619,7 +619,7 @@ function EmployeeProfileContent() {
             <div className={dashStyles.brandMark}>MZ</div>
             <div className={dashStyles.brandText}>
               <div className={dashStyles.p1}>Talent</div>
-              <div className={dashStyles.p2}>Mazik Global Pakistan</div>
+              <div className={dashStyles.p2}></div>
             </div>
           </button>
 
@@ -1387,7 +1387,7 @@ function EmployeeProfileContent() {
               </div>
             )}
 
-            <div className={dashStyles.footerNote}>Talent by Mazik Global Pakistan · Employee Profile</div>
+            <div className={dashStyles.footerNote}>Talent by  · Employee Profile</div>
           </div>
         </main>
       </div>
@@ -1632,3 +1632,4 @@ function titleCase(value) {
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
+

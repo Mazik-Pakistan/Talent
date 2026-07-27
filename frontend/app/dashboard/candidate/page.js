@@ -203,7 +203,7 @@ function CandidateDashboardContent() {
             <div className={styles.brandMark}>MZ</div>
             <div className={styles.brandText}>
               <div className={styles.p1}>Talent</div>
-              <div className={styles.p2}>Mazik Global Pakistan</div>
+              <div className={styles.p2}></div>
             </div>
           </button>
 
@@ -619,7 +619,7 @@ function CandidateDashboardContent() {
               </div>
             </div>
 
-            <div className={styles.footerNote}>Talent by Mazik Global Pakistan · Candidate Dashboard</div>
+            <div className={styles.footerNote}>Talent by  · Candidate Dashboard</div>
           </div>
         </main>
       </div>
@@ -672,3 +672,4 @@ function formatDate(value) {
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
+

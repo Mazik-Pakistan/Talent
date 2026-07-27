@@ -55,18 +55,40 @@
 }
 .sidebarCollapsed { width: 72px; padding: 16px 10px; }
 .brand {
-  display: flex; align-items: center; gap: 11px; padding: 4px 8px 16px 8px; border-bottom: 1px solid var(--border);
-  margin-bottom: 12px; cursor: pointer; border-radius: 10px; background: transparent; border: none; width: 100%; text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  padding: 6px 8px 6px 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+  cursor: pointer;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
 }
-.brand:hover { background: var(--blue-lighter); }
+
 .brandMark {
-  width: 36px; height: 36px; border-radius: 11px; background: linear-gradient(135deg, var(--blue), var(--navy-2));
-  display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; flex-shrink: 0;
-  box-shadow: 0 10px 22px -10px rgba(56, 162, 255, 0.85);
+  width: 100%;
+  max-width: 210px;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.brandMark img {
+  width: 100%;
+  height: auto;
+  max-height: 96px;
+  object-fit: contain;
+  display: block;
 }
 .brandText { line-height: 1.2; }
 .p1 { font-size: 15px; font-weight: 700; color: var(--navy); }
-.p2 { font-size: 11px; color: var(--text-faint); }
+.p2 { font-size: 12px; color: var(--blue-strong); }
 .navSectionLabel { font-size: 10.5px; text-transform: uppercase; letter-spacing: .9px; color: var(--text-faint); padding: 8px 12px 8px; font-weight: 700; }
 .nav {
   list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px;
@@ -92,7 +114,8 @@
 .role { font-size: 11px; color: var(--text-faint); text-transform: capitalize; }
 .logoutBtn { margin-left: auto; width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--text-faint); cursor: pointer; }
 .logoutBtn:hover { background: var(--red-light); color: var(--red); }
-.sidebarCollapsed .brand { justify-content: center; padding: 4px 0 14px 0; }
+.sidebarCollapsed .brand { justify-content: center; padding: 16px 0 20px 0; }
+.sidebarCollapsed .brandMark { width: 50px; max-width: 50px; height: auto; }
 .sidebarCollapsed .brandText, .sidebarCollapsed .navLabel, .sidebarCollapsed .sidebarFooterText, .sidebarCollapsed .navSectionLabel { display: none; }
 .sidebarCollapsed .navItem { justify-content: center; padding: 10px 0; gap: 0; }
 .sidebarCollapsed .navItem:hover { transform: none; }
@@ -387,3 +410,11 @@
 .statCard { transition: transform .22s var(--ease), box-shadow .22s var(--ease), border-color .22s var(--ease); }
 .statCard:hover { transform: translateY(-3px); border-color: var(--blue-mid); box-shadow: var(--shadow); }
 .quickAction { transition: transform .18s var(--ease), box-shadow .18s var(--ease), border-color .18s var(--ease); }
+
+
+
+
+
+
+
+

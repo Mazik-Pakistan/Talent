@@ -419,7 +419,7 @@ function EmployeeDashboardContent() {
             <div className={styles.brandMark}>MZ</div>
             <div className={styles.brandText}>
               <div className={styles.p1}>Talent</div>
-              <div className={styles.p2}>Mazik Global Pakistan</div>
+              <div className={styles.p2}></div>
             </div>
           </button>
 
@@ -1106,7 +1106,7 @@ function EmployeeDashboardContent() {
               </div>
             </div>
 
-            <div className={styles.footerNote}>Talent by Mazik Global Pakistan · Employee Dashboard</div>
+            <div className={styles.footerNote}>Talent by  · Employee Dashboard</div>
           </div>
         </main>
       </div>
@@ -1212,3 +1212,4 @@ function tenureLabel(startDate) {
   const rem = months % 12;
   return rem ? `${years} yr ${rem} mo` : `${years} yr`;
 }
+
