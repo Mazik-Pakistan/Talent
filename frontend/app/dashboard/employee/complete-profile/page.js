@@ -41,7 +41,7 @@ const SECTION_FIELDS = {
   emergency: ["Full name", "Relationship", "Contact", "Alternate contact", "Address"],
   employment: ["Bank name", "Account holder", "Account number", "IBAN", "Branch", "SWIFT"],
   references: ["Full name", "Relationship", "Email", "Contact", "Company"],
-  documents: ["Code of Conduct", "Privacy Policy", "Employee Handbook"],
+  documents: ["Privacy Policy", "Employee Handbook"],
   nda: ["Full legal name", "Agreement checkbox", "Signature"],
   submit: ["Review all sections", "Submit profile"],
 };
@@ -60,7 +60,6 @@ const emptyEmployment = {
 };
 const emptyReference = { full_name: "", relationship: "", email: "", phone: "", company: "" };
 const emptyDocuments = {
-  accepted_code_of_conduct: false,
   accepted_privacy_policy: false,
   accepted_employee_handbook: false,
 };
@@ -353,11 +352,10 @@ function CompleteProfileContent() {
       },
       documents: () => ({
         errors: {
-          "documents.accepted_code_of_conduct": !documents.accepted_code_of_conduct,
           "documents.accepted_privacy_policy": !documents.accepted_privacy_policy,
           "documents.accepted_employee_handbook": !documents.accepted_employee_handbook,
         },
-        message: "Acknowledge all three policies to continue.",
+        message: "Acknowledge both policies to continue.",
       }),
       nda: () => {
         const expected = employee?.full_name || "";
@@ -797,6 +795,7 @@ function OnboardingForm({
   onExit,
 }) {
   const { fields: aiFields, activeField } = automation;
+  const [ndaSigMethod, setNdaSigMethod] = useState("pad");
 
   const fieldProps = (key, { required = false } = {}) => ({
     fieldKey: key,
@@ -832,8 +831,7 @@ function OnboardingForm({
     employment: Boolean(employment.bank_name && employment.account_number),
     references: Boolean(references[0]?.full_name && references[1]?.full_name),
     documents: Boolean(
-      documents.accepted_code_of_conduct &&
-        documents.accepted_privacy_policy &&
+      documents.accepted_privacy_policy &&
         documents.accepted_employee_handbook
     ),
     nda: Boolean(ndaAgreed),
@@ -979,6 +977,7 @@ function OnboardingForm({
                 />
                 <AiField
                   label="IBAN"
+                  hint="Format: PK36SCBL0000001123456702"
                   value={employment.iban || ""}
                   onChange={(event) => updateEmployment("iban", event.target.value.toUpperCase())}
                   {...fieldProps("employment.iban", { required: true })}
@@ -1086,13 +1085,6 @@ function OnboardingForm({
               </div>
               <div style={{ display: "grid", gap: 10 }}>
                 <AiCheckRow
-                  checked={documents.accepted_code_of_conduct}
-                  onChange={(event) => updateDocuments("accepted_code_of_conduct", event.target.checked)}
-                  {...fieldProps("documents.accepted_code_of_conduct", { required: true })}
-                >
-                  I have read and agree to the Code of Conduct.
-                </AiCheckRow>
-                <AiCheckRow
                   checked={documents.accepted_privacy_policy}
                   onChange={(event) => updateDocuments("accepted_privacy_policy", event.target.checked)}
                   {...fieldProps("documents.accepted_privacy_policy", { required: true })}
@@ -1104,7 +1096,7 @@ function OnboardingForm({
                   onChange={(event) => updateDocuments("accepted_employee_handbook", event.target.checked)}
                   {...fieldProps("documents.accepted_employee_handbook", { required: true })}
                 >
-                  I have read and agree to the Employee Handbook (leave &amp; remote work policy).
+                  I have read and agree to the Employee Handbook.
                 </AiCheckRow>
               </div>
             </div>
@@ -1132,7 +1124,45 @@ function OnboardingForm({
                   style={{ marginTop: 18 }}
                   data-field-error={fieldErrors["nda.signature"] ? "true" : undefined}
                 >
-                  <SignaturePad onChange={setNdaSignature} />
+                  <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+                    <button
+                      type="button"
+                      className={ndaSigMethod === "pad" ? styles.btnPrimary : styles.btnSecondary}
+                      onClick={() => { setNdaSigMethod("pad"); setNdaSignature(null); }}
+                    >
+                      Draw signature
+                    </button>
+                    <button
+                      type="button"
+                      className={ndaSigMethod === "upload" ? styles.btnPrimary : styles.btnSecondary}
+                      onClick={() => { setNdaSigMethod("upload"); setNdaSignature(null); }}
+                    >
+                      Upload signature
+                    </button>
+                  </div>
+
+                  {ndaSigMethod === "pad" ? (
+                    <SignaturePad onChange={setNdaSignature} />
+                  ) : (
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted, #5b6d86)", textTransform: "uppercase", letterSpacing: ".4px" }}>
+                        Signature file (PNG, JPG, or PDF)
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,application/pdf"
+                        style={{ fontSize: 13 }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = (ev) => setNdaSignature(ev.target.result);
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </div>
+                  )}
+
                   {fieldErrors["nda.signature"] ? (
                     <em style={{ fontStyle: "normal", fontSize: 11.5, fontWeight: 700, color: "#b42318" }}>
                       Signature required
@@ -1190,7 +1220,6 @@ function OnboardingForm({
                     ["Signed by", employee?.full_name || ndaName || "—"],
                     [
                       "Policies",
-                      documents.accepted_code_of_conduct &&
                       documents.accepted_privacy_policy &&
                       documents.accepted_employee_handbook
                         ? "Acknowledged"
@@ -1284,7 +1313,6 @@ function CompletedRecord({
           </HistoryBlock>
 
           <HistoryBlock title="Policies">
-            <HistoryRow label="Code of conduct" value={documents.accepted_code_of_conduct ? "Accepted" : "—"} />
             <HistoryRow label="Privacy policy" value={documents.accepted_privacy_policy ? "Accepted" : "—"} />
             <HistoryRow label="Employee handbook" value={documents.accepted_employee_handbook ? "Accepted" : "—"} />
           </HistoryBlock>

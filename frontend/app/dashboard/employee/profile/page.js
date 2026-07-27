@@ -265,7 +265,6 @@ function EmployeeProfileContent() {
     banking: !!(onboarding?.employment?.iban && onboarding?.employment?.bank_name),
     references: (onboarding?.references?.references?.length || 0) >= 2,
     policies: !!(
-      documents.accepted_code_of_conduct &&
       documents.accepted_privacy_policy &&
       documents.accepted_employee_handbook &&
       nda.full_legal_name
@@ -1287,10 +1286,6 @@ function EmployeeProfileContent() {
                 >
                   <div className={styles.subBlock} style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
                     <h4>Company policies</h4>
-                    <PolicyStatus
-                      label="Code of Conduct"
-                      accepted={documents.accepted_code_of_conduct}
-                    />
                     <PolicyStatus
                       label="Privacy & IT Security Policy"
                       accepted={documents.accepted_privacy_policy}

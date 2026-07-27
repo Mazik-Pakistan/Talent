@@ -742,25 +742,19 @@ class DocumentService:
 
         await database.documents.update_one({"_id": doc["_id"]}, {"$set": update})
 
-        # Update profile-level verification summary only when every active OCR
-        # document for this owner is verified — never batch-verify siblings.
-        if payload.status == "verified" or approve_despite:
-            sibling_docs = await database.documents.find(
+        # Update profile-level verification only when every active OCR document
+        # for this owner is verified — never batch-verify siblings.
+        if approve_despite or payload.status == "verified":
+            remaining_unverified = await database.documents.count_documents(
                 {
                     "owner_id": doc["owner_id"],
                     "is_active": True,
                     "ocr_result.status": "completed",
+                    "verification_status": {"$ne": "verified"},
+                    "_id": {"$ne": doc["_id"]},  # exclude the one we just verified
                 }
-            ).to_list(length=100)
-            all_verified = bool(sibling_docs) and all(
-                (
-                    (d.get("verification_status") or d.get("status")) == "verified"
-                    if d.get("_id") != doc["_id"]
-                    else True
-                )
-                for d in sibling_docs
             )
-            if all_verified:
+            if remaining_unverified == 0:
                 profile_set = {
                     "document_verification.verification_status": "verified",
                     "document_verification.summary": None,
