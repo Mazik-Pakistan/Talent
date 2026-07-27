@@ -280,7 +280,7 @@ function OfferLetterPageContent() {
     router.push("/dashboard/candidate");
   }
 
-  // --------------- PDF generation ---------------
+  // --------------- Professional PDF Offer Letter ---------------
   const handleDownloadPDF = useCallback(() => {
     if (!offer) return;
 
@@ -290,131 +290,177 @@ function OfferLetterPageContent() {
       return;
     }
 
-    const logoUrl = "/mazikglobal-logo.png";
     const candidateName = expectedName || fullLegalName || offer.candidate_name || "Candidate";
     const currentDate = new Date().toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
       day: "numeric",
     });
+    const currency = offer.currency || "PKR";
+    const grossSalary = formatCurrency(offer.monthly_salary, currency);
+    const breakdownRows = (offer.salary_breakdown || [])
+      .filter(row => row.label.trim())
+      .map(row => `<tr><td>${row.label}</td><td style="text-align:right;">${formatCurrency(row.amount, currency)}</td></tr>`)
+      .join("");
+    const breakdownTotal = (offer.salary_breakdown || []).reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    const benefitsList = selectedBenefits.map(b => `<li>${b.label}</li>`).join("");
 
-    const benefitsHTML = selectedBenefits.map(b => `<li>${b.label}</li>`).join("");
-    const breakdownHTML = (offer.salary_breakdown || []).map(row =>
-      `<tr><td>${row.label}</td><td style="text-align:right;">${formatCurrency(row.amount, offer.currency)}</td></tr>`
-    ).join("");
+    // Company info – replace with your actual details
+    const companyName = "Mazik Global Pakistan";
+    const companyAddress = "Islamabad, Pakistan";
+    const companyRepresentative = offer.reporting_manager || "Hiring Manager";
 
-    const signedHTML = (offer.status === "signed" || offer.status === "approved") ? `
-      <div style="margin-top: 40px;">
-        <p><strong>Signed by:</strong> ${offer.signature?.full_legal_name || candidateName}</p>
-        <p><strong>Date:</strong> ${offer.signed_at ? new Date(offer.signed_at).toLocaleString() : ""}</p>
-        ${offer.signature?.signature_data_url ? `<img src="${offer.signature.signature_data_url}" alt="Signature" style="max-width: 200px; margin-top: 10px;"/>` : ""}
+    const signedBlock = (offer.status === "signed" || offer.status === "approved") ? `
+      <div class="signature-confirm">
+        <p><strong>Accepted by:</strong> ${offer.signature?.full_legal_name || candidateName}</p>
+        <p><strong>Date:</strong> ${offer.signed_at ? new Date(offer.signed_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : ""}</p>
       </div>
     ` : "";
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Offer Letter - ${offer.job_title || "Employment"}</title>
-        <style>
-          body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            margin: 40px auto;
-            max-width: 800px;
-            padding: 0 20px;
-            color: #1a2b3c;
-            line-height: 1.6;
-          }
-          .logo { text-align: center; margin-bottom: 30px; }
-          .logo img { height: 60px; }
-          h1 { font-size: 28px; color: #0a2540; border-bottom: 2px solid #0a2540; padding-bottom: 12px; }
-          .meta { margin: 20px 0; font-size: 14px; color: #4a5c6c; }
-          .section { margin: 30px 0; }
-          .section-title { font-size: 18px; font-weight: 600; color: #0a2540; border-left: 4px solid var(--navy, #0a2540); padding-left: 10px; margin-bottom: 12px; }
-          table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-          th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #e0e6ed; }
-          th { background: #f5f7fa; font-weight: 600; }
-          .total { font-weight: 700; background: #f0f4f8; }
-          ul { padding-left: 20px; }
-          .terms { white-space: pre-line; background: #f9fbfd; padding: 16px; border-radius: 8px; }
-          .signature-block { margin-top: 50px; }
-          @media print {
-            body { margin: 0; padding: 0 20px; }
-            .no-print { display: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="logo">
-          <img src="${logoUrl}" alt="Mazik Global" />
-        </div>
-        <h1>Employment Offer Letter</h1>
-        <div class="meta">
-          <p><strong>Date:</strong> ${currentDate}</p>
-          <p><strong>To:</strong> ${candidateName}</p>
-          <p><strong>Position:</strong> ${offer.job_title}</p>
-          <p><strong>Department:</strong> ${offer.department}</p>
-          <p><strong>Reference:</strong> OFF-${offer.id || "N/A"}</p>
-        </div>
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Employment Offer Letter - ${offer.job_title}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #1e293b;
+      padding: 60px 70px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .letterhead {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 40px;
+      border-bottom: 2px solid #0a2540;
+      padding-bottom: 20px;
+    }
+    .logo img { height: 55px; }
+    .company-info { text-align: right; font-size: 13px; color: #475569; }
+    .date { margin-bottom: 25px; font-size: 14px; }
+    .recipient { margin-bottom: 25px; }
+    .subject { font-weight: 600; font-size: 15px; margin-bottom: 15px; color: #0a2540; }
+    .salutation { margin-bottom: 20px; }
+    .body-text { margin-bottom: 18px; text-align: justify; }
+    h2 { font-size: 20px; color: #0a2540; margin-bottom: 10px; }
+    h3 { font-size: 16px; color: #0a2540; margin: 20px 0 10px; border-left: 4px solid #0a2540; padding-left: 10px; }
+    table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+    th { background: #f8fafc; font-weight: 600; width: 40%; }
+    td { background: #ffffff; }
+    .total-row td { font-weight: 700; background: #f1f5f9; }
+    ul { padding-left: 22px; margin: 10px 0; }
+    .terms { white-space: pre-line; background: #f9fafb; padding: 16px; border-radius: 6px; font-size: 14px; }
+    .signature-block { margin-top: 50px; display: flex; justify-content: space-between; }
+    .sig-box { width: 45%; }
+    .sig-line { border-top: 1px solid #0a2540; margin-top: 50px; padding-top: 8px; font-weight: 600; font-size: 14px; }
+    .signature-confirm { margin-top: 30px; border: 1px dashed #0a2540; padding: 15px; background: #f0f7ff; }
+    @media print {
+      body { padding: 40px 50px; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Letterhead -->
+  <div class="letterhead">
+    <div class="logo">
+      <img src="/mazikglobal-logo.png" alt="Mazik Global" />
+    </div>
+    <div class="company-info">
+      <strong>${companyName}</strong><br>
+      ${companyAddress}
+    </div>
+  </div>
 
-        <div class="section">
-          <div class="section-title">Role Details</div>
-          <table>
-            <tr><th>Job Title</th><td>${offer.job_title}</td></tr>
-            <tr><th>Department</th><td>${offer.department}</td></tr>
-            <tr><th>Employment Type</th><td>${offer.employment_type}</td></tr>
-            <tr><th>Office Location</th><td>${offer.office_location || "—"}</td></tr>
-            <tr><th>Reporting Manager</th><td>${offer.reporting_manager || "—"}</td></tr>
-            <tr><th>Start Date</th><td>${offer.start_date}</td></tr>
-          </table>
-        </div>
+  <div class="date">${currentDate}</div>
 
-        <div class="section">
-          <div class="section-title">Compensation</div>
-          <table>
-            <tr><th>Monthly Salary (Gross)</th><td>${formatCurrency(offer.monthly_salary, offer.currency)}</td></tr>
-            ${breakdownHTML ? `
-              <tr><td colspan="2" style="padding: 0;">
-                <table style="margin: 0;">
-                  <tr><th colspan="2" style="background: transparent; border-bottom: 2px solid #0a2540;">Salary Breakdown</th></tr>
-                  ${breakdownHTML}
-                  <tr class="total"><td>Total</td><td style="text-align:right;">${formatCurrency(offer.salary_breakdown.reduce((sum, r) => sum + (Number(r.amount) || 0), 0), offer.currency)}</td></tr>
-                </table>
-              </td></tr>` : ""}
-          </table>
-        </div>
+  <div class="recipient">
+    <strong>To:</strong><br>
+    ${candidateName}<br>
+    <!-- candidate address can be added if available -->
+  </div>
 
-        ${selectedBenefits.length > 0 ? `
-        <div class="section">
-          <div class="section-title">Benefits</div>
-          <ul>${benefitsHTML}</ul>
-        </div>` : ""}
+  <div class="subject">Re: Employment Offer for the Position of ${offer.job_title}</div>
 
-        <div class="section">
-          <div class="section-title">Terms & Conditions</div>
-          <div class="terms">${offer.terms}</div>
-        </div>
+  <div class="salutation">Dear ${candidateName.split(' ')[0] || candidateName},</div>
 
-        ${signedHTML}
+  <p class="body-text">
+    We are delighted to offer you the position of <strong>${offer.job_title}</strong> with ${companyName}. 
+    Your skills, experience, and enthusiasm will be a valuable addition to our team. Please review the details 
+    of your employment package below.
+  </p>
 
-        <div class="signature-block no-print">
-          <p style="margin-top: 60px;">_________________________</p>
-          <p>Candidate Signature</p>
-        </div>
-      </body>
-      </html>
-    `;
+  <h3>Position Details</h3>
+  <table>
+    <tr><th>Job Title</th><td>${offer.job_title}</td></tr>
+    <tr><th>Department</th><td>${offer.department}</td></tr>
+    <tr><th>Employment Type</th><td>${offer.employment_type}</td></tr>
+    <tr><th>Location</th><td>${offer.office_location || "—"}</td></tr>
+    <tr><th>Reporting To</th><td>${offer.reporting_manager || "—"}</td></tr>
+    <tr><th>Start Date</th><td>${offer.start_date}</td></tr>
+  </table>
+
+  <h3>Compensation</h3>
+  <table>
+    <tr><th>Monthly Gross Salary</th><td>${grossSalary}</td></tr>
+  </table>
+  ${breakdownRows ? `
+    <table>
+      <tr><th colspan="2" style="text-align:left;">Salary Breakdown</th></tr>
+      ${breakdownRows}
+      <tr class="total-row"><td>Total</td><td style="text-align:right;">${formatCurrency(breakdownTotal, currency)}</td></tr>
+    </table>
+  ` : ""}
+
+  ${selectedBenefits.length > 0 ? `
+  <h3>Benefits</h3>
+  <ul>${benefitsList}</ul>
+  ` : ""}
+
+  <h3>Terms & Conditions</h3>
+  <div class="terms">${offer.terms}</div>
+
+  <p class="body-text" style="margin-top: 25px;">
+    To accept this offer, please sign below and return the signed copy by the offer expiry date. 
+    We look forward to welcoming you aboard.
+  </p>
+
+  <p class="body-text">Sincerely,<br><br>${companyRepresentative}<br>${companyName}</p>
+
+  <div class="signature-block">
+    <div class="sig-box">
+      <div class="sig-line">${candidateName}</div>
+      <small>Candidate Signature & Date</small>
+    </div>
+    <div class="sig-box">
+      <div class="sig-line">${companyRepresentative}</div>
+      <small>For ${companyName}</small>
+    </div>
+  </div>
+
+  ${signedBlock}
+
+  <!-- Print-only instruction -->
+  <p class="no-print" style="margin-top: 30px; font-style: italic; color: #64748b;">
+    This document is an electronic copy. To save as PDF, use your browser's <strong>Save as PDF</strong> option in the print dialog.
+  </p>
+</body>
+</html>`;
 
     printWindow.document.write(html);
     printWindow.document.close();
     printWindow.focus();
-    // Wait for image to load before printing
+    // Wait a moment for image, then open print dialog
     printWindow.onload = () => {
       setTimeout(() => {
         printWindow.print();
-        // printWindow.close(); // optional – keep open so user can save as PDF
-      }, 500);
+      }, 600);
     };
   }, [offer, expectedName, fullLegalName, selectedBenefits]);
 
@@ -487,7 +533,6 @@ function OfferLetterPageContent() {
         </div>
       ) : (
         <div className="offer-letter-card">
-          {/* Header – kept the same except for adding a personal message banner */}
           <div className="offer-letter-head">
             <span className={`offer-status-pill ${offer.status}`}>{offer.status}</span>
             <p className="eyebrow">
