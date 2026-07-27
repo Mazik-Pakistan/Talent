@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -280,6 +280,144 @@ function OfferLetterPageContent() {
     router.push("/dashboard/candidate");
   }
 
+  // --------------- PDF generation ---------------
+  const handleDownloadPDF = useCallback(() => {
+    if (!offer) return;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Please allow pop-ups to download the offer letter as PDF.");
+      return;
+    }
+
+    const logoUrl = "/mazikglobal-logo.png";
+    const candidateName = expectedName || fullLegalName || offer.candidate_name || "Candidate";
+    const currentDate = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    const benefitsHTML = selectedBenefits.map(b => `<li>${b.label}</li>`).join("");
+    const breakdownHTML = (offer.salary_breakdown || []).map(row =>
+      `<tr><td>${row.label}</td><td style="text-align:right;">${formatCurrency(row.amount, offer.currency)}</td></tr>`
+    ).join("");
+
+    const signedHTML = (offer.status === "signed" || offer.status === "approved") ? `
+      <div style="margin-top: 40px;">
+        <p><strong>Signed by:</strong> ${offer.signature?.full_legal_name || candidateName}</p>
+        <p><strong>Date:</strong> ${offer.signed_at ? new Date(offer.signed_at).toLocaleString() : ""}</p>
+        ${offer.signature?.signature_data_url ? `<img src="${offer.signature.signature_data_url}" alt="Signature" style="max-width: 200px; margin-top: 10px;"/>` : ""}
+      </div>
+    ` : "";
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Offer Letter - ${offer.job_title || "Employment"}</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            margin: 40px auto;
+            max-width: 800px;
+            padding: 0 20px;
+            color: #1a2b3c;
+            line-height: 1.6;
+          }
+          .logo { text-align: center; margin-bottom: 30px; }
+          .logo img { height: 60px; }
+          h1 { font-size: 28px; color: #0a2540; border-bottom: 2px solid #0a2540; padding-bottom: 12px; }
+          .meta { margin: 20px 0; font-size: 14px; color: #4a5c6c; }
+          .section { margin: 30px 0; }
+          .section-title { font-size: 18px; font-weight: 600; color: #0a2540; border-left: 4px solid var(--navy, #0a2540); padding-left: 10px; margin-bottom: 12px; }
+          table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+          th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #e0e6ed; }
+          th { background: #f5f7fa; font-weight: 600; }
+          .total { font-weight: 700; background: #f0f4f8; }
+          ul { padding-left: 20px; }
+          .terms { white-space: pre-line; background: #f9fbfd; padding: 16px; border-radius: 8px; }
+          .signature-block { margin-top: 50px; }
+          @media print {
+            body { margin: 0; padding: 0 20px; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="logo">
+          <img src="${logoUrl}" alt="Mazik Global" />
+        </div>
+        <h1>Employment Offer Letter</h1>
+        <div class="meta">
+          <p><strong>Date:</strong> ${currentDate}</p>
+          <p><strong>To:</strong> ${candidateName}</p>
+          <p><strong>Position:</strong> ${offer.job_title}</p>
+          <p><strong>Department:</strong> ${offer.department}</p>
+          <p><strong>Reference:</strong> OFF-${offer.id || "N/A"}</p>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Role Details</div>
+          <table>
+            <tr><th>Job Title</th><td>${offer.job_title}</td></tr>
+            <tr><th>Department</th><td>${offer.department}</td></tr>
+            <tr><th>Employment Type</th><td>${offer.employment_type}</td></tr>
+            <tr><th>Office Location</th><td>${offer.office_location || "—"}</td></tr>
+            <tr><th>Reporting Manager</th><td>${offer.reporting_manager || "—"}</td></tr>
+            <tr><th>Start Date</th><td>${offer.start_date}</td></tr>
+          </table>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Compensation</div>
+          <table>
+            <tr><th>Monthly Salary (Gross)</th><td>${formatCurrency(offer.monthly_salary, offer.currency)}</td></tr>
+            ${breakdownHTML ? `
+              <tr><td colspan="2" style="padding: 0;">
+                <table style="margin: 0;">
+                  <tr><th colspan="2" style="background: transparent; border-bottom: 2px solid #0a2540;">Salary Breakdown</th></tr>
+                  ${breakdownHTML}
+                  <tr class="total"><td>Total</td><td style="text-align:right;">${formatCurrency(offer.salary_breakdown.reduce((sum, r) => sum + (Number(r.amount) || 0), 0), offer.currency)}</td></tr>
+                </table>
+              </td></tr>` : ""}
+          </table>
+        </div>
+
+        ${selectedBenefits.length > 0 ? `
+        <div class="section">
+          <div class="section-title">Benefits</div>
+          <ul>${benefitsHTML}</ul>
+        </div>` : ""}
+
+        <div class="section">
+          <div class="section-title">Terms & Conditions</div>
+          <div class="terms">${offer.terms}</div>
+        </div>
+
+        ${signedHTML}
+
+        <div class="signature-block no-print">
+          <p style="margin-top: 60px;">_________________________</p>
+          <p>Candidate Signature</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    // Wait for image to load before printing
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print();
+        // printWindow.close(); // optional – keep open so user can save as PDF
+      }, 500);
+    };
+  }, [offer, expectedName, fullLegalName, selectedBenefits]);
+
   // --- professional SVG icons (inherit currentColor – no color override) ---
   const IconRole = () => (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -312,9 +450,27 @@ function OfferLetterPageContent() {
           <span className="brand-divider" aria-hidden="true" />
           <span className="product-name">Talent</span>
         </div>
-        <button type="button" onClick={handleBack} className="secondary-button">
-          {offer?.status === "signed" ? "Continue to documents" : "Go to Dashboard"}
-        </button>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {offer && (
+            <button
+              type="button"
+              onClick={handleDownloadPDF}
+              className="secondary-button"
+              title="Download offer letter as PDF"
+              style={{ display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Download PDF
+            </button>
+          )}
+          <button type="button" onClick={handleBack} className="secondary-button">
+            {offer?.status === "signed" ? "Continue to documents" : "Go to Dashboard"}
+          </button>
+        </div>
       </header>
 
       {loading ? (
@@ -378,7 +534,7 @@ function OfferLetterPageContent() {
               </p>
             )}
 
-            {/* ---- Role Details Section (clean layout, uses existing styles) ---- */}
+            {/* ---- Role Details Section ---- */}
             <section style={{ marginBottom: 28 }}>
               <h3 className="offer-section-title">
                 <span style={{ marginRight: 6 }}><IconRole /></span> Role Details
@@ -411,7 +567,7 @@ function OfferLetterPageContent() {
               </dl>
             </section>
 
-            {/* ---- Compensation Section (formatted with commas) ---- */}
+            {/* ---- Compensation Section ---- */}
             <section style={{ marginBottom: 28 }}>
               <h3 className="offer-section-title">
                 <span style={{ marginRight: 6 }}><IconCompensation /></span> Compensation
@@ -458,7 +614,7 @@ function OfferLetterPageContent() {
               <div className="offer-terms-text">{offer.terms}</div>
             </section>
 
-            {/* ---- Signature / Actions (kept original logic) ---- */}
+            {/* ---- Signature / Actions ---- */}
             {offer.status === "signed" || offer.status === "approved" ? (
               <div className="offer-signed-confirmation">
                 <strong>✓ Signed by {offer.signature?.full_legal_name}</strong>
@@ -661,7 +817,6 @@ function OfferLetterPageContent() {
         </div>
       )}
 
-      {/* Minimal CSS to ensure section titles look crisp */}
       <style jsx>{`
         .offer-section-title {
           font-size: 15px;
