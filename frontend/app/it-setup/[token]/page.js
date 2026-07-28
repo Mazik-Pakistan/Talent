@@ -501,7 +501,7 @@ export default function ItSetupPublicPage() {
   if (state.status === "error") {
     return (
       <Shell narrow>
-        <Image className="it-logo" src="/mazikglobal-logo.png" alt="Mazik Global" width={192} height={52} priority />
+        <Image className="it-logo" src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
         <div className="it-center">
           <div className="it-icon err" aria-hidden>!</div>
           <p className="it-eyebrow">IT provisioning</p>
@@ -521,7 +521,7 @@ export default function ItSetupPublicPage() {
 
     return (
       <Shell narrow>
-        <Image className="it-logo" src="/mazikglobal-logo.png" alt="Mazik Global" width={192} height={52} priority />
+        <Image className="it-logo" src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
         <div className="it-center">
           <div className="it-icon ok" aria-hidden>✓</div>
           <p className="it-eyebrow">IT provisioning</p>
@@ -582,7 +582,7 @@ export default function ItSetupPublicPage() {
 
   return (
     <Shell>
-      <Image className="it-logo" src="/mazikglobal-logo.png" alt="Mazik Global" width={192} height={52} priority />
+      <Image className="it-logo" src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
       <div className="it-center">
         <p className="it-eyebrow">IT provisioning</p>
         <h1 className="it-title">Assign email &amp; assets</h1>

@@ -201,7 +201,7 @@ export default function RegisterPage() {
         <aside className={styles.aside} aria-label="Talent platform introduction">
           <div className={styles.asideBrandRow}>
             <Image
-              src="/mazik-logo.png"
+              src="/talentai-logo.png"
               alt="Mazik Global"
               width={192}
               height={52}

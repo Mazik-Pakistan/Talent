@@ -364,7 +364,7 @@ function OfferLetterPageContent() {
 <body>
   <div class="letterhead">
     <div class="logo">
-      <img src="/mazikglobal-logo.png" alt="Mazik Global" />
+      <img src="/talentai-logo.png" alt="Mazik Global" />
     </div>
     <div class="company-info">
       <strong>${companyName}</strong><br>
@@ -484,7 +484,7 @@ function OfferLetterPageContent() {
     <main className="offer-shell">
       <header className="onboarding-header">
         <div className="brand-row">
-          <Image src="/mazikglobal-logo.png" alt="Mazik Global" width={160} height={44} priority />
+          <Image src="/talentai-logo.png" alt="Mazik Global" width={160} height={44} priority />
           <span className="brand-divider" aria-hidden="true" />
           <span className="product-name">Talent</span>
         </div>

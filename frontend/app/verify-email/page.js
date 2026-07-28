@@ -120,7 +120,7 @@ export default function VerifyEmailPage() {
       <div className={styles.card}>
         <aside className={styles.aside} aria-label="Email verification introduction">
           <div className={styles.asideBrandRow}>
-            <Image src="/mazik-logo.png" alt="Mazik Global" width={192} height={52} className={styles.asideLogo} priority />
+            <Image src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} className={styles.asideLogo} priority />
           </div>
           <div className={styles.asideContent}>
             <div>

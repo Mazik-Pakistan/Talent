@@ -126,7 +126,7 @@ export default function InviteRegisterPage() {
     return (
       <main className="verification-shell">
         <section className="verification-card" aria-labelledby="invite-error-heading">
-          <Image src="/mazik-logo.png" alt="Mazik Global" width={192} height={52} priority />
+          <Image src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
           <div className="verification-icon error" aria-hidden="true">!</div>
           <p className="eyebrow">Invitation</p>
           <h1 id="invite-error-heading">Invitation unavailable</h1>
@@ -144,7 +144,7 @@ export default function InviteRegisterPage() {
       <div className={styles.card}>
         <aside className={styles.aside} aria-label="Candidate onboarding introduction">
           <div className={styles.asideBrandRow}>
-            <Image src="/mazik-logo.png" alt="Mazik Global" width={192} height={52} className={styles.asideLogo} priority />
+            <Image src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} className={styles.asideLogo} priority />
           </div>
           <div className={styles.asideContent}>
             <div>

@@ -99,7 +99,7 @@ export default function ResetPasswordPage() {
       <div className={styles.card}>
         <section className={styles.panel} aria-labelledby="reset-heading">
           <div className={styles.brandRow}>
-            <Image src="/mazikglobal-logo.png" alt="Mazik Global" width={192} height={52} priority />
+            <Image src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
             <span className={styles.brandDivider} aria-hidden="true" />
             <span className={styles.productName}>Talent</span>
           </div>
