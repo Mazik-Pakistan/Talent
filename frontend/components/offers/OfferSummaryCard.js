@@ -187,9 +187,15 @@ export default function OfferSummaryCard({
         padding: 14px 16px;
         display: grid;
         gap: 6px;
-        border: 1px solid #f3d7a5;
-        background: #fff8eb;
-        color: #8a5400;
+        border: 1px solid #dfe9f6;
+        background: #f6fbff;
+        color: #153d5e;
+      }
+      .offer-negotiation-strip span {
+      font-size: 12.5px;
+      }
+      .offer-negotiation-strip strong {
+        color: #0c2a41;
       }
       .offer-negotiation-strip.accepted {
         border-color: #b8ead5;
