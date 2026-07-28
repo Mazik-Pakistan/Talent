@@ -100,6 +100,13 @@ def _parse_start_date(value) -> date | None:
         return None
 
 
+def _announcement_visibility_filter(user_created_at) -> dict | None:
+    """Hide announcements published before this person existed."""
+    if not user_created_at:
+        return None
+    return {"created_at": {"$gte": _as_aware(user_created_at)}}
+
+
 class DashboardService:
     @staticmethod
     def _candidate_id(candidate: dict) -> str:
@@ -109,6 +116,12 @@ class DashboardService:
     def _missing_onboarding_fields(onboarding: dict | None) -> list[str]:
         onboarding = onboarding or {}
         return [field for field in REQUIRED_ONBOARDING_FIELDS if not onboarding.get(field)]
+
+    async def _user_created_at(self, user_id: str | None) -> datetime | None:
+        if not user_id:
+            return None
+        user = await database.users.find_one({"_id": ObjectId(user_id)} if ObjectId.is_valid(user_id) else {"_id": user_id}, {"created_at": 1})
+        return user.get("created_at") if user else None
 
     @classmethod
     def _is_offer_declined(cls, candidate: dict, offer_status_by_candidate: dict[str, str] | None = None) -> bool:
@@ -420,9 +433,11 @@ class DashboardService:
         if role == "candidate":
             candidate = await database.candidates.find_one(
                 {"$or": [{"user_id": current_user.id}, {"email": current_user.email}]},
-                {"user_id": 1},
+                {"user_id": 1, "created_at": 1},
             ) or {}
             candidate_id = candidate.get("user_id") or current_user.id
+            visibility_cutoff = candidate.get("created_at") or await self._user_created_at(candidate_id)
+            visibility_filter = _announcement_visibility_filter(visibility_cutoff)
             query["$and"] = [
                 {"$or": [{"audience": {"$in": ["candidates", "both"]}}, {"audience": {"$exists": False}}]},
                 {"$or": [
@@ -431,16 +446,20 @@ class DashboardService:
                     {"target_candidate_ids": candidate_id},
                 ]},
             ]
+            if visibility_filter:
+                query["$and"].append(visibility_filter)
         elif role == "employee":
             employee = await database.employees.find_one(
-                {**self._scope_filter(current_user), "user_id": current_user.id},
-                {"department": 1, "job_title": 1},
+                {"$or": [{"user_id": current_user.id}, {"email": current_user.email}, {"company_email": current_user.email}]},
+                {"department": 1, "job_title": 1, "created_at": 1},
             ) or {}
             recipient_filters = [{"target_employee_ids": current_user.id}]
             if employee.get("department"):
                 recipient_filters.append({"target_departments": employee["department"]})
             if employee.get("job_title"):
                 recipient_filters.append({"target_designations": employee["job_title"]})
+            visibility_cutoff = employee.get("created_at") or await self._user_created_at(current_user.id)
+            visibility_filter = _announcement_visibility_filter(visibility_cutoff)
             query["$and"] = [
                 {"$or": [{"audience": {"$in": ["employees", "both"]}}, {"audience": {"$exists": False}}]},
                 {
@@ -456,6 +475,8 @@ class DashboardService:
                     ]
                 },
             ]
+            if visibility_filter:
+                query["$and"].append(visibility_filter)
         elif audience in ("candidates", "employees", "both"):
             query["audience"] = audience
 
