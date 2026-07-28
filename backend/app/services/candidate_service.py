@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+from bson import ObjectId
 from fastapi import HTTPException, status
 
 from app.core.config import settings
@@ -64,6 +65,14 @@ STEP_FLOW = {
     "government_docs": "resume",
     "resume": "submit",
 }
+
+
+def _announcement_visibility_filter(user_created_at) -> dict | None:
+    if not user_created_at:
+        return None
+    if isinstance(user_created_at, datetime) and user_created_at.tzinfo is None:
+        user_created_at = user_created_at.replace(tzinfo=UTC)
+    return {"created_at": {"$gte": user_created_at}}
 
 
 EMPTY_ONBOARDING = {
@@ -760,16 +769,24 @@ class CandidateService:
                 recruiter_contact = {"full_name": None, "email": candidate["recruiter_email"], "phone": None}
 
         candidate_id = candidate.get("user_id") or str(candidate.get("_id") or "")
+        announcement_query = {"$and": [
+            {"$or": [{"audience": {"$in": ["candidates", "both"]}}, {"audience": {"$exists": False}}]},
+            {"$or": [
+                {"target_candidate_ids": {"$exists": False}},
+                {"target_candidate_ids": {"$size": 0}},
+                {"target_candidate_ids": candidate_id},
+            ]},
+        ]}
+        visibility_cutoff = candidate.get("created_at")
+        if not visibility_cutoff and ObjectId.is_valid(current_user.id):
+            user_doc = await database.users.find_one({"_id": ObjectId(current_user.id)}, {"created_at": 1})
+            visibility_cutoff = user_doc.get("created_at") if user_doc else None
+        visibility_filter = _announcement_visibility_filter(visibility_cutoff)
+        if visibility_filter:
+            announcement_query["$and"].append(visibility_filter)
         announcements = (
             await database.announcements.find(
-                {"$and": [
-                    {"$or": [{"audience": {"$in": ["candidates", "both"]}}, {"audience": {"$exists": False}}]},
-                    {"$or": [
-                        {"target_candidate_ids": {"$exists": False}},
-                        {"target_candidate_ids": {"$size": 0}},
-                        {"target_candidate_ids": candidate_id},
-                    ]},
-                ]}
+                announcement_query
             )
             .sort("created_at", -1)
             .limit(3)

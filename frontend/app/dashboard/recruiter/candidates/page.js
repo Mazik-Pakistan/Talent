@@ -518,19 +518,9 @@ export default function RecruiterCandidatesPage() {
                           type="button"
                           className={styles.secondaryButton}
                           disabled={busy}
-                          onClick={() => handleSendIt(candidate)}
+                          onClick={() => (itPending ? handleRemindIt(candidate) : handleSendIt(candidate))}
                         >
-                          {busy ? "Sending…" : itPending ? "Resend to IT" : "Send email to IT"}
-                        </button>
-                      )}
-                      {itPending && (
-                        <button
-                          type="button"
-                          className={styles.secondaryButton}
-                          disabled={busy}
-                          onClick={() => handleRemindIt(candidate)}
-                        >
-                          {busy ? "Sending…" : "Follow up IT"}
+                          {busy ? "Sending…" : itPending ? "Follow up IT" : "Send email to IT"}
                         </button>
                       )}
                       <button
