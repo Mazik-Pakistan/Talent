@@ -8,6 +8,7 @@ import { useState } from "react";
 import AuthAside, { RECOVERY_SLIDES } from "@/components/auth/AuthAside";
 import { forgotPassword, getApiErrorMessage } from "@/services/authService";
 import styles from "@/app/styles/auth.module.css";
+import styles from "@/app/styles/auth.module.css";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -41,49 +42,49 @@ export default function ForgotPasswordPage() {
   return (
     <main className={styles.shell}>
       <div className={styles.card}>
-        <section className={styles.panel} aria-labelledby="forgot-heading">
-          <div className={styles.brandRow}>
-            <Image src="/mazikglobal-logo.png" alt="Mazik Global" width={192} height={52} priority />
-            <span className={styles.brandDivider} aria-hidden="true" />
-            <span className={styles.productName}>Talent</span>
+        <aside className={styles.aside} aria-label="Password recovery introduction">
+          <div className={styles.asideBrandRow}>
+            <Image src="/mazik-logo.png" alt="Mazik Global" width={192} height={52} className={styles.asideLogo} priority />
           </div>
+          <div className={styles.asideContent}>
+            <div>
+              <span className={styles.asideEyebrow}>✦ Account recovery</span>
+              <h2 className={styles.asideHeading}>Reset securely. Get back to <em>Talent.</em></h2>
+              <p className={styles.asideText}>We&apos;ll email a one-time reset code so you can safely set a new password.</p>
+            </div>
+          </div>
+        </aside>
 
+        <section className={styles.panel} aria-labelledby="forgot-heading">
           <div className={styles.intro}>
-            <p className={styles.eyebrow}>Account recovery</p>
+            <span className={styles.eyebrow}>Account recovery</span>
             <h1 id="forgot-heading" className={styles.heading}>Reset your password</h1>
-            <p className={styles.subtext}>Enter your email address. We&apos;ll send a one-time reset code.</p>
+            <p className={styles.subtext}>Enter your company email and we&apos;ll send a one-time reset code.</p>
           </div>
 
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
-            <label className={styles.field}>
-              <span>Company email <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
-              <input
-                className={styles.input}
-                type="email"
-                name="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-                required
-              />
+            <label className={`${styles.field} ${styles.animField}`}>
+              <span>Company email</span>
+              <span className={styles.inputShell}>
+                <MailIcon />
+                <input className={styles.input} type="email" name="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="you@company.com" required />
+              </span>
             </label>
-
-            {error && <p className={`${styles.formMessage} ${styles.formMessageError}`} role="alert">{error}</p>}
-            {message && <p className={`${styles.formMessage} ${styles.formMessageSuccess}`} role="status">{message}</p>}
-
+            {error && <p className={styles.fieldError} role="alert">{error}</p>}
+            {message && <p className={styles.fieldError} role="status">{message}</p>}
             <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
               {isSubmitting && <span className={styles.spinner} />}
               {isSubmitting ? "Sending code…" : "Send reset code"}
             </button>
           </form>
 
-          <div className={styles.footer}>
-            <p><Link href="/login">Back to sign in</Link></p>
-          </div>
+          <p className={styles.footer}><Link href="/login">← Back to sign in</Link></p>
         </section>
-
-        <AuthAside slides={RECOVERY_SLIDES} ariaLabel="Password recovery help" />
       </div>
     </main>
   );
+}
+
+function MailIcon() {
+  return <svg className={styles.inputIcon} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 5.5 10 10l7-4.5M4 4h12a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /></svg>;
 }

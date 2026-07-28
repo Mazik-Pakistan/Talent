@@ -12,10 +12,46 @@ import { getApiErrorMessage, login, persistLoginSession } from "@/services/authS
 import styles from "@/app/styles/auth.module.css";
 
 const ROLES = [
-  { id: "recruiter", label: "Recruiter", hint: "Hiring & invitations" },
-  { id: "candidate", label: "Candidate", hint: "Offer & onboarding" },
-  { id: "employee", label: "Employee", hint: "Workplace portal" },
-  { id: "super_admin", label: "Super Admin", hint: "Platform control" },
+  {
+    id: "recruiter",
+    label: "Recruiter",
+    hint: "Hiring & invitations",
+  },
+  {
+    id: "candidate",
+    label: "Candidate",
+    hint: "Offer & onboarding",
+  },
+  {
+    id: "employee",
+    label: "Employee",
+    hint: "Workplace portal",
+  },
+  {
+    id: "super_admin",
+    label: "Super Admin",
+    hint: "Platform control",
+  },
+];
+
+// Content variants for auto-rotation
+const ROTATING_CONTENT = [
+  {
+    heading: "One platform, built around your hiring workflow.",
+    text: "Post roles, screen candidates, and move them through onboarding — all from a single connected dashboard.",
+  },
+  {
+    heading: "AI-powered matching for better hires.",
+    text: "Our algorithms analyze skills, experience, and culture fit to find your ideal candidates faster.",
+  },
+  {
+    heading: "Seamless onboarding from day one.",
+    text: "Move new hires through paperwork, training, and integration without breaking stride.",
+  },
+  {
+    heading: "Data-driven decisions at every step.",
+    text: "Real-time analytics help you refine your hiring strategy and reduce time-to-hire.",
+  },
 ];
 
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
@@ -71,6 +107,19 @@ function LoginForm() {
       toast.info("Your session expired after inactivity. Please sign in again.");
     }
   }, [searchParams]);
+
+  // Auto-rotation effect
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setContentIndex((prev) => (prev + 1) % ROTATING_CONTENT.length);
+        setIsTransitioning(false);
+      }, 300);
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, []);
 
   function handleBlur(field) {
     setTouched((current) => ({ ...current, [field]: true }));
@@ -130,15 +179,32 @@ function LoginForm() {
       <ToastContainer position="top-right" autoClose={4000} theme="colored" newestOnTop />
 
       <div className={styles.card}>
-        <section className={styles.panel} aria-labelledby="login-heading">
-          <div className={styles.brandRow}>
-            <Image src="/mazikglobal-logo.png" alt="Mazik Global" width={192} height={52} priority />
-            <span className={styles.brandDivider} aria-hidden="true" />
-            <span className={styles.productName}>Talent</span>
+        <aside className={styles.aside} aria-label="Talent platform introduction">
+          <div className={styles.asideBrandRow}>
+            <Image
+              src="/mazik-logo.png"
+              alt="Mazik Global"
+              width={192}
+              height={52}
+              className={styles.asideLogo}
+              priority
+            />
           </div>
 
+          <div className={styles.asideContent} key={contentIndex}>
+            <div>
+              <h2 className={`${styles.asideHeading} ${isTransitioning ? styles.fadeOut : styles.fadeIn}`}>
+                {ROTATING_CONTENT[contentIndex].heading}
+              </h2>
+              <p className={`${styles.asideText} ${isTransitioning ? styles.fadeOut : styles.fadeIn}`}>
+                {ROTATING_CONTENT[contentIndex].text}
+              </p>
+            </div>
+          </div>
+        </aside>
+
+        <section className={styles.panel} aria-labelledby="login-heading">
           <div className={styles.intro}>
-            <p className={styles.eyebrow}>Secure access</p>
             <h1 id="login-heading" className={styles.heading}>Sign in to Talent</h1>
             <p className={styles.subtext}>Choose your role, then enter your credentials to open that dashboard.</p>
           </div>
@@ -245,4 +311,9 @@ function LoginForm() {
       </div>
     </main>
   );
+}
+
+function FieldIcon({ type }) {
+  const path = type === "email" ? <path d="M3 5.5 10 10l7-4.5M4 4h12a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /> : <><rect x="5" y="9" width="10" height="7" rx="1" /><path d="M7.3 9V6.8a2.7 2.7 0 0 1 5.4 0V9" /></>;
+  return <svg className={styles.inputIcon} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">{path}</svg>;
 }

@@ -15,6 +15,7 @@ import {
 import SignaturePad from "@/components/SignaturePad";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
+import styles from "@/app/styles/auth.module.css";
 
 const OFFER_DRAFT_KEY = "offer_letter_draft";
 
@@ -481,10 +482,25 @@ function OfferLetterPageContent() {
   );
 
   return (
-    <main className="offer-shell">
+    <main className={styles.shell}>
+      <div className={styles.card}>
+        <aside className={styles.aside} aria-label="Talent offer overview">
+          <div className={styles.asideBrandRow}>
+            <Image src="/mazik-logo.png" alt="Mazik Global" width={160} height={44} className={styles.asideLogo} priority />
+          </div>
+          <div className={styles.asideContent}>
+            <div>
+              <span className={styles.asideEyebrow}>✦ Your next chapter</span>
+              <h2 className={styles.asideHeading}>Review your offer with <em>confidence.</em></h2>
+              <p className={styles.asideText}>Everything you need to understand and accept your next role is safely in one place.</p>
+            </div>
+          </div>
+        </aside>
+
+        <section className={styles.panel}>
       <header className="onboarding-header">
         <div className="brand-row">
-          <Image src="/mazikglobal-logo.png" alt="Mazik Global" width={160} height={44} priority />
+          <Image src="/mazik-logo.png" alt="Mazik Global" width={160} height={44} priority />
           <span className="brand-divider" aria-hidden="true" />
           <span className="product-name">Talent</span>
         </div>
@@ -514,7 +530,7 @@ function OfferLetterPageContent() {
       {loading ? (
         <p style={{ textAlign: "center", padding: "3rem 1rem" }}>Loading your offer letter…</p>
       ) : !offer ? (
-        <div className="offer-letter-card">
+          <div className="offer-letter-card">
           <div className="offer-empty">
             <h2>No offer letter yet</h2>
             <p>
@@ -524,8 +540,8 @@ function OfferLetterPageContent() {
           </div>
         </div>
       ) : (
-        <div className="offer-letter-card">
-          <div className="offer-letter-head">
+          <div className="offer-letter-card">
+          <div className="offer-letter-head" style={{ background: "linear-gradient(135deg, var(--navy), var(--blue-strong))" }}>
             <span className={`offer-status-pill ${offer.status}`}>{offer.status}</span>
             <p className="eyebrow">
               Offer letter · Mazik Global Pakistan · v{offer.version || 1}

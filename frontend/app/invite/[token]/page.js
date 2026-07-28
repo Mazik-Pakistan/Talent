@@ -477,3 +477,27 @@ function FormField({
     </label>
   );
 }
+
+function FieldIcon({ type }) {
+  if (type === "email") {
+    return (
+      <svg className={styles.inputIcon} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+        <path d="M3 5.5 10 10l7-4.5M4 4h12a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />
+      </svg>
+    );
+  }
+  if (type === "phone") {
+    return (
+      <svg className={styles.inputIcon} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+        <path d="M6.2 3.5 8 6.8 6.5 8.1c.9 1.9 2.4 3.4 4.3 4.3l1.3-1.5 3.3 1.8-.5 3.1c-4.8.5-10.8-5.5-10.3-10.3l1.6-2Z" />
+      </svg>
+    );
+  }
+  // Full name icon
+  return (
+    <svg className={styles.inputIcon} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+      <circle cx="10" cy="6.3" r="2.8" />
+      <path d="M4.5 16.5c.6-3 2.5-4.6 5.5-4.6s4.9 1.6 5.5 4.6" />
+    </svg>
+  );
+}
