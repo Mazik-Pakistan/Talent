@@ -97,6 +97,7 @@ const emptyPersonal = {
   postal_code: "",
   country: "Pakistan",
 };
+
 const emptyEducationEntry = {
   institution: "",
   board_university: "",
@@ -106,6 +107,7 @@ const emptyEducationEntry = {
   cgpa_or_percentage: "",
   certificate_file: null,
 };
+
 const COUNTRY_OPTIONS = ["Pakistan", "United Arab Emirates", "Saudi Arabia"];
 const PAKISTANI_CITIES = ["Karachi", "Lahore", "Islamabad", "Rawalpindi", "Faisalabad"];
 const PAKISTANI_PROVINCES = ["Punjab", "Sindh", "Khyber Pakhtunkhwa", "Balochistan", "Islamabad Capital Territory", "Gilgit-Baltistan", "Azad Kashmir"];
@@ -116,19 +118,68 @@ const UNIVERSITIES_BY_CITY = {
   Rawalpindi: ["Fatima Jinnah Women University", "Pir Mehr Ali Shah Arid Agriculture University"],
   Faisalabad: ["University of Agriculture, Faisalabad", "Government College University Faisalabad"],
 };
+
 const emptySkills = {
   technical_skills: "",
   soft_skills: "",
   languages: "",
   certifications: [{ name: "", document_url: null, expiry_date: "" }],
 };
+
 const emptyGovDoc = {
   doc_type: "cnic",
   document_number: "",
   file_name: null,
   file_url: null,
 };
+
 const emptyResume = { summary: "", file_name: null, file_url: null };
+
+// --- CONSTANTS AND UTILITY FUNCTIONS ---
+
+const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "N/A"];
+const BLOOD_GROUP_HINT = "Required for medical emergencies.";
+
+function normalizeBloodGroup(value) {
+  if (!value) return "N/A";
+  const normalized = String(value).trim().toUpperCase();
+  if (BLOOD_GROUP_OPTIONS.includes(normalized)) return normalized;
+  return "N/A";
+}
+
+function validateTextField(value, minLength, maxLength, fieldName) {
+  const text = String(value || "").trim();
+  if (text.length === 0 && minLength > 0) return { isValid: false, error: `${fieldName} is required.` };
+  if (text.length < minLength) return { isValid: false, error: `${fieldName} must be at least ${minLength} characters.` };
+  if (text.length > maxLength) return { isValid: false, error: `${fieldName} cannot exceed ${maxLength} characters.` };
+  return { isValid: true, normalized: text };
+}
+
+function validateDateNotFuture(value, fieldName) {
+  if (!value) return { isValid: false, error: `${fieldName} is required.` };
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return { isValid: false, error: `Invalid date format for ${fieldName}.` };
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Ignore time for comparison
+  if (date > today) return { isValid: false, error: `${fieldName} cannot be in the future.` };
+  
+  return { isValid: true };
+}
+
+function validateCNIC(value) {
+  const text = String(value || "").replace(/[^0-9]/g, ""); // Extract digits
+  if (text.length !== 13) return { isValid: false, error: "CNIC must be exactly 13 digits." };
+  return { isValid: true, normalized: `${text.slice(0, 5)}-${text.slice(5, 12)}-${text.slice(12)}` };
+}
+
+function isValidPkMobile(value) {
+  const text = String(value || "").replace(/[^0-9+]/g, "");
+  // Common regex for Pakistani numbers: +923xxxxxxxxx, 03xxxxxxxxx, etc.
+  return /^((\+92)|(0092)|0)?3[0-9]{9}$/.test(text); 
+}
+
+// ---------------------------------------
 
 export default function OnboardingPage() {
   return (
