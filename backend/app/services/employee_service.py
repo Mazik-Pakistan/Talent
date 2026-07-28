@@ -750,6 +750,12 @@ class EmployeeService:
         payload["onboarding"] = onboarding
         progress = self._profile_progress(employee)
         payload["profile_progress"] = progress
+        payload["offers"] = await self._list_related_offers(
+            candidate_id=employee.get("candidate_id"),
+            candidate_email=employee.get("email"),
+            offer_id=employee.get("offer_id"),
+        )
+        payload["current_offer"] = payload["offers"][0] if payload["offers"] else None
         if employee.get("profile_reminder_sent_at"):
             sent_at = employee["profile_reminder_sent_at"]
             payload["profile_reminder_sent_at"] = (
@@ -951,7 +957,13 @@ class EmployeeService:
             raise HTTPException(status_code=404, detail="Candidate not found.")
         if current_user.role != "super_admin" and candidate.get("recruiter_id") != current_user.id:
             raise HTTPException(status_code=403, detail="Not allowed.")
-        return {"candidate": self._public_candidate(candidate, CandidateService()._progress_payload(candidate), include_onboarding=True)}
+        payload = self._public_candidate(candidate, CandidateService()._progress_payload(candidate), include_onboarding=True)
+        payload["offers"] = await self._list_related_offers(
+            candidate_id=candidate.get("user_id") or str(candidate.get("_id") or ""),
+            candidate_email=candidate.get("email"),
+        )
+        payload["current_offer"] = payload["offers"][0] if payload["offers"] else None
+        return {"candidate": payload}
 
     @staticmethod
     def _public_candidate(doc: dict, progress: dict, *, include_onboarding: bool = False) -> dict:
@@ -968,6 +980,79 @@ class EmployeeService:
         if include_onboarding:
             payload["onboarding"] = doc.get("onboarding") or {}
         return payload
+
+    async def _list_related_offers(
+        self,
+        *,
+        candidate_id: str | None = None,
+        candidate_email: str | None = None,
+        offer_id: str | None = None,
+    ) -> list[dict]:
+        query_or: list[dict] = []
+        if candidate_id:
+            query_or.append({"candidate_id": candidate_id})
+        if candidate_email:
+            query_or.append({"candidate_email": candidate_email.lower().strip()})
+        if offer_id and ObjectId.is_valid(offer_id):
+            query_or.append({"_id": ObjectId(offer_id)})
+        if not query_or:
+            return []
+        docs = (
+            await database.offer_letters.find({"$or": query_or})
+            .sort([("version", -1), ("created_at", -1)])
+            .to_list(length=20)
+        )
+        return [self._public_offer_summary(doc) for doc in docs]
+
+    @staticmethod
+    def _public_offer_summary(doc: dict) -> dict:
+        def _iso(value):
+            return value.isoformat() if hasattr(value, "isoformat") else value
+
+        negotiation = dict(doc.get("negotiation") or {})
+        if negotiation.get("requested_at"):
+            negotiation["requested_at"] = _iso(negotiation.get("requested_at"))
+        if negotiation.get("responded_at"):
+            negotiation["responded_at"] = _iso(negotiation.get("responded_at"))
+        history = []
+        for entry in doc.get("negotiation_history") or []:
+            history.append({**entry, "created_at": _iso(entry.get("created_at"))})
+
+        return {
+            "id": str(doc.get("_id", "")),
+            "candidate_id": doc.get("candidate_id"),
+            "candidate_name": doc.get("candidate_name"),
+            "candidate_email": doc.get("candidate_email"),
+            "job_title": doc.get("job_title"),
+            "department": doc.get("department"),
+            "employment_type": doc.get("employment_type"),
+            "office_location": doc.get("office_location"),
+            "reporting_manager": doc.get("reporting_manager"),
+            "start_date": doc.get("start_date"),
+            "monthly_salary": doc.get("monthly_salary"),
+            "currency": doc.get("currency"),
+            "salary_breakdown": doc.get("salary_breakdown") or [],
+            "benefits": doc.get("benefits") or [],
+            "terms": doc.get("terms"),
+            "message_to_candidate": doc.get("message_to_candidate"),
+            "status": doc.get("status"),
+            "version": doc.get("version") or 1,
+            "parent_offer_id": doc.get("parent_offer_id"),
+            "negotiation_used": bool(doc.get("negotiation_used")),
+            "negotiation_rounds_used": int(doc.get("negotiation_rounds_used") or 0),
+            "negotiation_max_rounds": int(doc.get("negotiation_max_rounds") or 3),
+            "negotiation": negotiation,
+            "negotiation_history": history,
+            "recruiter_id": doc.get("recruiter_id"),
+            "recruiter_name": doc.get("recruiter_name"),
+            "sent_at": _iso(doc.get("sent_at")),
+            "expires_at": _iso(doc.get("expires_at")),
+            "viewed_at": _iso(doc.get("viewed_at")),
+            "signed_at": _iso(doc.get("signed_at")),
+            "signature": doc.get("signature"),
+            "declined_reason": doc.get("declined_reason"),
+            "approved_at": _iso(doc.get("approved_at")),
+        }
 
     async def attach_uploaded_file(
         self,

@@ -101,6 +101,13 @@ async def reject_negotiation(
     return await offer_service.reject_negotiation(current_user, offer_id, payload)
 
 
+@router.post("/{offer_id}/negotiation/counter")
+async def counter_negotiation(
+    offer_id: str, payload: NegotiationRespondRequest, current_user: RequireRecruiter
+):
+    return await offer_service.counter_negotiation(current_user, offer_id, payload)
+
+
 @router.post("/{offer_id}/approve")
 async def approve_offer(offer_id: str, payload: OfferApproveRequest, current_user: RequireRecruiter):
     """Activate employee after signed offer + docs + IT provisioning."""
