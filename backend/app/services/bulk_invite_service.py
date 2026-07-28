@@ -1,0 +1,249 @@
+"""Bulk invite + offer from spreadsheet rows (same flow as single invite)."""
+
+from __future__ import annotations
+
+from fastapi import HTTPException, UploadFile
+from pydantic import ValidationError
+
+from app.core.rbac import CurrentUser
+from app.schemas.invitation import CreateInvitationRequest
+from app.schemas.offer import DEFAULT_BENEFITS, DEFAULT_OFFER_TERMS, OfferTermsPayload
+from app.services.invitation_service import InvitationService
+from app.services.people_history import lookup_history_by_email
+from app.services.spreadsheet_roster import (
+    BULK_INVITE_MAX_ROWS,
+    missing_required_headers,
+    read_upload_rows,
+    resolve_column_indexes,
+    row_to_candidate,
+)
+
+invitation_service = InvitationService()
+
+
+def _benefit_items(labels: list[str] | None) -> list[dict]:
+    source = labels if labels else list(DEFAULT_BENEFITS)
+    items = []
+    for label in source:
+        cleaned = " ".join(str(label).split())
+        if not cleaned:
+            continue
+        slug = "".join(ch if ch.isalnum() else "-" for ch in cleaned.lower()).strip("-")
+        items.append({"id": slug or f"benefit-{len(items)}", "label": cleaned, "selected": True})
+    return items
+
+
+def candidate_row_to_request(row: dict) -> CreateInvitationRequest:
+    """Build a validated CreateInvitationRequest from a parsed roster row."""
+    from datetime import date as date_cls
+
+    start_raw = str(row.get("start_date") or "").strip()[:10]
+    start_date = date_cls.fromisoformat(start_raw) if start_raw else None
+
+    offer = OfferTermsPayload(
+        job_title=row["job_title"],
+        department=row["department"],
+        employment_type=row.get("employment_type") or "Full-time",
+        office_location=row.get("office_location"),
+        reporting_manager=row["reporting_manager"],
+        start_date=start_raw,
+        monthly_salary=float(row["monthly_salary"]),
+        currency=(row.get("currency") or "PKR").upper(),
+        salary_breakdown=[],
+        benefits=_benefit_items(row.get("benefits")),
+        offer_expiry_days=int(row.get("offer_expiry_days") or 14),
+        terms=DEFAULT_OFFER_TERMS,
+        message_to_candidate=row.get("message_to_candidate"),
+    )
+    return CreateInvitationRequest(
+        email=row["email"],
+        full_name=row["full_name"],
+        job_title=row["job_title"],
+        department=row["department"],
+        office_location=row.get("office_location"),
+        start_date=start_date,
+        expires_in_days=int(row.get("expires_in_days") or 7),
+        offer=offer,
+    )
+
+
+class BulkInviteService:
+    async def parse_file(self, file: UploadFile) -> dict:
+        header, data_rows = await read_upload_rows(file)
+        indexes = resolve_column_indexes(header)
+        missing = missing_required_headers(indexes)
+        if missing:
+            return {
+                "ok": False,
+                "filename": file.filename,
+                "missing_headers": missing,
+                "found_headers": [h for h in header if h],
+                "rows": [],
+                "summary": {
+                    "total": 0,
+                    "valid": 0,
+                    "invalid": 0,
+                    "blocked": 0,
+                    "rehire_suggested": 0,
+                },
+                "message": (
+                    "Spreadsheet is missing required columns: "
+                    + ", ".join(missing)
+                    + ". Download the template and try again."
+                ),
+            }
+
+        rows: list[dict] = []
+        for sheet_row, cells in data_rows:
+            if not cells or all(c is None or str(c).strip() == "" for c in cells):
+                continue
+            parsed = row_to_candidate(cells, indexes, sheet_row)
+            rows.append(parsed)
+            if len(rows) >= BULK_INVITE_MAX_ROWS:
+                break
+
+        return {
+            "ok": True,
+            "filename": file.filename,
+            "missing_headers": [],
+            "found_headers": [h for h in header if h],
+            "rows": rows,
+            "summary": {
+                "total": len(rows),
+                "valid": sum(1 for r in rows if r.get("valid")),
+                "invalid": sum(1 for r in rows if not r.get("valid")),
+                "blocked": 0,
+                "rehire_suggested": 0,
+            },
+            "message": f"Parsed {len(rows)} row(s) from {file.filename}.",
+            "truncated": len(data_rows) > BULK_INVITE_MAX_ROWS,
+        }
+
+    async def preview(self, file: UploadFile, current_user: CurrentUser) -> dict:
+        parsed = await self.parse_file(file)
+        if not parsed.get("ok"):
+            return parsed
+
+        enriched: list[dict] = []
+        blocked = 0
+        rehire = 0
+        for row in parsed["rows"]:
+            item = {**row, "selected": bool(row.get("valid")), "can_send": False, "block_reason": None}
+            if not row.get("valid"):
+                item["block_reason"] = "Missing required fields: " + ", ".join(row.get("missing_fields") or [])
+                item["person_history"] = None
+                enriched.append(item)
+                continue
+
+            history = await lookup_history_by_email(
+                row["email"],
+                recruiter_id=None if current_user.role == "super_admin" else current_user.id,
+                is_super_admin=current_user.role == "super_admin",
+            )
+            item["person_history"] = {
+                "suggestion_summary": history.get("suggestion_summary"),
+                "can_reinvite": history.get("can_reinvite"),
+                "active_conflict": history.get("active_conflict"),
+                "matches": history.get("matches") or [],
+                "employee_matches": history.get("employee_matches") or [],
+                "converted_matches": history.get("converted_matches") or [],
+                "candidate_matches": history.get("candidate_matches") or [],
+            }
+            conflict = history.get("active_conflict")
+            if conflict:
+                item["can_send"] = False
+                item["selected"] = False
+                item["block_reason"] = conflict.get("message") or "Active conflict for this email."
+                blocked += 1
+            else:
+                item["can_send"] = True
+                if history.get("matches"):
+                    rehire += 1
+            enriched.append(item)
+
+        valid = sum(1 for r in enriched if r.get("can_send"))
+        return {
+            **parsed,
+            "rows": enriched,
+            "summary": {
+                "total": len(enriched),
+                "valid": valid,
+                "invalid": sum(1 for r in enriched if not r.get("valid")),
+                "blocked": blocked,
+                "rehire_suggested": rehire,
+            },
+            "message": (
+                f"Reviewed {len(enriched)} row(s): {valid} ready to invite, "
+                f"{blocked} blocked by active conflict, "
+                f"{sum(1 for r in enriched if not r.get('valid'))} incomplete."
+            ),
+        }
+
+    async def send_rows(self, current_user: CurrentUser, candidates: list[dict]) -> dict:
+        if not candidates:
+            raise HTTPException(status_code=400, detail="No candidates provided.")
+        if len(candidates) > BULK_INVITE_MAX_ROWS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bulk invite is limited to {BULK_INVITE_MAX_ROWS} rows per request.",
+            )
+
+        sent: list[dict] = []
+        failed: list[dict] = []
+        skipped: list[dict] = []
+
+        for raw in candidates:
+            email = (raw.get("email") or "").strip().lower()
+            if raw.get("selected") is False:
+                skipped.append({"email": email or None, "reason": "Deselected by recruiter"})
+                continue
+            if not raw.get("valid", True) and raw.get("missing_fields"):
+                failed.append(
+                    {
+                        "email": email or None,
+                        "row": raw.get("row"),
+                        "error": "Missing fields: " + ", ".join(raw["missing_fields"]),
+                    }
+                )
+                continue
+            try:
+                payload = candidate_row_to_request(raw)
+            except (ValidationError, KeyError, TypeError, ValueError) as exc:
+                failed.append({"email": email or None, "row": raw.get("row"), "error": str(exc)})
+                continue
+
+            try:
+                result = await invitation_service.create_invitation(payload, current_user)
+                sent.append(
+                    {
+                        "email": payload.email,
+                        "full_name": payload.full_name,
+                        "email_sent": result.get("email_sent", False),
+                        "invite_link": (result.get("invitation") or {}).get("invite_link"),
+                        "reinvite_from_history": result.get("reinvite_from_history", False),
+                        "person_history_summary": (result.get("person_history") or {}).get("suggestion_summary"),
+                    }
+                )
+            except HTTPException as exc:
+                failed.append({"email": email or payload.email, "row": raw.get("row"), "error": str(exc.detail)})
+            except Exception as exc:  # noqa: BLE001
+                failed.append({"email": email or None, "row": raw.get("row"), "error": str(exc)})
+
+        return {
+            "message": (
+                f"Bulk invite finished — sent {len(sent)}, failed {len(failed)}"
+                + (f", skipped {len(skipped)}" if skipped else "")
+                + "."
+            ),
+            "sent": sent,
+            "failed": failed,
+            "skipped": skipped,
+            "summary": {
+                "sent": len(sent),
+                "failed": len(failed),
+                "skipped": len(skipped),
+            },
+        }
+
+
+bulk_invite_service = BulkInviteService()

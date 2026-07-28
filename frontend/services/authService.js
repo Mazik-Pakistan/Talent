@@ -175,6 +175,71 @@ export async function createInvitation(payload, accessToken) {
   return data;
 }
 
+export async function downloadBulkInviteTemplate(accessToken) {
+  const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}/api/invitations/bulk/template`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  if (!response.ok) {
+    let detail = "Could not download template.";
+    try {
+      const data = await response.json();
+      detail = data?.detail || detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  return response.blob();
+}
+
+export async function previewBulkInvitations(file, accessToken) {
+  const formData = new FormData();
+  formData.append("file", file, file?.name || "roster.xlsx");
+
+  // Use fetch so the browser sets multipart boundary (axios defaults to JSON).
+  const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}/api/invitations/bulk/preview`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+    body: formData,
+  });
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+  if (!response.ok) {
+    const detail = data?.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail)
+        ? detail.map((d) => d.msg || d).join("; ")
+        : "Could not preview spreadsheet.";
+    const error = new Error(message);
+    error.response = { data, status: response.status };
+    throw error;
+  }
+  return data;
+}
+
+export async function sendBulkInvitations(candidates, accessToken) {
+  const { data } = await apiClient.post(
+    "/api/invitations/bulk/send",
+    { candidates },
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  return data;
+}
+
 export async function lookupPersonHistory(email, accessToken) {
   const { data } = await apiClient.get("/api/employees/person-history", {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -842,6 +907,20 @@ export async function sendItProvisioning(payload, accessToken) {
 
 export async function remindItProvisioning(payload, accessToken) {
   const { data } = await apiClient.post("/api/it-provisioning/remind", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function bulkSendItProvisioning(payload, accessToken) {
+  const { data } = await apiClient.post("/api/it-provisioning/bulk-send", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function bulkRemindItProvisioning(payload, accessToken) {
+  const { data } = await apiClient.post("/api/it-provisioning/bulk-remind", payload, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return data;

@@ -9,7 +9,7 @@ import {
   RECRUITER_DEPARTMENTS,
   RECRUITER_DESIGNATIONS,
 } from "@/components/recruiter/recruiterOptions";
-import { createInvitation, getApiErrorMessage, lookupPersonHistory } from "@/services/authService";
+import { createInvitation, getApiErrorMessage, lookupPersonHistory, previewBulkInvitations, sendBulkInvitations, downloadBulkInviteTemplate } from "@/services/authService";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -156,6 +156,325 @@ const IconTerms = () => (
   </svg>
 );
 
+function BulkInviteSection({ styles, cardStyle, sectionHeadStyle }) {
+  const [preview, setPreview] = useState(null);
+  const [fileName, setFileName] = useState("");
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const rows = preview?.rows || [];
+  const selectedCount = rows.filter((r) => r.selected && r.can_send).length;
+
+  async function handleDownloadTemplate() {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    try {
+      const blob = await downloadBulkInviteTemplate(accessToken);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "bulk-invite-template.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.info("Template downloaded.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not download template."));
+    }
+  }
+
+  async function handleFileChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setLoadingPreview(true);
+    setResult(null);
+    setFileName(file.name);
+    try {
+      const data = await previewBulkInvitations(file, accessToken);
+      setPreview(data);
+      if (!data.ok) {
+        toast.error(data.message || "Spreadsheet validation failed.");
+      } else {
+        toast.success(data.message || "Roster reviewed.");
+      }
+    } catch (err) {
+      setPreview(null);
+      toast.error(getApiErrorMessage(err, "Could not preview spreadsheet."));
+    } finally {
+      setLoadingPreview(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function toggleRow(index, checked) {
+    setPreview((current) => {
+      if (!current?.rows) return current;
+      const nextRows = current.rows.map((row, i) =>
+        i === index ? { ...row, selected: Boolean(checked) && Boolean(row.can_send) } : row
+      );
+      return { ...current, rows: nextRows };
+    });
+  }
+
+  function selectAllSendable(checked) {
+    setPreview((current) => {
+      if (!current?.rows) return current;
+      return {
+        ...current,
+        rows: current.rows.map((row) => ({
+          ...row,
+          selected: checked ? Boolean(row.can_send) : false,
+        })),
+      };
+    });
+  }
+
+  async function handleSendSelected() {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken || !preview?.rows?.length) return;
+    const toSend = preview.rows.filter((r) => r.selected && r.can_send);
+    if (!toSend.length) {
+      toast.info("Select at least one ready row.");
+      return;
+    }
+    setSending(true);
+    setResult(null);
+    try {
+      const data = await sendBulkInvitations(toSend, accessToken);
+      setResult(data);
+      toast.success(data.message || "Bulk invitations sent.");
+      setPreview((current) =>
+        current
+          ? {
+              ...current,
+              rows: current.rows.map((row) =>
+                toSend.some((s) => s.row === row.row && s.email === row.email)
+                  ? { ...row, selected: false, can_send: false, block_reason: "Already invited in this batch" }
+                  : row
+              ),
+            }
+          : current
+      );
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Bulk invite failed."));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div>
+      <div style={cardStyle}>
+        <div style={sectionHeadStyle}>Bulk Excel invite</div>
+        <p className={styles.mutedText} style={{ marginTop: 0 }}>
+          Upload a roster with offer fields. Every row is checked for person history and active
+          conflicts (same rules as single invite) before you send.
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+          <button type="button" className={styles.secondaryButton} onClick={handleDownloadTemplate}>
+            Download template
+          </button>
+          <label className={styles.primaryButton} style={{ cursor: "pointer", margin: 0 }}>
+            {loadingPreview ? "Reading…" : "Upload spreadsheet"}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xlsm,.csv"
+              hidden
+              disabled={loadingPreview}
+              onChange={handleFileChange}
+            />
+          </label>
+        </div>
+        {fileName ? (
+          <p className={styles.mutedText} style={{ marginTop: 10 }}>
+            File: <strong>{fileName}</strong>
+          </p>
+        ) : null}
+        <div className={styles.mutedText} style={{ marginTop: 12, fontSize: 13 }}>
+          Required columns: email, full_name, job_title, department, reporting_manager, start_date,
+          monthly_salary. Optional: office_location, employment_type, currency, benefits
+          (comma-separated), message_to_candidate.
+        </div>
+      </div>
+
+      {preview?.missing_headers?.length ? (
+        <div className={styles.formMessage} role="alert" style={{ marginBottom: 16 }}>
+          Missing columns: {preview.missing_headers.join(", ")}
+        </div>
+      ) : null}
+
+      {preview?.summary ? (
+        <div className={styles.chipRow} style={{ marginBottom: 16 }}>
+          <span className={styles.chip}>{preview.summary.total} rows</span>
+          <span className={styles.chip} style={{ background: "var(--green-light)", color: "var(--green)" }}>
+            {preview.summary.valid} ready
+          </span>
+          <span className={styles.chip} style={{ background: "var(--orange-light)", color: "var(--orange)" }}>
+            {preview.summary.blocked} blocked
+          </span>
+          <span className={styles.chip}>
+            {preview.summary.rehire_suggested} with history
+          </span>
+          <span className={styles.chip}>{preview.summary.invalid} incomplete</span>
+        </div>
+      ) : null}
+
+      {rows.length ? (
+        <div style={cardStyle}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+              marginBottom: 12,
+            }}
+          >
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+              <input
+                type="checkbox"
+                checked={selectedCount > 0 && selectedCount === rows.filter((r) => r.can_send).length}
+                onChange={(e) => selectAllSendable(e.target.checked)}
+              />
+              Select all ready ({selectedCount} selected)
+            </label>
+            <button
+              type="button"
+              className={styles.primaryButton}
+              disabled={sending || selectedCount === 0}
+              onClick={handleSendSelected}
+            >
+              {sending ? "Sending…" : `Send ${selectedCount} invitation${selectedCount === 1 ? "" : "s"}`}
+            </button>
+          </div>
+
+          <ul className={styles.miniList}>
+            {rows.map((row, index) => {
+              const history = row.person_history;
+              const conflict = history?.active_conflict;
+              return (
+                <li
+                  key={`${row.row}-${row.email || index}`}
+                  className={styles.miniListItem}
+                  style={{ alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}
+                >
+                  <label style={{ display: "flex", gap: 10, flex: 1, minWidth: 240 }}>
+                    <input
+                      type="checkbox"
+                      disabled={!row.can_send}
+                      checked={Boolean(row.selected && row.can_send)}
+                      onChange={(e) => toggleRow(index, e.target.checked)}
+                      style={{ marginTop: 4 }}
+                    />
+                    <div>
+                      <strong>
+                        Row {row.row}: {row.full_name || "—"}
+                      </strong>
+                      <div className={styles.mutedText}>
+                        {row.email || "no email"} · {row.job_title || "—"} · {row.department || "—"}
+                        {row.monthly_salary != null ? ` · ${row.currency || "PKR"} ${row.monthly_salary}` : ""}
+                        {row.start_date ? ` · start ${row.start_date}` : ""}
+                      </div>
+                      {row.block_reason ? (
+                        <div style={{ color: "#b42318", fontSize: 13, marginTop: 4 }}>{row.block_reason}</div>
+                      ) : null}
+                      {conflict ? (
+                        <div style={{ color: "#b42318", fontSize: 13, marginTop: 4 }}>
+                          {conflict.message}
+                        </div>
+                      ) : null}
+                      {!conflict && history?.suggestion_summary ? (
+                        <div
+                          style={{
+                            marginTop: 6,
+                            padding: "8px 10px",
+                            borderRadius: 8,
+                            background: "#fff7ed",
+                            border: "1px solid #fed7aa",
+                            fontSize: 13,
+                          }}
+                        >
+                          History: {history.suggestion_summary}
+                          {history.matches?.length ? (
+                            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                              {history.matches.slice(0, 4).map((match) => (
+                                <li key={`${match.type}-${match.id}`}>
+                                  {match.type === "converted_candidate"
+                                    ? "candidate → employee"
+                                    : match.record_type || match.type}
+                                  {match.employee_id ? ` · ${match.employee_id}` : ""}
+                                  {match.outcome ? ` · ${match.outcome}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </label>
+                  <span
+                    className={styles.chip}
+                    style={{
+                      background: row.can_send
+                        ? "var(--green-light)"
+                        : row.valid
+                        ? "var(--orange-light)"
+                        : "#fee2e2",
+                      color: row.can_send ? "var(--green)" : row.valid ? "var(--orange)" : "#b42318",
+                    }}
+                  >
+                    {row.can_send ? "Ready" : row.valid ? "Blocked" : "Incomplete"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+
+      {result ? (
+        <div style={cardStyle}>
+          <div style={sectionHeadStyle}>Results</div>
+          <p className={styles.mutedText}>{result.message}</p>
+          {result.sent?.length ? (
+            <ul className={styles.miniList}>
+              {result.sent.map((item) => (
+                <li className={styles.miniListItem} key={`sent-${item.email}`}>
+                  <div>
+                    <strong>{item.full_name || item.email}</strong>
+                    <div className={styles.mutedText}>
+                      {item.email}
+                      {item.email_sent ? " · emailed" : " · created (email failed)"}
+                      {item.reinvite_from_history ? " · rehire cycle" : ""}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {result.failed?.length ? (
+            <ul className={styles.miniList} style={{ marginTop: 8 }}>
+              {result.failed.map((item, i) => (
+                <li className={styles.miniListItem} key={`fail-${item.email || i}`}>
+                  <div>
+                    <strong>{item.email || `Row ${item.row}`}</strong>
+                    <div style={{ color: "#b42318", fontSize: 13 }}>{item.error}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function RecruiterInvitePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -179,6 +498,7 @@ export default function RecruiterInvitePage() {
   const [isCreating, setIsCreating] = useState(false);
   const [personHistory, setPersonHistory] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [inviteMode, setInviteMode] = useState("single"); // single | bulk
 
   const breakdownTotal = useMemo(
     () =>
@@ -418,16 +738,36 @@ export default function RecruiterInvitePage() {
             <div className={`${styles.bar} ${styles.orange}`} />
             <div>
               <div className={styles.sectionTitle}>
-                Compose invitation + offer letter
+                {inviteMode === "bulk" ? "Bulk invite from Excel" : "Compose invitation + offer letter"}
               </div>
               <div className={styles.sectionDesc}>
-                Mazik Global Pakistan offer is emailed with the invite link.
-                Candidate accepts by signing in the portal.
+                {inviteMode === "bulk"
+                  ? "Upload a roster — each row gets the same offer invite flow, including historical rehire suggestions."
+                  : "Mazik Global Pakistan offer is emailed with the invite link. Candidate accepts by signing in the portal."}
               </div>
             </div>
           </div>
+          <div className={styles.chipRow}>
+            <button
+              type="button"
+              className={inviteMode === "single" ? styles.primaryButton : styles.secondaryButton}
+              onClick={() => setInviteMode("single")}
+            >
+              Single invite
+            </button>
+            <button
+              type="button"
+              className={inviteMode === "bulk" ? styles.primaryButton : styles.secondaryButton}
+              onClick={() => setInviteMode("bulk")}
+            >
+              Bulk Excel
+            </button>
+          </div>
         </div>
         <div className={styles.sectionBody}>
+          {inviteMode === "bulk" ? (
+            <BulkInviteSection styles={styles} cardStyle={cardStyle} sectionHeadStyle={sectionHeadStyle} />
+          ) : (
           <form data-partner-coach onSubmit={handleCreateInvite}>
             {/* ---------- Candidate card ---------- */}
             <div style={cardStyle}>
@@ -1009,6 +1349,7 @@ export default function RecruiterInvitePage() {
               {isCreating ? "Sending…" : "Send invitation & offer letter"}
             </button>
           </form>
+          )}
         </div>
       </div>
     </RecruiterShell>

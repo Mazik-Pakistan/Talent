@@ -417,43 +417,78 @@ async def _tool_send_invitation(user: CurrentUser, args: dict) -> ToolResult:
 
 
 async def _tool_bulk_invite(user: CurrentUser, args: dict) -> ToolResult:
+    """Bulk invite with offer — prefer /dashboard/recruiter/invite bulk Excel for full UX."""
+    from app.services.bulk_invite_service import bulk_invite_service
+
     rows = args.get("candidates") or []
     if not isinstance(rows, list) or not rows:
         return ToolResult(ok=False, error="No candidates provided.")
-    sent, failed = [], []
+
+    normalized = []
     for row in rows[:200]:
         email = (row.get("email") or "").strip()
-        full_name = (row.get("full_name") or "").strip()
+        full_name = (row.get("full_name") or row.get("name") or "").strip()
         job_title = (row.get("job_title") or row.get("designation") or "").strip()
         department = (row.get("department") or "").strip()
-        if not email or not full_name or not job_title or not department:
-            failed.append(
-                {
-                    "email": email or None,
-                    "error": (
-                        "Missing required fields (same as Create invitation): "
-                        "email, full_name, job_title/designation, department. "
-                        "Do not use placeholders like 'Not specified'."
-                    ),
-                }
-            )
-            continue
+        reporting_manager = (row.get("reporting_manager") or row.get("manager") or "").strip()
+        start_date = (row.get("start_date") or "").strip()
+        salary_raw = row.get("monthly_salary") if row.get("monthly_salary") is not None else row.get("salary")
         try:
-            payload = CreateInvitationRequest(
-                email=email,
-                full_name=full_name,
-                job_title=job_title,
-                department=department,
-                office_location=row.get("office_location") or None,
-                start_date=row.get("start_date") or None,
-                expires_in_days=int(row.get("expires_in_days") or 7),
+            monthly_salary = float(salary_raw) if salary_raw is not None and str(salary_raw).strip() != "" else None
+        except (TypeError, ValueError):
+            monthly_salary = None
+        missing = [
+            label
+            for label, value in (
+                ("email", email),
+                ("full_name", full_name),
+                ("job_title", job_title),
+                ("department", department),
+                ("reporting_manager", reporting_manager),
+                ("start_date", start_date),
+                ("monthly_salary", monthly_salary),
             )
-            result = await invitation_service.create_invitation(payload, user)
-            sent.append({"email": payload.email, "email_sent": result.get("email_sent", False)})
-        except Exception as exc:  # noqa: BLE001
-            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
-            failed.append({"email": email or row.get("email"), "error": str(detail)})
-    return ToolResult(ok=True, data={"sent": sent, "failed": failed, "total": len(rows)})
+            if value is None or value == ""
+        ]
+        benefits = row.get("benefits")
+        if isinstance(benefits, str):
+            benefits = [b.strip() for b in benefits.split(",") if b.strip()]
+        normalized.append(
+            {
+                **row,
+                "email": email or None,
+                "full_name": full_name or None,
+                "job_title": job_title or None,
+                "department": department or None,
+                "reporting_manager": reporting_manager or None,
+                "start_date": start_date or None,
+                "monthly_salary": monthly_salary,
+                "office_location": row.get("office_location") or None,
+                "employment_type": row.get("employment_type") or "Full-time",
+                "currency": (row.get("currency") or "PKR"),
+                "expires_in_days": int(row.get("expires_in_days") or 7),
+                "offer_expiry_days": int(row.get("offer_expiry_days") or 14),
+                "message_to_candidate": row.get("message_to_candidate"),
+                "benefits": benefits if isinstance(benefits, list) else [],
+                "missing_fields": missing,
+                "valid": not missing,
+                "selected": not missing,
+            }
+        )
+
+    try:
+        result = await bulk_invite_service.send_rows(user, normalized)
+        return ToolResult(
+            ok=True,
+            data={
+                "sent": result.get("sent") or [],
+                "failed": result.get("failed") or [],
+                "skipped": result.get("skipped") or [],
+                "total": len(rows),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
 
 
 async def _tool_create_offer(user: CurrentUser, args: dict) -> ToolResult:
@@ -1450,13 +1485,16 @@ RECRUITER_TOOLS: list[Tool] = [
     Tool(
         name="bulk_invite",
         description=(
-            "Invite many candidates at once. Each row MUST include email, full_name, job_title "
-            "(designation), and department — same required fields as Create invitation. "
-            "Never invent or default missing job_title/department. If any are missing, tell the "
-            "recruiter to fix the list/spreadsheet first instead of inviting."
+            "Invite many candidates at once WITH offer letters. Each row MUST include email, "
+            "full_name, job_title, department, reporting_manager, start_date, monthly_salary — "
+            "same as Create invitation / bulk Excel template. Prefer directing recruiters to "
+            "/dashboard/recruiter/invite bulk Excel for history review. Never invent missing fields."
         ),
         parameters={
-            "candidates": "array of {email, full_name, job_title, department, office_location?, start_date?}"
+            "candidates": (
+                "array of {email, full_name, job_title, department, reporting_manager, "
+                "start_date, monthly_salary, office_location?, currency?, benefits?}"
+            )
         },
         handler=_tool_bulk_invite,
         roles=("recruiter", "super_admin"),

@@ -18,6 +18,8 @@ from app.core.crypto import decrypt_text, encrypt_text
 from app.core.database import database
 from app.core.rbac import CurrentUser
 from app.schemas.it_provisioning import (
+    BulkRemindItProvisioningRequest,
+    BulkSendItProvisioningRequest,
     ItProvisioningSubmitRequest,
     RemindItProvisioningRequest,
     SendItProvisioningRequest,
@@ -173,6 +175,70 @@ class ItProvisioningService:
             "email_error": email_error,
             "provisioning": self._public_status(doc if existing else {**doc, "token": token}),
             "form_link": link,
+        }
+
+    async def bulk_send(self, current_user: CurrentUser, request: BulkSendItProvisioningRequest) -> dict:
+        sent: list[dict] = []
+        failed: list[dict] = []
+        for offer_id in request.offer_ids:
+            try:
+                result = await self.send_request(
+                    current_user,
+                    SendItProvisioningRequest(
+                        offer_id=offer_id,
+                        it_manager_email=request.it_manager_email,
+                        note=request.note,
+                    ),
+                )
+                sent.append(
+                    {
+                        "offer_id": offer_id,
+                        "email_sent": result.get("email_sent", False),
+                        "form_link": result.get("form_link"),
+                        "message": result.get("message"),
+                        "employee_name": ((result.get("provisioning") or {}).get("employee_name")),
+                        "it_manager_email": ((result.get("provisioning") or {}).get("it_manager_email")),
+                    }
+                )
+            except HTTPException as exc:
+                failed.append({"offer_id": offer_id, "error": str(exc.detail)})
+            except Exception as exc:  # noqa: BLE001
+                failed.append({"offer_id": offer_id, "error": str(exc)})
+
+        return {
+            "message": f"Bulk IT send finished — sent {len(sent)}, failed {len(failed)}.",
+            "sent": sent,
+            "failed": failed,
+            "summary": {"sent": len(sent), "failed": len(failed)},
+        }
+
+    async def bulk_remind(self, current_user: CurrentUser, request: BulkRemindItProvisioningRequest) -> dict:
+        sent: list[dict] = []
+        failed: list[dict] = []
+        for offer_id in request.offer_ids:
+            try:
+                result = await self.remind(
+                    current_user,
+                    RemindItProvisioningRequest(offer_id=offer_id, note=request.note),
+                )
+                sent.append(
+                    {
+                        "offer_id": offer_id,
+                        "email_sent": result.get("email_sent", False),
+                        "form_link": result.get("form_link"),
+                        "message": result.get("message"),
+                    }
+                )
+            except HTTPException as exc:
+                failed.append({"offer_id": offer_id, "error": str(exc.detail)})
+            except Exception as exc:  # noqa: BLE001
+                failed.append({"offer_id": offer_id, "error": str(exc)})
+
+        return {
+            "message": f"Bulk IT follow-up finished — sent {len(sent)}, failed {len(failed)}.",
+            "sent": sent,
+            "failed": failed,
+            "summary": {"sent": len(sent), "failed": len(failed)},
         }
 
     async def remind(self, current_user: CurrentUser, request: RemindItProvisioningRequest) -> dict:

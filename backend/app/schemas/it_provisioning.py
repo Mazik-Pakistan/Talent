@@ -53,6 +53,65 @@ class RemindItProvisioningRequest(BaseModel):
         return sanitize_html(value)
 
 
+class BulkSendItProvisioningRequest(BaseModel):
+    """Send IT provisioning for multiple signed offers in one action."""
+
+    offer_ids: list[str] = Field(min_length=1, max_length=100)
+    it_manager_email: EmailStr | None = None
+    note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("offer_ids")
+    @classmethod
+    def strip_offer_ids(cls, value: list[str]) -> list[str]:
+        cleaned = []
+        seen: set[str] = set()
+        for item in value:
+            oid = (item or "").strip()
+            if not oid or oid in seen:
+                continue
+            seen.add(oid)
+            cleaned.append(oid)
+        if not cleaned:
+            raise ValueError("At least one offer_id is required.")
+        return cleaned
+
+    @field_validator("note")
+    @classmethod
+    def sanitize_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+        return sanitize_html(value)
+
+
+class BulkRemindItProvisioningRequest(BaseModel):
+    offer_ids: list[str] = Field(min_length=1, max_length=100)
+    note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("offer_ids")
+    @classmethod
+    def strip_offer_ids(cls, value: list[str]) -> list[str]:
+        cleaned = []
+        seen: set[str] = set()
+        for item in value:
+            oid = (item or "").strip()
+            if not oid or oid in seen:
+                continue
+            seen.add(oid)
+            cleaned.append(oid)
+        if not cleaned:
+            raise ValueError("At least one offer_id is required.")
+        return cleaned
+
+    @field_validator("note")
+    @classmethod
+    def sanitize_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+        return sanitize_html(value)
+
+
 class ItAssetItem(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     asset_type: str = Field(default="other", max_length=64)
