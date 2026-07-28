@@ -888,6 +888,48 @@ async def _tool_search_people(user: CurrentUser, args: dict) -> ToolResult:
         return ToolResult(ok=False, error="Search query must be at least 2 characters.")
     try:
         result = await dashboard_service.search(user, q)
+        # If query looks like an email, also attach full multi-cycle history.
+        history = None
+        if "@" in q:
+            history = await employee_service.lookup_person_history(user, q)
+            result = {
+                **result,
+                "person_history": history,
+                "suggestion_summary": (history or {}).get("suggestion_summary"),
+            }
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_lookup_person_history(user: CurrentUser, args: dict) -> ToolResult:
+    email = (args.get("email") or "").strip()
+    if "@" not in email:
+        return ToolResult(ok=False, error="Provide a valid email to look up historical records.")
+    try:
+        result = await employee_service.lookup_person_history(user, email)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_mark_employee_exit(user: CurrentUser, args: dict) -> ToolResult:
+    employee_id = (args.get("employee_id") or "").strip()
+    exit_type = (args.get("exit_type") or "").strip().lower()
+    if not employee_id:
+        return ToolResult(ok=False, error="employee_id is required.")
+    if exit_type not in {"resigned", "terminated", "exited"}:
+        return ToolResult(ok=False, error="exit_type must be resigned, terminated, or exited.")
+    try:
+        from app.schemas.employee_exit import EmployeeExitRequest
+
+        request = EmployeeExitRequest(
+            exit_type=exit_type,
+            exit_reason=args.get("exit_reason") or args.get("reason"),
+            note=args.get("note"),
+            lock_profile=bool(args.get("lock_profile", True)),
+        )
+        result = await employee_service.mark_employee_exit(user, employee_id, request)
         return ToolResult(ok=True, data=result)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
@@ -914,6 +956,7 @@ async def _tool_directory_employees(user: CurrentUser, args: dict) -> ToolResult
             profile_status=args.get("profile_status"),
             joining_from=args.get("joining_from"),
             joining_to=args.get("joining_to"),
+            history_bucket=args.get("history_bucket"),
             sort=args.get("sort") or "created_at",
             page=int(args.get("page") or 1),
             page_size=min(int(args.get("page_size") or 20), 100),
@@ -1504,9 +1547,36 @@ RECRUITER_TOOLS: list[Tool] = [
     ),
     Tool(
         name="search_people",
-        description="Global search across candidates and employees by name, email, phone, department, title, or IDs.",
+        description="Global search across candidates and employees by name, email, phone, department, title, or IDs. Includes historical matches.",
         parameters={"query": "string, required, min 2 chars"},
         handler=_tool_search_people,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="lookup_person_history",
+        description=(
+            "Look up ALL prior candidate cycles and employee tenures for an email. "
+            "Use before inviting someone who may have been a prior candidate or exited employee. "
+            "Returns suggestion_summary, can_reinvite, and hrefs to historical records."
+        ),
+        parameters={"email": "string, required"},
+        handler=_tool_lookup_person_history,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="mark_employee_exit",
+        description=(
+            "Mark an active employee as resigned, terminated, or exited. "
+            "Moves them to historical employees and archives their login so the same email can be reinvited as a candidate."
+        ),
+        parameters={
+            "employee_id": "string, required e.g. MZK-2026-000022",
+            "exit_type": "resigned | terminated | exited",
+            "exit_reason": "string, optional",
+            "note": "string, optional",
+            "lock_profile": "boolean, optional default true",
+        },
+        handler=_tool_mark_employee_exit,
         roles=("recruiter", "super_admin"),
     ),
     Tool(

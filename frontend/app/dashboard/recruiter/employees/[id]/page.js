@@ -8,6 +8,7 @@ import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
   getEmployeeDetail,
   getApiErrorMessage,
+  markEmployeeExit,
   scheduleEmployeeOrientation,
 } from "@/services/authService";
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
@@ -518,6 +519,137 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
   );
 }
 
+/**
+ * Mark active employee as resigned / terminated / exited.
+ */
+function ExitEmployeeSection({ employee, employeeId, onEmployeeUpdate }) {
+  const isHistorical =
+    employee.history_bucket === "historical" ||
+    ["resigned", "terminated", "exited"].includes(String(employee.status || "").toLowerCase());
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({
+    exit_type: "resigned",
+    exit_date: new Date().toISOString().slice(0, 10),
+    exit_reason: "",
+    note: "",
+  });
+
+  if (isHistorical) {
+    return (
+      <div className={styles.section}>
+        <div className={styles.sectionHead}>
+          <div className={styles.sectionHeadLeft}>
+            <div className={`${styles.bar} ${styles.orange || styles.navy}`} />
+            <div>
+              <div className={styles.sectionTitle}>Historical employment</div>
+              <div className={styles.sectionDesc}>
+                This tenure ended as <strong style={{ textTransform: "capitalize" }}>{employee.exit_type || employee.status}</strong>
+                {employee.exit_date ? ` on ${fmtDate(employee.exit_date)}` : ""}.
+                {employee.previous_employee_id ? ` Prior employee ID: ${employee.previous_employee_id}.` : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className={styles.sectionBody}>
+          {employee.exit_reason ? <p className={styles.mutedText}>{employee.exit_reason}</p> : null}
+          <button
+            type="button"
+            className={styles.primaryButton}
+            onClick={() => {
+              const email = encodeURIComponent(employee.email || "");
+              window.location.href = `/dashboard/recruiter/invite?email=${email}&full_name=${encodeURIComponent(employee.full_name || "")}`;
+            }}
+          >
+            Invite again as candidate
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  async function submitExit() {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setBusy(true);
+    try {
+      const data = await markEmployeeExit(
+        employee.employee_id || employeeId,
+        {
+          exit_type: form.exit_type,
+          exit_date: form.exit_date || null,
+          exit_reason: form.exit_reason || null,
+          note: form.note || null,
+          lock_profile: true,
+        },
+        accessToken
+      );
+      onEmployeeUpdate?.(data.employee);
+      toast.success(data.message || `Marked as ${form.exit_type}.`);
+      setOpen(false);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not update employment status."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionHead}>
+        <div className={styles.sectionHeadLeft}>
+          <div className={`${styles.bar} ${styles.navy}`} />
+          <div>
+            <div className={styles.sectionTitle}>Employment status</div>
+            <div className={styles.sectionDesc}>
+              Mark this person as a former employee. Their record stays in Historical employees, and the same email can be invited again as a new candidate (new employee ID on reconversion).
+            </div>
+          </div>
+        </div>
+        {!open ? (
+          <button type="button" className={styles.secondaryButton} onClick={() => setOpen(true)}>
+            Mark as former employee
+          </button>
+        ) : null}
+      </div>
+      {open ? (
+        <div className={styles.sectionBody}>
+          <div className={styles.formGrid}>
+            <label className={styles.field}>
+              <span>Outcome</span>
+              <select value={form.exit_type} onChange={(e) => setForm({ ...form, exit_type: e.target.value })}>
+                <option value="resigned">Resigned</option>
+                <option value="terminated">Terminated</option>
+                <option value="exited">Exited</option>
+              </select>
+            </label>
+            <label className={styles.field}>
+              <span>Effective date</span>
+              <input type="date" value={form.exit_date} onChange={(e) => setForm({ ...form, exit_date: e.target.value })} />
+            </label>
+            <label className={styles.field} style={{ gridColumn: "1 / -1" }}>
+              <span>Reason</span>
+              <input value={form.exit_reason} onChange={(e) => setForm({ ...form, exit_reason: e.target.value })} placeholder="Optional reason" />
+            </label>
+            <label className={styles.field} style={{ gridColumn: "1 / -1" }}>
+              <span>Internal note</span>
+              <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} rows={3} placeholder="Optional note for career timeline" />
+            </label>
+          </div>
+          <div className={styles.actions} style={{ marginTop: 12 }}>
+            <button type="button" className={styles.primaryButton} disabled={busy} onClick={submitExit}>
+              {busy ? "Saving…" : `Confirm ${form.exit_type}`}
+            </button>
+            <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Page Component
 // ---------------------------------------------------------------------------
@@ -686,6 +818,11 @@ export default function EmployeeProfilePage({ params }) {
 
       {activeTab === "overview" && (
         <>
+          <ExitEmployeeSection
+            employee={employee}
+            employeeId={employeeId}
+            onEmployeeUpdate={setEmployee}
+          />
           <ProfileCompletionSection
             employee={employee}
             employeeId={employeeId}
@@ -770,9 +907,71 @@ export default function EmployeeProfilePage({ params }) {
                     : ""}
                 </dd>
               </div>
+              <div className={styles.employeeFact}>
+                <dt>Employment status</dt>
+                <dd style={{ textTransform: "capitalize" }}>{employee.exit_type || employee.status || "-"}</dd>
+              </div>
+              {employee.exit_date ? (
+                <div className={styles.employeeFact}>
+                  <dt>Exit date</dt>
+                  <dd>{fmtDate(employee.exit_date)}</dd>
+                </div>
+              ) : null}
+              {employee.previous_employee_id ? (
+                <div className={styles.employeeFact}>
+                  <dt>Previous employee ID</dt>
+                  <dd>{employee.previous_employee_id}</dd>
+                </div>
+              ) : null}
             </dl>
           </div>
         </div>
+          {(employee.person_history?.matches || []).length > 0 ? (
+            <div className={styles.section}>
+              <div className={styles.sectionHead}>
+                <div className={styles.sectionHeadLeft}>
+                  <div className={`${styles.bar} ${styles.navy}`} />
+                  <div>
+                    <div className={styles.sectionTitle}>Cross-cycle history</div>
+                    <div className={styles.sectionDesc}>
+                      {employee.person_history.suggestion_summary || "Prior candidate and employee records for this email."}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className={styles.sectionBody}>
+                <ul className={styles.miniList}>
+                  {employee.person_history.matches
+                    .filter(
+                      (match) =>
+                        match.record_type !== "candidate" ||
+                        (match.outcome !== "converted" && match.status !== "converted")
+                    )
+                    .map((match) => (
+                    <li className={styles.miniListItem} key={`${match.type}-${match.id}`}>
+                      <div>
+                        <strong>{match.full_name || match.email}</strong>
+                        <div className={styles.mutedText}>
+                          {match.record_type}
+                          {match.employee_id ? ` · ${match.employee_id}` : ""}
+                          {match.job_title ? ` · ${match.job_title}` : ""}
+                          {" · "}
+                          <span style={{ textTransform: "capitalize" }}>
+                            {String(match.outcome || match.status || "").replace(/_/g, " ")}
+                          </span>
+                        </div>
+                      </div>
+                      {match.href ? (
+                        <button type="button" className={styles.secondaryButton} onClick={() => router.push(match.href)}>
+                          Open
+                        </button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
           <CompanyEmailSection employee={employee} />
           <CompanyAssetsSection employee={employee} />
         </>

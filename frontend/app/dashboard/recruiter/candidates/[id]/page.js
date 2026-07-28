@@ -68,14 +68,69 @@ export default function CandidateProfilePage({ params }) {
   const skills = onboarding.skills || {};
   const governmentDocs = onboarding.government_docs?.documents || [];
   const currentOffer = candidate.current_offer || null;
+  const personHistory = candidate.person_history || null;
+  const isHistorical =
+    candidate.history_bucket !== "converted" &&
+    candidate.status !== "converted" &&
+    candidate.conversion_status !== "converted" &&
+    (candidate.history_bucket === "historical" ||
+      ["historical", "declined", "offer_declined"].includes(candidate.status) ||
+      ["offer_declined", "declined"].includes(candidate.conversion_status));
 
   return <RecruiterShell activeKey="candidates" title="Candidate Profile" subtitle={`Detailed overview for ${candidate.full_name}`}>
-    <div style={{ marginBottom: 20 }}><button type="button" className={styles.secondaryButton} onClick={() => router.back()}>← Back to Candidates</button></div>
-    <section className={styles.section} style={{ marginBottom: 16 }}><div className={styles.profileHero}><div className={styles.profileAvatar}>{initials || "?"}</div><div><h2 className={styles.profileName}>{candidate.full_name}</h2><p className={styles.mutedText} style={{ margin: 0 }}>{candidate.job_title || "No applied role"} · {candidate.department || "No department"}</p><div className={styles.chipRow}><span className={styles.chip} style={{ background: complete ? "var(--green-light)" : "var(--orange-light)", color: complete ? "var(--green)" : "var(--orange)" }}>Profile {progress.percentage ?? 0}%</span><span className={styles.chip} style={{ textTransform: "capitalize" }}>{humanize(candidate.conversion_status || progress.status || candidate.status)}</span>{candidate.office_location && <span className={styles.chip}>{candidate.office_location}</span>}</div></div></div></section>
+    <div style={{ marginBottom: 20, display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <button type="button" className={styles.secondaryButton} onClick={() => router.back()}>← Back to Candidates</button>
+      {isHistorical ? (
+        <button
+          type="button"
+          className={styles.primaryButton}
+          onClick={() =>
+            router.push(
+              `/dashboard/recruiter/invite?email=${encodeURIComponent(candidate.email || "")}&full_name=${encodeURIComponent(candidate.full_name || "")}`
+            )
+          }
+        >
+          Invite again
+        </button>
+      ) : null}
+    </div>
+    <section className={styles.section} style={{ marginBottom: 16 }}><div className={styles.profileHero}><div className={styles.profileAvatar}>{initials || "?"}</div><div><h2 className={styles.profileName}>{candidate.full_name}</h2><p className={styles.mutedText} style={{ margin: 0 }}>{candidate.job_title || "No applied role"} · {candidate.department || "No department"}</p><div className={styles.chipRow}><span className={styles.chip} style={{ background: complete ? "var(--green-light)" : "var(--orange-light)", color: complete ? "var(--green)" : "var(--orange)" }}>Profile {progress.percentage ?? 0}%</span><span className={styles.chip} style={{ textTransform: "capitalize" }}>{humanize(candidate.historical_reason || candidate.conversion_status || progress.status || candidate.status)}</span>{candidate.office_location && <span className={styles.chip}>{candidate.office_location}</span>}{isHistorical && <span className={styles.chip}>Historical</span>}</div></div></div></section>
 
     <section className={styles.section} style={{ marginBottom: 16 }}><div className={styles.sectionHead}><div className={styles.sectionHeadLeft}><div className={`${styles.bar} ${complete ? styles.green : styles.orange}`} /><div><div className={styles.sectionTitle}>Onboarding progress</div><div className={styles.sectionDesc}>{tasks.filter((task) => task.completed).length} of {tasks.length} steps completed · Current step: {humanize(progress.current_step)}</div></div></div><span className={styles.chip}>{progress.percentage ?? 0}%</span></div><div className={styles.sectionBody}><div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: complete ? 0 : 14 }}>{tasks.map((task) => <span key={task.id} className={styles.chip} style={{ background: task.completed ? "var(--green-light)" : "#F3F4F6", color: task.completed ? "var(--green)" : "var(--text-muted)" }}>{task.completed ? "✓ " : ""}{task.label}</span>)}</div><div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}><button type="button" className={styles.primaryButton} onClick={handleReminder}>Send reminder</button>{candidate.onboarding_reminder_sent_at && <span className={styles.mutedText}>Last sent {formatDate(candidate.onboarding_reminder_sent_at)}</span>}</div></div></section>
 
-    <DetailSection tone="navy" title="Overview" description="Basic, contact, and application information."><dl className={styles.employeeFactGrid}><Fact label="Full name" value={candidate.full_name} /><Fact label="Email" value={candidate.email} /><Fact label="Contact" value={candidate.phone} /><Fact label="Applied role" value={candidate.job_title} /><Fact label="Department / track" value={candidate.department} /><Fact label="Office location" value={candidate.office_location} /><Fact label="Start date" value={formatDate(candidate.start_date)} /><Fact label="Joined date" value={formatDate(candidate.created_at)} /><Fact label="Current status" value={humanize(candidate.conversion_status || progress.status || candidate.status)} /></dl></DetailSection>
+    <DetailSection tone="navy" title="Overview" description="Basic, contact, and application information."><dl className={styles.employeeFactGrid}><Fact label="Full name" value={candidate.full_name} /><Fact label="Email" value={candidate.email} /><Fact label="Contact" value={candidate.phone} /><Fact label="Applied role" value={candidate.job_title} /><Fact label="Department / track" value={candidate.department} /><Fact label="Office location" value={candidate.office_location} /><Fact label="Start date" value={formatDate(candidate.start_date)} /><Fact label="Joined date" value={formatDate(candidate.created_at)} /><Fact label="Current status" value={humanize(candidate.conversion_status || progress.status || candidate.status)} /><Fact label="History reason" value={humanize(candidate.historical_reason)} /><Fact label="Linked employee ID" value={candidate.employee_id} /></dl></DetailSection>
+
+    {personHistory?.matches?.length ? (
+      <DetailSection tone="orange" title="Cross-cycle history" description={personHistory.suggestion_summary || "All prior candidate and employee records for this email."}>
+        <ul className={styles.miniList}>
+          {personHistory.matches
+            .filter(
+              (match) =>
+                match.record_type !== "candidate" ||
+                (match.outcome !== "converted" && match.status !== "converted")
+            )
+            .map((match) => (
+            <li className={styles.miniListItem} key={`${match.type}-${match.id}`}>
+              <div>
+                <strong>{match.full_name || match.email}</strong>
+                <div className={styles.mutedText}>
+                  {match.record_type}
+                  {match.employee_id ? ` · ${match.employee_id}` : ""}
+                  {match.job_title ? ` · ${match.job_title}` : ""}
+                  {" · "}
+                  {humanize(match.outcome || match.status)}
+                </div>
+              </div>
+              {match.href ? (
+                <button type="button" className={styles.secondaryButton} onClick={() => router.push(match.href)}>
+                  Open
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </DetailSection>
+    ) : null}
 
     <DetailSection tone="cyan" title="Personal and contact information" description="Information provided in the onboarding record."><dl className={styles.employeeFactGrid}><Fact label="Date of birth" value={formatDate(onboarding.personal?.date_of_birth)} /><Fact label="Nationality" value={onboarding.personal?.nationality} /><Fact label="National ID" value={onboarding.personal?.national_id} /><Fact label="Blood group" value={onboarding.personal ? formatBloodGroupDisplay(onboarding.personal?.blood_group) : null} /><Fact label="Current address" value={onboarding.personal?.current_address} /><Fact label="Permanent address" value={onboarding.personal?.permanent_address} /><Fact label="City" value={onboarding.personal?.city} /><Fact label="Country" value={onboarding.personal?.country} /></dl></DetailSection>
 

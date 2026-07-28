@@ -175,6 +175,30 @@ export async function createInvitation(payload, accessToken) {
   return data;
 }
 
+export async function lookupPersonHistory(email, accessToken) {
+  const { data } = await apiClient.get("/api/employees/person-history", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: { email },
+  });
+  return data;
+}
+
+export async function listHistoricalCandidates(accessToken, params = {}) {
+  const { data } = await apiClient.get("/api/employees/historical-candidates", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params,
+  });
+  return data;
+}
+
+export async function markEmployeeExit(employeeId, payload, accessToken) {
+  const id = encodeURIComponent(String(employeeId || "").trim());
+  const { data } = await apiClient.post(`/api/employees/${id}/exit`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
 // ─── Onboarding ──────────────────────────────────────────────────────────────
 
 export async function getOnboarding(accessToken) {

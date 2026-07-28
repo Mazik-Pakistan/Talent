@@ -372,31 +372,48 @@ class DashboardService:
 
         results = [
             {
-                "type": "employee",
-                "id": _record_id(e),
+                "type": "employee" if (e.get("history_bucket") != "historical" and e.get("status") in ("active", "inactive", "on_leave", None)) else "historical_employee",
+                "id": e.get("employee_id") or _record_id(e),
                 "full_name": e.get("full_name"),
                 "email": e.get("email"),
                 "department": e.get("department"),
                 "job_title": e.get("job_title"),
                 "status": e.get("status"),
+                "history_bucket": e.get("history_bucket")
+                or ("historical" if e.get("status") in ("resigned", "terminated", "exited") else "active"),
+                "employee_id": e.get("employee_id"),
+                "outcome": e.get("exit_type") or e.get("status"),
+                "href": f"/dashboard/recruiter/employees/{e.get('employee_id') or _record_id(e)}",
             }
             for e in employees
         ]
         seen_ids = {r["id"] for r in results}
-        seen_emails = {r["email"] for r in results if r.get("email")}
         for c in candidates:
             rid = _record_id(c)
-            if rid in seen_ids or c.get("email") in seen_emails:
+            if rid in seen_ids:
                 continue
+            # Converted candidates are employees — do not list them as historical candidates.
+            if c.get("status") == "converted" or c.get("conversion_status") == "converted" or c.get("history_bucket") == "converted":
+                continue
+            is_historical = (
+                c.get("history_bucket") == "historical"
+                or c.get("status") in {"historical", "declined", "offer_declined"}
+                or c.get("conversion_status") in {"offer_declined", "declined"}
+            )
             results.append(
                 {
-                    "type": "candidate",
+                    "type": "historical_candidate" if is_historical else "candidate",
                     "id": rid,
                     "full_name": c.get("full_name"),
                     "email": c.get("email"),
                     "department": c.get("department"),
                     "job_title": c.get("job_title"),
-                    "status": (c.get("onboarding") or {}).get("status", "not_started"),
+                    "status": (c.get("onboarding") or {}).get("status", "not_started")
+                    if not is_historical
+                    else (c.get("historical_reason") or c.get("conversion_status") or c.get("status")),
+                    "history_bucket": "historical" if is_historical else "active",
+                    "outcome": c.get("historical_reason") or c.get("conversion_status") or c.get("status"),
+                    "href": f"/dashboard/recruiter/candidates/{rid}",
                 }
             )
 

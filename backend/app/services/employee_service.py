@@ -16,6 +16,14 @@ from app.schemas.auth import names_match
 from app.services.candidate_service import CandidateService, onboarding_missing_keys
 from app.services.dashboard_service import DashboardService, create_notification
 from app.services.email_service import email_service
+from app.services.people_history import (
+    ACTIVE_EMPLOYEE_STATUSES,
+    HISTORICAL_EMPLOYEE_STATUSES,
+    archive_user_login,
+    cycle_group_key,
+    lookup_history_by_email,
+    mark_employee_historical_fields,
+)
 
 EMPLOYEE_ID_PREFIX = "MZK"
 
@@ -390,18 +398,31 @@ class EmployeeService:
 
         existing_employee = await database.employees.find_one(
             {
+                "status": {"$in": list(ACTIVE_EMPLOYEE_STATUSES)},
                 "$or": [
                     {"user_id": candidate.get("user_id")},
                     {"email": candidate.get("email")},
                     {"candidate_id": candidate.get("user_id") or str(candidate["_id"])},
-                ]
+                ],
             }
         )
         if existing_employee:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="An employee record already exists for this candidate.",
+                detail="An active employee record already exists for this candidate.",
             )
+
+        email_key = cycle_group_key(candidate.get("email"))
+        prior_employee = await database.employees.find_one(
+            {
+                "email": email_key,
+                "$or": [
+                    {"history_bucket": "historical"},
+                    {"status": {"$in": list(HISTORICAL_EMPLOYEE_STATUSES)}},
+                ],
+            },
+            sort=[("created_at", -1)],
+        )
 
         onboarding = candidate.get("onboarding") or {}
         missing = onboarding_missing_keys(onboarding)
@@ -448,6 +469,9 @@ class EmployeeService:
             "phone": candidate.get("phone"),
             "role": "employee",
             "status": "active",
+            "history_bucket": "active",
+            "cycle_group_key": email_key,
+            "previous_employee_id": (prior_employee or {}).get("employee_id"),
             "job_title": offer.get("job_title") or candidate.get("job_title"),
             "department": offer.get("department") or candidate.get("department"),
             "employment_type": offer.get("employment_type"),
@@ -493,10 +517,14 @@ class EmployeeService:
             {"_id": candidate["_id"]},
             {
                 "$set": {
+                    # Converted ≠ historical candidate. Person is tracked as an employee.
                     "status": "converted",
                     "conversion_status": "converted",
+                    "lifecycle_state": "converted",
+                    "history_bucket": "converted",
                     "converted_at": now,
                     "employee_id": employee_id,
+                    "cycle_group_key": email_key,
                     "updated_at": now,
                 }
             },
@@ -588,14 +616,26 @@ class EmployeeService:
         profile_status: str | None = None,
         joining_from: str | None = None,
         joining_to: str | None = None,
+        history_bucket: str | None = None,
     ) -> dict:
         query: dict = {}
         if current_user.role != "super_admin":
             query["recruiter_id"] = current_user.id
-        if status:
+        bucket = (history_bucket or "").strip().lower()
+        if bucket == "historical":
+            query["$or"] = [
+                {"history_bucket": "historical"},
+                {"status": {"$in": list(HISTORICAL_EMPLOYEE_STATUSES)}},
+            ]
+            if status:
+                query["status"] = status
+        elif bucket == "all":
+            if status:
+                query["status"] = status
+        elif status:
             query["status"] = status
         else:
-            query["status"] = {"$in": ["active", "inactive", "on_leave"]}
+            query["status"] = {"$in": list(ACTIVE_EMPLOYEE_STATUSES)}
         if profile_status:
             query["profile_status"] = profile_status.strip().lower()
         if employee_id:
@@ -613,13 +653,22 @@ class EmployeeService:
             query["start_date"] = date_filter
         if q and q.strip():
             term = q.strip()
-            query["$or"] = [
+            text_or = [
                 {"full_name": {"$regex": term, "$options": "i"}},
                 {"email": {"$regex": term, "$options": "i"}},
                 {"employee_id": {"$regex": term, "$options": "i"}},
                 {"department": {"$regex": term, "$options": "i"}},
                 {"job_title": {"$regex": term, "$options": "i"}},
             ]
+            # When historical query already uses $or for status, combine with $and.
+            if "$or" in query and bucket == "historical":
+                status_or = query.pop("$or")
+                and_clauses = [{"$or": status_or}, {"$or": text_or}]
+                if status:
+                    and_clauses.append({"status": query.pop("status")})
+                query["$and"] = and_clauses
+            else:
+                query["$or"] = text_or
         return query
 
     async def list_employees(
@@ -634,6 +683,7 @@ class EmployeeService:
         profile_status: str | None = None,
         joining_from: str | None = None,
         joining_to: str | None = None,
+        history_bucket: str | None = None,
         sort: str = "created_at",
         page: int = 1,
         page_size: int = 20,
@@ -650,6 +700,7 @@ class EmployeeService:
             profile_status=profile_status,
             joining_from=joining_from,
             joining_to=joining_to,
+            history_bucket=history_bucket,
         )
         sort_field = sort.lstrip("-") if sort else "created_at"
         if sort_field not in {"created_at", "full_name", "employee_id", "department", "job_title", "start_date"}:
@@ -763,6 +814,11 @@ class EmployeeService:
             )
         career = await self.list_career_events(employee.get("employee_id") or key)
         payload["career"] = career["events"]
+        payload["person_history"] = await lookup_history_by_email(
+            employee.get("email") or "",
+            recruiter_id=None if current_user.role == "super_admin" else current_user.id,
+            is_super_admin=current_user.role == "super_admin",
+        )
         return {"employee": payload}
 
     async def list_career_events(self, employee_id: str) -> dict:
@@ -848,6 +904,146 @@ class EmployeeService:
 
             await learning_service._invalidate_ai_caches(employee["user_id"])
         return await self.list_career_events(employee_id)
+
+    async def mark_employee_exit(self, current_user: CurrentUser, employee_id: str, request) -> dict:
+        """Move an employee into historical status: resigned, terminated, or exited."""
+        employee = await self._resolve_employee_for_recruiter(current_user, employee_id)
+        current_status = (employee.get("status") or "active").lower()
+        if current_status in HISTORICAL_EMPLOYEE_STATUSES or employee.get("history_bucket") == "historical":
+            raise HTTPException(status_code=409, detail="This employee is already marked historical.")
+
+        exit_type = request.exit_type
+        now = datetime.now(UTC)
+        exit_date = request.exit_date.isoformat() if getattr(request, "exit_date", None) else now.date().isoformat()
+        fields = mark_employee_historical_fields(
+            exit_type=exit_type,
+            exit_reason=request.exit_reason or request.note,
+            exit_date=exit_date,
+            when=now,
+        )
+        if request.lock_profile:
+            fields["profile_locked"] = True
+        fields["cycle_group_key"] = employee.get("cycle_group_key") or cycle_group_key(employee.get("email"))
+
+        await database.employees.update_one({"_id": employee["_id"]}, {"$set": fields})
+
+        await database.employee_career_events.insert_one(
+            {
+                "employee_id": employee.get("employee_id"),
+                "employee_user_id": employee.get("user_id"),
+                "event_type": "status_change",
+                "effective_date": exit_date,
+                "from_status": current_status,
+                "to_status": exit_type,
+                "note": request.note or request.exit_reason or f"Employee marked as {exit_type}.",
+                "actor_id": current_user.id,
+                "actor_email": current_user.email,
+                "created_at": now,
+            }
+        )
+
+        await archive_user_login(employee.get("email") or "", reason=f"employee_{exit_type}")
+
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "recruiter_id": current_user.id,
+                "employee_id": employee.get("employee_id"),
+                "email": employee.get("email"),
+                "actor_email": current_user.email,
+                "module": "employees",
+                "action": f"employee_{exit_type}",
+                "outcome": "success",
+                "created_at": now,
+            }
+        )
+
+        refreshed = await database.employees.find_one({"_id": employee["_id"]})
+        return {
+            "message": f"Employee marked as {exit_type}.",
+            "employee": self._public_employee(refreshed or {**employee, **fields}),
+        }
+
+    async def list_historical_candidates(
+        self,
+        current_user: CurrentUser,
+        *,
+        q: str | None = None,
+        reason: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict:
+        page = max(1, page)
+        page_size = max(1, min(page_size, 100))
+        query: dict = {
+            "$and": [
+                {
+                    "$or": [
+                        {"history_bucket": "historical"},
+                        {"status": {"$in": ["historical", "declined", "offer_declined"]}},
+                        {"conversion_status": {"$in": ["offer_declined", "declined"]}},
+                    ]
+                },
+                # Converted people are employees (active or former), not historical candidates.
+                {"status": {"$ne": "converted"}},
+                {"conversion_status": {"$ne": "converted"}},
+                {"history_bucket": {"$ne": "converted"}},
+            ]
+        }
+        if current_user.role != "super_admin":
+            query["recruiter_id"] = current_user.id
+        if reason:
+            query["historical_reason"] = reason.strip().lower()
+        if q and q.strip():
+            term = q.strip()
+            query = {
+                "$and": [
+                    query,
+                    {
+                        "$or": [
+                            {"full_name": {"$regex": term, "$options": "i"}},
+                            {"email": {"$regex": term, "$options": "i"}},
+                            {"job_title": {"$regex": term, "$options": "i"}},
+                            {"department": {"$regex": term, "$options": "i"}},
+                            {"user_id": {"$regex": term, "$options": "i"}},
+                        ]
+                    },
+                ]
+            }
+
+        total = await database.candidates.count_documents(query)
+        docs = (
+            await database.candidates.find(query)
+            .sort("updated_at", -1)
+            .skip((page - 1) * page_size)
+            .limit(page_size)
+            .to_list(length=page_size)
+        )
+        candidate_service = CandidateService()
+        items = []
+        for doc in docs:
+            progress = candidate_service._progress_payload(doc)
+            payload = self._public_candidate(doc, progress)
+            payload["historical_reason"] = doc.get("historical_reason") or doc.get("conversion_status")
+            payload["lifecycle_state"] = doc.get("lifecycle_state")
+            payload["history_bucket"] = doc.get("history_bucket") or "historical"
+            payload["employee_id"] = doc.get("employee_id")
+            items.append(payload)
+        return {
+            "candidates": items,
+            "count": len(items),
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "pages": max(1, (total + page_size - 1) // page_size),
+        }
+
+    async def lookup_person_history(self, current_user: CurrentUser, email: str) -> dict:
+        return await lookup_history_by_email(
+            email,
+            recruiter_id=None if current_user.role == "super_admin" else current_user.id,
+            is_super_admin=current_user.role == "super_admin",
+        )
 
     async def assign_role(self, current_user: CurrentUser, employee_id: str, request) -> dict:
         """Assign designation + department via a career event (promotion / title / dept change)."""
@@ -963,6 +1159,12 @@ class EmployeeService:
             candidate_email=candidate.get("email"),
         )
         payload["current_offer"] = payload["offers"][0] if payload["offers"] else None
+        history = await lookup_history_by_email(
+            candidate.get("email") or "",
+            recruiter_id=None if current_user.role == "super_admin" else current_user.id,
+            is_super_admin=current_user.role == "super_admin",
+        )
+        payload["person_history"] = history
         return {"candidate": payload}
 
     @staticmethod
@@ -973,6 +1175,21 @@ class EmployeeService:
             "job_title": doc.get("job_title"), "department": doc.get("department"),
             "office_location": doc.get("office_location"), "start_date": doc.get("start_date"),
             "status": doc.get("status"), "conversion_status": doc.get("conversion_status"),
+            "history_bucket": doc.get("history_bucket")
+            or (
+                "converted"
+                if doc.get("status") == "converted" or doc.get("conversion_status") == "converted"
+                else (
+                    "historical"
+                    if doc.get("status") in {"historical", "declined", "offer_declined"}
+                    or doc.get("conversion_status") in {"offer_declined", "declined"}
+                    else "active"
+                )
+            ),
+            "historical_reason": doc.get("historical_reason"),
+            "lifecycle_state": doc.get("lifecycle_state"),
+            "cycle_group_key": doc.get("cycle_group_key") or cycle_group_key(doc.get("email")),
+            "employee_id": doc.get("employee_id"),
             "created_at": doc.get("created_at").isoformat() if hasattr(doc.get("created_at"), "isoformat") else doc.get("created_at"),
             "progress": progress,
             "onboarding_reminder_sent_at": doc.get("onboarding_reminder_sent_at").isoformat() if hasattr(doc.get("onboarding_reminder_sent_at"), "isoformat") else doc.get("onboarding_reminder_sent_at"),
@@ -1398,6 +1615,19 @@ class EmployeeService:
             "reporting_manager": doc.get("reporting_manager"),
             "profile_status": doc.get("profile_status", "complete"),
             "status": doc.get("status"),
+            "history_bucket": doc.get("history_bucket")
+            or ("historical" if doc.get("status") in HISTORICAL_EMPLOYEE_STATUSES else "active"),
+            "exit_type": doc.get("exit_type"),
+            "exit_reason": doc.get("exit_reason"),
+            "exit_date": doc.get("exit_date").isoformat()
+            if hasattr(doc.get("exit_date"), "isoformat")
+            else doc.get("exit_date"),
+            "historical_at": doc.get("historical_at").isoformat()
+            if hasattr(doc.get("historical_at"), "isoformat")
+            else doc.get("historical_at"),
+            "cycle_group_key": doc.get("cycle_group_key") or cycle_group_key(doc.get("email")),
+            "previous_employee_id": doc.get("previous_employee_id"),
+            "profile_locked": bool(doc.get("profile_locked")),
             "converted_at": doc.get("converted_at").isoformat()
             if hasattr(doc.get("converted_at"), "isoformat")
             else doc.get("converted_at"),

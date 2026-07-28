@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -8,7 +9,7 @@ import {
   RECRUITER_DEPARTMENTS,
   RECRUITER_DESIGNATIONS,
 } from "@/components/recruiter/recruiterOptions";
-import { createInvitation, getApiErrorMessage } from "@/services/authService";
+import { createInvitation, getApiErrorMessage, lookupPersonHistory } from "@/services/authService";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -156,6 +157,8 @@ const IconTerms = () => (
 );
 
 export default function RecruiterInvitePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [inviteForm, setInviteForm] = useState(initialInvite);
   const [breakdown, setBreakdown] = useState([
     { label: "Basic", amount: "" },
@@ -174,6 +177,8 @@ export default function RecruiterInvitePage() {
   const [inviteLink, setInviteLink] = useState("");
   const [inviteEmailSent, setInviteEmailSent] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [personHistory, setPersonHistory] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const breakdownTotal = useMemo(
     () =>
@@ -183,9 +188,43 @@ export default function RecruiterInvitePage() {
   const gross = Number(inviteForm.monthly_salary) || 0;
 
   useEffect(() => {
+    const email = searchParams.get("email");
+    const fullName = searchParams.get("full_name");
+    if (!email && !fullName) return;
+    setInviteForm((current) => ({
+      ...current,
+      email: email || current.email,
+      full_name: fullName || current.full_name,
+    }));
+  }, [searchParams]);
+
+  useEffect(() => {
+    const email = (inviteForm.email || "").trim().toLowerCase();
+    if (!email.includes("@") || email.length < 5) {
+      setPersonHistory(null);
+      return undefined;
+    }
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return undefined;
+    const timer = setTimeout(async () => {
+      setHistoryLoading(true);
+      try {
+        const data = await lookupPersonHistory(email, accessToken);
+        setPersonHistory(data);
+      } catch {
+        setPersonHistory(null);
+      } finally {
+        setHistoryLoading(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [inviteForm.email]);
+
+  useEffect(() => {
     publishRecruiterContext({
       section: "invite_offer_form",
-      hint: "Invite sends the offer letter together. Fill Salary, benefits, and role details.",
+      hint: personHistory?.suggestion_summary
+        || "Invite sends the offer letter together. Fill Salary, benefits, and role details.",
       fields: [
         "full_name",
         "email",
@@ -199,7 +238,7 @@ export default function RecruiterInvitePage() {
       ],
     });
     return () => clearRecruiterContext();
-  }, []);
+  }, [personHistory]);
 
   function updateInviteField(event) {
     const { name, value } = event.target;
@@ -264,6 +303,10 @@ export default function RecruiterInvitePage() {
     }
     if (breakdownTotal > 0 && gross > 0 && breakdownTotal - gross > 0.01) {
       setInviteMessage("Salary breakdown total cannot exceed monthly salary.");
+      return;
+    }
+    if (personHistory?.active_conflict) {
+      setInviteMessage(personHistory.active_conflict.message || "This email cannot be invited right now.");
       return;
     }
 
@@ -437,6 +480,68 @@ export default function RecruiterInvitePage() {
                   />
                 </label>
               </div>
+              {(historyLoading || personHistory?.matches?.length || personHistory?.active_conflict) ? (
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: 14,
+                    borderRadius: 12,
+                    border: personHistory?.active_conflict
+                      ? "1px solid #f3d7a5"
+                      : "1px solid var(--border)",
+                    background: personHistory?.active_conflict ? "#fff8eb" : "#f8fbff",
+                  }}
+                >
+                  <div style={{ fontWeight: 600, marginBottom: 6, color: "var(--navy)" }}>
+                    AI history suggestion
+                  </div>
+                  <p className={styles.mutedText} style={{ marginTop: 0, marginBottom: 10 }}>
+                    {historyLoading
+                      ? "Checking prior candidate and employee records…"
+                      : personHistory?.suggestion_summary}
+                  </p>
+                  {!historyLoading && (personHistory?.matches || []).length > 0 ? (
+                    <ul className={styles.miniList} style={{ margin: 0 }}>
+                      {personHistory.matches
+                    .filter(
+                      (match) =>
+                        match.record_type !== "candidate" ||
+                        (match.outcome !== "converted" && match.status !== "converted")
+                    )
+                    .map((match) => (
+                        <li className={styles.miniListItem} key={`${match.type}-${match.id}`}>
+                          <div>
+                            <strong>{match.full_name || match.email}</strong>
+                            <div className={styles.mutedText}>
+                              {match.record_type}
+                              {match.employee_id ? ` · ${match.employee_id}` : ""}
+                              {match.job_title ? ` · ${match.job_title}` : ""}
+                              {" · "}
+                              <span style={{ textTransform: "capitalize" }}>
+                                {String(match.outcome || match.status || "historical").replace(/_/g, " ")}
+                              </span>
+                            </div>
+                          </div>
+                          {match.href ? (
+                            <button
+                              type="button"
+                              className={styles.secondaryButton}
+                              onClick={() => router.push(match.href)}
+                            >
+                              Open history
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {!personHistory?.active_conflict && (personHistory?.matches || []).length > 0 ? (
+                    <p className={styles.mutedText} style={{ marginBottom: 0, marginTop: 10 }}>
+                      You can still send a new invitation with this email. They will become a new candidate cycle, and if converted again they get a new employee ID.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             {/* ---------- Role card ---------- */}

@@ -7,6 +7,7 @@ from app.core.rbac import CurrentUser
 from app.core.security import require_permissions, require_roles
 from app.schemas.career import CareerEventCreateRequest, RoleAssignRequest
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
+from app.schemas.employee_exit import EmployeeExitRequest
 from app.schemas.onboarding_assignment import (
     AssetAssignRequest,
     AssetUpdateRequest,
@@ -57,6 +58,25 @@ async def create_from_candidate(request: CreateFromCandidateRequest, current_use
     return await service.create_from_candidate(current_user, request.candidate_id)
 
 
+@router.get("/historical-candidates")
+async def list_historical_candidates(
+    current_user: RequireRecruiter,
+    q: str | None = None,
+    reason: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+):
+    return await service.list_historical_candidates(
+        current_user, q=q, reason=reason, page=page, page_size=page_size
+    )
+
+
+@router.get("/person-history")
+async def lookup_person_history(current_user: RequireRecruiter, email: str = Query(..., min_length=3)):
+    """Return all historical candidate cycles + employee tenures for an email (invite AI suggestions)."""
+    return await service.lookup_person_history(current_user, email)
+
+
 @router.get("/pending-review")
 async def list_pending_review(current_user: RequireRecruiter):
     return await service.list_pending_review(current_user)
@@ -101,6 +121,7 @@ async def export_employees_csv(
     profile_status: str | None = None,
     joining_from: str | None = None,
     joining_to: str | None = None,
+    history_bucket: str | None = Query(default=None, pattern="^(active|historical|all)$"),
     sort: str = "created_at",
 ):
     """US-035: CSV export of employee directory with the same filters as list."""
@@ -114,6 +135,7 @@ async def export_employees_csv(
         profile_status=profile_status,
         joining_from=joining_from,
         joining_to=joining_to,
+        history_bucket=history_bucket,
         sort=sort,
     )
     return Response(
@@ -134,6 +156,7 @@ async def list_employees(
     profile_status: str | None = None,
     joining_from: str | None = None,
     joining_to: str | None = None,
+    history_bucket: str | None = Query(default=None, pattern="^(active|historical|all)$"),
     sort: str = "created_at",
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -149,6 +172,7 @@ async def list_employees(
         profile_status=profile_status,
         joining_from=joining_from,
         joining_to=joining_to,
+        history_bucket=history_bucket,
         sort=sort,
         page=page,
         page_size=page_size,
@@ -316,6 +340,16 @@ async def remind_employee(
         note=body.get("note"),
         force=bool(body.get("force") or body.get("resend")),
     )
+
+
+@router.post("/{employee_id}/exit")
+async def mark_employee_exit(
+    employee_id: str,
+    request: EmployeeExitRequest,
+    current_user: RequireRecruiter,
+):
+    """Mark employee as resigned, terminated, or exited (moves to historical)."""
+    return await service.mark_employee_exit(current_user, employee_id, request)
 
 
 @router.get("/{employee_id}/career")

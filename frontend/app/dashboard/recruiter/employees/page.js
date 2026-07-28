@@ -36,6 +36,7 @@ export default function RecruiterEmployeesPage() {
     status: "active",
     employee_id: "",
     profile_status: "",
+    history_bucket: "active",
   });
   const [careerForm, setCareerForm] = useState({ event_type: "promoted", effective_date: "", to_title: "", to_department: "", to_manager: "", note: "" });
 
@@ -60,9 +61,12 @@ export default function RecruiterEmployeesPage() {
         q: filters.q || undefined,
         department: filters.department || undefined,
         job_title: filters.job_title || undefined,
-        status: filters.status || undefined,
+        status: filters.history_bucket === "historical"
+          ? (filters.status || undefined)
+          : (filters.status || undefined),
         employee_id: filters.employee_id || undefined,
         profile_status: filters.profile_status || undefined,
+        history_bucket: filters.history_bucket || "active",
         page,
         page_size: 10,
         sort: "full_name",
@@ -144,7 +148,15 @@ export default function RecruiterEmployeesPage() {
   }
 
   return (
-    <RecruiterShell activeKey="employees" title="Employee directory" subtitle="Search, filter, export, and review employee profiles">
+    <RecruiterShell
+      activeKey="employees"
+      title={dirFilters.history_bucket === "historical" ? "Historical employees" : "Employee directory"}
+      subtitle={
+        dirFilters.history_bucket === "historical"
+          ? "Former employees who resigned, were terminated, or exited — invite again with the same email when ready"
+          : "Search, filter, export, and review employee profiles"
+      }
+    >
       {error && <div className={styles.formMessage} role="alert">{error}</div>}
       <div className={styles.section}>
         <div className={styles.sectionHead}>
@@ -154,6 +166,30 @@ export default function RecruiterEmployeesPage() {
               <div className={styles.sectionTitle}>Directory filters</div>
               <div className={styles.sectionDesc}>Search across {employeeTotal} employee records and export results.</div>
             </div>
+          </div>
+          <div className={styles.actions} style={{ gap: 8 }}>
+            <button
+              type="button"
+              className={dirFilters.history_bucket === "active" ? styles.primaryButton : styles.secondaryButton}
+              onClick={() => {
+                const next = { ...dirFilters, history_bucket: "active", status: "active" };
+                setDirFilters(next);
+                loadEmployees(1, next);
+              }}
+            >
+              Active
+            </button>
+            <button
+              type="button"
+              className={dirFilters.history_bucket === "historical" ? styles.primaryButton : styles.secondaryButton}
+              onClick={() => {
+                const next = { ...dirFilters, history_bucket: "historical", status: "" };
+                setDirFilters(next);
+                loadEmployees(1, next);
+              }}
+            >
+              Historical
+            </button>
           </div>
         </div>
         <div className={styles.sectionBody}>
@@ -187,10 +223,21 @@ export default function RecruiterEmployeesPage() {
             <label className={styles.field}>
               <span>Status</span>
               <select value={dirFilters.status} onChange={(e) => setDirFilters({ ...dirFilters, status: e.target.value })}>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="on_leave">On leave</option>
-                <option value="">All statuses</option>
+                {dirFilters.history_bucket === "historical" ? (
+                  <>
+                    <option value="">All historical</option>
+                    <option value="resigned">Resigned</option>
+                    <option value="terminated">Terminated</option>
+                    <option value="exited">Exited</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="on_leave">On leave</option>
+                    <option value="">All active statuses</option>
+                  </>
+                )}
               </select>
             </label>
             <label className={styles.field}>
@@ -218,6 +265,9 @@ export default function RecruiterEmployeesPage() {
                       <strong>{employee.full_name}</strong>
                       <div className={styles.mutedText}>
                         {employee.employee_id} · {employee.email} · {employee.job_title} · {employee.department}
+                        {employee.history_bucket === "historical" || ["resigned", "terminated", "exited"].includes(employee.status) ? (
+                          <> · <span style={{ textTransform: "capitalize" }}>{employee.exit_type || employee.status}</span></>
+                        ) : null}
                       </div>
                       {employee.profile_status === "incomplete" && (
                         <div style={{ marginTop: 6 }}>

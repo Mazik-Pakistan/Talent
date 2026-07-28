@@ -13,6 +13,7 @@ import {
   getOnboardingInProgress,
   getReadyForConversion,
   listAwaitingOfferResponse,
+  listHistoricalCandidates,
   listPendingNegotiations,
   rejectOfferNegotiation,
   remindItProvisioning,
@@ -45,6 +46,10 @@ export default function RecruiterCandidatesPage() {
   const [search, setSearch] = useState("");
   const [reminderTarget, setReminderTarget] = useState(null);
   const [negoPopup, setNegoPopup] = useState(null);
+  const [pipelineView, setPipelineView] = useState("active");
+  const [historicalCandidates, setHistoricalCandidates] = useState([]);
+  const [historicalTotal, setHistoricalTotal] = useState(0);
+  const [historicalLoading, setHistoricalLoading] = useState(false);
 
   useEffect(() => {
     const nego = negotiations.length;
@@ -92,12 +97,39 @@ export default function RecruiterCandidatesPage() {
     }
   }, []);
 
+  const loadHistorical = useCallback(async (q = search) => {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setHistoricalLoading(true);
+    try {
+      const data = await listHistoricalCandidates(accessToken, {
+        q: q || undefined,
+        page: 1,
+        page_size: 50,
+      });
+      setHistoricalCandidates(data.candidates || []);
+      setHistoricalTotal(data.total || 0);
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Could not load historical candidates."));
+    } finally {
+      setHistoricalLoading(false);
+    }
+  }, [search]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       loadCandidates();
     }, 0);
     return () => clearTimeout(timer);
   }, [loadCandidates]);
+
+  useEffect(() => {
+    if (pipelineView !== "historical") return undefined;
+    const timer = setTimeout(() => {
+      loadHistorical();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [pipelineView, loadHistorical]);
 
   const visibleNewCandidates = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -267,8 +299,12 @@ export default function RecruiterCandidatesPage() {
   return (
     <RecruiterShell
       activeKey="candidates"
-      title="Candidate pipeline"
-      subtitle="Offer first → documents → IT provisioning → activate employee"
+      title={pipelineView === "historical" ? "Historical candidates" : "Candidate pipeline"}
+      subtitle={
+        pipelineView === "historical"
+          ? "Declined, expired, or abandoned candidate cycles — invite again with the same email"
+          : "Offer first → documents → IT provisioning → activate employee"
+      }
     >
       {error && (
         <div className={styles.formMessage} role="alert">
@@ -281,7 +317,99 @@ export default function RecruiterCandidatesPage() {
         </div>
       )}
 
-      {negoPopup && (
+      <div className={styles.actions} style={{ marginBottom: 16, gap: 8 }}>
+        <button
+          type="button"
+          className={pipelineView === "active" ? styles.primaryButton : styles.secondaryButton}
+          onClick={() => setPipelineView("active")}
+        >
+          Active pipeline
+        </button>
+        <button
+          type="button"
+          className={pipelineView === "historical" ? styles.primaryButton : styles.secondaryButton}
+          onClick={() => setPipelineView("historical")}
+        >
+          Historical
+        </button>
+      </div>
+
+      {pipelineView === "historical" ? (
+        <div className={styles.section}>
+          <div className={styles.sectionHead}>
+            <div className={styles.sectionHeadLeft}>
+              <div className={`${styles.bar} ${styles.navy}`} />
+              <div>
+                <div className={styles.sectionTitle}>Historical candidates</div>
+                <div className={styles.sectionDesc}>
+                  {historicalTotal} prior cycle{historicalTotal === 1 ? "" : "s"} — declined offers, expired invites, or archived (not converted employees).
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className={styles.sectionBody}>
+            <div className={styles.formGrid}>
+              <label className={styles.field}>
+                <span>Search history</span>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Name, email, role"
+                />
+              </label>
+              <div className={styles.actions}>
+                <button type="button" className={styles.primaryButton} onClick={() => loadHistorical(search)}>
+                  Search
+                </button>
+              </div>
+            </div>
+            {historicalLoading ? (
+              <p className={styles.emptySub}>Loading historical candidates…</p>
+            ) : historicalCandidates.length ? (
+              <ul className={styles.miniList}>
+                {historicalCandidates.map((candidate) => (
+                  <li className={styles.miniListItem} key={candidate.id}>
+                    <div>
+                      <strong>{candidate.full_name}</strong>
+                      <div className={styles.mutedText}>
+                        {candidate.email} · {candidate.job_title || "—"} ·{" "}
+                        <span style={{ textTransform: "capitalize" }}>
+                          {(candidate.historical_reason || candidate.conversion_status || candidate.status || "historical").replace(/_/g, " ")}
+                        </span>
+                        {candidate.employee_id ? ` · was ${candidate.employee_id}` : ""}
+                      </div>
+                    </div>
+                    <div className={styles.actions}>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => router.push(`/dashboard/recruiter/candidates/${candidate.id}`)}
+                      >
+                        Open history
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.primaryButton}
+                        onClick={() =>
+                          router.push(
+                            `/dashboard/recruiter/invite?email=${encodeURIComponent(candidate.email || "")}&full_name=${encodeURIComponent(candidate.full_name || "")}`
+                          )
+                        }
+                      >
+                        Invite again
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className={styles.emptySub}>No historical candidates yet.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {pipelineView === "active" && negoPopup && (
         <div
           style={{
             position: "fixed",
@@ -537,6 +665,8 @@ export default function RecruiterCandidatesPage() {
         </div>
       )}
 
+      {pipelineView === "active" ? (
+        <>
       <div className={styles.section}>
         <div className={styles.sectionHead}>
           <div className={styles.sectionHeadLeft}>
@@ -809,6 +939,8 @@ export default function RecruiterCandidatesPage() {
           loadCandidates();
         }}
       />
+        </>
+      ) : null}
     </RecruiterShell>
   );
 }
