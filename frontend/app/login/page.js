@@ -7,8 +7,7 @@ import { Suspense, useEffect, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-import AuthAside, { LOGIN_SLIDES } from "@/components/auth/AuthAside";
-import { getApiErrorMessage, login, persistLoginSession } from "@/services/authService";
+import { getApiErrorMessage, login } from "@/services/authService";
 import styles from "@/app/styles/auth.module.css";
 
 const ROLES = [
@@ -55,7 +54,6 @@ const ROTATING_CONTENT = [
 ];
 
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
-const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
 
 function validateForm(values) {
   const errors = {};
@@ -68,8 +66,8 @@ function validateForm(values) {
 
   if (!values.password) {
     errors.password = "Password is required.";
-  } else if (!PASSWORD_REGEX.test(values.password)) {
-    errors.password = "Password must be at least 8 characters with uppercase, lowercase, number, and special character.";
+  } else if (values.password.length < 8) {
+    errors.password = "Password must be at least 8 characters.";
   }
 
   return errors;
@@ -94,13 +92,10 @@ function LoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
-
-  useEffect(() => {
-    const savedEmail = localStorage.getItem("remembered_email");
-    const savedRemember = localStorage.getItem("remember_me") === "true";
-    if (savedEmail) setEmail(savedEmail);
-    if (savedRemember) setRememberMe(true);
-  }, []);
+  
+  // Auto-rotation state
+  const [contentIndex, setContentIndex] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   useEffect(() => {
     if (searchParams.get("reason") === "session_timeout") {
@@ -159,10 +154,10 @@ function LoginForm() {
         role,
         remember_me: rememberMe,
       });
-      persistLoginSession(data.session, data.user, {
-        rememberMe,
-        email: email.trim(),
-      });
+      localStorage.setItem("access_token", data.session.access_token);
+      localStorage.setItem("refresh_token", data.session.refresh_token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("session_last_active", String(Date.now()));
       toast.success("Signed in successfully. Redirecting…");
       router.push(data.redirect_to);
     } catch (error) {
@@ -237,28 +232,32 @@ function LoginForm() {
             </fieldset>
 
             <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: "80ms" }}>
-              <span>Email <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
-              <input
-                className={styles.input}
-                type="email"
-                name="email"
-                value={email}
-                onChange={(e) => handleEmailChange(e.target.value)}
-                onBlur={() => handleBlur("email")}
-                aria-invalid={Boolean(touched.email && errors.email)}
-                aria-describedby={touched.email && errors.email ? "email-error" : undefined}
-                autoComplete="email"
-                placeholder="you@company.com"
-                required
-              />
+              <span>Email</span>
+              <span className={styles.inputShell}>
+                <FieldIcon type="email" />
+                <input
+                  className={styles.input}
+                  type="email"
+                  name="email"
+                  value={email}
+                  onChange={(e) => handleEmailChange(e.target.value)}
+                  onBlur={() => handleBlur("email")}
+                  aria-invalid={Boolean(touched.email && errors.email)}
+                  aria-describedby={touched.email && errors.email ? "email-error" : undefined}
+                  autoComplete="email"
+                  placeholder="you@company.com"
+                  required
+                />
+              </span>
               {touched.email && errors.email && (
                 <small className={styles.fieldError} id="email-error">⚠ {errors.email}</small>
               )}
             </label>
 
             <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: "130ms" }}>
-              <span>Password <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
-              <span className={styles.passwordControl}>
+              <span>Password</span>
+              <span className={styles.inputShell}>
+                <FieldIcon type="password" />
                 <input
                   className={styles.input}
                   type={showPassword ? "text" : "password"}
@@ -306,8 +305,6 @@ function LoginForm() {
             <p>Recruiter account? <Link href="/register">Create one</Link></p>
           </div>
         </section>
-
-        <AuthAside slides={LOGIN_SLIDES} ariaLabel="Talent platform introduction" />
       </div>
     </main>
   );

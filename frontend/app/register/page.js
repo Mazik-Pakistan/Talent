@@ -7,7 +7,6 @@ import { useMemo, useState, useEffect } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-import AuthAside, { REGISTER_SLIDES } from "@/components/auth/AuthAside";
 import { getApiErrorMessage, register } from "@/services/authService";
 import {
   formatPkMobileInput,
@@ -70,9 +69,9 @@ function validateForm(form) {
   }
 
   if (!form.phone.trim()) {
-    errors.phone = "Contact is required.";
+    errors.phone = "Phone number is required.";
   } else if (!isValidPkMobile(form.phone)) {
-    errors.phone = `Enter a valid Pakistani contact number (${PK_MOBILE_HINT}).`;
+    errors.phone = `Enter a valid Pakistani mobile number (${PK_MOBILE_HINT}).`;
   }
 
   if (!form.password) {
