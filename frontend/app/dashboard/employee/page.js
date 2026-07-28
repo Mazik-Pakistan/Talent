@@ -30,9 +30,6 @@ const ANNOUNCEMENTS_POLL_MS = 30000;
 const NOTIFICATIONS_POLL_MS = 20000;
 const COLLAPSE_KEY = "employee_sidebar_collapsed";
 
-// Presentation metadata for each profile-completion task returned by the API
-// (see backend PROFILE_TASK_DEFS). Purely cosmetic — icon, unlock hint, and a
-// rough time estimate so the checklist reads the way a guided setup should.
 const TASK_META = {
   emergency: {
     minutes: "2 min",
@@ -79,8 +76,6 @@ function firstNameOf(name) {
   return name.trim().split(/\s+/)[0];
 }
 
-// A light, clearly-cosmetic "ahead of peers" estimate driven off the real
-// completion percentage — same spirit as the reference mockup's AI copy.
 function peerRank(percentage) {
   if (percentage >= 90) return 95;
   if (percentage >= 70) return 83;
@@ -163,7 +158,6 @@ function EmployeeDashboardContent() {
     return () => window.removeEventListener("talent-user-updated", onUserUpdated);
   }, []);
 
-  // Shared with EmployeeShell so the sidebar keeps its width across pages.
   useEffect(() => {
     setSidebarCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
   }, []);
@@ -303,19 +297,15 @@ function EmployeeDashboardContent() {
     Boolean(onboarding?.personal) && isBloodGroupPending(onboarding?.personal?.blood_group);
   const profileIncomplete = employee?.profile_status === "incomplete";
   const profileComplete = employee?.profile_status === "complete";
-  // Start at zero while loading: the ring then sweeps up to the real figure
-  // instead of flashing a misleading 100%.
   const percentage = loading ? 0 : progress?.percentage ?? (profileIncomplete ? 0 : 100);
   const navItems = useMemo(() => getEmployeeNavItems({ profileComplete }), [profileComplete]);
   const documentsSummary = onboarding?.government_docs?.documents?.length ?? null;
   const assignedAssets = employee?.assets || [];
   const orientation = employee?.orientation;
 
-  // ----- Derived data for the AI-styled dashboard -----
   const tasks = useMemo(() => {
     const raw = progress?.tasks || [];
     const withMeta = raw.map((t) => ({ ...t, meta: TASK_META[t.step] || {} }));
-    // Incomplete first (so the checklist leads with what's next), completed last.
     return [...withMeta].sort((a, b) => Number(a.completed) - Number(b.completed));
   }, [progress]);
   const incompleteTasks = useMemo(() => tasks.filter((t) => !t.completed), [tasks]);
@@ -367,7 +357,6 @@ function EmployeeDashboardContent() {
   const journeyDoneCount = journeySteps.filter((s) => s.done).length;
   const journeyFillPct = Math.max(0, ((journeyDoneCount - 1) / (journeySteps.length - 1)) * 100);
 
-  // ----- Client-side "Search records" over the data already on this page -----
   const searchIndex = useMemo(() => {
     if (!employee) return [];
     const rows = [
@@ -646,226 +635,7 @@ function EmployeeDashboardContent() {
               </div>
             </div>
 
-            {/* Stats */}
-            <div className={styles.stats} data-stagger>
-              <StatCard
-                icon={<><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></>}
-                tone="green"
-                value={healthLabel}
-                label="Onboarding health"
-                sub={healthSub}
-              />
-              <StatCard
-                icon={<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></>}
-                tone="cyan"
-                value={incompleteTasks.length ? `${etaMinutes} min` : "Done"}
-                label="Estimated ETA"
-                sub="AI predicted"
-              />
-              <StatCard
-                icon={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>}
-                tone="orange"
-                value={docCount}
-                label="Documents on file"
-                sub={documents.some((d) => d.verification_status === "verified") ? "OCR verified" : "Awaiting review"}
-              />
-              <StatCard
-                icon={<><path d="M20 7h-3a2 2 0 0 1-2-2V2" /><path d="M9 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z" /><path d="M12 12v4M10 14h4" /></>}
-                tone="navy"
-                value="Phase 3"
-                label="Learning modules unlock"
-                sub="After onboarding"
-              />
-            </div>
-
-            {/* Task checklist + documents (main) / highlights + profile review (side) */}
-            <div className={styles.dashGrid}>
-              <div className={styles.dashMain}>
-                <div className={styles.panel} id="task-checklist">
-                  <div className={styles.panelHead}>
-                    <div className={styles.panelHeadLeft}>
-                      <div className={styles.panelTitleRow}>
-                        <span className={styles.panelTitle}>Complete these first</span>
-                      </div>
-                      <div className={styles.panelDesc}>
-                        {incompleteTasks.length
-                          ? <>You&rsquo;ll reach 100% onboarding in ~{etaMinutes} minute{etaMinutes === 1 ? "" : "s"}.</>
-                          : "Every onboarding task is complete."}
-                      </div>
-                    </div>
-                    <button type="button" className={styles.panelLink} onClick={() => router.push("/dashboard/employee/complete-profile")}>
-                      See all
-                    </button>
-                  </div>
-                  <div className={styles.panelBody}>
-                    {tasks.length ? (
-                      <div className={styles.taskList}>
-                        {tasks.slice(0, 5).map((t) => (
-                          <div
-                            key={t.id}
-                            className={`${styles.taskRow} ${t.completed ? styles.done : ""}`}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => router.push("/dashboard/employee/complete-profile")}
-                          >
-                            <div className={`${styles.taskIcon} ${t.completed ? styles.done : ""}`}>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                {t.completed ? <path d="M20 6L9 17l-5-5" /> : t.meta.icon}
-                              </svg>
-                            </div>
-                            <div className={styles.taskBody}>
-                              <div className={styles.taskTitle}>{t.label}</div>
-                              <div className={styles.taskSub}>{t.meta.hint || "Part of your onboarding record"} · {t.meta.minutes || "a moment"}</div>
-                            </div>
-                            <div className={styles.taskChevron}>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className={styles.emptyState}>
-                        <div className={styles.emptyTitle}>Nothing left on your checklist</div>
-                        <div className={styles.emptySub}>Your onboarding record is fully up to date.</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className={styles.panel} id="documents-panel">
-                  <div className={styles.panelHead}>
-                    <div className={styles.panelHeadLeft}>
-                      <div className={styles.panelTitleRow}>
-                        <span className={styles.panelTitle}>My Documents</span>
-                        <span className={styles.aiChipGhost}><SparkleIcon /> OCR VERIFIED</span>
-                      </div>
-                      <div className={styles.panelDesc}>AI parses, verifies, and scores each upload.</div>
-                    </div>
-                    <button type="button" className={styles.panelLink} onClick={() => router.push("/documents")}>
-                      Manage
-                    </button>
-                  </div>
-                  <div className={styles.panelBody}>
-                    {documents.length ? (
-                      <div className={styles.docList}>
-                        {documents.slice(0, 4).map((doc) => {
-                          const badge = docBadgeInfo(doc);
-                          const confidence = typeof doc.ocr_result?.confidence === "number" ? Math.round(doc.ocr_result.confidence * 100) : null;
-                          return (
-                            <div className={styles.docRow} key={doc.id}>
-                              <div className={styles.docIcon}>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" />
-                                </svg>
-                              </div>
-                              <div className={styles.docBody}>
-                                <div className={styles.docTitleRow}>
-                                  <span className={styles.docTitle}>{doc.file_name || DOC_TYPE_LABELS[doc.doc_type] || "Document"}</span>
-                                  <span className={`${styles.docBadge} ${styles[badge.cls]}`}>
-                                    {badge.icon && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">{badge.icon}</svg>}
-                                    {badge.label}
-                                  </span>
-                                </div>
-                                {confidence !== null && (
-                                  <>
-                                    <div className={styles.docTrack}>
-                                      <div className={`${styles.docFill} ${styles[badge.cls]}`} style={{ width: `${confidence}%` }} />
-                                    </div>
-                                    <div className={styles.docMeta}>
-                                      <span />
-                                      <span className={styles.docConf}>{confidence}% conf.</span>
-                                    </div>
-                                  </>
-                                )}
-                                {badge.cls === "review" && (
-                                  <div className={styles.docNote}>
-                                    {doc.rejection_note || doc.reupload_request_note || "Needs another look — check quality and retake if needed."}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className={styles.docEmpty}>No documents uploaded yet. Open the document centre to get started.</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className={styles.dashSide}>
-                <div className={styles.sideCard}>
-                  <div className={styles.sideCardHead}>
-                    <span className={styles.sideCardTitle}>Today&rsquo;s Highlights</span>
-                    <span className={styles.aiChipGhost}><SparkleIcon /> SUMMARY</span>
-                  </div>
-                  <div className={styles.sideCardDesc}>AI read your announcements so you don&rsquo;t have to.</div>
-                  {highlights.length ? (
-                    <ul className={styles.highlightList}>
-                      {highlights.map((h) => <li key={h.key}>{h.node}</li>)}
-                    </ul>
-                  ) : (
-                    <p className={styles.emptySub} style={{ marginBottom: 0 }}>No updates yet — check back soon.</p>
-                  )}
-                </div>
-
-                <div className={styles.sideCard}>
-                  <div className={styles.sideCardHead}>
-                    <span className={styles.sideCardTitle}>AI Profile Review</span>
-                    <span className={styles.reviewBadge}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
-                      Everything matches
-                    </span>
-                  </div>
-                  <div className={styles.profileGrid}>
-                    <div className={styles.profileField}>
-                      <div className={styles.profileLabel}>Department</div>
-                      <div className={styles.profileValue}>{employee?.department || "—"}</div>
-                    </div>
-                    <div className={styles.profileField}>
-                      <div className={styles.profileLabel}>Manager</div>
-                      <div className={styles.profileValue}>{employee?.reporting_manager || "—"}</div>
-                    </div>
-                    <div className={styles.profileField} style={{ gridColumn: "1 / -1" }}>
-                      <div className={styles.profileLabel}>Role</div>
-                      <div className={styles.profileValue}>{employee?.job_title || "—"}</div>
-                    </div>
-                  </div>
-                  <div className={styles.noteBox}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
-                    <div>
-                      <div className={styles.noteBoxTitle}>Learning path unlocks after onboarding</div>
-                      <div className={styles.chipRow}>
-                        <span className={styles.miniChip}>Phase 3</span>
-                        <span className={styles.miniChip}>Skill matching</span>
-                        <span className={styles.miniChip}>Career path</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className={`${styles.sideCard} ${styles.celebrateCard}`}>
-                  <div className={styles.celebrateHead}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "var(--blue-strong)" }}><path d="M12 2l2.4 5.2L20 8l-4 4 1 5.8L12 15l-5 2.8 1-5.8-4-4 5.6-.8z" /></svg>
-                    <span className={styles.celebrateTitle}>{incompleteTasks.length ? "Almost there!" : "All set!"}</span>
-                  </div>
-                  <div className={styles.celebrateDesc}>
-                    {incompleteTasks.length
-                      ? <>Complete the final {incompleteTasks.length} task{incompleteTasks.length === 1 ? "" : "s"} and unlock your Day 1 welcome kit.</>
-                      : "Your Day 1 welcome kit is unlocked."}
-                  </div>
-                  <div className={styles.avatarStack}>
-                    <div className={styles.stackItem}>{firstNameOf(employee?.full_name)[0] || "?"}</div>
-                    <div className={styles.stackItem}>MZ</div>
-                    <div className={styles.stackItem}>+{Math.max(1, assignedAssets.length)}</div>
-                    <span className={styles.stackText}>Your team is waiting</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Onboarding journey */}
+            {/* Onboarding Journey – moved above stats for better visual flow */}
             <div className={`${styles.section} ${styles.journeySection}`}>
               <div className={styles.sectionHead}>
                 <div className={styles.sectionHeadLeft}>
@@ -881,22 +651,321 @@ function EmployeeDashboardContent() {
                   <div className={styles.journeyLine} />
                   <div className={styles.journeyLineFill} style={{ width: `${journeyFillPct * 0.88}%` }} />
                   {journeySteps.map((step, i) => (
-                    <div key={step.key} className={`${styles.journeyStep} ${step.done ? styles.done : ""} ${step.current ? styles.current : ""}`}>
-                      <div className={`${styles.journeyDot} ${step.done ? styles.done : ""} ${step.current ? styles.current : ""}`}>
-                        {step.done ? (
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
-                        ) : (
-                          i + 1
-                        )}
-                      </div>
-                      <div className={styles.journeyLabel}>{step.label}</div>
-                    </div>
-                  ))}
+  <div
+    key={step.key}
+    className={`${styles.journeyStep} ${step.done ? styles.done : ""} ${step.current ? styles.current : ""} ${step.key === "profile" ? styles.journeyStepClickable : ""}`}
+    onClick={step.key === "profile" ? () => router.push("/dashboard/employee/complete-profile") : undefined}
+    role={step.key === "profile" ? "button" : undefined}
+    tabIndex={step.key === "profile" ? 0 : undefined}
+    onKeyDown={step.key === "profile" ? (e) => e.key === "Enter" && router.push("/dashboard/employee/complete-profile") : undefined}
+  >
+    <div className={`${styles.journeyDot} ${step.done ? styles.done : ""} ${step.current ? styles.current : ""}`}>
+      {step.done ? (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
+      ) : (
+        i + 1
+      )}
+    </div>
+    <div className={styles.journeyLabel}>{step.label}</div>
+  </div>
+))}
                 </div>
               </div>
             </div>
 
-            
+            {/* Stats – only visible while onboarding is incomplete */}
+            {!profileComplete && (
+              <div className={styles.stats} data-stagger>
+                <StatCard
+                  icon={<><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></>}
+                  tone="green"
+                  value={healthLabel}
+                  label="Onboarding health"
+                  sub={healthSub}
+                />
+                <StatCard
+                  icon={<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></>}
+                  tone="cyan"
+                  value={incompleteTasks.length ? `${etaMinutes} min` : "Done"}
+                  label="Estimated ETA"
+                  sub="AI predicted"
+                />
+                <StatCard
+                  icon={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>}
+                  tone="orange"
+                  value={docCount}
+                  label="Documents on file"
+                  sub={documents.some((d) => d.verification_status === "verified") ? "OCR verified" : "Awaiting review"}
+                />
+                <StatCard
+                  icon={<><path d="M20 7h-3a2 2 0 0 1-2-2V2" /><path d="M9 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z" /><path d="M12 12v4M10 14h4" /></>}
+                  tone="navy"
+                  value="Phase 3"
+                  label="Learning modules unlock"
+                  sub="After onboarding"
+                />
+              </div>
+            )}
+
+            {/* Task checklist + documents (main) / highlights + profile review (side) */}
+            {!profileComplete ? (
+              <div className={styles.dashGrid}>
+                <div className={styles.dashMain}>
+                  <div className={styles.panel} id="task-checklist">
+                    <div className={styles.panelHead}>
+                      <div className={styles.panelHeadLeft}>
+                        <div className={styles.panelTitleRow}>
+                          <span className={styles.panelTitle}>Complete these first</span>
+                        </div>
+                        <div className={styles.panelDesc}>
+                          {incompleteTasks.length
+                            ? <>You&rsquo;ll reach 100% onboarding in ~{etaMinutes} minute{etaMinutes === 1 ? "" : "s"}.</>
+                            : "Every onboarding task is complete."}
+                        </div>
+                      </div>
+                      <button type="button" className={styles.panelLink} onClick={() => router.push("/dashboard/employee/complete-profile")}>
+                        See all
+                      </button>
+                    </div>
+                    <div className={styles.panelBody}>
+                      {tasks.length ? (
+                        <div className={styles.taskList}>
+                          {tasks.slice(0, 5).map((t) => (
+                            <div
+                              key={t.id}
+                              className={`${styles.taskRow} ${t.completed ? styles.done : ""}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => router.push("/dashboard/employee/complete-profile")}
+                            >
+                              <div className={`${styles.taskIcon} ${t.completed ? styles.done : ""}`}>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  {t.completed ? <path d="M20 6L9 17l-5-5" /> : t.meta.icon}
+                                </svg>
+                              </div>
+                              <div className={styles.taskBody}>
+                                <div className={styles.taskTitle}>{t.label}</div>
+                                <div className={styles.taskSub}>{t.meta.hint || "Part of your onboarding record"} · {t.meta.minutes || "a moment"}</div>
+                              </div>
+                              <div className={styles.taskChevron}>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className={styles.emptyState}>
+                          <div className={styles.emptyTitle}>Nothing left on your checklist</div>
+                          <div className={styles.emptySub}>Your onboarding record is fully up to date.</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={styles.panel} id="documents-panel">
+                    <div className={styles.panelHead}>
+                      <div className={styles.panelHeadLeft}>
+                        <div className={styles.panelTitleRow}>
+                          <span className={styles.panelTitle}>My Documents</span>
+                          <span className={styles.aiChipGhost}><SparkleIcon /> OCR VERIFIED</span>
+                        </div>
+                        <div className={styles.panelDesc}>AI parses, verifies, and scores each upload.</div>
+                      </div>
+                      <button type="button" className={styles.panelLink} onClick={() => router.push("/documents")}>
+                        Manage
+                      </button>
+                    </div>
+                    <div className={styles.panelBody}>
+                      {documents.length ? (
+                        <div className={styles.docList}>
+                          {documents.slice(0, 4).map((doc) => {
+                            const badge = docBadgeInfo(doc);
+                            const confidence = typeof doc.ocr_result?.confidence === "number" ? Math.round(doc.ocr_result.confidence * 100) : null;
+                            return (
+                              <div className={styles.docRow} key={doc.id}>
+                                <div className={styles.docIcon}>
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" />
+                                  </svg>
+                                </div>
+                                <div className={styles.docBody}>
+                                  <div className={styles.docTitleRow}>
+                                    <span className={styles.docTitle}>{doc.file_name || DOC_TYPE_LABELS[doc.doc_type] || "Document"}</span>
+                                    <span className={`${styles.docBadge} ${styles[badge.cls]}`}>
+                                      {badge.icon && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">{badge.icon}</svg>}
+                                      {badge.label}
+                                    </span>
+                                  </div>
+                                  {confidence !== null && (
+                                    <>
+                                      <div className={styles.docTrack}>
+                                        <div className={`${styles.docFill} ${styles[badge.cls]}`} style={{ width: `${confidence}%` }} />
+                                      </div>
+                                      <div className={styles.docMeta}>
+                                        <span />
+                                        <span className={styles.docConf}>{confidence}% conf.</span>
+                                      </div>
+                                    </>
+                                  )}
+                                  {badge.cls === "review" && (
+                                    <div className={styles.docNote}>
+                                      {doc.rejection_note || doc.reupload_request_note || "Needs another look — check quality and retake if needed."}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className={styles.docEmpty}>No documents uploaded yet. Open the document centre to get started.</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className={styles.dashSide}>
+                  <div className={styles.sideCard}>
+                    <div className={styles.sideCardHead}>
+                      <span className={styles.sideCardTitle}>Today&rsquo;s Highlights</span>
+                      <span className={styles.aiChipGhost}><SparkleIcon /> SUMMARY</span>
+                    </div>
+                    <div className={styles.sideCardDesc}>AI read your announcements so you don&rsquo;t have to.</div>
+                    {highlights.length ? (
+                      <ul className={styles.highlightList}>
+                        {highlights.map((h) => <li key={h.key}>{h.node}</li>)}
+                      </ul>
+                    ) : (
+                      <p className={styles.emptySub} style={{ marginBottom: 0 }}>No updates yet — check back soon.</p>
+                    )}
+                  </div>
+
+                  <div className={styles.sideCard}>
+                    <div className={styles.sideCardHead}>
+                      <span className={styles.sideCardTitle}>AI Profile Review</span>
+                      <span className={styles.reviewBadge}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
+                        Everything matches
+                      </span>
+                    </div>
+                    <div className={styles.profileGrid}>
+                      <div className={styles.profileField}>
+                        <div className={styles.profileLabel}>Department</div>
+                        <div className={styles.profileValue}>{employee?.department || "—"}</div>
+                      </div>
+                      <div className={styles.profileField}>
+                        <div className={styles.profileLabel}>Manager</div>
+                        <div className={styles.profileValue}>{employee?.reporting_manager || "—"}</div>
+                      </div>
+                      <div className={styles.profileField} style={{ gridColumn: "1 / -1" }}>
+                        <div className={styles.profileLabel}>Role</div>
+                        <div className={styles.profileValue}>{employee?.job_title || "—"}</div>
+                      </div>
+                    </div>
+                    <div className={styles.noteBox}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+                      <div>
+                        <div className={styles.noteBoxTitle}>Learning path unlocks after onboarding</div>
+                        <div className={styles.chipRow}>
+                          <span className={styles.miniChip}>Phase 3</span>
+                          <span className={styles.miniChip}>Skill matching</span>
+                          <span className={styles.miniChip}>Career path</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={`${styles.sideCard} ${styles.celebrateCard}`}>
+                    <div className={styles.celebrateHead}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "var(--blue-strong)" }}><path d="M12 2l2.4 5.2L20 8l-4 4 1 5.8L12 15l-5 2.8 1-5.8-4-4 5.6-.8z" /></svg>
+                      <span className={styles.celebrateTitle}>{incompleteTasks.length ? "Almost there!" : "All set!"}</span>
+                    </div>
+                    <div className={styles.celebrateDesc}>
+                      {incompleteTasks.length
+                        ? <>Complete the final {incompleteTasks.length} task{incompleteTasks.length === 1 ? "" : "s"} and unlock your Day 1 welcome kit.</>
+                        : "Your Day 1 welcome kit is unlocked."}
+                    </div>
+                    <div className={styles.avatarStack}>
+                      <div className={styles.stackItem}>{firstNameOf(employee?.full_name)[0] || "?"}</div>
+                      <div className={styles.stackItem}>MZ</div>
+                      <div className={styles.stackItem}>+{Math.max(1, assignedAssets.length)}</div>
+                      <span className={styles.stackText}>Your team is waiting</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Profile complete – clean, simplified layout */
+              <div className={styles.dashGrid}>
+                <div className={styles.dashSide} style={{ gridColumn: "1 / -1" }}>
+                  <div className={styles.sideCard}>
+                    <div className={styles.sideCardHead}>
+                      <span className={styles.sideCardTitle}>Today&rsquo;s Highlights</span>
+                      <span className={styles.aiChipGhost}><SparkleIcon /> SUMMARY</span>
+                    </div>
+                    <div className={styles.sideCardDesc}>AI read your announcements so you don&rsquo;t have to.</div>
+                    {highlights.length ? (
+                      <ul className={styles.highlightList}>
+                        {highlights.map((h) => <li key={h.key}>{h.node}</li>)}
+                      </ul>
+                    ) : (
+                      <p className={styles.emptySub} style={{ marginBottom: 0 }}>No updates yet — check back soon.</p>
+                    )}
+                  </div>
+
+                  <div className={styles.sideCard}>
+                    <div className={styles.sideCardHead}>
+                      <span className={styles.sideCardTitle}>AI Profile Review</span>
+                      <span className={styles.reviewBadge}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
+                        Everything matches
+                      </span>
+                    </div>
+                    <div className={styles.profileGrid}>
+                      <div className={styles.profileField}>
+                        <div className={styles.profileLabel}>Department</div>
+                        <div className={styles.profileValue}>{employee?.department || "—"}</div>
+                      </div>
+                      <div className={styles.profileField}>
+                        <div className={styles.profileLabel}>Manager</div>
+                        <div className={styles.profileValue}>{employee?.reporting_manager || "—"}</div>
+                      </div>
+                      <div className={styles.profileField} style={{ gridColumn: "1 / -1" }}>
+                        <div className={styles.profileLabel}>Role</div>
+                        <div className={styles.profileValue}>{employee?.job_title || "—"}</div>
+                      </div>
+                    </div>
+                    <div className={styles.noteBox}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+                      <div>
+                        <div className={styles.noteBoxTitle}>Learning path now unlocked</div>
+                        <div className={styles.chipRow}>
+                          <span className={styles.miniChip}>Phase 3</span>
+                          <span className={styles.miniChip}>Skill matching</span>
+                          <span className={styles.miniChip}>Career path</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={`${styles.sideCard} ${styles.celebrateCard}`}>
+                    <div className={styles.celebrateHead}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "var(--blue-strong)" }}><path d="M12 2l2.4 5.2L20 8l-4 4 1 5.8L12 15l-5 2.8 1-5.8-4-4 5.6-.8z" /></svg>
+                      <span className={styles.celebrateTitle}>All set!</span>
+                    </div>
+                    <div className={styles.celebrateDesc}>Your Day 1 welcome kit is unlocked.</div>
+                    <div className={styles.avatarStack}>
+                      <div className={styles.stackItem}>{firstNameOf(employee?.full_name)[0] || "?"}</div>
+                      <div className={styles.stackItem}>MZ</div>
+                      <div className={styles.stackItem}>+{Math.max(1, assignedAssets.length)}</div>
+                      <span className={styles.stackText}>Your team is waiting</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Workplace setup (remains visible always) */}
             {(employee?.company_email || orientation || assignedAssets.length > 0 || (employee?.licenses || []).length > 0) && (
               <div className={styles.section} id="workplace-section">
                 <div className={styles.sectionHead}>
@@ -982,6 +1051,7 @@ function EmployeeDashboardContent() {
               </div>
             </div>
 
+            {/* Document centre banner (always visible) – the second "My documents" column */}
             <div className={styles.cols2}>
               <div className={styles.section} style={{ marginBottom: 0 }} id="documents-section">
                 <div className={styles.sectionHead}>
@@ -1010,72 +1080,75 @@ function EmployeeDashboardContent() {
                 </div>
               </div>
 
-              <div className={styles.section} style={{ marginBottom: 0 }} id="onboarding-section">
-                <div className={styles.sectionHead}>
-                  <div className={styles.sectionHeadLeft}>
-                    <div className={`${styles.bar} ${styles.cyan}`} />
-                    <div>
-                      <div className={styles.sectionTitle}>Onboarding record</div>
-                      <div className={styles.sectionDesc}>Preserved from your onboarding submission.</div>
+              {/* Onboarding record – hidden once profile is complete */}
+              {!profileComplete && (
+                <div className={styles.section} style={{ marginBottom: 0 }} id="onboarding-section">
+                  <div className={styles.sectionHead}>
+                    <div className={styles.sectionHeadLeft}>
+                      <div className={`${styles.bar} ${styles.cyan}`} />
+                      <div>
+                        <div className={styles.sectionTitle}>Onboarding record</div>
+                        <div className={styles.sectionDesc}>Preserved from your onboarding submission.</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.sectionBody}>
+                    <div className={styles.recordGrid}>
+                      <RecordItem
+                        styles={styles}
+                        label="Personal"
+                        value={summarize(onboarding.personal)}
+                        icon={<><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" /></>}
+                      />
+                      <RecordItem
+                        styles={styles}
+                        label="Emergency contact"
+                        value={summarize(onboarding.emergency)}
+                        icon={<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />}
+                      />
+                      <RecordItem
+                        styles={styles}
+                        label="Payroll"
+                        value={summarize(onboarding.employment)}
+                        icon={<><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /></>}
+                      />
+                      <RecordItem
+                        styles={styles}
+                        label="Education"
+                        value={`${onboarding.education?.entries?.length || 0} entr${(onboarding.education?.entries?.length || 0) === 1 ? "y" : "ies"}`}
+                        icon={<><path d="M22 10L12 5 2 10l10 5 10-5z" /><path d="M6 12v5c3 2 9 2 12 0v-5" /></>}
+                      />
+                      <RecordItem
+                        styles={styles}
+                        label="Government docs"
+                        value={documentsSummary !== null ? `${documentsSummary} document(s)` : "Not on file"}
+                        icon={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>}
+                      />
+                      <RecordItem
+                        styles={styles}
+                        label="References"
+                        value={`${onboarding.references?.references?.length || 0} reference(s)`}
+                        icon={<><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" /></>}
+                      />
+                      <RecordItem
+                        styles={styles}
+                        label="NDA"
+                        value={onboarding.nda?.full_legal_name ? `Signed · ${onboarding.nda.full_legal_name}` : "Not on file"}
+                        icon={<><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></>}
+                      />
+                      <RecordItem
+                        styles={styles}
+                        label="Resume"
+                        value={onboarding.resume?.file_name || "Not on file"}
+                        icon={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>}
+                      />
                     </div>
                   </div>
                 </div>
-                <div className={styles.sectionBody}>
-                  <div className={styles.recordGrid}>
-                    <RecordItem
-                      styles={styles}
-                      label="Personal"
-                      value={summarize(onboarding.personal)}
-                      icon={<><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" /></>}
-                    />
-                    <RecordItem
-                      styles={styles}
-                      label="Emergency contact"
-                      value={summarize(onboarding.emergency)}
-                      icon={<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />}
-                    />
-                    <RecordItem
-                      styles={styles}
-                      label="Payroll"
-                      value={summarize(onboarding.employment)}
-                      icon={<><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /></>}
-                    />
-                    <RecordItem
-                      styles={styles}
-                      label="Education"
-                      value={`${onboarding.education?.entries?.length || 0} entr${(onboarding.education?.entries?.length || 0) === 1 ? "y" : "ies"}`}
-                      icon={<><path d="M22 10L12 5 2 10l10 5 10-5z" /><path d="M6 12v5c3 2 9 2 12 0v-5" /></>}
-                    />
-                    <RecordItem
-                      styles={styles}
-                      label="Government docs"
-                      value={documentsSummary !== null ? `${documentsSummary} document(s)` : "Not on file"}
-                      icon={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>}
-                    />
-                    <RecordItem
-                      styles={styles}
-                      label="References"
-                      value={`${onboarding.references?.references?.length || 0} reference(s)`}
-                      icon={<><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" /></>}
-                    />
-                    <RecordItem
-                      styles={styles}
-                      label="NDA"
-                      value={onboarding.nda?.full_legal_name ? `Signed · ${onboarding.nda.full_legal_name}` : "Not on file"}
-                      icon={<><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></>}
-                    />
-                    <RecordItem
-                      styles={styles}
-                      label="Resume"
-                      value={onboarding.resume?.file_name || "Not on file"}
-                      icon={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>}
-                    />
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
 
-            {/* Workplace modules */}
+            {/* Workplace modules – always visible */}
             <div className={styles.section} style={{ marginTop: 24, marginBottom: 0 }}>
               <div className={styles.sectionHead}>
                 <div className={styles.sectionHeadLeft}>
@@ -1160,6 +1233,8 @@ function StatCard({ icon, iconExtra, tone, value, label, sub }) {
   );
 }
 
+
+
 function HeroRing({ percentage = 0 }) {
   const r = 42;
   const circumference = 2 * Math.PI * r;
@@ -1204,4 +1279,3 @@ function tenureLabel(startDate) {
   const rem = months % 12;
   return rem ? `${years} yr ${rem} mo` : `${years} yr`;
 }
-

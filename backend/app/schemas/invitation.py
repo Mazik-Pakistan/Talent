@@ -292,15 +292,15 @@ class OnboardingReferences(BaseModel):
 
 
 class OnboardingDocumentsAck(BaseModel):
-    accepted_code_of_conduct: bool
+    
     accepted_privacy_policy: bool
     accepted_employee_handbook: bool
 
     @model_validator(mode="after")
     def require_acceptances(self):
         if not (
-            self.accepted_code_of_conduct
-            and self.accepted_privacy_policy
+            # self.accepted_code_of_conduct
+            self.accepted_privacy_policy
             and self.accepted_employee_handbook
         ):
             raise ValueError("You must acknowledge all required documents.")
