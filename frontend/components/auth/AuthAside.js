@@ -179,6 +179,36 @@ export const VERIFY_SLIDES = [
   },
 ];
 
+export const INVITE_SLIDES = [
+  {
+    eyebrow: "Mazik Global",
+    heading: "You've been invited to join Talent.",
+    text: "Create your candidate account with this secure link, verify your email, then review and sign your offer.",
+    highlights: [
+      { icon: "mail", title: "Invite-only access", body: "Only people with a valid invitation link can register for this role." },
+      { icon: "path", title: "Clear next steps", body: "Register → verify email → review your offer letter." },
+    ],
+  },
+  {
+    eyebrow: "Your offer path",
+    heading: "From invitation to signed offer.",
+    text: "Talent keeps your offer, documents, and onboarding in one place once your account is active.",
+    highlights: [
+      { icon: "check", title: "Role details ready", body: "Your invitation already includes the job and department you were offered." },
+      { icon: "shield", title: "Protected registration", body: "Email must match the invitation before the account is created." },
+    ],
+  },
+  {
+    eyebrow: "Already registered?",
+    heading: "Sign in to continue where you left off.",
+    text: "If you already created your candidate account, open Talent with your credentials and pick the Candidate role.",
+    highlights: [
+      { icon: "lock", title: "Secure sign-in", body: "Use the same email from your invitation when you log in." },
+      { icon: "roles", title: "Candidate workspace", body: "Offers, documents, and onboarding live in your candidate dashboard." },
+    ],
+  },
+];
+
 const INTERVAL_MS = 5500;
 
 export default function AuthAside({ slides, ariaLabel = "Talent platform introduction" }) {

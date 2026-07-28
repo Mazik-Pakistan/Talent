@@ -288,6 +288,17 @@
   background: #fff;
 }
 
+.input:read-only {
+  background: var(--blue-lighter);
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.input:read-only:focus {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
 .input[aria-invalid="false"]:not(:placeholder-shown):not(:focus) {
   border-color: var(--green);
   background: rgba(31, 174, 122, 0.04);
