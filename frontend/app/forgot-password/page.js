@@ -5,9 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import AuthAside, { RECOVERY_SLIDES } from "@/components/auth/AuthAside";
 import { forgotPassword, getApiErrorMessage } from "@/services/authService";
-import styles from "@/app/styles/auth.module.css";
 import styles from "@/app/styles/auth.module.css";
 
 export default function ForgotPasswordPage() {
