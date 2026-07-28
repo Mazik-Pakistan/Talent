@@ -103,18 +103,12 @@ export default function CandidateProfilePage({ params }) {
     {personHistory?.matches?.length ? (
       <DetailSection tone="orange" title="Cross-cycle history" description={personHistory.suggestion_summary || "All prior candidate and employee records for this email."}>
         <ul className={styles.miniList}>
-          {personHistory.matches
-            .filter(
-              (match) =>
-                match.record_type !== "candidate" ||
-                (match.outcome !== "converted" && match.status !== "converted")
-            )
-            .map((match) => (
+          {personHistory.matches.map((match) => (
             <li className={styles.miniListItem} key={`${match.type}-${match.id}`}>
               <div>
                 <strong>{match.full_name || match.email}</strong>
                 <div className={styles.mutedText}>
-                  {match.record_type}
+                  {match.type === "converted_candidate" ? "candidate → employee" : match.record_type}
                   {match.employee_id ? ` · ${match.employee_id}` : ""}
                   {match.job_title ? ` · ${match.job_title}` : ""}
                   {" · "}

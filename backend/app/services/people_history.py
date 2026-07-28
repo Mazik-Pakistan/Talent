@@ -148,13 +148,25 @@ def public_history_match(*, record_type: str, doc: dict) -> dict:
         record_id = doc.get("employee_id") or doc.get("user_id") or str(doc.get("_id", ""))
         outcome = doc.get("exit_type") or doc.get("status") or "historical"
         href = f"/dashboard/recruiter/employees/{record_id}?bucket=historical"
+        match_type = "historical_employee"
+        history_bucket = doc.get("history_bucket") or "historical"
+    elif record_type == "converted_candidate":
+        # Prior hire cycle — shown for rehire history only, never as a historical candidate.
+        record_id = doc.get("user_id") or str(doc.get("_id", ""))
+        outcome = "converted"
+        href = f"/dashboard/recruiter/candidates/{record_id}"
+        match_type = "converted_candidate"
+        history_bucket = "converted"
+        record_type = "candidate"
     else:
         record_id = doc.get("user_id") or str(doc.get("_id", ""))
         outcome = doc.get("historical_reason") or doc.get("conversion_status") or doc.get("status") or "historical"
         href = f"/dashboard/recruiter/candidates/{record_id}?bucket=historical"
+        match_type = "historical_candidate"
+        history_bucket = doc.get("history_bucket") or "historical"
 
     return {
-        "type": f"historical_{record_type}",
+        "type": match_type,
         "record_type": record_type,
         "id": record_id,
         "full_name": doc.get("full_name"),
@@ -164,18 +176,29 @@ def public_history_match(*, record_type: str, doc: dict) -> dict:
         "status": doc.get("status"),
         "outcome": outcome,
         "employee_id": doc.get("employee_id"),
-        "history_bucket": doc.get("history_bucket") or "historical",
+        "history_bucket": history_bucket,
         "historical_reason": doc.get("historical_reason"),
         "exit_type": doc.get("exit_type"),
         "exit_date": _iso(doc.get("exit_date") or doc.get("historical_at")),
         "cycle_group_key": doc.get("cycle_group_key") or email,
         "href": href,
         "created_at": _iso(doc.get("created_at")),
+        "invitation_token": doc.get("invitation_token"),
     }
 
 
 async def lookup_history_by_email(email: str, *, recruiter_id: str | None = None, is_super_admin: bool = False) -> dict:
-    """Return ALL prior candidate cycles and employee tenures for an email."""
+    """Return prior candidate cycles and employee tenures for an email.
+
+    Rules:
+    - Historical employees (resigned/terminated/exited) always appear.
+    - Non-converted historical candidates (declined/expired/etc.) always appear.
+    - Converted candidates are NOT historical candidates. They appear in invite
+      rehire suggestions only when there is no active employee (alongside prior
+      resigned tenures), so recruiters see both the conversion cycle and exit.
+    - Active employees block reinvite; their converted/used-invite cycles are
+      not recommended as new candidate history.
+    """
     email = cycle_group_key(email)
     if not email:
         return {
@@ -184,6 +207,7 @@ async def lookup_history_by_email(email: str, *, recruiter_id: str | None = None
             "matches": [],
             "candidate_matches": [],
             "employee_matches": [],
+            "converted_matches": [],
             "can_reinvite": False,
             "suggestion_summary": "No email provided.",
         }
@@ -196,6 +220,7 @@ async def lookup_history_by_email(email: str, *, recruiter_id: str | None = None
     if recruiter_id and not is_super_admin:
         scope["recruiter_id"] = recruiter_id
 
+    # Declined / expired / withdrawn — true historical candidates.
     candidate_query = {
         "email": email,
         **scope,
@@ -220,12 +245,20 @@ async def lookup_history_by_email(email: str, *, recruiter_id: str | None = None
             {"status": {"$in": list(HISTORICAL_EMPLOYEE_STATUSES)}},
         ],
     }
+    converted_query = {
+        "email": email,
+        **scope,
+        "$or": [
+            {"status": "converted"},
+            {"conversion_status": "converted"},
+            {"history_bucket": "converted"},
+        ],
+    }
 
     candidates = await database.candidates.find(candidate_query).sort("created_at", -1).to_list(length=50)
     employees = await database.employees.find(employee_query).sort("created_at", -1).to_list(length=50)
+    converted_docs = await database.candidates.find(converted_query).sort("created_at", -1).to_list(length=50)
 
-    # Also match archived users' original_email linked employee/candidate docs already covered by email.
-    # Include invitations that never became candidates.
     invite_query = {
         "email": email,
         "status": {"$in": ["expired", "used"]},
@@ -236,12 +269,34 @@ async def lookup_history_by_email(email: str, *, recruiter_id: str | None = None
     candidate_matches = [public_history_match(record_type="candidate", doc=doc) for doc in candidates]
     employee_matches = [public_history_match(record_type="employee", doc=doc) for doc in employees]
 
+    # Converted cycles only for rehire context (no active employee). Keep them
+    # alongside resigned tenures; never recommend while the person is employed.
+    converted_matches = []
+    if not active_employee:
+        converted_matches = [
+            public_history_match(record_type="converted_candidate", doc=doc) for doc in converted_docs
+        ]
+
+    converted_tokens = {
+        doc.get("invitation_token") for doc in converted_docs if doc.get("invitation_token")
+    }
+    historical_tokens = {
+        doc.get("invitation_token") for doc in candidates if doc.get("invitation_token")
+    }
+
     invite_matches = []
     for inv in invitations:
-        # Skip if we already have a candidate cycle for the same invite token.
         token = inv.get("token")
-        if token and any(c.get("invitation_token") == token for c in candidates):
+        # Prefer candidate / converted rows over a raw invitation card.
+        if token and (token in converted_tokens or token in historical_tokens):
             continue
+        # Active employees are not invite suggestions — block via active_conflict only.
+        if inv.get("status") == "used" and active_employee:
+            continue
+        # Used invite already covered by converted_matches for resigned rehire.
+        if inv.get("status") == "used" and converted_matches:
+            continue
+
         invite_matches.append(
             {
                 "type": "historical_invitation",
@@ -262,7 +317,8 @@ async def lookup_history_by_email(email: str, *, recruiter_id: str | None = None
             }
         )
 
-    matches = employee_matches + candidate_matches + invite_matches
+    # Employee tenures first, then conversion cycles, then other candidate/invite history.
+    matches = employee_matches + converted_matches + candidate_matches + invite_matches
     active_conflict = None
     if active_employee:
         active_conflict = {
@@ -296,6 +352,8 @@ async def lookup_history_by_email(email: str, *, recruiter_id: str | None = None
     parts = []
     if employee_matches:
         parts.append(f"{len(employee_matches)} prior employee tenure(s)")
+    if converted_matches:
+        parts.append(f"{len(converted_matches)} prior conversion cycle(s)")
     if candidate_matches:
         parts.append(f"{len(candidate_matches)} prior candidate cycle(s)")
     if invite_matches:
@@ -316,6 +374,7 @@ async def lookup_history_by_email(email: str, *, recruiter_id: str | None = None
         "matches": matches,
         "candidate_matches": candidate_matches,
         "employee_matches": employee_matches,
+        "converted_matches": converted_matches,
         "invitation_matches": invite_matches,
         "can_reinvite": can_reinvite,
         "suggestion_summary": suggestion_summary,

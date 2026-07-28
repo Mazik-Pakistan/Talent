@@ -502,18 +502,14 @@ export default function RecruiterInvitePage() {
                   </p>
                   {!historyLoading && (personHistory?.matches || []).length > 0 ? (
                     <ul className={styles.miniList} style={{ margin: 0 }}>
-                      {personHistory.matches
-                    .filter(
-                      (match) =>
-                        match.record_type !== "candidate" ||
-                        (match.outcome !== "converted" && match.status !== "converted")
-                    )
-                    .map((match) => (
+                      {personHistory.matches.map((match) => (
                         <li className={styles.miniListItem} key={`${match.type}-${match.id}`}>
                           <div>
                             <strong>{match.full_name || match.email}</strong>
                             <div className={styles.mutedText}>
-                              {match.record_type}
+                              {match.type === "converted_candidate"
+                                ? "candidate → employee"
+                                : match.record_type}
                               {match.employee_id ? ` · ${match.employee_id}` : ""}
                               {match.job_title ? ` · ${match.job_title}` : ""}
                               {" · "}

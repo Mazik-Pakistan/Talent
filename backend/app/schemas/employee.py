@@ -6,6 +6,6 @@ class CreateFromCandidateRequest(BaseModel):
 
 
 class GenerateEmployeeIdRequest(BaseModel):
-    """Optional year override; defaults to current UTC year."""
+    """Optional year override (ignored — IDs are global EMP-000001)."""
 
     year: int | None = Field(default=None, ge=2000, le=2100)

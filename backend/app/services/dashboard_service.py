@@ -370,23 +370,57 @@ class DashboardService:
         def _record_id(doc: dict) -> str:
             return str(doc.get("user_id") or doc.get("supabase_user_id") or doc.get("_id"))
 
-        results = [
-            {
-                "type": "employee" if (e.get("history_bucket") != "historical" and e.get("status") in ("active", "inactive", "on_leave", None)) else "historical_employee",
-                "id": e.get("employee_id") or _record_id(e),
-                "full_name": e.get("full_name"),
-                "email": e.get("email"),
-                "department": e.get("department"),
-                "job_title": e.get("job_title"),
-                "status": e.get("status"),
-                "history_bucket": e.get("history_bucket")
-                or ("historical" if e.get("status") in ("resigned", "terminated", "exited") else "active"),
-                "employee_id": e.get("employee_id"),
-                "outcome": e.get("exit_type") or e.get("status"),
-                "href": f"/dashboard/recruiter/employees/{e.get('employee_id') or _record_id(e)}",
-            }
+        from app.services.people_history import ACTIVE_EMPLOYEE_STATUSES, cycle_group_key
+
+        active_emails = {
+            cycle_group_key(e.get("email"))
             for e in employees
-        ]
+            if e.get("email")
+            and e.get("history_bucket") != "historical"
+            and e.get("status") in (*ACTIVE_EMPLOYEE_STATUSES, None)
+        }
+        # Also catch active employees not in this search page of results.
+        if active_emails or any(e.get("email") for e in employees):
+            extra_active = await database.employees.distinct(
+                "email",
+                {
+                    **(scope or {}),
+                    "status": {"$in": list(ACTIVE_EMPLOYEE_STATUSES)},
+                    "$or": [
+                        {"history_bucket": {"$exists": False}},
+                        {"history_bucket": "active"},
+                    ],
+                },
+            )
+            active_emails |= {cycle_group_key(e) for e in extra_active if e}
+
+        results = []
+        for e in employees:
+            email_key = cycle_group_key(e.get("email"))
+            is_hist = e.get("history_bucket") == "historical" or e.get("status") in (
+                "resigned",
+                "terminated",
+                "exited",
+            )
+            # Prior tenures for someone who is active again belong on career timeline only.
+            if is_hist and email_key in active_emails:
+                continue
+            results.append(
+                {
+                    "type": "historical_employee" if is_hist else "employee",
+                    "id": e.get("employee_id") or _record_id(e),
+                    "full_name": e.get("full_name"),
+                    "email": e.get("email"),
+                    "department": e.get("department"),
+                    "job_title": e.get("job_title"),
+                    "status": e.get("status"),
+                    "history_bucket": e.get("history_bucket")
+                    or ("historical" if is_hist else "active"),
+                    "employee_id": e.get("employee_id"),
+                    "outcome": e.get("exit_type") or e.get("status"),
+                    "href": f"/dashboard/recruiter/employees/{e.get('employee_id') or _record_id(e)}",
+                }
+            )
         seen_ids = {r["id"] for r in results}
         for c in candidates:
             rid = _record_id(c)
@@ -400,6 +434,9 @@ class DashboardService:
                 or c.get("status") in {"historical", "declined", "offer_declined"}
                 or c.get("conversion_status") in {"offer_declined", "declined"}
             )
+            email_key = cycle_group_key(c.get("email"))
+            if is_historical and email_key in active_emails:
+                continue
             results.append(
                 {
                     "type": "historical_candidate" if is_historical else "candidate",

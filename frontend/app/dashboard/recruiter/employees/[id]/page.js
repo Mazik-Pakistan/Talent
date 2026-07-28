@@ -9,8 +9,10 @@ import {
   getEmployeeDetail,
   getApiErrorMessage,
   markEmployeeExit,
+  addCareerEvent,
   scheduleEmployeeOrientation,
 } from "@/services/authService";
+import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
 import EmployeeTalentPanel from "@/components/recruiter/EmployeeTalentPanel";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
@@ -520,6 +522,221 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
 }
 
 /**
+ * Career tab: unified timeline (hire / promo / resign / prior tenures),
+ * add-event form, and resign/exit controls.
+ */
+function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeUpdate }) {
+  const [careerForm, setCareerForm] = useState({
+    event_type: "promoted",
+    effective_date: new Date().toISOString().slice(0, 10),
+    to_title: employee.job_title || "",
+    to_department: employee.department || "",
+    to_manager: employee.reporting_manager || "",
+    note: "",
+  });
+  const [busy, setBusy] = useState(false);
+  const isHistorical =
+    employee.history_bucket === "historical" ||
+    ["resigned", "terminated", "exited"].includes(String(employee.status || "").toLowerCase());
+
+  async function refreshEmployee() {
+    const accessToken = localStorage.getItem("access_token");
+    const data = await getEmployeeDetail(employeeId, accessToken);
+    onEmployeeUpdate(data.employee);
+  }
+
+  async function handleSaveCareerEvent() {
+    if (!careerForm.effective_date) {
+      toast.error("Effective date is required.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await addCareerEvent(
+        employeeId,
+        {
+          event_type: careerForm.event_type,
+          effective_date: careerForm.effective_date,
+          to_title: careerForm.to_title || null,
+          to_department: careerForm.to_department || null,
+          to_manager: careerForm.to_manager || null,
+          note: careerForm.note || null,
+        },
+        localStorage.getItem("access_token")
+      );
+      await refreshEmployee();
+      toast.success("Career event saved.");
+      setCareerForm((prev) => ({ ...prev, note: "" }));
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not save career event."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <ExitEmployeeSection
+        employee={employee}
+        employeeId={employeeId}
+        onEmployeeUpdate={onEmployeeUpdate}
+      />
+
+      <div className={styles.section}>
+        <div className={styles.sectionHead}>
+          <div className={styles.sectionHeadLeft}>
+            <div className={`${styles.bar} ${styles.cyan}`} />
+            <div>
+              <div className={styles.sectionTitle}>Career timeline</div>
+              <div className={styles.sectionDesc}>
+                Hires, promotions, resignations, and prior tenures for this person — not listed again under Historical once rehired.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className={styles.sectionBody}>
+          {careerEvents.length === 0 ? (
+            <p className={styles.emptySub}>No career events recorded yet.</p>
+          ) : (
+            <ul className={styles.miniList}>
+              {careerEvents.map((event) => {
+                const isExit = ["resigned", "terminated", "exited"].includes(
+                  String(event.event_type || event.to_status || "").toLowerCase()
+                );
+                return (
+                  <li key={event.id} className={styles.miniListItem}>
+                    <div>
+                      <strong style={{ textTransform: "capitalize" }}>
+                        {toLabel(event.event_type || event.to_status || "event")}
+                      </strong>
+                      {event.employee_id ? (
+                        <span className={styles.chip} style={{ marginLeft: 8 }}>
+                          {event.employee_id}
+                        </span>
+                      ) : null}
+                      {isExit ? (
+                        <span
+                          className={styles.chip}
+                          style={{
+                            marginLeft: 8,
+                            background: "var(--orange-light)",
+                            color: "var(--orange)",
+                          }}
+                        >
+                          Exit
+                        </span>
+                      ) : null}
+                      <div className={styles.sectionDesc}>
+                        {fmtDate(event.effective_date) || "No date"}
+                        {event.to_title ? ` · ${event.to_title}` : ""}
+                        {event.to_department ? ` · ${event.to_department}` : ""}
+                        {event.to_manager ? ` · Manager: ${event.to_manager}` : ""}
+                        {event.note ? ` — ${event.note}` : ""}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {!isHistorical ? (
+        <div className={styles.section}>
+          <div className={styles.sectionHead}>
+            <div className={styles.sectionHeadLeft}>
+              <div className={`${styles.bar} ${styles.purple}`} />
+              <div>
+                <div className={styles.sectionTitle}>Add career event</div>
+                <div className={styles.sectionDesc}>Log a promotion, title, department, or manager change.</div>
+              </div>
+            </div>
+          </div>
+          <div className={styles.sectionBody}>
+            <div className={styles.formGrid}>
+              <label className={styles.field}>
+                <span>Event type</span>
+                <select
+                  value={careerForm.event_type}
+                  onChange={(e) => setCareerForm({ ...careerForm, event_type: e.target.value })}
+                >
+                  <option value="promoted">Promoted</option>
+                  <option value="title_change">Title change</option>
+                  <option value="department_change">Department change</option>
+                  <option value="manager_change">Manager change</option>
+                  <option value="status_change">Status change</option>
+                </select>
+              </label>
+              <label className={styles.field}>
+                <span>Effective date</span>
+                <input
+                  type="date"
+                  value={careerForm.effective_date}
+                  onChange={(e) => setCareerForm({ ...careerForm, effective_date: e.target.value })}
+                />
+              </label>
+              <label className={styles.field}>
+                <span>New title</span>
+                <select
+                  value={careerForm.to_title}
+                  onChange={(e) => setCareerForm({ ...careerForm, to_title: e.target.value })}
+                >
+                  <option value="">Select designation</option>
+                  {RECRUITER_DESIGNATIONS.map((designation) => (
+                    <option key={designation} value={designation}>
+                      {designation}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.field}>
+                <span>New department</span>
+                <select
+                  value={careerForm.to_department}
+                  onChange={(e) => setCareerForm({ ...careerForm, to_department: e.target.value })}
+                >
+                  <option value="">Select department</option>
+                  {RECRUITER_DEPARTMENTS.map((department) => (
+                    <option key={department} value={department}>
+                      {department}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.field}>
+                <span>New manager</span>
+                <input
+                  value={careerForm.to_manager}
+                  onChange={(e) => setCareerForm({ ...careerForm, to_manager: e.target.value })}
+                />
+              </label>
+              <label className={styles.field}>
+                <span>Note</span>
+                <input
+                  value={careerForm.note}
+                  onChange={(e) => setCareerForm({ ...careerForm, note: e.target.value })}
+                />
+              </label>
+            </div>
+            <div className={styles.actions} style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                disabled={busy}
+                onClick={handleSaveCareerEvent}
+              >
+                {busy ? "Saving…" : "Save event"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * Mark active employee as resigned / terminated / exited.
  */
 function ExitEmployeeSection({ employee, employeeId, onEmployeeUpdate }) {
@@ -584,7 +801,12 @@ function ExitEmployeeSection({ employee, employeeId, onEmployeeUpdate }) {
         },
         accessToken
       );
-      onEmployeeUpdate?.(data.employee);
+      try {
+        const refreshed = await getEmployeeDetail(employee.employee_id || employeeId, accessToken);
+        onEmployeeUpdate?.(refreshed.employee);
+      } catch {
+        onEmployeeUpdate?.(data.employee);
+      }
       toast.success(data.message || `Marked as ${form.exit_type}.`);
       setOpen(false);
     } catch (err) {
@@ -602,7 +824,7 @@ function ExitEmployeeSection({ employee, employeeId, onEmployeeUpdate }) {
           <div>
             <div className={styles.sectionTitle}>Employment status</div>
             <div className={styles.sectionDesc}>
-              Mark this person as a former employee. Their record stays in Historical employees, and the same email can be invited again as a new candidate (new employee ID on reconversion).
+              Mark this person as resigned, terminated, or exited. The exit is recorded on the career timeline. If they return later, prior tenures stay on this timeline — not as a separate Historical directory entry while they are active again.
             </div>
           </div>
         </div>
@@ -729,7 +951,11 @@ export default function EmployeeProfilePage({ params }) {
   }
 
   const employeeId      = employee.employee_id || id;
-  const careerEvents    = Array.isArray(employee.career) ? employee.career : [];
+  const careerEvents = Array.isArray(employee.career_timeline) && employee.career_timeline.length
+    ? employee.career_timeline
+    : Array.isArray(employee.career)
+      ? employee.career
+      : [];
   const currentOffer = employee.current_offer || null;
   const personal = employee.onboarding?.personal || null;
   const bloodGroupPending = Boolean(personal) && isBloodGroupPending(personal.blood_group);
@@ -818,11 +1044,6 @@ export default function EmployeeProfilePage({ params }) {
 
       {activeTab === "overview" && (
         <>
-          <ExitEmployeeSection
-            employee={employee}
-            employeeId={employeeId}
-            onEmployeeUpdate={setEmployee}
-          />
           <ProfileCompletionSection
             employee={employee}
             employeeId={employeeId}
@@ -926,52 +1147,6 @@ export default function EmployeeProfilePage({ params }) {
             </dl>
           </div>
         </div>
-          {(employee.person_history?.matches || []).length > 0 ? (
-            <div className={styles.section}>
-              <div className={styles.sectionHead}>
-                <div className={styles.sectionHeadLeft}>
-                  <div className={`${styles.bar} ${styles.navy}`} />
-                  <div>
-                    <div className={styles.sectionTitle}>Cross-cycle history</div>
-                    <div className={styles.sectionDesc}>
-                      {employee.person_history.suggestion_summary || "Prior candidate and employee records for this email."}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className={styles.sectionBody}>
-                <ul className={styles.miniList}>
-                  {employee.person_history.matches
-                    .filter(
-                      (match) =>
-                        match.record_type !== "candidate" ||
-                        (match.outcome !== "converted" && match.status !== "converted")
-                    )
-                    .map((match) => (
-                    <li className={styles.miniListItem} key={`${match.type}-${match.id}`}>
-                      <div>
-                        <strong>{match.full_name || match.email}</strong>
-                        <div className={styles.mutedText}>
-                          {match.record_type}
-                          {match.employee_id ? ` · ${match.employee_id}` : ""}
-                          {match.job_title ? ` · ${match.job_title}` : ""}
-                          {" · "}
-                          <span style={{ textTransform: "capitalize" }}>
-                            {String(match.outcome || match.status || "").replace(/_/g, " ")}
-                          </span>
-                        </div>
-                      </div>
-                      {match.href ? (
-                        <button type="button" className={styles.secondaryButton} onClick={() => router.push(match.href)}>
-                          Open
-                        </button>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          ) : null}
           <CompanyEmailSection employee={employee} />
           <CompanyAssetsSection employee={employee} />
         </>
@@ -995,41 +1170,12 @@ export default function EmployeeProfilePage({ params }) {
       )}
 
       {activeTab === "career" && (
-        <div className={styles.section}>
-          <div className={styles.sectionHead}>
-            <div className={styles.sectionHeadLeft}>
-              <div className={`${styles.bar} ${styles.cyan}`} />
-              <div>
-                <div className={styles.sectionTitle}>Career timeline</div>
-                <div className={styles.sectionDesc}>Promotions, title changes, and role history.</div>
-              </div>
-            </div>
-          </div>
-          <div className={styles.sectionBody}>
-            {careerEvents.length === 0 ? (
-              <p className={styles.emptySub}>No career events recorded yet.</p>
-            ) : (
-              <ul className={styles.miniList}>
-                {careerEvents.map((event) => (
-                  <li key={event.id} className={styles.miniListItem}>
-                    <div>
-                      <strong style={{ textTransform: "capitalize" }}>
-                        {toLabel(event.event_type || "event")}
-                      </strong>
-                      <div className={styles.sectionDesc}>
-                        {fmtDate(event.effective_date) || "No date"}
-                        {event.to_title ? ` | ${event.to_title}` : ""}
-                        {event.to_department ? ` | ${event.to_department}` : ""}
-                        {event.to_manager ? ` | Manager: ${event.to_manager}` : ""}
-                        {event.note ? ` - ${event.note}` : ""}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
+        <CareerTimelineSection
+          employee={employee}
+          employeeId={employeeId}
+          careerEvents={careerEvents}
+          onEmployeeUpdate={setEmployee}
+        />
       )}
 
       {activeTab === "documents" && (
