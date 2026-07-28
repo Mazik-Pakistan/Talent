@@ -14,22 +14,52 @@ from app.services.spreadsheet_roster import (
     BULK_INVITE_MAX_ROWS,
     missing_required_headers,
     read_upload_rows,
+    resolve_benefit_columns,
     resolve_column_indexes,
+    resolve_pay_columns,
     row_to_candidate,
 )
 
 invitation_service = InvitationService()
 
 
-def _benefit_items(labels: list[str] | None) -> list[dict]:
+def _slug(label: str) -> str:
+    return "".join(ch if ch.isalnum() else "-" for ch in (label or "").lower()).strip("-")
+
+
+def _benefit_items(row: dict) -> list[dict]:
+    """Build offer benefit list from checkbox columns, comma list, or defaults."""
+    mode = row.get("benefits_mode") or "default"
+    flags = row.get("benefit_flags") or {}
+    labels = row.get("benefits")
+
+    if mode == "checkboxes":
+        # Include every known benefit with selected from Yes/No; keep any custom Yes labels too.
+        items = []
+        seen = set()
+        for label in DEFAULT_BENEFITS:
+            selected = bool(flags.get(label, False))
+            items.append({"id": _slug(label), "label": label, "selected": selected})
+            seen.add(label.lower())
+        for label, selected in flags.items():
+            if label.lower() in seen:
+                continue
+            cleaned = " ".join(str(label).split())
+            if cleaned:
+                items.append({"id": _slug(cleaned), "label": cleaned, "selected": bool(selected)})
+        # If somehow nothing selected, fall back to defaults on so the offer is not empty.
+        if not any(i["selected"] for i in items):
+            for item in items:
+                item["selected"] = True
+        return items
+
     source = labels if labels else list(DEFAULT_BENEFITS)
     items = []
     for label in source:
         cleaned = " ".join(str(label).split())
         if not cleaned:
             continue
-        slug = "".join(ch if ch.isalnum() else "-" for ch in cleaned.lower()).strip("-")
-        items.append({"id": slug or f"benefit-{len(items)}", "label": cleaned, "selected": True})
+        items.append({"id": _slug(cleaned) or f"benefit-{len(items)}", "label": cleaned, "selected": True})
     return items
 
 
@@ -49,10 +79,10 @@ def candidate_row_to_request(row: dict) -> CreateInvitationRequest:
         start_date=start_raw,
         monthly_salary=float(row["monthly_salary"]),
         currency=(row.get("currency") or "PKR").upper(),
-        salary_breakdown=[],
-        benefits=_benefit_items(row.get("benefits")),
+        salary_breakdown=row.get("salary_breakdown") or [],
+        benefits=_benefit_items(row),
         offer_expiry_days=int(row.get("offer_expiry_days") or 14),
-        terms=DEFAULT_OFFER_TERMS,
+        terms=(row.get("terms") or "").strip() or DEFAULT_OFFER_TERMS,
         message_to_candidate=row.get("message_to_candidate"),
     )
     return CreateInvitationRequest(
@@ -94,10 +124,20 @@ class BulkInviteService:
             }
 
         rows: list[dict] = []
+        benefit_columns = resolve_benefit_columns(header)
+        pay_columns = resolve_pay_columns(header)
         for sheet_row, cells in data_rows:
             if not cells or all(c is None or str(c).strip() == "" for c in cells):
                 continue
-            parsed = row_to_candidate(cells, indexes, sheet_row)
+            parsed = row_to_candidate(
+                cells,
+                indexes,
+                sheet_row,
+                benefit_columns=benefit_columns,
+                pay_columns=pay_columns,
+            )
+            if not parsed.get("email") and not parsed.get("full_name"):
+                continue
             rows.append(parsed)
             if len(rows) >= BULK_INVITE_MAX_ROWS:
                 break
@@ -107,6 +147,8 @@ class BulkInviteService:
             "filename": file.filename,
             "missing_headers": [],
             "found_headers": [h for h in header if h],
+            "benefit_columns": [label for label, _ in benefit_columns],
+            "pay_columns": [label for label, _ in pay_columns],
             "rows": rows,
             "summary": {
                 "total": len(rows),
