@@ -15,14 +15,50 @@ import {
 import SignaturePad from "@/components/SignaturePad";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
+import { formatOfferCurrency, openOfferLetterPdf } from "@/lib/offerLetter";
 
 const OFFER_DRAFT_KEY = "offer_letter_draft";
 
-const formatCurrency = (amount, currency = "PKR") => {
-  if (amount == null) return "—";
-  const num = Number(amount);
-  return `${currency || ""} ${num.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-};
+function IconRole() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+      <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+    </svg>
+  );
+}
+
+function IconCompensation() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="1" x2="12" y2="23" />
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
+  );
+}
+
+function IconBenefits() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 12 20 22 4 22 4 12" />
+      <rect x="2" y="7" width="20" height="5" />
+      <line x1="12" y1="22" x2="12" y2="7" />
+      <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
+      <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
+    </svg>
+  );
+}
+
+function IconTerms() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+    </svg>
+  );
+}
 
 function OfferLetterPageContent() {
   const router = useRouter();
@@ -52,10 +88,13 @@ function OfferLetterPageContent() {
   const negotiation = offer?.negotiation || {};
   const negoPending = negotiation.status === "pending";
   const negoRejected = negotiation.status === "rejected";
+  const negotiationRoundsUsed = Number(offer?.negotiation_rounds_used || 0);
+  const negotiationMaxRounds = Number(offer?.negotiation_max_rounds || 3);
+  const negotiationRoundsLeft = Math.max(negotiationMaxRounds - negotiationRoundsUsed, 0);
   const canNegotiate =
     offer &&
     ["sent", "viewed"].includes(offer.status) &&
-    !offer.negotiation_used &&
+    negotiationRoundsLeft > 0 &&
     !negoPending;
   const canSign = offer && ["sent", "viewed"].includes(offer.status) && !negoPending;
 
@@ -78,7 +117,7 @@ function OfferLetterPageContent() {
       pathname: "/offer",
       section: "offer",
       hint: offer?.status
-        ? `Offer v${offer.version || 1} status: ${offer.status}. Accept, negotiate once, or decline.`
+        ? `Offer v${offer.version || 1} status: ${offer.status}. Accept, negotiate, or decline.`
         : "Review your offer letter first — documents unlock after you sign.",
       fields: ["full_legal_name", "agree", "signature", "negotiate"],
     });
@@ -279,206 +318,13 @@ function OfferLetterPageContent() {
 
   // --------------- PDF generation ---------------
   const handleDownloadPDF = useCallback(() => {
-    if (!offer) return;
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      alert("Please allow pop-ups to download the offer letter as PDF.");
-      return;
-    }
-
-    const candidateName = expectedName || fullLegalName || offer.candidate_name || "Candidate";
-    const currentDate = new Date().toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
+    const ok = openOfferLetterPdf(offer, {
+      candidateName: expectedName || fullLegalName || offer?.candidate_name,
     });
-    const currency = offer.currency || "PKR";
-    const grossSalary = formatCurrency(offer.monthly_salary, currency);
-    const breakdownRows = (offer.salary_breakdown || [])
-      .filter(row => row.label.trim())
-      .map(row => `<tr><td>${row.label}</td><td style="text-align:right;">${formatCurrency(row.amount, currency)}</td></tr>`)
-      .join("");
-    const breakdownTotal = (offer.salary_breakdown || []).reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-    const benefitsList = selectedBenefits.map(b => `<li>${b.label}</li>`).join("");
-
-    const companyName = "Mazik Global Pakistan";
-    const companyAddress = "Islamabad, Pakistan";
-    const companyRepresentative = offer.reporting_manager || "Hiring Manager";
-
-    const signedBlock = (offer.status === "signed" || offer.status === "approved") ? `
-      <div class="signature-confirm" style="margin-top: 30px; border: 1px dashed #0a2540; padding: 15px; background: #f0f7ff;">
-        <p><strong>Accepted by:</strong> ${offer.signature?.full_legal_name || candidateName}</p>
-        <p><strong>Date:</strong> ${offer.signed_at ? new Date(offer.signed_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : ""}</p>
-        ${offer.signature?.signature_data_url ? `<img src="${offer.signature.signature_data_url}" alt="Signature" style="max-width: 200px; margin-top: 10px;"/>` : ""}
-      </div>
-    ` : "";
-
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Employment Offer Letter - ${offer.job_title}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
-      line-height: 1.6;
-      color: #1e293b;
-      padding: 60px 70px;
-      max-width: 800px;
-      margin: 0 auto;
+    if (!ok) {
+      alert("Please allow pop-ups to download the offer letter as PDF.");
     }
-    .letterhead {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 40px;
-      border-bottom: 2px solid #0a2540;
-      padding-bottom: 20px;
-    }
-    .logo img { height: 55px; }
-    .company-info { text-align: right; font-size: 13px; color: #475569; }
-    .date { margin-bottom: 25px; font-size: 14px; }
-    .recipient { margin-bottom: 25px; }
-    .subject { font-weight: 600; font-size: 15px; margin-bottom: 15px; color: #0a2540; }
-    .salutation { margin-bottom: 20px; }
-    .body-text { margin-bottom: 18px; text-align: justify; }
-    h3 { font-size: 16px; color: #0a2540; margin: 20px 0 10px; border-left: 4px solid #0a2540; padding-left: 10px; }
-    table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px; }
-    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
-    th { background: #f8fafc; font-weight: 600; width: 40%; }
-    td { background: #ffffff; }
-    .total-row td { font-weight: 700; background: #f1f5f9; }
-    ul { padding-left: 22px; margin: 10px 0; }
-    .terms { white-space: pre-line; background: #f9fafb; padding: 16px; border-radius: 6px; font-size: 14px; }
-    .signature-block { margin-top: 50px; display: flex; justify-content: space-between; }
-    .sig-box { width: 45%; }
-    .sig-line { border-top: 1px solid #0a2540; margin-top: 50px; padding-top: 8px; font-weight: 600; font-size: 14px; }
-    .signature-confirm { margin-top: 30px; border: 1px dashed #0a2540; padding: 15px; background: #f0f7ff; }
-    @media print {
-      body { padding: 40px 50px; }
-      .no-print { display: none; }
-    }
-  </style>
-</head>
-<body>
-  <div class="letterhead">
-    <div class="logo">
-      <img src="/talentai-logo.png" alt="Mazik Global" />
-    </div>
-    <div class="company-info">
-      <strong>${companyName}</strong><br>
-      ${companyAddress}
-    </div>
-  </div>
-
-  <div class="date">${currentDate}</div>
-
-  <div class="recipient">
-    <strong>To:</strong><br>
-    ${candidateName}<br>
-  </div>
-
-  <div class="subject">Re: Employment Offer for the Position of ${offer.job_title}</div>
-
-  <div class="salutation">Dear ${candidateName.split(' ')[0] || candidateName},</div>
-
-  <p class="body-text">
-    We are delighted to offer you the position of <strong>${offer.job_title}</strong> with ${companyName}. 
-    Your skills, experience, and enthusiasm will be a valuable addition to our team. Please review the details 
-    of your employment package below.
-  </p>
-
-  <h3>Position Details</h3>
-  <table>
-    <tr><th>Job Title</th><td>${offer.job_title}</td></tr>
-    <tr><th>Department</th><td>${offer.department}</td></tr>
-    <tr><th>Employment Type</th><td>${offer.employment_type}</td></tr>
-    <tr><th>Location</th><td>${offer.office_location || "—"}</td></tr>
-    <tr><th>Reporting To</th><td>${offer.reporting_manager || "—"}</td></tr>
-    <tr><th>Start Date</th><td>${offer.start_date}</td></tr>
-  </table>
-
-  <h3>Compensation</h3>
-  <table>
-    <tr><th>Monthly Gross Salary</th><td>${grossSalary}</td></tr>
-  </table>
-  ${breakdownRows ? `
-    <table>
-      <tr><th colspan="2" style="text-align:left;">Salary Breakdown</th></tr>
-      ${breakdownRows}
-      <tr class="total-row"><td>Total</td><td style="text-align:right;">${formatCurrency(breakdownTotal, currency)}</td></tr>
-    </table>
-  ` : ""}
-
-  ${selectedBenefits.length > 0 ? `
-  <h3>Benefits</h3>
-  <ul>${benefitsList}</ul>
-  ` : ""}
-
-  <h3>Terms & Conditions</h3>
-  <div class="terms">${offer.terms}</div>
-
-  <p class="body-text" style="margin-top: 25px;">
-    To accept this offer, please sign below and return the signed copy by the offer expiry date. 
-    We look forward to welcoming you aboard.
-  </p>
-
-  <p class="body-text">Sincerely,<br><br>${companyRepresentative}<br>${companyName}</p>
-
-  ${offer.signature?.signature_data_url ? `<img src="${offer.signature.signature_data_url}" alt="Signature" style="max-width: 200px; margin-top: 10px;"/>` : ""}
-  <div class="signature-block">
-    <div class="sig-box">
-      <div class="sig-line">${candidateName}</div>
-      <small>Candidate Signature & Date</small>
-    </div>
-    <div class="sig-box">
-      <div class="sig-line">${companyRepresentative}</div>
-      <small>For ${companyName}</small>
-    </div>
-  </div>
-
-  ${signedBlock}
-
-  <p class="no-print" style="margin-top: 30px; font-style: italic; color: #64748b;">
-    This document is an electronic copy. To save as PDF, use your browser's <strong>Save as PDF</strong> option in the print dialog.
-  </p>
-</body>
-</html>`;
-
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.onload = () => {
-      setTimeout(() => {
-        printWindow.print();
-      }, 600);
-    };
-  }, [offer, expectedName, fullLegalName, selectedBenefits]);
-
-  // --- SVG icons ---
-  const IconRole = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-    </svg>
-  );
-  const IconCompensation = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-    </svg>
-  );
-  const IconBenefits = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="20 12 20 22 4 22 4 12" /><rect x="2" y="7" width="20" height="5" /><line x1="12" y1="22" x2="12" y2="7" />
-      <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" /><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
-    </svg>
-  );
-  const IconTerms = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
-    </svg>
-  );
+  }, [offer, expectedName, fullLegalName]);
 
   return (
     <main className="offer-shell">
@@ -560,15 +406,51 @@ function OfferLetterPageContent() {
 
             {negoPending && (
               <p className="form-message" style={{ background: "#fff7ed", color: "#9a3412" }}>
-                Negotiation pending — your recruiter will accept (new v2 offer) or reject. Signing is paused until then.
+                Negotiation pending — your recruiter is reviewing this round. Signing is paused until they respond.
               </p>
             )}
             {negoRejected && ["sent", "viewed"].includes(offer.status) && (
               <p className="form-message" style={{ background: "#fee9e7", color: "#b42318" }}>
                 Negotiation declined
-                {negotiation.recruiter_note ? `: ${negotiation.recruiter_note}` : "."} You may accept the original
-                offer or decline it. No further negotiation is available.
+                {negotiation.recruiter_note ? `: ${negotiation.recruiter_note}` : "."} You may accept the current
+                offer, decline it, or continue if you still have rounds left.
               </p>
+            )}
+            {offer && (
+              <div
+                style={{
+                  marginBottom: 22,
+                  padding: "14px 16px",
+                  borderRadius: 14,
+                  border: "1px solid #dfe9f6",
+                  background: "#fbfdff",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <strong style={{ color: "#0c2a41" }}>Negotiation rounds</strong>
+                  <span style={{ color: "#5b6d86", fontSize: 13 }}>
+                    {negotiationRoundsUsed}/{negotiationMaxRounds} used · {negotiationRoundsLeft} left
+                  </span>
+                </div>
+                {(offer.negotiation_history || []).length > 0 && (
+                  <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                    {offer.negotiation_history.map((entry, index) => (
+                      <div
+                        key={`${entry.created_at || index}-${entry.action || index}`}
+                        style={{ borderLeft: "3px solid #38a2ff", paddingLeft: 12 }}
+                      >
+                        <div style={{ fontWeight: 700, color: "#0c2a41", fontSize: 13 }}>
+                          {humanizeHistory(entry.actor_role)} · {humanizeHistory(entry.action)}
+                        </div>
+                        <div style={{ color: "#8fa0b8", fontSize: 12 }}>{formatHistoryDate(entry.created_at)}</div>
+                        {entry.note ? (
+                          <div style={{ marginTop: 4, color: "#5b6d86", fontSize: 12.5 }}>{entry.note}</div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* ---- Role Details ---- */}
@@ -612,7 +494,7 @@ function OfferLetterPageContent() {
               <div className="offer-term" style={{ marginBottom: 16 }}>
                 <dt>Monthly salary (gross)</dt>
                 <dd style={{ fontSize: "1.2em", fontWeight: 600 }}>
-                  {formatCurrency(offer.monthly_salary, offer.currency)} / month
+                  {formatOfferCurrency(offer.monthly_salary, offer.currency)} / month
                 </dd>
               </div>
               {(offer.salary_breakdown || []).length > 0 && (
@@ -621,7 +503,7 @@ function OfferLetterPageContent() {
                   <ul style={{ margin: 0, paddingLeft: 18, color: "#405266" }}>
                     {offer.salary_breakdown.map((row, i) => (
                       <li key={i}>
-                        {row.label}: {formatCurrency(row.amount, offer.currency)}
+                        {row.label}: {formatOfferCurrency(row.amount, offer.currency)}
                       </li>
                     ))}
                   </ul>
@@ -700,33 +582,79 @@ function OfferLetterPageContent() {
                 {canNegotiate && !showNegotiate && (
                   <div style={{ marginBottom: 16 }}>
                     <button type="button" className="secondary-button" onClick={() => setShowNegotiate(true)}>
-                      Negotiate once (salary, start date, benefits)
+                      Continue negotiation ({negotiationRoundsLeft} round{negotiationRoundsLeft === 1 ? "" : "s"} left)
                     </button>
                   </div>
                 )}
 
                 {showNegotiate && canNegotiate && (
-                  <form onSubmit={handleNegotiate} className="auth-form" style={{ marginBottom: 20 }}>
-                    <h3>Propose changes (one round)</h3>
-                    <label className="field">
-                      <span>Proposed monthly salary ({offer.currency})</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={negoSalary}
-                        onChange={(e) => setNegoSalary(e.target.value)}
-                        required
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Proposed start date</span>
-                      <input type="date" value={negoStart} onChange={(e) => setNegoStart(e.target.value)} required />
-                    </label>
-                    <div style={{ marginBottom: 12 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>Benefits</span>
-                      <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                  <form
+                    onSubmit={handleNegotiate}
+                    className="auth-form"
+                    style={{
+                      marginBottom: 20,
+                      border: "1px solid #dfe9f6",
+                      borderRadius: 18,
+                      padding: 18,
+                      background: "linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)",
+                    }}
+                  >
+                    <div style={{ marginBottom: 14 }}>
+                      <h3 style={{ marginBottom: 6 }}>Request changes to this offer</h3>
+                      <p style={{ margin: 0, color: "#5b6d86" }}>
+                        You have {negotiationRoundsLeft} negotiation round{negotiationRoundsLeft === 1 ? "" : "s"} left.
+                        Use them for salary, allowances, benefits, joining date, and any clarifying note for your recruiter.
+                      </p>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 12,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <div style={{ border: "1px solid #eaf1fa", borderRadius: 14, padding: 14, background: "#fff" }}>
+                        <div style={{ fontSize: 11, textTransform: "uppercase", color: "#8fa0b8", marginBottom: 6 }}>
+                          Current salary
+                        </div>
+                        <strong style={{ color: "#0c2a41", fontSize: 16 }}>
+                          {formatOfferCurrency(offer.monthly_salary, offer.currency)}
+                        </strong>
+                      </div>
+                      <div style={{ border: "1px solid #eaf1fa", borderRadius: 14, padding: 14, background: "#fff" }}>
+                        <div style={{ fontSize: 11, textTransform: "uppercase", color: "#8fa0b8", marginBottom: 6 }}>
+                          Current joining date
+                        </div>
+                        <strong style={{ color: "#0c2a41", fontSize: 16 }}>{offer.start_date || "—"}</strong>
+                      </div>
+                    </div>
+
+                    <div className="offer-negotiation-grid">
+                      <label className="field">
+                        <span>Proposed monthly salary ({offer.currency})</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={negoSalary}
+                          onChange={(e) => setNegoSalary(e.target.value)}
+                          required
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Proposed joining date</span>
+                        <input type="date" value={negoStart} onChange={(e) => setNegoStart(e.target.value)} required />
+                      </label>
+                    </div>
+
+                    <div style={{ marginBottom: 14 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "#153d5e" }}>
+                        Benefits and allowances to keep in the revised offer
+                      </span>
+                      <div className="offer-benefit-grid" style={{ marginTop: 10 }}>
                         {negoBenefits.map((b) => (
-                          <label key={b.id || b.label} className="checkbox-field">
+                          <label key={b.id || b.label} className="checkbox-field offer-benefit-option">
                             <input
                               type="checkbox"
                               checked={b.selected}
@@ -745,16 +673,56 @@ function OfferLetterPageContent() {
                         ))}
                       </div>
                     </div>
+
+                    {(offer.salary_breakdown || []).length > 0 && (
+                      <div
+                        style={{
+                          marginBottom: 14,
+                          padding: 14,
+                          borderRadius: 14,
+                          background: "#fff8eb",
+                          border: "1px solid #f3d7a5",
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, color: "#8a5400", marginBottom: 8 }}>
+                          Current allowances / compensation structure
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                          {offer.salary_breakdown.map((row, index) => (
+                            <span
+                              key={`${row.label}-${index}`}
+                              style={{
+                                padding: "6px 10px",
+                                borderRadius: 999,
+                                border: "1px solid #f3d7a5",
+                                background: "#fff",
+                                fontSize: 12,
+                                color: "#8a5400",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {row.label}: {formatOfferCurrency(row.amount, offer.currency)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <label className="field">
-                      <span>Note to recruiter (optional)</span>
-                      <textarea rows={3} value={negoNote} onChange={(e) => setNegoNote(e.target.value)} />
+                      <span>Negotiation note to recruiter</span>
+                      <textarea
+                        rows={4}
+                        value={negoNote}
+                        onChange={(e) => setNegoNote(e.target.value)}
+                        placeholder="Explain the reason for your salary, benefits, allowances, or joining date request."
+                      />
                     </label>
                     <div className="offer-actions">
                       <button type="button" className="secondary-button" onClick={() => setShowNegotiate(false)}>
                         Cancel
                       </button>
                       <button type="submit" className="primary-button" disabled={negotiating}>
-                        {negotiating ? "Sending…" : "Send negotiation"}
+                        {negotiating ? "Sending…" : "Send negotiation request"}
                       </button>
                     </div>
                   </form>
@@ -885,6 +853,29 @@ function OfferLetterPageContent() {
           padding-bottom: 8px;
           border-bottom: 1px solid var(--border);
         }
+        .offer-negotiation-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+          margin-bottom: 14px;
+        }
+        .offer-benefit-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .offer-benefit-option {
+          border: 1px solid #dfe9f6;
+          border-radius: 12px;
+          padding: 10px 12px;
+          background: #fff;
+        }
+        @media (max-width: 720px) {
+          .offer-negotiation-grid,
+          .offer-benefit-grid {
+            grid-template-columns: 1fr;
+          }
+        }
       `}</style>
     </main>
   );
@@ -902,4 +893,16 @@ export default function OfferLetterPage() {
       <OfferLetterPageContent />
     </Suspense>
   );
+}
+
+function humanizeHistory(value) {
+  return String(value || "system")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatHistoryDate(value) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
 }

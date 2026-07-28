@@ -13,6 +13,7 @@ import {
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
 import EmployeeTalentPanel from "@/components/recruiter/EmployeeTalentPanel";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
+import OfferSummaryCard from "@/components/offers/OfferSummaryCard";
 import SendReminderModal from "@/components/recruiter/SendReminderModal";
 import {
   clearRecruiterContext,
@@ -308,10 +309,6 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
   const [orientationMessage, setOrientationMessage] = useState("");
   const [orientationSaving, setOrientationSaving] = useState(false);
 
-  useEffect(() => {
-    setOrientationForm(orientationDefaults(employee.orientation));
-  }, [employee.orientation]);
-
   const orientation = employee.orientation || null;
 
   function updateOrientationField(event) {
@@ -601,6 +598,7 @@ export default function EmployeeProfilePage({ params }) {
 
   const employeeId      = employee.employee_id || id;
   const careerEvents    = Array.isArray(employee.career) ? employee.career : [];
+  const currentOffer = employee.current_offer || null;
   const personal = employee.onboarding?.personal || null;
   const bloodGroupPending = Boolean(personal) && isBloodGroupPending(personal.blood_group);
   const bloodGroupLabel = personal
@@ -782,6 +780,7 @@ export default function EmployeeProfilePage({ params }) {
 
       {activeTab === "day1" && (
         <DayOneOnboardingSection
+          key={`day1-${employeeId}-${employee.orientation?.date || ""}-${employee.orientation?.time || ""}-${employee.orientation?.trainer || ""}`}
           employee={employee}
           employeeId={employeeId}
           onEmployeeUpdate={setEmployee}
@@ -846,6 +845,16 @@ export default function EmployeeProfilePage({ params }) {
             </div>
           </div>
           <div className={styles.sectionBody}>
+            {currentOffer ? (
+              <div style={{ marginBottom: 16 }}>
+                <OfferSummaryCard
+                  offer={currentOffer}
+                  candidateName={employee.full_name}
+                  title="Offer letter PDF"
+                  description="Recruiters can review the final offer letter here alongside the employee's submitted documents."
+                />
+              </div>
+            ) : null}
             {employee.id ? (
               <RecruiterDocumentReview ownerId={employee.id} />
             ) : (

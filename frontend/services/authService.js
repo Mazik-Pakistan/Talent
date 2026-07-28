@@ -672,6 +672,13 @@ export async function rejectOfferNegotiation(offerId, payload, accessToken) {
   return data;
 }
 
+export async function counterOfferNegotiation(offerId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/offers/${offerId}/negotiation/counter`, payload || {}, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
 export async function approveOffer(offerId, payload, accessToken) {
   const { data } = await apiClient.post(`/api/offers/${offerId}/approve`, payload, {
     headers: { Authorization: `Bearer ${accessToken}` },

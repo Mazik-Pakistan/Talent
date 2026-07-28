@@ -8,6 +8,7 @@ import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
   acceptOfferNegotiation,
   approveOffer,
+  counterOfferNegotiation,
   getApiErrorMessage,
   getOnboardingInProgress,
   getReadyForConversion,
@@ -18,6 +19,7 @@ import {
   sendItProvisioning,
 } from "@/services/authService";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
+import OfferSummaryCard from "@/components/offers/OfferSummaryCard";
 import SendReminderModal from "@/components/recruiter/SendReminderModal";
 import {
   clearRecruiterContext,
@@ -38,6 +40,7 @@ export default function RecruiterCandidatesPage() {
   const [negoBusyId, setNegoBusyId] = useState(null);
   const [itEmailDrafts, setItEmailDrafts] = useState({});
   const [negoNotes, setNegoNotes] = useState({});
+  const [counterTerms, setCounterTerms] = useState({});
   const [conversionMessage, setConversionMessage] = useState("");
   const [search, setSearch] = useState("");
   const [reminderTarget, setReminderTarget] = useState(null);
@@ -64,7 +67,7 @@ export default function RecruiterCandidatesPage() {
       fields: ["search"],
     });
     return () => clearRecruiterContext();
-  }, [newCandidates.length, negotiations.length, readyCandidates.length]);
+  }, [newCandidates.length, negotiations.length, readyCandidates]);
 
   const loadCandidates = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
@@ -108,6 +111,17 @@ export default function RecruiterCandidatesPage() {
       )
     );
   }, [newCandidates, search]);
+
+  const activeCounterDraft = useMemo(() => {
+    if (!negoPopup?.id) return null;
+    return (
+      counterTerms[negoPopup.id] || {
+        revised_salary: negoPopup.negotiation?.proposed_salary ?? negoPopup.monthly_salary ?? "",
+        revised_start_date: negoPopup.negotiation?.proposed_start_date || negoPopup.start_date || "",
+        decision_summary: "",
+      }
+    );
+  }, [counterTerms, negoPopup]);
 
   function handleReminder(candidate) {
     setReminderTarget({
@@ -225,6 +239,32 @@ export default function RecruiterCandidatesPage() {
     }
   }
 
+  async function handleNegoCounter(offer) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    const draft = counterTerms[offer.id] || {};
+    setNegoBusyId(offer.id);
+    try {
+      const data = await counterOfferNegotiation(
+        offer.id,
+        {
+          recruiter_note: (negoNotes[offer.id] || "").trim() || null,
+          revised_salary: draft.revised_salary ? Number(draft.revised_salary) : undefined,
+          revised_start_date: draft.revised_start_date || undefined,
+          decision_summary: draft.decision_summary?.trim() || undefined,
+        },
+        accessToken
+      );
+      toast.success(data.message || "Counter-offer sent.");
+      setNegoPopup(null);
+      await loadCandidates();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not send counter-offer."));
+    } finally {
+      setNegoBusyId(null);
+    }
+  }
+
   return (
     <RecruiterShell
       activeKey="candidates"
@@ -257,28 +297,123 @@ export default function RecruiterCandidatesPage() {
         >
           <div
             className={styles.section}
-            style={{ maxWidth: 520, width: "100%", margin: 0 }}
+            style={{ maxWidth: 980, width: "100%", margin: 0, maxHeight: "calc(100vh - 32px)", overflow: "auto" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className={styles.sectionBody}>
-              <h3 style={{ marginTop: 0 }}>Offer negotiation</h3>
-              <p className={styles.mutedText}>
-                {negoPopup.candidate_name} · {negoPopup.job_title}
-              </p>
-              <NegotiationCompare offer={negoPopup} />
-              <label className={styles.field} style={{ marginTop: 12 }}>
-                <span>Note to candidate (optional)</span>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <div>
+                  <h3 style={{ marginTop: 0, marginBottom: 6 }}>Offer negotiation review</h3>
+                  <p className={styles.mutedText} style={{ marginTop: 0 }}>
+                    {negoPopup.candidate_name} · {negoPopup.candidate_email} · {negoPopup.job_title}
+                  </p>
+                </div>
+                <span
+                  className={styles.chip}
+                  style={{ background: "var(--orange-light)", color: "var(--orange)", borderColor: "transparent" }}
+                >
+                  Candidate waiting for recruiter decision
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gap: 16, marginTop: 12 }}>
+                <OfferSummaryCard
+                  offer={negoPopup}
+                  candidateName={negoPopup.candidate_name}
+                  title="Current offer"
+                  description="Open the PDF to verify the exact letter the candidate received."
+                  compact
+                />
+                <NegotiationCompare offer={negoPopup} />
+                <NegotiationTimeline history={negoPopup.negotiation_history} />
+              </div>
+
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: 16,
+                  border: "1px solid var(--border)",
+                  borderRadius: 14,
+                  background: "#fbfdff",
+                }}
+              >
+                <div style={{ fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>Counter-offer terms</div>
+                <div className={styles.formGrid} style={{ marginBottom: 0 }}>
+                  <label className={styles.field}>
+                    <span>Revised salary ({negoPopup.currency})</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={activeCounterDraft?.revised_salary ?? ""}
+                      onChange={(e) =>
+                        setCounterTerms((current) => ({
+                          ...current,
+                          [negoPopup.id]: {
+                            ...(current[negoPopup.id] || {}),
+                            revised_salary: e.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>Revised joining date</span>
+                    <input
+                      type="date"
+                      value={activeCounterDraft?.revised_start_date ?? ""}
+                      onChange={(e) =>
+                        setCounterTerms((current) => ({
+                          ...current,
+                          [negoPopup.id]: {
+                            ...(current[negoPopup.id] || {}),
+                            revised_start_date: e.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className={styles.field} style={{ gridColumn: "1 / -1" }}>
+                    <span>Counter-offer summary</span>
+                    <textarea
+                      rows={3}
+                      value={activeCounterDraft?.decision_summary ?? ""}
+                      onChange={(e) =>
+                        setCounterTerms((current) => ({
+                          ...current,
+                          [negoPopup.id]: {
+                            ...(current[negoPopup.id] || {}),
+                            decision_summary: e.target.value,
+                          },
+                        }))
+                      }
+                      placeholder="Explain the counter-offer and what changed in this round."
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <label className={styles.field} style={{ marginTop: 16 }}>
+                <span>Decision note to candidate</span>
                 <textarea
-                  rows={2}
+                  rows={4}
                   value={negoNotes[negoPopup.id] || ""}
                   onChange={(e) =>
                     setNegoNotes((current) => ({ ...current, [negoPopup.id]: e.target.value }))
                   }
+                  placeholder="Explain why you accepted, rejected, or adjusted the salary, allowances, benefits, or joining date."
                 />
               </label>
-              <div className={styles.rowActions} style={{ marginTop: 14 }}>
+              <div className={styles.rowActions} style={{ marginTop: 14, justifyContent: "flex-end", flexWrap: "wrap" }}>
                 <button type="button" className={styles.secondaryButton} onClick={() => setNegoPopup(null)}>
-                  Later
+                  Review later
+                </button>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  disabled={negoBusyId === negoPopup.id}
+                  onClick={() => handleNegoCounter(negoPopup)}
+                >
+                  {negoBusyId === negoPopup.id ? "Saving…" : "Send counter-offer"}
                 </button>
                 <button
                   type="button"
@@ -286,7 +421,7 @@ export default function RecruiterCandidatesPage() {
                   disabled={negoBusyId === negoPopup.id}
                   onClick={() => handleNegoReject(negoPopup)}
                 >
-                  Reject
+                  {negoBusyId === negoPopup.id ? "Saving…" : "Reject negotiation"}
                 </button>
                 <button
                   type="button"
@@ -294,7 +429,7 @@ export default function RecruiterCandidatesPage() {
                   disabled={negoBusyId === negoPopup.id}
                   onClick={() => handleNegoAccept(negoPopup)}
                 >
-                  Accept → send v2
+                  {negoBusyId === negoPopup.id ? "Saving…" : "Accept and send revised offer"}
                 </button>
               </div>
             </div>
@@ -573,18 +708,90 @@ export default function RecruiterCandidatesPage() {
 
 function NegotiationCompare({ offer }) {
   const n = offer.negotiation || {};
+  const currentBenefits = (offer.benefits || []).filter((item) => item?.selected !== false);
+  const proposedBenefits = (n.proposed_benefits || []).filter((item) => item?.selected !== false);
   return (
-    <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6 }}>
-      <div>
-        Salary: {offer.currency} {Number(offer.monthly_salary || 0).toLocaleString()} →{" "}
-        <strong>
-          {offer.currency} {Number(n.proposed_salary || 0).toLocaleString()}
-        </strong>
+    <div
+      style={{
+        marginTop: 10,
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+        gap: 14,
+      }}
+    >
+      <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 16, background: "#fff" }}>
+        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--text-faint)", marginBottom: 10 }}>
+          Current package
+        </div>
+        <div style={{ display: "grid", gap: 10, color: "var(--text-muted)", fontSize: 13 }}>
+          <div>
+            <strong style={{ color: "var(--navy)" }}>Salary:</strong> {offer.currency}{" "}
+            {Number(offer.monthly_salary || 0).toLocaleString()}
+          </div>
+          <div>
+            <strong style={{ color: "var(--navy)" }}>Joining date:</strong> {offer.start_date || "—"}
+          </div>
+          <div>
+            <strong style={{ color: "var(--navy)" }}>Benefits:</strong>{" "}
+            {currentBenefits.length ? currentBenefits.map((item) => item.label).join(", ") : "None listed"}
+          </div>
+          <div>
+            <strong style={{ color: "var(--navy)" }}>Rounds:</strong> {offer.negotiation_rounds_used || 0}/
+            {offer.negotiation_max_rounds || 3}
+          </div>
+          {(offer.salary_breakdown || []).length > 0 && (
+            <div>
+              <strong style={{ color: "var(--navy)" }}>Allowances:</strong>{" "}
+              {offer.salary_breakdown.map((row) => `${row.label} (${offer.currency} ${Number(row.amount || 0).toLocaleString()})`).join(", ")}
+            </div>
+          )}
+        </div>
       </div>
-      <div>
-        Start: {offer.start_date || "—"} → <strong>{n.proposed_start_date || "—"}</strong>
+
+      <div style={{ border: "1px solid #f3d7a5", borderRadius: 14, padding: 16, background: "#fff8eb" }}>
+        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".05em", color: "#8a5400", marginBottom: 10 }}>
+          Candidate proposal
+        </div>
+        <div style={{ display: "grid", gap: 10, color: "#8a5400", fontSize: 13 }}>
+          <div>
+            <strong>Salary:</strong> {offer.currency} {Number(n.proposed_salary || 0).toLocaleString()}
+          </div>
+          <div>
+            <strong>Joining date:</strong> {n.proposed_start_date || "—"}
+          </div>
+          <div>
+            <strong>Benefits:</strong>{" "}
+            {proposedBenefits.length ? proposedBenefits.map((item) => item.label).join(", ") : "No change requested"}
+          </div>
+          {n.note && (
+            <div>
+              <strong>Candidate note:</strong> {n.note}
+            </div>
+          )}
+        </div>
       </div>
-      {n.note && <div>Note: {n.note}</div>}
+    </div>
+  );
+}
+
+function NegotiationTimeline({ history = [] }) {
+  if (!history.length) return null;
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 16, background: "#fff" }}>
+      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--text-faint)", marginBottom: 12 }}>
+        Negotiation timeline
+      </div>
+      <div style={{ display: "grid", gap: 10 }}>
+        {history.map((entry, index) => (
+          <div key={`${entry.created_at || index}-${entry.action || index}`} style={{ borderLeft: "3px solid var(--blue)", paddingLeft: 12 }}>
+            <div style={{ fontWeight: 700, color: "var(--navy)", fontSize: 13 }}>
+              {humanize(entry.actor_role)} · {humanize(entry.action)}
+            </div>
+            <div className={styles.mutedText}>{formatDate(entry.created_at)}</div>
+            {entry.note ? <div style={{ marginTop: 4, fontSize: 12.5, color: "var(--text-muted)" }}>{entry.note}</div> : null}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

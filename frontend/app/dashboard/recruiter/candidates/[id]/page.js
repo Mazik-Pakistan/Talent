@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
+import OfferSummaryCard from "@/components/offers/OfferSummaryCard";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { getApiErrorMessage, getCandidateDetail } from "@/services/authService";
 import SendReminderModal from "@/components/recruiter/SendReminderModal";
@@ -66,6 +67,7 @@ export default function CandidateProfilePage({ params }) {
   const education = onboarding.education?.entries || [];
   const skills = onboarding.skills || {};
   const governmentDocs = onboarding.government_docs?.documents || [];
+  const currentOffer = candidate.current_offer || null;
 
   return <RecruiterShell activeKey="candidates" title="Candidate Profile" subtitle={`Detailed overview for ${candidate.full_name}`}>
     <div style={{ marginBottom: 20 }}><button type="button" className={styles.secondaryButton} onClick={() => router.back()}>← Back to Candidates</button></div>
@@ -82,6 +84,19 @@ export default function CandidateProfilePage({ params }) {
     <DetailSection tone="green" title="Skills" description="Skills, languages, and certifications provided by the candidate."><TagGroup label="Technical skills" values={skills.technical_skills} /><TagGroup label="Soft skills" values={skills.soft_skills} /><TagGroup label="Languages" values={skills.languages} />{skills.certifications?.length ? <ul className={styles.miniList}>{skills.certifications.map((item, index) => <li key={`${item.name}-${index}`} className={styles.miniListItem}><div><strong>{item.name}</strong><div className={styles.mutedText}>{item.expiry_date ? `Expires ${formatDate(item.expiry_date)}` : "No expiry date"}</div>{item.document_url && <a href={item.document_url} target="_blank" rel="noreferrer" className={styles.linkButton}>Open certificate</a>}</div></li>)}</ul> : null}{!skills.technical_skills?.length && !skills.soft_skills?.length && !skills.languages?.length && !skills.certifications?.length && <p className={styles.emptySub}>No skills have been submitted yet.</p>}</DetailSection>
 
     <DetailSection tone="orange" title="Resume / CV" description="Resume submitted during onboarding.">{onboarding.resume?.file_url ? <div className={styles.actions}><span className={styles.mutedText}>{onboarding.resume.file_name || "Resume / CV"}</span><a href={onboarding.resume.file_url} target="_blank" rel="noreferrer" className={styles.secondaryButton}>Open resume</a></div> : <p className={styles.emptySub}>No resume has been submitted yet.</p>}{onboarding.resume?.summary && <p className={styles.instruction} style={{ marginTop: 12 }}>{onboarding.resume.summary}</p>}</DetailSection>
+
+    <DetailSection tone="navy" title="Offer letter" description="Recruiter-facing view of the current offer, PDF, and negotiation state.">
+      {currentOffer ? (
+        <OfferSummaryCard
+          offer={currentOffer}
+          candidateName={candidate.full_name}
+          title="Current offer letter"
+          description="Use this area to review the candidate's current version before documents and activation."
+        />
+      ) : (
+        <p className={styles.emptySub}>No offer letter is linked to this candidate yet.</p>
+      )}
+    </DetailSection>
 
     <DetailSection tone="cyan" title="Documents" description="Identity and uploaded onboarding documents.">{governmentDocs.length ? <ul className={styles.miniList}>{governmentDocs.map((document, index) => <li key={`${document.doc_type}-${index}`} className={styles.miniListItem}><div><strong>{humanize(document.doc_type)}</strong><div className={styles.mutedText}>{document.file_name || "No filename"}</div>{document.file_url && <a href={document.file_url} target="_blank" rel="noreferrer" className={styles.linkButton}>Open document</a>}</div></li>)}</ul> : <p className={styles.emptySub}>No identity documents have been submitted yet.</p>}<div style={{ marginTop: 16 }}><RecruiterDocumentReview ownerId={candidate.id} /></div></DetailSection>
     <SendReminderModal
