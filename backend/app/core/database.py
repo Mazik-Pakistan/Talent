@@ -60,6 +60,7 @@ async def create_database_indexes() -> None:
     await database.employees.create_index([("history_bucket", 1), ("status", 1)])
     await database.employees.create_index("supabase_user_id", unique=True, sparse=True)
     await database.employees.create_index("employee_id", unique=True, sparse=True)
+    await database.employees.create_index("legacy_employee_id", sparse=True)
     await database.employees.create_index(
         "user_id",
         unique=True,

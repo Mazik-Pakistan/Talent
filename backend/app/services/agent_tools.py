@@ -1540,7 +1540,7 @@ RECRUITER_TOOLS: list[Tool] = [
         parameters={
             "email": "string, optional",
             "name": "string, optional",
-            "employee_id": "string, optional e.g. MZK-2026-000022",
+            "employee_id": "string, optional e.g. EMP-000022",
         },
         handler=_tool_get_employee_detail,
         roles=("recruiter", "super_admin"),
@@ -1570,7 +1570,7 @@ RECRUITER_TOOLS: list[Tool] = [
             "Moves them to historical employees and archives their login so the same email can be reinvited as a candidate."
         ),
         parameters={
-            "employee_id": "string, required e.g. MZK-2026-000022",
+            "employee_id": "string, required e.g. EMP-000022",
             "exit_type": "resigned | terminated | exited",
             "exit_reason": "string, optional",
             "note": "string, optional",
@@ -1597,7 +1597,7 @@ RECRUITER_TOOLS: list[Tool] = [
         parameters={
             "email": "string, preferred",
             "name": "string, optional",
-            "employee_id": "string, optional e.g. MZK-2026-000022",
+            "employee_id": "string, optional e.g. EMP-000022",
             "note": "string, optional message for the employee",
             "force": "boolean, optional — set true to resend even if a reminder was sent recently",
         },

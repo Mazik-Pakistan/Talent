@@ -6,10 +6,8 @@ import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import {
-  addCareerEvent,
   exportEmployeesCsv,
   getApiErrorMessage,
-  getEmployeeDetail,
   listEmployees,
 } from "@/services/authService";
 import SendReminderModal from "@/components/recruiter/SendReminderModal";
@@ -27,7 +25,6 @@ export default function RecruiterEmployeesPage() {
   const [employeePages, setEmployeePages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [reminderTarget, setReminderTarget] = useState(null);
   const [dirFilters, setDirFilters] = useState({
     q: "",
@@ -38,20 +35,15 @@ export default function RecruiterEmployeesPage() {
     profile_status: "",
     history_bucket: "active",
   });
-  const [careerForm, setCareerForm] = useState({ event_type: "promoted", effective_date: "", to_title: "", to_department: "", to_manager: "", note: "" });
 
   useEffect(() => {
     publishRecruiterContext({
-      section: selectedEmployee ? "career_event" : "employee_directory",
-      hint: selectedEmployee
-        ? `Add a career event for ${selectedEmployee.full_name || "this employee"} — type, date, and new title/department.`
-        : "Filter the directory, export CSV, or open a profile for day-1 / learning. Career timeline logs promotions.",
-      fields: selectedEmployee
-        ? ["event_type", "effective_date", "to_title", "to_department", "to_manager", "note"]
-        : ["q", "employee_id", "department", "job_title", "status", "profile_status"],
+      section: "employee_directory",
+      hint: "Filter the directory, export CSV, or open a profile. Career timeline, resign/exit, and prior tenures live inside View profile → Career.",
+      fields: ["q", "employee_id", "department", "job_title", "status", "profile_status"],
     });
     return () => clearRecruiterContext();
-  }, [selectedEmployee]);
+  }, []);
 
   const loadEmployees = useCallback(async (page = 1, filters = dirFilters) => {
     const accessToken = localStorage.getItem("access_token");
@@ -61,9 +53,7 @@ export default function RecruiterEmployeesPage() {
         q: filters.q || undefined,
         department: filters.department || undefined,
         job_title: filters.job_title || undefined,
-        status: filters.history_bucket === "historical"
-          ? (filters.status || undefined)
-          : (filters.status || undefined),
+        status: filters.status || undefined,
         employee_id: filters.employee_id || undefined,
         profile_status: filters.profile_status || undefined,
         history_bucket: filters.history_bucket || "active",
@@ -87,29 +77,6 @@ export default function RecruiterEmployeesPage() {
     loadEmployees(1);
   }, [loadEmployees]);
 
-  async function handleViewProfile(employee) {
-    const accessToken = localStorage.getItem("access_token");
-    const id = employee.employee_id || employee.id || employee.email;
-    if (!id) {
-      setError("This employee record has no ID to open.");
-      return;
-    }
-    try {
-      const data = await getEmployeeDetail(id, accessToken);
-      setSelectedEmployee(data.employee);
-      setCareerForm({
-        event_type: "promoted",
-        effective_date: new Date().toISOString().slice(0, 10),
-        to_title: data.employee.job_title || "",
-        to_department: data.employee.department || "",
-        to_manager: data.employee.reporting_manager || "",
-        note: "",
-      });
-    } catch (err) {
-      setError(getApiErrorMessage(err, "Could not open employee profile."));
-    }
-  }
-
   async function handleExport() {
     const accessToken = localStorage.getItem("access_token");
     const blob = await exportEmployeesCsv(accessToken, {
@@ -118,6 +85,7 @@ export default function RecruiterEmployeesPage() {
       job_title: dirFilters.job_title || undefined,
       status: dirFilters.status || undefined,
       employee_id: dirFilters.employee_id || undefined,
+      history_bucket: dirFilters.history_bucket || undefined,
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -127,34 +95,14 @@ export default function RecruiterEmployeesPage() {
     URL.revokeObjectURL(url);
   }
 
-  async function handleSaveCareerEvent() {
-    const accessToken = localStorage.getItem("access_token");
-    if (!selectedEmployee) return;
-    try {
-      const data = await addCareerEvent(selectedEmployee.employee_id, {
-        event_type: careerForm.event_type,
-        effective_date: careerForm.effective_date,
-        to_title: careerForm.to_title || null,
-        to_department: careerForm.to_department || null,
-        to_manager: careerForm.to_manager || null,
-        note: careerForm.note || null,
-      }, accessToken);
-      setSelectedEmployee({ ...selectedEmployee, career: data.events });
-      await loadEmployees(employeePage);
-      toast.success(data?.message || "Career event saved successfully.");
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not save career event."));
-    }
-  }
-
   return (
     <RecruiterShell
       activeKey="employees"
       title={dirFilters.history_bucket === "historical" ? "Historical employees" : "Employee directory"}
       subtitle={
         dirFilters.history_bucket === "historical"
-          ? "Former employees who resigned, were terminated, or exited — invite again with the same email when ready"
-          : "Search, filter, export, and review employee profiles"
+          ? "Former employees who have not been rehired — open a profile for career timeline, or invite again with the same email"
+          : "Search, filter, export, and open profiles. Career timeline & resign/exit live inside each profile."
       }
     >
       {error && <div className={styles.formMessage} role="alert">{error}</div>}
@@ -205,7 +153,7 @@ export default function RecruiterEmployeesPage() {
             <label className={styles.field}>
               <span>Department</span>
               <select value={dirFilters.department} onChange={(e) => setDirFilters({ ...dirFilters, department: e.target.value })}>
-                <option value="">All departments</option>
+                <option value="">All</option>
                 {RECRUITER_DEPARTMENTS.map((department) => (
                   <option key={department} value={department}>{department}</option>
                 ))}
@@ -214,7 +162,7 @@ export default function RecruiterEmployeesPage() {
             <label className={styles.field}>
               <span>Designation</span>
               <select value={dirFilters.job_title} onChange={(e) => setDirFilters({ ...dirFilters, job_title: e.target.value })}>
-                <option value="">All designations</option>
+                <option value="">All</option>
                 {RECRUITER_DESIGNATIONS.map((designation) => (
                   <option key={designation} value={designation}>{designation}</option>
                 ))}
@@ -235,18 +183,14 @@ export default function RecruiterEmployeesPage() {
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                     <option value="on_leave">On leave</option>
-                    <option value="">All active statuses</option>
                   </>
                 )}
               </select>
             </label>
             <label className={styles.field}>
-              <span>Profile completion</span>
-              <select
-                value={dirFilters.profile_status}
-                onChange={(e) => setDirFilters({ ...dirFilters, profile_status: e.target.value })}
-              >
-                <option value="">All profiles</option>
+              <span>Profile</span>
+              <select value={dirFilters.profile_status} onChange={(e) => setDirFilters({ ...dirFilters, profile_status: e.target.value })}>
+                <option value="">All</option>
                 <option value="incomplete">Incomplete</option>
                 <option value="complete">Complete</option>
               </select>
@@ -285,20 +229,21 @@ export default function RecruiterEmployeesPage() {
                       )}
                     </div>
                     <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                      <button type="button" className={styles.secondaryButton} onClick={() => handleViewProfile(employee)}>Career timeline</button>
-                      <button
-                        type="button"
-                        className={styles.secondaryButton}
-                        onClick={() =>
-                          setReminderTarget({
-                            id: employee.employee_id || employee.id,
-                            full_name: employee.full_name,
-                            role: "employee",
-                          })
-                        }
-                      >
-                        Remind
-                      </button>
+                      {dirFilters.history_bucket !== "historical" ? (
+                        <button
+                          type="button"
+                          className={styles.secondaryButton}
+                          onClick={() =>
+                            setReminderTarget({
+                              id: employee.employee_id || employee.id,
+                              full_name: employee.full_name,
+                              role: "employee",
+                            })
+                          }
+                        >
+                          Remind
+                        </button>
+                      ) : null}
                       <button type="button" className={styles.primaryButton} onClick={() => router.push(`/dashboard/recruiter/employees/${employee.employee_id || employee.id}`)}>View profile</button>
                     </div>
                   </li>
@@ -314,80 +259,6 @@ export default function RecruiterEmployeesPage() {
         </div>
       </div>
 
-      {selectedEmployee && (
-        <div className={styles.section}>
-          <div className={styles.sectionHead}>
-            <div className={styles.sectionHeadLeft}>
-              <div className={`${styles.bar} ${styles.purple}`} />
-              <div>
-                <div className={styles.sectionTitle}>{selectedEmployee.full_name}</div>
-                <div className={styles.sectionDesc}>{selectedEmployee.employee_id} · {selectedEmployee.job_title} · {selectedEmployee.department}</div>
-              </div>
-            </div>
-          </div>
-          <div className={styles.sectionBody}>
-            <p className={styles.instruction}>Manager: {selectedEmployee.reporting_manager || "—"} · Joined: {formatDate(selectedEmployee.start_date)} · Status: {selectedEmployee.status}</p>
-            <h3 className={styles.sectionTitle} style={{ fontSize: 14, marginBottom: 10 }}>Career timeline</h3>
-            <ul className={styles.miniList}>
-              {(selectedEmployee.career || []).map((event) => (
-                <li className={styles.miniListItem} key={event.id}>
-                  <div>
-                    <strong>{event.event_type}</strong>
-                    <div className={styles.mutedText}>{event.effective_date} · {event.to_title || event.to_department || event.note || "—"}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <h3 className={styles.sectionTitle} style={{ fontSize: 14, marginTop: 16, marginBottom: 10 }}>Add career event</h3>
-            <div className={styles.formGrid}>
-              <label className={styles.field}>
-                <span>Event type</span>
-                <select value={careerForm.event_type} onChange={(e) => setCareerForm({ ...careerForm, event_type: e.target.value })}>
-                  <option value="promoted">Promoted</option>
-                  <option value="title_change">Title change</option>
-                  <option value="department_change">Department change</option>
-                  <option value="manager_change">Manager change</option>
-                  <option value="status_change">Status change</option>
-                </select>
-              </label>
-              <label className={styles.field}>
-                <span>Effective date</span>
-                <input type="date" value={careerForm.effective_date} onChange={(e) => setCareerForm({ ...careerForm, effective_date: e.target.value })} />
-              </label>
-              <label className={styles.field}>
-                <span>New title</span>
-                <select value={careerForm.to_title} onChange={(e) => setCareerForm({ ...careerForm, to_title: e.target.value })}>
-                  <option value="">Select designation</option>
-                  {RECRUITER_DESIGNATIONS.map((designation) => (
-                    <option key={designation} value={designation}>{designation}</option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.field}>
-                <span>New department</span>
-                <select value={careerForm.to_department} onChange={(e) => setCareerForm({ ...careerForm, to_department: e.target.value })}>
-                  <option value="">Select department</option>
-                  {RECRUITER_DEPARTMENTS.map((department) => (
-                    <option key={department} value={department}>{department}</option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.field}>
-                <span>New manager</span>
-                <input value={careerForm.to_manager} onChange={(e) => setCareerForm({ ...careerForm, to_manager: e.target.value })} />
-              </label>
-              <label className={styles.field}>
-                <span>Note</span>
-                <input value={careerForm.note} onChange={(e) => setCareerForm({ ...careerForm, note: e.target.value })} />
-              </label>
-            </div>
-            <div className={styles.actions}>
-              <button type="button" className={styles.secondaryButton} onClick={() => setSelectedEmployee(null)}>Close</button>
-              <button type="button" className={styles.primaryButton} onClick={handleSaveCareerEvent}>Save event</button>
-            </div>
-          </div>
-        </div>
-      )}
       <SendReminderModal
         open={Boolean(reminderTarget)}
         target={reminderTarget}
@@ -398,11 +269,4 @@ export default function RecruiterEmployeesPage() {
       />
     </RecruiterShell>
   );
-}
-
-function formatDate(value) {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }

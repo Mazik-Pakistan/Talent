@@ -342,7 +342,8 @@ export default function RecruiterCandidatesPage() {
               <div>
                 <div className={styles.sectionTitle}>Historical candidates</div>
                 <div className={styles.sectionDesc}>
-                  {historicalTotal} prior cycle{historicalTotal === 1 ? "" : "s"} — declined offers, expired invites, or archived (not converted employees).
+                  {historicalTotal} prior cycle{historicalTotal === 1 ? "" : "s"} — declined offers, expired invites, or archived.
+                  People who are active employees again are not listed here; their history is on the employee Career timeline.
                 </div>
               </div>
             </div>

@@ -25,7 +25,8 @@ from app.services.people_history import (
     mark_employee_historical_fields,
 )
 
-EMPLOYEE_ID_PREFIX = "MZK"
+EMPLOYEE_ID_PREFIX = "EMP"
+EMPLOYEE_ID_COUNTER = "employee_id"
 
 # Post-hire profile completion — the flow the user lands on right after
 # their Employee ID is issued ("profile incomplete" banner on the dashboard).
@@ -48,22 +49,22 @@ PROFILE_STEP_FLOW = {
 
 class EmployeeService:
     async def generate_employee_id(self, year: int | None = None, *, allocate: bool = False) -> dict:
-        """US-024: Unique Employee ID in format MZK-YYYY-000123.
+        """US-024: Unique Employee ID in format EMP-000001.
 
         By default returns a preview of the next ID without consuming the counter.
         Pass allocate=True to reserve the ID (used during conversion).
+        `year` is accepted for API compatibility but ignored (IDs are global).
         """
         from pymongo import ReturnDocument
 
-        now = datetime.now(UTC)
-        use_year = year or now.year
-        prefix = f"{EMPLOYEE_ID_PREFIX}-{use_year}-"
-        counter_id = f"employee_id_{use_year}"
+        _ = year  # legacy param — format is no longer year-scoped
+        prefix = f"{EMPLOYEE_ID_PREFIX}-"
+        counter_id = EMPLOYEE_ID_COUNTER
 
         if allocate:
             counter = await database.counters.find_one_and_update(
                 {"_id": counter_id},
-                {"$inc": {"seq": 1}},
+                {"$inc": {"seq": 1}, "$set": {"updated_at": datetime.now(UTC)}},
                 upsert=True,
                 return_document=ReturnDocument.AFTER,
             )
@@ -80,13 +81,12 @@ class EmployeeService:
             if allocate:
                 await database.counters.update_one(
                     {"_id": counter_id},
-                    {"$set": {"seq": next_seq}},
+                    {"$set": {"seq": next_seq, "updated_at": datetime.now(UTC)}},
                     upsert=True,
                 )
 
         return {
             "employee_id": employee_id,
-            "year": use_year,
             "sequence": next_seq,
             "allocated": allocate,
         }
@@ -671,6 +671,20 @@ class EmployeeService:
                 query["$or"] = text_or
         return query
 
+    async def _active_employee_emails(self, current_user: CurrentUser) -> set[str]:
+        """Emails that currently have an active/inactive/on_leave employee tenure."""
+        scope: dict = {
+            "status": {"$in": list(ACTIVE_EMPLOYEE_STATUSES)},
+            "$or": [
+                {"history_bucket": {"$exists": False}},
+                {"history_bucket": "active"},
+            ],
+        }
+        if current_user.role != "super_admin":
+            scope["recruiter_id"] = current_user.id
+        emails = await database.employees.distinct("email", scope)
+        return {cycle_group_key(e) for e in emails if e}
+
     async def list_employees(
         self,
         current_user: CurrentUser,
@@ -702,6 +716,15 @@ class EmployeeService:
             joining_to=joining_to,
             history_bucket=history_bucket,
         )
+        # Rehired people stay on Active only — prior exited tenures belong in career timeline.
+        if (history_bucket or "").strip().lower() == "historical":
+            active_emails = await self._active_employee_emails(current_user)
+            if active_emails:
+                email_clause = {"email": {"$nin": sorted(active_emails)}}
+                if "$and" in query:
+                    query["$and"].append(email_clause)
+                else:
+                    query = {"$and": [query, email_clause]} if query else email_clause
         sort_field = sort.lstrip("-") if sort else "created_at"
         if sort_field not in {"created_at", "full_name", "employee_id", "department", "job_title", "start_date"}:
             sort_field = "created_at"
@@ -780,6 +803,7 @@ class EmployeeService:
 
         query_or: list[dict] = [
             {"employee_id": key},
+            {"legacy_employee_id": key},
             {"user_id": key},
             {"email": key.lower()},
             {"candidate_id": key},
@@ -814,12 +838,129 @@ class EmployeeService:
             )
         career = await self.list_career_events(employee.get("employee_id") or key)
         payload["career"] = career["events"]
+        payload["career_timeline"] = await self.build_career_timeline(
+            employee.get("email") or "",
+            primary_employee_id=employee.get("employee_id"),
+        )
         payload["person_history"] = await lookup_history_by_email(
             employee.get("email") or "",
             recruiter_id=None if current_user.role == "super_admin" else current_user.id,
             is_super_admin=current_user.role == "super_admin",
         )
         return {"employee": payload}
+
+    async def build_career_timeline(
+        self,
+        email: str,
+        *,
+        primary_employee_id: str | None = None,
+    ) -> list[dict]:
+        """Unified timeline across all tenures for an email (hire, promo, resign, rehire)."""
+        email = cycle_group_key(email)
+        if not email:
+            return []
+
+        tenures = (
+            await database.employees.find({"email": email})
+            .sort([("created_at", 1), ("_id", 1)])
+            .to_list(length=100)
+        )
+        employee_ids = [t.get("employee_id") for t in tenures if t.get("employee_id")]
+
+        timeline: list[dict] = []
+        career_docs = []
+        if employee_ids:
+            career_docs = await database.employee_career_events.find(
+                {"employee_id": {"$in": employee_ids}}
+            ).to_list(length=500)
+
+        for doc in career_docs:
+            timeline.append(
+                {
+                    "id": str(doc["_id"]),
+                    "employee_id": doc.get("employee_id"),
+                    "event_type": doc.get("event_type"),
+                    "effective_date": doc.get("effective_date"),
+                    "from_title": doc.get("from_title"),
+                    "to_title": doc.get("to_title"),
+                    "from_department": doc.get("from_department"),
+                    "to_department": doc.get("to_department"),
+                    "from_manager": doc.get("from_manager"),
+                    "to_manager": doc.get("to_manager"),
+                    "from_status": doc.get("from_status"),
+                    "to_status": doc.get("to_status"),
+                    "note": doc.get("note"),
+                    "actor_email": doc.get("actor_email"),
+                    "source": "career_event",
+                    "created_at": doc.get("created_at").isoformat()
+                    if hasattr(doc.get("created_at"), "isoformat")
+                    else doc.get("created_at"),
+                }
+            )
+
+        # Tenure markers so prior resigned cycles appear on the active profile timeline.
+        seen_exits = {
+            (e.get("employee_id"), str(e.get("to_status") or e.get("event_type") or "").lower(), str(e.get("effective_date") or "")[:10])
+            for e in timeline
+        }
+        for tenure in tenures:
+            eid = tenure.get("employee_id")
+            start_raw = tenure.get("start_date") or tenure.get("converted_at") or tenure.get("created_at")
+            start_date = start_raw.isoformat() if hasattr(start_raw, "isoformat") else start_raw
+            if isinstance(start_date, str) and "T" in start_date:
+                start_date = start_date[:10]
+            timeline.append(
+                {
+                    "id": f"tenure-hired-{eid}",
+                    "employee_id": eid,
+                    "event_type": "hired",
+                    "effective_date": start_date,
+                    "to_title": tenure.get("job_title"),
+                    "to_department": tenure.get("department"),
+                    "to_manager": tenure.get("reporting_manager"),
+                    "note": f"Employee ID {eid} issued"
+                    + (
+                        f" (current)"
+                        if eid and primary_employee_id and eid == primary_employee_id
+                        else " (prior tenure)"
+                        if eid and primary_employee_id and eid != primary_employee_id
+                        else ""
+                    ),
+                    "source": "tenure",
+                    "history_bucket": tenure.get("history_bucket")
+                    or ("historical" if tenure.get("status") in HISTORICAL_EMPLOYEE_STATUSES else "active"),
+                }
+            )
+            exit_type = (tenure.get("exit_type") or tenure.get("status") or "").lower()
+            if exit_type in HISTORICAL_EMPLOYEE_STATUSES or tenure.get("history_bucket") == "historical":
+                exit_date = tenure.get("exit_date") or tenure.get("historical_at")
+                exit_date = exit_date.isoformat() if hasattr(exit_date, "isoformat") else exit_date
+                if isinstance(exit_date, str) and "T" in exit_date:
+                    exit_date = exit_date[:10]
+                key = (eid, exit_type, str(exit_date or "")[:10])
+                if key not in seen_exits:
+                    timeline.append(
+                        {
+                            "id": f"tenure-exit-{eid}",
+                            "employee_id": eid,
+                            "event_type": exit_type or "exited",
+                            "effective_date": exit_date,
+                            "from_status": "active",
+                            "to_status": exit_type,
+                            "to_title": tenure.get("job_title"),
+                            "to_department": tenure.get("department"),
+                            "note": tenure.get("exit_reason") or f"Tenure ended ({exit_type}).",
+                            "source": "tenure_exit",
+                            "history_bucket": "historical",
+                        }
+                    )
+
+        def _sort_key(item: dict):
+            raw = str(item.get("effective_date") or item.get("created_at") or "")
+            return raw
+
+        timeline.sort(key=_sort_key, reverse=True)
+        return timeline
 
     async def list_career_events(self, employee_id: str) -> dict:
         docs = (
@@ -931,7 +1072,7 @@ class EmployeeService:
             {
                 "employee_id": employee.get("employee_id"),
                 "employee_user_id": employee.get("user_id"),
-                "event_type": "status_change",
+                "event_type": exit_type,
                 "effective_date": exit_date,
                 "from_status": current_status,
                 "to_status": exit_type,
@@ -1010,6 +1151,12 @@ class EmployeeService:
                     },
                 ]
             }
+
+        # Active (rehired) employees keep prior candidate cycles on career timeline only.
+        active_emails = await self._active_employee_emails(current_user)
+        if active_emails:
+            email_clause = {"email": {"$nin": sorted(active_emails)}}
+            query = {"$and": [query, email_clause]}
 
         total = await database.candidates.count_documents(query)
         docs = (
@@ -1627,6 +1774,7 @@ class EmployeeService:
             else doc.get("historical_at"),
             "cycle_group_key": doc.get("cycle_group_key") or cycle_group_key(doc.get("email")),
             "previous_employee_id": doc.get("previous_employee_id"),
+            "legacy_employee_id": doc.get("legacy_employee_id"),
             "profile_locked": bool(doc.get("profile_locked")),
             "converted_at": doc.get("converted_at").isoformat()
             if hasattr(doc.get("converted_at"), "isoformat")
@@ -1648,6 +1796,7 @@ class EmployeeService:
             raise HTTPException(status_code=404, detail="Employee not found.")
         query_or: list[dict] = [
             {"employee_id": key},
+            {"legacy_employee_id": key},
             {"user_id": key},
             {"email": key.lower()},
             {"candidate_id": key},

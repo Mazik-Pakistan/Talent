@@ -19,6 +19,7 @@ from app.api.talent import router as talent_router
 from app.core.config import settings
 from app.core.database import create_database_indexes, mongo_client
 from app.core.rbac_seed import seed_rbac_collections
+from app.services.employee_id_migration import migrate_employee_ids_to_emp_format
 from app.services.org_taxonomy_service import seed_org_taxonomy
 from app.services import coursera_service
 
@@ -26,6 +27,7 @@ from app.services import coursera_service
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await create_database_indexes()
+    await migrate_employee_ids_to_emp_format()
     await seed_rbac_collections()
     await seed_org_taxonomy()
 

@@ -49,7 +49,7 @@ async def generate_employee_id(
     current_user: RequireRecruiter,
     request: GenerateEmployeeIdRequest = GenerateEmployeeIdRequest(),
 ):
-    """US-024: Preview / allocate a unique Employee ID (MZK-YYYY-000123)."""
+    """US-024: Preview / allocate a unique Employee ID (EMP-000001)."""
     return await service.generate_employee_id(request.year)
 
 
@@ -258,7 +258,7 @@ async def remind_candidate(
 async def get_employee_detail(employee_id: str, current_user: RequireRecruiter):
     """US-035: open full employee profile from the directory.
 
-    Dedicated path (not /{employee_id}) so IDs like MZK-2026-000123 never collide
+    Dedicated path (not /{employee_id}) so IDs like EMP-000123 never collide
     with static routes such as /me, /upload, or /export.csv.
     """
     return await service.get_employee_profile(current_user, employee_id, reveal_banking=False)
