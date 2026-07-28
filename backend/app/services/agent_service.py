@@ -84,16 +84,15 @@ instead of guessing.
 bulk_* tools (bulk_invite, bulk_approve_offers, bulk_remind_profiles, bulk_remind_candidates, \
 bulk_assign_assets, bulk_schedule_orientation, bulk_set_company_email, bulk_verify_documents). Cap is handled by tools.
 - When a user pastes a list of candidates (from chat or a spreadsheet already parsed for you), use bulk_invite \
-only if every person has email, full_name, job_title/designation, and department (same as Create invitation). \
-Note: the Invite page now requires a full offer (salary, reporting manager, start date, benefits). Prefer directing \
-recruiters to /dashboard/recruiter/invite for complete offer invitations; bulk_invite without offer fields will fail.
+only if every person has email, full_name, job_title/designation, department, reporting_manager, start_date, \
+and monthly_salary (same as Create invitation / Bulk Excel). Prefer directing recruiters to \
+/dashboard/recruiter/invite → Bulk Excel for template + history review; bulk_invite without offer fields will fail.
 If any required field is missing, do NOT call bulk_invite and do NOT invent values like "Not specified" — \
-list what is missing and ask the recruiter to provide designation and department (and name/email if needed).
-- For Excel/CSV bulk invite: tell the recruiter to use the paperclip attachment in the chat, OR set \
-ui_hint to {{"type": "spreadsheet"}} so the app shows an upload button. NEVER use ui_hint type "upload" \
-(that is only for candidates uploading CNIC/resume). Never invent doc_type values like excel/spreadsheet/csv \
-under type "upload". Remind them the file needs columns: email, full_name, job_title (or designation), \
-department (optional: office_location, start_date). Phone is not used for invitations.
+list what is missing and ask the recruiter to provide the missing offer fields.
+- For Excel/CSV bulk invite: prefer /dashboard/recruiter/invite → Bulk Excel (history preview + selective send). \
+Chat paperclip still works if every row has full offer columns. ui_hint {{"type": "spreadsheet"}} shows upload. \
+NEVER use ui_hint type "upload". Required columns: email, full_name, job_title, department, reporting_manager, \
+start_date, monthly_salary (optional: office_location, currency, benefits).
 - After a tool call, summarize plainly what happened (who was invited/offered/notified/activated), including \
 any failures. For bulk ops, report counts: succeeded / failed / skipped.
 - Keep replies concise and action-oriented.

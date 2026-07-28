@@ -9,7 +9,6 @@ already do by hand.
 
 from __future__ import annotations
 
-import io
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from app.core.database import database
@@ -65,84 +64,18 @@ async def bulk_invite_from_spreadsheet(
     file: UploadFile = File(...),
     session_id: str | None = Query(None),
 ):
-    """Parse an uploaded .xlsx / .csv roster and invite every valid row.
+    """Parse an uploaded .xlsx / .csv roster and invite every valid row (with offer).
 
-    Required columns (same as manual Create invitation):
-      email, full_name (or name), job_title (or designation/title), department
-    Optional: office_location, start_date (YYYY-MM-DD), expires_in_days, phone (ignored)
-
-    If required headers or row values are missing, no invitations are sent — a
-    validation report is returned so the recruiter can fix the file first.
+    Prefer the Invite page bulk flow for review + history; this endpoint still
+    validates offer fields then sends. Required columns match the bulk template.
     """
     if current_user.role not in ("recruiter", "super_admin"):
         raise HTTPException(status_code=403, detail="Only recruiters can bulk-invite candidates.")
 
+    from app.services.bulk_invite_service import bulk_invite_service
+
     resolved_session = session_id
 
-    filename = (file.filename or "").lower()
-    is_csv = filename.endswith(".csv")
-    is_xlsx = filename.endswith(".xlsx") or filename.endswith(".xlsm")
-    if not (is_csv or is_xlsx):
-        raise HTTPException(status_code=400, detail="Please upload a .xlsx or .csv spreadsheet.")
-
-    raw = await file.read()
-    if len(raw) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File is too large (5MB limit).")
-
-    try:
-        if is_csv:
-            import csv
-
-            text = raw.decode("utf-8-sig", errors="replace")
-            reader = csv.reader(io.StringIO(text))
-            rows = list(reader)
-            if not rows:
-                raise HTTPException(status_code=400, detail="The CSV file is empty.")
-            header = [str(h).strip().lower() if h else "" for h in rows[0]]
-            data_rows = list(rows[1:])
-        else:
-            from openpyxl import load_workbook
-
-            workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-            sheet = workbook.active
-            rows_iter = sheet.iter_rows(values_only=True)
-            header = [str(h).strip().lower() if h else "" for h in next(rows_iter, [])]
-            data_rows = list(rows_iter)
-    except HTTPException:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"Could not read the spreadsheet: {exc}") from exc
-
-    def _col(*names: str) -> int | None:
-        for name in names:
-            if name in header:
-                return header.index(name)
-        return None
-
-    def _cell(row, idx: int | None) -> str:
-        if idx is None or idx >= len(row) or row[idx] is None:
-            return ""
-        return str(row[idx]).strip()
-
-    idx_email = _col("email", "email address")
-    idx_name = _col("full_name", "name", "candidate name", "full name")
-    idx_title = _col("job_title", "designation", "title", "job title", "position")
-    idx_dept = _col("department", "dept")
-    idx_office = _col("office_location", "office", "location")
-    idx_start = _col("start_date", "start date", "joining date")
-    idx_expires = _col("expires_in_days", "expires", "expiry days")
-
-    missing_headers: list[str] = []
-    if idx_email is None:
-        missing_headers.append("email")
-    if idx_name is None:
-        missing_headers.append("full_name (or name)")
-    if idx_title is None:
-        missing_headers.append("job_title (or designation)")
-    if idx_dept is None:
-        missing_headers.append("department")
-
-    # Persist a chat-friendly validation report helper
     async def _report(message: str, *, ok: bool, extra: dict | None = None) -> dict:
         payload = {"session_id": None, "message": message, "ok": ok, "sent": [], "failed": [], **(extra or {})}
         convo = await _load_or_create_session(current_user, resolved_session)
@@ -157,120 +90,74 @@ async def bulk_invite_from_spreadsheet(
         payload["session_id"] = convo["session_id"]
         return payload
 
-    if missing_headers:
-        found = ", ".join(h for h in header if h) or "(none)"
+    preview = await bulk_invite_service.preview(file, current_user)
+    if not preview.get("ok"):
+        missing = preview.get("missing_headers") or []
+        found = ", ".join(preview.get("found_headers") or []) or "(none)"
         message = (
-            f"I checked `{file.filename}` before sending any invites — it's missing required columns "
-            f"(same as Create invitation):\n"
-            f"• Missing: {', '.join(missing_headers)}\n"
+            f"I checked `{file.filename}` before sending any invites — it's missing required columns:\n"
+            f"• Missing: {', '.join(missing)}\n"
             f"• Found headers: {found}\n\n"
-            "Required columns: email, full_name (or name), job_title (or designation), department.\n"
-            "Optional: office_location, start_date, expires_in_days.\n"
-            "(Phone is collected when the candidate registers — it is not used for invitations.)\n\n"
-            "Please update the spreadsheet and upload again. No invitations were sent."
+            "Required: email, full_name, job_title, department, reporting_manager, start_date, monthly_salary.\n"
+            "Download the template from Invite → Bulk Excel, then upload again. No invitations were sent."
         )
-        return await _report(
-            message,
-            ok=False,
-            extra={"missing_headers": missing_headers, "found_headers": [h for h in header if h]},
-        )
+        return await _report(message, ok=False, extra=preview)
 
-    candidates: list[dict] = []
-    row_issues: list[dict] = []
-    for i, row in enumerate(data_rows, start=2):  # 1-based sheet row (header is row 1)
-        if not row or all(c is None or str(c).strip() == "" for c in row):
-            continue
-        email = _cell(row, idx_email)
-        full_name = _cell(row, idx_name)
-        job_title = _cell(row, idx_title)
-        department = _cell(row, idx_dept)
-        missing_fields = [
-            label
-            for label, value in (
-                ("email", email),
-                ("full_name", full_name),
-                ("job_title/designation", job_title),
-                ("department", department),
-            )
-            if not value or (label != "email" and len(value) < 2)
-        ]
-        if missing_fields:
-            row_issues.append(
-                {
-                    "row": i,
-                    "email": email or None,
-                    "missing_fields": missing_fields,
-                }
-            )
-            continue
-        expires_raw = _cell(row, idx_expires)
-        candidates.append(
-            {
-                "email": email,
-                "full_name": full_name,
-                "job_title": job_title,
-                "department": department,
-                "office_location": _cell(row, idx_office) or None,
-                "start_date": _cell(row, idx_start) or None,
-                "expires_in_days": int(expires_raw) if expires_raw.isdigit() else 7,
-            }
-        )
+    rows = preview.get("rows") or []
+    invalid = [r for r in rows if not r.get("valid")]
+    blocked = [r for r in rows if r.get("valid") and not r.get("can_send")]
+    sendable = [r for r in rows if r.get("can_send")]
 
-    if row_issues and not candidates:
+    if invalid and not sendable:
         issue_lines = "; ".join(
-            f"row {x['row']}" + (f" ({x['email']})" if x.get("email") else "") + f": missing {', '.join(x['missing_fields'])}"
-            for x in row_issues[:8]
+            f"row {x.get('row')}" + (f" ({x.get('email')})" if x.get("email") else "")
+            + f": missing {', '.join(x.get('missing_fields') or [])}"
+            for x in invalid[:8]
         )
-        more = f" (+{len(row_issues) - 8} more)" if len(row_issues) > 8 else ""
         message = (
-            f"I checked `{file.filename}` — every data row is missing required invitation fields "
-            f"(designation and department are required, same as Create invitation).\n"
-            f"Issues: {issue_lines}{more}\n\n"
-            "Please add job_title/designation and department for each candidate, then upload again. "
-            "No invitations were sent."
+            f"I checked `{file.filename}` — every data row is missing required offer fields.\n"
+            f"Issues: {issue_lines}\n\n"
+            "Required per row: email, full_name, job_title, department, reporting_manager, "
+            "start_date, monthly_salary. No invitations were sent."
         )
-        return await _report(message, ok=False, extra={"row_issues": row_issues, "valid_rows": 0})
+        return await _report(message, ok=False, extra={"row_issues": invalid, "valid_rows": 0})
 
-    if row_issues:
-        # Partial file: block entirely so recruiter fixes the sheet (safer than inviting a subset silently)
-        issue_lines = "; ".join(
-            f"row {x['row']}" + (f" ({x['email']})" if x.get("email") else "") + f": missing {', '.join(x['missing_fields'])}"
-            for x in row_issues[:8]
-        )
-        more = f" (+{len(row_issues) - 8} more)" if len(row_issues) > 8 else ""
+    if invalid or blocked:
         message = (
             f"I checked `{file.filename}` before inviting anyone.\n"
-            f"• Valid rows ready to invite: {len(candidates)}\n"
-            f"• Incomplete rows: {len(row_issues)} — {issue_lines}{more}\n\n"
-            "Required per row (same as Create invitation): email, full_name, job_title/designation, department.\n"
-            "Fix the incomplete rows and upload again. No invitations were sent."
+            f"• Ready to invite: {len(sendable)}\n"
+            f"• Incomplete rows: {len(invalid)}\n"
+            f"• Blocked (active conflict): {len(blocked)}\n\n"
+            "Fix incomplete/blocked rows (or use Invite → Bulk Excel to review history and send "
+            "only selected rows). No invitations were sent from this upload."
         )
         return await _report(
             message,
             ok=False,
-            extra={"row_issues": row_issues, "valid_rows": len(candidates), "blocked": True},
+            extra={
+                "row_issues": invalid,
+                "blocked_rows": blocked,
+                "valid_rows": len(sendable),
+                "blocked": True,
+            },
         )
 
-    if not candidates:
-        message = (
-            f"`{file.filename}` has the right headers but no candidate rows. "
-            "Add at least one row with email, full_name, job_title/designation, and department."
+    if not sendable:
+        return await _report(
+            f"`{file.filename}` has headers but no candidate rows ready to invite.",
+            ok=False,
+            extra={"valid_rows": 0},
         )
-        return await _report(message, ok=False, extra={"valid_rows": 0})
 
-    result = await agent_tools.run_tool(current_user, "bulk_invite", {"candidates": candidates})
-    if not result.ok:
-        raise HTTPException(status_code=400, detail=result.error or "Bulk invite failed.")
-
-    sent = result.data["sent"]
-    failed = result.data["failed"]
+    result = await bulk_invite_service.send_rows(current_user, sendable)
+    sent = result.get("sent") or []
+    failed = result.get("failed") or []
     summary = (
-        f"Checked `{file.filename}` — all {len(candidates)} row(s) had the required fields "
-        f"(email, name, designation, department). "
+        f"Checked `{file.filename}` — all {len(sendable)} row(s) had required offer fields. "
         f"Invited {len(sent)}, failed {len(failed)}."
     )
     if failed:
-        summary += " Failures: " + "; ".join(f"{f['email']}: {f['error']}" for f in failed[:5])
+        summary += " Failures: " + "; ".join(f"{f.get('email')}: {f.get('error')}" for f in failed[:5])
 
     convo = await _load_or_create_session(current_user, resolved_session)
     await _save_messages(
@@ -278,7 +165,7 @@ async def bulk_invite_from_spreadsheet(
         current_user.id,
         [
             {"role": "user", "content": f"[Uploaded spreadsheet: {file.filename}]", "created_at": _now_iso()},
-            {"role": "assistant", "content": summary, "created_at": _now_iso(), "meta": {"tool_data": result.data}},
+            {"role": "assistant", "content": summary, "created_at": _now_iso(), "meta": {"tool_data": result}},
         ],
     )
 

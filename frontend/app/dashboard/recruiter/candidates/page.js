@@ -18,6 +18,8 @@ import {
   rejectOfferNegotiation,
   remindItProvisioning,
   sendItProvisioning,
+  bulkSendItProvisioning,
+  bulkRemindItProvisioning,
 } from "@/services/authService";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
 import OfferSummaryCard from "@/components/offers/OfferSummaryCard";
@@ -50,6 +52,9 @@ export default function RecruiterCandidatesPage() {
   const [historicalCandidates, setHistoricalCandidates] = useState([]);
   const [historicalTotal, setHistoricalTotal] = useState(0);
   const [historicalLoading, setHistoricalLoading] = useState(false);
+  const [selectedItOfferIds, setSelectedItOfferIds] = useState([]);
+  const [bulkItEmail, setBulkItEmail] = useState("");
+  const [bulkItBusy, setBulkItBusy] = useState(false);
 
   useEffect(() => {
     const nego = negotiations.length;
@@ -153,6 +158,88 @@ export default function RecruiterCandidatesPage() {
       }
     );
   }, [counterTerms, negoPopup]);
+
+  const itActionableCandidates = useMemo(
+    () => readyCandidates.filter((c) => c.offer_id && !c.can_activate),
+    [readyCandidates]
+  );
+
+  const itPendingCandidates = useMemo(
+    () => itActionableCandidates.filter((c) => c.it_provisioning && !c.can_activate),
+    [itActionableCandidates]
+  );
+
+  const itNotSentCandidates = useMemo(
+    () => itActionableCandidates.filter((c) => !c.it_provisioning),
+    [itActionableCandidates]
+  );
+
+  useEffect(() => {
+    const allowed = new Set(itActionableCandidates.map((c) => c.offer_id));
+    setSelectedItOfferIds((current) => current.filter((id) => allowed.has(id)));
+  }, [itActionableCandidates]);
+
+  function toggleItSelection(offerId, checked) {
+    setSelectedItOfferIds((current) => {
+      if (checked) {
+        return current.includes(offerId) ? current : [...current, offerId];
+      }
+      return current.filter((id) => id !== offerId);
+    });
+  }
+
+  function selectAllItActionable(checked) {
+    setSelectedItOfferIds(checked ? itActionableCandidates.map((c) => c.offer_id) : []);
+  }
+
+  async function handleBulkSendIt(offerIds) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken || !offerIds.length) return;
+    setBulkItBusy(true);
+    setConversionMessage("");
+    try {
+      const payload = { offer_ids: offerIds };
+      const shared = bulkItEmail.trim();
+      if (shared) payload.it_manager_email = shared;
+      const data = await bulkSendItProvisioning(payload, accessToken);
+      setConversionMessage(data.message);
+      toast.success(data.message || "Bulk IT requests sent.");
+      if (data.failed?.length) {
+        toast.error(`${data.failed.length} IT request(s) failed.`);
+      }
+      setSelectedItOfferIds([]);
+      await loadCandidates();
+    } catch (err) {
+      const msg = getApiErrorMessage(err, "Could not send bulk IT provisioning.");
+      setConversionMessage(msg);
+      toast.error(msg);
+    } finally {
+      setBulkItBusy(false);
+    }
+  }
+
+  async function handleBulkRemindIt(offerIds) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken || !offerIds.length) return;
+    setBulkItBusy(true);
+    setConversionMessage("");
+    try {
+      const data = await bulkRemindItProvisioning({ offer_ids: offerIds }, accessToken);
+      setConversionMessage(data.message);
+      toast.success(data.message || "Bulk IT follow-ups sent.");
+      if (data.failed?.length) {
+        toast.error(`${data.failed.length} follow-up(s) failed.`);
+      }
+      setSelectedItOfferIds([]);
+      await loadCandidates();
+    } catch (err) {
+      const msg = getApiErrorMessage(err, "Could not send bulk IT follow-ups.");
+      setConversionMessage(msg);
+      toast.error(msg);
+    } finally {
+      setBulkItBusy(false);
+    }
+  }
 
   function handleReminder(candidate) {
     setReminderTarget({
@@ -808,6 +895,7 @@ export default function RecruiterCandidatesPage() {
               <div className={styles.sectionTitle}>Ready for IT & activation</div>
               <div className={styles.sectionDesc}>
                 Signed offers — send IT provisioning after documents are complete, then activate.
+                Select multiple people to bulk-email IT in one click.
               </div>
             </div>
           </div>
@@ -816,6 +904,89 @@ export default function RecruiterCandidatesPage() {
           {loading ? (
             <p className={styles.emptySub}>Loading…</p>
           ) : readyCandidates.length ? (
+            <>
+              {itActionableCandidates.length ? (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 12,
+                    alignItems: "flex-end",
+                    marginBottom: 16,
+                    padding: 14,
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: "#f7faf8",
+                  }}
+                >
+                  <label className={styles.field} style={{ margin: 0, minWidth: 220, flex: 1 }}>
+                    <span>Shared IT manager email (optional)</span>
+                    <input
+                      type="email"
+                      value={bulkItEmail}
+                      onChange={(e) => setBulkItEmail(e.target.value)}
+                      placeholder="Uses server default if blank"
+                    />
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, paddingBottom: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        selectedItOfferIds.length > 0 &&
+                        selectedItOfferIds.length === itActionableCandidates.length
+                      }
+                      onChange={(e) => selectAllItActionable(e.target.checked)}
+                    />
+                    Select all ({selectedItOfferIds.length})
+                  </label>
+                  <button
+                    type="button"
+                    className={styles.primaryButton}
+                    disabled={
+                      bulkItBusy ||
+                      !selectedItOfferIds.some((id) =>
+                        itNotSentCandidates.some((c) => c.offer_id === id)
+                      )
+                    }
+                    onClick={() =>
+                      handleBulkSendIt(
+                        selectedItOfferIds.filter((id) =>
+                          itNotSentCandidates.some((c) => c.offer_id === id)
+                        )
+                      )
+                    }
+                  >
+                    {bulkItBusy ? "Sending…" : "Send IT for selected"}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    disabled={
+                      bulkItBusy ||
+                      !selectedItOfferIds.some((id) =>
+                        itPendingCandidates.some((c) => c.offer_id === id)
+                      )
+                    }
+                    onClick={() =>
+                      handleBulkRemindIt(
+                        selectedItOfferIds.filter((id) =>
+                          itPendingCandidates.some((c) => c.offer_id === id)
+                        )
+                      )
+                    }
+                  >
+                    Follow up selected
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    disabled={bulkItBusy || itNotSentCandidates.length === 0}
+                    onClick={() => handleBulkSendIt(itNotSentCandidates.map((c) => c.offer_id))}
+                  >
+                    Send IT to all pending
+                  </button>
+                </div>
+              ) : null}
             <ul className={styles.miniList}>
               {readyCandidates.map((candidate) => {
                 const it = candidate.it_provisioning;
@@ -829,6 +1000,17 @@ export default function RecruiterCandidatesPage() {
                     style={{ alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}
                   >
                     <div style={{ flex: 1, minWidth: 220 }}>
+                      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                        {!itComplete ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedItOfferIds.includes(candidate.offer_id)}
+                            onChange={(e) => toggleItSelection(candidate.offer_id, e.target.checked)}
+                            style={{ marginTop: 4 }}
+                            aria-label={`Select ${candidate.full_name} for bulk IT`}
+                          />
+                        ) : null}
+                        <div>
                       <strong>{candidate.full_name}</strong>
                       <div className={styles.mutedText}>
                         {candidate.email} · {candidate.department || "—"} · Signed{" "}
@@ -873,6 +1055,8 @@ export default function RecruiterCandidatesPage() {
                           />
                         </label>
                       )}
+                        </div>
+                      </div>
                     </div>
                     <div className={styles.rowActions} style={{ flexWrap: "wrap" }}>
                       <button
@@ -923,6 +1107,7 @@ export default function RecruiterCandidatesPage() {
                 );
               })}
             </ul>
+            </>
           ) : (
             <p className={styles.emptySub}>No signed offers are waiting for IT or activation.</p>
           )}
