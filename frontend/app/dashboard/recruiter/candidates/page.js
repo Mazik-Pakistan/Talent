@@ -85,7 +85,6 @@ export default function RecruiterCandidatesPage() {
       setNegotiations(negoList);
       setAwaitingOffers(awaitingData.offers || []);
       setError("");
-      setNegoPopup((current) => current || negoList[0] || null);
     } catch (err) {
       setError(getApiErrorMessage(err, "Could not load candidate pipeline data."));
     } finally {
@@ -296,27 +295,103 @@ export default function RecruiterCandidatesPage() {
           onClick={() => setNegoPopup(null)}
         >
           <div
-            className={styles.section}
-            style={{ maxWidth: 980, width: "100%", margin: 0, maxHeight: "calc(100vh - 32px)", overflow: "auto" }}
+            style={{
+              width: "100%",
+              maxWidth: 900,
+              maxHeight: "calc(100vh - 32px)",
+              background: "var(--card)",
+              borderRadius: 20,
+              boxShadow: "var(--shadow-lg)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className={styles.sectionBody}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <div>
-                  <h3 style={{ marginTop: 0, marginBottom: 6 }}>Offer negotiation review</h3>
-                  <p className={styles.mutedText} style={{ marginTop: 0 }}>
+            <div style={{ height: 4, background: "var(--orange)", flexShrink: 0 }} />
+
+            <div
+              style={{
+                padding: "16px 24px",
+                borderBottom: "1px solid var(--border-soft)",
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 14,
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0 }}>
+                <div
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 10,
+                    background: "var(--orange-light)",
+                    color: "var(--orange)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <DollarSignIcon />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "var(--navy)" }}>
+                    Offer negotiation review
+                  </h3>
+                  <p
+                    style={{
+                      margin: "3px 0 0",
+                      fontSize: 12.5,
+                      color: "var(--text-muted)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     {negoPopup.candidate_name} · {negoPopup.candidate_email} · {negoPopup.job_title}
                   </p>
                 </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                 <span
                   className={styles.chip}
-                  style={{ background: "var(--orange-light)", color: "var(--orange)", borderColor: "transparent" }}
+                  style={{ background: "var(--orange-light)", color: "var(--orange)", borderColor: "transparent", whiteSpace: "nowrap" }}
                 >
-                  Candidate waiting for recruiter decision
+                  Awaiting your decision
                 </span>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  onClick={() => setNegoPopup(null)}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 9,
+                    border: "1px solid var(--border)",
+                    background: "#fff",
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  <CloseIcon />
+                </button>
               </div>
+            </div>
 
-              <div style={{ display: "grid", gap: 16, marginTop: 12 }}>
+            <div style={{ padding: "18px 24px", overflowY: "auto", flex: 1 }}>
+              <RoundProgress
+                used={negoPopup.negotiation_rounds_used || 0}
+                max={negoPopup.negotiation_max_rounds || 3}
+              />
+
+              <div style={{ display: "grid", gap: 14, marginTop: 14 }}>
                 <OfferSummaryCard
                   offer={negoPopup}
                   candidateName={negoPopup.candidate_name}
@@ -330,14 +405,27 @@ export default function RecruiterCandidatesPage() {
 
               <div
                 style={{
-                  marginTop: 16,
-                  padding: 16,
+                  marginTop: 14,
+                  padding: "16px 18px",
                   border: "1px solid var(--border)",
                   borderRadius: 14,
-                  background: "#fbfdff",
+                  background: "var(--blue-lighter)",
                 }}
               >
-                <div style={{ fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>Counter-offer terms</div>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: 13,
+                    color: "var(--navy)",
+                    marginBottom: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <EditIcon />
+                  Counter-offer terms
+                </div>
                 <div className={styles.formGrid} style={{ marginBottom: 0 }}>
                   <label className={styles.field}>
                     <span>Revised salary ({negoPopup.currency})</span>
@@ -392,10 +480,10 @@ export default function RecruiterCandidatesPage() {
                 </div>
               </div>
 
-              <label className={styles.field} style={{ marginTop: 16 }}>
+              <label className={styles.field} style={{ marginTop: 14 }}>
                 <span>Decision note to candidate</span>
                 <textarea
-                  rows={4}
+                  rows={3}
                   value={negoNotes[negoPopup.id] || ""}
                   onChange={(e) =>
                     setNegoNotes((current) => ({ ...current, [negoPopup.id]: e.target.value }))
@@ -403,35 +491,47 @@ export default function RecruiterCandidatesPage() {
                   placeholder="Explain why you accepted, rejected, or adjusted the salary, allowances, benefits, or joining date."
                 />
               </label>
-              <div className={styles.rowActions} style={{ marginTop: 14, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                <button type="button" className={styles.secondaryButton} onClick={() => setNegoPopup(null)}>
-                  Review later
-                </button>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  disabled={negoBusyId === negoPopup.id}
-                  onClick={() => handleNegoCounter(negoPopup)}
-                >
-                  {negoBusyId === negoPopup.id ? "Saving…" : "Send counter-offer"}
-                </button>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  disabled={negoBusyId === negoPopup.id}
-                  onClick={() => handleNegoReject(negoPopup)}
-                >
-                  {negoBusyId === negoPopup.id ? "Saving…" : "Reject negotiation"}
-                </button>
-                <button
-                  type="button"
-                  className={styles.primaryButton}
-                  disabled={negoBusyId === negoPopup.id}
-                  onClick={() => handleNegoAccept(negoPopup)}
-                >
-                  {negoBusyId === negoPopup.id ? "Saving…" : "Accept and send revised offer"}
-                </button>
-              </div>
+            </div>
+
+            <div
+              style={{
+                padding: "14px 24px",
+                borderTop: "1px solid var(--border-soft)",
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+                flexWrap: "wrap",
+                flexShrink: 0,
+                background: "var(--card)",
+              }}
+            >
+              <button type="button" className={styles.secondaryButton} onClick={() => setNegoPopup(null)}>
+                Review later
+              </button>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                disabled={negoBusyId === negoPopup.id}
+                onClick={() => handleNegoCounter(negoPopup)}
+              >
+                {negoBusyId === negoPopup.id ? "Saving…" : "Send counter-offer"}
+              </button>
+              <button
+                type="button"
+                className={styles.dangerButton}
+                disabled={negoBusyId === negoPopup.id}
+                onClick={() => handleNegoReject(negoPopup)}
+              >
+                {negoBusyId === negoPopup.id ? "Saving…" : "Reject negotiation"}
+              </button>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                disabled={negoBusyId === negoPopup.id}
+                onClick={() => handleNegoAccept(negoPopup)}
+              >
+                {negoBusyId === negoPopup.id ? "Saving…" : "Accept and send revised offer"}
+              </button>
             </div>
           </div>
         </div>
@@ -469,7 +569,14 @@ export default function RecruiterCandidatesPage() {
                     </button>
                   </div>
                 </div>
-                <NegotiationCompare offer={offer} />
+                <div className={styles.mutedText} style={{ marginTop: 6 }}>
+                  <strong style={{ color: "var(--navy)" }}>Current package:</strong> {offer.currency}{" "}
+                  {Number(offer.monthly_salary || 0).toLocaleString()} · {offer.start_date || "—"}
+                  {"  "}&middot;{"  "}
+                  <strong style={{ color: "var(--navy)" }}>Candidate proposal:</strong> {offer.currency}{" "}
+                  {Number(offer.negotiation?.proposed_salary || 0).toLocaleString()} ·{" "}
+                  {offer.negotiation?.proposed_start_date || "—"}
+                </div>
               </div>
             ))
           ) : (
@@ -710,23 +817,42 @@ function NegotiationCompare({ offer }) {
   const n = offer.negotiation || {};
   const currentBenefits = (offer.benefits || []).filter((item) => item?.selected !== false);
   const proposedBenefits = (n.proposed_benefits || []).filter((item) => item?.selected !== false);
+  const currentLabels = new Set(currentBenefits.map((item) => item.label));
+  const currentSalary = Number(offer.monthly_salary || 0);
+  const proposedSalary = Number(n.proposed_salary || 0);
+  const salaryDeltaPct =
+    currentSalary > 0 && proposedSalary > 0
+      ? Math.round(((proposedSalary - currentSalary) / currentSalary) * 100)
+      : null;
+
   return (
     <div
       style={{
-        marginTop: 10,
         display: "grid",
         gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
         gap: 14,
       }}
     >
       <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 16, background: "#fff" }}>
-        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--text-faint)", marginBottom: 10 }}>
-          Current package
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: ".05em",
+            color: "var(--text-faint)",
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <FileTextIcon /> Current package
         </div>
         <div style={{ display: "grid", gap: 10, color: "var(--text-muted)", fontSize: 13 }}>
           <div>
             <strong style={{ color: "var(--navy)" }}>Salary:</strong> {offer.currency}{" "}
-            {Number(offer.monthly_salary || 0).toLocaleString()}
+            {currentSalary.toLocaleString()}
           </div>
           <div>
             <strong style={{ color: "var(--navy)" }}>Joining date:</strong> {offer.start_date || "—"}
@@ -734,10 +860,6 @@ function NegotiationCompare({ offer }) {
           <div>
             <strong style={{ color: "var(--navy)" }}>Benefits:</strong>{" "}
             {currentBenefits.length ? currentBenefits.map((item) => item.label).join(", ") : "None listed"}
-          </div>
-          <div>
-            <strong style={{ color: "var(--navy)" }}>Rounds:</strong> {offer.negotiation_rounds_used || 0}/
-            {offer.negotiation_max_rounds || 3}
           </div>
           {(offer.salary_breakdown || []).length > 0 && (
             <div>
@@ -748,20 +870,64 @@ function NegotiationCompare({ offer }) {
         </div>
       </div>
 
-      <div style={{ border: "1px solid #f3d7a5", borderRadius: 14, padding: 16, background: "#fff8eb" }}>
-        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".05em", color: "#8a5400", marginBottom: 10 }}>
-          Candidate proposal
+      <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 16, background: "var(--blue-lighter)" }}>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: ".05em",
+            color: "var(--navy-2)",
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <MessageIcon /> Candidate proposal
         </div>
-        <div style={{ display: "grid", gap: 10, color: "#8a5400", fontSize: 13 }}>
+        <div style={{ display: "grid", gap: 10, color: "var(--navy-2)", fontSize: 13 }}>
           <div>
-            <strong>Salary:</strong> {offer.currency} {Number(n.proposed_salary || 0).toLocaleString()}
+            <strong style={{ color: "var(--navy)" }}>Salary:</strong> {offer.currency} {proposedSalary.toLocaleString()}
+            {salaryDeltaPct !== null && salaryDeltaPct !== 0 && (
+              <span
+                style={{
+                  marginLeft: 8,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  background: "#fff",
+                  color: "var(--navy-2)",
+                  padding: "2px 7px",
+                  borderRadius: 999,
+                }}
+              >
+                {salaryDeltaPct > 0 ? "+" : ""}
+                {salaryDeltaPct}%
+              </span>
+            )}
           </div>
           <div>
-            <strong>Joining date:</strong> {n.proposed_start_date || "—"}
+            <strong style={{ color: "var(--navy)" }}>Joining date:</strong> {n.proposed_start_date || "—"}
           </div>
           <div>
-            <strong>Benefits:</strong>{" "}
-            {proposedBenefits.length ? proposedBenefits.map((item) => item.label).join(", ") : "No change requested"}
+            <strong style={{ color: "var(--navy)" }}>Benefits:</strong>{" "}
+            {proposedBenefits.length
+              ? proposedBenefits
+                  .map((item) => item.label)
+                  .reduce((nodes, label, index) => {
+                    if (index > 0) nodes.push(", ");
+                    nodes.push(
+                      currentLabels.has(label) ? (
+                        label
+                      ) : (
+                        <span key={label} style={{ fontWeight: 700, color: "var(--navy)" }}>
+                          {label} (new)
+                        </span>
+                      )
+                    );
+                    return nodes;
+                  }, [])
+              : "No change requested"}
           </div>
           {n.note && (
             <div>
@@ -778,8 +944,20 @@ function NegotiationTimeline({ history = [] }) {
   if (!history.length) return null;
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 16, background: "#fff" }}>
-      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--text-faint)", marginBottom: 12 }}>
-        Negotiation timeline
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: ".05em",
+          color: "var(--text-faint)",
+          marginBottom: 12,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        <ClockIcon /> Negotiation timeline
       </div>
       <div style={{ display: "grid", gap: 10 }}>
         {history.map((entry, index) => (
@@ -793,6 +971,76 @@ function NegotiationTimeline({ history = [] }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function RoundProgress({ used = 0, max = 3 }) {
+  const safeMax = max > 0 ? max : 3;
+  const percent = Math.min(100, Math.round((used / safeMax) * 100));
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--text-faint)", whiteSpace: "nowrap" }}>
+        Round {used} of {safeMax}
+      </span>
+      <div style={{ flex: 1, height: 5, borderRadius: 999, background: "var(--border-soft)", overflow: "hidden" }}>
+        <div style={{ width: `${percent}%`, height: "100%", background: "var(--blue)" }} />
+      </div>
+    </div>
+  );
+}
+
+function DollarSignIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="1" x2="12" y2="23" />
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+function MessageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    </svg>
+  );
+}
+
+function FileTextIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+    </svg>
   );
 }
 
