@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, Suspense, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { getApiErrorMessage, uploadDocument, verifyDocument, uploadEmployeePhoto, uploadRecruiterPhoto, analyzeBankSlip, uploadOnboardingFile } from "@/services/authService";
@@ -733,7 +733,7 @@ function Attachment({ attachment, auth, onLocalNote }) {
  * launcher panel) or "canvas" (large, embedded, full-height surface used as
  * the default onboarding screen / AI assistant page).
  */
-const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", auth, onEscalate, context = null }, ref) {
+const AgentChatCoreInner = forwardRef(function AgentChatCoreInner({ variant = "floating", auth, onEscalate, context = null, searchParams }, ref) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -749,7 +749,6 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
   const pendingUploadHint = useRef(null);
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   const assistantContext = useMemo(
     () => buildAssistantContext({ pathname, searchParams, auth, extraContext: context }),
@@ -1185,6 +1184,24 @@ const AgentChatCore = forwardRef(function AgentChatCore({ variant = "floating", 
 
       <input ref={docInputRef} type="file" accept=".jpg,.jpeg,.png,.pdf" className={styles.visuallyHidden} onChange={handleDocFileChosen} />
     </div>
+  );
+});
+
+/**
+ * Thin bridge that reads useSearchParams() inside a Suspense boundary so the
+ * static-generation pass doesn't fail. AgentChatCoreInner receives searchParams
+ * as a plain prop — no hook call at the outer forwardRef level.
+ */
+function SearchParamsBridge({ innerRef, ...props }) {
+  const searchParams = useSearchParams();
+  return <AgentChatCoreInner ref={innerRef} {...props} searchParams={searchParams} />;
+}
+
+const AgentChatCore = forwardRef(function AgentChatCore(props, ref) {
+  return (
+    <Suspense fallback={null}>
+      <SearchParamsBridge innerRef={ref} {...props} />
+    </Suspense>
   );
 });
 

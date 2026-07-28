@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { Suspense, useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
@@ -159,6 +159,14 @@ const IconTerms = () => (
 );
 
 export default function RecruiterInvitePage() {
+  return (
+    <Suspense fallback={null}>
+      <RecruiterInvitePageInner />
+    </Suspense>
+  );
+}
+
+function RecruiterInvitePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [inviteForm, setInviteForm] = useState(initialInvite);
