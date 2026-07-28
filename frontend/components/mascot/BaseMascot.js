@@ -73,17 +73,21 @@ function isFieldVisible(field) {
   return field && !field.disabled && field.offsetParent !== null;
 }
 
+function normalizeFieldLabel(label) {
+  return String(label || "").replace(/\s*\(optional\)$/i, "").trim();
+}
+
 function getFieldLabel(field) {
   const labelEl = field.closest("label");
   if (labelEl) {
     const span = labelEl.querySelector("span");
     const text = (span?.textContent || labelEl.textContent || "").trim();
-    if (text) return text.replace(/\*$/, "").trim();
+    if (text) return normalizeFieldLabel(text.replace(/\*$/, "").trim());
   }
   const placeholder = field.getAttribute("placeholder");
-  if (placeholder) return placeholder.trim();
+  if (placeholder) return normalizeFieldLabel(placeholder.trim());
   const name = field.name || field.id;
-  if (name) return name.replace(/_/g, " ");
+  if (name) return normalizeFieldLabel(name.replace(/_/g, " "));
   return "This field";
 }
 
@@ -445,12 +449,13 @@ export default function BaseMascot({
     (field, options = {}) => {
       if (!field) return false;
       const label = getFieldLabel(field);
+      const normalizedLabel = label.replace(/\s*\(optional\)$/i, "").trim();
       const tip =
         (typeof resolveFieldHelp === "function" && resolveFieldHelp(field)) ||
         (field.required
-          ? `“${label}” is required — enter it carefully; it becomes part of the record.`
-          : `“${label}” is optional — fill it if you have the detail.`);
-      return setMessage(tip, MASCOT_PRIORITY_LEVELS.SUGGESTION, `field-help:${field.name || field.id || label}`, {
+          ? `“${normalizedLabel}” is required — enter it carefully; it becomes part of the record.`
+          : `“${normalizedLabel}” is optional — fill it if you have the detail.`);
+      return setMessage(tip, MASCOT_PRIORITY_LEVELS.SUGGESTION, `field-help:${field.name || field.id || normalizedLabel}`, {
         force: true,
         bypassCooldown: true,
         animation: options.animation || "statePoint",
@@ -1478,18 +1483,18 @@ export default function BaseMascot({
                   </div>
                 ) : null}
 
-                {coaching ? (
-                  <p key={`coach-msg-${coach?.next?.key || "done"}-${formComplete}`} className={`${styles.bubbleText} ${styles.fadeInUp}`}>
-                    {formComplete
-                      ? "All set — required filled, optional handled. Click the primary button on the form."
-                      : bubbleText ||
-                        (coach.next
-                          ? isOptionalNext
-                            ? `Optional: “${coach.next.label}”. Enter it in the highlighted field, or skip.`
-                            : `Next up: “${coach.next.label}”. Enter it in the highlighted field.`
-                          : "Enter the highlighted field on the form.")}
-                  </p>
-                ) : null}
+{coaching ? (
+  <p key={`coach-msg-${coach?.next?.key || "done"}-${formComplete}`} className={`${styles.bubbleText} ${styles.fadeInUp}`}>
+    {formComplete
+      ? "All set — required filled, optional handled. Click the primary button on the form."
+      : bubbleText ||
+        (coach.next
+          ? isOptionalNext
+            ? `“${coach.next.label}”. Enter it in the highlighted field, or skip.`
+            : `Next up: “${coach.next.label}”. Enter it in the highlighted field.`
+          : "Enter the highlighted field on the form.")}
+  </p>
+) : null}
 
                 {!introMode && !coaching && bubbleText && insightCount === 0 ? (
                   <p key={bubbleText} className={`${styles.bubbleText} ${styles.fadeInUp}`}>

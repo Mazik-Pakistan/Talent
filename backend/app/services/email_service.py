@@ -2,11 +2,14 @@
 
 import smtplib
 import ssl
+import logging
 from html import escape
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class EmailService:
@@ -24,9 +27,9 @@ class EmailService:
         return msg
 
     def _send(self, to_email: str, subject: str, html_body: str) -> None:
-        msg = self._build_message(to_email, subject, html_body)
-        context = ssl.create_default_context()
         try:
+            msg = self._build_message(to_email, subject, html_body)
+            context = ssl.create_default_context()
             if settings.MAIL_USE_SSL:
                 with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, context=context) as server:
                     server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
@@ -40,6 +43,10 @@ class EmailService:
                     server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
                     server.sendmail(settings.SMTP_FROM_EMAIL, to_email, msg.as_string())
         except Exception as exc:
+            logger.error(
+                f"SMTP send failed to {to_email} (subject: {subject})",
+                exc_info=True
+            )
             raise RuntimeError(f"Failed to send email to {to_email}: {exc}") from exc
 
     # ------------------------------------------------------------------ #
@@ -242,6 +249,70 @@ class EmailService:
 </p>
 <p style="margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   Click the button below to complete your registration and begin onboarding.
+  This invitation expires on <strong>{escape(expires_at)}</strong>.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
+  <tr>
+    <td align="center">
+      <a href="{safe_link}" class="cta-btn"
+         style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                font-weight:600;font-size:15px;letter-spacing:0.2px;
+                box-shadow:0 4px 16px rgba(13,92,145,.2);
+                transition:all 0.2s ease;">
+        Accept Invitation
+      </a>
+    </td>
+  </tr>
+</table>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;">
+  <tr>
+    <td style="padding:20px;">
+      <p style="margin:0 0 4px;color:#6b7a8f;font-size:11px;font-weight:600;
+                text-transform:uppercase;letter-spacing:0.8px;">
+        Or copy this link into your browser
+      </p>
+      <p style="margin:0;font-family:monospace;font-size:12px;color:#1a1a2e;
+                word-break:break-all;line-height:1.5;">
+        {escape(invite_link)}
+      </p>
+    </td>
+  </tr>
+</table>
+"""
+        self._send(
+            to_email, subject,
+            self._branded_shell("Candidate Invitation", f"Hello, {escape(full_name)} 👋", body)
+        )
+
+    # ------------------------------------------------------------------ #
+    # send_offer_invitation_email
+    # ------------------------------------------------------------------ #
+    def send_offer_invitation_email(
+        self,
+        to_email: str,
+        full_name: str,
+        job_title: str,
+        department: str,
+        start_date: str,
+        currency: str,
+        monthly_salary: str,
+        invite_link: str,
+        expires_at: str,
+    ) -> None:
+        subject = "Your Invitation to Join TalentAI"
+        safe_link = escape(invite_link, quote=True)
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  You have been invited to join <strong>TalentAI</strong> as a candidate for the position of
+  <strong>{escape(job_title)}</strong> in the <strong>{escape(department)}</strong> department.
+</p>
+<p style="margin:0 0 12px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Your offer includes <strong>{escape(currency)} {escape(monthly_salary)}</strong> per month,
+  with a start date of <strong>{escape(start_date)}</strong>.
+</p>
+<p style="margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Click the button below to review the offer and complete your registration.
   This invitation expires on <strong>{escape(expires_at)}</strong>.
 </p>
 <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
@@ -711,7 +782,8 @@ class EmailService:
     <td style="padding:22px;">
       <p style="margin:0 0 10px;color:#6b7a8f;font-size:11px;font-weight:700;
                 text-transform:uppercase;letter-spacing:1.2px;">
-        Still needed      </p>
+        Still needed
+      </p>
       <ul style="margin:0;padding-left:20px;">{missing_items}</ul>
       {note_html}
     </td>
@@ -735,7 +807,7 @@ class EmailService:
             self._branded_shell("Action required", "Complete your onboarding", body)
         )
 
-      # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------ #
     # send_announcement - FIXED (title appears only once)
     # ------------------------------------------------------------------ #
     def send_announcement(
@@ -767,8 +839,6 @@ class EmailService:
 <p style="margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   Hello {escape(full_name)}, your recruiting team shared a new announcement.
 </p>
-
-<!-- Announcement card -->
 <table cellpadding="0" cellspacing="0" border="0" width="100%"
        style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;
               margin:0 0 8px;">

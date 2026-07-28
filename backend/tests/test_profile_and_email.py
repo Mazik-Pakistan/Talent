@@ -59,6 +59,39 @@ def test_profile_photo_allowed_extensions():
     assert MAX_BYTES == 5 * 1024 * 1024
 
 
+def test_offer_invitation_email_includes_offer_details(monkeypatch):
+    from app.services.email_service import EmailService
+
+    service = EmailService()
+    captured = {}
+
+    def fake_send(to_email, subject, html_body):
+        captured["to_email"] = to_email
+        captured["subject"] = subject
+        captured["html_body"] = html_body
+
+    monkeypatch.setattr(service, "_send", fake_send)
+
+    service.send_offer_invitation_email(
+        to_email="candidate@example.com",
+        full_name="Ali Khan",
+        job_title="Software Engineer",
+        department="Engineering",
+        start_date="2026-08-01",
+        currency="PKR",
+        monthly_salary="250000",
+        invite_link="https://example.com/invite/test-token",
+        expires_at="August 01, 2026",
+    )
+
+    assert captured["to_email"] == "candidate@example.com"
+    assert "Invitation" in captured["subject"]
+    assert "Ali Khan" in captured["html_body"]
+    assert "Software Engineer" in captured["html_body"]
+    assert "PKR 250000" in captured["html_body"]
+    assert "https://example.com/invite/test-token" in captured["html_body"]
+
+
 @pytest.mark.asyncio
 async def test_save_profile_photo_rejects_non_image(monkeypatch):
     from fastapi import UploadFile, HTTPException

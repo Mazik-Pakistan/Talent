@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Image from "next/image";
+import { cloneElement, useEffect, useState } from "react";
 
 import styles from "@/app/styles/auth.module.css";
 
@@ -211,6 +212,21 @@ export const INVITE_SLIDES = [
 
 const INTERVAL_MS = 5500;
 
+const ICON_WRAPPER_STYLE = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: "40px",
+  height: "40px",
+  minWidth: "40px",
+  flexShrink: 0,
+};
+
+const ICON_SVG_STYLE = {
+  width: "20px",
+  height: "20px",
+};
+
 export default function AuthAside({ slides, ariaLabel = "Talent platform introduction" }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -240,17 +256,37 @@ export default function AuthAside({ slides, ariaLabel = "Talent platform introdu
     >
       <div className={styles.asideBackdrop} aria-hidden="true" />
 
+      <div className={styles.asideBrand} style={{ marginBottom: "32px" }}>
+        <Image
+          src="/talentai-logo.png"
+          alt="Mazik Global"
+          width={140}
+          height={40}
+          style={{ width: "140px", height: "auto" }}
+          priority
+        />
+      </div>
+
       <div className={styles.asideSlide} key={activeIndex}>
         <p className={styles.asideEyebrow}>{slide.eyebrow}</p>
         <h2 className={styles.asideHeading}>{slide.heading}</h2>
         <p className={styles.asideText}>{slide.text}</p>
 
         {slide.highlights?.length > 0 && (
-          <ul className={styles.highlightList}>
+          <ul
+            className={styles.highlightList}
+            style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "16px" }}
+          >
             {slide.highlights.map((item) => (
-              <li key={item.title} className={styles.highlightItem}>
-                <span className={styles.highlightIcon}>{ICONS[item.icon] || ICONS.check}</span>
-                <span className={styles.highlightCopy}>
+              <li
+                key={item.title}
+                className={styles.highlightItem}
+                style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}
+              >
+                <span className={styles.highlightIcon} style={ICON_WRAPPER_STYLE}>
+                  {cloneElement(ICONS[item.icon] || ICONS.check, { style: ICON_SVG_STYLE })}
+                </span>
+                <span className={styles.highlightCopy} style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                   <strong>{item.title}</strong>
                   <span className={styles.highlightBody}>{item.body}</span>
                 </span>

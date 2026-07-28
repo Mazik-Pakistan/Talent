@@ -93,6 +93,10 @@ export function fieldKey(field) {
  * Resolve a human-readable label for any role's form controls.
  * Supports htmlFor labels (AiField), wrapping labels, data-field-label, aria-label.
  */
+function normalizeFieldLabel(label) {
+  return String(label || "").replace(/\s*\(optional\)$/i, "").trim();
+}
+
 export function getFieldLabel(field) {
   if (!field) return "This field";
 
@@ -100,20 +104,20 @@ export function getFieldLabel(field) {
     field.getAttribute?.("data-field-label") ||
     field.closest?.("[data-field-label]")?.getAttribute("data-field-label");
   if (dataLabel) {
-    const text = cleanLabelText(dataLabel);
+    const text = normalizeFieldLabel(cleanLabelText(dataLabel));
     if (text) return text;
   }
 
   const aria = field.getAttribute?.("aria-label");
   if (aria) {
-    const text = cleanLabelText(aria);
+    const text = normalizeFieldLabel(cleanLabelText(aria));
     if (text) return text;
   }
 
   if (field.id && field.ownerDocument) {
     try {
       const byFor = field.ownerDocument.querySelector(`label[for="${CSS.escape(field.id)}"]`);
-      const text = labelTextFromElement(byFor, field);
+      const text = normalizeFieldLabel(labelTextFromElement(byFor, field));
       if (text) return text;
     } catch {
       // CSS.escape / querySelector failures — fall through
@@ -122,7 +126,7 @@ export function getFieldLabel(field) {
 
   const wrapLabel = field.closest?.("label");
   if (wrapLabel) {
-    const text = labelTextFromElement(wrapLabel, field);
+    const text = normalizeFieldLabel(labelTextFromElement(wrapLabel, field));
     if (text) return text;
   }
 
@@ -130,18 +134,18 @@ export function getFieldLabel(field) {
   const shell = field.closest?.("[data-field-root]");
   if (shell) {
     const headLabel = shell.querySelector("label");
-    const text = labelTextFromElement(headLabel, field);
+    const text = normalizeFieldLabel(labelTextFromElement(headLabel, field));
     if (text) return text;
   }
 
   const placeholder = field.getAttribute?.("placeholder");
   if (placeholder) {
-    const text = cleanLabelText(placeholder);
+    const text = normalizeFieldLabel(cleanLabelText(placeholder));
     if (text) return text;
   }
 
   if (field.name && !isOpaqueDomId(field.name)) {
-    return cleanLabelText(String(field.name).replace(/_/g, " ")) || "This field";
+    return normalizeFieldLabel(cleanLabelText(String(field.name).replace(/_/g, " "))) || "This field";
   }
 
   // Never surface React useId() as a label.
@@ -300,4 +304,4 @@ export function getSelectFieldMeta(field) {
     many: options.length > SELECT_CHIP_LIMIT,
   };
 }
-
+

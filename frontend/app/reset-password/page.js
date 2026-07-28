@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -97,13 +96,14 @@ export default function ResetPasswordPage() {
   return (
     <main className={styles.shell}>
       <div className={styles.card}>
-        <section className={styles.panel} aria-labelledby="reset-heading">
-          <div className={styles.brandRow}>
-            <Image src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
-            <span className={styles.brandDivider} aria-hidden="true" />
-            <span className={styles.productName}>Talent</span>
-          </div>
+        {/* Brand / marketing panel now renders first so it sits on the left */}
+        <AuthAside slides={RECOVERY_SLIDES} ariaLabel="Password reset help" />
 
+        <section
+          className={styles.panel}
+          aria-labelledby="reset-heading"
+          style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start" }}
+        >
           <div className={styles.intro}>
             <p className={styles.eyebrow}>Account recovery</p>
             <h1 id="reset-heading" className={styles.heading}>Set a new password</h1>
@@ -193,8 +193,6 @@ export default function ResetPasswordPage() {
             <p><Link href="/login">Back to sign in</Link></p>
           </div>
         </section>
-
-        <AuthAside slides={RECOVERY_SLIDES} ariaLabel="Password reset help" />
       </div>
     </main>
   );
