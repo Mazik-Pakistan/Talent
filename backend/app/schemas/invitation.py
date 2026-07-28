@@ -1,5 +1,6 @@
 from datetime import date
 from typing import Literal
+import re
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
