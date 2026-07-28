@@ -15,50 +15,15 @@ import {
 import SignaturePad from "@/components/SignaturePad";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
-import { formatOfferCurrency, openOfferLetterPdf } from "@/lib/offerLetter";
+import styles from "@/app/styles/auth.module.css";
 
 const OFFER_DRAFT_KEY = "offer_letter_draft";
 
-function IconRole() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-      <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-    </svg>
-  );
-}
-
-function IconCompensation() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="1" x2="12" y2="23" />
-      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-    </svg>
-  );
-}
-
-function IconBenefits() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="20 12 20 22 4 22 4 12" />
-      <rect x="2" y="7" width="20" height="5" />
-      <line x1="12" y1="22" x2="12" y2="7" />
-      <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
-      <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
-    </svg>
-  );
-}
-
-function IconTerms() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" y1="13" x2="8" y2="13" />
-      <line x1="16" y1="17" x2="8" y2="17" />
-    </svg>
-  );
-}
+const formatCurrency = (amount, currency = "PKR") => {
+  if (amount == null) return "-";
+  const num = Number(amount);
+  return `${currency || ""} ${num.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+};
 
 function OfferLetterPageContent() {
   const router = useRouter();
@@ -88,13 +53,10 @@ function OfferLetterPageContent() {
   const negotiation = offer?.negotiation || {};
   const negoPending = negotiation.status === "pending";
   const negoRejected = negotiation.status === "rejected";
-  const negotiationRoundsUsed = Number(offer?.negotiation_rounds_used || 0);
-  const negotiationMaxRounds = Number(offer?.negotiation_max_rounds || 3);
-  const negotiationRoundsLeft = Math.max(negotiationMaxRounds - negotiationRoundsUsed, 0);
   const canNegotiate =
     offer &&
     ["sent", "viewed"].includes(offer.status) &&
-    negotiationRoundsLeft > 0 &&
+    !offer.negotiation_used &&
     !negoPending;
   const canSign = offer && ["sent", "viewed"].includes(offer.status) && !negoPending;
 
@@ -117,8 +79,8 @@ function OfferLetterPageContent() {
       pathname: "/offer",
       section: "offer",
       hint: offer?.status
-        ? `Offer v${offer.version || 1} status: ${offer.status}. Accept, negotiate, or decline.`
-        : "Review your offer letter first — documents unlock after you sign.",
+        ? `Offer v${offer.version || 1} status: ${offer.status}. Accept, negotiate once, or decline.`
+        : "Review your offer letter first - documents unlock after you sign.",
       fields: ["full_legal_name", "agree", "signature", "negotiate"],
     });
     return () => clearCandidateContext();
@@ -316,325 +278,517 @@ function OfferLetterPageContent() {
     router.push("/dashboard/candidate");
   }
 
-  // --------------- PDF generation ---------------
-  const handleDownloadPDF = useCallback(() => {
-    const ok = openOfferLetterPdf(offer, {
-      candidateName: expectedName || fullLegalName || offer?.candidate_name,
-    });
-    if (!ok) {
+const handleDownloadPDF = useCallback(() => {
+    if (!offer) return;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
       alert("Please allow pop-ups to download the offer letter as PDF.");
+      return;
     }
-  }, [offer, expectedName, fullLegalName]);
+
+    const candidateName = expectedName || fullLegalName || offer.candidate_name || "Candidate";
+    const currentDate = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    const currency = offer.currency || "PKR";
+    const grossSalary = formatCurrency(offer.monthly_salary, currency);
+    const breakdownRows = (offer.salary_breakdown || [])
+      .filter(row => row.label.trim())
+      .map(row => `<div class="kv-row"><span>${row.label}</span><span>${formatCurrency(row.amount, currency)}</span></div>`)
+      .join("");
+    const breakdownTotal = (offer.salary_breakdown || []).reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    const benefitsList = selectedBenefits.map(b => `<li>${b.label}</li>`).join("");
+
+    const companyName = "Mazik Global Pakistan";
+    const companyAddress = "Karachi, Pakistan";
+    const companyRepresentative = offer.reporting_manager || "Hiring Manager";
+
+    const signedBlock = (offer.status === "signed" || offer.status === "approved") ? `
+      <div class="signature-confirm">
+        <strong>Accepted by:</strong> ${offer.signature?.full_legal_name || candidateName}
+        &nbsp;&nbsp;·&nbsp;&nbsp;
+        <strong>Date:</strong> ${offer.signed_at ? new Date(offer.signed_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : ""}
+        ${offer.signature?.signature_data_url ? `<div><img src="${offer.signature.signature_data_url}" alt="Signature" style="max-width: 140px; margin-top: 6px;"/></div>` : ""}
+      </div>
+    ` : "";
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Offer Letter - ${offer.job_title}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page { 
+      size: A4; 
+      margin: 10mm 16mm;
+      @top-center {
+        content: "";
+      }
+      @bottom-center {
+        content: "";
+      }
+    }
+    html, body {
+      font-family: 'Calibri', 'Segoe UI', Arial, sans-serif;
+      color: #1e2b3a;
+      font-size: 13.5px;
+      line-height: 1.45;
+    }
+    body { padding: 6px 4px; max-width: 800px; margin: 0 auto; }
+
+    .letterhead {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 9px;
+      border-bottom: 2px solid #0a2540;
+    }
+    .logo img { height: 34px; }
+    .company-info { text-align: right; font-size: 11.5px; color: #5a6b7d; line-height: 1.45; }
+    .company-info strong { color: #0a2540; font-size: 13px; }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 9px;
+      font-size: 11.5px;
+      color: #5a6b7d;
+    }
+
+    .subject {
+      font-weight: 700;
+      font-size: 15px;
+      margin-bottom: 7px;
+      color: #0a2540;
+    }
+    .salutation { margin-bottom: 7px; font-size: 13px; }
+    .body-text { margin-bottom: 9px; text-align: justify; font-size: 12px; }
+
+    h3 {
+      font-size: 11.5px;
+      color: #0a2540;
+      background: transparent;
+      margin: 12px 0 6px;
+      padding: 4px 0;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-radius: 0;
+      display: block;
+      border-bottom: 1px solid #e3e8ee;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px 16px;
+      margin-bottom: 4px;
+      border: 1px solid #e3e8ee;
+      border-radius: 4px;
+      padding: 9px 12px;
+    }
+    .info-cell dt { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.3px; color: #8592a3; margin-bottom: 2px; }
+    .info-cell dd { font-size: 12.5px; font-weight: 600; color: #1e2b3a; }
+
+    .comp-box {
+      border: 1px solid #e3e8ee;
+      border-radius: 4px;
+      padding: 9px 12px;
+      margin-bottom: 4px;
+    }
+    .gross-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+    .gross-row .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; color: #8592a3; }
+    .gross-row .value { font-size: 16px; font-weight: 700; color: #0a2540; }
+    .kv-row { display: flex; justify-content: space-between; font-size: 12px; padding: 2.5px 0; color: #445468; border-top: 1px dashed #eef1f5; }
+    .kv-row:first-of-type { border-top: 1px solid #e3e8ee; margin-top: 5px; padding-top: 5px; }
+    .kv-total { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; padding-top: 4px; margin-top: 3px; border-top: 1px solid #cbd5e0; color: #0a2540; }
+
+    ul.benefits { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 16px; font-size: 12px; color: #445468; margin: 0; }
+    ul.benefits li { padding-left: 13px; position: relative; }
+    ul.benefits li::before { content: "•"; position: absolute; left: 0; color: #0a2540; font-weight: 700; }
+
+    .terms {
+      white-space: pre-line;
+      font-size: 11px;
+      color: #445468;
+      background: #f9fafb;
+      border: 1px solid #eef1f5;
+      border-radius: 4px;
+      padding: 9px 12px;
+      max-height: 175px;
+      overflow: hidden;
+    }
+
+    .signature-block { margin-top: 16px; display: flex; justify-content: space-between; }
+    .sig-box { width: 45%; }
+    .sig-line { border-top: 1px solid #0a2540; margin-top: 22px; padding-top: 5px; font-weight: 700; font-size: 12.5px; }
+    .sig-box small { font-size: 10px; color: #8592a3; }
+    .signature-confirm {
+      margin-top: 10px;
+      border: 1px dashed #0a2540;
+      padding: 8px 12px;
+      background: #f0f7ff;
+      font-size: 12px;
+      border-radius: 4px;
+    }
+
+    .doc-footer {
+      margin-top: 14px;
+      padding-top: 7px;
+      border-top: 1px solid #e3e8ee;
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #94a3b8;
+    }
+
+    @media print {
+      body { padding: 0; }
+      .no-print { display: none; }
+      .info-grid, .comp-box, .terms, .signature-block { page-break-inside: avoid; }
+      h3 { page-break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="letterhead">
+    <div class="logo">
+      <img src="/talentai-logo.png" alt="Mazik Global" />
+    </div>
+    <div class="company-info">
+      <strong>${companyName}</strong><br>
+      ${companyAddress}
+    </div>
+  </div>
+
+  <div class="meta-row">
+    <span>Offer Letter · v${offer.version || 1}</span>
+    <span>${currentDate}</span>
+  </div>
+
+  <div class="subject">Re: Employment Offer — ${offer.job_title}</div>
+  <div class="salutation">Dear ${candidateName.split(' ')[0] || candidateName},</div>
+
+  <p class="body-text">
+    We are delighted to offer you the position of <strong>${offer.job_title}</strong> with ${companyName}.
+    Your skills and experience will be a valuable addition to our team. Please review the details of your
+    employment package below.
+  </p>
+
+  <h3>Position Details</h3>
+  <div class="info-grid">
+    <div class="info-cell"><dt>Job Title</dt><dd>${offer.job_title}</dd></div>
+    <div class="info-cell"><dt>Department</dt><dd>${offer.department}</dd></div>
+    <div class="info-cell"><dt>Employment Type</dt><dd>${offer.employment_type}</dd></div>
+    <div class="info-cell"><dt>Location</dt><dd>${offer.office_location || "-"}</dd></div>
+    <div class="info-cell"><dt>Reporting To</dt><dd>${offer.reporting_manager || "-"}</dd></div>
+    <div class="info-cell"><dt>Start Date</dt><dd>${offer.start_date}</dd></div>
+  </div>
+
+  <h3>Compensation</h3>
+  <div class="comp-box">
+    <div class="gross-row">
+      <span class="label">Monthly Gross Salary</span>
+      <span class="value">${grossSalary}</span>
+    </div>
+    ${breakdownRows ? `
+      ${breakdownRows}
+      <div class="kv-total"><span>Total</span><span>${formatCurrency(breakdownTotal, currency)}</span></div>
+    ` : ""}
+  </div>
+
+  ${selectedBenefits.length > 0 ? `
+  <h3>Benefits</h3>
+  <ul class="benefits">${benefitsList}</ul>
+  ` : ""}
+
+  <h3>Terms &amp; Conditions</h3>
+  <div class="terms">${offer.terms}</div>
+
+  <p class="body-text" style="margin-top: 10px;">
+    To accept this offer, please sign below and return the signed copy by the offer expiry date.
+    We look forward to welcoming you aboard.
+  </p>
+
+  <p class="body-text">Sincerely,<br>${companyRepresentative}<br>${companyName}</p>
+
+  ${offer.signature?.signature_data_url ? `<img src="${offer.signature.signature_data_url}" alt="Signature" style="max-width: 140px; margin-top: 5px;"/>` : ""}
+  <div class="signature-block">
+    <div class="sig-box">
+      <div class="sig-line">${candidateName}</div>
+      <small>Candidate Signature &amp; Date</small>
+    </div>
+    <div class="sig-box">
+      <div class="sig-line">${companyRepresentative}</div>
+      <small>For ${companyName}</small>
+    </div>
+  </div>
+
+  ${signedBlock}
+
+  <div class="doc-footer">
+    <span>${offer.job_title} — Offer Letter</span>
+    <span>${currentDate}</span>
+  </div>
+</body>
+</html>`;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print();
+      }, 600);
+    };
+  }, [offer, expectedName, fullLegalName, selectedBenefits]);
+
+  const IconRole = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+    </svg>
+  );
+  const IconCompensation = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
+  );
+  const IconBenefits = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 12 20 22 4 22 4 12" /><rect x="2" y="7" width="20" height="5" /><line x1="12" y1="22" x2="12" y2="7" />
+      <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" /><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
+    </svg>
+  );
+  const IconTerms = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
+    </svg>
+  );
 
   return (
-    <main className="offer-shell">
-      <header className="onboarding-header">
-        <div className="brand-row">
-          <Image src="/talentai-logo.png" alt="Mazik Global" width={160} height={44} priority />
-          <span className="brand-divider" aria-hidden="true" />
-          <span className="product-name">Talent</span>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          {offer && (
-            <button
-              type="button"
-              onClick={handleDownloadPDF}
-              className="secondary-button"
-              title="Download offer letter as PDF"
-              style={{ display: "flex", alignItems: "center", gap: 6 }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              Download PDF
-            </button>
-          )}
-          <button type="button" onClick={handleBack} className="secondary-button">
-            {offer?.status === "signed" ? "Continue to documents" : "Go to Dashboard"}
-          </button>
-        </div>
-      </header>
+    <main className={styles.offerShell}>
+      <div className={styles.offerCard}>
+        <header className={styles.offerPageHeader}>
+          <div className={styles.offerBrandRow}>
+            <Image src="/talentai-logo.png" alt="Mazik Global" width={160} height={44} priority />
+          </div>
+          <div className={styles.offerHeaderActions}>
+            {offer && (
+              <>
+                <span className={`${styles.offerStatusPill} ${styles[offer.status]}`}>
+                  {offer.status}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  className={styles.offerSecondaryButton}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Download PDF
+                </button>
+                <button type="button" onClick={handleBack} className={styles.offerSecondaryButton}>
+                  {offer?.status === "signed" ? "Continue" : "Dashboard"}
+                </button>
+              </>
+            )}
+          </div>
+        </header>
 
-      {loading ? (
-        <p style={{ textAlign: "center", padding: "3rem 1rem" }}>Loading your offer letter…</p>
-      ) : !offer ? (
-        <div className="offer-letter-card">
-          <div className="offer-empty">
+        {loading ? (
+          <p style={{ textAlign: "center", padding: "3rem 1rem" }}>Loading your offer letter...</p>
+        ) : !offer ? (
+          <div className={styles.offerEmptyState}>
             <h2>No offer letter yet</h2>
             <p>
               Your invitation should include an offer from Mazik Global Pakistan. If you registered without one,
               ask your recruiter to send a new invitation with an offer letter.
             </p>
           </div>
-        </div>
-      ) : (
-        <div className="offer-letter-card">
-          <div className="offer-letter-head">
-            <span className={`offer-status-pill ${offer.status}`}>{offer.status}</span>
-            <p className="eyebrow">
-              Offer letter · Mazik Global Pakistan · v{offer.version || 1}
-            </p>
-            <h1>{offer.job_title}</h1>
-            <p>
-              {offer.department} · {offer.employment_type} · Starting {offer.start_date}
-            </p>
-            {offer.message_to_candidate && (
-              <div
-                style={{
-                  marginTop: 16,
-                  padding: "12px 16px",
-                  background: "var(--blue-lighter, #eef5ff)",
-                  borderRadius: 10,
-                  border: "1px solid var(--blue, #1a73e8)",
-                  color: "var(--navy, #0a2540)",
-                  fontStyle: "italic",
-                }}
-              >
-                “{offer.message_to_candidate}”
-              </div>
-            )}
-          </div>
-
-          <div className="offer-letter-body">
-            {message && (
-              <p className="form-message" role="status">
-                {message}
+        ) : (
+          <div className={styles.offerLetter}>
+            <div className={styles.offerLetterHead}>
+              <span className={styles.offerEyebrow}>Offer letter · v{offer.version || 1}</span>
+              <h1 className={styles.offerTitle}>{offer.job_title}</h1>
+              <p className={styles.offerMeta}>
+                {offer.department} · {offer.employment_type} · Starting {offer.start_date}
               </p>
-            )}
-
-            {negoPending && (
-              <p className="form-message" style={{ background: "#fff7ed", color: "#9a3412" }}>
-                Negotiation pending — your recruiter is reviewing this round. Signing is paused until they respond.
-              </p>
-            )}
-            {negoRejected && ["sent", "viewed"].includes(offer.status) && (
-              <p className="form-message" style={{ background: "#fee9e7", color: "#b42318" }}>
-                Negotiation declined
-                {negotiation.recruiter_note ? `: ${negotiation.recruiter_note}` : "."} You may accept the current
-                offer, decline it, or continue if you still have rounds left.
-              </p>
-            )}
-            {offer && (
-              <div
-                style={{
-                  marginBottom: 22,
-                  padding: "14px 16px",
-                  borderRadius: 14,
-                  border: "1px solid #dfe9f6",
-                  background: "#fbfdff",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                  <strong style={{ color: "#0c2a41" }}>Negotiation rounds</strong>
-                  <span style={{ color: "#5b6d86", fontSize: 13 }}>
-                    {negotiationRoundsUsed}/{negotiationMaxRounds} used · {negotiationRoundsLeft} left
-                  </span>
-                </div>
-                {(offer.negotiation_history || []).length > 0 && (
-                  <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-                    {offer.negotiation_history.map((entry, index) => (
-                      <div
-                        key={`${entry.created_at || index}-${entry.action || index}`}
-                        style={{ borderLeft: "3px solid #38a2ff", paddingLeft: 12 }}
-                      >
-                        <div style={{ fontWeight: 700, color: "#0c2a41", fontSize: 13 }}>
-                          {humanizeHistory(entry.actor_role)} · {humanizeHistory(entry.action)}
-                        </div>
-                        <div style={{ color: "#8fa0b8", fontSize: 12 }}>{formatHistoryDate(entry.created_at)}</div>
-                        {entry.note ? (
-                          <div style={{ marginTop: 4, color: "#5b6d86", fontSize: 12.5 }}>{entry.note}</div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ---- Role Details ---- */}
-            <section style={{ marginBottom: 28 }}>
-              <h3 className="offer-section-title">
-                <span style={{ marginRight: 6 }}><IconRole /></span> Role Details
-              </h3>
-              <dl className="offer-terms-grid">
-                <div className="offer-term">
-                  <dt>Job title</dt>
-                  <dd>{offer.job_title}</dd>
-                </div>
-                <div className="offer-term">
-                  <dt>Department</dt>
-                  <dd>{offer.department}</dd>
-                </div>
-                <div className="offer-term">
-                  <dt>Employment type</dt>
-                  <dd>{offer.employment_type}</dd>
-                </div>
-                <div className="offer-term">
-                  <dt>Office location</dt>
-                  <dd>{offer.office_location || "—"}</dd>
-                </div>
-                <div className="offer-term">
-                  <dt>Reporting manager</dt>
-                  <dd>{offer.reporting_manager || "—"}</dd>
-                </div>
-                <div className="offer-term">
-                  <dt>Start date</dt>
-                  <dd>{offer.start_date}</dd>
-                </div>
-              </dl>
-            </section>
-
-            {/* ---- Compensation ---- */}
-            <section style={{ marginBottom: 28 }}>
-              <h3 className="offer-section-title">
-                <span style={{ marginRight: 6 }}><IconCompensation /></span> Compensation
-              </h3>
-              <div className="offer-term" style={{ marginBottom: 16 }}>
-                <dt>Monthly salary (gross)</dt>
-                <dd style={{ fontSize: "1.2em", fontWeight: 600 }}>
-                  {formatOfferCurrency(offer.monthly_salary, offer.currency)} / month
-                </dd>
-              </div>
-              {(offer.salary_breakdown || []).length > 0 && (
-                <div>
-                  <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>Salary breakdown</div>
-                  <ul style={{ margin: 0, paddingLeft: 18, color: "#405266" }}>
-                    {offer.salary_breakdown.map((row, i) => (
-                      <li key={i}>
-                        {row.label}: {formatOfferCurrency(row.amount, offer.currency)}
-                      </li>
-                    ))}
-                  </ul>
+              {offer.message_to_candidate && (
+                <div className={styles.offerMessageBox}>
+                  "{offer.message_to_candidate}"
                 </div>
               )}
-            </section>
+            </div>
 
-            {/* ---- Benefits ---- */}
-            {selectedBenefits.length > 0 && (
-              <section style={{ marginBottom: 28 }}>
-                <h3 className="offer-section-title">
-                  <span style={{ marginRight: 6 }}><IconBenefits /></span> Benefits
+            <div className={styles.offerLetterBody}>
+              {message && (
+                <p className={`${styles.offerFormMessage} ${styles.offerFormMessageError}`} role="status">
+                  {message}
+                </p>
+              )}
+
+              {negoPending && (
+                <p className={`${styles.offerFormMessage} ${styles.offerFormMessageWarning}`}>
+                  Negotiation pending - your recruiter will accept (new v2 offer) or reject. Signing is paused until then.
+                </p>
+              )}
+              {negoRejected && ["sent", "viewed"].includes(offer.status) && (
+                <p className={`${styles.offerFormMessage} ${styles.offerFormMessageError}`}>
+                  Negotiation declined
+                  {negotiation.recruiter_note ? `: ${negotiation.recruiter_note}` : "."} You may accept the original
+                  offer or decline it. No further negotiation is available.
+                </p>
+              )}
+
+              {/* Role Details */}
+              <section className={styles.offerSection}>
+                <h3 className={styles.offerSectionTitle}>
+                  <IconRole /> Role Details
                 </h3>
-                <ul style={{ margin: 0, paddingLeft: 18, color: "#405266", columnCount: 2, columnGap: 24 }}>
-                  {selectedBenefits.map((b) => (
-                    <li key={b.id || b.label}>{b.label}</li>
-                  ))}
-                </ul>
+                <dl className={styles.offerTermsGrid}>
+                  <div className={styles.offerTerm}>
+                    <dt>Job title</dt>
+                    <dd>{offer.job_title}</dd>
+                  </div>
+                  <div className={styles.offerTerm}>
+                    <dt>Department</dt>
+                    <dd>{offer.department}</dd>
+                  </div>
+                  <div className={styles.offerTerm}>
+                    <dt>Employment type</dt>
+                    <dd>{offer.employment_type}</dd>
+                  </div>
+                  <div className={styles.offerTerm}>
+                    <dt>Office location</dt>
+                    <dd>{offer.office_location || "-"}</dd>
+                  </div>
+                  <div className={styles.offerTerm}>
+                    <dt>Reporting manager</dt>
+                    <dd>{offer.reporting_manager || "-"}</dd>
+                  </div>
+                  <div className={styles.offerTerm}>
+                    <dt>Start date</dt>
+                    <dd>{offer.start_date}</dd>
+                  </div>
+                </dl>
               </section>
-            )}
 
-            {/* ---- Terms ---- */}
-            <section style={{ marginBottom: 28 }}>
-              <h3 className="offer-section-title">
-                <span style={{ marginRight: 6 }}><IconTerms /></span> Terms & Conditions
-              </h3>
-              <div className="offer-terms-text">{offer.terms}</div>
-            </section>
-
-            {/* ---- Signature / Actions ---- */}
-            {offer.status === "signed" || offer.status === "approved" ? (
-              <div className="offer-sign-block">
-                <h3>Signed by You</h3>
-                <div style={{ marginBottom: 20 }}>
-                  {offer.signature?.signature_data_url ? (
-                    <img
-                      src={offer.signature.signature_data_url}
-                      alt="Your Signature"
-                      style={{
-                        maxWidth: 300,
-                        maxHeight: 100,
-                        border: "1px solid var(--border)",
-                        borderRadius: 6,
-                        padding: 8,
-                        background: "#fff",
-                        display: "block",
-                      }}
-                    />
-                  ) : (
-                    <p><em>Signature recorded electronically.</em></p>
-                  )}
-                  <p style={{ marginTop: 8 }}>
-                    <strong>{offer.signature?.full_legal_name}</strong>
-                    <br />
-                    Signed on {offer.signed_at ? new Date(offer.signed_at).toLocaleString() : ""}
-                  </p>
+              {/* Compensation */}
+              <section className={styles.offerSection}>
+                <h3 className={styles.offerSectionTitle}>
+                  <IconCompensation /> Compensation
+                </h3>
+                <div className={styles.offerTerm} style={{ marginBottom: 16 }}>
+                  <dt>Monthly salary (gross)</dt>
+                  <dd style={{ fontSize: "1.2em", fontWeight: 600 }}>
+                    {formatCurrency(offer.monthly_salary, offer.currency)} / month
+                  </dd>
                 </div>
-                <button
-                  type="button"
-                  className="primary-button"
-                  onClick={() => router.push("/onboarding")}
-                >
-                  Continue to documents
-                </button>
-              </div>
-            ) : offer.status === "declined" ? (
-              <p className="form-message" style={{ background: "#fee9e7", color: "#b42318" }}>
-                You declined this offer letter{offer.declined_reason ? `: ${offer.declined_reason}` : "."}
-              </p>
-            ) : offer.status === "expired" ? (
-              <p className="form-message" style={{ background: "#fee9e7", color: "#b42318" }}>
-                This offer letter has expired. Contact your recruiter for a new invitation.
-              </p>
-            ) : (
-              <div className="offer-sign-block">
-                {canNegotiate && !showNegotiate && (
-                  <div style={{ marginBottom: 16 }}>
-                    <button type="button" className="secondary-button" onClick={() => setShowNegotiate(true)}>
-                      Continue negotiation ({negotiationRoundsLeft} round{negotiationRoundsLeft === 1 ? "" : "s"} left)
-                    </button>
+                {(offer.salary_breakdown || []).length > 0 && (
+                  <div>
+                    <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>Salary breakdown</div>
+                    <ul style={{ margin: 0, paddingLeft: 18, color: "#405266" }}>
+                      {offer.salary_breakdown.map((row, i) => (
+                        <li key={i}>
+                          {row.label}: {formatCurrency(row.amount, offer.currency)}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
+              </section>
 
-                {showNegotiate && canNegotiate && (
-                  <form
-                    onSubmit={handleNegotiate}
-                    className="auth-form"
-                    style={{
-                      marginBottom: 20,
-                      border: "1px solid #dfe9f6",
-                      borderRadius: 18,
-                      padding: 18,
-                      background: "linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)",
-                    }}
+              {/* Benefits */}
+              {selectedBenefits.length > 0 && (
+                <section className={styles.offerSection}>
+                  <h3 className={styles.offerSectionTitle}>
+                    <IconBenefits /> Benefits
+                  </h3>
+                  <ul style={{ margin: 0, paddingLeft: 18, color: "#405266", columnCount: 2, columnGap: 24 }}>
+                    {selectedBenefits.map((b) => (
+                      <li key={b.id || b.label}>{b.label}</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {/* Terms */}
+              <section className={styles.offerSection}>
+                <h3 className={styles.offerSectionTitle}>
+                  <IconTerms /> Terms & Conditions
+                </h3>
+                <div className={styles.offerTermsText}>{offer.terms}</div>
+              </section>
+
+              {/* Signature / Actions */}
+              {offer.status === "signed" || offer.status === "approved" ? (
+                <div className={styles.offerSignBlock}>
+                  <h3>✓ Signed by You</h3>
+                  <div style={{ marginBottom: 20 }}>
+                    {offer.signature?.signature_data_url ? (
+                      <img
+                        src={offer.signature.signature_data_url}
+                        alt="Your Signature"
+                        style={{
+                          maxWidth: 300,
+                          maxHeight: 100,
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          padding: 8,
+                          background: "#fff",
+                          display: "block",
+                        }}
+                      />
+                    ) : (
+                      <p><em>Signature recorded electronically.</em></p>
+                    )}
+                    <p style={{ marginTop: 8 }}>
+                      <strong>{offer.signature?.full_legal_name}</strong>
+                      <br />
+                      Signed on {offer.signed_at ? new Date(offer.signed_at).toLocaleString() : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.offerPrimaryButton}
+                    onClick={() => router.push("/onboarding")}
                   >
-                    <div style={{ marginBottom: 14 }}>
-                      <h3 style={{ marginBottom: 6 }}>Request changes to this offer</h3>
-                      <p style={{ margin: 0, color: "#5b6d86" }}>
-                        You have {negotiationRoundsLeft} negotiation round{negotiationRoundsLeft === 1 ? "" : "s"} left.
-                        Use them for salary, allowances, benefits, joining date, and any clarifying note for your recruiter.
-                      </p>
+                    Continue to documents
+                  </button>
+                </div>
+              ) : offer.status === "declined" ? (
+                <p className={`${styles.offerFormMessage} ${styles.offerFormMessageError}`}>
+                  You declined this offer letter{offer.declined_reason ? `: ${offer.declined_reason}` : "."}
+                </p>
+              ) : offer.status === "expired" ? (
+                <p className={`${styles.offerFormMessage} ${styles.offerFormMessageError}`}>
+                  This offer letter has expired. Contact your recruiter for a new invitation.
+                </p>
+              ) : (
+                <div className={styles.offerSignBlock}>
+                  {canNegotiate && !showNegotiate && (
+                    <div style={{ marginBottom: 16 }}>
+                      <button type="button" className={styles.offerSecondaryButton} onClick={() => setShowNegotiate(true)}>
+                        Negotiate once (salary, start date, benefits)
+                      </button>
                     </div>
+                  )}
 
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                        gap: 12,
-                        marginBottom: 16,
-                      }}
-                    >
-                      <div style={{ border: "1px solid #eaf1fa", borderRadius: 14, padding: 14, background: "#fff" }}>
-                        <div style={{ fontSize: 11, textTransform: "uppercase", color: "#8fa0b8", marginBottom: 6 }}>
-                          Current salary
-                        </div>
-                        <strong style={{ color: "#0c2a41", fontSize: 16 }}>
-                          {formatOfferCurrency(offer.monthly_salary, offer.currency)}
-                        </strong>
-                      </div>
-                      <div style={{ border: "1px solid #eaf1fa", borderRadius: 14, padding: 14, background: "#fff" }}>
-                        <div style={{ fontSize: 11, textTransform: "uppercase", color: "#8fa0b8", marginBottom: 6 }}>
-                          Current joining date
-                        </div>
-                        <strong style={{ color: "#0c2a41", fontSize: 16 }}>{offer.start_date || "—"}</strong>
-                      </div>
-                    </div>
-
-                    <div className="offer-negotiation-grid">
-                      <label className="field">
+                  {showNegotiate && canNegotiate && (
+                    <form onSubmit={handleNegotiate} className={styles.offerForm} style={{ marginBottom: 20 }}>
+                      <h3 style={{ fontSize: 16, marginBottom: 12, color: "var(--navy)" }}>Propose changes (one round)</h3>
+                      <label className={styles.offerField}>
                         <span>Proposed monthly salary ({offer.currency})</span>
                         <input
+                          className={styles.offerInput}
                           type="number"
                           min="0"
                           value={negoSalary}
@@ -642,241 +796,177 @@ function OfferLetterPageContent() {
                           required
                         />
                       </label>
-                      <label className="field">
-                        <span>Proposed joining date</span>
-                        <input type="date" value={negoStart} onChange={(e) => setNegoStart(e.target.value)} required />
+                      <label className={styles.offerField}>
+                        <span>Proposed start date</span>
+                        <input
+                          className={styles.offerInput}
+                          type="date"
+                          value={negoStart}
+                          onChange={(e) => setNegoStart(e.target.value)}
+                          required
+                        />
                       </label>
-                    </div>
-
-                    <div style={{ marginBottom: 14 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "#153d5e" }}>
-                        Benefits and allowances to keep in the revised offer
-                      </span>
-                      <div className="offer-benefit-grid" style={{ marginTop: 10 }}>
-                        {negoBenefits.map((b) => (
-                          <label key={b.id || b.label} className="checkbox-field offer-benefit-option">
-                            <input
-                              type="checkbox"
-                              checked={b.selected}
-                              onChange={() =>
-                                setNegoBenefits((rows) =>
-                                  rows.map((row) =>
-                                    (row.id || row.label) === (b.id || b.label)
-                                      ? { ...row, selected: !row.selected }
-                                      : row
+                      <div style={{ marginBottom: 12 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--navy)" }}>Benefits</span>
+                        <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                          {negoBenefits.map((b) => (
+                            <label key={b.id || b.label} className={styles.offerCheckbox}>
+                              <input
+                                type="checkbox"
+                                checked={b.selected}
+                                onChange={() =>
+                                  setNegoBenefits((rows) =>
+                                    rows.map((row) =>
+                                      (row.id || row.label) === (b.id || b.label)
+                                        ? { ...row, selected: !row.selected }
+                                        : row
+                                    )
                                   )
-                                )
-                              }
-                            />
-                            <span>{b.label}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    {(offer.salary_breakdown || []).length > 0 && (
-                      <div
-                        style={{
-                          marginBottom: 14,
-                          padding: 14,
-                          borderRadius: 14,
-                          background: "#fff8eb",
-                          border: "1px solid #f3d7a5",
-                        }}
-                      >
-                        <div style={{ fontWeight: 700, color: "#8a5400", marginBottom: 8 }}>
-                          Current allowances / compensation structure
-                        </div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                          {offer.salary_breakdown.map((row, index) => (
-                            <span
-                              key={`${row.label}-${index}`}
-                              style={{
-                                padding: "6px 10px",
-                                borderRadius: 999,
-                                border: "1px solid #f3d7a5",
-                                background: "#fff",
-                                fontSize: 12,
-                                color: "#8a5400",
-                                fontWeight: 600,
-                              }}
-                            >
-                              {row.label}: {formatOfferCurrency(row.amount, offer.currency)}
-                            </span>
+                                }
+                              />
+                              <span>{b.label}</span>
+                            </label>
                           ))}
                         </div>
                       </div>
-                    )}
-
-                    <label className="field">
-                      <span>Negotiation note to recruiter</span>
-                      <textarea
-                        rows={4}
-                        value={negoNote}
-                        onChange={(e) => setNegoNote(e.target.value)}
-                        placeholder="Explain the reason for your salary, benefits, allowances, or joining date request."
-                      />
-                    </label>
-                    <div className="offer-actions">
-                      <button type="button" className="secondary-button" onClick={() => setShowNegotiate(false)}>
-                        Cancel
-                      </button>
-                      <button type="submit" className="primary-button" disabled={negotiating}>
-                        {negotiating ? "Sending…" : "Send negotiation request"}
-                      </button>
-                    </div>
-                  </form>
-                )}
-
-                {canSign && (
-                  <>
-                    <h3>Accept & digitally sign</h3>
-                    <p>
-                      Draw your signature or upload a signature image/PDF. Your legal name must match your
-                      registration.
-                    </p>
-                    <form data-partner-coach onSubmit={handleSign} className="auth-form">
-                      <label className="field">
-                        <span>Full legal name</span>
-                        <input value={expectedName || fullLegalName} readOnly aria-readonly="true" />
+                      <label className={styles.offerField}>
+                        <span>Note to recruiter (optional)</span>
+                        <textarea
+                          className={styles.offerInput}
+                          style={{ minHeight: 80, padding: 10, resize: "vertical" }}
+                          rows={3}
+                          value={negoNote}
+                          onChange={(e) => setNegoNote(e.target.value)}
+                        />
                       </label>
-
-                      <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
-                        <button
-                          type="button"
-                          className={signatureMethod === "pad" ? "primary-button" : "secondary-button"}
-                          onClick={() => setSignatureMethod("pad")}
-                        >
-                          Draw signature
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <button type="button" className={styles.offerSecondaryButton} onClick={() => setShowNegotiate(false)}>
+                          Cancel
                         </button>
-                        <button
-                          type="button"
-                          className={signatureMethod === "upload" ? "primary-button" : "secondary-button"}
-                          onClick={() => setSignatureMethod("upload")}
-                        >
-                          Upload signature
+                        <button type="submit" className={styles.offerPrimaryButton} disabled={negotiating}>
+                          {negotiating ? "Sending..." : "Send negotiation"}
                         </button>
                       </div>
+                    </form>
+                  )}
 
-                      {signatureMethod === "pad" ? (
-                        <SignaturePad onChange={setSignatureDataUrl} />
-                      ) : (
-                        <label className="field">
-                          <span>Signature file (PNG, JPG, or PDF)</span>
+                  {canSign && (
+                    <>
+                      <h3>Accept & digitally sign</h3>
+                      <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
+                        Draw your signature or upload a signature image/PDF. Your legal name must match your
+                        registration.
+                      </p>
+                      <form data-partner-coach onSubmit={handleSign} className={styles.offerForm}>
+                        <label className={styles.offerField}>
+                          <span>Full legal name</span>
                           <input
-                            type="file"
-                            accept="image/png,image/jpeg,application/pdf"
-                            onChange={handleSignatureFile}
-                            disabled={uploadingSig}
+                            className={styles.offerInput}
+                            value={expectedName || fullLegalName}
+                            readOnly
+                            aria-readonly="true"
                           />
-                          {signatureUploadUrl && (
-                            <small style={{ color: "#056280" }}>Uploaded — ready to submit.</small>
-                          )}
                         </label>
-                      )}
 
-                      <label className="checkbox-field">
-                        <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-                        <span>
-                          I have read and agree to the compensation, benefits, terms, and conditions described above.
-                        </span>
-                      </label>
-                      <div className="offer-actions offer-sign-actions">
-                        {!showDeclineForm && (
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
                           <button
                             type="button"
-                            className="danger-link-button"
-                            onClick={() => setShowDeclineForm(true)}
+                            className={signatureMethod === "pad" ? styles.offerPrimaryButton : styles.offerSecondaryButton}
+                            onClick={() => setSignatureMethod("pad")}
                           >
-                            Decline / cancel this offer
+                            Draw signature
                           </button>
+                          <button
+                            type="button"
+                            className={signatureMethod === "upload" ? styles.offerPrimaryButton : styles.offerSecondaryButton}
+                            onClick={() => setSignatureMethod("upload")}
+                          >
+                            Upload signature
+                          </button>
+                        </div>
+
+                        {signatureMethod === "pad" ? (
+                          <SignaturePad onChange={setSignatureDataUrl} />
+                        ) : (
+                          <label className={styles.offerField}>
+                            <span>Signature file (PNG, JPG, or PDF)</span>
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,application/pdf"
+                              onChange={handleSignatureFile}
+                              disabled={uploadingSig}
+                            />
+                            {signatureUploadUrl && (
+                              <small style={{ color: "#056280" }}>Uploaded - ready to submit.</small>
+                            )}
+                          </label>
                         )}
-                        <div className="offer-submit-actions">
-                          <button type="button" className="secondary-button offer-back-button" onClick={handleBack}>
+
+                        <label className={styles.offerCheckbox}>
+                          <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+                          <span>
+                            I have read and agree to the compensation, benefits, terms, and conditions described above.
+                          </span>
+                        </label>
+
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                          {!showDeclineForm && (
+                            <button
+                              type="button"
+                              className={styles.offerSecondaryButton}
+                              style={{ color: "#b42318", borderColor: "#fad5d5" }}
+                              onClick={() => setShowDeclineForm(true)}
+                            >
+                              Decline this offer
+                            </button>
+                          )}
+                          <button type="button" className={styles.offerSecondaryButton} onClick={handleBack}>
                             ← Back
                           </button>
                           <button
                             type="submit"
-                            className="primary-button offer-submit-button"
+                            className={styles.offerPrimaryButton}
                             disabled={submitting || uploadingSig}
                           >
-                            {submitting ? "Signing…" : "Sign & accept"}
+                            {submitting ? "Signing..." : "Sign & accept"}
                           </button>
                         </div>
+                      </form>
+                    </>
+                  )}
+
+                  {showDeclineForm && (
+                    <div style={{ marginTop: 18, borderTop: "1px dashed #f0d68a", paddingTop: 16 }}>
+                      <textarea
+                        className={styles.offerInput}
+                        style={{ minHeight: 60, padding: 10, width: "100%", resize: "vertical" }}
+                        rows={2}
+                        placeholder="Optional: let your recruiter know why."
+                        value={declineReason}
+                        onChange={(e) => setDeclineReason(e.target.value)}
+                      />
+                      <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                        <button type="button" className={styles.offerSecondaryButton} onClick={() => setShowDeclineForm(false)}>
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.offerPrimaryButton}
+                          style={{ background: "#b42318" }}
+                          onClick={handleDecline}
+                          disabled={declining}
+                        >
+                          {declining ? "Declining..." : "Confirm decline"}
+                        </button>
                       </div>
-                    </form>
-                  </>
-                )}
-
-                {showDeclineForm && (
-                  <div
-                    className="doc-reject-form"
-                    style={{ marginTop: 18, borderTop: "1px dashed #f0d68a", paddingTop: 16 }}
-                  >
-                    <textarea
-                      rows={2}
-                      placeholder="Optional: let your recruiter know why."
-                      value={declineReason}
-                      onChange={(e) => setDeclineReason(e.target.value)}
-                    />
-                    <div className="offer-actions">
-                      <button type="button" className="secondary-button" onClick={() => setShowDeclineForm(false)}>
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="primary-button"
-                        style={{ background: "#b42318" }}
-                        onClick={handleDecline}
-                        disabled={declining}
-                      >
-                        {declining ? "Declining…" : "Confirm decline"}
-                      </button>
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-
-      <style jsx>{`
-        .offer-section-title {
-          font-size: 15px;
-          font-weight: 600;
-          color: var(--navy);
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          margin: 0 0 12px;
-          padding-bottom: 8px;
-          border-bottom: 1px solid var(--border);
-        }
-        .offer-negotiation-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 14px;
-          margin-bottom: 14px;
-        }
-        .offer-benefit-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 8px;
-        }
-        .offer-benefit-option {
-          border: 1px solid #dfe9f6;
-          border-radius: 12px;
-          padding: 10px 12px;
-          background: #fff;
-        }
-        @media (max-width: 720px) {
-          .offer-negotiation-grid,
-          .offer-benefit-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
+        )}
+      </div>
     </main>
   );
 }
@@ -885,24 +975,14 @@ export default function OfferLetterPage() {
   return (
     <Suspense
       fallback={
-        <main className="offer-shell">
-          <p style={{ textAlign: "center", padding: "2rem" }}>Loading your offer letter…</p>
+        <main className={styles.offerShell}>
+          <div className={styles.offerCard}>
+            <p style={{ textAlign: "center", padding: "2rem" }}>Loading your offer letter...</p>
+          </div>
         </main>
       }
     >
       <OfferLetterPageContent />
     </Suspense>
   );
-}
-
-function humanizeHistory(value) {
-  return String(value || "system")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function formatHistoryDate(value) {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
 }
