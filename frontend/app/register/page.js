@@ -288,6 +288,7 @@ export default function RegisterPage() {
               <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: "140ms" }}>
                 <span>Password</span>
                 <span className={styles.inputShell}>
+                  <FieldIcon type="password" />
                   <input
                     className={styles.input}
                     aria-invalid={form.password ? Boolean(showError("password")) : undefined}
@@ -345,6 +346,7 @@ export default function RegisterPage() {
               <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: "160ms" }}>
                 <span>Confirm password</span>
                 <span className={styles.inputShell}>
+                  <FieldIcon type="confirm_password" />
                   <input
                     className={styles.input}
                     aria-invalid={form.confirm_password ? Boolean(showError("confirm_password")) : undefined}
@@ -357,9 +359,14 @@ export default function RegisterPage() {
                     autoComplete="new-password"
                     placeholder="••••••••"
                   />
-<span className={styles.toggleButton}>
-  Show
-</span>
+                  <button 
+                    type="button" 
+                    className={styles.toggleButton} 
+                    onClick={() => setShowConfirmPassword((v) => !v)} 
+                    aria-label={`${showConfirmPassword ? "Hide" : "Show"} confirm password`}
+                  >
+                    {showConfirmPassword ? "Hide" : "Show"}
+                  </button>
                 </span>
                 {showError("confirm_password") && (
                   <small className={styles.fieldError} id="confirm_password-error">⚠ {errors.confirm_password}</small>
