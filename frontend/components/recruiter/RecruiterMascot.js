@@ -103,7 +103,7 @@ export default function RecruiterMascot() {
           router.push(
             match.type === "employee"
               ? `/dashboard/recruiter/employees/${match.id}`
-              : "/dashboard/recruiter/candidates"
+              : `/dashboard/recruiter/candidates/${match.id}`
           );
         } catch {
           setMessage(

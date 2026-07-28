@@ -127,15 +127,30 @@ class CandidateService:
                 detail="Use the email address that received this invitation.",
             )
 
-        if await database.users.find_one({"email": email}):
+        from app.services.people_history import (
+            find_active_candidate,
+            find_active_employee,
+            find_active_user,
+            prepare_email_for_reinvite,
+        )
+
+        await prepare_email_for_reinvite(email)
+
+        active_user = await find_active_user(email)
+        if active_user:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="An account already exists for this email address.",
             )
-        if await database.candidates.find_one({"email": email, "status": "active"}):
+        if await find_active_candidate(email):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="An account already exists for this email address.",
+            )
+        if await find_active_employee(email):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An active employee already exists for this email address.",
             )
         if await database.recruiters.find_one({"email": email}):
             raise HTTPException(
@@ -169,6 +184,9 @@ class CandidateService:
                     "recruiter_id": invitation["recruiter_id"],
                     "recruiter_email": invitation.get("recruiter_email"),
                     "onboarding": dict(EMPTY_ONBOARDING),
+                    "history_bucket": "active",
+                    "lifecycle_state": "invited",
+                    "cycle_group_key": email,
                 },
             },
             upsert=True,

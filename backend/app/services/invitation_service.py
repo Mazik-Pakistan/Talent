@@ -10,6 +10,13 @@ from app.schemas.invitation import CreateInvitationRequest
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
 from app.services.offer_service import offer_service
+from app.services.people_history import (
+    find_active_candidate,
+    find_active_employee,
+    find_active_user,
+    lookup_history_by_email,
+    prepare_email_for_reinvite,
+)
 
 
 class InvitationService:
@@ -20,17 +27,37 @@ class InvitationService:
                 detail="An offer letter is required when inviting a candidate. Include salary, start date, benefits, and reporting manager.",
             )
 
-        existing_candidate = await database.candidates.find_one(
-            {"email": request.email.lower().strip(), "status": "active"}
-        )
+        email = request.email.lower().strip()
+        existing_candidate = await find_active_candidate(email)
         if existing_candidate:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A candidate account already exists for this email address.",
             )
 
+        existing_employee = await find_active_employee(email)
+        if existing_employee:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An active employee already exists for this email address.",
+            )
+
+        active_user = await find_active_user(email)
+        if active_user and active_user.get("role") in ("recruiter", "super_admin"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This email belongs to a staff account and cannot be invited as a candidate.",
+            )
+
+        history = await lookup_history_by_email(
+            email,
+            recruiter_id=None if actor.role == "super_admin" else actor.id,
+            is_super_admin=actor.role == "super_admin",
+        )
+        # Same-email reinvite: archive old login so a fresh candidate cycle can register.
+        await prepare_email_for_reinvite(email)
+
         now = datetime.now(UTC)
-        email = request.email.lower().strip()
 
         await database.invitations.update_many(
             {
@@ -133,6 +160,8 @@ class InvitationService:
             "message": message,
             "email_sent": email_sent,
             "email_error": email_error,
+            "person_history": history,
+            "reinvite_from_history": bool(history.get("matches")),
             "invitation": {
                 "token": token,
                 "email": email,

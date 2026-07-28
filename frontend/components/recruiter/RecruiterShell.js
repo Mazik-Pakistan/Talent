@@ -366,11 +366,19 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
     setSelectedPerson(result);
     setSearchOpen(false);
     setSearchQuery(result.full_name || "");
-    if (result.type === "employee") {
-      router.push(`/dashboard/recruiter/employees/${result.id}`);
-    } else {
-      router.push("/dashboard/recruiter/candidates");
+    if (result.href) {
+      router.push(result.href);
+      return;
     }
+    if (result.type === "employee" || result.type === "historical_employee") {
+      router.push(`/dashboard/recruiter/employees/${result.id}`);
+      return;
+    }
+    if (result.type === "candidate" || result.type === "historical_candidate") {
+      router.push(`/dashboard/recruiter/candidates/${result.id}`);
+      return;
+    }
+    router.push("/dashboard/recruiter/candidates");
   }
 
   if (!user) {

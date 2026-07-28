@@ -20,21 +20,67 @@ async def create_database_indexes() -> None:
     await database.invitations.create_index([("recruiter_id", 1), ("created_at", -1)])
     await database.invitations.create_index("expires_at")
 
-    await database.candidates.create_index("email", unique=True)
+    # Allow multiple historical cycles for the same email; only one active candidate.
+    try:
+        await database.candidates.drop_index("email_1")
+    except Exception:
+        pass
+    await database.candidates.create_index(
+        "email",
+        unique=True,
+        partialFilterExpression={"status": "active"},
+        name="email_active_unique",
+    )
+    await database.candidates.create_index("email")
+    await database.candidates.create_index("cycle_group_key")
+    await database.candidates.create_index([("history_bucket", 1), ("recruiter_id", 1)])
     await database.candidates.create_index("supabase_user_id", unique=True, sparse=True)
     await database.candidates.create_index("invitation_token", unique=True, sparse=True)
     await database.candidates.create_index("user_id", unique=True, sparse=True)
     await database.candidates.create_index([("conversion_status", 1), ("recruiter_id", 1)])
     await database.candidates.create_index("recruiter_id")
 
-    await database.employees.create_index("email", unique=True)
+    # Allow multiple exited tenures for the same email; only one active employee.
+    try:
+        await database.employees.drop_index("email_1")
+    except Exception:
+        pass
+    try:
+        await database.employees.drop_index("user_id_1")
+    except Exception:
+        pass
+    await database.employees.create_index(
+        "email",
+        unique=True,
+        partialFilterExpression={"status": {"$in": ["active", "inactive", "on_leave"]}},
+        name="email_active_unique",
+    )
+    await database.employees.create_index("email")
+    await database.employees.create_index("cycle_group_key")
+    await database.employees.create_index([("history_bucket", 1), ("status", 1)])
     await database.employees.create_index("supabase_user_id", unique=True, sparse=True)
     await database.employees.create_index("employee_id", unique=True, sparse=True)
-    await database.employees.create_index("user_id", unique=True, sparse=True)
+    await database.employees.create_index(
+        "user_id",
+        unique=True,
+        partialFilterExpression={
+            "user_id": {"$type": "string"},
+            "status": {"$in": ["active", "inactive", "on_leave"]},
+        },
+        name="user_id_active_unique",
+    )
     await database.employees.create_index("recruiter_id")
     await database.employees.create_index("onboarding.employment.iban_hash", unique=True, sparse=True)
     await database.employees.create_index([("department", 1), ("status", 1)])
     await database.employees.create_index([("full_name", 1)])
+
+    # Active login emails stay unique. Archived users rewrite email to archived.<id>.<email>.
+    try:
+        await database.users.create_index("email", unique=True, name="email_1")
+    except Exception:
+        pass
+    await database.users.create_index("original_email")
+    await database.users.create_index("status")
 
     await database.employee_career_events.create_index([("employee_id", 1), ("effective_date", -1)])
     await database.employee_career_events.create_index([("created_at", -1)])

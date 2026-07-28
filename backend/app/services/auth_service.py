@@ -133,6 +133,7 @@ class AuthService:
             "email": email,
             "password_hash": pending["password_hash"],
             "role": role,
+            "status": "active",
             "created_at": now,
             "updated_at": now,
         }
@@ -174,13 +175,27 @@ class AuthService:
         if collection is not None:
             profile_doc.update(extra)
             if role == "candidate":
-                # Remove any leftover unverified docs from the old Supabase path
-                await database.candidates.delete_many(
-                    {"email": email, "status": {"$ne": "active"}}
-                )
+                # Keep historical candidate cycles; never wipe prior declined/converted records.
                 onboarding = profile_doc.get("onboarding") or {}
                 onboarding["status"] = "in_progress"
                 profile_doc["onboarding"] = onboarding
+                profile_doc["history_bucket"] = "active"
+                profile_doc["lifecycle_state"] = profile_doc.get("lifecycle_state") or "invited"
+                profile_doc["cycle_group_key"] = profile_doc.get("cycle_group_key") or email
+                # Link to prior candidate cycle if present.
+                prior = await database.candidates.find_one(
+                    {
+                        "email": email,
+                        "$or": [
+                            {"history_bucket": "historical"},
+                            {"status": {"$in": ["converted", "historical", "declined", "offer_declined"]}},
+                            {"conversion_status": {"$in": ["converted", "offer_declined", "declined"]}},
+                        ],
+                    },
+                    sort=[("created_at", -1)],
+                )
+                if prior:
+                    profile_doc["previous_candidate_id"] = prior.get("user_id") or str(prior.get("_id"))
             await collection.insert_one(profile_doc)
 
         # Remove the pending record
@@ -386,6 +401,11 @@ class AuthService:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password.",
+            )
+        if user_doc.get("status") == "archived":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This account is archived. Use a new invitation to rejoin as a candidate.",
             )
 
         await self._clear_failed_login(email)

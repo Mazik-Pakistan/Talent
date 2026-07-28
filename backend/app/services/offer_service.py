@@ -344,9 +344,22 @@ class OfferService:
             {"_id": offer["_id"]},
             {"$set": {"status": "declined", "declined_reason": request.reason, "declined_at": now, "updated_at": now}},
         )
+        from app.services.people_history import cycle_group_key, mark_candidate_historical_fields
+
         await database.candidates.update_one(
             {"$or": [{"user_id": current_user.id}, {"email": current_user.email}]},
-            {"$set": {"conversion_status": "offer_declined", "updated_at": now}},
+            {
+                "$set": {
+                    **mark_candidate_historical_fields(
+                        reason="offer_declined",
+                        lifecycle_state="declined",
+                        when=now,
+                    ),
+                    "conversion_status": "offer_declined",
+                    "cycle_group_key": cycle_group_key(current_user.email),
+                    "updated_at": now,
+                }
+            },
         )
         if offer.get("recruiter_id"):
             await create_notification(
