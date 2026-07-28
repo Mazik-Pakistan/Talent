@@ -31,7 +31,6 @@ import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav"
 import {
   BLOOD_GROUP_HINT,
   BLOOD_GROUP_OPTIONS,
-  confirmBloodGroupSelection,
   normalizeBloodGroup,
 } from "@/lib/bloodGroup";
 import styles from "./onboarding.module.css";
@@ -180,6 +179,7 @@ function OnboardingContent() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [toast, setToast] = useState(null);
   const [pendingReplace, setPendingReplace] = useState(null);
+  const [bloodGroupPending, setBloodGroupPending] = useState(null);
   const [scanPulse, setScanPulse] = useState(false);
   const [otherSelections, setOtherSelections] = useState({ country: false, city: false, state: false, institutions: {} });
   const [ocrSession, setOcrSession] = useState(null);
@@ -210,7 +210,6 @@ function OnboardingContent() {
     Promise.resolve().then(async () => {
       try {
         const storedMode = sessionStorage.getItem(FILL_MODE_KEY);
-        // Legacy "agent" fill mode removed — only OCR / manual stay on this page.
         if (storedMode === "agent") {
           sessionStorage.removeItem(FILL_MODE_KEY);
         } else if (storedMode === "ocr" || storedMode === "manual") {
@@ -227,7 +226,6 @@ function OnboardingContent() {
         setOnboarding(data.onboarding);
         setProgress(data.progress);
         hydrateForms(data.onboarding);
-        // Restore local draft if server personal is empty/partial after an OCR fill that wasn't fully saved.
         try {
           const draft = JSON.parse(localStorage.getItem(draftStorageKey()) || "null");
           if (draft?.personal && isPersonalIncomplete(data.onboarding?.personal)) {
@@ -255,7 +253,6 @@ function OnboardingContent() {
           data.onboarding?.status === "submitted" && !isEditMode
             ? "submit"
             : deepLinkStep || storedStep || "personal";
-        // Keep user on personal until that section is actually complete.
         if (
           data.onboarding?.status !== "submitted" &&
           isPersonalIncomplete(data.onboarding?.personal) &&
@@ -520,7 +517,6 @@ function OnboardingContent() {
       file_url: fileMeta?.file_url || nextGovDocs[index]?.file_url || null,
     };
 
-    // File meta + empty typed fields so the user watches AI write them in.
     setGovDocs((current) => {
       const next = [...current];
       next[index] = {
@@ -634,7 +630,6 @@ function OnboardingContent() {
     endOcrSession();
   }
 
-  // Clear fill highlight after the animation finishes.
   useEffect(() => {
     if (!autoFilledKeys.length || ocrTypingKey) return undefined;
     const timer = window.setTimeout(() => setAutoFilledKeys([]), 4200);
@@ -814,7 +809,6 @@ function OnboardingContent() {
               cgpa_or_percentage: ed.cgpa || ed.gpa || ed.percentage || "",
             };
           });
-          // Type first education row field-by-field, then snap remaining rows.
           const firstEd = mapped[0];
           const eduEntries = [
             firstEd.institution && {
@@ -995,9 +989,6 @@ function OnboardingContent() {
     return () => clearCandidateContext();
   }, [step, isEditMode]);
 
-  // ── Per-step completion checks (drive the blue progress indicator) ──
-  // A step should only be shown as "complete" once its own required fields
-  // are actually filled — not merely because the user has navigated past it.
   function isPersonalComplete() {
     if (isPersonalIncomplete(personal)) return false;
     return govDocs.every((doc) => {
@@ -1098,7 +1089,6 @@ function OnboardingContent() {
       showToast("info", "NIC details filled. Complete the remaining fields, then Save & continue.");
       return;
     }
-    // Backend rejects incomplete personal payloads (address/city/DOB required) — keep local draft only.
     if (isPersonalIncomplete(nextPersonal)) {
       showToast("info", "NIC details filled. Add your address fields, then Save & continue.");
       return;
@@ -1312,7 +1302,6 @@ function OnboardingContent() {
         hydrateForms(data.onboarding);
       }
 
-      // Only National ID uploads block on wrong document type.
       if (ocrHardRejected) {
         setScanPulse(false);
         const err = ocr.rejection_message || data.message || "Document type rejected.";
@@ -1955,8 +1944,12 @@ function OnboardingContent() {
                                 <select
                                   value={normalizeBloodGroup(personal.blood_group)}
                                   onChange={(e) => {
-                                    const next = confirmBloodGroupSelection(e.target.value, personal.blood_group);
-                                    setPersonal({ ...personal, blood_group: next });
+                                    const val = e.target.value;
+                                    if (val === "N/A" || val === personal.blood_group) {
+                                      setPersonal({ ...personal, blood_group: val });
+                                      return;
+                                    }
+                                    setBloodGroupPending({ value: val, previous: personal.blood_group });
                                   }}
                                 >
                                   {BLOOD_GROUP_OPTIONS.map((g) => (
@@ -2527,6 +2520,21 @@ function OnboardingContent() {
           setPendingReplace(null);
           if (!job) return;
           await runFileUpload(job.file, job.purpose, job.index, job.input);
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!bloodGroupPending}
+        title="Confirm blood group"
+        message={`You selected blood group ${bloodGroupPending?.value}. Blood group information is critical for medical emergencies — are you sure this is correct?`}
+        confirmLabel="Yes, set blood group"
+        cancelLabel="Keep current"
+        onConfirm={() => {
+          setPersonal({ ...personal, blood_group: bloodGroupPending.value });
+          setBloodGroupPending(null);
+        }}
+        onCancel={() => {
+          setBloodGroupPending(null);
         }}
       />
 

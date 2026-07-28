@@ -896,50 +896,7 @@ function EmployeeDashboardContent() {
               </div>
             </div>
 
-            {/* Employment profile */}
-            <div className={styles.section} id="profile-section">
-              <div className={styles.sectionHead}>
-                <div className={styles.sectionHeadLeft}>
-                  <div className={`${styles.bar} ${styles.navy}`} />
-                  <div>
-                    <div className={styles.sectionTitle}>Employment profile</div>
-                    <div className={styles.sectionDesc}>Core employment record synced from HR onboarding.</div>
-                  </div>
-                </div>
-              </div>
-              <div className={styles.sectionBody}>
-                {loading ? (
-                  <div className={styles.fieldGrid}>
-                    {Array.from({ length: 8 }, (_, i) => (
-                      <div key={i}>
-                        <div className={`${styles.skeletonLine} ${styles.short}`} />
-                        <div className={styles.skeletonLine} />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className={styles.fieldGrid}>
-                    <Field label="Employee ID" value={employee?.employee_id} styles={styles} />
-                    <Field label="Designation" value={employee?.job_title} styles={styles} />
-                    <Field label="Department" value={employee?.department} styles={styles} />
-                    <Field label="Reporting manager" value={employee?.reporting_manager} styles={styles} />
-                    <Field label="Office location" value={employee?.office_location} styles={styles} />
-                    <Field label="Joining date" value={formatDate(employee?.start_date)} styles={styles} />
-                    <Field label="Converted on" value={formatDate(employee?.converted_at)} styles={styles} />
-                    <div>
-                      <div className={styles.fieldLabel}>Profile status</div>
-                      <span className={`${styles.statusPill} ${profileIncomplete ? styles.incomplete : ""}`}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                          <path d="M20 6L9 17l-5-5" />
-                        </svg>
-                        {profileIncomplete ? "Incomplete" : "Complete"}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
+            
             {(employee?.company_email || orientation || assignedAssets.length > 0 || (employee?.licenses || []).length > 0) && (
               <div className={styles.section} id="workplace-section">
                 <div className={styles.sectionHead}>
