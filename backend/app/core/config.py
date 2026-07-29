@@ -121,10 +121,13 @@ class Settings(BaseSettings):
         return self.allowed_origins[0]
 
     def invitation_link(self, token: str) -> str:
-        return f"{self.frontend_base_url}/invite/{token}"
+        # Uses FRONTEND_URL so you only need to change that one variable when deploying.
+        base = (self.FRONTEND_URL or self.frontend_base_url).rstrip("/")
+        return f"{base}/invite/{token}"
 
     def it_provisioning_link(self, token: str) -> str:
-        return f"{self.frontend_base_url}/it-setup/{token}"
+        base = (self.FRONTEND_URL or self.frontend_base_url).rstrip("/")
+        return f"{base}/it-setup/{token}"
 
 
 settings = Settings()
