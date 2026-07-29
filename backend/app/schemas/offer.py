@@ -38,8 +38,7 @@ DEFAULT_BENEFITS = (
 
 
 class AllowanceItem(BaseModel):
-    """Single allowance (paid extra on top of gross / monthly salary)."""
-
+    """Single allowance (paid extra on top of gross salary)."""
     label: str = Field(..., min_length=1, max_length=120)
     amount: float = Field(..., ge=0)
 
@@ -77,10 +76,7 @@ class OfferTermsPayload(BaseModel):
     start_date: str = Field(..., min_length=4, max_length=40)
     monthly_salary: float = Field(..., ge=0)
     currency: str = Field(default="PKR", max_length=8)
-    # Allowances are paid on top of monthly_salary (not required to sum to it).
-    # salary_breakdown is kept as a legacy alias for older clients.
-    allowances: list[AllowanceItem] = Field(default_factory=list)
-    salary_breakdown: list[AllowanceItem] = Field(default_factory=list)
+    allowances: list[AllowanceItem] = Field(default_factory=list)          # <-- renamed
     benefits: list[BenefitItem] = Field(default_factory=list)
     offer_expiry_days: int | None = Field(default=None, ge=1, le=90)
     terms: str = Field(default=DEFAULT_OFFER_TERMS, max_length=8000)

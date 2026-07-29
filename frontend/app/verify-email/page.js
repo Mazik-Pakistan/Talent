@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { getApiErrorMessage, verifyOtp, resendOtp } from "@/services/authService";
+import { getApiErrorMessage, verifyOtp, resendOtp, persistLoginSession } from "@/services/authService";
 import styles from "@/app/styles/auth.module.css";
 
 export default function VerifyEmailPage() {
@@ -78,10 +78,7 @@ export default function VerifyEmailPage() {
       sessionStorage.removeItem("pendingEmail");
 
       if (response.role === "candidate" && response.session) {
-        localStorage.setItem("access_token", response.session.access_token);
-        localStorage.setItem("refresh_token", response.session.refresh_token);
-        if (response.user) localStorage.setItem("user", JSON.stringify(response.user));
-        localStorage.setItem("session_last_active", String(Date.now()));
+        persistLoginSession(response.session, response.user || null);
         sessionStorage.setItem("pendingRole", "candidate");
         setRedirectTo(response.redirect_to || "/onboarding");
       } else {

@@ -122,6 +122,7 @@ async def edit_and_resend_offer(
 async def approve_offer(offer_id: str, payload: OfferApproveRequest, current_user: RequireRecruiter):
     """Activate employee after signed offer + docs + IT provisioning."""
     return await offer_service.approve(current_user, offer_id, payload)
+    return await offer_service.approve(current_user, offer_id, payload)
 
 
 @router.post("/{offer_id}/extend-validity")

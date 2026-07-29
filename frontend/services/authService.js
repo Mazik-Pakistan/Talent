@@ -92,14 +92,30 @@ export function clearLocalSession() {
   localStorage.removeItem("refresh_token");
   localStorage.removeItem("user");
   localStorage.removeItem("session_last_active");
+  localStorage.removeItem("token_expires_at");
   localStorage.removeItem("remember_me");
+}
+
+/**
+ * Persist just the token half of a session (access/refresh token + the wall-clock
+ * time the access token actually expires at). Used after login and after a
+ * background refresh, so the JWT's real (server-side) expiry can be tracked
+ * independently of the idle-timeout clock.
+ */
+export function persistTokens(session) {
+  localStorage.setItem("access_token", session.access_token);
+  if (session.refresh_token) {
+    localStorage.setItem("refresh_token", session.refresh_token);
+  }
+  if (session.expires_in) {
+    localStorage.setItem("token_expires_at", String(Date.now() + session.expires_in * 1000));
+  }
 }
 
 /** Persist login session + remember-me preference. */
 export function persistLoginSession(session, user, { rememberMe = false, email = "" } = {}) {
-  localStorage.setItem("access_token", session.access_token);
-  localStorage.setItem("refresh_token", session.refresh_token);
-  localStorage.setItem("user", JSON.stringify(user));
+  persistTokens(session);
+  if (user) localStorage.setItem("user", JSON.stringify(user));
   localStorage.setItem("session_last_active", String(Date.now()));
 
   const remembered = Boolean(rememberMe || session?.remember_me);
@@ -114,6 +130,26 @@ export function persistLoginSession(session, user, { rememberMe = false, email =
 
 export function isRememberMeEnabled() {
   return localStorage.getItem("remember_me") === "true";
+}
+
+/** Wall-clock time (ms since epoch) the current access token actually expires. 0 if unknown. */
+export function getTokenExpiresAt() {
+  return Number(localStorage.getItem("token_expires_at") || 0);
+}
+
+/**
+ * US-009: Exchange the refresh token for a new access token before the current
+ * one expires, so an active user is never suddenly logged out mid-session.
+ * Throws if there is no refresh token or the server rejects it (expired/revoked).
+ */
+export async function refreshSession() {
+  const refreshTokenValue = localStorage.getItem("refresh_token");
+  if (!refreshTokenValue) {
+    throw new Error("No refresh token available.");
+  }
+  const data = await refreshToken(refreshTokenValue);
+  persistTokens(data.session);
+  return data.session;
 }
 
 // ─── Super Admin Bootstrap ───────────────────────────────────────────────────
