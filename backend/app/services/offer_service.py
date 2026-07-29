@@ -11,6 +11,7 @@ from app.core.database import database
 from app.core.rbac import CurrentUser
 from app.schemas.auth import names_match
 from app.schemas.offer import (
+    AllowanceItem,
     BenefitItem,
     NegotiationRespondRequest,
     OfferApproveRequest,
@@ -21,7 +22,6 @@ from app.schemas.offer import (
     OfferNegotiateRequest,
     OfferSignRequest,
     OfferTermsPayload,
-    SalaryBreakdownItem,
 )
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
@@ -29,6 +29,10 @@ from app.services.email_service import email_service
 
 ACTIVE_OFFER_STATUSES = ("sent", "viewed", "signed")
 MAX_NEGOTIATION_ROUNDS = 3
+
+
+def _iso(value):
+    return value.isoformat() if hasattr(value, "isoformat") else value
 
 
 def _send_email_bg(fn, **kwargs) -> None:
@@ -405,7 +409,8 @@ class OfferService:
             "status": "pending",
             "proposed_salary": None,
             "proposed_start_date": None,
-            "proposed_salary_breakdown": [],
+            "proposed_allowances": [],
+            "proposed_salary_breakdown": [],  # legacy alias for older stored docs
             "proposed_benefits": [],
             "requested_changes": ["clarification"],
             "note": request.note,
@@ -679,8 +684,8 @@ class OfferService:
             start_date=request.start_date,
             monthly_salary=float(request.monthly_salary),
             currency=request.currency or "PKR",
-            salary_breakdown=request.salary_breakdown or request.allowances or [],
-            allowances=request.allowances or request.salary_breakdown or [],
+            allowances=list(request.allowances or request.salary_breakdown or []),
+            salary_breakdown=list(request.salary_breakdown or request.allowances or []),
             benefits=request.benefits or [],
             offer_expiry_days=request.offer_expiry_days,
             terms=request.terms or "",
@@ -950,9 +955,9 @@ class OfferService:
         now = datetime.now(UTC)
         days = expiry_days or terms.offer_expiry_days or settings.OFFER_EXPIRE_DAYS
         benefits = [b.model_dump() if hasattr(b, "model_dump") else b for b in (terms.benefits or [])]
-        breakdown = [
-            b.model_dump() if hasattr(b, "model_dump") else b
-            for b in (terms.allowances or terms.salary_breakdown or [])
+        allowances = [
+            a.model_dump() if hasattr(a, "model_dump") else a
+            for a in (terms.allowances or terms.salary_breakdown or [])
         ]
         return {
             "candidate_id": candidate_id,
@@ -971,8 +976,8 @@ class OfferService:
             "start_date": terms.start_date,
             "monthly_salary": terms.monthly_salary,
             "currency": terms.currency,
-            "salary_breakdown": breakdown,
-            "allowances": breakdown,
+            "allowances": allowances,
+            "salary_breakdown": allowances,  # legacy alias
             "benefits": benefits,
             "terms": terms.terms,
             "message_to_candidate": terms.message_to_candidate,
@@ -1030,7 +1035,8 @@ class OfferService:
             "status": "none",
             "proposed_salary": None,
             "proposed_start_date": None,
-            "proposed_salary_breakdown": [],
+            "proposed_allowances": [],
+            "proposed_salary_breakdown": [],  # legacy alias
             "proposed_benefits": [],
             "requested_changes": [],
             "note": None,
@@ -1061,8 +1067,8 @@ class OfferService:
         proposed_salary,
         current_start_date,
         proposed_start_date,
-        current_breakdown: list[dict],
-        proposed_breakdown: list[dict],
+        current_allowances: list[dict],
+        proposed_allowances: list[dict],
         current_benefits: list[dict],
         proposed_benefits: list[dict],
     ) -> list[str]:
@@ -1071,7 +1077,7 @@ class OfferService:
             changes.append("salary")
         if str(proposed_start_date or "") != str(current_start_date or ""):
             changes.append("joining_date")
-        if proposed_breakdown and proposed_breakdown != (current_breakdown or []):
+        if proposed_allowances and proposed_allowances != (current_allowances or []):
             changes.append("allowances")
         if self._normalize_benefits(proposed_benefits) != self._normalize_benefits(current_benefits):
             changes.append("benefits")
@@ -1083,7 +1089,7 @@ class OfferService:
         negotiation: dict,
         final_salary: float,
         final_start_date: str,
-        final_breakdown: list[dict],
+        final_allowances: list[dict],
         final_benefits: list[dict],
         currency: str,
     ) -> str:
@@ -1093,7 +1099,7 @@ class OfferService:
             resolved.append(f"salary {currency} {final_salary:,.0f}")
         if "joining_date" in requested:
             resolved.append(f"joining date {final_start_date}")
-        if "allowances" in requested and final_breakdown:
+        if "allowances" in requested and final_allowances:
             resolved.append("updated allowances")
         if "benefits" in requested and final_benefits:
             resolved.append("updated benefits")
@@ -1103,9 +1109,6 @@ class OfferService:
 
     @staticmethod
     def _public(offer: dict) -> dict:
-        def _iso(value):
-            return value.isoformat() if hasattr(value, "isoformat") else value
-
         negotiation = offer.get("negotiation") or {}
         if negotiation.get("requested_at"):
             negotiation = {**negotiation, "requested_at": _iso(negotiation.get("requested_at"))}
@@ -1134,8 +1137,8 @@ class OfferService:
             "start_date": offer.get("start_date"),
             "monthly_salary": offer.get("monthly_salary"),
             "currency": offer.get("currency"),
-            "salary_breakdown": offer.get("salary_breakdown") or offer.get("allowances") or [],
             "allowances": offer.get("allowances") or offer.get("salary_breakdown") or [],
+            "salary_breakdown": offer.get("salary_breakdown") or offer.get("allowances") or [],
             "benefits": offer.get("benefits") or [],
             "terms": offer.get("terms"),
             "message_to_candidate": offer.get("message_to_candidate"),

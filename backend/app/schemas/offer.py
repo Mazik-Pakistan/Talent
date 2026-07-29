@@ -1,6 +1,6 @@
 """Offer Letter cycle schemas.
 
-Flow: Recruiter invites with offer -> candidate signs (or one-round negotiate -> v2) ->
+Flow: Recruiter invites with offer -> candidate signs (or clarification -> edit/resend) ->
 documents -> IT provisioning -> activate employee.
 """
 
@@ -37,7 +37,9 @@ DEFAULT_BENEFITS = (
 )
 
 
-class SalaryBreakdownItem(BaseModel):
+class AllowanceItem(BaseModel):
+    """Single allowance (paid extra on top of gross / monthly salary)."""
+
     label: str = Field(..., min_length=1, max_length=120)
     amount: float = Field(..., ge=0)
 
@@ -45,6 +47,10 @@ class SalaryBreakdownItem(BaseModel):
     @classmethod
     def _strip_label(cls, value: str) -> str:
         return " ".join(value.split())
+
+
+# Legacy alias — older clients / services still import SalaryBreakdownItem.
+SalaryBreakdownItem = AllowanceItem
 
 
 class BenefitItem(BaseModel):
@@ -71,9 +77,10 @@ class OfferTermsPayload(BaseModel):
     start_date: str = Field(..., min_length=4, max_length=40)
     monthly_salary: float = Field(..., ge=0)
     currency: str = Field(default="PKR", max_length=8)
-    # Allowances paid on top of monthly_salary (also accepted as salary_breakdown for older clients).
-    salary_breakdown: list[SalaryBreakdownItem] = Field(default_factory=list)
-    allowances: list[SalaryBreakdownItem] = Field(default_factory=list)
+    # Allowances are paid on top of monthly_salary (not required to sum to it).
+    # salary_breakdown is kept as a legacy alias for older clients.
+    allowances: list[AllowanceItem] = Field(default_factory=list)
+    salary_breakdown: list[AllowanceItem] = Field(default_factory=list)
     benefits: list[BenefitItem] = Field(default_factory=list)
     offer_expiry_days: int | None = Field(default=None, ge=1, le=90)
     terms: str = Field(default=DEFAULT_OFFER_TERMS, max_length=8000)
@@ -103,6 +110,7 @@ class OfferTermsPayload(BaseModel):
     @model_validator(mode="after")
     def _merge_allowances(self) -> OfferTermsPayload:
         # Prefer explicit allowances; otherwise keep salary_breakdown (legacy).
+        # No sum-to-salary check — allowances are extra on top of monthly_salary.
         if self.allowances:
             self.salary_breakdown = list(self.allowances)
         elif self.salary_breakdown:
@@ -163,9 +171,12 @@ class OfferEditResendRequest(OfferTermsPayload):
 
 
 class OfferNegotiateRequest(BaseModel):
+    # Clarification flow: note is required; salary/date proposals stay optional.
     proposed_salary: float | None = Field(default=None, ge=0)
     proposed_start_date: str | None = Field(default=None, min_length=4, max_length=40)
-    proposed_salary_breakdown: list[SalaryBreakdownItem] = Field(default_factory=list)
+    proposed_allowances: list[AllowanceItem] = Field(default_factory=list)
+    # Legacy alias accepted from older clients.
+    proposed_salary_breakdown: list[AllowanceItem] = Field(default_factory=list)
     proposed_benefits: list[BenefitItem] = Field(default_factory=list)
     requested_changes: list[str] = Field(default_factory=list)
     note: str = Field(..., min_length=1, max_length=2000)
@@ -181,11 +192,12 @@ class OfferNegotiateRequest(BaseModel):
         return out
 
     @model_validator(mode="after")
-    def _validate_proposed_breakdown(self) -> OfferNegotiateRequest:
-        if self.proposed_salary_breakdown and self.proposed_salary is not None:
-            total = sum(item.amount for item in self.proposed_salary_breakdown)
-            if total - self.proposed_salary > 0.01:
-                raise ValueError("Proposed salary breakdown total cannot exceed proposed salary.")
+    def _merge_proposed_allowances(self) -> OfferNegotiateRequest:
+        # Prefer proposed_allowances; mirror into legacy field. No sum-to-salary check.
+        if self.proposed_allowances:
+            self.proposed_salary_breakdown = list(self.proposed_allowances)
+        elif self.proposed_salary_breakdown:
+            self.proposed_allowances = list(self.proposed_salary_breakdown)
         return self
 
 
@@ -193,14 +205,17 @@ class NegotiationRespondRequest(BaseModel):
     recruiter_note: str | None = Field(default=None, max_length=2000)
     revised_salary: float | None = Field(default=None, ge=0)
     revised_start_date: str | None = Field(default=None, min_length=4, max_length=40)
-    revised_salary_breakdown: list[SalaryBreakdownItem] = Field(default_factory=list)
+    revised_allowances: list[AllowanceItem] = Field(default_factory=list)
+    # Legacy alias accepted from older clients.
+    revised_salary_breakdown: list[AllowanceItem] = Field(default_factory=list)
     revised_benefits: list[BenefitItem] = Field(default_factory=list)
     decision_summary: str | None = Field(default=None, max_length=2000)
 
     @model_validator(mode="after")
-    def _validate_revised_breakdown(self) -> NegotiationRespondRequest:
-        if self.revised_salary_breakdown and self.revised_salary is not None:
-            total = sum(item.amount for item in self.revised_salary_breakdown)
-            if total - self.revised_salary > 0.01:
-                raise ValueError("Revised salary breakdown total cannot exceed revised salary.")
+    def _merge_revised_allowances(self) -> NegotiationRespondRequest:
+        # Prefer revised_allowances; mirror into legacy field. No sum-to-salary check.
+        if self.revised_allowances:
+            self.revised_salary_breakdown = list(self.revised_allowances)
+        elif self.revised_salary_breakdown:
+            self.revised_allowances = list(self.revised_salary_breakdown)
         return self
