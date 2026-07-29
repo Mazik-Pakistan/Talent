@@ -119,10 +119,25 @@ const UNIVERSITIES_BY_CITY = {
   Faisalabad: ["University of Agriculture, Faisalabad", "Government College University Faisalabad"],
 };
 
+// Curated skill lists
+const TECHNICAL_SKILLS = [
+  "JavaScript", "TypeScript", "React", "Next.js", "Node.js", "Python", "Java", "C#",
+  "SQL", "MongoDB", "GraphQL", "REST APIs", "Docker", "Kubernetes", "AWS", "Azure",
+  "Git", "CI/CD", "Agile/Scrum", "Machine Learning", "Data Analysis", "Cybersecurity",
+  "Networking", "Linux", "DevOps", "Flutter", "Swift", "Kotlin", "PHP", "Ruby",
+];
+
+const SOFT_SKILLS = [
+  "Communication", "Teamwork", "Problem Solving", "Critical Thinking", "Leadership",
+  "Time Management", "Adaptability", "Creativity", "Emotional Intelligence",
+  "Conflict Resolution", "Presentation", "Negotiation", "Mentoring", "Attention to Detail",
+  "Work Ethic", "Interpersonal Skills", "Self-motivation", "Resilience",
+];
+
 const emptySkills = {
-  technical_skills: "",
-  soft_skills: "",
-  languages: "",
+  technical_skills: [],    // now an array of strings
+  soft_skills: [],
+  languages: [],
   certifications: [{ name: "", document_url: null, expiry_date: "" }],
 };
 
@@ -161,21 +176,20 @@ function validateDateNotFuture(value, fieldName) {
   if (isNaN(date.getTime())) return { isValid: false, error: `Invalid date format for ${fieldName}.` };
   
   const today = new Date();
-  today.setHours(0, 0, 0, 0); // Ignore time for comparison
+  today.setHours(0, 0, 0, 0);
   if (date > today) return { isValid: false, error: `${fieldName} cannot be in the future.` };
   
   return { isValid: true };
 }
 
 function validateCNIC(value) {
-  const text = String(value || "").replace(/[^0-9]/g, ""); // Extract digits
+  const text = String(value || "").replace(/[^0-9]/g, "");
   if (text.length !== 13) return { isValid: false, error: "CNIC must be exactly 13 digits." };
   return { isValid: true, normalized: `${text.slice(0, 5)}-${text.slice(5, 12)}-${text.slice(12)}` };
 }
 
 function isValidPkMobile(value) {
   const text = String(value || "").replace(/[^0-9+]/g, "");
-  // Common regex for Pakistani numbers: +923xxxxxxxxx, 03xxxxxxxxx, etc.
   return /^((\+92)|(0092)|0)?3[0-9]{9}$/.test(text); 
 }
 
@@ -283,7 +297,7 @@ function OnboardingContent() {
             if (draft.govDocs?.length) setGovDocs(draft.govDocs);
           }
         } catch {
-          /* ignore draft parse errors */
+          /* ignore */
         }
         const stepAliases = {
           government_docs: "personal",
@@ -331,10 +345,16 @@ function OnboardingContent() {
     }
     if (data.education?.entries?.length) setEducationEntries(data.education.entries);
     if (data.skills) {
+      const tech = Array.isArray(data.skills.technical_skills)
+        ? data.skills.technical_skills
+        : (data.skills.technical_skills || "").split(",").map(s => s.trim()).filter(Boolean);
+      const soft = Array.isArray(data.skills.soft_skills)
+        ? data.skills.soft_skills
+        : (data.skills.soft_skills || "").split(",").map(s => s.trim()).filter(Boolean);
       setSkills({
-        technical_skills: (data.skills.technical_skills || []).join(", "),
-        soft_skills: (data.skills.soft_skills || []).join(", "),
-        languages: (data.skills.languages || []).join(", "),
+        technical_skills: tech,
+        soft_skills: soft,
+        languages: data.skills.languages || [],
         certifications: data.skills.certifications?.length
           ? data.skills.certifications.map((c) => ({
               name: c.name || "",
@@ -356,10 +376,16 @@ function OnboardingContent() {
   }
 
   function splitTags(value) {
+    if (Array.isArray(value)) return value;
     return String(value || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
+  }
+
+  function joinList(value) {
+    if (Array.isArray(value)) return value.filter(Boolean).join(", ");
+    return value || "";
   }
 
   function normalizeGender(value) {
@@ -379,11 +405,6 @@ function OnboardingContent() {
     if (["divorced"].includes(v)) return "divorced";
     if (["widowed", "widow", "widower"].includes(v)) return "widowed";
     return null;
-  }
-
-  function joinList(value) {
-    if (Array.isArray(value)) return value.filter(Boolean).join(", ");
-    return value || "";
   }
 
   function normalizeDateForInput(value) {
@@ -753,8 +774,16 @@ function OnboardingContent() {
         ]
           .filter(Boolean)
           .join(" | ");
-      const tech = joinList(fields.technical_skills || fields.skills);
-      const soft = joinList(fields.soft_skills);
+
+      const techArr = (fields.technical_skills || fields.skills || "")
+        .split(/[,;]/)
+        .map(s => s.trim())
+        .filter(Boolean);
+      const softArr = (fields.soft_skills || "")
+        .split(/[,;]/)
+        .map(s => s.trim())
+        .filter(Boolean);
+
       const certs = Array.isArray(fields.certifications)
         ? fields.certifications.map((c) =>
             typeof c === "string"
@@ -804,18 +833,18 @@ function OnboardingContent() {
           apply: (v) => setResume((prev) => ({ ...prev, summary: v })),
         });
       }
-      if (tech && !skillsSnapshot.technical_skills) {
+      if (techArr.length && !skillsSnapshot.technical_skills.length) {
         entries.push({
           key: "technical_skills",
-          value: tech,
-          apply: (v) => setSkills((prev) => ({ ...prev, technical_skills: v })),
+          value: techArr.join(", "),
+          apply: (v) => setSkills(prev => ({ ...prev, technical_skills: techArr })),
         });
       }
-      if (soft && !skillsSnapshot.soft_skills) {
+      if (softArr.length && !skillsSnapshot.soft_skills.length) {
         entries.push({
           key: "soft_skills",
-          value: soft,
-          apply: (v) => setSkills((prev) => ({ ...prev, soft_skills: v })),
+          value: softArr.join(", "),
+          apply: (v) => setSkills(prev => ({ ...prev, soft_skills: softArr })),
         });
       }
 
@@ -1056,13 +1085,10 @@ function OnboardingContent() {
   }
 
   function isSkillsComplete() {
-    const technical_skills = splitTags(skills.technical_skills);
-    const soft_skills = splitTags(skills.soft_skills);
-    const certifications = (skills.certifications || []).filter((c) => c.name && c.name.trim());
-    const hasAnySkillData =
-      technical_skills.length > 0 || soft_skills.length > 0 || certifications.length > 0;
+    const hasSkills = skills.technical_skills.length > 0 || skills.soft_skills.length > 0;
+    const hasCertifications = (skills.certifications || []).some((c) => c.name && c.name.trim());
     const hasSummary = !!(resume.summary && resume.summary.length >= 20);
-    return hasAnySkillData && hasSummary;
+    return (hasSkills || hasCertifications) && hasSummary;
   }
 
   function isStepComplete(stepId) {
@@ -1458,6 +1484,18 @@ function OnboardingContent() {
     }
   }
 
+  // Toggle a skill pill
+  function toggleSkill(skill, category) {
+    setSkills(prev => {
+      const current = prev[category] || [];
+      const exists = current.includes(skill);
+      return {
+        ...prev,
+        [category]: exists ? current.filter(s => s !== skill) : [...current, skill],
+      };
+    });
+  }
+
   async function handleNext(event) {
     event.preventDefault();
     if (submitted && !isEditMode) return;
@@ -1529,7 +1567,7 @@ function OnboardingContent() {
         postal_code: postalCodeValidation.normalized,
         country: countryValidation.normalized,
         current_address: currentAddressValidation.normalized,
-        permanent_address: personal.same_as_current ? currentAddressValidation.normalized : permanentAddressValidation?.normalized || personal.permanent_address,
+        permanent_address: personal.same_as_current ? currentAddressValidation.normalized : (permanentAddressValidation?.normalized || personal.permanent_address),
         national_id: cnicValidation.normalized,
         alternate_phone: personal.alternate_phone || null,
         profile_picture: personal.profile_picture || null,
@@ -1566,7 +1604,6 @@ function OnboardingContent() {
       });
       localStorage.removeItem(draftStorageKey());
     } else if (step === "education") {
-      // Validate education entries
       let hasErrors = false;
       const educationErrors = {};
       
@@ -1586,7 +1623,6 @@ function OnboardingContent() {
         if (!yearValidation.isValid) {
           entryErrors.year_completed = yearValidation.error;
         } else {
-          // Additional year validation
           const currentYear = new Date().getFullYear();
           const yearNum = parseInt(entry.year_completed, 10);
           if (yearNum > currentYear) {
@@ -1609,17 +1645,10 @@ function OnboardingContent() {
       setFieldErrors({});
       await persist({ step: "education", education: { entries: educationEntries } });
     } else if (step === "skills") {
-      const technical_skills = splitTags(skills.technical_skills);
-      const soft_skills = splitTags(skills.soft_skills);
-      const certifications = (skills.certifications || [])
-        .filter((c) => c.name && c.name.trim())
-        .map((c) => ({
-          name: c.name.trim(),
-          document_url: c.document_url || null,
-          expiry_date: c.expiry_date || null,
-        }));
-      if (!technical_skills.length && !soft_skills.length && !certifications.length) {
-        showFormError("Add at least one skill or certification.");
+      const hasSkills = skills.technical_skills.length > 0 || skills.soft_skills.length > 0;
+      const hasCertifications = (skills.certifications || []).filter(c => c.name.trim()).length > 0;
+      if (!hasSkills && !hasCertifications) {
+        showFormError("Select at least one skill or add a certification.");
         return;
       }
       if (!resume.summary || resume.summary.length < 20) {
@@ -1629,7 +1658,18 @@ function OnboardingContent() {
       setFieldErrors({});
       await persist({
         step: "skills",
-        skills: { technical_skills, soft_skills, languages: [], certifications },
+        skills: {
+          technical_skills: skills.technical_skills,
+          soft_skills: skills.soft_skills,
+          languages: [],
+          certifications: (skills.certifications || [])
+            .filter(c => c.name.trim())
+            .map(c => ({
+              name: c.name.trim(),
+              document_url: c.document_url || null,
+              expiry_date: c.expiry_date || null,
+            })),
+        },
         resume,
       });
     } else if (step === "submit") {
@@ -2325,7 +2365,7 @@ function OnboardingContent() {
                           <p className={styles.docHelper}>
                             {isOcrMode
                               ? "Upload your resume and we'll extract your summary, skills, and certifications into the fields below. Review and edit anything that needs a tweak."
-                              : "Summarize your experience and skills. Attach a resume if you have one."}
+                              : "Select your skills from the lists below or add custom certifications. Attach a resume if you have one."}
                           </p>
 
                           <section className={styles.sectionCard}>
@@ -2365,19 +2405,51 @@ function OnboardingContent() {
                             </div>
                           </section>
 
+                          {/* Technical Skills Pills */}
                           <section className={styles.sectionCard}>
                             <div className={styles.sectionCardHead}>
                               <div>
-                                <h3>Skills</h3>
-                                <p>Separate items with commas</p>
+                                <h3>Technical Skills</h3>
+                                <p>Select all that apply</p>
                               </div>
                             </div>
-                            <div className={styles.formGrid}>
-                              <Field styles={styles} label="Technical skills" value={skills.technical_skills} onChange={(e) => setSkills({ ...skills, technical_skills: e.target.value })} wide {...fillAnimProps("technical_skills")} />
-                              <Field styles={styles} label="Soft skills" value={skills.soft_skills} onChange={(e) => setSkills({ ...skills, soft_skills: e.target.value })} wide {...fillAnimProps("soft_skills")} />
+                            <div className={styles.skillsPillContainer}>
+                              {TECHNICAL_SKILLS.map(skill => (
+                                <button
+                                  type="button"
+                                  key={skill}
+                                  className={`${styles.skillPill} ${skills.technical_skills.includes(skill) ? styles.skillPillSelected : ""}`}
+                                  onClick={() => toggleSkill(skill, "technical_skills")}
+                                >
+                                  {skill}
+                                </button>
+                              ))}
                             </div>
                           </section>
 
+                          {/* Soft Skills Pills */}
+                          <section className={styles.sectionCard}>
+                            <div className={styles.sectionCardHead}>
+                              <div>
+                                <h3>Soft Skills</h3>
+                                <p>Select all that apply</p>
+                              </div>
+                            </div>
+                            <div className={styles.skillsPillContainer}>
+                              {SOFT_SKILLS.map(skill => (
+                                <button
+                                  type="button"
+                                  key={skill}
+                                  className={`${styles.skillPill} ${skills.soft_skills.includes(skill) ? styles.skillPillSelected : ""}`}
+                                  onClick={() => toggleSkill(skill, "soft_skills")}
+                                >
+                                  {skill}
+                                </button>
+                              ))}
+                            </div>
+                          </section>
+
+                          {/* Certifications */}
                           <section className={styles.sectionCard}>
                             <div className={styles.sectionCardHead}>
                               <div>
@@ -2536,8 +2608,8 @@ function OnboardingContent() {
                               title="Skills & resume"
                               subtitle="Professional profile"
                               rows={[
-                                ["Technical skills", skills.technical_skills, true],
-                                ["Soft skills", skills.soft_skills, true],
+                                ["Technical skills", joinList(skills.technical_skills), true],
+                                ["Soft skills", joinList(skills.soft_skills), true],
                                 [
                                   "Certifications",
                                   (skills.certifications || [])

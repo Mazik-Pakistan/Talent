@@ -788,3 +788,32 @@ a.fileChip:hover {
   70% { background-color: #f0fdf4; }
   100% { background-color: #fff; }
 }
+.skillsPillContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.skillPill {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--text);
+}
+
+.skillPill:hover {
+  background: #f0f6ff;
+  border-color: var(--blue);
+}
+
+.skillPillSelected {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+  font-weight: 500;
+}
