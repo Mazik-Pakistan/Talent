@@ -9,6 +9,7 @@ import "react-toastify/dist/ReactToastify.css";
 
 import { getApiErrorMessage, login } from "@/services/authService";
 import styles from "@/app/styles/auth.module.css";
+import MascotStatic from "@/components/MascotStatic";
 
 const ROLES = [
   {
@@ -33,11 +34,11 @@ const ROLES = [
   },
 ];
 
-// Content variants for auto-rotation
+// Content variants for auto-rotation - with larger text
 const ROTATING_CONTENT = [
   {
-    heading: "One platform, built around your hiring workflow.",
-    text: "Post roles, screen candidates, and move them through onboarding — all from a single connected dashboard.",
+  heading: "One platform for your entire hiring workflow.",
+  text: "Post roles, screen candidates, and onboard new hires — all in one connected dashboard.",
   },
   {
     heading: "AI-powered matching for better hires.",
@@ -96,6 +97,7 @@ function LoginForm() {
   // Auto-rotation state
   const [contentIndex, setContentIndex] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [direction, setDirection] = useState(1); // 1 = right, -1 = left
 
   useEffect(() => {
     if (searchParams.get("reason") === "session_timeout") {
@@ -103,15 +105,17 @@ function LoginForm() {
     }
   }, [searchParams]);
 
-  // Auto-rotation effect
+  // Auto-rotation effect with left-to-right animation
   useEffect(() => {
     const interval = setInterval(() => {
       setIsTransitioning(true);
+      setDirection(1); // Slide right
       setTimeout(() => {
         setContentIndex((prev) => (prev + 1) % ROTATING_CONTENT.length);
         setIsTransitioning(false);
-      }, 300);
-    }, 2500);
+        setDirection(-1); // Slide left for next
+      }, 400);
+    }, 3000);
 
     return () => clearInterval(interval);
   }, []);
@@ -187,14 +191,18 @@ function LoginForm() {
           </div>
 
           <div className={styles.asideContent} key={contentIndex}>
-            <div>
-              <h2 className={`${styles.asideHeading} ${isTransitioning ? styles.fadeOut : styles.fadeIn}`}>
+            <div className={styles.rotatingContent}>
+              <h2 className={`${styles.asideHeading} ${isTransitioning ? styles.slideOut : styles.slideIn}`}>
                 {ROTATING_CONTENT[contentIndex].heading}
               </h2>
-              <p className={`${styles.asideText} ${isTransitioning ? styles.fadeOut : styles.fadeIn}`}>
+              <p className={`${styles.asideText} ${isTransitioning ? styles.slideOut : styles.slideIn}`}>
                 {ROTATING_CONTENT[contentIndex].text}
               </p>
             </div>
+          </div>
+
+          <div className={styles.mascotContainer}>
+            <MascotStatic />
           </div>
         </aside>
 
