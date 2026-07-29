@@ -249,13 +249,13 @@ export default function RecruiterCandidatesPage() {
     });
   }
 
-  async function handleApproveOffer(offerId) {
+  async function handleApproveOffer(offerId, force = false) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setApprovingOfferId(offerId);
     setConversionMessage("");
     try {
-      const data = await approveOffer(offerId, {}, accessToken);
+      const data = await approveOffer(offerId, { force }, accessToken);
       setConversionMessage(`${data.message} Employee ID: ${data.employee?.employee_id}.`);
       toast.success(data.message || "Employee activated.");
       await loadCandidates();
@@ -992,6 +992,14 @@ export default function RecruiterCandidatesPage() {
                 const it = candidate.it_provisioning;
                 const itComplete = Boolean(candidate.can_activate);
                 const itPending = it && !itComplete;
+                const isExpired = Boolean(candidate.is_expired);
+                const approveLabel = approvingOfferId === candidate.offer_id
+                  ? "Activating…"
+                  : itComplete
+                  ? isExpired
+                    ? "Force approve & activate"
+                    : "Approve & activate"
+                  : "Waiting for IT";
                 const busy = itBusyOfferId === candidate.offer_id;
                 return (
                   <li
@@ -1038,6 +1046,17 @@ export default function RecruiterCandidatesPage() {
                             ? `IT pending · ${it?.it_manager_email || "awaiting form"}`
                             : "IT not requested"}
                         </span>
+                        {isExpired ? (
+                          <span
+                            className={styles.chip}
+                            style={{
+                              background: "var(--red-light)",
+                              color: "var(--red)",
+                            }}
+                          >
+                            Offer expired
+                          </span>
+                        ) : null}
                       </div>
                       {!itComplete && (
                         <label className={styles.field} style={{ marginTop: 10, maxWidth: 320 }}>
@@ -1086,16 +1105,14 @@ export default function RecruiterCandidatesPage() {
                         disabled={!itComplete || approvingOfferId === candidate.offer_id}
                         title={
                           itComplete
-                            ? "Activate employee account"
+                            ? isExpired
+                              ? "Force approve expired offer and activate employee account"
+                              : "Activate employee account"
                             : "Waiting for IT to submit company email and assets"
                         }
-                        onClick={() => handleApproveOffer(candidate.offer_id)}
+                        onClick={() => handleApproveOffer(candidate.offer_id, isExpired)}
                       >
-                        {approvingOfferId === candidate.offer_id
-                          ? "Activating…"
-                          : itComplete
-                          ? "Approve & activate"
-                          : "Waiting for IT"}
+                        {approveLabel}
                       </button>
                     </div>
                     {expandedCandidateId === candidate.id && (

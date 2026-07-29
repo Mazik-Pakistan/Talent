@@ -838,16 +838,36 @@ class OfferService:
         }
 
     async def approve(self, current_user: CurrentUser, offer_id: str, request: OfferApproveRequest) -> dict:
-        """Recruiter activates the employee via EmployeeService (requires IT + signed offer + docs)."""
+        """Recruiter activates the employee via EmployeeService (requires IT + signed offer + docs).
+
+        When force=True, recruiters can approve a signed offer even after the offer window expires.
+        """
         from app.services.employee_service import EmployeeService
 
         offer = await self._find(offer_id)
         if current_user.role != "super_admin" and offer.get("recruiter_id") != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized to approve this offer.")
-        if offer["status"] != "signed":
-            raise HTTPException(status_code=409, detail=f"Offer must be signed before activation (status: {offer['status']}).")
+        signed_at = offer.get("signed_at")
+        is_signed_offer = bool(signed_at) or offer.get("status") == "signed"
+        if not is_signed_offer:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Offer must be signed by the candidate before activation (status: {offer['status']}).",
+            )
 
-        result = await EmployeeService().create_from_candidate(current_user, offer["candidate_id"])
+        expires_at = offer.get("expires_at")
+        if expires_at and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        is_expired = bool(expires_at and expires_at < datetime.now(UTC))
+        if is_expired and not request.force:
+            raise HTTPException(
+                status_code=410,
+                detail="This offer has expired. Use force approval to activate it anyway.",
+            )
+
+        result = await EmployeeService().create_from_candidate(
+            current_user, offer["candidate_id"], allow_unsigned=request.force
+        )
         await database.audit_logs.insert_one(
             {
                 "user_id": current_user.id,
@@ -855,13 +875,17 @@ class OfferService:
                 "email": current_user.email,
                 "actor_email": current_user.email,
                 "module": "offers",
-                "action": "offer_approved",
+                "action": "offer_approved_force" if (is_expired or offer["status"] != "signed") and request.force else "offer_approved",
                 "outcome": "success",
                 "created_at": datetime.now(UTC),
             }
         )
         return {
-            "message": "Employee activated with IT-provisioned email and assets — they'll be asked to complete their profile.",
+            "message": (
+                "Expired offer force-approved and employee activated with IT-provisioned email and assets — they'll be asked to complete their profile."
+                if is_expired and request.force
+                else "Employee activated with IT-provisioned email and assets — they'll be asked to complete their profile."
+            ),
             "employee": result["employee"],
         }
 

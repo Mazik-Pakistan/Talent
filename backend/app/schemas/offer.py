@@ -134,6 +134,7 @@ class OfferDeclineRequest(BaseModel):
 
 class OfferApproveRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
+    force: bool = Field(default=False, description="Allow approval even if the offer has expired.")
 
 
 class OfferNegotiateRequest(BaseModel):
