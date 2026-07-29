@@ -343,12 +343,13 @@ class EmployeeService:
         """Candidates whose offer has been signed and is awaiting HR approval/activation."""
         from app.services.it_provisioning_service import it_provisioning_service
 
-        query: dict = {"status": "signed"}
+        query: dict = {"status": {"$in": ["signed", "expired"]}}
         if current_user.role != "super_admin":
             query["recruiter_id"] = current_user.id
 
         offers = await database.offer_letters.find(query).sort("signed_at", -1).to_list(length=100)
         ready = []
+        now = datetime.now(UTC)
         for offer in offers:
             candidate = await self._find_candidate(offer["candidate_id"])
             if not candidate or candidate.get("status") == "converted":
@@ -357,6 +358,9 @@ class EmployeeService:
             if onboarding.get("status") != "submitted":
                 continue
             it_status = await it_provisioning_service.get_for_offer(str(offer["_id"]))
+            expires_at = offer.get("expires_at")
+            if expires_at and expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=UTC)
             docs_complete = True
             ready.append(
                 {
@@ -368,6 +372,8 @@ class EmployeeService:
                     "department": offer.get("department") or candidate.get("department"),
                     "office_location": offer.get("office_location") or candidate.get("office_location"),
                     "start_date": offer.get("start_date") or candidate.get("start_date"),
+                    "expires_at": expires_at.isoformat() if hasattr(expires_at, "isoformat") else expires_at,
+                    "is_expired": bool(expires_at and expires_at < now),
                     "signed_at": offer.get("signed_at").isoformat() if hasattr(offer.get("signed_at"), "isoformat") else offer.get("signed_at"),
                     "monthly_salary": offer.get("monthly_salary"),
                     "reporting_manager": offer.get("reporting_manager"),
@@ -378,7 +384,7 @@ class EmployeeService:
             )
         return {"candidates": ready, "count": len(ready)}
 
-    async def create_from_candidate(self, current_user: CurrentUser, candidate_id: str) -> dict:
+    async def create_from_candidate(self, current_user: CurrentUser, candidate_id: str, *, allow_unsigned: bool = False) -> dict:
         """US-023: Convert a fully onboarded candidate into an employee (once)."""
         candidate = await self._find_candidate(candidate_id)
         if not candidate:
@@ -436,14 +442,20 @@ class EmployeeService:
                 ),
             )
 
-        offer = await database.offer_letters.find_one(
-            {"candidate_id": candidate.get("user_id") or str(candidate["_id"]), "status": "signed"}
-        )
+        offer_query = {"candidate_id": candidate.get("user_id") or str(candidate["_id"])}
+        if not allow_unsigned:
+            offer_query["status"] = "signed"
+        else:
+            offer_query["status"] = {"$in": ["signed", "expired"]}
+            offer_query["signed_at"] = {"$ne": None}
+
+        offer = await database.offer_letters.find_one(offer_query, sort=[("version", -1), ("created_at", -1)])
+
         if not offer:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This candidate does not have a signed offer letter yet. Send and get the offer signed before activation.",
-            )
+            detail = "This candidate does not have a signed offer letter yet. Send and get the offer signed before activation."
+            if allow_unsigned:
+                detail = "No signed offer letter found for this candidate to force-approve."
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
         from app.services.it_provisioning_service import it_provisioning_service
 

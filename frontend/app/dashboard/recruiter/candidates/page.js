@@ -9,6 +9,7 @@ import {
   acceptOfferNegotiation,
   approveOffer,
   counterOfferNegotiation,
+  extendOfferValidity,
   getApiErrorMessage,
   getOnboardingInProgress,
   getReadyForConversion,
@@ -39,6 +40,7 @@ export default function RecruiterCandidatesPage() {
   const [error, setError] = useState("");
   const [expandedCandidateId, setExpandedCandidateId] = useState(null);
   const [approvingOfferId, setApprovingOfferId] = useState(null);
+  const [extendingOfferId, setExtendingOfferId] = useState(null);
   const [itBusyOfferId, setItBusyOfferId] = useState(null);
   const [negoBusyId, setNegoBusyId] = useState(null);
   const [itEmailDrafts, setItEmailDrafts] = useState({});
@@ -249,13 +251,13 @@ export default function RecruiterCandidatesPage() {
     });
   }
 
-  async function handleApproveOffer(offerId) {
+  async function handleApproveOffer(offerId, force = false) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setApprovingOfferId(offerId);
     setConversionMessage("");
     try {
-      const data = await approveOffer(offerId, {}, accessToken);
+      const data = await approveOffer(offerId, { force }, accessToken);
       setConversionMessage(`${data.message} Employee ID: ${data.employee?.employee_id}.`);
       toast.success(data.message || "Employee activated.");
       await loadCandidates();
@@ -265,6 +267,29 @@ export default function RecruiterCandidatesPage() {
       toast.error(msg);
     } finally {
       setApprovingOfferId(null);
+    }
+  }
+
+  async function handleExtendOfferValidity(offer) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    const input = window.prompt("Extend offer validity by how many days?", "7");
+    if (input === null) return;
+    const extraDays = Number(input);
+    if (!Number.isInteger(extraDays) || extraDays < 1 || extraDays > 90) {
+      toast.error("Enter a whole number of days between 1 and 90.");
+      return;
+    }
+
+    setExtendingOfferId(offer.id);
+    try {
+      const data = await extendOfferValidity(offer.id, { extra_days: extraDays }, accessToken);
+      toast.success(data.message || "Offer validity extended.");
+      await loadCandidates();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not extend offer validity."));
+    } finally {
+      setExtendingOfferId(null);
     }
   }
 
@@ -822,12 +847,38 @@ export default function RecruiterCandidatesPage() {
             <ul className={styles.miniList}>
               {awaitingOffers.map((offer) => (
                 <li className={styles.miniListItem} key={offer.id}>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <strong>{offer.candidate_name}</strong>
                     <div className={styles.mutedText}>
                       {offer.candidate_email} · {offer.job_title} · {offer.status}
                       {offer.negotiation?.status === "rejected" ? " · negotiation rejected" : ""}
                     </div>
+                    <div className={styles.chipRow} style={{ marginTop: 8 }}>
+                      {offer.is_expired ? (
+                        <span
+                          className={styles.chip}
+                          style={{
+                            background: "var(--red-light)",
+                            color: "var(--red)",
+                          }}
+                        >
+                          Offer expired
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className={styles.rowActions}>
+                    {offer.is_expired ? (
+                      <button
+                        type="button"
+                        className={styles.primaryButton}
+                        disabled={extendingOfferId === offer.id}
+                        title="Extend validity for this expired unsigned offer"
+                        onClick={() => handleExtendOfferValidity(offer)}
+                      >
+                        {extendingOfferId === offer.id ? "Extending…" : "Extend validity"}
+                      </button>
+                    ) : null}
                   </div>
                 </li>
               ))}
@@ -992,6 +1043,14 @@ export default function RecruiterCandidatesPage() {
                 const it = candidate.it_provisioning;
                 const itComplete = Boolean(candidate.can_activate);
                 const itPending = it && !itComplete;
+                const isExpired = Boolean(candidate.is_expired);
+                const approveLabel = approvingOfferId === candidate.offer_id
+                  ? "Activating…"
+                  : itComplete
+                  ? isExpired
+                    ? "Force approve & activate"
+                    : "Approve & activate"
+                  : "Waiting for IT";
                 const busy = itBusyOfferId === candidate.offer_id;
                 return (
                   <li
@@ -1038,6 +1097,17 @@ export default function RecruiterCandidatesPage() {
                             ? `IT pending · ${it?.it_manager_email || "awaiting form"}`
                             : "IT not requested"}
                         </span>
+                        {isExpired ? (
+                          <span
+                            className={styles.chip}
+                            style={{
+                              background: "var(--red-light)",
+                              color: "var(--red)",
+                            }}
+                          >
+                            Offer expired
+                          </span>
+                        ) : null}
                       </div>
                       {!itComplete && (
                         <label className={styles.field} style={{ marginTop: 10, maxWidth: 320 }}>
@@ -1086,16 +1156,14 @@ export default function RecruiterCandidatesPage() {
                         disabled={!itComplete || approvingOfferId === candidate.offer_id}
                         title={
                           itComplete
-                            ? "Activate employee account"
+                            ? isExpired
+                              ? "Force approve expired offer and activate employee account"
+                              : "Activate employee account"
                             : "Waiting for IT to submit company email and assets"
                         }
-                        onClick={() => handleApproveOffer(candidate.offer_id)}
+                        onClick={() => handleApproveOffer(candidate.offer_id, isExpired)}
                       >
-                        {approvingOfferId === candidate.offer_id
-                          ? "Activating…"
-                          : itComplete
-                          ? "Approve & activate"
-                          : "Waiting for IT"}
+                        {approveLabel}
                       </button>
                     </div>
                     {expandedCandidateId === candidate.id && (

@@ -775,6 +775,13 @@ export async function approveOffer(offerId, payload, accessToken) {
   return data;
 }
 
+export async function extendOfferValidity(offerId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/offers/${offerId}/extend-validity`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
 // ─── Documents (Epic 4 — OCR-backed document management) ────────────────────
 
 export async function uploadDocument(formData, accessToken) {
