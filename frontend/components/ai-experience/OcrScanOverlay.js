@@ -25,6 +25,23 @@ export default function OcrScanOverlay({
 }) {
   if (!open) return null;
 
+  // Build a list of field labels that have been completely extracted (revealed).
+  const completedLabels = fieldDefs
+    .filter((f) => revealed.includes(f.key))
+    .map((f) => f.label);
+
+  // Friendly note showing which fields were successfully read.
+  const note = completedLabels.length > 0
+    ? `✓ Extracted: ${completedLabels.join(", ")}`
+    : "Reading your document — fields will be written into your form below.";
+
+  // Empty hint shown only while scanning or before any fields appear.
+  const emptyHint = scanning
+    ? "Scanning document… extracted fields will appear here."
+    : completedLabels.length === 0
+      ? "Waiting for OCR results…"
+      : null;
+
   return (
     <div className={styles.ocrOverlay} role="status" aria-live="polite" data-mascot-busy>
       <div className={styles.ocrOverlayCard}>
@@ -42,8 +59,8 @@ export default function OcrScanOverlay({
           confidence={confidence}
           progress={progress}
           error={error}
-          note="Values are being written into your form — review and edit anytime after."
-          emptyHint="Hang tight — extracted fields will appear here one by one."
+          note={note}
+          emptyHint={emptyHint}
         />
       </div>
     </div>
