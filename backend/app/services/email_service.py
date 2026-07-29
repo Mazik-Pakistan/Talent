@@ -12,6 +12,10 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _escape_text(value: object, *, quote: bool = False) -> str:
+    return escape("" if value is None else str(value), quote=quote)
+
+
 class EmailService:
     # ============================================================
     #  Logo loaded from Cloudinary CDN
@@ -125,9 +129,9 @@ class EmailService:
         <tr>
           <td class="email-body" style="padding:36px 40px 32px 40px;background:#ffffff;">
             <p style="margin:0 0 4px;color:#6b7a8f;font-size:12px;font-weight:600;
-                      text-transform:uppercase;letter-spacing:1.2px;">{escape(eyebrow)}</p>
+                      text-transform:uppercase;letter-spacing:1.2px;">{_escape_text(eyebrow)}</p>
             <h1 style="margin:0 0 24px;color:#1a1a2e;font-size:28px;font-weight:700;
-                       line-height:1.3;letter-spacing:-0.3px;">{title}</h1>
+                       line-height:1.3;letter-spacing:-0.3px;">{_escape_text(title)}</h1>
             {body_html}
           </td>
         </tr>
@@ -241,15 +245,15 @@ class EmailService:
         expires_at: str,
     ) -> None:
         subject = "You've Been Invited to Join TalentAI"
-        safe_link = escape(invite_link, quote=True)
+        safe_link = _escape_text(invite_link, quote=True)
         body = f"""
 <p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   You have been invited to join <strong>TalentAI</strong> as a candidate for the position of
-  <strong>{escape(job_title)}</strong> in the <strong>{escape(department)}</strong> department.
+  <strong>{_escape_text(job_title)}</strong> in the <strong>{_escape_text(department)}</strong> department.
 </p>
 <p style="margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   Click the button below to complete your registration and begin onboarding.
-  This invitation expires on <strong>{escape(expires_at)}</strong>.
+  This invitation expires on <strong>{_escape_text(expires_at)}</strong>.
 </p>
 <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
   <tr>
@@ -274,7 +278,7 @@ class EmailService:
       </p>
       <p style="margin:0;font-family:monospace;font-size:12px;color:#1a1a2e;
                 word-break:break-all;line-height:1.5;">
-        {escape(invite_link)}
+        {_escape_text(invite_link)}
       </p>
     </td>
   </tr>
@@ -282,7 +286,7 @@ class EmailService:
 """
         self._send(
             to_email, subject,
-            self._branded_shell("Candidate Invitation", f"Hello, {escape(full_name)} 👋", body)
+            self._branded_shell("Candidate Invitation", f"Hello, {_escape_text(full_name)} 👋", body)
         )
 
     # ------------------------------------------------------------------ #
@@ -296,24 +300,26 @@ class EmailService:
         department: str,
         start_date: str,
         currency: str,
-        monthly_salary: str,
+        monthly_salary: float | str,
         invite_link: str,
         expires_at: str,
     ) -> None:
         subject = "Your Invitation to Join TalentAI"
-        safe_link = escape(invite_link, quote=True)
+        safe_link = _escape_text(invite_link, quote=True)
+        salary_amount = float(monthly_salary)
+        salary_value = str(int(salary_amount)) if salary_amount.is_integer() else str(salary_amount)
         body = f"""
 <p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   You have been invited to join <strong>TalentAI</strong> as a candidate for the position of
-  <strong>{escape(job_title)}</strong> in the <strong>{escape(department)}</strong> department.
+  <strong>{_escape_text(job_title)}</strong> in the <strong>{_escape_text(department)}</strong> department.
 </p>
 <p style="margin:0 0 12px;color:#1a1a2e;font-size:15px;line-height:1.7;">
-  Your offer includes <strong>{escape(currency)} {escape(monthly_salary)}</strong> per month,
-  with a start date of <strong>{escape(start_date)}</strong>.
+  Your offer includes <strong>{_escape_text(currency)} {_escape_text(salary_value)}</strong> per month,
+  with a start date of <strong>{_escape_text(start_date)}</strong>.
 </p>
 <p style="margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   Click the button below to review the offer and complete your registration.
-  This invitation expires on <strong>{escape(expires_at)}</strong>.
+  This invitation expires on <strong>{_escape_text(expires_at)}</strong>.
 </p>
 <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
   <tr>
@@ -338,7 +344,7 @@ class EmailService:
       </p>
       <p style="margin:0;font-family:monospace;font-size:12px;color:#1a1a2e;
                 word-break:break-all;line-height:1.5;">
-        {escape(invite_link)}
+        {_escape_text(invite_link)}
       </p>
     </td>
   </tr>
@@ -346,7 +352,7 @@ class EmailService:
 """
         self._send(
             to_email, subject,
-            self._branded_shell("Candidate Invitation", f"Hello, {escape(full_name)} 👋", body)
+            self._branded_shell("Candidate Invitation", f"Hello, {_escape_text(full_name)} 👋", body)
         )
 
     # ------------------------------------------------------------------ #
@@ -422,10 +428,10 @@ class EmailService:
   <tr>
     <td style="padding:24px;">
       <p style="margin:0 0 4px;color:#0D5C91;font-size:18px;font-weight:700;">
-        {escape(job_title)}
+        {_escape_text(job_title)}
       </p>
       <p style="margin:0;color:#6b7a8f;font-size:14px;">
-        {escape(department)}&ensp;&middot;&ensp;Starting {escape(start_date)}
+        {_escape_text(department)}&ensp;&middot;&ensp;Starting {_escape_text(start_date)}
       </p>
     </td>
   </tr>
@@ -437,7 +443,7 @@ class EmailService:
 """
         self._send(
             to_email, subject,
-            self._branded_shell("Offer Letter", f"You&rsquo;ve been offered a role, {escape(full_name)}!", body)
+            self._branded_shell("Offer Letter", f"You&rsquo;ve been offered a role, {_escape_text(full_name)}!", body)
         )
 
     # ------------------------------------------------------------------ #

@@ -186,6 +186,7 @@ function RecruiterInvitePageInner() {
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviteLink, setInviteLink] = useState("");
   const [inviteEmailSent, setInviteEmailSent] = useState(null);
+  const [inviteEmailError, setInviteEmailError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [personHistory, setPersonHistory] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -301,6 +302,7 @@ function RecruiterInvitePageInner() {
     setInviteMessage("");
     setInviteLink("");
     setInviteEmailSent(null);
+    setInviteEmailError("");
 
     if (
       !inviteForm.reporting_manager.trim() ||
@@ -364,6 +366,7 @@ function RecruiterInvitePageInner() {
       setInviteMessage(data.message);
       setInviteLink(data.invitation?.invite_link || "");
       setInviteEmailSent(Boolean(data.email_sent));
+      setInviteEmailError(data.email_error || "");
       setInviteForm(initialInvite);
       setBreakdown([
         { label: "Basic", amount: "" },
@@ -1029,6 +1032,11 @@ function RecruiterInvitePageInner() {
                 }}
               >
                 Email delivery failed. Share the invitation link below manually.
+                {inviteEmailError ? (
+                  <span style={{ display: "block", marginTop: 6, fontSize: 13, opacity: 0.9 }}>
+                    {inviteEmailError}
+                  </span>
+                ) : null}
               </p>
             )}
             {inviteLink && (
