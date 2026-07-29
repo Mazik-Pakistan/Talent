@@ -145,8 +145,16 @@ class ItProvisioningService:
             recipient_id=current_user.id,
             recipient_role=current_user.role if current_user.role in ("recruiter", "super_admin") else "recruiter",
             notif_type="it_provisioning_sent",
-            title="IT provisioning requested",
-            message=f"IT setup request for {snapshot.get('full_name')} sent to {it_email}.",
+            title="IT provisioning requested" if email_sent else "IT request created (email failed)",
+            message=(
+                f"IT setup request for {snapshot.get('full_name')} emailed to {it_email}."
+                if email_sent
+                else (
+                    f"IT setup for {snapshot.get('full_name')} was saved, but the email to {it_email} failed"
+                    + (f": {email_error}" if email_error else ".")
+                    + " Use Follow up IT or share the form link manually."
+                )
+            ),
             link="/dashboard/recruiter/candidates",
             related_id=str(offer["_id"]),
         )

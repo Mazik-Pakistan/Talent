@@ -1151,15 +1151,27 @@ function EmployeeProfileContent() {
                     </div>
                   }
                 >
-                  {onboarding.employment?.bank_name ? (
+                  {onboarding.employment?.bank_name || employment.bank_name ? (
                     <dl className={styles.grid}>
-                      <Row label="Bank" value={onboarding.employment.bank_name} />
-                      <Row label="Account title" value={onboarding.employment.account_holder_name} />
-                      <Row label="Account number" value={onboarding.employment.account_number} />
-                      <Row label="IBAN" value={onboarding.employment.iban} />
-                      <Row label="Branch" value={onboarding.employment.branch} />
-                      <Row label="Branch code" value={onboarding.employment.branch_code} />
-                      <Row label="Swift code" value={onboarding.employment.swift_code} />
+                      <Row label="Bank" value={onboarding.employment?.bank_name || employment.bank_name} />
+                      <Row
+                        label="Account title"
+                        value={onboarding.employment?.account_holder_name || employment.account_holder_name}
+                      />
+                      <Row
+                        label="Account number"
+                        value={onboarding.employment?.account_number || employment.account_number}
+                      />
+                      <Row label="IBAN" value={onboarding.employment?.iban || employment.iban} />
+                      <Row label="Branch" value={onboarding.employment?.branch || employment.branch} />
+                      <Row
+                        label="Branch code"
+                        value={onboarding.employment?.branch_code || employment.branch_code}
+                      />
+                      <Row label="Swift code" value={onboarding.employment?.swift_code || employment.swift_code} />
+                      {!employee?.is_remote ? (
+                        <Row label="Managed by" value="Recruiter (view only)" wide />
+                      ) : null}
                     </dl>
                   ) : (
                     <p className={styles.empty}>
