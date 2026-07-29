@@ -218,6 +218,7 @@ function BankingManagementSection({ employee, employeeId, onEmployeeUpdate }) {
   const hasBanking = Boolean(existing.bank_name || employee?.has_banking);
   const [editing, setEditing] = useState(!hasBanking && !isRemote);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [form, setForm] = useState({
     ...emptyBankingForm,
     bank_name: existing.bank_name || "",
@@ -242,10 +243,12 @@ function BankingManagementSection({ employee, employeeId, onEmployeeUpdate }) {
       swift_code: next.swift_code || "",
     });
     setEditing(!(next.bank_name || employee?.has_banking) && !Boolean(employee?.is_remote));
+    setSaveError("");
   }, [employee]);
 
   function updateField(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
+    setSaveError("");
   }
 
   async function handleSave(event) {
@@ -254,10 +257,13 @@ function BankingManagementSection({ employee, employeeId, onEmployeeUpdate }) {
     if (!accessToken) return;
     const required = ["bank_name", "account_holder_name", "account_number", "iban", "branch", "branch_code"];
     if (required.some((key) => !String(form[key] || "").trim())) {
-      toast.error("Complete bank name, account title, account number, IBAN, branch, and branch code.");
+      const msg = "Complete bank name, account title, account number, IBAN, branch, and branch code.";
+      setSaveError(msg);
+      toast.error(msg);
       return;
     }
     setSaving(true);
+    setSaveError("");
     try {
       const data = await updateEmployeeBanking(
         employeeId,
@@ -273,10 +279,13 @@ function BankingManagementSection({ employee, employeeId, onEmployeeUpdate }) {
         accessToken
       );
       if (data?.employee) onEmployeeUpdate(data.employee);
-      toast.success(data?.message || "Banking details saved.");
+      toast.success(data?.message || "Banking details saved. Employee has been notified.");
       setEditing(false);
+      setSaveError("");
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not save banking details."));
+      const msg = getApiErrorMessage(err, "Could not save banking details.");
+      setSaveError(msg);
+      toast.error(msg, { autoClose: 8000 });
     } finally {
       setSaving(false);
     }
@@ -333,16 +342,37 @@ function BankingManagementSection({ employee, employeeId, onEmployeeUpdate }) {
                   value={form[key] || ""}
                   onChange={(e) => updateField(key, e.target.value)}
                   required={key !== "swift_code"}
-                  placeholder={key === "iban" ? "PK36SCBL0000001123456702" : undefined}
+                  placeholder={key === "iban" ? "PK00XXXX0000000000000000" : undefined}
                 />
               </label>
             ))}
+            {saveError ? (
+              <p
+                role="alert"
+                style={{
+                  gridColumn: "1 / -1",
+                  margin: 0,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: "rgba(185, 28, 28, 0.08)",
+                  color: "#b91c1c",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  lineHeight: 1.45,
+                }}
+              >
+                {saveError}
+              </p>
+            ) : null}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", gridColumn: "1 / -1" }}>
               {hasBanking ? (
                 <button
                   type="button"
                   className={styles.secondaryButton}
-                  onClick={() => setEditing(false)}
+                  onClick={() => {
+                    setEditing(false);
+                    setSaveError("");
+                  }}
                   disabled={saving}
                 >
                   Cancel
