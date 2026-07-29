@@ -7,7 +7,7 @@ import { Suspense, useEffect, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-import { getApiErrorMessage, login } from "@/services/authService";
+import { getApiErrorMessage, login, persistLoginSession } from "@/services/authService";
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic";
 
@@ -100,8 +100,11 @@ function LoginForm() {
   const [direction, setDirection] = useState(1); // 1 = right, -1 = left
 
   useEffect(() => {
-    if (searchParams.get("reason") === "session_timeout") {
+    const reason = searchParams.get("reason");
+    if (reason === "session_timeout") {
       toast.info("Your session expired after inactivity. Please sign in again.");
+    } else if (reason === "session_expired") {
+      toast.info("Your session expired. Please sign in again.");
     }
   }, [searchParams]);
 
@@ -158,10 +161,10 @@ function LoginForm() {
         role,
         remember_me: rememberMe,
       });
-      localStorage.setItem("access_token", data.session.access_token);
-      localStorage.setItem("refresh_token", data.session.refresh_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      localStorage.setItem("session_last_active", String(Date.now()));
+      persistLoginSession(data.session, data.user, {
+        rememberMe,
+        email: email.trim(),
+      });
       toast.success("Signed in successfully. Redirecting…");
       router.push(data.redirect_to);
     } catch (error) {
