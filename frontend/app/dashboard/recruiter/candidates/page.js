@@ -9,6 +9,7 @@ import {
   acceptOfferNegotiation,
   approveOffer,
   counterOfferNegotiation,
+  extendOfferValidity,
   getApiErrorMessage,
   getOnboardingInProgress,
   getReadyForConversion,
@@ -39,6 +40,7 @@ export default function RecruiterCandidatesPage() {
   const [error, setError] = useState("");
   const [expandedCandidateId, setExpandedCandidateId] = useState(null);
   const [approvingOfferId, setApprovingOfferId] = useState(null);
+  const [extendingOfferId, setExtendingOfferId] = useState(null);
   const [itBusyOfferId, setItBusyOfferId] = useState(null);
   const [negoBusyId, setNegoBusyId] = useState(null);
   const [itEmailDrafts, setItEmailDrafts] = useState({});
@@ -265,6 +267,29 @@ export default function RecruiterCandidatesPage() {
       toast.error(msg);
     } finally {
       setApprovingOfferId(null);
+    }
+  }
+
+  async function handleExtendOfferValidity(offer) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    const input = window.prompt("Extend offer validity by how many days?", "7");
+    if (input === null) return;
+    const extraDays = Number(input);
+    if (!Number.isInteger(extraDays) || extraDays < 1 || extraDays > 90) {
+      toast.error("Enter a whole number of days between 1 and 90.");
+      return;
+    }
+
+    setExtendingOfferId(offer.id);
+    try {
+      const data = await extendOfferValidity(offer.id, { extra_days: extraDays }, accessToken);
+      toast.success(data.message || "Offer validity extended.");
+      await loadCandidates();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not extend offer validity."));
+    } finally {
+      setExtendingOfferId(null);
     }
   }
 
@@ -822,12 +847,38 @@ export default function RecruiterCandidatesPage() {
             <ul className={styles.miniList}>
               {awaitingOffers.map((offer) => (
                 <li className={styles.miniListItem} key={offer.id}>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <strong>{offer.candidate_name}</strong>
                     <div className={styles.mutedText}>
                       {offer.candidate_email} · {offer.job_title} · {offer.status}
                       {offer.negotiation?.status === "rejected" ? " · negotiation rejected" : ""}
                     </div>
+                    <div className={styles.chipRow} style={{ marginTop: 8 }}>
+                      {offer.is_expired ? (
+                        <span
+                          className={styles.chip}
+                          style={{
+                            background: "var(--red-light)",
+                            color: "var(--red)",
+                          }}
+                        >
+                          Offer expired
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className={styles.rowActions}>
+                    {offer.is_expired ? (
+                      <button
+                        type="button"
+                        className={styles.primaryButton}
+                        disabled={extendingOfferId === offer.id}
+                        title="Extend validity for this expired unsigned offer"
+                        onClick={() => handleExtendOfferValidity(offer)}
+                      >
+                        {extendingOfferId === offer.id ? "Extending…" : "Extend validity"}
+                      </button>
+                    ) : null}
                   </div>
                 </li>
               ))}

@@ -9,6 +9,7 @@ from app.schemas.offer import (
     OfferApproveRequest,
     OfferCreateRequest,
     OfferDeclineRequest,
+    OfferExtendValidityRequest,
     OfferNegotiateRequest,
     OfferSignRequest,
 )
@@ -112,3 +113,11 @@ async def counter_negotiation(
 async def approve_offer(offer_id: str, payload: OfferApproveRequest, current_user: RequireRecruiter):
     """Activate employee after signed offer + docs + IT provisioning."""
     return await offer_service.approve(current_user, offer_id, payload)
+
+
+@router.post("/{offer_id}/extend-validity")
+async def extend_offer_validity(
+    offer_id: str, payload: OfferExtendValidityRequest, current_user: RequireRecruiter
+):
+    """Extend an expired unsigned offer for a specific candidate."""
+    return await offer_service.extend_validity(current_user, offer_id, payload)
