@@ -16,12 +16,14 @@ from app.api.offers import router as offers_router
 from app.api.onboarding import router as onboarding_router
 from app.api.rbac import router as rbac_router
 from app.api.talent import router as talent_router
+from app.api.universities import router as universities_router
 from app.core.config import settings
 from app.core.database import create_database_indexes, mongo_client
 from app.core.rbac_seed import seed_rbac_collections
 from app.services.employee_id_migration import migrate_employee_ids_to_emp_format
 from app.services.org_taxonomy_service import seed_org_taxonomy
 from app.services import coursera_service
+from app.services.university_seed_service import seed_universities
 
 
 @asynccontextmanager
@@ -30,6 +32,7 @@ async def lifespan(_: FastAPI):
     await migrate_employee_ids_to_emp_format()
     await seed_rbac_collections()
     await seed_org_taxonomy()
+    await seed_universities()
 
     # Hydrate the Coursera catalog cache from its last Mongo snapshot so the
     # process never starts "cold" — the first employee to open the Coursera
@@ -58,6 +61,7 @@ app.include_router(auth_router)
 app.include_router(invitations_router)
 app.include_router(it_provisioning_router)
 app.include_router(onboarding_router)
+app.include_router(universities_router)
 app.include_router(rbac_router)
 app.include_router(dashboard_router)
 app.include_router(employees_router)

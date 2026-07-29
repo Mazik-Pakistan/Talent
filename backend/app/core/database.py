@@ -209,3 +209,11 @@ async def create_database_indexes() -> None:
         [("employee_user_id", 1), ("recruiter_id", 1), ("status", 1)],
         name="hr_thread_open_pair",
     )
+
+    # ── Universities (Candidate Onboarding — Education autocomplete) ─────────
+    # Unique upsert key used by the seed service.
+    await _ensure_index(database.universities, "normalised_name", unique=True)
+    # Search indexes: name prefix/contains, country filter, city filter.
+    await _ensure_index(database.universities, "name")
+    await _ensure_index(database.universities, "country")
+    await _ensure_index(database.universities, "city")

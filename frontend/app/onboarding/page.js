@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import UniversityAutocomplete from "@/components/onboarding/UniversityAutocomplete";
 import {
   clearLocalSession,
   clearOnboardingFile,
@@ -111,13 +112,6 @@ const emptyEducationEntry = {
 const COUNTRY_OPTIONS = ["Pakistan", "United Arab Emirates", "Saudi Arabia"];
 const PAKISTANI_CITIES = ["Karachi", "Lahore", "Islamabad", "Rawalpindi", "Faisalabad"];
 const PAKISTANI_PROVINCES = ["Punjab", "Sindh", "Khyber Pakhtunkhwa", "Balochistan", "Islamabad Capital Territory", "Gilgit-Baltistan", "Azad Kashmir"];
-const UNIVERSITIES_BY_CITY = {
-  Karachi: ["University of Karachi", "NED University of Engineering & Technology", "IBA Karachi"],
-  Lahore: ["University of the Punjab", "LUMS", "University of Engineering and Technology, Lahore"],
-  Islamabad: ["Quaid-i-Azam University", "NUST", "COMSATS University Islamabad"],
-  Rawalpindi: ["Fatima Jinnah Women University", "Pir Mehr Ali Shah Arid Agriculture University"],
-  Faisalabad: ["University of Agriculture, Faisalabad", "Government College University Faisalabad"],
-};
 
 // Curated skill lists
 const TECHNICAL_SKILLS = [
@@ -241,12 +235,11 @@ function OnboardingContent() {
   const [pendingReplace, setPendingReplace] = useState(null);
   const [bloodGroupPending, setBloodGroupPending] = useState(null);
   const [scanPulse, setScanPulse] = useState(false);
-  const [otherSelections, setOtherSelections] = useState({ country: false, city: false, state: false, institutions: {} });
+  const [otherSelections, setOtherSelections] = useState({ country: false, city: false, state: false });
   const [ocrSession, setOcrSession] = useState(null);
   const ocrFillAbortRef = useRef(null);
   const ocrPreviewUrlRef = useRef(null);
 
-  const universityOptions = useMemo(() => UNIVERSITIES_BY_CITY[personal.city] || [], [personal.city]);
   const steps = useMemo(() => (isEditMode ? STEPS.filter((s) => s.id !== "submit") : STEPS), [isEditMode]);
 
   useEffect(() => {
@@ -2281,42 +2274,20 @@ function OnboardingContent() {
                                   hint="PDF, JPG, or PNG"
                                   wide
                                 />
-                                <label
-                                  className={`${styles.field} ${fillAnimLabelClass(`edu_${index}_institution`)}`}
-                                  style={fillAnimLabelStyle(`edu_${index}_institution`)}
-                                  data-ocr-key={`edu_${index}_institution`}
-                                >
-                                  <span>Institute / University <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
-                                  <select
-                                    value={otherSelections.institutions[index] || (entry.institution && !universityOptions.includes(entry.institution)) ? "other" : entry.institution}
-                                    onChange={(e) => {
-                                      const isOther = e.target.value === "other";
-                                      setOtherSelections((prev) => ({
-                                        ...prev,
-                                        institutions: { ...prev.institutions, [index]: isOther },
-                                      }));
-                                      const next = [...educationEntries];
-                                      next[index] = { ...next[index], institution: isOther ? entry.institution : e.target.value };
-                                      setEducationEntries(next);
-                                    }}
-                                    disabled={!personal.city}
-                                  >
-                                    <option value="">{personal.city ? "Select a university" : "Select a city first"}</option>
-                                    {universityOptions.map((university) => <option key={university} value={university}>{university}</option>)}
-                                    <option value="other">Other</option>
-                                  </select>
-                                  {(otherSelections.institutions[index] || (entry.institution && !universityOptions.includes(entry.institution))) && (
-                                    <input
-                                      value={entry.institution}
-                                      onChange={(e) => {
-                                        const next = [...educationEntries];
-                                        next[index] = { ...next[index], institution: e.target.value };
-                                        setEducationEntries(next);
-                                      }}
-                                      placeholder="Enter university"
-                                    />
-                                  )}
-                                </label>
+                                <UniversityAutocomplete
+                                  value={entry.institution}
+                                  onChange={(val) => {
+                                    const next = [...educationEntries];
+                                    next[index] = { ...next[index], institution: val };
+                                    setEducationEntries(next);
+                                    setFieldErrors((prev) => ({ ...prev, [`edu_${index}_institution`]: false }));
+                                  }}
+                                  error={!!fieldErrors[`edu_${index}_institution`]}
+                                  styles={styles}
+                                  fillAnimClass={fillAnimLabelClass(`edu_${index}_institution`)}
+                                  fillAnimStyle={fillAnimLabelStyle(`edu_${index}_institution`)}
+                                  dataOcrKey={`edu_${index}_institution`}
+                                />
                                 <Field styles={styles} label="Degree" required value={entry.degree} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], degree: e.target.value };
