@@ -40,7 +40,7 @@ const initialInvite = {
   department: "",
   office_location: "",
   employment_type: "Full-time",
-  is_remote: false,
+  employment_mode: "onsite",
   reporting_manager: "",
   start_date: "",
   monthly_salary: "",
@@ -337,14 +337,15 @@ function RecruiterInvitePageInner() {
         job_title: inviteForm.job_title.trim(),
         department: inviteForm.department.trim(),
         office_location: inviteForm.office_location.trim() || null,
-        is_remote: Boolean(inviteForm.is_remote),
+        employment_mode: inviteForm.employment_mode || "onsite",
         start_date: inviteForm.start_date || null,
         offer: {
           job_title: inviteForm.job_title.trim(),
           department: inviteForm.department.trim(),
           employment_type: inviteForm.employment_type,
+          employment_mode: inviteForm.employment_mode || "onsite",
           office_location: inviteForm.office_location.trim() || null,
-          is_remote: Boolean(inviteForm.is_remote),
+          is_remote: inviteForm.employment_mode === "remote",
           reporting_manager: inviteForm.reporting_manager.trim(),
           start_date: inviteForm.start_date,
           monthly_salary: Number(inviteForm.monthly_salary),
@@ -647,24 +648,20 @@ function RecruiterInvitePageInner() {
                   </select>
                 </label>
                 <label className={styles.field}>
-                  <span>Work arrangement</span>
+                  <span>Employment mode</span>
                   <select
-                    name="is_remote"
-                    value={inviteForm.is_remote ? "remote" : "onsite"}
-                    onChange={(e) =>
-                      setInviteForm((current) => ({
-                        ...current,
-                        is_remote: e.target.value === "remote",
-                      }))
-                    }
+                    name="employment_mode"
+                    value={inviteForm.employment_mode}
+                    onChange={updateInviteField}
                   >
-                    <option value="onsite">On-site / office-based</option>
-                    <option value="remote">Remote employee</option>
+                    <option value="onsite">Onsite</option>
+                    <option value="hybrid">Hybrid</option>
+                    <option value="remote">Remote</option>
                   </select>
                   <span className={styles.mutedText} style={{ fontSize: 12, marginTop: 6, display: "block" }}>
-                    {inviteForm.is_remote
+                    {inviteForm.employment_mode === "remote"
                       ? "Remote hires enter banking details themselves during Complete Profile."
-                      : "Recruiters add banking details for on-site hires after activation."}
+                      : "Recruiters add banking details for onsite/hybrid hires after activation."}
                   </span>
                 </label>
                 <label className={styles.field}>
@@ -673,7 +670,7 @@ function RecruiterInvitePageInner() {
                     name="office_location"
                     value={inviteForm.office_location}
                     onChange={updateInviteField}
-                    placeholder={inviteForm.is_remote ? "e.g. Remote — Pakistan" : "e.g. Karachi"}
+                    placeholder={inviteForm.employment_mode === "remote" ? "e.g. Remote — Pakistan" : "e.g. Karachi"}
                   />
                 </label>
                 <label className={styles.field}>

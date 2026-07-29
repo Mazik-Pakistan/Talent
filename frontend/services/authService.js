@@ -950,6 +950,13 @@ export async function scheduleEmployeeOrientation(employeeId, payload, accessTok
   return data;
 }
 
+export async function saveHrBanking(employeeId, payload, accessToken) {
+  const { data } = await apiClient.put(`/api/employees/detail/${employeeId}/banking`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
 // ─── IT provisioning (pre-activation) ────────────────────────────────────────
 
 export async function sendItProvisioning(payload, accessToken) {

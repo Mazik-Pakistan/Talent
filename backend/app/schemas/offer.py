@@ -6,6 +6,8 @@ documents -> IT provisioning -> activate employee.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 OFFER_STATUSES = (
@@ -69,6 +71,7 @@ class OfferTermsPayload(BaseModel):
     job_title: str = Field(..., min_length=2, max_length=120)
     department: str = Field(..., min_length=2, max_length=120)
     employment_type: str = Field(default="Full-time", max_length=80)
+    employment_mode: Literal["remote", "hybrid", "onsite"] = "onsite"
     office_location: str | None = Field(default=None, max_length=120)
     # Remote: employee completes banking in profile. On-site: recruiter manages banking.
     is_remote: bool = False

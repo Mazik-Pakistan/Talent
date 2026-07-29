@@ -46,6 +46,14 @@ PROFILE_STEP_FLOW = {
     "nda": "submit",
 }
 
+# Helper to determine required keys based on employment mode
+def _required_profile_keys(employment_mode: str | None) -> list[str]:
+    """Banking is only required for remote employees; HR fills it for hybrid/onsite."""
+    if employment_mode == "remote":
+        return PROFILE_REQUIRED_KEYS
+    else:
+        return [k for k in PROFILE_REQUIRED_KEYS if k != "employment"]
+
 
 def _employee_is_remote(employee: dict | None) -> bool:
     return bool((employee or {}).get("is_remote"))
@@ -503,6 +511,7 @@ class EmployeeService:
             "job_title": offer.get("job_title") or candidate.get("job_title"),
             "department": offer.get("department") or candidate.get("department"),
             "employment_type": offer.get("employment_type"),
+            "employment_mode": offer.get("employment_mode") or "onsite",
             "office_location": offer.get("office_location") or candidate.get("office_location"),
             "is_remote": bool(offer.get("is_remote") if "is_remote" in offer else candidate.get("is_remote")),
             "start_date": offer.get("start_date") or candidate.get("start_date"),
@@ -1669,10 +1678,14 @@ class EmployeeService:
 
     def _profile_progress(self, employee: dict) -> dict:
         onboarding = employee.get("onboarding") or {}
+        employment_mode = employee.get("employment_mode") or "onsite"
+        
+        # Build tasks list - exclude banking for hybrid/onsite
         tasks = []
         for task_def in _profile_task_defs_for(employee):
             completed = bool(onboarding.get(task_def["step"]))
             tasks.append({**task_def, "completed": completed})
+        
         completed_count = sum(1 for t in tasks if t["completed"])
         percentage = round((completed_count / len(tasks)) * 100) if tasks else 100
         missing_fields = [t["step"] for t in tasks if not t["completed"]]
@@ -1802,6 +1815,94 @@ class EmployeeService:
             "progress": self._profile_progress(refreshed),
         }
 
+    async def save_hr_banking(self, current_user: CurrentUser, employee_id: str, banking_data: dict) -> dict:
+        """HR/recruiter fills banking details for hybrid/onsite employees."""
+        employee = await self._resolve_employee_for_recruiter(current_user, employee_id)
+        employment_mode = employee.get("employment_mode") or "onsite"
+        
+        if employment_mode == "remote":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Banking details for remote employees must be filled by the employee themselves during onboarding.",
+            )
+        
+        now = datetime.now(UTC)
+        
+        # Validate and encrypt banking data
+        from app.schemas.invitation import OnboardingEmploymentInfo
+        banking_payload = OnboardingEmploymentInfo.model_validate(banking_data)
+        data = banking_payload.model_dump(mode="json")
+        
+        # Check for IBAN duplicate
+        iban_hash = iban_fingerprint(data["iban"])
+        duplicate = await database.employees.find_one(
+            {
+                "onboarding.employment.iban_hash": iban_hash,
+                "_id": {"$ne": employee["_id"]},
+            }
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This IBAN is already registered to another employee.",
+            )
+        
+        # Encrypt and save
+        encrypted_data = encrypt_banking_payload(data)
+        
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {
+                "$set": {
+                    "onboarding.employment": encrypted_data,
+                    "banking_filled_by_hr": True,
+                    "banking_filled_at": now,
+                    "banking_filled_by": current_user.id,
+                    "updated_at": now,
+                }
+            },
+        )
+        
+        # Send notification to employee
+        await self._notify_employee(
+            employee,
+            notif_type="banking_filled_by_hr",
+            title="Banking details added",
+            message="Your recruiter has filled in your bank account details. You can view them in your profile.",
+            link="/dashboard/employee/profile",
+        )
+        
+        # Send email notification
+        try:
+            email_service.send_banking_details_filled_by_hr(
+                to_email=employee.get("company_email") or employee.get("email"),
+                full_name=employee.get("full_name") or "Team member",
+                employee_id=employee.get("employee_id") or "",
+            )
+        except Exception:
+            pass
+        
+        # Audit log
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "recruiter_id": current_user.id,
+                "employee_id": employee.get("employee_id"),
+                "email": employee.get("email"),
+                "actor_email": current_user.email,
+                "module": "employees",
+                "action": "hr_banking_filled",
+                "outcome": "success",
+                "created_at": now,
+            }
+        )
+        
+        refreshed = await database.employees.find_one({"_id": employee["_id"]})
+        return {
+            "message": "Banking details saved and employee notified.",
+            "employee": self._public_employee(refreshed),
+        }
+
     @staticmethod
     def _public_employee(doc: dict, include_onboarding: bool = False) -> dict:
         payload = {
@@ -1817,6 +1918,7 @@ class EmployeeService:
             "job_title": doc.get("job_title"),
             "department": doc.get("department"),
             "employment_type": doc.get("employment_type"),
+            "employment_mode": doc.get("employment_mode") or "onsite",
             "office_location": doc.get("office_location"),
             "is_remote": bool(doc.get("is_remote")),
             "start_date": doc.get("start_date"),
@@ -1848,6 +1950,7 @@ class EmployeeService:
             "profile_picture": doc.get("profile_picture"),
             "banking_managed_by": "employee" if bool(doc.get("is_remote")) else "recruiter",
             "has_banking": bool((doc.get("onboarding") or {}).get("employment")),
+            "banking_filled_by_hr": bool(doc.get("banking_filled_by_hr")),
         }
         if include_onboarding:
             payload["onboarding"] = doc.get("onboarding")

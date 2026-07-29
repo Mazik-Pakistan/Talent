@@ -11,7 +11,7 @@ import {
   markEmployeeExit,
   addCareerEvent,
   scheduleEmployeeOrientation,
-  updateEmployeeBanking,
+  saveHrBanking,
 } from "@/services/authService";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
@@ -259,7 +259,7 @@ function BankingManagementSection({ employee, employeeId, onEmployeeUpdate }) {
     }
     setSaving(true);
     try {
-      const data = await updateEmployeeBanking(
+      const data = await saveHrBanking(
         employeeId,
         {
           bank_name: form.bank_name.trim(),
@@ -502,6 +502,203 @@ function CompanyAssetsSection({ employee }) {
             <strong>IT notes:</strong> {employee.it_notes}
           </p>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * HR Banking Section - For hybrid/onsite employees only
+ */
+function HrBankingSection({ employee, employeeId, onEmployeeUpdate }) {
+  const employmentMode = employee.employment_mode || "onsite";
+  const bankingFilled = employee.banking_filled_by_hr || false;
+  const [bankingForm, setBankingForm] = useState({
+    bank_name: "",
+    account_holder_name: employee.full_name || "",
+    account_number: "",
+    iban: "",
+    branch: "",
+    branch_code: "",
+    swift_code: "",
+  });
+  const [bankingMessage, setBankingMessage] = useState("");
+  const [bankingSaving, setBankingSaving] = useState(false);
+
+  // Only show for hybrid/onsite employees
+  if (employmentMode === "remote") {
+    return null;
+  }
+
+  function updateBankingField(event) {
+    const { name, value } = event.target;
+    setBankingForm((current) => ({ ...current, [name]: value }));
+    setBankingMessage("");
+  }
+
+  async function handleSaveBanking(event) {
+    event.preventDefault();
+    setBankingMessage("");
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+
+    const payload = {
+      bank_name: bankingForm.bank_name.trim(),
+      account_holder_name: bankingForm.account_holder_name.trim(),
+      account_number: bankingForm.account_number.trim(),
+      iban: bankingForm.iban.trim().toUpperCase(),
+      branch: bankingForm.branch.trim(),
+      branch_code: bankingForm.branch_code.trim(),
+      swift_code: bankingForm.swift_code.trim() || null,
+    };
+
+    setBankingSaving(true);
+    try {
+      const data = await saveHrBanking(employeeId, payload, accessToken);
+      if (data.employee) onEmployeeUpdate(data.employee);
+      const msg = data.message || "Banking details saved and employee notified.";
+      setBankingMessage(msg);
+      toast.success(msg);
+      // Clear form after successful save
+      setBankingForm({
+        bank_name: "",
+        account_holder_name: employee.full_name || "",
+        account_number: "",
+        iban: "",
+        branch: "",
+        branch_code: "",
+        swift_code: "",
+      });
+    } catch (err) {
+      const msg = getApiErrorMessage(err, "Could not save banking details.");
+      setBankingMessage(msg);
+      toast.error(msg);
+    } finally {
+      setBankingSaving(false);
+    }
+  }
+
+  return (
+    <div className={styles.section} style={{ marginBottom: 16 }}>
+      <div className={styles.sectionHead}>
+        <div className={styles.sectionHeadLeft}>
+          <div className={`${styles.bar} ${bankingFilled ? styles.green : styles.orange}`} />
+          <div>
+            <div className={styles.sectionTitle}>Banking details (HR fills for {employmentMode} employees)</div>
+            <div className={styles.sectionDesc}>
+              {bankingFilled
+                ? "Banking details have been filled by HR. Employee has been notified."
+                : `This ${employmentMode} employee's banking details must be filled by HR. Employee will be notified via email once filled.`}
+            </div>
+          </div>
+        </div>
+        {bankingFilled && (
+          <span
+            className={styles.chip}
+            style={{
+              background: "var(--green-light)",
+              color: "var(--green)",
+              fontWeight: 700,
+            }}
+          >
+            ✓ Filled by HR
+          </span>
+        )}
+      </div>
+      <div className={styles.sectionBody}>
+        <form onSubmit={handleSaveBanking}>
+          <p
+            style={{
+              fontSize: "10.5px",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              color: "var(--text-faint)",
+              margin: "0 0 10px",
+            }}
+          >
+            {bankingFilled ? "Update banking details" : "Fill banking details"}
+          </p>
+          <div className={styles.formGrid} style={{ marginBottom: "12px" }}>
+            <label className={styles.field}>
+              <span>Bank name *</span>
+              <input
+                name="bank_name"
+                value={bankingForm.bank_name}
+                onChange={updateBankingField}
+                placeholder="e.g. HBL"
+                required
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Account holder name *</span>
+              <input
+                name="account_holder_name"
+                value={bankingForm.account_holder_name}
+                onChange={updateBankingField}
+                placeholder="Full name as per bank"
+                required
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Account number *</span>
+              <input
+                name="account_number"
+                value={bankingForm.account_number}
+                onChange={updateBankingField}
+                placeholder="Account number"
+                required
+              />
+            </label>
+            <label className={styles.field}>
+              <span>IBAN *</span>
+              <input
+                name="iban"
+                value={bankingForm.iban}
+                onChange={updateBankingField}
+                placeholder="PK36SCBL0000001123456702"
+                required
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Branch *</span>
+              <input
+                name="branch"
+                value={bankingForm.branch}
+                onChange={updateBankingField}
+                placeholder="Branch name"
+                required
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Branch code *</span>
+              <input
+                name="branch_code"
+                value={bankingForm.branch_code}
+                onChange={updateBankingField}
+                placeholder="Branch code"
+                required
+              />
+            </label>
+            <label className={styles.field}>
+              <span>SWIFT code (optional)</span>
+              <input
+                name="swift_code"
+                value={bankingForm.swift_code}
+                onChange={updateBankingField}
+                placeholder="SWIFT/BIC code"
+              />
+            </label>
+          </div>
+          {bankingMessage && (
+            <p className={styles.formMessage} role="status" style={{ marginTop: 0 }}>
+              {bankingMessage}
+            </p>
+          )}
+          <button type="submit" className={styles.primaryButton} disabled={bankingSaving}>
+            {bankingSaving ? "Saving..." : bankingFilled ? "Update banking details" : "Save & notify employee"}
+          </button>
+        </form>
       </div>
     </div>
   );
@@ -1252,6 +1449,11 @@ export default function EmployeeProfilePage({ params }) {
             employeeId={employeeId}
             onEmployeeUpdate={setEmployee}
           />
+          <HrBankingSection
+            employee={employee}
+            employeeId={employeeId}
+            onEmployeeUpdate={setEmployee}
+          />
           <div className={styles.section}>
           <div className={styles.sectionHead}>
             <div className={styles.sectionHeadLeft}>
@@ -1319,8 +1521,8 @@ export default function EmployeeProfilePage({ params }) {
                 <dd>{employee.office_location || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
-                <dt>Work arrangement</dt>
-                <dd>{employee.is_remote ? "Remote" : "On-site / office-based"}</dd>
+                <dt>Employment mode</dt>
+                <dd style={{ textTransform: "capitalize" }}>{employee.employment_mode || "onsite"}</dd>
               </div>
               <div className={styles.employeeFact}>
                 <dt>Start date</dt>

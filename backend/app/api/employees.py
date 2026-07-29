@@ -310,12 +310,12 @@ async def schedule_orientation(
 
 
 @router.put("/detail/{employee_id}/banking")
-async def update_employee_banking(
+async def save_hr_banking(
     employee_id: str,
     payload: dict,
     current_user: RequireRecruiter,
 ):
-    """Add or update payroll banking for on-site employees (recruiter-managed)."""
+    """Add or update payroll banking for on-site/hybrid employees (recruiter-managed)."""
     from app.schemas.invitation import OnboardingEmploymentInfo
 
     request = OnboardingEmploymentInfo.model_validate(payload)

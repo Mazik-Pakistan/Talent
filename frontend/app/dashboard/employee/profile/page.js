@@ -273,22 +273,28 @@ function EmployeeProfileContent() {
 
   const sectionsMeta = useMemo(
     () => {
-      const items = [
+      const employmentMode = employee?.employment_mode || "onsite";
+      const sections = [
         { id: "sec-employment", label: "Employment", icon: <IconBriefcase />, done: sectionComplete.employment },
         { id: "sec-personal", label: "Personal", icon: <IconUser />, done: sectionComplete.personal },
         { id: "sec-education", label: "Education", icon: <IconCap />, done: sectionComplete.education },
         { id: "sec-skills", label: "Skills & resume", icon: <IconSpark />, done: sectionComplete.skills },
         { id: "sec-emergency", label: "Emergency contact", icon: <IconHeart />, done: sectionComplete.emergency },
       ];
-      // Always show banking: remote employees edit it; on-site view recruiter-managed details.
-      items.push({ id: "sec-banking", label: "Banking", icon: <IconBank />, done: sectionComplete.banking });
-      items.push(
+
+      // Only show banking section for remote employees; HR fills it for hybrid/onsite
+      if (employmentMode === "remote") {
+        sections.push({ id: "sec-banking", label: "Banking", icon: <IconBank />, done: sectionComplete.banking });
+      }
+
+      sections.push(
         { id: "sec-references", label: "References", icon: <IconUsers />, done: sectionComplete.references },
-        { id: "sec-policies", label: "Policies & NDA", icon: <IconShield />, done: sectionComplete.policies },
+        { id: "sec-policies", label: "Policies & NDA", icon: <IconShield />, done: sectionComplete.policies }
       );
-      return items;
+
+      return sections;
     },
-    [sectionComplete]
+    [sectionComplete, employee]
   );
 
   const sectionsDoneCount = sectionsMeta.filter((item) => item.done).length;
@@ -716,7 +722,11 @@ function EmployeeProfileContent() {
                     <Row label="Employment type" value={employee?.employment_type} />
                     <Row
                       label="Work arrangement"
-                      value={employee?.is_remote ? "Remote" : "On-site / office-based"}
+                      value={
+                        employee?.employment_mode
+                          ? employee.employment_mode.charAt(0).toUpperCase() + employee.employment_mode.slice(1)
+                          : employee?.is_remote ? "Remote" : "On-site / office-based"
+                      }
                     />
                     <Row label="Reporting manager" value={employee?.reporting_manager} />
                     <Row label="Office location" value={employee?.office_location} />

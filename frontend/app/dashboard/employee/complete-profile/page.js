@@ -37,6 +37,15 @@ const STEPS = [
   { id: "submit", label: "Finish" },
 ];
 
+// Filter steps based on employment mode
+function getFilteredSteps(employmentMode) {
+  if (employmentMode === "remote") {
+    return STEPS;
+  }
+  // For hybrid/onsite, exclude banking step
+  return STEPS.filter(step => step.id !== "employment");
+}
+
 const SECTION_FIELDS = {
   emergency: ["Full name", "Relationship", "Contact", "Alternate contact", "Address"],
   employment: ["Bank name", "Account holder", "Account number", "IBAN", "Branch", "SWIFT"],
@@ -104,10 +113,13 @@ function CompleteProfileContent() {
 
   const complete = progress?.profile_status === "complete";
   const isRemote = Boolean(employee?.is_remote);
+  const employmentMode = employee?.employment_mode || "onsite";
   const visibleSteps = useMemo(
     () => (isRemote ? STEPS : STEPS.filter((item) => item.id !== "employment")),
     [isRemote]
   );
+  // alias so JSX that uses filteredSteps also works
+  const filteredSteps = visibleSteps;
   const stepIndex = useMemo(
     () => visibleSteps.findIndex((item) => item.id === step),
     [step, visibleSteps]
@@ -634,6 +646,7 @@ function CompleteProfileContent() {
           <AssistStrip onOpenAssistant={openOnboardingAssistant} />
 
           <OnboardingForm
+            filteredSteps={filteredSteps}
             step={step}
             stepIndex={stepIndex}
             onStepChange={gotoSection}
@@ -662,6 +675,7 @@ function CompleteProfileContent() {
             onScanDismissed={() => setShowScanner(false)}
             onSubmit={handleNext}
             onExit={() => router.push("/dashboard/employee")}
+            isRemote={isRemote}
           />
         </>
       )}
@@ -766,6 +780,7 @@ function AssistStrip({ onOpenAssistant }) {
 }
 
 function OnboardingForm({
+  filteredSteps,
   step,
   stepIndex,
   onStepChange,
@@ -794,6 +809,7 @@ function OnboardingForm({
   onScanDismissed,
   onSubmit,
   onExit,
+  isRemote,
 }) {
   const { fields: aiFields, activeField } = automation;
   const [selfDeclSigMethod, setSelfDeclSigMethod] = useState("pad");
@@ -857,7 +873,7 @@ function OnboardingForm({
 
       <div className={styles.sectionBody}>
         <ol className={styles.stepsList} aria-label="Profile completion steps">
-          {visibleSteps.map((item, index) => {
+          {filteredSteps.map((item, index) => {
             const isCurrent = index === stepIndex;
             const done = sectionHasData[item.id];
             const statusClass = isCurrent

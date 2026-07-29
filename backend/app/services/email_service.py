@@ -1110,6 +1110,318 @@ class EmailService:
             self._branded_shell("New message", subject_line, body)
         )
 
+    # ------------------------------------------------------------------ #
+    # send_banking_details_filled_by_hr
+    # ------------------------------------------------------------------ #
+    def send_banking_details_filled_by_hr(
+        self,
+        to_email: str,
+        full_name: str,
+        employee_id: str,
+    ) -> None:
+        subject = "Your banking details have been added — TalentAI"
+        body = f"""
+<p style="margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Your recruiter has filled in your bank account details for salary deposits.
+  You can review them in your employee profile.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;
+              margin:0 0 24px;">
+  <tr>
+    <td style="padding:22px;">
+      <p style="margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">
+        Your Employee ID
+      </p>
+      <p style="margin:0;color:#0D5C91;font-size:20px;font-weight:700;
+                letter-spacing:2px;">
+        {escape(employee_id)}
+      </p>
+    </td>
+  </tr>
+</table>
+<p style="margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Your banking information is securely stored and will be used for monthly salary deposits.
+  If you need to update any details, please contact your recruiter.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 20px;">
+  <tr>
+    <td align="center">
+      <a href="{settings.frontend_base_url}/dashboard/employee/profile" class="cta-btn"
+         style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                font-weight:600;font-size:15px;letter-spacing:0.2px;
+                box-shadow:0 4px 16px rgba(13,92,145,.2);">
+        View your profile
+      </a>
+    </td>
+  </tr>
+</table>
+<p style="margin:0;color:#8a9bb0;font-size:13px;line-height:1.6;">
+  Questions? Reach out to your recruiter through the Messages section in your dashboard.
+</p>
+"""
+        self._send(
+            to_email, subject,
+            self._branded_shell("Banking details", f"Hello, {escape(full_name)}", body)
+        )
+
+    # ------------------------------------------------------------------ #
+    # send_it_provisioning_request
+    # ------------------------------------------------------------------ #
+    def send_it_provisioning_request(
+        self,
+        to_email: str,
+        recruiter_name: str,
+        employee: dict,
+        form_link: str,
+        expires_at: str,
+        note: str | None = None,
+        is_reminder: bool = False,
+    ) -> None:
+        action = "Reminder: " if is_reminder else ""
+        subject = f"{action}IT provisioning request for {escape(employee.get('full_name', 'new employee'))} — TalentAI"
+        safe_link = escape(form_link, quote=True)
+        note_html = (
+            f'<p style="margin:16px 0 0;color:#b45309;font-size:14px;line-height:1.6;">'
+            f'<strong>Recruiter note:</strong> {escape(note)}</p>'
+            if note else ""
+        )
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  {"A follow-up request has been sent by" if is_reminder else "A new IT provisioning request has been sent by"}
+  <strong>{escape(recruiter_name)}</strong>. Please complete the provisioning
+  form before the link expires.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;
+              margin:0 0 24px;">
+  <tr>
+    <td style="padding:22px;">
+      <p style="margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">New employee</p>
+      <p style="margin:0 0 4px;color:#0D5C91;font-size:18px;font-weight:700;">
+        {escape(employee.get("full_name", "—"))}
+      </p>
+      <p style="margin:0;color:#6b7a8f;font-size:14px;">
+        {escape(employee.get("job_title", "—"))}&ensp;&middot;&ensp;{escape(employee.get("department", "—"))}
+      </p>
+      <p style="margin:6px 0 0;color:#6b7a8f;font-size:13px;">
+        Starting: {escape(str(employee.get("start_date", "—")))}
+        {f'&ensp;&middot;&ensp;Location: {escape(employee.get("office_location"))}' if employee.get("office_location") else ""}
+      </p>
+      {note_html}
+    </td>
+  </tr>
+</table>
+<p style="margin:0 0 6px;color:#6b7a8f;font-size:12px;">
+  Link expires: <strong>{escape(expires_at)}</strong>
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 20px;">
+  <tr>
+    <td align="center">
+      <a href="{safe_link}" class="cta-btn"
+         style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                font-weight:600;font-size:15px;letter-spacing:0.2px;
+                box-shadow:0 4px 16px rgba(13,92,145,.2);">
+        Open IT provisioning form
+      </a>
+    </td>
+  </tr>
+</table>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;">
+  <tr>
+    <td style="padding:16px 20px;">
+      <p style="margin:0 0 4px;color:#6b7a8f;font-size:11px;font-weight:600;
+                text-transform:uppercase;letter-spacing:0.8px;">Or copy this link</p>
+      <p style="margin:0;font-family:monospace;font-size:12px;color:#1a1a2e;
+                word-break:break-all;line-height:1.5;">
+        {escape(form_link)}
+      </p>
+    </td>
+  </tr>
+</table>
+"""
+        eyebrow = "IT provisioning reminder" if is_reminder else "IT provisioning request"
+        self._send(
+            to_email, subject,
+            self._branded_shell(eyebrow, "Action required: set up new employee", body)
+        )
+
+    # ------------------------------------------------------------------ #
+    # send_it_provisioning_complete
+    # ------------------------------------------------------------------ #
+    def send_it_provisioning_complete(
+        self,
+        to_email: str,
+        recruiter_name: str,
+        employee_name: str,
+        company_email: str | None,
+        submitted_by: str | None = None,
+    ) -> None:
+        subject = f"IT provisioning complete for {escape(employee_name)} — TalentAI"
+        company_email_html = (
+            f'<p style="margin:6px 0 0;color:#0D5C91;font-size:15px;font-weight:600;">'
+            f'{escape(company_email)}</p>'
+            if company_email else
+            '<p style="margin:6px 0 0;color:#6b7a8f;font-size:14px;">No company email assigned</p>'
+        )
+        submitted_html = (
+            f'<p style="margin:8px 0 0;color:#6b7a8f;font-size:13px;">Submitted by: {escape(submitted_by)}</p>'
+            if submitted_by else ""
+        )
+        body = f"""
+<p style="margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hello {escape(recruiter_name)}, IT has completed provisioning for
+  <strong>{escape(employee_name)}</strong>. You can now activate the employee.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;
+              margin:0 0 24px;">
+  <tr>
+    <td style="padding:22px;">
+      <p style="margin:0 0 4px;color:#6b7a8f;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">
+        Company email assigned
+      </p>
+      {company_email_html}
+      {submitted_html}
+    </td>
+  </tr>
+</table>
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 20px;">
+  <tr>
+    <td align="center">
+      <a href="{settings.frontend_base_url}/dashboard/recruiter/candidates" class="cta-btn"
+         style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                font-weight:600;font-size:15px;letter-spacing:0.2px;
+                box-shadow:0 4px 16px rgba(13,92,145,.2);">
+        Activate employee
+      </a>
+    </td>
+  </tr>
+</table>
+"""
+        self._send(
+            to_email, subject,
+            self._branded_shell("IT provisioning done", f"Ready to activate {escape(employee_name)}", body)
+        )
+
+    # ------------------------------------------------------------------ #
+    # send_offer_negotiation_request / send_offer_negotiation_result
+    # ------------------------------------------------------------------ #
+    def send_offer_negotiation_request(
+        self,
+        to_email: str,
+        recruiter_name: str,
+        candidate_name: str,
+        job_title: str,
+        current_salary: float | None,
+        proposed_salary: float,
+        currency: str,
+        current_start_date: str,
+        proposed_start_date: str,
+        note: str | None = None,
+    ) -> None:
+        subject = f"Offer negotiation request from {escape(candidate_name)} — TalentAI"
+        note_html = (
+            f'<p style="margin:8px 0 0;color:#1a1a2e;font-size:13px;line-height:1.6;">'
+            f'<strong>Candidate note:</strong> {escape(note)}</p>'
+            if note else ""
+        )
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hello {escape(recruiter_name)}, <strong>{escape(candidate_name)}</strong> has proposed
+  a change to their offer for <strong>{escape(job_title)}</strong>.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;
+              margin:0 0 24px;">
+  <tr>
+    <td style="padding:22px;">
+      <p style="margin:0 0 8px;color:#6b7a8f;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Proposed changes</p>
+      <p style="margin:0 0 4px;color:#1a1a2e;font-size:14px;">
+        Salary: <strong>{escape(currency)} {proposed_salary:,.0f}</strong>
+        {f"(was {escape(currency)} {current_salary:,.0f})" if current_salary else ""}
+      </p>
+      <p style="margin:0;color:#1a1a2e;font-size:14px;">
+        Start date: <strong>{escape(proposed_start_date)}</strong>
+        {f"(was {escape(current_start_date)})" if current_start_date else ""}
+      </p>
+      {note_html}
+    </td>
+  </tr>
+</table>
+<table cellpadding="0" cellspacing="0" border="0" width="100%">
+  <tr>
+    <td align="center">
+      <a href="{settings.frontend_base_url}/dashboard/recruiter/candidates" class="cta-btn"
+         style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                font-weight:600;font-size:15px;letter-spacing:0.2px;
+                box-shadow:0 4px 16px rgba(13,92,145,.2);">
+        Review negotiation
+      </a>
+    </td>
+  </tr>
+</table>
+"""
+        self._send(
+            to_email, subject,
+            self._branded_shell("Offer negotiation", "Candidate proposed changes", body)
+        )
+
+    def send_offer_negotiation_result(
+        self,
+        to_email: str,
+        full_name: str,
+        accepted: bool,
+        job_title: str,
+        recruiter_note: str | None = None,
+    ) -> None:
+        result_label = "accepted" if accepted else "declined"
+        subject = f"Negotiation {result_label} for {escape(job_title)} — TalentAI"
+        note_html = (
+            f'<p style="margin:12px 0 0;color:#1a1a2e;font-size:14px;line-height:1.6;">'
+            f'<strong>Recruiter note:</strong> {escape(recruiter_note)}</p>'
+            if recruiter_note else ""
+        )
+        body = f"""
+<p style="margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hello {escape(full_name)}, your recruiter has <strong>{result_label}</strong>
+  your negotiation request for <strong>{escape(job_title)}</strong>.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;
+              margin:0 0 24px;">
+  <tr>
+    <td style="padding:22px;">
+      <p style="margin:0;color:#1a1a2e;font-size:15px;font-weight:700;">
+        {"A revised offer letter has been sent. Please review and sign it." if accepted else "The original offer terms remain. You may accept or decline."}
+      </p>
+      {note_html}
+    </td>
+  </tr>
+</table>
+<table cellpadding="0" cellspacing="0" border="0" width="100%">
+  <tr>
+    <td align="center">
+      <a href="{settings.frontend_base_url}/offer" class="cta-btn"
+         style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                font-weight:600;font-size:15px;letter-spacing:0.2px;
+                box-shadow:0 4px 16px rgba(13,92,145,.2);">
+        View your offer
+      </a>
+    </td>
+  </tr>
+</table>
+"""
+        self._send(
+            to_email, subject,
+            self._branded_shell("Offer negotiation update", f"Negotiation {result_label}", body)
+        )
+
 
 # Singleton instance
 email_service = EmailService()

@@ -81,7 +81,7 @@ class InvitationService:
             "job_title": request.job_title,
             "department": request.department,
             "office_location": request.offer.office_location or request.office_location,
-            "is_remote": bool(request.is_remote or (request.offer and request.offer.is_remote)),
+            "employment_mode": request.employment_mode,
             "start_date": start_date,
             "recruiter_id": actor.id,
             "recruiter_email": actor.email,
@@ -170,7 +170,8 @@ class InvitationService:
                 "job_title": request.job_title,
                 "department": request.department,
                 "office_location": invitation["office_location"],
-                "is_remote": bool(invitation.get("is_remote")),
+                "employment_mode": invitation.get("employment_mode", "onsite"),
+                "is_remote": invitation.get("employment_mode") == "remote",
                 "start_date": invitation["start_date"],
                 "status": "pending",
                 "expires_at": invitation["expires_at"].isoformat(),
@@ -194,7 +195,8 @@ class InvitationService:
                 "job_title": invitation["job_title"],
                 "department": invitation["department"],
                 "office_location": invitation.get("office_location"),
-                "is_remote": bool(invitation.get("is_remote") or (offer or {}).get("is_remote")),
+                "employment_mode": invitation.get("employment_mode") or (offer or {}).get("employment_mode") or "onsite",
+                "is_remote": (invitation.get("employment_mode") or (offer or {}).get("employment_mode")) == "remote",
                 "start_date": invitation.get("start_date"),
                 "expires_at": invitation["expires_at"].isoformat()
                 if isinstance(invitation["expires_at"], datetime)
