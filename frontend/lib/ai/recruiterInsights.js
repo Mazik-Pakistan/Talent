@@ -403,11 +403,6 @@ function inviteInsights(snapshot, context) {
     message: "Office location and start date are optional — add them only if you already know.",
   });
   push(insights, {
-    id: "invite-expiry",
-    priority: MASCOT_PRIORITY.tip,
-    message: "Invite links usually expire in 7 days — change Expires in days if you need longer.",
-  });
-  push(insights, {
     id: "invite-bulk",
     priority: MASCOT_PRIORITY.tip,
     message: "Inviting many people from Excel? Open AI Assistant for bulk invite.",

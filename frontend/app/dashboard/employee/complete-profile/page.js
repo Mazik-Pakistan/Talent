@@ -103,19 +103,34 @@ function CompleteProfileContent() {
   const [selfDeclSignature, setSelfDeclSignature] = useState(null);
 
   const complete = progress?.profile_status === "complete";
-  const stepIndex = useMemo(() => STEPS.findIndex((item) => item.id === step), [step]);
+  const isRemote = Boolean(employee?.is_remote);
+  const visibleSteps = useMemo(
+    () => (isRemote ? STEPS : STEPS.filter((item) => item.id !== "employment")),
+    [isRemote]
+  );
+  const stepIndex = useMemo(
+    () => visibleSteps.findIndex((item) => item.id === step),
+    [step, visibleSteps]
+  );
+
+  useEffect(() => {
+    if (!employee) return;
+    if (!isRemote && step === "employment") {
+      setStep(progress?.current_step || "emergency");
+    }
+  }, [employee, isRemote, step, progress?.current_step]);
 
   useEffect(() => {
     publishGuideContext({
       pathname: "/dashboard/employee/complete-profile",
       section: step,
-      label: STEPS.find((item) => item.id === step)?.label || step,
+      label: visibleSteps.find((item) => item.id === step)?.label || step,
       fields: SECTION_FIELDS[step] || [],
       progress: progress || null,
       mode: "manual",
       formId: "complete-profile",
     });
-  }, [step, progress]);
+  }, [step, progress, visibleSteps]);
 
   const gotoSection = useCallback((sectionId) => {
     setFieldErrors({});
@@ -442,16 +457,19 @@ function CompleteProfileContent() {
 
   const autoSaveValue = useMemo(() => {
     if (step === "emergency") return emergency;
-    if (step === "employment") return employment;
+    if (step === "employment" && isRemote) return employment;
     if (step === "references") return references;
     if (step === "documents") return documents;
     return null;
-  }, [step, emergency, employment, references, documents]);
+  }, [step, emergency, employment, references, documents, isRemote]);
 
   useAutoSave({
     value: autoSaveValue,
     resetKey: step,
-    enabled: AUTOSAVE_SECTIONS.includes(step) && !complete,
+    enabled:
+      AUTOSAVE_SECTIONS.includes(step) &&
+      !complete &&
+      (step !== "employment" || isRemote),
     isReady: () => isSectionValid(step),
     buildPayload: () => buildSectionPayload(step),
     save: async (payload) => {
@@ -465,7 +483,7 @@ function CompleteProfileContent() {
   });
 
   function openOnboardingAssistant() {
-    const label = STEPS.find((item) => item.id === step)?.label || "onboarding";
+    const label = visibleSteps.find((item) => item.id === step)?.label || "onboarding";
     openAiAssistantChat(router, {
       href: "/dashboard/employee/ai-assistant",
       prompt:
@@ -601,6 +619,7 @@ function CompleteProfileContent() {
       {complete && step === "submit" ? (
         <CompletedRecord
           employee={employee}
+          isRemote={isRemote}
           emergency={emergency}
           employment={employment}
           references={references}
@@ -828,7 +847,9 @@ function OnboardingForm({
           <div>
             <div className={styles.sectionTitle}>Required information</div>
             <div className={styles.sectionDesc}>
-              Every section is validated before it&apos;s saved — nothing is submitted half-finished.
+              {isRemote
+                ? "Every section is validated before it is saved — including banking, which you must complete yourself."
+                : "Every section is validated before it is saved. Banking for on-site roles is handled by your recruiter."}
             </div>
           </div>
         </div>
@@ -836,7 +857,7 @@ function OnboardingForm({
 
       <div className={styles.sectionBody}>
         <ol className={styles.stepsList} aria-label="Profile completion steps">
-          {STEPS.map((item, index) => {
+          {visibleSteps.map((item, index) => {
             const isCurrent = index === stepIndex;
             const done = sectionHasData[item.id];
             const statusClass = isCurrent
@@ -906,7 +927,7 @@ function OnboardingForm({
             </div>
           ) : null}
 
-          {step === "employment" ? (
+          {step === "employment" && isRemote ? (
             <div className={styles.formStack}>
               <div>
                 <h2 className={styles.stepTitle}>Banking details</h2>
@@ -1226,15 +1247,29 @@ function OnboardingForm({
                     ["Alternate contact", emergency.alternate_phone],
                   ]}
                 />
-                <ReviewBlock
-                  title="Banking"
-                  items={[
-                    ["Bank", employment.bank_name],
-                    ["Account title", employment.account_holder_name],
-                    ["IBAN", employment.iban],
-                    ["Branch", employment.branch],
-                  ]}
-                />
+                {isRemote ? (
+                  <ReviewBlock
+                    title="Banking"
+                    items={[
+                      ["Bank", employment.bank_name],
+                      ["Account title", employment.account_holder_name],
+                      ["IBAN", employment.iban],
+                      ["Branch", employment.branch],
+                    ]}
+                  />
+                ) : (
+                  <ReviewBlock
+                    title="Banking"
+                    items={[
+                      [
+                        "Status",
+                        employment.bank_name
+                          ? "Added by your recruiter (view on profile)"
+                          : "Your recruiter will add payroll banking details",
+                      ],
+                    ]}
+                  />
+                )}
                 <ReviewBlock
                   title="References"
                   items={references.map((reference, index) => [
@@ -1284,6 +1319,7 @@ function OnboardingForm({
 
 function CompletedRecord({
   employee,
+  isRemote,
   emergency,
   employment,
   references,
@@ -1316,15 +1352,23 @@ function CompletedRecord({
             <HistoryRow label="Address" value={emergency.address} />
           </HistoryBlock>
 
-          <HistoryBlock title="Banking">
-            <HistoryRow label="Bank" value={employment.bank_name} />
-            <HistoryRow label="Account title" value={employment.account_holder_name} />
-            <HistoryRow label="Account number" value={employment.account_number} />
-            <HistoryRow label="IBAN" value={employment.iban} />
-            <HistoryRow label="Branch" value={employment.branch} />
-            <HistoryRow label="Branch code" value={employment.branch_code} />
-            <HistoryRow label="SWIFT code" value={employment.swift_code} />
-          </HistoryBlock>
+          {isRemote || employment?.bank_name ? (
+            <HistoryBlock title="Banking">
+              {employment?.bank_name ? (
+                <>
+                  <HistoryRow label="Bank" value={employment.bank_name} />
+                  <HistoryRow label="Account title" value={employment.account_holder_name} />
+                  <HistoryRow label="IBAN" value={employment.iban} />
+                  <HistoryRow label="Branch" value={employment.branch} />
+                </>
+              ) : (
+                <HistoryRow
+                  label="Status"
+                  value="Managed by your recruiter — check your profile when available"
+                />
+              )}
+            </HistoryBlock>
+          ) : null}
 
           <HistoryBlock title="References">
             {(references || []).map((reference, index) => (

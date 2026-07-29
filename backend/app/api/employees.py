@@ -309,6 +309,19 @@ async def schedule_orientation(
     return await service.schedule_orientation(current_user, employee_id, request)
 
 
+@router.put("/detail/{employee_id}/banking")
+async def update_employee_banking(
+    employee_id: str,
+    payload: dict,
+    current_user: RequireRecruiter,
+):
+    """Add or update payroll banking for on-site employees (recruiter-managed)."""
+    from app.schemas.invitation import OnboardingEmploymentInfo
+
+    request = OnboardingEmploymentInfo.model_validate(payload)
+    return await service.update_employee_banking(current_user, employee_id, request)
+
+
 @router.post("/detail/{employee_id}/remind-profile")
 async def remind_profile_completion(
     employee_id: str,

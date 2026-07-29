@@ -393,23 +393,16 @@ async def _tool_send_invitation(user: CurrentUser, args: dict) -> ToolResult:
             job_title=args["job_title"],
             department=args["department"],
             office_location=args.get("office_location"),
+            is_remote=bool(args.get("is_remote")),
             start_date=args.get("start_date") or None,
-            expires_in_days=int(args.get("expires_in_days") or 7),
+            expires_in_days=365,
         )
         result = await invitation_service.create_invitation(payload, user)
         return ToolResult(
             ok=True,
             data={
                 **(result if isinstance(result, dict) else {"result": result}),
-                "invite_link": (result or {}).get("invite_link") if isinstance(result, dict) else None,
-                "message": (
-                    f"Invitation sent to {payload.email}."
-                    + (
-                        f" Invite link: {(result or {}).get('invite_link')}"
-                        if isinstance(result, dict) and result.get("invite_link")
-                        else ""
-                    )
-                ),
+                "message": f"Invitation sent to {payload.email}.",
             },
         )
     except Exception as exc:  # noqa: BLE001
@@ -466,7 +459,7 @@ async def _tool_bulk_invite(user: CurrentUser, args: dict) -> ToolResult:
                 "office_location": row.get("office_location") or None,
                 "employment_type": row.get("employment_type") or "Full-time",
                 "currency": (row.get("currency") or "PKR"),
-                "expires_in_days": int(row.get("expires_in_days") or 7),
+                "expires_in_days": 365,
                 "offer_expiry_days": int(row.get("offer_expiry_days") or 14),
                 "message_to_candidate": row.get("message_to_candidate"),
                 "benefits": benefits if isinstance(benefits, list) else [],
@@ -1476,8 +1469,8 @@ RECRUITER_TOOLS: list[Tool] = [
             "job_title": "string, required",
             "department": "string, required",
             "office_location": "string, optional",
+            "is_remote": "boolean, optional, true if remote employee (self-manages banking)",
             "start_date": "string YYYY-MM-DD, optional",
-            "expires_in_days": "integer 1-30, optional, default 7",
         },
         handler=_tool_send_invitation,
         roles=("recruiter", "super_admin"),

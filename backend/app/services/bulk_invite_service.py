@@ -75,6 +75,7 @@ def candidate_row_to_request(row: dict) -> CreateInvitationRequest:
         department=row["department"],
         employment_type=row.get("employment_type") or "Full-time",
         office_location=row.get("office_location"),
+        is_remote=bool(row.get("is_remote")),
         reporting_manager=row["reporting_manager"],
         start_date=start_raw,
         monthly_salary=float(row["monthly_salary"]),
@@ -91,8 +92,9 @@ def candidate_row_to_request(row: dict) -> CreateInvitationRequest:
         job_title=row["job_title"],
         department=row["department"],
         office_location=row.get("office_location"),
+        is_remote=bool(row.get("is_remote")),
         start_date=start_date,
-        expires_in_days=int(row.get("expires_in_days") or 7),
+        expires_in_days=365,
         offer=offer,
     )
 

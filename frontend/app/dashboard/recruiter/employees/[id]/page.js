@@ -11,6 +11,7 @@ import {
   markEmployeeExit,
   addCareerEvent,
   scheduleEmployeeOrientation,
+  updateEmployeeBanking,
 } from "@/services/authService";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
@@ -191,6 +192,208 @@ function CompanyEmailSection({ employee }) {
           <p className={styles.emptySub} style={{ margin: 0 }}>
             No company email on file. IT should complete provisioning before activation.
           </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const emptyBankingForm = {
+  bank_name: "",
+  account_holder_name: "",
+  account_number: "",
+  iban: "",
+  branch: "",
+  branch_code: "",
+  swift_code: "",
+};
+
+/**
+ * Recruiter-managed payroll banking for on-site employees.
+ * Remote employees enter banking themselves — this section is informational only.
+ */
+function BankingManagementSection({ employee, employeeId, onEmployeeUpdate }) {
+  const existing = employee?.onboarding?.employment || {};
+  const isRemote = Boolean(employee?.is_remote);
+  const hasBanking = Boolean(existing.bank_name || employee?.has_banking);
+  const [editing, setEditing] = useState(!hasBanking && !isRemote);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    ...emptyBankingForm,
+    bank_name: existing.bank_name || "",
+    account_holder_name: existing.account_holder_name || employee?.full_name || "",
+    account_number: existing.account_number || "",
+    iban: existing.iban || "",
+    branch: existing.branch || "",
+    branch_code: existing.branch_code || "",
+    swift_code: existing.swift_code || "",
+  });
+
+  useEffect(() => {
+    const next = employee?.onboarding?.employment || {};
+    setForm({
+      ...emptyBankingForm,
+      bank_name: next.bank_name || "",
+      account_holder_name: next.account_holder_name || employee?.full_name || "",
+      account_number: next.account_number || "",
+      iban: next.iban || "",
+      branch: next.branch || "",
+      branch_code: next.branch_code || "",
+      swift_code: next.swift_code || "",
+    });
+    setEditing(!(next.bank_name || employee?.has_banking) && !Boolean(employee?.is_remote));
+  }, [employee]);
+
+  function updateField(key, value) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function handleSave(event) {
+    event.preventDefault();
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    const required = ["bank_name", "account_holder_name", "account_number", "iban", "branch", "branch_code"];
+    if (required.some((key) => !String(form[key] || "").trim())) {
+      toast.error("Complete bank name, account title, account number, IBAN, branch, and branch code.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const data = await updateEmployeeBanking(
+        employeeId,
+        {
+          bank_name: form.bank_name.trim(),
+          account_holder_name: form.account_holder_name.trim(),
+          account_number: form.account_number.trim(),
+          iban: form.iban.replace(/\s/g, "").toUpperCase(),
+          branch: form.branch.trim(),
+          branch_code: form.branch_code.trim(),
+          swift_code: form.swift_code?.trim() || null,
+        },
+        accessToken
+      );
+      if (data?.employee) onEmployeeUpdate(data.employee);
+      toast.success(data?.message || "Banking details saved.");
+      setEditing(false);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not save banking details."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className={styles.section} id="sec-banking">
+      <div className={styles.sectionHead}>
+        <div className={styles.sectionHeadLeft}>
+          <div className={`${styles.bar} ${hasBanking ? styles.green : styles.orange}`} />
+          <div>
+            <div className={styles.sectionTitle}>Banking information</div>
+            <div className={styles.sectionDesc}>
+              {isRemote
+                ? "Remote employee — banking is completed in their profile checklist"
+                : hasBanking
+                  ? "On-site payroll account on file"
+                  : "On-site employee — add payroll banking details"}
+            </div>
+          </div>
+        </div>
+        <span
+          className={styles.chip}
+          style={{
+            background: hasBanking ? "var(--green-light)" : "var(--orange-light)",
+            color: hasBanking ? "var(--green)" : "var(--orange)",
+            fontWeight: 700,
+          }}
+        >
+          {hasBanking ? "On file" : "Needed"}
+        </span>
+      </div>
+      <div className={styles.sectionBody}>
+        {isRemote ? (
+          <p className={styles.emptySub} style={{ margin: 0 }}>
+            {hasBanking
+              ? "Banking details were submitted by the employee. Values are masked here for privacy."
+              : "Waiting for the employee to complete banking in Complete Profile."}
+          </p>
+        ) : editing ? (
+          <form onSubmit={handleSave} className={styles.formGrid} style={{ gap: 12 }}>
+            {[
+              ["bank_name", "Bank name"],
+              ["account_holder_name", "Account title"],
+              ["account_number", "Account number"],
+              ["iban", "IBAN"],
+              ["branch", "Branch"],
+              ["branch_code", "Branch code"],
+              ["swift_code", "SWIFT (optional)"],
+            ].map(([key, label]) => (
+              <label key={key} className={styles.field}>
+                <span>{label}</span>
+                <input
+                  value={form[key] || ""}
+                  onChange={(e) => updateField(key, e.target.value)}
+                  required={key !== "swift_code"}
+                  placeholder={key === "iban" ? "PK36SCBL0000001123456702" : undefined}
+                />
+              </label>
+            ))}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", gridColumn: "1 / -1" }}>
+              {hasBanking ? (
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => setEditing(false)}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+              ) : null}
+              <button type="submit" className={styles.primaryButton} disabled={saving}>
+                {saving ? "Saving…" : hasBanking ? "Update banking" : "Save banking"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <dl className={styles.employeeFactGrid}>
+              <div className={styles.employeeFact}>
+                <dt>Bank</dt>
+                <dd>{existing.bank_name || "-"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Account title</dt>
+                <dd>{existing.account_holder_name || "-"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Account number</dt>
+                <dd>{existing.account_number || "-"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>IBAN</dt>
+                <dd>{existing.iban || "-"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Branch</dt>
+                <dd>{existing.branch || "-"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>Branch code</dt>
+                <dd>{existing.branch_code || "-"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
+                <dt>SWIFT</dt>
+                <dd>{existing.swift_code || "-"}</dd>
+              </div>
+            </dl>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              style={{ marginTop: 12 }}
+              onClick={() => setEditing(true)}
+            >
+              Edit banking
+            </button>
+          </>
         )}
       </div>
     </div>
@@ -1116,6 +1319,10 @@ export default function EmployeeProfilePage({ params }) {
                 <dd>{employee.office_location || "-"}</dd>
               </div>
               <div className={styles.employeeFact}>
+                <dt>Work arrangement</dt>
+                <dd>{employee.is_remote ? "Remote" : "On-site / office-based"}</dd>
+              </div>
+              <div className={styles.employeeFact}>
                 <dt>Start date</dt>
                 <dd>{fmtDate(employee.start_date) || "-"}</dd>
               </div>
@@ -1148,6 +1355,11 @@ export default function EmployeeProfilePage({ params }) {
           </div>
         </div>
           <CompanyEmailSection employee={employee} />
+          <BankingManagementSection
+            employee={employee}
+            employeeId={employeeId}
+            onEmployeeUpdate={setEmployee}
+          />
           <CompanyAssetsSection employee={employee} />
         </>
       )}

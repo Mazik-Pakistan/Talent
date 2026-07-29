@@ -47,6 +47,22 @@ PROFILE_STEP_FLOW = {
 }
 
 
+def _employee_is_remote(employee: dict | None) -> bool:
+    return bool((employee or {}).get("is_remote"))
+
+
+def _profile_task_defs_for(employee: dict | None) -> list[dict]:
+    if _employee_is_remote(employee):
+        return list(PROFILE_TASK_DEFS)
+    return [task for task in PROFILE_TASK_DEFS if task["step"] != "employment"]
+
+
+def _profile_required_keys_for(employee: dict | None) -> list[str]:
+    if _employee_is_remote(employee):
+        return list(PROFILE_REQUIRED_KEYS)
+    return [key for key in PROFILE_REQUIRED_KEYS if key != "employment"]
+
+
 class EmployeeService:
     async def generate_employee_id(self, year: int | None = None, *, allocate: bool = False) -> dict:
         """US-024: Unique Employee ID in format EMP-000001.
@@ -488,6 +504,7 @@ class EmployeeService:
             "department": offer.get("department") or candidate.get("department"),
             "employment_type": offer.get("employment_type"),
             "office_location": offer.get("office_location") or candidate.get("office_location"),
+            "is_remote": bool(offer.get("is_remote") if "is_remote" in offer else candidate.get("is_remote")),
             "start_date": offer.get("start_date") or candidate.get("start_date"),
             "reporting_manager": offer.get("reporting_manager"),
             "monthly_salary": offer.get("monthly_salary"),
@@ -608,6 +625,22 @@ class EmployeeService:
             link="/dashboard/recruiter#employees-section",
             related_id=employee_id,
         )
+
+        # On-site hires: recruiter must add banking; nudge immediately after activation.
+        if not employee_doc.get("is_remote"):
+            banking_recipient = employee_doc.get("recruiter_id") or current_user.id
+            await create_notification(
+                recipient_id=banking_recipient,
+                recipient_role="recruiter",
+                notif_type="banking_required",
+                title="Banking details needed",
+                message=(
+                    f"Add payroll banking details for {candidate['full_name']} "
+                    f"({employee_id}) — on-site employees cannot enter this themselves."
+                ),
+                link=f"/dashboard/recruiter/employees/{employee_id}",
+                related_id=employee_id,
+            )
 
         return {
             "message": "Candidate converted to employee successfully.",
@@ -830,10 +863,13 @@ class EmployeeService:
             owner = str(employee.get("recruiter_id") or "")
             if owner and owner != str(current_user.id):
                 raise HTTPException(status_code=403, detail="Not allowed.")
+        # Recruiters manage on-site banking, so reveal full values for those employees.
+        # Remote employee banking stays masked on the recruiter view.
+        should_reveal = reveal_banking or not _employee_is_remote(employee)
         payload = self._public_employee(employee, include_onboarding=True)
         onboarding = dict(payload.get("onboarding") or {})
         banking = onboarding.get("employment")
-        onboarding["employment"] = decrypt_banking_payload(banking, mask=not reveal_banking)
+        onboarding["employment"] = decrypt_banking_payload(banking, mask=not should_reveal)
         payload["onboarding"] = onboarding
         progress = self._profile_progress(employee)
         payload["profile_progress"] = progress
@@ -1634,7 +1670,7 @@ class EmployeeService:
     def _profile_progress(self, employee: dict) -> dict:
         onboarding = employee.get("onboarding") or {}
         tasks = []
-        for task_def in PROFILE_TASK_DEFS:
+        for task_def in _profile_task_defs_for(employee):
             completed = bool(onboarding.get(task_def["step"]))
             tasks.append({**task_def, "completed": completed})
         completed_count = sum(1 for t in tasks if t["completed"])
@@ -1646,6 +1682,8 @@ class EmployeeService:
             "missing_fields": missing_fields,
             "tasks": tasks,
             "current_step": next((t["step"] for t in tasks if not t["completed"]), "submit"),
+            "is_remote": _employee_is_remote(employee),
+            "banking_managed_by": "employee" if _employee_is_remote(employee) else "recruiter",
         }
 
     async def get_profile_completion(self, current_user: CurrentUser) -> dict:
@@ -1663,6 +1701,7 @@ class EmployeeService:
         onboarding = employee.get("onboarding") or {}
         now = datetime.now(UTC)
         updates: dict = {"updated_at": now}
+        is_remote = _employee_is_remote(employee)
 
         step_handlers = {
             "personal": ("personal", request.personal, "Personal information is required."),
@@ -1676,6 +1715,14 @@ class EmployeeService:
 
         if request.step in step_handlers:
             field, payload, error = step_handlers[request.step]
+            if request.step == "employment" and not is_remote:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Banking details for on-site employees are managed by your recruiter. "
+                        "You can view them on your profile once they are added."
+                    ),
+                )
             if not payload:
                 raise HTTPException(status_code=400, detail=error)
             data = payload.model_dump(mode="json")
@@ -1721,7 +1768,7 @@ class EmployeeService:
                 }
             )
         elif request.step == "submit":
-            missing = [k for k in PROFILE_REQUIRED_KEYS if not onboarding.get(k)]
+            missing = [k for k in _profile_required_keys_for(employee) if not onboarding.get(k)]
             if missing:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -1744,6 +1791,7 @@ class EmployeeService:
         await database.employees.update_one({"_id": employee["_id"]}, {"$set": updates})
         refreshed = await database.employees.find_one({"_id": employee["_id"]})
         response_onboarding = dict(refreshed.get("onboarding") or {})
+        # On-site employees may view recruiter-entered banking read-only; remote see their own.
         response_onboarding["employment"] = decrypt_banking_payload(
             response_onboarding.get("employment"), mask=False
         )
@@ -1770,6 +1818,7 @@ class EmployeeService:
             "department": doc.get("department"),
             "employment_type": doc.get("employment_type"),
             "office_location": doc.get("office_location"),
+            "is_remote": bool(doc.get("is_remote")),
             "start_date": doc.get("start_date"),
             "reporting_manager": doc.get("reporting_manager"),
             "profile_status": doc.get("profile_status", "complete"),
@@ -1797,6 +1846,8 @@ class EmployeeService:
             "it_notes": doc.get("it_notes"),
             "orientation": doc.get("orientation"),
             "profile_picture": doc.get("profile_picture"),
+            "banking_managed_by": "employee" if bool(doc.get("is_remote")) else "recruiter",
+            "has_banking": bool((doc.get("onboarding") or {}).get("employment")),
         }
         if include_onboarding:
             payload["onboarding"] = doc.get("onboarding")
@@ -1823,6 +1874,88 @@ class EmployeeService:
             if owner and owner != str(current_user.id):
                 raise HTTPException(status_code=403, detail="Not allowed.")
         return employee
+
+    async def update_employee_banking(self, current_user: CurrentUser, employee_id: str, request) -> dict:
+        """Recruiter-managed banking for on-site / office-based employees."""
+        employee = await self._resolve_employee_for_recruiter(current_user, employee_id)
+        if _employee_is_remote(employee):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Remote employees enter and manage their own banking details in Complete Profile.",
+            )
+
+        data = request.model_dump(mode="json") if hasattr(request, "model_dump") else dict(request)
+        iban_hash = iban_fingerprint(data["iban"])
+        duplicate = await database.employees.find_one(
+            {
+                "onboarding.employment.iban_hash": iban_hash,
+                "_id": {"$ne": employee["_id"]},
+            }
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This IBAN is already registered to another employee.",
+            )
+
+        now = datetime.now(UTC)
+        had_banking = bool((employee.get("onboarding") or {}).get("employment"))
+        encrypted = encrypt_banking_payload(data)
+        encrypted["updated_by"] = "recruiter"
+        encrypted["updated_by_id"] = current_user.id
+        encrypted["updated_at"] = now.isoformat()
+
+        await database.employees.update_one(
+            {"_id": employee["_id"]},
+            {
+                "$set": {
+                    "onboarding.employment": encrypted,
+                    "updated_at": now,
+                }
+            },
+        )
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "employee_id": employee.get("employee_id"),
+                "email": employee.get("email"),
+                "actor_email": current_user.email,
+                "module": "employees",
+                "action": "recruiter_banking_updated" if had_banking else "recruiter_banking_added",
+                "outcome": "success",
+                "created_at": now,
+            }
+        )
+
+        await self._notify_employee(
+            employee,
+            notif_type="banking_updated" if had_banking else "banking_added",
+            title="Banking details updated" if had_banking else "Banking details added",
+            message=(
+                "Your recruiter updated your salary bank account details. "
+                "Open your profile to review them (view only)."
+                if had_banking
+                else "Your recruiter added your salary bank account details. "
+                "Open your profile to review them (view only)."
+            ),
+            link="/dashboard/employee/profile#sec-banking",
+            related_id=employee.get("employee_id"),
+        )
+
+        refreshed = await database.employees.find_one({"_id": employee["_id"]})
+        profile = await self.get_employee_profile(
+            current_user,
+            refreshed.get("employee_id") or employee_id,
+            reveal_banking=True,
+        )
+        return {
+            "message": (
+                "Banking details updated. The employee has been notified."
+                if had_banking
+                else "Banking details saved. The employee has been notified."
+            ),
+            "employee": profile["employee"],
+        }
 
     async def _notify_employee(
         self,

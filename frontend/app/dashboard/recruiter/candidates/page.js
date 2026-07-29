@@ -9,6 +9,7 @@ import {
   acceptOfferNegotiation,
   approveOffer,
   counterOfferNegotiation,
+  editAndResendOffer,
   extendOfferValidity,
   getApiErrorMessage,
   getOnboardingInProgress,
@@ -43,6 +44,7 @@ export default function RecruiterCandidatesPage() {
   const [extendingOfferId, setExtendingOfferId] = useState(null);
   const [itBusyOfferId, setItBusyOfferId] = useState(null);
   const [negoBusyId, setNegoBusyId] = useState(null);
+  const [negoBusyAction, setNegoBusyAction] = useState(null); // "accept" | "reject" | "edit"
   const [itEmailDrafts, setItEmailDrafts] = useState({});
   const [negoNotes, setNegoNotes] = useState({});
   const [counterTerms, setCounterTerms] = useState({});
@@ -50,6 +52,8 @@ export default function RecruiterCandidatesPage() {
   const [search, setSearch] = useState("");
   const [reminderTarget, setReminderTarget] = useState(null);
   const [negoPopup, setNegoPopup] = useState(null);
+  const [editingOffer, setEditingOffer] = useState(false);
+  const [editDraft, setEditDraft] = useState(null);
   const [pipelineView, setPipelineView] = useState("active");
   const [historicalCandidates, setHistoricalCandidates] = useState([]);
   const [historicalTotal, setHistoricalTotal] = useState(0);
@@ -64,7 +68,7 @@ export default function RecruiterCandidatesPage() {
     const docs = newCandidates.length;
     let hint = "Invite with offer → candidate signs → documents → IT → activate.";
     if (nego > 0) {
-      hint = `${nego} negotiation${nego === 1 ? "" : "s"} waiting — accept (issues v2) or reject.`;
+      hint = `${nego} clarification request${nego === 1 ? "" : "s"} waiting for recruiter response.`;
     } else if (ready > 0) {
       const waitingIt = readyCandidates.filter((c) => !c.can_activate).length;
       hint = waitingIt
@@ -154,8 +158,6 @@ export default function RecruiterCandidatesPage() {
     if (!negoPopup?.id) return null;
     return (
       counterTerms[negoPopup.id] || {
-        revised_salary: negoPopup.negotiation?.proposed_salary ?? negoPopup.monthly_salary ?? "",
-        revised_start_date: negoPopup.negotiation?.proposed_start_date || negoPopup.start_date || "",
         decision_summary: "",
       }
     );
@@ -346,19 +348,25 @@ export default function RecruiterCandidatesPage() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setNegoBusyId(offer.id);
+    setNegoBusyAction("accept");
     try {
       const data = await acceptOfferNegotiation(
         offer.id,
         { recruiter_note: (negoNotes[offer.id] || "").trim() || null },
         accessToken
       );
-      toast.success(data.message || "Negotiation accepted — v2 sent.");
+      toast.success(data.message || "Clarification response sent to the candidate.", {
+        toastId: `clarification-accept-${offer.id}`,
+      });
       setNegoPopup(null);
+      setEditingOffer(false);
+      setEditDraft(null);
       await loadCandidates();
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not accept negotiation."));
+      toast.error(getApiErrorMessage(err, "Could not resolve clarification."));
     } finally {
       setNegoBusyId(null);
+      setNegoBusyAction(null);
     }
   }
 
@@ -366,19 +374,25 @@ export default function RecruiterCandidatesPage() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setNegoBusyId(offer.id);
+    setNegoBusyAction("reject");
     try {
       const data = await rejectOfferNegotiation(
         offer.id,
         { recruiter_note: (negoNotes[offer.id] || "").trim() || null },
         accessToken
       );
-      toast.success(data.message || "Negotiation rejected.");
+      toast.success(data.message || "Clarification closed. Candidate notified.", {
+        toastId: `clarification-reject-${offer.id}`,
+      });
       setNegoPopup(null);
+      setEditingOffer(false);
+      setEditDraft(null);
       await loadCandidates();
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not reject negotiation."));
+      toast.error(getApiErrorMessage(err, "Could not close clarification."));
     } finally {
       setNegoBusyId(null);
+      setNegoBusyAction(null);
     }
   }
 
@@ -387,24 +401,154 @@ export default function RecruiterCandidatesPage() {
     if (!accessToken) return;
     const draft = counterTerms[offer.id] || {};
     setNegoBusyId(offer.id);
+    setNegoBusyAction("counter");
     try {
       const data = await counterOfferNegotiation(
         offer.id,
         {
           recruiter_note: (negoNotes[offer.id] || "").trim() || null,
-          revised_salary: draft.revised_salary ? Number(draft.revised_salary) : undefined,
-          revised_start_date: draft.revised_start_date || undefined,
           decision_summary: draft.decision_summary?.trim() || undefined,
         },
         accessToken
       );
-      toast.success(data.message || "Counter-offer sent.");
+      toast.success(data.message || "Clarification response sent.", {
+        toastId: `clarification-counter-${offer.id}`,
+      });
       setNegoPopup(null);
+      setEditingOffer(false);
+      setEditDraft(null);
       await loadCandidates();
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not send counter-offer."));
+      toast.error(getApiErrorMessage(err, "Could not send clarification response."));
     } finally {
       setNegoBusyId(null);
+      setNegoBusyAction(null);
+    }
+  }
+
+  function openClarificationPopup(offer) {
+    setNegoPopup(offer);
+    setEditingOffer(false);
+    setEditDraft(buildOfferEditDraft(offer));
+  }
+
+  function updateEditDraft(field, value) {
+    setEditDraft((current) => ({ ...(current || {}), [field]: value }));
+  }
+
+  function updateBreakdownRow(index, field, value) {
+    setEditDraft((current) => {
+      const rows = [...(current?.salary_breakdown || [])];
+      rows[index] = { ...rows[index], [field]: value };
+      return { ...current, salary_breakdown: rows };
+    });
+  }
+
+  function addBreakdownRow() {
+    setEditDraft((current) => ({
+      ...current,
+      salary_breakdown: [...(current?.salary_breakdown || []), { label: "", amount: "" }],
+    }));
+  }
+
+  function removeBreakdownRow(index) {
+    setEditDraft((current) => ({
+      ...current,
+      salary_breakdown: (current?.salary_breakdown || []).filter((_, i) => i !== index),
+    }));
+  }
+
+  function toggleBenefit(index) {
+    setEditDraft((current) => {
+      const rows = [...(current?.benefits || [])];
+      rows[index] = { ...rows[index], selected: !rows[index].selected };
+      return { ...current, benefits: rows };
+    });
+  }
+
+  function addCustomBenefit() {
+    const label = window.prompt("Benefit label");
+    if (!label?.trim()) return;
+    setEditDraft((current) => ({
+      ...current,
+      benefits: [
+        ...(current?.benefits || []),
+        {
+          id: label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+          label: label.trim(),
+          selected: true,
+        },
+      ],
+    }));
+  }
+
+  async function handleEditAndResend(offer) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken || !editDraft) return;
+    if (!editDraft.job_title?.trim() || !editDraft.department?.trim() || !editDraft.reporting_manager?.trim()) {
+      toast.error("Job title, department, and reporting manager are required.");
+      return;
+    }
+    const salaryRaw = unformatMoney(editDraft.monthly_salary);
+    if (!editDraft.start_date || salaryRaw === "" || Number.isNaN(Number(salaryRaw))) {
+      toast.error("Start date and monthly salary are required.");
+      return;
+    }
+
+    const startDate = String(editDraft.start_date).includes("T")
+      ? String(editDraft.start_date).split("T")[0]
+      : String(editDraft.start_date).trim();
+
+    const allowances = (editDraft.salary_breakdown || [])
+      .map((row) => ({
+        label: String(row.label || "").trim(),
+        amount: Number(unformatMoney(row.amount)),
+      }))
+      .filter((row) => row.label && Number.isFinite(row.amount) && row.amount > 0);
+
+    setNegoBusyId(offer.id);
+    setNegoBusyAction("edit");
+    try {
+      const payload = {
+        job_title: editDraft.job_title.trim(),
+        department: editDraft.department.trim(),
+        employment_type: editDraft.employment_type || "Full-time",
+        office_location: editDraft.office_location?.trim() || null,
+        reporting_manager: editDraft.reporting_manager.trim(),
+        start_date: startDate,
+        monthly_salary: Number(salaryRaw),
+        currency: (editDraft.currency || "PKR").trim().toUpperCase() || "PKR",
+        allowances,
+        salary_breakdown: allowances,
+        benefits: (editDraft.benefits || [])
+          .filter((b) => String(b.label || "").trim())
+          .map((b) => ({
+            id: String(b.id || b.label).trim().slice(0, 64) || undefined,
+            label: String(b.label).trim(),
+            selected: b.selected !== false,
+          })),
+        offer_expiry_days: Math.min(90, Math.max(1, Number(editDraft.offer_expiry_days) || 14)),
+        terms: editDraft.terms?.trim() || "",
+        message_to_candidate: editDraft.message_to_candidate?.trim() || null,
+        recruiter_note: (negoNotes[offer.id] || "").trim() || null,
+        decision_summary:
+          (counterTerms[offer.id]?.decision_summary || "").trim() ||
+          "Offer letter updated after clarification and resent.",
+      };
+      const data = await editAndResendOffer(offer.id, payload, accessToken);
+      toast.success(data.message || "Updated offer resent to the candidate.", {
+        toastId: `offer-edit-resend-${offer.id}`,
+        autoClose: 5000,
+      });
+      setNegoPopup(null);
+      setEditingOffer(false);
+      setEditDraft(null);
+      await loadCandidates();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not edit and resend offer."));
+    } finally {
+      setNegoBusyId(null);
+      setNegoBusyAction(null);
     }
   }
 
@@ -533,7 +677,11 @@ export default function RecruiterCandidatesPage() {
             placeItems: "center",
             padding: 16,
           }}
-          onClick={() => setNegoPopup(null)}
+          onClick={() => {
+            setNegoPopup(null);
+            setEditingOffer(false);
+            setEditDraft(null);
+          }}
         >
           <div
             style={{
@@ -580,7 +728,7 @@ export default function RecruiterCandidatesPage() {
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "var(--navy)" }}>
-                    Offer negotiation review
+                    Offer clarification review
                   </h3>
                   <p
                     style={{
@@ -601,12 +749,16 @@ export default function RecruiterCandidatesPage() {
                   className={styles.chip}
                   style={{ background: "var(--orange-light)", color: "var(--orange)", borderColor: "transparent", whiteSpace: "nowrap" }}
                 >
-                  Awaiting your decision
+                  Awaiting your response
                 </span>
                 <button
                   type="button"
                   aria-label="Close"
-                  onClick={() => setNegoPopup(null)}
+                  onClick={() => {
+                    setNegoPopup(null);
+                    setEditingOffer(false);
+                    setEditDraft(null);
+                  }}
                   style={{
                     width: 32,
                     height: 32,
@@ -627,11 +779,6 @@ export default function RecruiterCandidatesPage() {
             </div>
 
             <div style={{ padding: "18px 24px", overflowY: "auto", flex: 1 }}>
-              <RoundProgress
-                used={negoPopup.negotiation_rounds_used || 0}
-                max={negoPopup.negotiation_max_rounds || 3}
-              />
-
               <div style={{ display: "grid", gap: 14, marginTop: 14 }}>
                 <OfferSummaryCard
                   offer={negoPopup}
@@ -640,8 +787,8 @@ export default function RecruiterCandidatesPage() {
                   description="Open the PDF to verify the exact letter the candidate received."
                   compact
                 />
-                <NegotiationCompare offer={negoPopup} />
-                <NegotiationTimeline history={negoPopup.negotiation_history} />
+                <ClarificationSummary offer={negoPopup} />
+                <ClarificationTimeline history={negoPopup.negotiation_history} />
               </div>
 
               <div
@@ -661,48 +808,255 @@ export default function RecruiterCandidatesPage() {
                     marginBottom: 12,
                     display: "flex",
                     alignItems: "center",
+                    justifyContent: "space-between",
                     gap: 8,
+                    flexWrap: "wrap",
                   }}
                 >
-                  <EditIcon />
-                  Counter-offer terms
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <EditIcon />
+                    {editingOffer ? "Edit offer letter" : "Recruiter response"}
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() => {
+                      if (!editingOffer) {
+                        setEditDraft(buildOfferEditDraft(negoPopup));
+                        setEditingOffer(true);
+                      } else {
+                        setEditingOffer(false);
+                      }
+                    }}
+                  >
+                    {editingOffer ? "Hide editor" : "Edit offer letter"}
+                  </button>
                 </div>
+
+                {editingOffer && editDraft ? (
+                  <div style={{ display: "grid", gap: 14, marginBottom: 12 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        background: "#fff",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase" }}>
+                          Monthly base
+                        </div>
+                        <div style={{ fontWeight: 700, color: "var(--navy)" }}>
+                          {editDraft.currency || "PKR"} {formatMoney(editDraft.monthly_salary) || "0"}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase" }}>
+                          Allowances
+                        </div>
+                        <div style={{ fontWeight: 700, color: "var(--navy)" }}>
+                          {editDraft.currency || "PKR"} {formatMoney(sumAllowances(editDraft.salary_breakdown))}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase" }}>
+                          Total compensation
+                        </div>
+                        <div style={{ fontWeight: 800, color: "var(--navy)" }}>
+                          {editDraft.currency || "PKR"}{" "}
+                          {formatMoney(
+                            (Number(unformatMoney(editDraft.monthly_salary)) || 0) +
+                              sumAllowances(editDraft.salary_breakdown)
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={styles.formGrid} style={{ marginBottom: 0 }}>
+                      <label className={styles.field}>
+                        <span>Job title</span>
+                        <input value={editDraft.job_title} onChange={(e) => updateEditDraft("job_title", e.target.value)} />
+                      </label>
+                      <label className={styles.field}>
+                        <span>Department</span>
+                        <input value={editDraft.department} onChange={(e) => updateEditDraft("department", e.target.value)} />
+                      </label>
+                      <label className={styles.field}>
+                        <span>Employment type</span>
+                        <select
+                          value={editDraft.employment_type}
+                          onChange={(e) => updateEditDraft("employment_type", e.target.value)}
+                        >
+                          <option>Full-time</option>
+                          <option>Part-time</option>
+                          <option>Contract</option>
+                          <option>Internship</option>
+                        </select>
+                      </label>
+                      <label className={styles.field}>
+                        <span>Office location</span>
+                        <input
+                          value={editDraft.office_location}
+                          onChange={(e) => updateEditDraft("office_location", e.target.value)}
+                        />
+                      </label>
+                      <label className={styles.field}>
+                        <span>Reporting manager</span>
+                        <input
+                          value={editDraft.reporting_manager}
+                          onChange={(e) => updateEditDraft("reporting_manager", e.target.value)}
+                        />
+                      </label>
+                      <label className={styles.field}>
+                        <span>Start date</span>
+                        <input
+                          type="date"
+                          value={normalizeDateInput(editDraft.start_date)}
+                          onChange={(e) => updateEditDraft("start_date", e.target.value)}
+                        />
+                      </label>
+                      <label className={styles.field}>
+                        <span>Monthly base salary</span>
+                        <input
+                          inputMode="decimal"
+                          value={formatMoney(editDraft.monthly_salary)}
+                          onChange={(e) => updateEditDraft("monthly_salary", sanitizeMoneyInput(e.target.value))}
+                          placeholder="e.g. 150,000"
+                        />
+                      </label>
+                      <label className={styles.field}>
+                        <span>Currency</span>
+                        <input value={editDraft.currency} onChange={(e) => updateEditDraft("currency", e.target.value)} />
+                      </label>
+                      <label className={styles.field}>
+                        <span>Offer expiry (days)</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="90"
+                          value={editDraft.offer_expiry_days}
+                          onChange={(e) => updateEditDraft("offer_expiry_days", e.target.value)}
+                        />
+                      </label>
+                      <label className={styles.field} style={{ gridColumn: "1 / -1" }}>
+                        <span>Message to candidate</span>
+                        <textarea
+                          rows={2}
+                          value={editDraft.message_to_candidate}
+                          onChange={(e) => updateEditDraft("message_to_candidate", e.target.value)}
+                        />
+                      </label>
+                      <label className={styles.field} style={{ gridColumn: "1 / -1" }}>
+                        <span>Terms & conditions</span>
+                        <textarea
+                          rows={4}
+                          value={editDraft.terms}
+                          onChange={(e) => updateEditDraft("terms", e.target.value)}
+                        />
+                      </label>
+                    </div>
+
+                    <div
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: 12,
+                        padding: 12,
+                        background: "#fff",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                        <div>
+                          <strong style={{ fontSize: 13, color: "var(--navy)" }}>Allowances</strong>
+                          <div className={styles.mutedText} style={{ fontSize: 12 }}>
+                            Paid on top of base salary — not deducted from it.
+                          </div>
+                        </div>
+                        <button type="button" className={styles.secondaryButton} onClick={addBreakdownRow}>
+                          Add allowance
+                        </button>
+                      </div>
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {(editDraft.salary_breakdown || []).length ? (
+                          (editDraft.salary_breakdown || []).map((row, index) => (
+                            <div
+                              key={`bd-${index}`}
+                              style={{ display: "grid", gridTemplateColumns: "1fr 160px auto", gap: 8, alignItems: "center" }}
+                            >
+                              <input
+                                placeholder="Allowance label"
+                                value={row.label}
+                                onChange={(e) => updateBreakdownRow(index, "label", e.target.value)}
+                              />
+                              <input
+                                inputMode="decimal"
+                                placeholder="Amount"
+                                value={formatMoney(row.amount)}
+                                onChange={(e) =>
+                                  updateBreakdownRow(index, "amount", sanitizeMoneyInput(e.target.value))
+                                }
+                              />
+                              <button
+                                type="button"
+                                className={styles.secondaryButton}
+                                onClick={() => removeBreakdownRow(index)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <p className={styles.emptySub} style={{ margin: 0 }}>
+                            No allowances yet.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: 12,
+                        padding: 12,
+                        background: "#fff",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                        <strong style={{ fontSize: 13, color: "var(--navy)" }}>Benefits</strong>
+                        <button type="button" className={styles.secondaryButton} onClick={addCustomBenefit}>
+                          Add benefit
+                        </button>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                        {(editDraft.benefits || []).map((b, index) => (
+                          <label
+                            key={b.id || b.label || index}
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              alignItems: "center",
+                              padding: "8px 10px",
+                              borderRadius: 10,
+                              border: "1px solid var(--border-soft)",
+                              background: b.selected !== false ? "var(--blue-lighter)" : "#fafafa",
+                            }}
+                          >
+                            <input type="checkbox" checked={b.selected !== false} onChange={() => toggleBenefit(index)} />
+                            <span>{b.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className={styles.formGrid} style={{ marginBottom: 0 }}>
-                  <label className={styles.field}>
-                    <span>Revised salary ({negoPopup.currency})</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={activeCounterDraft?.revised_salary ?? ""}
-                      onChange={(e) =>
-                        setCounterTerms((current) => ({
-                          ...current,
-                          [negoPopup.id]: {
-                            ...(current[negoPopup.id] || {}),
-                            revised_salary: e.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className={styles.field}>
-                    <span>Revised joining date</span>
-                    <input
-                      type="date"
-                      value={activeCounterDraft?.revised_start_date ?? ""}
-                      onChange={(e) =>
-                        setCounterTerms((current) => ({
-                          ...current,
-                          [negoPopup.id]: {
-                            ...(current[negoPopup.id] || {}),
-                            revised_start_date: e.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
                   <label className={styles.field} style={{ gridColumn: "1 / -1" }}>
-                    <span>Counter-offer summary</span>
+                    <span>Resolution summary</span>
                     <textarea
                       rows={3}
                       value={activeCounterDraft?.decision_summary ?? ""}
@@ -715,21 +1069,21 @@ export default function RecruiterCandidatesPage() {
                           },
                         }))
                       }
-                      placeholder="Explain the counter-offer and what changed in this round."
+                      placeholder="Explain the clarification response or what changed in the edited offer."
                     />
                   </label>
                 </div>
               </div>
 
               <label className={styles.field} style={{ marginTop: 14 }}>
-                <span>Decision note to candidate</span>
+                <span>Reply to candidate</span>
                 <textarea
                   rows={3}
                   value={negoNotes[negoPopup.id] || ""}
                   onChange={(e) =>
                     setNegoNotes((current) => ({ ...current, [negoPopup.id]: e.target.value }))
                   }
-                  placeholder="Explain why you accepted, rejected, or adjusted the salary, allowances, benefits, or joining date."
+                  placeholder="Answer the clarification directly so the candidate can proceed."
                 />
               </label>
             </div>
@@ -746,16 +1100,16 @@ export default function RecruiterCandidatesPage() {
                 background: "var(--card)",
               }}
             >
-              <button type="button" className={styles.secondaryButton} onClick={() => setNegoPopup(null)}>
-                Review later
-              </button>
               <button
                 type="button"
                 className={styles.secondaryButton}
-                disabled={negoBusyId === negoPopup.id}
-                onClick={() => handleNegoCounter(negoPopup)}
+                onClick={() => {
+                  setNegoPopup(null);
+                  setEditingOffer(false);
+                  setEditDraft(null);
+                }}
               >
-                {negoBusyId === negoPopup.id ? "Saving…" : "Send counter-offer"}
+                Review later
               </button>
               <button
                 type="button"
@@ -763,16 +1117,33 @@ export default function RecruiterCandidatesPage() {
                 disabled={negoBusyId === negoPopup.id}
                 onClick={() => handleNegoReject(negoPopup)}
               >
-                {negoBusyId === negoPopup.id ? "Saving…" : "Reject negotiation"}
+                {negoBusyId === negoPopup.id && negoBusyAction === "reject"
+                  ? "Saving…"
+                  : "Close clarification"}
               </button>
-              <button
-                type="button"
-                className={styles.primaryButton}
-                disabled={negoBusyId === negoPopup.id}
-                onClick={() => handleNegoAccept(negoPopup)}
-              >
-                {negoBusyId === negoPopup.id ? "Saving…" : "Accept and send revised offer"}
-              </button>
+              {editingOffer ? (
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  disabled={negoBusyId === negoPopup.id}
+                  onClick={() => handleEditAndResend(negoPopup)}
+                >
+                  {negoBusyId === negoPopup.id && negoBusyAction === "edit"
+                    ? "Sending…"
+                    : "Save & resend updated offer"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  disabled={negoBusyId === negoPopup.id}
+                  onClick={() => handleNegoAccept(negoPopup)}
+                >
+                  {negoBusyId === negoPopup.id && negoBusyAction === "accept"
+                    ? "Sending…"
+                    : "Send clarification response"}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -785,10 +1156,9 @@ export default function RecruiterCandidatesPage() {
           <div className={styles.sectionHeadLeft}>
             <div className={`${styles.bar} ${styles.orange}`} />
             <div>
-              <div className={styles.sectionTitle}>Offer negotiations</div>
+              <div className={styles.sectionTitle}>Offer clarifications</div>
               <div className={styles.sectionDesc}>
-                One-round salary / start date / benefits proposals. Accept issues offer v2; reject leaves the
-                original offer.
+                Candidate questions on the offer letter. Respond here so they can continue signing.
               </div>
             </div>
           </div>
@@ -807,23 +1177,19 @@ export default function RecruiterCandidatesPage() {
                     </span>
                   </div>
                   <div className={styles.rowActions}>
-                    <button type="button" className={styles.primaryButton} onClick={() => setNegoPopup(offer)}>
+                    <button type="button" className={styles.primaryButton} onClick={() => openClarificationPopup(offer)}>
                       Review
                     </button>
                   </div>
                 </div>
                 <div className={styles.mutedText} style={{ marginTop: 6 }}>
-                  <strong style={{ color: "var(--navy)" }}>Current package:</strong> {offer.currency}{" "}
-                  {Number(offer.monthly_salary || 0).toLocaleString()} · {offer.start_date || "—"}
-                  {"  "}&middot;{"  "}
-                  <strong style={{ color: "var(--navy)" }}>Candidate proposal:</strong> {offer.currency}{" "}
-                  {Number(offer.negotiation?.proposed_salary || 0).toLocaleString()} ·{" "}
-                  {offer.negotiation?.proposed_start_date || "—"}
+                  <strong style={{ color: "var(--navy)" }}>Clarification:</strong>{" "}
+                  {offer.negotiation?.note || "No clarification note provided."}
                 </div>
               </div>
             ))
           ) : (
-            <p className={styles.emptySub}>No pending negotiations.</p>
+            <p className={styles.emptySub}>No pending clarifications.</p>
           )}
         </div>
       </div>
@@ -851,7 +1217,7 @@ export default function RecruiterCandidatesPage() {
                     <strong>{offer.candidate_name}</strong>
                     <div className={styles.mutedText}>
                       {offer.candidate_email} · {offer.job_title} · {offer.status}
-                      {offer.negotiation?.status === "rejected" ? " · negotiation rejected" : ""}
+                      {offer.negotiation?.status === "closed" ? " · clarification closed" : ""}
                     </div>
                     <div className={styles.chipRow} style={{ marginTop: 8 }}>
                       {offer.is_expired ? (
@@ -1199,18 +1565,74 @@ export default function RecruiterCandidatesPage() {
   );
 }
 
-function NegotiationCompare({ offer }) {
-  const n = offer.negotiation || {};
-  const currentBenefits = (offer.benefits || []).filter((item) => item?.selected !== false);
-  const proposedBenefits = (n.proposed_benefits || []).filter((item) => item?.selected !== false);
-  const currentLabels = new Set(currentBenefits.map((item) => item.label));
-  const currentSalary = Number(offer.monthly_salary || 0);
-  const proposedSalary = Number(n.proposed_salary || 0);
-  const salaryDeltaPct =
-    currentSalary > 0 && proposedSalary > 0
-      ? Math.round(((proposedSalary - currentSalary) / currentSalary) * 100)
-      : null;
+function unformatMoney(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).replace(/,/g, "").trim();
+}
 
+function sanitizeMoneyInput(value) {
+  const raw = String(value || "").replace(/,/g, "");
+  if (raw === "" || /^\d*\.?\d*$/.test(raw)) return raw;
+  return unformatMoney(value).replace(/[^\d.]/g, "");
+}
+
+function formatMoney(value) {
+  const raw = unformatMoney(value);
+  if (raw === "" || raw == null) return "";
+  if (raw === ".") return ".";
+  const [whole, fraction] = String(raw).split(".");
+  const wholeFormatted = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return fraction !== undefined ? `${wholeFormatted}.${fraction}` : wholeFormatted;
+}
+
+function sumAllowances(rows = []) {
+  return (rows || []).reduce((sum, row) => sum + (Number(unformatMoney(row.amount)) || 0), 0);
+}
+
+function normalizeDateInput(value) {
+  if (!value) return "";
+  const text = String(value);
+  if (text.includes("T")) return text.split("T")[0];
+  return text.slice(0, 10);
+}
+
+function buildOfferEditDraft(offer) {
+  const expiresAt = offer?.expires_at ? new Date(offer.expires_at) : null;
+  const sentAt = offer?.sent_at ? new Date(offer.sent_at) : null;
+  let offerExpiryDays = 14;
+  if (expiresAt && sentAt && !Number.isNaN(expiresAt.getTime()) && !Number.isNaN(sentAt.getTime())) {
+    const days = Math.round((expiresAt.getTime() - sentAt.getTime()) / (1000 * 60 * 60 * 24));
+    if (days >= 1 && days <= 90) offerExpiryDays = days;
+  }
+  const allowanceRows = offer?.allowances?.length ? offer.allowances : offer?.salary_breakdown || [];
+  return {
+    job_title: offer?.job_title || "",
+    department: offer?.department || "",
+    employment_type: offer?.employment_type || "Full-time",
+    office_location: offer?.office_location || "",
+    reporting_manager: offer?.reporting_manager || "",
+    start_date: normalizeDateInput(offer?.start_date),
+    monthly_salary: offer?.monthly_salary == null ? "" : String(offer.monthly_salary),
+    currency: offer?.currency || "PKR",
+    offer_expiry_days: offerExpiryDays,
+    message_to_candidate: offer?.message_to_candidate || "",
+    terms: offer?.terms || "",
+    salary_breakdown: allowanceRows.map((row) => ({
+      label: row.label || "",
+      amount: row.amount == null || row.amount === "" ? "" : String(row.amount),
+    })),
+    benefits: (offer?.benefits || []).map((b) => ({
+      id: b.id || b.label,
+      label: b.label,
+      selected: b.selected !== false,
+    })),
+  };
+}
+
+function ClarificationSummary({ offer }) {
+  const clarification = offer.negotiation || {};
+  const currentBenefits = (offer.benefits || []).filter((item) => item?.selected !== false);
+  const currentSalary = Number(offer.monthly_salary || 0);
   return (
     <div
       style={{
@@ -1233,7 +1655,7 @@ function NegotiationCompare({ offer }) {
             gap: 6,
           }}
         >
-          <FileTextIcon /> Current package
+          <FileTextIcon /> Current offer context
         </div>
         <div style={{ display: "grid", gap: 10, color: "var(--text-muted)", fontSize: 13 }}>
           <div>
@@ -1270,63 +1692,30 @@ function NegotiationCompare({ offer }) {
             gap: 6,
           }}
         >
-          <MessageIcon /> Candidate proposal
+          <MessageIcon /> Candidate clarification
         </div>
         <div style={{ display: "grid", gap: 10, color: "var(--navy-2)", fontSize: 13 }}>
           <div>
-            <strong style={{ color: "var(--navy)" }}>Salary:</strong> {offer.currency} {proposedSalary.toLocaleString()}
-            {salaryDeltaPct !== null && salaryDeltaPct !== 0 && (
-              <span
-                style={{
-                  marginLeft: 8,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: "#fff",
-                  color: "var(--navy-2)",
-                  padding: "2px 7px",
-                  borderRadius: 999,
-                }}
-              >
-                {salaryDeltaPct > 0 ? "+" : ""}
-                {salaryDeltaPct}%
-              </span>
-            )}
+            <strong style={{ color: "var(--navy)" }}>Request:</strong>{" "}
+            {clarification.note || "No clarification note provided."}
           </div>
-          <div>
-            <strong style={{ color: "var(--navy)" }}>Joining date:</strong> {n.proposed_start_date || "—"}
-          </div>
-          <div>
-            <strong style={{ color: "var(--navy)" }}>Benefits:</strong>{" "}
-            {proposedBenefits.length
-              ? proposedBenefits
-                  .map((item) => item.label)
-                  .reduce((nodes, label, index) => {
-                    if (index > 0) nodes.push(", ");
-                    nodes.push(
-                      currentLabels.has(label) ? (
-                        label
-                      ) : (
-                        <span key={label} style={{ fontWeight: 700, color: "var(--navy)" }}>
-                          {label} (new)
-                        </span>
-                      )
-                    );
-                    return nodes;
-                  }, [])
-              : "No change requested"}
-          </div>
-          {n.note && (
+          {clarification.requested_at && (
             <div>
-              <strong>Candidate note:</strong> {n.note}
+              <strong>Submitted:</strong> {formatDate(clarification.requested_at)}
             </div>
           )}
+          {clarification.recruiter_note ? (
+            <div>
+              <strong>Last recruiter note:</strong> {clarification.recruiter_note}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
   );
 }
 
-function NegotiationTimeline({ history = [] }) {
+function ClarificationTimeline({ history = [] }) {
   if (!history.length) return null;
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 16, background: "#fff" }}>
@@ -1343,7 +1732,7 @@ function NegotiationTimeline({ history = [] }) {
           gap: 6,
         }}
       >
-        <ClockIcon /> Negotiation timeline
+        <ClockIcon /> Clarification timeline
       </div>
       <div style={{ display: "grid", gap: 10 }}>
         {history.map((entry, index) => (
@@ -1355,21 +1744,6 @@ function NegotiationTimeline({ history = [] }) {
             {entry.note ? <div style={{ marginTop: 4, fontSize: 12.5, color: "var(--text-muted)" }}>{entry.note}</div> : null}
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-
-function RoundProgress({ used = 0, max = 3 }) {
-  const safeMax = max > 0 ? max : 3;
-  const percent = Math.min(100, Math.round((used / safeMax) * 100));
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--text-faint)", whiteSpace: "nowrap" }}>
-        Round {used} of {safeMax}
-      </span>
-      <div style={{ flex: 1, height: 5, borderRadius: 999, background: "var(--border-soft)", overflow: "hidden" }}>
-        <div style={{ width: `${percent}%`, height: "100%", background: "var(--blue)" }} />
       </div>
     </div>
   );

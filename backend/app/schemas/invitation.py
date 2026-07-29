@@ -25,8 +25,10 @@ class CreateInvitationRequest(BaseModel):
     job_title: str = Field(min_length=2, max_length=120)
     department: str = Field(min_length=2, max_length=120)
     office_location: str | None = Field(default=None, max_length=120)
+    # Remote employees enter banking themselves; on-site banking is recruiter-managed.
+    is_remote: bool = False
     start_date: date | None = None
-    expires_in_days: int = Field(default=7, ge=1, le=30)
+    expires_in_days: int = Field(default=365, ge=1, le=365)
     # When present, invitation email includes the offer letter (new primary flow).
     offer: OfferTermsPayload | None = None
 
@@ -78,6 +80,7 @@ class CreateInvitationRequest(BaseModel):
         self.offer.department = self.department
         if self.office_location and not self.offer.office_location:
             self.offer.office_location = self.office_location
+        self.offer.is_remote = bool(self.is_remote or self.offer.is_remote)
         if self.start_date and (not self.offer.start_date or self.offer.start_date in ("", "—")):
             self.offer.start_date = self.start_date.isoformat()
         return self

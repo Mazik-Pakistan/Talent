@@ -211,7 +211,9 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
         nextList[0]
       ) {
         const newest = nextList[0];
-        toast.info(`${newest.title}: ${newest.message?.slice(0, 80) || "New notification"}`);
+        toast.info(`${newest.title}: ${newest.message?.slice(0, 100) || "New notification"}`, {
+          toastId: `recruiter-notif-${newest.id || newest.title}`,
+        });
       }
       lastUnreadRef.current = nextUnread;
       setNotifications(nextList);

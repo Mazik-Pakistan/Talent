@@ -55,14 +55,8 @@ COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "office_location": ("office_location", "office", "location", "office location"),
     "employment_type": ("employment_type", "employment type", "type"),
+    "is_remote": ("is_remote", "remote", "remote employee", "work mode", "work_mode"),
     "currency": ("currency", "curr"),
-    "expires_in_days": (
-        "expires_in_days",
-        "expires",
-        "expiry days",
-        "invite expiry days",
-        "invite link days",
-    ),
     "offer_expiry_days": ("offer_expiry_days", "offer expiry", "offer expiry days"),
     "message_to_candidate": (
         "message_to_candidate",
@@ -108,8 +102,8 @@ TEMPLATE_CORE_HEADERS = [
 TEMPLATE_OFFER_META_HEADERS = [
     "Office location",
     "Employment type",
+    "Remote (Yes/No)",
     "Currency",
-    "Invite link days",
     "Offer expiry days",
     "Message to candidate",
     "Offer terms",
@@ -136,8 +130,8 @@ TEMPLATE_SAMPLE_PAY = {
 TEMPLATE_SAMPLE_META = [
     "Karachi",
     "Full-time",
+    "No",
     "PKR",
-    "7",
     "14",
     "Welcome to the team!",
     "",  # offer terms — blank uses standard company terms
@@ -478,7 +472,6 @@ def row_to_candidate(
     if email and "@" not in email:
         missing_fields.append("email (invalid)")
 
-    expires_raw = get("expires_in_days")
     offer_exp_raw = get("offer_expiry_days")
 
     # Salary breakdown from Pay: columns
@@ -530,8 +523,9 @@ def row_to_candidate(
         "breakdown_total": breakdown_total if salary_breakdown else None,
         "office_location": get("office_location") or None,
         "employment_type": get("employment_type") or "Full-time",
+        "is_remote": _is_truthy_flag(get("is_remote")),
         "currency": (get("currency") or "PKR").upper(),
-        "expires_in_days": int(expires_raw) if expires_raw.isdigit() else 7,
+        "expires_in_days": 365,
         "offer_expiry_days": int(offer_exp_raw) if offer_exp_raw.isdigit() else 14,
         "message_to_candidate": get("message_to_candidate") or None,
         "terms": terms,

@@ -1,5 +1,6 @@
-"""Offer Letter cycle — invite+offer, sign/negotiate, then docs → IT → activate."""
+"""Offer Letter cycle — invite+offer, candidate clarification/sign, then docs → IT → activate."""
 
+import threading
 from datetime import UTC, datetime, timedelta
 
 from bson import ObjectId
@@ -16,6 +17,7 @@ from app.schemas.offer import (
     OfferApproveRequest,
     OfferCreateRequest,
     OfferDeclineRequest,
+    OfferEditResendRequest,
     OfferExtendValidityRequest,
     OfferNegotiateRequest,
     OfferSignRequest,
@@ -27,6 +29,22 @@ from app.services.email_service import email_service
 
 ACTIVE_OFFER_STATUSES = ("sent", "viewed", "signed")
 MAX_NEGOTIATION_ROUNDS = 3
+
+
+def _iso(value):
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
+def _send_email_bg(fn, **kwargs) -> None:
+    """Fire-and-forget SMTP so API responses (and toasts) are not blocked by mail latency."""
+
+    def _run() -> None:
+        try:
+            fn(**kwargs)
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 class OfferService:
@@ -221,7 +239,7 @@ class OfferService:
         return {"offers": [self._public(o) for o in offers]}
 
     async def list_pending_negotiations(self, current_user: CurrentUser) -> dict:
-        query: dict = {"negotiation.status": "pending", "status": {"$in": ["sent", "viewed"]}}
+        query: dict = {"negotiation.status": "pending", "status": {"$in": ["sent", "viewed", "expired"]}}
         if current_user.role != "super_admin":
             query["recruiter_id"] = current_user.id
         docs = await database.offer_letters.find(query).sort("negotiation.requested_at", -1).to_list(length=50)
@@ -253,7 +271,7 @@ class OfferService:
         if negotiation.get("status") == "pending":
             raise HTTPException(
                 status_code=409,
-                detail="Your negotiation request is pending. Wait for your recruiter to respond before signing.",
+                detail="Your clarification request is pending. Wait for your recruiter to respond before signing.",
             )
 
         expires_at = offer.get("expires_at")
@@ -267,7 +285,7 @@ class OfferService:
                 )
                 raise HTTPException(
                     status_code=410,
-                    detail="This offer letter has expired. Ask your recruiter to resend it.",
+                    detail="This offer letter has expired. Ask your recruiter to extend or resend it.",
                 )
 
         now = datetime.now(UTC)
@@ -380,39 +398,21 @@ class OfferService:
         offer = await self._find(offer_id)
         self._assert_owner(current_user, offer)
         if offer["status"] not in ("sent", "viewed"):
-            raise HTTPException(status_code=409, detail="This offer cannot be negotiated.")
-        rounds_used = int(offer.get("negotiation_rounds_used") or 0)
-        if rounds_used >= int(offer.get("negotiation_max_rounds") or MAX_NEGOTIATION_ROUNDS):
-            raise HTTPException(
-                status_code=409,
-                detail="Maximum negotiation rounds reached. You can accept or decline this offer.",
-            )
+            raise HTTPException(status_code=409, detail="This offer cannot receive clarification requests.")
         negotiation = offer.get("negotiation") or {}
         if negotiation.get("status") == "pending":
-            raise HTTPException(status_code=409, detail="A negotiation request is already pending.")
+            raise HTTPException(status_code=409, detail="A clarification request is already pending.")
 
         now = datetime.now(UTC)
-        proposed_allowances = [
-            row.model_dump() if hasattr(row, "model_dump") else row for row in (request.proposed_allowances or [])
-        ]
-        proposed_benefits = [b.model_dump() for b in request.proposed_benefits]
-        requested_changes = request.requested_changes or self._derive_requested_changes(
-            current_salary=offer.get("monthly_salary"),
-            proposed_salary=request.proposed_salary,
-            current_start_date=offer.get("start_date"),
-            proposed_start_date=request.proposed_start_date,
-            current_allowances=offer.get("allowances") or [],
-            proposed_allowances=proposed_allowances,
-            current_benefits=offer.get("benefits") or [],
-            proposed_benefits=proposed_benefits,
-        )
+        rounds_used = int(offer.get("negotiation_rounds_used") or 0)
         negotiation_doc = {
             "status": "pending",
-            "proposed_salary": request.proposed_salary,
-            "proposed_start_date": request.proposed_start_date,
-            "proposed_allowances": proposed_allowances,
-            "proposed_benefits": proposed_benefits,
-            "requested_changes": requested_changes,
+            "proposed_salary": None,
+            "proposed_start_date": None,
+            "proposed_allowances": [],
+            "proposed_salary_breakdown": [],  # legacy alias for older stored docs
+            "proposed_benefits": [],
+            "requested_changes": ["clarification"],
             "note": request.note,
             "requested_at": now,
             "responded_at": None,
@@ -425,11 +425,7 @@ class OfferService:
             when=now,
             note=request.note,
             snapshot={
-                "proposed_salary": request.proposed_salary,
-                "proposed_start_date": request.proposed_start_date,
-                "proposed_allowances": proposed_allowances,
-                "proposed_benefits": proposed_benefits,
-                "requested_changes": requested_changes,
+                "requested_changes": ["clarification"],
             },
         )
         await database.offer_letters.update_one(
@@ -446,40 +442,39 @@ class OfferService:
         )
 
         if offer.get("recruiter_id"):
+            note_preview = (request.note or "").strip()
+            notif_message = f"{offer['candidate_name']} sent a clarification request on the offer letter."
+            if note_preview:
+                notif_message = f"{offer['candidate_name']}: {note_preview[:180]}"
             await create_notification(
                 recipient_id=offer["recruiter_id"],
                 recipient_role="recruiter",
-                notif_type="offer_negotiation",
-                title="Offer negotiation requested",
-                message=(
-                    f"{offer['candidate_name']} proposed {offer.get('currency', 'PKR')} "
-                    f"{request.proposed_salary:,.0f} and start date {request.proposed_start_date}."
-                ),
+                notif_type="offer_clarification",
+                title="Offer clarification requested",
+                message=notif_message,
                 link="/dashboard/recruiter/candidates",
                 related_id=str(offer["_id"]),
             )
             recruiter = await database.recruiters.find_one({"user_id": offer["recruiter_id"]}) or {}
             to_email = recruiter.get("email") or offer.get("recruiter_email")
+            if not to_email:
+                user = await database.users.find_one({"_id": offer["recruiter_id"]}) or {}
+                if not user and ObjectId.is_valid(str(offer["recruiter_id"])):
+                    user = await database.users.find_one({"_id": ObjectId(str(offer["recruiter_id"]))}) or {}
+                to_email = user.get("email")
             if to_email:
-                try:
-                    email_service.send_offer_negotiation_request(
-                        to_email=to_email,
-                        recruiter_name=offer.get("recruiter_name") or "Recruiter",
-                        candidate_name=offer.get("candidate_name") or "Candidate",
-                        job_title=offer.get("job_title") or "",
-                        current_salary=offer.get("monthly_salary"),
-                        proposed_salary=request.proposed_salary,
-                        currency=offer.get("currency") or "PKR",
-                        current_start_date=str(offer.get("start_date") or ""),
-                        proposed_start_date=request.proposed_start_date,
-                        note=request.note,
-                    )
-                except Exception:
-                    pass
+                _send_email_bg(
+                    email_service.send_offer_clarification_request,
+                    to_email=to_email,
+                    recruiter_name=offer.get("recruiter_name") or "Recruiter",
+                    candidate_name=offer.get("candidate_name") or "Candidate",
+                    job_title=offer.get("job_title") or "",
+                    note=request.note,
+                )
 
         refreshed = await database.offer_letters.find_one({"_id": offer["_id"]})
         return {
-            "message": "Negotiation sent to your recruiter. You will be notified when they respond.",
+            "message": "Clarification sent to your recruiter. You will be notified when they respond.",
             "offer": self._public(refreshed),
         }
 
@@ -490,60 +485,27 @@ class OfferService:
         self._assert_recruiter(current_user, offer)
         negotiation = offer.get("negotiation") or {}
         if negotiation.get("status") != "pending":
-            raise HTTPException(status_code=409, detail="There is no pending negotiation on this offer.")
+            raise HTTPException(status_code=409, detail="There is no pending clarification on this offer.")
 
         now = datetime.now(UTC)
-        next_version = int(offer.get("version") or 1) + 1
-        final_salary = (
-            request.revised_salary
-            if request.revised_salary is not None
-            else float(negotiation.get("proposed_salary") or offer.get("monthly_salary") or 0)
-        )
-        final_start_date = request.revised_start_date or negotiation.get("proposed_start_date") or offer.get("start_date")
-        final_allowances_raw = (
-            [row.model_dump() if hasattr(row, "model_dump") else row for row in (request.revised_allowances or [])]
-            or negotiation.get("proposed_allowances")
-            or offer.get("allowances")
-            or []
-        )
-        final_benefits_raw = (
-            [b.model_dump() if hasattr(b, "model_dump") else b for b in (request.revised_benefits or [])]
-            or negotiation.get("proposed_benefits")
-            or offer.get("benefits")
-            or []
-        )
-        decision_summary = request.decision_summary or self._build_decision_summary(
-            negotiation=negotiation,
-            final_salary=final_salary,
-            final_start_date=final_start_date,
-            final_allowances=final_allowances_raw,
-            final_benefits=final_benefits_raw,
-            currency=offer.get("currency") or "PKR",
-        )
+        decision_summary = request.decision_summary or "Recruiter responded to the clarification request."
         await database.offer_letters.update_one(
             {"_id": offer["_id"]},
             {
                 "$set": {
-                    "status": "withdrawn",
-                    "negotiation.status": "accepted",
+                    "negotiation.status": "resolved",
                     "negotiation.responded_at": now,
                     "negotiation.recruiter_note": request.recruiter_note,
                     "negotiation.decision_summary": decision_summary,
                     "updated_at": now,
-                    "withdrawn_at": now,
-                    "superseded_by_version": next_version,
                 },
                 "$push": {
                     "negotiation_history": self._history_entry(
                         actor_role="recruiter",
-                        action="accepted",
+                        action="resolved",
                         when=now,
                         note=request.recruiter_note or request.decision_summary,
                         snapshot={
-                            "revised_salary": final_salary,
-                            "revised_start_date": final_start_date,
-                            "revised_allowances": final_allowances_raw,
-                            "revised_benefits": final_benefits_raw,
                             "decision_summary": decision_summary,
                         },
                     )
@@ -551,89 +513,35 @@ class OfferService:
             },
         )
 
-        terms = OfferTermsPayload(
-            job_title=offer["job_title"],
-            department=offer["department"],
-            employment_type=offer.get("employment_type") or "Full-time",
-            office_location=offer.get("office_location"),
-            reporting_manager=offer["reporting_manager"],
-            start_date=str(final_start_date),
-            monthly_salary=float(final_salary),
-            currency=offer.get("currency") or "PKR",
-            allowances=[AllowanceItem.model_validate(x) if isinstance(x, dict) else x for x in final_allowances_raw],
-            benefits=[BenefitItem.model_validate(x) if isinstance(x, dict) else x for x in final_benefits_raw],
-            offer_expiry_days=None,
-            terms=offer.get("terms") or "",
-            message_to_candidate=offer.get("message_to_candidate"),
-        )
-        # Rebuild expiry from original window if possible
-        expiry_days = settings.OFFER_EXPIRE_DAYS
-        if offer.get("expires_at") and offer.get("sent_at"):
-            try:
-                delta = offer["expires_at"] - offer["sent_at"]
-                expiry_days = max(1, min(90, delta.days or settings.OFFER_EXPIRE_DAYS))
-            except Exception:
-                pass
-
-        v2 = self._build_offer_doc(
-            terms=terms,
-            recruiter=current_user,
-            candidate_name=offer.get("candidate_name") or "",
-            candidate_email=offer.get("candidate_email") or "",
-            candidate_id=offer.get("candidate_id"),
-            invitation_token=offer.get("invitation_token"),
-            version=next_version,
-            parent_offer_id=str(offer["_id"]),
-            expiry_days=expiry_days,
-        )
-        v2["negotiation"] = self._empty_negotiation_state()
-        v2["negotiation_used"] = True  # no second round on v2
-        v2["negotiation_rounds_used"] = int(offer.get("negotiation_rounds_used") or 0)
-        v2["negotiation_max_rounds"] = int(offer.get("negotiation_max_rounds") or MAX_NEGOTIATION_ROUNDS)
-        v2["negotiation_history"] = [
-            *list(offer.get("negotiation_history") or []),
-            self._history_entry(
-                actor_role="system",
-                action="reissued_offer",
-                when=now,
-                note=decision_summary,
-                snapshot={"version": next_version},
-            ),
-        ]
-        v2["recruiter_name"] = offer.get("recruiter_name") or current_user.full_name
-        v2["recruiter_id"] = offer.get("recruiter_id") or current_user.id
-        result = await database.offer_letters.insert_one(v2)
-        v2["_id"] = result.inserted_id
-
         candidate_id = offer.get("candidate_id")
         if candidate_id:
-            await database.candidates.update_one(
-                {"user_id": candidate_id},
-                {"$set": {"conversion_status": "offer_sent", "updated_at": now}},
-            )
             await create_notification(
                 recipient_id=candidate_id,
                 recipient_role="candidate",
-                notif_type="offer_negotiation_accepted",
-                title="Negotiation accepted — new offer ready",
-                message=f"Your recruiter sent an updated offer letter (v{next_version}). Review the revised compensation and sign when ready.",
+                notif_type="offer_clarification_resolved",
+                title="Offer clarification resolved",
+                message=(
+                    request.recruiter_note.strip()
+                    if request.recruiter_note and request.recruiter_note.strip()
+                    else "Your recruiter responded to your offer clarification request. Review the response and continue."
+                ),
                 link="/offer",
-                related_id=str(v2["_id"]),
+                related_id=str(offer["_id"]),
             )
-            try:
-                email_service.send_offer_negotiation_result(
-                    to_email=offer["candidate_email"],
-                    full_name=offer.get("candidate_name") or "Candidate",
-                    accepted=True,
-                    job_title=offer.get("job_title") or "",
-                    recruiter_note=request.recruiter_note,
-                )
-            except Exception:
-                pass
+        if offer.get("candidate_email"):
+            _send_email_bg(
+                email_service.send_offer_clarification_result,
+                to_email=offer["candidate_email"],
+                full_name=offer.get("candidate_name") or "Candidate",
+                job_title=offer.get("job_title") or "",
+                outcome="resolved",
+                recruiter_note=request.recruiter_note,
+            )
 
+        refreshed = await database.offer_letters.find_one({"_id": offer["_id"]})
         return {
-            "message": "Negotiation accepted. A revised offer (v2) was sent to the candidate.",
-            "offer": self._public(v2),
+            "message": "Clarification resolved. The candidate can review your response and continue.",
+            "offer": self._public(refreshed),
         }
 
     async def counter_negotiation(
@@ -643,38 +551,106 @@ class OfferService:
         self._assert_recruiter(current_user, offer)
         negotiation = offer.get("negotiation") or {}
         if negotiation.get("status") != "pending":
-            raise HTTPException(status_code=409, detail="There is no pending negotiation on this offer.")
+            raise HTTPException(status_code=409, detail="There is no pending clarification on this offer.")
+
+        return await self.accept_negotiation(current_user, offer_id, request)
+
+    async def reject_negotiation(
+        self, current_user: CurrentUser, offer_id: str, request: NegotiationRespondRequest
+    ) -> dict:
+        offer = await self._find(offer_id)
+        self._assert_recruiter(current_user, offer)
+        negotiation = offer.get("negotiation") or {}
+        if negotiation.get("status") != "pending":
+            raise HTTPException(status_code=409, detail="There is no pending clarification on this offer.")
+
+        now = datetime.now(UTC)
+        decision_summary = request.decision_summary or "The clarification request was closed by the recruiter."
+        await database.offer_letters.update_one(
+            {"_id": offer["_id"]},
+            {
+                "$set": {
+                    "negotiation.status": "closed",
+                    "negotiation.responded_at": now,
+                    "negotiation.recruiter_note": request.recruiter_note,
+                    "negotiation.decision_summary": decision_summary,
+                    "negotiation_used": True,
+                    "updated_at": now,
+                },
+                "$push": {
+                    "negotiation_history": self._history_entry(
+                        actor_role="recruiter",
+                        action="closed",
+                        when=now,
+                        note=request.recruiter_note or request.decision_summary,
+                        snapshot={"decision_summary": decision_summary},
+                    )
+                },
+            },
+        )
+
+        candidate_id = offer.get("candidate_id")
+        if candidate_id:
+            await create_notification(
+                recipient_id=candidate_id,
+                recipient_role="candidate",
+                notif_type="offer_clarification_closed",
+                title="Offer clarification closed",
+                message=(
+                    request.recruiter_note.strip()
+                    if request.recruiter_note and request.recruiter_note.strip()
+                    else "Your recruiter closed the clarification request. Review their note and continue with the offer."
+                ),
+                link="/offer",
+                related_id=str(offer["_id"]),
+            )
+        if offer.get("candidate_email"):
+            _send_email_bg(
+                email_service.send_offer_clarification_result,
+                to_email=offer["candidate_email"],
+                full_name=offer.get("candidate_name") or "Candidate",
+                job_title=offer.get("job_title") or "",
+                outcome="closed",
+                recruiter_note=request.recruiter_note,
+            )
+
+        refreshed = await database.offer_letters.find_one({"_id": offer["_id"]})
+        return {
+            "message": "Clarification closed. The candidate can review your note and continue.",
+            "offer": self._public(refreshed),
+        }
+
+    async def edit_and_resend(
+        self, current_user: CurrentUser, offer_id: str, request: OfferEditResendRequest
+    ) -> dict:
+        """Edit any offer terms after clarification and resend as a new unsigned version."""
+        offer = await self._find(offer_id)
+        self._assert_recruiter(current_user, offer)
+        if offer.get("signed_at") or offer.get("status") == "signed":
+            raise HTTPException(status_code=409, detail="Signed offers cannot be edited. Create a new invitation instead.")
+        if offer.get("status") not in ("sent", "viewed", "expired"):
+            raise HTTPException(
+                status_code=409,
+                detail=f"This offer cannot be edited (status: {offer.get('status')}).",
+            )
 
         now = datetime.now(UTC)
         next_version = int(offer.get("version") or 1) + 1
-        final_salary = (
-            request.revised_salary
-            if request.revised_salary is not None
-            else float(offer.get("monthly_salary") or negotiation.get("proposed_salary") or 0)
+        negotiation = offer.get("negotiation") or {}
+        decision_summary = (
+            request.decision_summary
+            or request.recruiter_note
+            or "Recruiter updated the offer letter after clarification and resent it."
         )
-        final_start_date = request.revised_start_date or offer.get("start_date") or negotiation.get("proposed_start_date")
-        final_allowances_raw = (
-            [row.model_dump() if hasattr(row, "model_dump") else row for row in (request.revised_allowances or [])]
-            or negotiation.get("proposed_allowances")
-            or offer.get("allowances")
-            or []
-        )
-        final_benefits_raw = (
-            [b.model_dump() if hasattr(b, "model_dump") else b for b in (request.revised_benefits or [])]
-            or negotiation.get("proposed_benefits")
-            or offer.get("benefits")
-            or []
-        )
-        decision_summary = request.decision_summary or "Recruiter sent a counter-offer with revised terms."
 
         await database.offer_letters.update_one(
             {"_id": offer["_id"]},
             {
                 "$set": {
                     "status": "withdrawn",
-                    "negotiation.status": "countered",
-                    "negotiation.responded_at": now,
-                    "negotiation.recruiter_note": request.recruiter_note,
+                    "negotiation.status": "resolved" if negotiation.get("status") == "pending" else negotiation.get("status") or "none",
+                    "negotiation.responded_at": now if negotiation.get("status") == "pending" else negotiation.get("responded_at"),
+                    "negotiation.recruiter_note": request.recruiter_note or negotiation.get("recruiter_note"),
                     "negotiation.decision_summary": decision_summary,
                     "updated_at": now,
                     "withdrawn_at": now,
@@ -683,15 +659,15 @@ class OfferService:
                 "$push": {
                     "negotiation_history": self._history_entry(
                         actor_role="recruiter",
-                        action="countered",
+                        action="edited_and_resent",
                         when=now,
-                        note=request.recruiter_note or request.decision_summary,
+                        note=request.recruiter_note or decision_summary,
                         snapshot={
-                            "revised_salary": final_salary,
-                            "revised_start_date": final_start_date,
-                            "revised_allowances": final_allowances_raw,
-                            "revised_benefits": final_benefits_raw,
                             "decision_summary": decision_summary,
+                            "job_title": request.job_title,
+                            "monthly_salary": request.monthly_salary,
+                            "start_date": request.start_date,
+                            "version": next_version,
                         },
                     )
                 },
@@ -699,22 +675,24 @@ class OfferService:
         )
 
         terms = OfferTermsPayload(
-            job_title=offer["job_title"],
-            department=offer["department"],
-            employment_type=offer.get("employment_type") or "Full-time",
-            office_location=offer.get("office_location"),
-            reporting_manager=offer["reporting_manager"],
-            start_date=str(final_start_date),
-            monthly_salary=float(final_salary),
-            currency=offer.get("currency") or "PKR",
-            allowances=[AllowanceItem.model_validate(x) if isinstance(x, dict) else x for x in final_allowances_raw],
-            benefits=[BenefitItem.model_validate(x) if isinstance(x, dict) else x for x in final_benefits_raw],
-            offer_expiry_days=None,
-            terms=offer.get("terms") or "",
-            message_to_candidate=offer.get("message_to_candidate"),
+            job_title=request.job_title,
+            department=request.department,
+            employment_type=request.employment_type or "Full-time",
+            office_location=request.office_location,
+            is_remote=bool(getattr(request, "is_remote", False) or offer.get("is_remote")),
+            reporting_manager=request.reporting_manager,
+            start_date=request.start_date,
+            monthly_salary=float(request.monthly_salary),
+            currency=request.currency or "PKR",
+            allowances=list(request.allowances or request.salary_breakdown or []),
+            salary_breakdown=list(request.salary_breakdown or request.allowances or []),
+            benefits=request.benefits or [],
+            offer_expiry_days=request.offer_expiry_days,
+            terms=request.terms or "",
+            message_to_candidate=request.message_to_candidate,
         )
-        expiry_days = settings.OFFER_EXPIRE_DAYS
-        if offer.get("expires_at") and offer.get("sent_at"):
+        expiry_days = request.offer_expiry_days or settings.OFFER_EXPIRE_DAYS
+        if not request.offer_expiry_days and offer.get("expires_at") and offer.get("sent_at"):
             try:
                 delta = offer["expires_at"] - offer["sent_at"]
                 expiry_days = max(1, min(90, delta.days or settings.OFFER_EXPIRE_DAYS))
@@ -732,20 +710,20 @@ class OfferService:
             parent_offer_id=str(offer["_id"]),
             expiry_days=expiry_days,
         )
-        v_next["negotiation"] = self._empty_negotiation_state()
-        v_next["negotiation_used"] = bool(offer.get("negotiation_used"))
-        v_next["negotiation_rounds_used"] = int(offer.get("negotiation_rounds_used") or 0)
-        v_next["negotiation_max_rounds"] = int(offer.get("negotiation_max_rounds") or MAX_NEGOTIATION_ROUNDS)
-        v_next["negotiation_history"] = [
-            *list(offer.get("negotiation_history") or []),
+        prior_history = list(offer.get("negotiation_history") or [])
+        prior_history.append(
             self._history_entry(
                 actor_role="system",
-                action="counter_offer_issued",
+                action="reissued_offer",
                 when=now,
                 note=decision_summary,
                 snapshot={"version": next_version},
-            ),
-        ]
+            )
+        )
+        v_next["negotiation_history"] = prior_history
+        v_next["negotiation_used"] = True
+        v_next["negotiation_rounds_used"] = int(offer.get("negotiation_rounds_used") or 0)
+        v_next["negotiation_max_rounds"] = int(offer.get("negotiation_max_rounds") or MAX_NEGOTIATION_ROUNDS)
         v_next["recruiter_name"] = offer.get("recruiter_name") or current_user.full_name
         v_next["recruiter_id"] = offer.get("recruiter_id") or current_user.id
         result = await database.offer_letters.insert_one(v_next)
@@ -760,80 +738,59 @@ class OfferService:
             await create_notification(
                 recipient_id=candidate_id,
                 recipient_role="candidate",
-                notif_type="offer_countered",
-                title="Counter-offer ready",
-                message=f"Your recruiter sent a counter-offer (v{next_version}). Review, sign, or continue negotiation.",
+                notif_type="offer_edited_resent",
+                title="Updated offer letter ready",
+                message=(
+                    (request.recruiter_note or "").strip()
+                    or (
+                        f"Your recruiter updated the offer letter (v{next_version}) after your clarification. "
+                        "Please review and sign when ready."
+                    )
+                ),
                 link="/offer",
                 related_id=str(v_next["_id"]),
             )
-        return {
-            "message": f"Counter-offer sent as v{next_version}.",
-            "offer": self._public(v_next),
-        }
 
-    async def reject_negotiation(
-        self, current_user: CurrentUser, offer_id: str, request: NegotiationRespondRequest
-    ) -> dict:
-        offer = await self._find(offer_id)
-        self._assert_recruiter(current_user, offer)
-        negotiation = offer.get("negotiation") or {}
-        if negotiation.get("status") != "pending":
-            raise HTTPException(status_code=409, detail="There is no pending negotiation on this offer.")
+        if offer.get("candidate_email"):
+            _send_email_bg(
+                email_service.send_offer_letter,
+                to_email=offer["candidate_email"],
+                full_name=offer.get("candidate_name") or "Candidate",
+                job_title=request.job_title,
+                department=request.department,
+                start_date=request.start_date,
+            )
+            _send_email_bg(
+                email_service.send_offer_clarification_result,
+                to_email=offer["candidate_email"],
+                full_name=offer.get("candidate_name") or "Candidate",
+                job_title=request.job_title,
+                outcome="updated",
+                recruiter_note=request.recruiter_note or decision_summary,
+            )
 
-        now = datetime.now(UTC)
-        decision_summary = request.decision_summary or "The original offer remains unchanged. Candidate may accept or decline it."
-        await database.offer_letters.update_one(
-            {"_id": offer["_id"]},
+        await database.audit_logs.insert_one(
             {
-                "$set": {
-                    "negotiation.status": "rejected",
-                    "negotiation.responded_at": now,
-                    "negotiation.recruiter_note": request.recruiter_note,
-                    "negotiation.decision_summary": decision_summary,
-                    "negotiation_used": True,
-                    "updated_at": now,
+                "user_id": current_user.id,
+                "candidate_id": candidate_id,
+                "email": current_user.email,
+                "actor_email": current_user.email,
+                "module": "offers",
+                "action": "offer_edited_and_resent",
+                "offer_id": str(v_next["_id"]),
+                "outcome": "success",
+                "metadata": {
+                    "parent_offer_id": str(offer["_id"]),
+                    "version": next_version,
+                    "note": request.recruiter_note,
                 },
-                "$push": {
-                    "negotiation_history": self._history_entry(
-                        actor_role="recruiter",
-                        action="rejected",
-                        when=now,
-                        note=request.recruiter_note or request.decision_summary,
-                        snapshot={"decision_summary": decision_summary},
-                    )
-                },
-            },
+                "created_at": now,
+            }
         )
 
-        candidate_id = offer.get("candidate_id")
-        if candidate_id:
-            await create_notification(
-                recipient_id=candidate_id,
-                recipient_role="candidate",
-                notif_type="offer_negotiation_rejected",
-                title="Negotiation declined",
-                message=(
-                    "Your recruiter declined the negotiation. You may accept the original offer or decline it. "
-                    "No further negotiation is available."
-                ),
-                link="/offer",
-                related_id=str(offer["_id"]),
-            )
-            try:
-                email_service.send_offer_negotiation_result(
-                    to_email=offer["candidate_email"],
-                    full_name=offer.get("candidate_name") or "Candidate",
-                    accepted=False,
-                    job_title=offer.get("job_title") or "",
-                    recruiter_note=request.recruiter_note,
-                )
-            except Exception:
-                pass
-
-        refreshed = await database.offer_letters.find_one({"_id": offer["_id"]})
         return {
-            "message": "Negotiation rejected. The candidate can accept or decline the original offer.",
-            "offer": self._public(refreshed),
+            "message": f"Offer letter updated and resent as v{next_version}.",
+            "offer": self._public(v_next),
         }
 
     async def approve(self, current_user: CurrentUser, offer_id: str, request: OfferApproveRequest) -> dict:
@@ -998,7 +955,10 @@ class OfferService:
         now = datetime.now(UTC)
         days = expiry_days or terms.offer_expiry_days or settings.OFFER_EXPIRE_DAYS
         benefits = [b.model_dump() if hasattr(b, "model_dump") else b for b in (terms.benefits or [])]
-        allowances = [a.model_dump() if hasattr(a, "model_dump") else a for a in (terms.allowances or [])]
+        allowances = [
+            a.model_dump() if hasattr(a, "model_dump") else a
+            for a in (terms.allowances or terms.salary_breakdown or [])
+        ]
         return {
             "candidate_id": candidate_id,
             "candidate_name": candidate_name,
@@ -1011,11 +971,13 @@ class OfferService:
             "department": terms.department,
             "employment_type": terms.employment_type,
             "office_location": terms.office_location,
+            "is_remote": bool(getattr(terms, "is_remote", False)),
             "reporting_manager": terms.reporting_manager,
             "start_date": terms.start_date,
             "monthly_salary": terms.monthly_salary,
             "currency": terms.currency,
             "allowances": allowances,
+            "salary_breakdown": allowances,  # legacy alias
             "benefits": benefits,
             "terms": terms.terms,
             "message_to_candidate": terms.message_to_candidate,
@@ -1074,6 +1036,7 @@ class OfferService:
             "proposed_salary": None,
             "proposed_start_date": None,
             "proposed_allowances": [],
+            "proposed_salary_breakdown": [],  # legacy alias
             "proposed_benefits": [],
             "requested_changes": [],
             "note": None,
@@ -1146,9 +1109,6 @@ class OfferService:
 
     @staticmethod
     def _public(offer: dict) -> dict:
-        def _iso(value):
-            return value.isoformat() if hasattr(value, "isoformat") else value
-
         negotiation = offer.get("negotiation") or {}
         if negotiation.get("requested_at"):
             negotiation = {**negotiation, "requested_at": _iso(negotiation.get("requested_at"))}
@@ -1172,11 +1132,13 @@ class OfferService:
             "department": offer.get("department"),
             "employment_type": offer.get("employment_type"),
             "office_location": offer.get("office_location"),
+            "is_remote": bool(offer.get("is_remote")),
             "reporting_manager": offer.get("reporting_manager"),
             "start_date": offer.get("start_date"),
             "monthly_salary": offer.get("monthly_salary"),
             "currency": offer.get("currency"),
-            "allowances": offer.get("allowances") or [],
+            "allowances": offer.get("allowances") or offer.get("salary_breakdown") or [],
+            "salary_breakdown": offer.get("salary_breakdown") or offer.get("allowances") or [],
             "benefits": offer.get("benefits") or [],
             "terms": offer.get("terms"),
             "message_to_candidate": offer.get("message_to_candidate"),

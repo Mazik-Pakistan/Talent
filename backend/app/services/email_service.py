@@ -447,6 +447,139 @@ class EmailService:
         )
 
     # ------------------------------------------------------------------ #
+    # Offer clarification emails
+    # ------------------------------------------------------------------ #
+    def send_offer_clarification_request(
+        self,
+        *,
+        to_email: str,
+        recruiter_name: str,
+        candidate_name: str,
+        job_title: str,
+        note: str | None = None,
+    ) -> None:
+        safe_recruiter = _escape_text(recruiter_name or "Recruiter")
+        safe_candidate = _escape_text(candidate_name or "Candidate")
+        safe_title = _escape_text(job_title or "the offered role")
+        safe_note = _escape_text(note or "")
+        note_html = (
+            f"""
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#fff8ef;border:1px solid #f3e0c2;border-radius:12px;margin:0 0 24px;">
+  <tr>
+    <td style="padding:18px 22px;">
+      <p style="margin:0 0 6px;color:#9a6700;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Candidate question</p>
+      <p style="margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;">{safe_note}</p>
+    </td>
+  </tr>
+</table>
+"""
+            if safe_note
+            else ""
+        )
+        subject = f"Offer clarification from {candidate_name or 'candidate'} — TalentAI"
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hi {safe_recruiter}, <strong>{safe_candidate}</strong> requested clarification on the offer
+  for <strong>{safe_title}</strong>.
+</p>
+{note_html}
+<p style="margin:0;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Open the candidate pipeline to reply, or edit and resend an updated offer letter.
+</p>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("Offer Clarification", "A candidate needs clarification", body),
+        )
+
+    def send_offer_clarification_result(
+        self,
+        *,
+        to_email: str,
+        full_name: str,
+        job_title: str,
+        outcome: str = "resolved",
+        recruiter_note: str | None = None,
+    ) -> None:
+        safe_name = _escape_text(full_name or "Candidate")
+        safe_title = _escape_text(job_title or "your offer")
+        safe_note = _escape_text(recruiter_note or "")
+        outcome_key = (outcome or "resolved").lower()
+        if outcome_key in {"closed", "rejected"}:
+            headline = "Clarification closed"
+            lead = (
+                f"Your recruiter closed the clarification request for <strong>{safe_title}</strong>. "
+                "You can still review the current offer and continue."
+            )
+        elif outcome_key in {"updated", "edited", "resent"}:
+            headline = "Updated offer ready"
+            lead = (
+                f"Your recruiter updated the offer letter for <strong>{safe_title}</strong> "
+                "after your clarification. Please review and sign when ready."
+            )
+        else:
+            headline = "Clarification response ready"
+            lead = (
+                f"Your recruiter responded to your clarification on <strong>{safe_title}</strong>. "
+                "Open your offer letter to continue."
+            )
+        note_html = (
+            f"""
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:16px 0 24px;">
+  <tr>
+    <td style="padding:18px 22px;">
+      <p style="margin:0 0 6px;color:#0D5C91;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Recruiter note</p>
+      <p style="margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;">{safe_note}</p>
+    </td>
+  </tr>
+</table>
+"""
+            if safe_note
+            else ""
+        )
+        subject = f"{headline} — {job_title or 'Offer letter'} | TalentAI"
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hi {safe_name}, {lead}
+</p>
+{note_html}
+<p style="margin:0;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Sign in and open <strong>My Offer Letter</strong> to continue.
+</p>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("Offer Clarification", headline, body),
+        )
+
+    # Backward-compatible aliases used by older offer flows.
+    def send_offer_negotiation_request(self, **kwargs) -> None:
+        self.send_offer_clarification_request(
+            to_email=kwargs.get("to_email"),
+            recruiter_name=kwargs.get("recruiter_name") or "Recruiter",
+            candidate_name=kwargs.get("candidate_name") or "Candidate",
+            job_title=kwargs.get("job_title") or "",
+            note=kwargs.get("note"),
+        )
+
+    def send_offer_negotiation_result(self, **kwargs) -> None:
+        accepted = kwargs.get("accepted")
+        outcome = "resolved" if accepted else "closed"
+        self.send_offer_clarification_result(
+            to_email=kwargs.get("to_email"),
+            full_name=kwargs.get("full_name") or "Candidate",
+            job_title=kwargs.get("job_title") or "",
+            outcome=outcome,
+            recruiter_note=kwargs.get("recruiter_note"),
+        )
+
+    # ------------------------------------------------------------------ #
     # send_document_reupload_request
     # ------------------------------------------------------------------ #
     def send_document_reupload_request(

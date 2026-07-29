@@ -127,6 +127,12 @@ class CandidateService:
                 detail="Use the email address that received this invitation.",
             )
 
+        offer_for_invite = await database.offer_letters.find_one(
+            {"invitation_token": invitation["token"]},
+            sort=[("version", -1), ("created_at", -1)],
+        )
+        is_remote = bool(invitation.get("is_remote") or (offer_for_invite or {}).get("is_remote"))
+
         from app.services.people_history import (
             find_active_candidate,
             find_active_employee,
@@ -180,6 +186,7 @@ class CandidateService:
                     "job_title": invitation["job_title"],
                     "department": invitation["department"],
                     "office_location": invitation.get("office_location"),
+                    "is_remote": is_remote,
                     "start_date": invitation.get("start_date"),
                     "recruiter_id": invitation["recruiter_id"],
                     "recruiter_email": invitation.get("recruiter_email"),

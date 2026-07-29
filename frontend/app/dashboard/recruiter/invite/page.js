@@ -40,6 +40,7 @@ const initialInvite = {
   department: "",
   office_location: "",
   employment_type: "Full-time",
+  is_remote: false,
   reporting_manager: "",
   start_date: "",
   monthly_salary: "",
@@ -47,7 +48,6 @@ const initialInvite = {
   message_to_candidate: "",
   terms: DEFAULT_TERMS,
   offer_expiry_days: 14,
-  expires_in_days: 7,
 };
 
 // Default optional allowances
@@ -190,7 +190,6 @@ function RecruiterInvitePageInner() {
   );
   const [customBenefit, setCustomBenefit] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
-  const [inviteLink, setInviteLink] = useState("");
   const [inviteEmailSent, setInviteEmailSent] = useState(null);
   const [inviteEmailError, setInviteEmailError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -304,7 +303,6 @@ function RecruiterInvitePageInner() {
   async function handleCreateInvite(event) {
     event.preventDefault();
     setInviteMessage("");
-    setInviteLink("");
     setInviteEmailSent(null);
     setInviteEmailError("");
 
@@ -338,14 +336,15 @@ function RecruiterInvitePageInner() {
         email: inviteForm.email.trim(),
         job_title: inviteForm.job_title.trim(),
         department: inviteForm.department.trim(),
-        expires_in_days: Number(inviteForm.expires_in_days) || 7,
         office_location: inviteForm.office_location.trim() || null,
+        is_remote: Boolean(inviteForm.is_remote),
         start_date: inviteForm.start_date || null,
         offer: {
           job_title: inviteForm.job_title.trim(),
           department: inviteForm.department.trim(),
           employment_type: inviteForm.employment_type,
           office_location: inviteForm.office_location.trim() || null,
+          is_remote: Boolean(inviteForm.is_remote),
           reporting_manager: inviteForm.reporting_manager.trim(),
           start_date: inviteForm.start_date,
           monthly_salary: Number(inviteForm.monthly_salary),
@@ -365,7 +364,6 @@ function RecruiterInvitePageInner() {
 
       const data = await createInvitation(payload, accessToken);
       setInviteMessage(data.message);
-      setInviteLink(data.invitation?.invite_link || "");
       setInviteEmailSent(Boolean(data.email_sent));
       setInviteEmailError(data.email_error || "");
       setInviteForm(initialInvite);
@@ -377,7 +375,16 @@ function RecruiterInvitePageInner() {
           selected: true,
         }))
       );
-      toast.success(data.message || "Offer invitation sent.");
+      toast.success(data.message || "Offer invitation sent.", {
+        toastId: `invite-offer-${inviteForm.email || "sent"}`,
+        autoClose: 5000,
+      });
+      if (data.email_sent === false) {
+        toast.warn(data.email_error || "Invitation saved, but email could not be delivered. Please retry.", {
+          toastId: `invite-email-fail-${inviteForm.email || "sent"}`,
+          autoClose: 7000,
+        });
+      }
     } catch (error) {
       const errMsg = getApiErrorMessage(
         error,
@@ -388,13 +395,6 @@ function RecruiterInvitePageInner() {
     } finally {
       setIsCreating(false);
     }
-  }
-
-  async function copyLink() {
-    if (!inviteLink) return;
-    await navigator.clipboard.writeText(inviteLink);
-    setInviteMessage("Invitation link copied.");
-    toast.info("Link copied.");
   }
 
   // ---------- Styles ----------
@@ -523,17 +523,6 @@ function RecruiterInvitePageInner() {
                   />
                 </label>
                 <label className={styles.field}>
-                  <span>Invite link expires (days)</span>
-                  <input
-                    name="expires_in_days"
-                    type="number"
-                    min="1"
-                    max="30"
-                    value={inviteForm.expires_in_days}
-                    onChange={updateInviteField}
-                  />
-                </label>
-                <label className={styles.field}>
                   <span>Offer expires (days)</span>
                   <input
                     name="offer_expiry_days"
@@ -658,12 +647,33 @@ function RecruiterInvitePageInner() {
                   </select>
                 </label>
                 <label className={styles.field}>
+                  <span>Work arrangement</span>
+                  <select
+                    name="is_remote"
+                    value={inviteForm.is_remote ? "remote" : "onsite"}
+                    onChange={(e) =>
+                      setInviteForm((current) => ({
+                        ...current,
+                        is_remote: e.target.value === "remote",
+                      }))
+                    }
+                  >
+                    <option value="onsite">On-site / office-based</option>
+                    <option value="remote">Remote employee</option>
+                  </select>
+                  <span className={styles.mutedText} style={{ fontSize: 12, marginTop: 6, display: "block" }}>
+                    {inviteForm.is_remote
+                      ? "Remote hires enter banking details themselves during Complete Profile."
+                      : "Recruiters add banking details for on-site hires after activation."}
+                  </span>
+                </label>
+                <label className={styles.field}>
                   <span>Office location</span>
                   <input
                     name="office_location"
                     value={inviteForm.office_location}
                     onChange={updateInviteField}
-                    placeholder="e.g. Karachi"
+                    placeholder={inviteForm.is_remote ? "e.g. Remote — Pakistan" : "e.g. Karachi"}
                   />
                 </label>
                 <label className={styles.field}>
@@ -1033,46 +1043,13 @@ function RecruiterInvitePageInner() {
                   border: "1px solid #f4c2c2",
                 }}
               >
-                Email delivery failed. Share the invitation link below manually.
+                Email delivery failed. Please resend the invitation or contact support.
                 {inviteEmailError ? (
                   <span style={{ display: "block", marginTop: 6, fontSize: 13, opacity: 0.9 }}>
                     {inviteEmailError}
                   </span>
                 ) : null}
               </p>
-            )}
-            {inviteLink && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  background: "var(--cyan-light)",
-                  border: "1px solid #bfe9f3",
-                  padding: 12,
-                  borderRadius: 10,
-                  marginTop: 16,
-                  flexWrap: "wrap",
-                }}
-              >
-                <code
-                  style={{
-                    color: "#056280",
-                    wordBreak: "break-all",
-                    flex: 1,
-                  }}
-                >
-                  {inviteLink}
-                </code>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  onClick={copyLink}
-                >
-                  Copy link
-                </button>
-              </div>
             )}
 
             <button
