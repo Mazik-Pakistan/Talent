@@ -65,6 +65,12 @@ function OfferLetterPageContent() {
     [offer]
   );
 
+  // Compute total monthly compensation = gross salary + allowances
+  const allowances = offer?.allowances || [];
+  const totalAllowances = allowances.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  const grossSalary = Number(offer?.monthly_salary) || 0;
+  const totalCompensation = grossSalary + totalAllowances;
+
   useEffect(() => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) {
@@ -278,7 +284,7 @@ function OfferLetterPageContent() {
     router.push("/dashboard/candidate");
   }
 
-const handleDownloadPDF = useCallback(() => {
+  const handleDownloadPDF = useCallback(() => {
     if (!offer) return;
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
@@ -293,12 +299,16 @@ const handleDownloadPDF = useCallback(() => {
       day: "numeric",
     });
     const currency = offer.currency || "PKR";
-    const grossSalary = formatCurrency(offer.monthly_salary, currency);
-    const breakdownRows = (offer.salary_breakdown || [])
+    const baseSalary = formatCurrency(grossSalary, currency);
+    const totalAllowanceAmount = formatCurrency(totalAllowances, currency);
+    const totalComp = formatCurrency(totalCompensation, currency);
+
+    // Allowance rows for PDF
+    const allowanceRows = (offer.allowances || [])
       .filter(row => row.label.trim())
       .map(row => `<div class="kv-row"><span>${row.label}</span><span>${formatCurrency(row.amount, currency)}</span></div>`)
       .join("");
-    const breakdownTotal = (offer.salary_breakdown || []).reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+
     const benefitsList = selectedBenefits.map(b => `<li>${b.label}</li>`).join("");
 
     const companyName = "Mazik Global Pakistan";
@@ -492,12 +502,16 @@ const handleDownloadPDF = useCallback(() => {
   <h3>Compensation</h3>
   <div class="comp-box">
     <div class="gross-row">
-      <span class="label">Monthly Gross Salary</span>
-      <span class="value">${grossSalary}</span>
+      <span class="label">Monthly Base Salary</span>
+      <span class="value">${baseSalary}</span>
     </div>
-    ${breakdownRows ? `
-      ${breakdownRows}
-      <div class="kv-total"><span>Total</span><span>${formatCurrency(breakdownTotal, currency)}</span></div>
+    ${allowances.length > 0 ? `
+      <div class="gross-row" style="margin-top: 8px;">
+        <span class="label">Monthly Allowances</span>
+        <span class="value" style="font-size: 15px;">${totalAllowanceAmount}</span>
+      </div>
+      ${allowanceRows}
+      <div class="kv-total"><span>Total Monthly Compensation</span><span>${totalComp}</span></div>
     ` : ""}
   </div>
 
@@ -545,7 +559,7 @@ const handleDownloadPDF = useCallback(() => {
         printWindow.print();
       }, 600);
     };
-  }, [offer, expectedName, fullLegalName, selectedBenefits]);
+  }, [offer, expectedName, fullLegalName, selectedBenefits, grossSalary, totalAllowances, totalCompensation]);
 
   const IconRole = () => (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -687,21 +701,25 @@ const handleDownloadPDF = useCallback(() => {
                   <IconCompensation /> Compensation
                 </h3>
                 <div className={styles.offerTerm} style={{ marginBottom: 16 }}>
-                  <dt>Monthly salary (gross)</dt>
+                  <dt>Monthly base salary (gross)</dt>
                   <dd style={{ fontSize: "1.2em", fontWeight: 600 }}>
-                    {formatCurrency(offer.monthly_salary, offer.currency)} / month
+                    {formatCurrency(grossSalary, offer.currency)} / month
                   </dd>
                 </div>
-                {(offer.salary_breakdown || []).length > 0 && (
-                  <div>
-                    <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>Salary breakdown</div>
+
+                {allowances.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>Allowances (paid extra)</div>
                     <ul style={{ margin: 0, paddingLeft: 18, color: "#405266" }}>
-                      {offer.salary_breakdown.map((row, i) => (
+                      {allowances.map((row, i) => (
                         <li key={i}>
                           {row.label}: {formatCurrency(row.amount, offer.currency)}
                         </li>
                       ))}
                     </ul>
+                    <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed #ccc", fontWeight: 600 }}>
+                      Total Monthly Compensation: {formatCurrency(totalCompensation, offer.currency)}
+                    </div>
                   </div>
                 )}
               </section>
