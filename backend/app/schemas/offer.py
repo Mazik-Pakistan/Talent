@@ -65,11 +65,15 @@ class OfferTermsPayload(BaseModel):
     department: str = Field(..., min_length=2, max_length=120)
     employment_type: str = Field(default="Full-time", max_length=80)
     office_location: str | None = Field(default=None, max_length=120)
+    # Remote: employee completes banking in profile. On-site: recruiter manages banking.
+    is_remote: bool = False
     reporting_manager: str = Field(..., min_length=2, max_length=120)
     start_date: str = Field(..., min_length=4, max_length=40)
     monthly_salary: float = Field(..., ge=0)
     currency: str = Field(default="PKR", max_length=8)
+    # Allowances paid on top of monthly_salary (also accepted as salary_breakdown for older clients).
     salary_breakdown: list[SalaryBreakdownItem] = Field(default_factory=list)
+    allowances: list[SalaryBreakdownItem] = Field(default_factory=list)
     benefits: list[BenefitItem] = Field(default_factory=list)
     offer_expiry_days: int | None = Field(default=None, ge=1, le=90)
     terms: str = Field(default=DEFAULT_OFFER_TERMS, max_length=8000)
@@ -88,12 +92,21 @@ class OfferTermsPayload(BaseModel):
         normalized = " ".join(value.split())
         return normalized or None
 
+    @field_validator("start_date")
+    @classmethod
+    def _normalize_start_date(cls, value: str) -> str:
+        normalized = " ".join(str(value or "").split())
+        if "T" in normalized:
+            normalized = normalized.split("T", 1)[0]
+        return normalized
+
     @model_validator(mode="after")
-    def _validate_breakdown(self) -> OfferTermsPayload:
-        if self.salary_breakdown:
-            total = sum(item.amount for item in self.salary_breakdown)
-            if total - self.monthly_salary > 0.01:
-                raise ValueError("Salary breakdown total cannot exceed monthly salary.")
+    def _merge_allowances(self) -> OfferTermsPayload:
+        # Prefer explicit allowances; otherwise keep salary_breakdown (legacy).
+        if self.allowances:
+            self.salary_breakdown = list(self.allowances)
+        elif self.salary_breakdown:
+            self.allowances = list(self.salary_breakdown)
         return self
 
 
@@ -142,13 +155,20 @@ class OfferExtendValidityRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
+class OfferEditResendRequest(OfferTermsPayload):
+    """Recruiter edits offer terms after a candidate clarification and resends as a new version."""
+
+    recruiter_note: str | None = Field(default=None, max_length=2000)
+    decision_summary: str | None = Field(default=None, max_length=2000)
+
+
 class OfferNegotiateRequest(BaseModel):
-    proposed_salary: float = Field(..., ge=0)
-    proposed_start_date: str = Field(..., min_length=4, max_length=40)
+    proposed_salary: float | None = Field(default=None, ge=0)
+    proposed_start_date: str | None = Field(default=None, min_length=4, max_length=40)
     proposed_salary_breakdown: list[SalaryBreakdownItem] = Field(default_factory=list)
     proposed_benefits: list[BenefitItem] = Field(default_factory=list)
     requested_changes: list[str] = Field(default_factory=list)
-    note: str | None = Field(default=None, max_length=2000)
+    note: str = Field(..., min_length=1, max_length=2000)
 
     @field_validator("requested_changes")
     @classmethod
@@ -162,7 +182,7 @@ class OfferNegotiateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_proposed_breakdown(self) -> OfferNegotiateRequest:
-        if self.proposed_salary_breakdown:
+        if self.proposed_salary_breakdown and self.proposed_salary is not None:
             total = sum(item.amount for item in self.proposed_salary_breakdown)
             if total - self.proposed_salary > 0.01:
                 raise ValueError("Proposed salary breakdown total cannot exceed proposed salary.")

@@ -16,6 +16,7 @@ import SignaturePad from "@/components/SignaturePad";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
 import styles from "@/app/styles/auth.module.css";
+import { toast } from "react-toastify";
 
 const OFFER_DRAFT_KEY = "offer_letter_draft";
 
@@ -43,22 +44,19 @@ function OfferLetterPageContent() {
   const [declining, setDeclining] = useState(false);
   const [showDeclineForm, setShowDeclineForm] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
-  const [showNegotiate, setShowNegotiate] = useState(false);
-  const [negotiating, setNegotiating] = useState(false);
-  const [negoSalary, setNegoSalary] = useState("");
-  const [negoStart, setNegoStart] = useState("");
-  const [negoNote, setNegoNote] = useState("");
-  const [negoBenefits, setNegoBenefits] = useState([]);
+  const [showClarification, setShowClarification] = useState(false);
+  const [sendingClarification, setSendingClarification] = useState(false);
+  const [clarificationNote, setClarificationNote] = useState("");
 
   const negotiation = offer?.negotiation || {};
-  const negoPending = negotiation.status === "pending";
-  const negoRejected = negotiation.status === "rejected";
-  const canNegotiate =
+  const clarificationPending = negotiation.status === "pending";
+  const clarificationResolved = ["resolved", "closed"].includes(negotiation.status);
+  const canRequestClarification =
     offer &&
     ["sent", "viewed"].includes(offer.status) &&
     !offer.negotiation_used &&
-    !negoPending;
-  const canSign = offer && ["sent", "viewed"].includes(offer.status) && !negoPending;
+    !clarificationPending;
+  const canSign = offer && ["sent", "viewed"].includes(offer.status) && !clarificationPending;
 
   const selectedBenefits = useMemo(
     () => (offer?.benefits || []).filter((b) => b.selected !== false),
@@ -85,9 +83,9 @@ function OfferLetterPageContent() {
       pathname: "/offer",
       section: "offer",
       hint: offer?.status
-        ? `Offer v${offer.version || 1} status: ${offer.status}. Accept, negotiate once, or decline.`
+        ? `Offer v${offer.version || 1} status: ${offer.status}. Accept, request clarification, or decline.`
         : "Review your offer letter first - documents unlock after you sign.",
-      fields: ["full_legal_name", "agree", "signature", "negotiate"],
+      fields: ["full_legal_name", "agree", "signature", "clarification"],
     });
     return () => clearCandidateContext();
   }, [offer?.status, offer?.version]);
@@ -126,17 +124,6 @@ function OfferLetterPageContent() {
         data.offer?.candidate_name || JSON.parse(localStorage.getItem("user") || "{}")?.full_name || "";
       setExpectedName(name);
       setFullLegalName(name);
-      if (data.offer) {
-        setNegoSalary(data.offer.monthly_salary != null ? String(data.offer.monthly_salary) : "");
-        setNegoStart(data.offer.start_date || "");
-        setNegoBenefits(
-          (data.offer.benefits || []).map((b) => ({
-            id: b.id || b.label,
-            label: b.label,
-            selected: b.selected !== false,
-          }))
-        );
-      }
     } catch (error) {
       setMessage(getApiErrorMessage(error, "Unable to load your offer letter."));
     } finally {
@@ -178,27 +165,39 @@ function OfferLetterPageContent() {
   async function handleSign(event) {
     event.preventDefault();
     if (!canSign) {
-      setMessage("You cannot sign while a negotiation is pending.");
+      const msg = "You cannot sign while a clarification request is pending.";
+      setMessage(msg);
+      toast.warn(msg, { toastId: "offer-sign-pending-clarification" });
       return;
     }
     if (!fullLegalName.trim()) {
-      setMessage("Your full legal name is required to sign.");
+      const msg = "Your full legal name is required to sign.";
+      setMessage(msg);
+      toast.warn(msg, { toastId: "offer-sign-name-required" });
       return;
     }
     if (expectedName && !namesMatch(fullLegalName, expectedName)) {
-      setMessage(`Full legal name must match your registered name: ${expectedName}`);
+      const msg = `Full legal name must match your registered name: ${expectedName}`;
+      setMessage(msg);
+      toast.warn(msg, { toastId: "offer-sign-name-mismatch" });
       return;
     }
     if (!agreed) {
-      setMessage("You must agree to the offer terms before signing.");
+      const msg = "Please check “I have read and agree…” before signing.";
+      setMessage(msg);
+      toast.warn(msg, { toastId: "offer-sign-agree-required" });
       return;
     }
     if (signatureMethod === "pad" && !signatureDataUrl) {
-      setMessage("Please draw your signature on the pad, or upload a signature file.");
+      const msg = "Please draw your signature on the pad, or upload a signature file.";
+      setMessage(msg);
+      toast.warn(msg, { toastId: "offer-sign-pad-required" });
       return;
     }
     if (signatureMethod === "upload" && !signatureUploadUrl) {
-      setMessage("Upload a signature file (PNG, JPG, or PDF).");
+      const msg = "Upload a signature file (PNG, JPG, or PDF).";
+      setMessage(msg);
+      toast.warn(msg, { toastId: "offer-sign-upload-required" });
       return;
     }
     const accessToken = localStorage.getItem("access_token");
@@ -216,9 +215,12 @@ function OfferLetterPageContent() {
       setOffer(data.offer);
       sessionStorage.removeItem(`${OFFER_DRAFT_KEY}_${offer.id}`);
       setMessage(data.message);
+      toast.success(data.message || "Offer signed successfully.");
       invalidateCandidateInsightCache();
     } catch (error) {
-      setMessage(getApiErrorMessage(error, "Could not sign the offer."));
+      const errMsg = getApiErrorMessage(error, "Could not sign the offer.");
+      setMessage(errMsg);
+      toast.error(errMsg);
     } finally {
       setSubmitting(false);
     }
@@ -232,43 +234,50 @@ function OfferLetterPageContent() {
       await declineOffer(offer.id, { reason: declineReason }, accessToken);
       await load(accessToken);
       setShowDeclineForm(false);
+      toast.info("Offer declined. Your recruiter has been notified.");
       invalidateCandidateInsightCache();
     } catch (error) {
-      setMessage(getApiErrorMessage(error, "Could not decline the offer."));
+      const errMsg = getApiErrorMessage(error, "Could not decline the offer.");
+      setMessage(errMsg);
+      toast.error(errMsg);
     } finally {
       setDeclining(false);
     }
   }
 
-  async function handleNegotiate(event) {
+  async function handleClarification(event) {
     event.preventDefault();
-    if (!canNegotiate) return;
-    if (!negoSalary || !negoStart) {
-      setMessage("Proposed salary and start date are required.");
+    if (!canRequestClarification) return;
+    if (!clarificationNote.trim()) {
+      setMessage("Please enter your clarification request.");
       return;
     }
     const accessToken = localStorage.getItem("access_token");
-    setNegotiating(true);
+    setSendingClarification(true);
     setMessage("");
     try {
       const data = await negotiateOffer(
         offer.id,
         {
-          proposed_salary: Number(negoSalary),
-          proposed_start_date: negoStart,
-          proposed_benefits: negoBenefits,
-          note: negoNote.trim() || null,
+          note: clarificationNote.trim(),
         },
         accessToken
       );
       setOffer(data.offer);
-      setShowNegotiate(false);
+      setShowClarification(false);
+      setClarificationNote("");
       setMessage(data.message);
+      toast.success(data.message || "Clarification sent to your recruiter.", {
+        toastId: `clarification-sent-${offer.id}`,
+        autoClose: 5000,
+      });
       invalidateCandidateInsightCache();
     } catch (error) {
-      setMessage(getApiErrorMessage(error, "Could not send negotiation."));
+      const errMsg = getApiErrorMessage(error, "Could not send clarification.");
+      setMessage(errMsg);
+      toast.error(errMsg);
     } finally {
-      setNegotiating(false);
+      setSendingClarification(false);
     }
   }
 
@@ -644,21 +653,27 @@ function OfferLetterPageContent() {
 
             <div className={styles.offerLetterBody}>
               {message && (
-                <p className={`${styles.offerFormMessage} ${styles.offerFormMessageError}`} role="status">
+                <p
+                  className={`${styles.offerFormMessage} ${
+                    /could not|failed|required|must |error/i.test(message)
+                      ? styles.offerFormMessageError
+                      : styles.offerFormMessageWarning
+                  }`}
+                  role="status"
+                >
                   {message}
                 </p>
               )}
 
-              {negoPending && (
+              {clarificationPending && (
                 <p className={`${styles.offerFormMessage} ${styles.offerFormMessageWarning}`}>
-                  Negotiation pending - your recruiter will accept (new v2 offer) or reject. Signing is paused until then.
+                  Clarification pending — your recruiter has been notified by email and in-app. Signing is paused until they respond.
                 </p>
               )}
-              {negoRejected && ["sent", "viewed"].includes(offer.status) && (
-                <p className={`${styles.offerFormMessage} ${styles.offerFormMessageError}`}>
-                  Negotiation declined
-                  {negotiation.recruiter_note ? `: ${negotiation.recruiter_note}` : "."} You may accept the original
-                  offer or decline it. No further negotiation is available.
+              {clarificationResolved && ["sent", "viewed", "expired"].includes(offer.status) && (
+                <p className={`${styles.offerFormMessage} ${styles.offerFormMessageWarning}`}>
+                  Clarification response received
+                  {negotiation.recruiter_note ? `: ${negotiation.recruiter_note}` : "."} You can continue with this offer.
                 </p>
               )}
 
@@ -792,77 +807,34 @@ function OfferLetterPageContent() {
                 </p>
               ) : (
                 <div className={styles.offerSignBlock}>
-                  {canNegotiate && !showNegotiate && (
+                  {canRequestClarification && !showClarification && (
                     <div style={{ marginBottom: 16 }}>
-                      <button type="button" className={styles.offerSecondaryButton} onClick={() => setShowNegotiate(true)}>
-                        Negotiate once (salary, start date, benefits)
+                      <button type="button" className={styles.offerSecondaryButton} onClick={() => setShowClarification(true)}>
+                        Request clarification
                       </button>
                     </div>
                   )}
 
-                  {showNegotiate && canNegotiate && (
-                    <form onSubmit={handleNegotiate} className={styles.offerForm} style={{ marginBottom: 20 }}>
-                      <h3 style={{ fontSize: 16, marginBottom: 12, color: "var(--navy)" }}>Propose changes (one round)</h3>
+                  {showClarification && canRequestClarification && (
+                    <form onSubmit={handleClarification} className={styles.offerForm} style={{ marginBottom: 20 }}>
+                      <h3 style={{ fontSize: 16, marginBottom: 12, color: "var(--navy)" }}>Request clarification</h3>
                       <label className={styles.offerField}>
-                        <span>Proposed monthly salary ({offer.currency})</span>
-                        <input
-                          className={styles.offerInput}
-                          type="number"
-                          min="0"
-                          value={negoSalary}
-                          onChange={(e) => setNegoSalary(e.target.value)}
-                          required
-                        />
-                      </label>
-                      <label className={styles.offerField}>
-                        <span>Proposed start date</span>
-                        <input
-                          className={styles.offerInput}
-                          type="date"
-                          value={negoStart}
-                          onChange={(e) => setNegoStart(e.target.value)}
-                          required
-                        />
-                      </label>
-                      <div style={{ marginBottom: 12 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--navy)" }}>Benefits</span>
-                        <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-                          {negoBenefits.map((b) => (
-                            <label key={b.id || b.label} className={styles.offerCheckbox}>
-                              <input
-                                type="checkbox"
-                                checked={b.selected}
-                                onChange={() =>
-                                  setNegoBenefits((rows) =>
-                                    rows.map((row) =>
-                                      (row.id || row.label) === (b.id || b.label)
-                                        ? { ...row, selected: !row.selected }
-                                        : row
-                                    )
-                                  )
-                                }
-                              />
-                              <span>{b.label}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                      <label className={styles.offerField}>
-                        <span>Note to recruiter (optional)</span>
+                        <span>Clarification for recruiter</span>
                         <textarea
                           className={styles.offerInput}
                           style={{ minHeight: 80, padding: 10, resize: "vertical" }}
                           rows={3}
-                          value={negoNote}
-                          onChange={(e) => setNegoNote(e.target.value)}
+                          value={clarificationNote}
+                          onChange={(e) => setClarificationNote(e.target.value)}
+                          placeholder="Ask your question about any term in the offer letter."
                         />
                       </label>
                       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                        <button type="button" className={styles.offerSecondaryButton} onClick={() => setShowNegotiate(false)}>
+                        <button type="button" className={styles.offerSecondaryButton} onClick={() => setShowClarification(false)}>
                           Cancel
                         </button>
-                        <button type="submit" className={styles.offerPrimaryButton} disabled={negotiating}>
-                          {negotiating ? "Sending..." : "Send negotiation"}
+                        <button type="submit" className={styles.offerPrimaryButton} disabled={sendingClarification}>
+                          {sendingClarification ? "Sending..." : "Send clarification"}
                         </button>
                       </div>
                     </form>

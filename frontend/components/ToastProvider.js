@@ -15,9 +15,9 @@ export default function ToastProvider() {
       draggable
       theme="colored"
       limit={4}
-      style={{ zIndex: 10050 }}
+      style={{ zIndex: 99999 }}
       toastStyle={{
-        zIndex: 10050,
+        zIndex: 99999,
         fontFamily: "inherit",
         fontSize: "14px",
         fontWeight: 600,

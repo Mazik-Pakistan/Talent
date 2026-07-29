@@ -639,11 +639,15 @@ export function getApiErrorMessage(error, fallbackMessage) {
   const detail = error.response?.data?.detail;
 
   if (Array.isArray(detail)) {
-    const first = detail[0];
-    const msg = first?.msg || first?.message;
-    if (msg) {
-      return String(msg).replace(/^Value error,\s*/i, "").replace(/^Assertion failed,\s*/i, "");
-    }
+    const messages = detail
+      .map((item) => {
+        const msg = item?.msg || item?.message;
+        return msg
+          ? String(msg).replace(/^Value error,\s*/i, "").replace(/^Assertion failed,\s*/i, "")
+          : null;
+      })
+      .filter(Boolean);
+    if (messages.length) return messages.join(" · ");
     return fallbackMessage;
   }
 
@@ -763,6 +767,13 @@ export async function rejectOfferNegotiation(offerId, payload, accessToken) {
 
 export async function counterOfferNegotiation(offerId, payload, accessToken) {
   const { data } = await apiClient.post(`/api/offers/${offerId}/negotiation/counter`, payload || {}, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function editAndResendOffer(offerId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/offers/${offerId}/edit-and-resend`, payload, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return data;
@@ -969,6 +980,15 @@ export async function remindEmployeeProfile(employeeId, payload, accessToken) {
     payload || {},
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
+  return data;
+}
+
+/** Recruiter-managed banking for on-site employees. */
+export async function updateEmployeeBanking(employeeId, payload, accessToken) {
+  const id = encodeURIComponent(String(employeeId || "").trim());
+  const { data } = await apiClient.put(`/api/employees/detail/${id}/banking`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
   return data;
 }
 

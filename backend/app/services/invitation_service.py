@@ -81,6 +81,7 @@ class InvitationService:
             "job_title": request.job_title,
             "department": request.department,
             "office_location": request.offer.office_location or request.office_location,
+            "is_remote": bool(request.is_remote or (request.offer and request.offer.is_remote)),
             "start_date": start_date,
             "recruiter_id": actor.id,
             "recruiter_email": actor.email,
@@ -144,7 +145,7 @@ class InvitationService:
             message=(
                 f"Offer invitation for {request.full_name} ({email}) was emailed."
                 if email_sent
-                else f"Offer invitation for {request.full_name} created. Email could not be sent — copy the link."
+                else f"Offer invitation for {request.full_name} created. Email could not be sent — please retry."
             ),
             link="/dashboard/recruiter/invite",
             related_id=token,
@@ -153,7 +154,7 @@ class InvitationService:
         message = (
             "Invitation and offer letter created and emailed to the candidate."
             if email_sent
-            else "Invitation and offer letter created, but the email could not be sent. Copy the link below to share it manually."
+            else "Invitation and offer letter created, but the email could not be sent. Please retry sending."
         )
 
         return {
@@ -169,6 +170,7 @@ class InvitationService:
                 "job_title": request.job_title,
                 "department": request.department,
                 "office_location": invitation["office_location"],
+                "is_remote": bool(invitation.get("is_remote")),
                 "start_date": invitation["start_date"],
                 "status": "pending",
                 "expires_at": invitation["expires_at"].isoformat(),
@@ -192,6 +194,7 @@ class InvitationService:
                 "job_title": invitation["job_title"],
                 "department": invitation["department"],
                 "office_location": invitation.get("office_location"),
+                "is_remote": bool(invitation.get("is_remote") or (offer or {}).get("is_remote")),
                 "start_date": invitation.get("start_date"),
                 "expires_at": invitation["expires_at"].isoformat()
                 if isinstance(invitation["expires_at"], datetime)

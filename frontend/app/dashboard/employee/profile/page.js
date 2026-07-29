@@ -272,16 +272,22 @@ function EmployeeProfileContent() {
   }), [employee, personal, educationEntries.length, skills, resume, onboarding, documents, nda]);
 
   const sectionsMeta = useMemo(
-    () => [
-      { id: "sec-employment", label: "Employment", icon: <IconBriefcase />, done: sectionComplete.employment },
-      { id: "sec-personal", label: "Personal", icon: <IconUser />, done: sectionComplete.personal },
-      { id: "sec-education", label: "Education", icon: <IconCap />, done: sectionComplete.education },
-      { id: "sec-skills", label: "Skills & resume", icon: <IconSpark />, done: sectionComplete.skills },
-      { id: "sec-emergency", label: "Emergency contact", icon: <IconHeart />, done: sectionComplete.emergency },
-      { id: "sec-banking", label: "Banking", icon: <IconBank />, done: sectionComplete.banking },
-      { id: "sec-references", label: "References", icon: <IconUsers />, done: sectionComplete.references },
-      { id: "sec-policies", label: "Policies & NDA", icon: <IconShield />, done: sectionComplete.policies },
-    ],
+    () => {
+      const items = [
+        { id: "sec-employment", label: "Employment", icon: <IconBriefcase />, done: sectionComplete.employment },
+        { id: "sec-personal", label: "Personal", icon: <IconUser />, done: sectionComplete.personal },
+        { id: "sec-education", label: "Education", icon: <IconCap />, done: sectionComplete.education },
+        { id: "sec-skills", label: "Skills & resume", icon: <IconSpark />, done: sectionComplete.skills },
+        { id: "sec-emergency", label: "Emergency contact", icon: <IconHeart />, done: sectionComplete.emergency },
+      ];
+      // Always show banking: remote employees edit it; on-site view recruiter-managed details.
+      items.push({ id: "sec-banking", label: "Banking", icon: <IconBank />, done: sectionComplete.banking });
+      items.push(
+        { id: "sec-references", label: "References", icon: <IconUsers />, done: sectionComplete.references },
+        { id: "sec-policies", label: "Policies & NDA", icon: <IconShield />, done: sectionComplete.policies },
+      );
+      return items;
+    },
     [sectionComplete]
   );
 
@@ -708,6 +714,10 @@ function EmployeeProfileContent() {
                     <Row label="Designation" value={employee?.job_title} />
                     <Row label="Department" value={employee?.department} />
                     <Row label="Employment type" value={employee?.employment_type} />
+                    <Row
+                      label="Work arrangement"
+                      value={employee?.is_remote ? "Remote" : "On-site / office-based"}
+                    />
                     <Row label="Reporting manager" value={employee?.reporting_manager} />
                     <Row label="Office location" value={employee?.office_location} />
                     <Row label="Joining date" value={formatDate(employee?.start_date)} />
@@ -1052,9 +1062,13 @@ function EmployeeProfileContent() {
                   icon={<IconBank />}
                   complete={sectionComplete.banking}
                   title="Banking"
-                  subtitle="Salary deposit account. Stored securely by HR."
-                  editable
-                  editing={editingSection === "employment"}
+                  subtitle={
+                    employee?.is_remote
+                      ? "Salary deposit account. You manage these details."
+                      : "Salary deposit account managed by your recruiter. View only."
+                  }
+                  editable={Boolean(employee?.is_remote)}
+                  editing={Boolean(employee?.is_remote) && editingSection === "employment"}
                   onEdit={() => startEdit("employment")}
                   onCancel={cancelEdit}
                   editForm={
@@ -1148,7 +1162,11 @@ function EmployeeProfileContent() {
                       <Row label="Swift code" value={onboarding.employment.swift_code} />
                     </dl>
                   ) : (
-                    <p className={styles.empty}>Not provided yet.</p>
+                    <p className={styles.empty}>
+                      {employee?.is_remote
+                        ? "Not provided yet."
+                        : "Your recruiter will add payroll banking details. You will be notified when they are ready."}
+                    </p>
                   )}
                 </ProfileSection>
 

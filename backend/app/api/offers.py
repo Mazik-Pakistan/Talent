@@ -9,6 +9,7 @@ from app.schemas.offer import (
     OfferApproveRequest,
     OfferCreateRequest,
     OfferDeclineRequest,
+    OfferEditResendRequest,
     OfferExtendValidityRequest,
     OfferNegotiateRequest,
     OfferSignRequest,
@@ -107,6 +108,14 @@ async def counter_negotiation(
     offer_id: str, payload: NegotiationRespondRequest, current_user: RequireRecruiter
 ):
     return await offer_service.counter_negotiation(current_user, offer_id, payload)
+
+
+@router.post("/{offer_id}/edit-and-resend")
+async def edit_and_resend_offer(
+    offer_id: str, payload: OfferEditResendRequest, current_user: RequireRecruiter
+):
+    """Edit offer letter terms after clarification and resend as a new version."""
+    return await offer_service.edit_and_resend(current_user, offer_id, payload)
 
 
 @router.post("/{offer_id}/approve")

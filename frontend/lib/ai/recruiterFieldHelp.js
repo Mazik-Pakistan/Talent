@@ -15,8 +15,6 @@ export const RECRUITER_FIELD_HELP = {
   department: "Hiring department — used for routing, learning, announcements, and talent filters.",
   office_location: "Office or city where they will work (optional).",
   start_date: "Planned joining date. Leave blank if not fixed yet.",
-  expires_in_days: "Days the invite link stays valid (1–30). Most teams use 7.",
-
   // Offer composer
   employment_type: "Employment type on the offer: Full-time, Part-time, Contract, or Internship.",
   reporting_manager: "Manager they will report to — required before sending the offer letter.",

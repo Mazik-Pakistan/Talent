@@ -17,7 +17,7 @@ import styles from "@/app/dashboard/candidate/candidate-dashboard.module.css";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
 
 const COLLAPSE_KEY = "candidate_sidebar_collapsed";
-const NOTIFICATIONS_POLL_MS = 60000;
+const NOTIFICATIONS_POLL_MS = 20000;
 
 /**
  * Shared chrome (sidebar + topbar) for candidate pages so the AI Assistant
@@ -85,12 +85,25 @@ function CandidateShellInner({ activeKey, title, subtitle, jobTitle, actions, ch
       const data = await getNotifications(accessToken);
       const nextUnread = data.unread_count || 0;
       const nextList = data.notifications || [];
-      if (silent && lastUnreadRef.current != null && nextUnread > lastUnreadRef.current && nextList[0]) {
-        toast.info(nextList[0].title || "New notification");
+      if (
+        silent &&
+        lastUnreadRef.current != null &&
+        nextUnread > lastUnreadRef.current &&
+        nextList[0]
+      ) {
+        const newest = nextList[0];
+        toast.info(`${newest.title}: ${newest.message?.slice(0, 100) || "New notification"}`, {
+          toastId: `candidate-notif-${newest.id || newest.title}`,
+        });
       }
       lastUnreadRef.current = nextUnread;
       setNotifications(nextList);
       setUnreadNotifications(nextUnread);
+      window.dispatchEvent(
+        new CustomEvent("talent-notifications-updated", {
+          detail: { unreadCount: nextUnread, notifications: nextList },
+        })
+      );
     } catch {
       // Non-critical polling failure
     }
@@ -218,6 +231,11 @@ function CandidateShellInner({ activeKey, title, subtitle, jobTitle, actions, ch
                           >
                             <strong>{notification.title}</strong>
                             <span>{notification.message}</span>
+                            {String(notification.type || "").includes("offer") ? (
+                              <em style={{ display: "block", marginTop: 4, fontSize: 11, color: "#0D5C91" }}>
+                                Open offer letter
+                              </em>
+                            ) : null}
                           </button>
                         ))
                       ) : (

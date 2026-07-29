@@ -91,12 +91,7 @@ export default function OfferSummaryCard({
 
       {negotiation.status && negotiation.status !== "none" && (
         <div className={`offer-negotiation-strip ${negotiation.status}`}>
-          <strong>Negotiation {negotiation.status}</strong>
-          <span>
-            Salary {formatOfferCurrency(offer.monthly_salary, offer.currency)} to{" "}
-            {formatOfferCurrency(negotiation.proposed_salary, offer.currency)} · Joining{" "}
-            {offer.start_date || "—"} to {negotiation.proposed_start_date || "—"}
-          </span>
+          <strong>Clarification {negotiation.status}</strong>
           {negotiation.note ? <p>{negotiation.note}</p> : null}
           {negotiation.recruiter_note ? <p>Recruiter note: {negotiation.recruiter_note}</p> : null}
         </div>
@@ -206,6 +201,16 @@ export default function OfferSummaryCard({
         border-color: #f3c9c3;
         background: #fff1f0;
         color: #b42318;
+      }
+      .offer-negotiation-strip.closed {
+        border-color: #f3c9c3;
+        background: #fff1f0;
+        color: #b42318;
+      }
+      .offer-negotiation-strip.resolved {
+        border-color: #b8ead5;
+        background: #eefaf4;
+        color: #157347;
       }
       .offer-negotiation-strip p {
         margin: 0;
