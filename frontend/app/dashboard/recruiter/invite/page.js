@@ -50,6 +50,13 @@ const initialInvite = {
   expires_in_days: 7,
 };
 
+// Default optional allowances
+const DEFAULT_ALLOWANCES = [
+  { label: "Meals", amount: "" },
+  { label: "Conveyance", amount: "" },
+  { label: "Communication", amount: "" },
+];
+
 function slugify(label) {
   return String(label || "")
     .toLowerCase()
@@ -170,11 +177,10 @@ function RecruiterInvitePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [inviteForm, setInviteForm] = useState(initialInvite);
-  const [breakdown, setBreakdown] = useState([
-    { label: "Basic", amount: "" },
-    { label: "Housing", amount: "" },
-    { label: "Transport", amount: "" },
-  ]);
+  // Allowances now start with the three default rows
+  const [allowances, setAllowances] = useState(
+    DEFAULT_ALLOWANCES.map((a) => ({ ...a }))
+  );
   const [benefits, setBenefits] = useState(
     PRESET_BENEFITS.map((label) => ({
       id: slugify(label),
@@ -191,12 +197,12 @@ function RecruiterInvitePageInner() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [inviteMode, setInviteMode] = useState("single"); // single | bulk
 
-  const breakdownTotal = useMemo(
-    () =>
-      breakdown.reduce((sum, row) => sum + (Number(row.amount) || 0), 0),
-    [breakdown]
+  const allowancesTotal = useMemo(
+    () => allowances.reduce((sum, row) => sum + (Number(row.amount) || 0), 0),
+    [allowances]
   );
   const gross = Number(inviteForm.monthly_salary) || 0;
+  const totalCompensation = gross + allowancesTotal;
 
   useEffect(() => {
     const email = searchParams.get("email");
@@ -257,20 +263,18 @@ function RecruiterInvitePageInner() {
     setInviteMessage("");
   }
 
-  function updateBreakdown(index, field, value) {
-    setBreakdown((rows) =>
-      rows.map((row, i) =>
-        i === index ? { ...row, [field]: value } : row
-      )
+  function updateAllowance(index, field, value) {
+    setAllowances((rows) =>
+      rows.map((row, i) => (i === index ? { ...row, [field]: value } : row))
     );
   }
 
-  function addBreakdownRow() {
-    setBreakdown((rows) => [...rows, { label: "", amount: "" }]);
+  function addAllowanceRow() {
+    setAllowances((rows) => [...rows, { label: "", amount: "" }]);
   }
 
-  function removeBreakdownRow(index) {
-    setBreakdown((rows) => rows.filter((_, i) => i !== index));
+  function removeAllowanceRow(index) {
+    setAllowances((rows) => rows.filter((_, i) => i !== index));
   }
 
   function toggleBenefit(id) {
@@ -312,10 +316,7 @@ function RecruiterInvitePageInner() {
       );
       return;
     }
-    if (breakdownTotal > 0 && gross > 0 && breakdownTotal - gross > 0.01) {
-      setInviteMessage("Salary breakdown total cannot exceed monthly salary.");
-      return;
-    }
+
     if (personHistory?.active_conflict) {
       setInviteMessage(personHistory.active_conflict.message || "This email cannot be invited right now.");
       return;
@@ -326,7 +327,7 @@ function RecruiterInvitePageInner() {
 
     setIsCreating(true);
     try {
-      const salaryBreakdown = breakdown
+      const payloadAllowances = allowances
         .filter((row) => row.label.trim() && Number(row.amount) > 0)
         .map((row) => ({ label: row.label.trim(), amount: Number(row.amount) }));
 
@@ -347,7 +348,7 @@ function RecruiterInvitePageInner() {
           start_date: inviteForm.start_date,
           monthly_salary: Number(inviteForm.monthly_salary),
           currency: inviteForm.currency,
-          salary_breakdown: salaryBreakdown,
+          allowances: payloadAllowances,   // NEW field name
           benefits: benefits.map((b) => ({
             id: b.id,
             label: b.label,
@@ -365,11 +366,7 @@ function RecruiterInvitePageInner() {
       setInviteLink(data.invitation?.invite_link || "");
       setInviteEmailSent(Boolean(data.email_sent));
       setInviteForm(initialInvite);
-      setBreakdown([
-        { label: "Basic", amount: "" },
-        { label: "Housing", amount: "" },
-        { label: "Transport", amount: "" },
-      ]);
+      setAllowances(DEFAULT_ALLOWANCES.map((a) => ({ ...a })));
       setBenefits(
         PRESET_BENEFITS.map((label) => ({
           id: slugify(label),
@@ -433,7 +430,7 @@ function RecruiterInvitePageInner() {
               </div>
               <div className={styles.sectionDesc}>
                 {inviteMode === "bulk"
-                  ? "Full offer parity with single invite — salary breakdown, benefits, and AI history review before send."
+                  ? "Full offer parity with single invite — allowances, benefits, and AI history review before send."
                   : "Mazik Global Pakistan offer is emailed with the invite link. Candidate accepts by signing in the portal."}
               </div>
             </div>
@@ -689,11 +686,11 @@ function RecruiterInvitePageInner() {
               </div>
             </div>
 
-            {/* ---------- Compensation card ---------- */}
+            {/* ---------- Compensation card (Salary & Allowances) ---------- */}
             <div style={cardStyle}>
               <div style={sectionHeadStyle}>
                 <IconCompensation />
-                Salary
+                Salary & Allowances
               </div>
               <div className={styles.formGrid} style={{ marginBottom: 20 }}>
                 <label className={styles.field}>
@@ -711,7 +708,7 @@ function RecruiterInvitePageInner() {
                   </select>
                 </label>
                 <label className={styles.field}>
-                  <span>Monthly salary (gross)</span>
+                  <span>Monthly salary (gross) <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
                   <FormattedNumberInput
                     value={inviteForm.monthly_salary}
                     onChange={(raw) =>
@@ -726,7 +723,7 @@ function RecruiterInvitePageInner() {
                 </label>
               </div>
 
-              {/* Salary breakdown */}
+              {/* Allowances – enhanced UI */}
               <div>
                 <div
                   style={{
@@ -736,20 +733,38 @@ function RecruiterInvitePageInner() {
                     marginBottom: 12,
                   }}
                 >
-                  <span style={{ fontWeight: 600, fontSize: 14, color: "var(--navy)" }}>
-                    Salary breakdown
-                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: "var(--navy)" }}>
+                      Allowances
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        padding: "2px 8px",
+                        borderRadius: 20,
+                        background: "#eef2f7",
+                        color: "#5a6b7d",
+                        fontWeight: 500,
+                      }}
+                    >
+                      Optional · Paid extra
+                    </span>
+                  </div>
                   <button
                     type="button"
                     className={styles.secondaryButton}
-                    onClick={addBreakdownRow}
+                    onClick={addAllowanceRow}
                     style={{ padding: "6px 14px", fontSize: 13 }}
                   >
-                    + Add component
+                    + Add allowance
                   </button>
                 </div>
 
-                {breakdown.map((row, index) => (
+                <p style={{ fontSize: 12, color: "#8592a3", margin: "0 0 12px" }}>
+                  These are paid on top of the gross salary. Leave any row empty or delete it if not needed.
+                </p>
+
+                {allowances.map((row, index) => (
                   <div
                     key={index}
                     style={{
@@ -767,19 +782,19 @@ function RecruiterInvitePageInner() {
                         border: "1px solid var(--border)",
                         background: "#fff",
                       }}
-                      placeholder="Component (e.g. Basic)"
+                      placeholder="Allowance name (e.g. Housing)"
                       value={row.label}
                       onChange={(e) =>
-                        updateBreakdown(index, "label", e.target.value)
+                        updateAllowance(index, "label", e.target.value)
                       }
                     />
                     <div style={{ position: "relative", flex: "1 1 180px" }}>
                       <FormattedNumberInput
                         value={row.amount}
                         onChange={(raw) =>
-                          updateBreakdown(index, "amount", raw)
+                          updateAllowance(index, "amount", raw)
                         }
-                        placeholder="Amount"
+                        placeholder="0.00"
                         style={{
                           width: "100%",
                           padding: "8px 48px 8px 12px",
@@ -804,7 +819,7 @@ function RecruiterInvitePageInner() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => removeBreakdownRow(index)}
+                      onClick={() => removeAllowanceRow(index)}
                       style={{
                         background: "none",
                         border: "none",
@@ -834,26 +849,13 @@ function RecruiterInvitePageInner() {
                   }}
                 >
                   <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                    Breakdown total
+                    Total Monthly Compensation
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <span style={{ fontWeight: 600, fontSize: 15 }}>
                       {inviteForm.currency}{" "}
-                      {formatNumberWithCommas(breakdownTotal)}
+                      {formatNumberWithCommas(totalCompensation)}
                     </span>
-                    {gross > 0 && breakdownTotal - gross > 0.01 && (
-                      <span
-                        style={{
-                          color: "#c92a2a",
-                          fontSize: 12,
-                          background: "#ffeef0",
-                          padding: "2px 8px",
-                          borderRadius: 4,
-                        }}
-                      >
-                        ⚠ Exceeds gross
-                      </span>
-                    )}
                   </div>
                 </div>
               </div>
