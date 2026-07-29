@@ -37,7 +37,8 @@ DEFAULT_BENEFITS = (
 )
 
 
-class SalaryBreakdownItem(BaseModel):
+class AllowanceItem(BaseModel):
+    """Single allowance (paid extra on top of gross salary)."""
     label: str = Field(..., min_length=1, max_length=120)
     amount: float = Field(..., ge=0)
 
@@ -69,7 +70,7 @@ class OfferTermsPayload(BaseModel):
     start_date: str = Field(..., min_length=4, max_length=40)
     monthly_salary: float = Field(..., ge=0)
     currency: str = Field(default="PKR", max_length=8)
-    salary_breakdown: list[SalaryBreakdownItem] = Field(default_factory=list)
+    allowances: list[AllowanceItem] = Field(default_factory=list)          # <-- renamed
     benefits: list[BenefitItem] = Field(default_factory=list)
     offer_expiry_days: int | None = Field(default=None, ge=1, le=90)
     terms: str = Field(default=DEFAULT_OFFER_TERMS, max_length=8000)
@@ -88,13 +89,7 @@ class OfferTermsPayload(BaseModel):
         normalized = " ".join(value.split())
         return normalized or None
 
-    @model_validator(mode="after")
-    def _validate_breakdown(self) -> OfferTermsPayload:
-        if self.salary_breakdown:
-            total = sum(item.amount for item in self.salary_breakdown)
-            if total - self.monthly_salary > 0.01:
-                raise ValueError("Salary breakdown total cannot exceed monthly salary.")
-        return self
+    # No longer validate that allowances sum to monthly_salary – they are extra.
 
 
 class OfferCreateRequest(OfferTermsPayload):
@@ -145,7 +140,7 @@ class OfferExtendValidityRequest(BaseModel):
 class OfferNegotiateRequest(BaseModel):
     proposed_salary: float = Field(..., ge=0)
     proposed_start_date: str = Field(..., min_length=4, max_length=40)
-    proposed_salary_breakdown: list[SalaryBreakdownItem] = Field(default_factory=list)
+    proposed_allowances: list[AllowanceItem] = Field(default_factory=list)   # <-- renamed
     proposed_benefits: list[BenefitItem] = Field(default_factory=list)
     requested_changes: list[str] = Field(default_factory=list)
     note: str | None = Field(default=None, max_length=2000)
@@ -160,27 +155,15 @@ class OfferNegotiateRequest(BaseModel):
                 out.append(normalized)
         return out
 
-    @model_validator(mode="after")
-    def _validate_proposed_breakdown(self) -> OfferNegotiateRequest:
-        if self.proposed_salary_breakdown:
-            total = sum(item.amount for item in self.proposed_salary_breakdown)
-            if total - self.proposed_salary > 0.01:
-                raise ValueError("Proposed salary breakdown total cannot exceed proposed salary.")
-        return self
+    # No more breakdown constraint – allowances are extra.
 
 
 class NegotiationRespondRequest(BaseModel):
     recruiter_note: str | None = Field(default=None, max_length=2000)
     revised_salary: float | None = Field(default=None, ge=0)
     revised_start_date: str | None = Field(default=None, min_length=4, max_length=40)
-    revised_salary_breakdown: list[SalaryBreakdownItem] = Field(default_factory=list)
+    revised_allowances: list[AllowanceItem] = Field(default_factory=list)    # <-- renamed
     revised_benefits: list[BenefitItem] = Field(default_factory=list)
     decision_summary: str | None = Field(default=None, max_length=2000)
 
-    @model_validator(mode="after")
-    def _validate_revised_breakdown(self) -> NegotiationRespondRequest:
-        if self.revised_salary_breakdown and self.revised_salary is not None:
-            total = sum(item.amount for item in self.revised_salary_breakdown)
-            if total - self.revised_salary > 0.01:
-                raise ValueError("Revised salary breakdown total cannot exceed revised salary.")
-        return self
+    # No validation against salary.
