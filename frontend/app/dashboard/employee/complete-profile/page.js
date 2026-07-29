@@ -33,7 +33,7 @@ const STEPS = [
   { id: "employment", label: "Banking" },
   { id: "references", label: "References" },
   { id: "documents", label: "Policies" },
-  { id: "nda", label: "Sign NDA" },
+  { id: "nda", label: "Self Declaration" },
   { id: "submit", label: "Finish" },
 ];
 
@@ -98,9 +98,9 @@ function CompleteProfileContent() {
   const [employment, setEmployment] = useState(emptyEmployment);
   const [references, setReferences] = useState([{ ...emptyReference }, { ...emptyReference }]);
   const [documents, setDocuments] = useState(emptyDocuments);
-  const [ndaName, setNdaName] = useState("");
-  const [ndaAgreed, setNdaAgreed] = useState(false);
-  const [ndaSignature, setNdaSignature] = useState(null);
+  const [selfDeclName, setSelfDeclName] = useState("");
+  const [selfDeclAgreed, setSelfDeclAgreed] = useState(false);
+  const [selfDeclSignature, setSelfDeclSignature] = useState(null);
 
   const complete = progress?.profile_status === "complete";
   const stepIndex = useMemo(() => STEPS.findIndex((item) => item.id === step), [step]);
@@ -146,11 +146,11 @@ function CompleteProfileContent() {
     if (onboarding.documents) setDocuments({ ...emptyDocuments, ...onboarding.documents });
     const lockedName = emp?.full_name || "";
     if (onboarding.nda) {
-      setNdaName(onboarding.nda.full_legal_name || lockedName);
-      setNdaAgreed(!!onboarding.nda.agreed);
-      if (onboarding.nda.signature) setNdaSignature(onboarding.nda.signature);
+      setSelfDeclName(onboarding.nda.full_legal_name || lockedName);
+      setSelfDeclAgreed(!!onboarding.nda.agreed);
+      if (onboarding.nda.signature) setSelfDeclSignature(onboarding.nda.signature);
     } else if (lockedName) {
-      setNdaName(lockedName);
+      setSelfDeclName(lockedName);
     }
   }, []);
 
@@ -344,20 +344,20 @@ function CompleteProfileContent() {
       nda: () => {
         const expected = employee?.full_name || "";
         const nameMismatch =
-          !ndaName?.trim() || normalizeName(ndaName) !== normalizeName(expected);
+          !selfDeclName?.trim() || normalizeName(selfDeclName) !== normalizeName(expected);
         const errors = {
           "nda.full_legal_name": nameMismatch,
-          "nda.signature": !ndaSignature,
-          "nda.agreed": !ndaAgreed,
+          "nda.signature": !selfDeclSignature,
+          "nda.agreed": !selfDeclAgreed,
         };
-        let message = "Agree to the NDA and provide your signature to continue.";
-        if (nameMismatch) message = `NDA name must match your registered name: ${expected}`;
-        else if (!ndaSignature) message = "Please draw or upload your signature.";
-        else if (!ndaAgreed) message = "You must agree to the NDA terms.";
+        let message = "You must agree to the self-declaration and provide your signature.";
+        if (nameMismatch) message = `Name must match your registered name: ${expected}`;
+        else if (!selfDeclSignature) message = "Please draw or upload your signature.";
+        else if (!selfDeclAgreed) message = "You must agree to the declaration to continue.";
         return { errors, message };
       },
     }),
-    [emergency, employment, references, documents, employee, ndaName, ndaAgreed, ndaSignature]
+    [emergency, employment, references, documents, employee, selfDeclName, selfDeclAgreed, selfDeclSignature]
   );
 
   const isSectionValid = useCallback(
@@ -429,15 +429,15 @@ function CompleteProfileContent() {
         return {
           step: "nda",
           nda: {
-            full_legal_name: employee?.full_name || ndaName,
-            agreed: ndaAgreed,
-            signature: ndaSignature,
+            full_legal_name: employee?.full_name || selfDeclName,
+            agreed: selfDeclAgreed,
+            signature: selfDeclSignature,
           },
         };
       }
       return { step: "submit" };
     },
-    [emergency, employment, references, documents, employee, ndaName, ndaAgreed, ndaSignature]
+    [emergency, employment, references, documents, employee, selfDeclName, selfDeclAgreed, selfDeclSignature]
   );
 
   const autoSaveValue = useMemo(() => {
@@ -605,8 +605,8 @@ function CompleteProfileContent() {
           employment={employment}
           references={references}
           documents={documents}
-          ndaName={ndaName}
-          ndaAgreed={ndaAgreed}
+          selfDeclName={selfDeclName}
+          selfDeclAgreed={selfDeclAgreed}
           onViewProfile={() => router.push("/dashboard/employee/profile")}
           onDashboard={() => router.push("/dashboard/employee")}
         />
@@ -632,11 +632,11 @@ function CompleteProfileContent() {
             setReferences={setReferences}
             documents={documents}
             setDocuments={setDocuments}
-            ndaName={ndaName}
-            ndaAgreed={ndaAgreed}
-            setNdaAgreed={setNdaAgreed}
-            ndaSignature={ndaSignature}              
-            setNdaSignature={setNdaSignature}
+            selfDeclName={selfDeclName}
+            selfDeclAgreed={selfDeclAgreed}
+            setSelfDeclAgreed={setSelfDeclAgreed}
+            selfDeclSignature={selfDeclSignature}
+            setSelfDeclSignature={setSelfDeclSignature}
             showScanner={showScanner}
             onToggleScanner={() => setShowScanner((value) => !value)}
             onScanApplied={handleScanApplied}
@@ -652,11 +652,7 @@ function CompleteProfileContent() {
   );
 }
 
-/* ── Hero, ProgressRing, AssistStrip, OnboardingForm, CompletedRecord, etc. ── */
-/* The remaining components (Hero, ProgressRing, AssistStrip, OnboardingForm, CompletedRecord, 
-   ReviewBlock, HistoryBlock, HistoryRow, LoadingSkeleton, normalizeName) stay exactly the 
-   same as your latest code, with the only change being that OnboardingForm now receives 
-   ndaSignature as a prop. */
+// ── Hero, ProgressRing, AssistStrip, OnboardingForm, CompletedRecord, etc. ──
 
 function Hero({ employee, percentage, complete, remaining }) {
   return (
@@ -768,11 +764,11 @@ function OnboardingForm({
   setReferences,
   documents,
   setDocuments,
-  ndaName,
-  ndaAgreed,
-  setNdaAgreed,
-  ndaSignature,       // <-- new prop
-  setNdaSignature,
+  selfDeclName,
+  selfDeclAgreed,
+  setSelfDeclAgreed,
+  selfDeclSignature,
+  setSelfDeclSignature,
   showScanner,
   onToggleScanner,
   onScanApplied,
@@ -781,7 +777,7 @@ function OnboardingForm({
   onExit,
 }) {
   const { fields: aiFields, activeField } = automation;
-  const [ndaSigMethod, setNdaSigMethod] = useState("pad");
+  const [selfDeclSigMethod, setSelfDeclSigMethod] = useState("pad");
 
   const fieldProps = (key, { required = false } = {}) => ({
     fieldKey: key,
@@ -812,7 +808,6 @@ function OnboardingForm({
     clearFieldError(`documents.${key}`);
   }
 
-  // visual completion for step navigation icons – now requires signature for NDA
   const sectionHasData = {
     emergency: Boolean(emergency.name && emergency.phone),
     employment: Boolean(employment.bank_name && employment.account_number),
@@ -821,7 +816,7 @@ function OnboardingForm({
       documents.accepted_privacy_policy &&
         documents.accepted_employee_handbook
     ),
-    nda: Boolean(ndaAgreed && ndaSignature),  // both required for the green check
+    nda: Boolean(selfDeclAgreed && selfDeclSignature),
     submit: Boolean(complete),
   };
 
@@ -863,8 +858,6 @@ function OnboardingForm({
         </ol>
 
         <form data-partner-coach onSubmit={onSubmit}>
-          {/* ... rest of the form (emergency, employment, references, documents, nda, submit) unchanged ... */}
-
           {step === "emergency" ? (
             <div className={styles.formStack}>
               <div>
@@ -1091,83 +1084,128 @@ function OnboardingForm({
             </div>
           ) : null}
 
-          {step === "nda" ? (
+          {step === "nda" ? ( // self-declaration step
             <div className={styles.formStack}>
               <div>
-                <h2 className={styles.stepTitle}>Non-disclosure agreement</h2>
+                <h2 className={styles.stepTitle}>Self Declaration</h2>
                 <p className={styles.stepLead}>
-                  Your legal name is locked to your employee record so it matches your signed offer letter.
-                  Both your signature and agreement checkbox are required.
+                  Please confirm that all documents you
+                  have submitted are true and correct by signing below.
                 </p>
               </div>
-              <div className={styles.ndaBlock}>
+
+              <div style={{ marginBottom: 24 }}>
+                <p style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6 }}>
+                  I, <strong>{employee?.full_name || "—"}</strong>, declare that all documents provided during
+                  this onboarding process (identity, educational, professional credentials, etc.) are genuine
+                  and true to the best of my knowledge. I take full responsibility and oath to agree with this
+                  declaration.
+                </p>
+              </div>
+
+              <div>
                 <AiField
                   wide
                   readOnly
                   label="Full legal name"
-                  value={employee?.full_name || ndaName}
+                  value={employee?.full_name || selfDeclName}
                   hint={`Must match: ${employee?.full_name || "your registered name"}`}
                   onChange={() => {}}
                   {...fieldProps("nda.full_legal_name", { required: true })}
                 />
-                <div
-                  style={{ marginTop: 18 }}
-                  data-field-error={fieldErrors["nda.signature"] ? "true" : undefined}
-                >
-                  <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
-                    <button
-                      type="button"
-                      className={ndaSigMethod === "pad" ? styles.btnPrimary : styles.btnSecondary}
-                      onClick={() => { setNdaSigMethod("pad"); setNdaSignature(null); }}
-                    >
-                      Draw signature
-                    </button>
-                    <button
-                      type="button"
-                      className={ndaSigMethod === "upload" ? styles.btnPrimary : styles.btnSecondary}
-                      onClick={() => { setNdaSigMethod("upload"); setNdaSignature(null); }}
-                    >
-                      Upload signature
-                    </button>
-                  </div>
+              </div>
 
-                  {ndaSigMethod === "pad" ? (
-                    <SignaturePad onChange={setNdaSignature} />
-                  ) : (
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted, #5b6d86)", textTransform: "uppercase", letterSpacing: ".4px" }}>
-                        Signature file (PNG, JPG, or PDF)
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/jpg,application/pdf"
-                        style={{ fontSize: 13 }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          const reader = new FileReader();
-                          reader.onload = (ev) => setNdaSignature(ev.target.result);
-                          reader.readAsDataURL(file);
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  {fieldErrors["nda.signature"] ? (
-                    <em style={{ fontStyle: "normal", fontSize: 11.5, fontWeight: 700, color: "#b42318" }}>
-                      Signature required
-                    </em>
-                  ) : null}
-                </div>
-                <div style={{ marginTop: 16 }}>
-                  <AiCheckRow
-                    checked={ndaAgreed}
-                    onChange={(event) => setNdaAgreed(event.target.checked)}
-                    error={fieldErrors["nda.agreed"]}
+              <div
+                style={{ marginTop: 18 }}
+                data-field-error={fieldErrors["nda.signature"] ? "true" : undefined}
+              >
+                <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    className={
+                      selfDeclSigMethod === "pad"
+                        ? styles.btnPrimary
+                        : styles.btnSecondary
+                    }
+                    onClick={() => {
+                      setSelfDeclSigMethod("pad");
+                      setSelfDeclSignature(null);
+                    }}
                   >
-                    I agree to the terms of the non-disclosure agreement.
-                  </AiCheckRow>
+                    Draw signature
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      selfDeclSigMethod === "upload"
+                        ? styles.btnPrimary
+                        : styles.btnSecondary
+                    }
+                    onClick={() => {
+                      setSelfDeclSigMethod("upload");
+                      setSelfDeclSignature(null);
+                    }}
+                  >
+                    Upload signature
+                  </button>
                 </div>
+
+                {selfDeclSigMethod === "pad" ? (
+                  <SignaturePad onChange={setSelfDeclSignature} />
+                ) : (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "var(--text-muted)",
+                        textTransform: "uppercase",
+                        letterSpacing: ".4px",
+                      }}
+                    >
+                      Signature file (PNG, JPG, or PDF)
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,application/pdf"
+                      style={{ fontSize: 13 }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (ev) =>
+                          setSelfDeclSignature(ev.target.result);
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                  </div>
+                )}
+
+                {fieldErrors["nda.signature"] ? (
+                  <em
+                    style={{
+                      fontStyle: "normal",
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      color: "#b42318",
+                      display: "block",
+                      marginTop: 8,
+                    }}
+                  >
+                    Signature required
+                  </em>
+                ) : null}
+              </div>
+
+              <div style={{ marginTop: 16 }}>
+                <AiCheckRow
+                  checked={selfDeclAgreed}
+                  onChange={(event) => setSelfDeclAgreed(event.target.checked)}
+                  error={fieldErrors["nda.agreed"]}
+                >
+                  I agree to the above declaration and take full responsibility for the accuracy of my
+                  submitted documents.
+                </AiCheckRow>
               </div>
             </div>
           ) : null}
@@ -1205,9 +1243,9 @@ function OnboardingForm({
                   ])}
                 />
                 <ReviewBlock
-                  title="Policies & NDA"
+                  title="Policies & Self Declaration"
                   items={[
-                    ["Signed by", employee?.full_name || ndaName || "—"],
+                    ["Signed by", employee?.full_name || selfDeclName || "—"],
                     [
                       "Policies",
                       documents.accepted_privacy_policy &&
@@ -1215,6 +1253,7 @@ function OnboardingForm({
                         ? "Acknowledged"
                         : "Incomplete",
                     ],
+                    ["Self Declaration", selfDeclAgreed ? "Agreed" : "—"],
                   ]}
                 />
               </div>
@@ -1249,8 +1288,8 @@ function CompletedRecord({
   employment,
   references,
   documents,
-  ndaName,
-  ndaAgreed,
+  selfDeclName,
+  selfDeclAgreed,
   onViewProfile,
   onDashboard,
 }) {
@@ -1305,9 +1344,9 @@ function CompletedRecord({
             <HistoryRow label="Employee handbook" value={documents.accepted_employee_handbook ? "Accepted" : "—"} />
           </HistoryBlock>
 
-          <HistoryBlock title="NDA">
-            <HistoryRow label="Signed name" value={ndaName} />
-            <HistoryRow label="Agreed" value={ndaAgreed ? "Yes" : "—"} />
+          <HistoryBlock title="Self Declaration">
+            <HistoryRow label="Signed name" value={selfDeclName} />
+            <HistoryRow label="Agreed" value={selfDeclAgreed ? "Yes" : "—"} />
           </HistoryBlock>
         </div>
 
