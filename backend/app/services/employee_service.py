@@ -1742,12 +1742,18 @@ class EmployeeService:
                     {
                         "onboarding.employment.iban_hash": iban_hash,
                         "_id": {"$ne": employee["_id"]},
+                        "status": {"$nin": list(HISTORICAL_EMPLOYEE_STATUSES)},
                     }
                 )
                 if duplicate:
+                    other_id = duplicate.get("employee_id") or "another employee"
+                    other_name = duplicate.get("full_name") or "another employee"
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
-                        detail="This IBAN is already registered to another employee.",
+                        detail=(
+                            f"This IBAN is already registered to {other_name} ({other_id}). "
+                            "Enter a different IBAN."
+                        ),
                     )
                 data = encrypt_banking_payload(data)
             if request.step == "personal":
@@ -1890,12 +1896,18 @@ class EmployeeService:
             {
                 "onboarding.employment.iban_hash": iban_hash,
                 "_id": {"$ne": employee["_id"]},
+                "status": {"$nin": list(HISTORICAL_EMPLOYEE_STATUSES)},
             }
         )
         if duplicate:
+            other_id = duplicate.get("employee_id") or "another employee"
+            other_name = duplicate.get("full_name") or "another employee"
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="This IBAN is already registered to another employee.",
+                detail=(
+                    f"This IBAN is already registered to {other_name} ({other_id}). "
+                    "Enter a different IBAN for this employee."
+                ),
             )
 
         now = datetime.now(UTC)
@@ -1941,6 +1953,20 @@ class EmployeeService:
             link="/dashboard/employee/profile#sec-banking",
             related_id=employee.get("employee_id"),
         )
+
+        try:
+            to_email = (employee.get("email") or "").strip()
+            if to_email:
+                email_service.send_banking_details_notice(
+                    to_email=to_email,
+                    full_name=employee.get("full_name") or "Employee",
+                    bank_name=data.get("bank_name") or "",
+                    account_holder_name=data.get("account_holder_name") or "",
+                    iban=data.get("iban") or "",
+                    is_update=had_banking,
+                )
+        except Exception:
+            pass
 
         refreshed = await database.employees.find_one({"_id": employee["_id"]})
         profile = await self.get_employee_profile(

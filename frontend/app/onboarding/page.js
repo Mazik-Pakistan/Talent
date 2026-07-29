@@ -376,9 +376,11 @@ function OnboardingContent() {
   }
 
   function splitTags(value) {
-    if (Array.isArray(value)) return value;
+    if (Array.isArray(value)) {
+      return value.map((s) => String(s ?? "").trim()).filter(Boolean);
+    }
     return String(value || "")
-      .split(",")
+      .split(/[,;|/]/)
       .map((s) => s.trim())
       .filter(Boolean);
   }
@@ -775,14 +777,8 @@ function OnboardingContent() {
           .filter(Boolean)
           .join(" | ");
 
-      const techArr = (fields.technical_skills || fields.skills || "")
-        .split(/[,;]/)
-        .map(s => s.trim())
-        .filter(Boolean);
-      const softArr = (fields.soft_skills || "")
-        .split(/[,;]/)
-        .map(s => s.trim())
-        .filter(Boolean);
+      const techArr = splitTags(fields.technical_skills || fields.skills);
+      const softArr = splitTags(fields.soft_skills);
 
       const certs = Array.isArray(fields.certifications)
         ? fields.certifications.map((c) =>
@@ -1527,10 +1523,12 @@ function OnboardingContent() {
       
       const currentAddressValidation = validateTextField(personal.current_address, 3, 300, "Current address");
       if (!currentAddressValidation.isValid) errors.current_address = currentAddressValidation.error;
-      
-      if (!personal.same_as_current) {
-        const permanentAddressValidation = validateTextField(personal.permanent_address, 3, 300, "Permanent address");
-        if (!permanentAddressValidation.isValid) errors.permanent_address = permanentAddressValidation.error;
+
+      const permanentAddressValidation = personal.same_as_current
+        ? null
+        : validateTextField(personal.permanent_address, 3, 300, "Permanent address");
+      if (permanentAddressValidation && !permanentAddressValidation.isValid) {
+        errors.permanent_address = permanentAddressValidation.error;
       }
       
       // Validate date of birth

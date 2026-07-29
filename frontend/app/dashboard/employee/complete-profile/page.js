@@ -636,6 +636,8 @@ function CompleteProfileContent() {
           <OnboardingForm
             step={step}
             stepIndex={stepIndex}
+            visibleSteps={visibleSteps}
+            isRemote={isRemote}
             onStepChange={gotoSection}
             fieldErrors={fieldErrors}
             clearFieldError={(key) => setFieldErrors((current) => ({ ...current, [key]: false }))}
@@ -768,6 +770,8 @@ function AssistStrip({ onOpenAssistant }) {
 function OnboardingForm({
   step,
   stepIndex,
+  visibleSteps,
+  isRemote,
   onStepChange,
   fieldErrors,
   clearFieldError,

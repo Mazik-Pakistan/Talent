@@ -306,13 +306,25 @@ export default function RecruiterCandidatesPage() {
       if (draft) payload.it_manager_email = draft;
       const data = await sendItProvisioning(payload, accessToken);
       setConversionMessage(data.message);
-      toast.success(data.message || "IT request sent.");
-      if (data.form_link) {
-        try {
-          await navigator.clipboard.writeText(data.form_link);
-          toast.info("IT form link copied to clipboard.");
-        } catch {
-          /* ignore */
+      if (data.email_sent) {
+        toast.success(data.message || "IT request emailed.");
+        if (data.form_link) {
+          try {
+            await navigator.clipboard.writeText(data.form_link);
+            toast.info("IT form link copied to clipboard.");
+          } catch {
+            /* ignore */
+          }
+        }
+      } else {
+        toast.error(data.message || "IT request saved, but the email failed to send.");
+        if (data.form_link) {
+          try {
+            await navigator.clipboard.writeText(data.form_link);
+            toast.info("IT form link copied — share it manually with IT.");
+          } catch {
+            /* ignore */
+          }
         }
       }
       await loadCandidates();
@@ -333,7 +345,19 @@ export default function RecruiterCandidatesPage() {
     try {
       const data = await remindItProvisioning({ offer_id: candidate.offer_id }, accessToken);
       setConversionMessage(data.message);
-      toast.success(data.message || "Follow-up sent.");
+      if (data.email_sent) {
+        toast.success(data.message || "Follow-up emailed.");
+      } else {
+        toast.error(data.message || "Could not send follow-up email.");
+        if (data.form_link) {
+          try {
+            await navigator.clipboard.writeText(data.form_link);
+            toast.info("IT form link copied — share it manually with IT.");
+          } catch {
+            /* ignore */
+          }
+        }
+      }
       await loadCandidates();
     } catch (err) {
       const msg = getApiErrorMessage(err, "Could not send IT follow-up.");

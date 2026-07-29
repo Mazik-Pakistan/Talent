@@ -691,6 +691,194 @@ class EmailService:
         )
 
     # ------------------------------------------------------------------ #
+    # IT provisioning request (to IT manager)
+    # ------------------------------------------------------------------ #
+    def send_it_provisioning_request(
+        self,
+        *,
+        to_email: str,
+        recruiter_name: str,
+        employee: dict | None,
+        form_link: str,
+        expires_at: str,
+        note: str | None = None,
+        is_reminder: bool = False,
+    ) -> None:
+        emp = employee or {}
+        name = emp.get("full_name") or "the new hire"
+        job_title = emp.get("job_title") or "—"
+        department = emp.get("department") or "—"
+        start_date = emp.get("start_date") or "—"
+        personal_email = emp.get("email") or "—"
+        safe_link = _escape_text(form_link, quote=True)
+        safe_note = _escape_text(note or "")
+        note_html = (
+            f"""
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#fff8ef;border:1px solid #f3e0c2;border-radius:12px;margin:0 0 24px;">
+  <tr>
+    <td style="padding:18px 22px;">
+      <p style="margin:0 0 6px;color:#9a6700;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Recruiter note</p>
+      <p style="margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;">{safe_note}</p>
+    </td>
+  </tr>
+</table>
+"""
+            if safe_note
+            else ""
+        )
+        headline = "Reminder: IT setup needed" if is_reminder else "IT setup requested"
+        subject = (
+            f"{'Reminder: ' if is_reminder else ''}IT provisioning for {name} — TalentAI"
+        )
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hi, <strong>{_escape_text(recruiter_name or 'a recruiter')}</strong> requested IT provisioning
+  for <strong>{_escape_text(name)}</strong>.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;">
+  <tr>
+    <td style="padding:18px 22px;">
+      <p style="margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;">
+        <strong>Role:</strong> {_escape_text(job_title)} · {_escape_text(department)}
+      </p>
+      <p style="margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;">
+        <strong>Start date:</strong> {_escape_text(start_date)}
+      </p>
+      <p style="margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;">
+        <strong>Personal email:</strong> {_escape_text(personal_email)}
+      </p>
+    </td>
+  </tr>
+</table>
+{note_html}
+<p style="margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Open the form to assign a company email, password, assets, and licenses.
+  This link expires on <strong>{_escape_text(expires_at)}</strong>.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
+  <tr>
+    <td align="center">
+      <a href="{safe_link}" class="cta-btn"
+         style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                font-weight:600;font-size:15px;letter-spacing:0.2px;
+                box-shadow:0 4px 16px rgba(13,92,145,.2);">
+        Open IT setup form
+      </a>
+    </td>
+  </tr>
+</table>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;">
+  <tr>
+    <td style="padding:20px;">
+      <p style="margin:0 0 4px;color:#6b7a8f;font-size:11px;font-weight:600;
+                text-transform:uppercase;letter-spacing:0.8px;">
+        Or copy this link into your browser
+      </p>
+      <p style="margin:0;font-family:monospace;font-size:12px;color:#1a1a2e;
+                word-break:break-all;line-height:1.5;">
+        {_escape_text(form_link)}
+      </p>
+    </td>
+  </tr>
+</table>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("IT Provisioning", headline, body),
+        )
+
+    def send_it_provisioning_complete(
+        self,
+        *,
+        to_email: str,
+        employee_name: str,
+        company_email: str,
+        assets_count: int = 0,
+        licenses_count: int = 0,
+    ) -> None:
+        safe_name = _escape_text(employee_name or "the candidate")
+        subject = f"IT provisioning complete for {employee_name or 'candidate'} — TalentAI"
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  IT finished provisioning for <strong>{safe_name}</strong>. You can now approve and activate
+  the employee from the candidate pipeline.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 8px;">
+  <tr>
+    <td style="padding:18px 22px;">
+      <p style="margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;">
+        <strong>Company email:</strong> {_escape_text(company_email)}
+      </p>
+      <p style="margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;">
+        <strong>Assets:</strong> {int(assets_count)} · <strong>Licenses:</strong> {int(licenses_count)}
+      </p>
+    </td>
+  </tr>
+</table>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("IT Provisioning", "Ready to activate", body),
+        )
+
+    # ------------------------------------------------------------------ #
+    # Banking details notice (employee — after recruiter adds/updates)
+    # ------------------------------------------------------------------ #
+    def send_banking_details_notice(
+        self,
+        *,
+        to_email: str,
+        full_name: str,
+        bank_name: str,
+        account_holder_name: str,
+        iban: str,
+        is_update: bool = False,
+    ) -> None:
+        safe_name = _escape_text(full_name or "Employee")
+        headline = "Banking details updated" if is_update else "Banking details added"
+        subject = f"{headline} — TalentAI"
+        masked_iban = iban or ""
+        if len(masked_iban) > 8:
+            masked_iban = f"{masked_iban[:4]}****{masked_iban[-4:]}"
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hi {safe_name}, your recruiter {"updated" if is_update else "added"} your payroll banking details.
+  You can review them (view only) on your employee profile.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;">
+  <tr>
+    <td style="padding:18px 22px;">
+      <p style="margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;">
+        <strong>Bank:</strong> {_escape_text(bank_name or "—")}
+      </p>
+      <p style="margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;">
+        <strong>Account title:</strong> {_escape_text(account_holder_name or "—")}
+      </p>
+      <p style="margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;">
+        <strong>IBAN:</strong> {_escape_text(masked_iban or "—")}
+      </p>
+    </td>
+  </tr>
+</table>
+<p style="margin:0;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Sign in and open <strong>My Profile → Banking</strong> to see the full details.
+</p>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("Payroll banking", headline, body),
+        )
+
+    # ------------------------------------------------------------------ #
     # send_company_email_assigned
     # ------------------------------------------------------------------ #
     def send_company_email_assigned(self, to_email: str, full_name: str, company_email: str) -> None:
