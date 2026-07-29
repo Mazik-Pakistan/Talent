@@ -86,6 +86,15 @@ class Settings(BaseSettings):
             return value.strip()
         return value
 
+    @field_validator("SMTP_PASSWORD", mode="before")
+    @classmethod
+    def normalize_smtp_password(cls, value: object) -> object:
+        # Gmail app passwords are 16 chars; they are often pasted with spaces
+        # (e.g. "abcd efgh ijkl mnop") which breaks SMTP authentication.
+        if isinstance(value, str):
+            return value.replace(" ", "").strip()
+        return value
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
