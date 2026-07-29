@@ -3,10 +3,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import { forgotPassword, getApiErrorMessage } from "@/services/authService";
 import styles from "@/app/styles/auth.module.css";
+import MascotStatic from "@/components/MascotStatic";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -45,11 +46,14 @@ export default function ForgotPasswordPage() {
             <Image src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} className={styles.asideLogo} priority />
           </div>
           <div className={styles.asideContent}>
-            <div>
+            <div className={styles.rotatingContent}>
               <span className={styles.asideEyebrow}>✦ Account recovery</span>
               <h2 className={styles.asideHeading}>Reset securely. Get back to <em>Talent.</em></h2>
               <p className={styles.asideText}>We&apos;ll email a one-time reset code so you can safely set a new password.</p>
             </div>
+          </div>
+          <div className={styles.mascotContainer}>
+            <MascotStatic />
           </div>
         </aside>
 

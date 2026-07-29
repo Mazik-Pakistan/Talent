@@ -70,6 +70,7 @@
   overflow: hidden;
   color: var(--navy);
   background: linear-gradient(140deg, var(--card), var(--blue-lighter) 58%, var(--blue-light));
+  min-height: 650px;
 }
 .aside::before, .aside::after {
   content: "";
@@ -82,13 +83,44 @@
 .aside::before { width: 170px; height: 170px; top: -72px; right: -54px; }
 .aside::after { width: 134px; height: 134px; bottom: -66px; left: -54px; }
 
-.asideBrandRow { position: relative; z-index: 1; display: flex; align-items: center; min-height: 52px; }
+.asideBrandRow { 
+  position: relative; 
+  z-index: 1; 
+  display: flex; 
+  align-items: center; 
+  min-height: 44px;
+  margin-bottom: 32px;
+}
 .asideLogo { width: 164px; height: auto; object-fit: contain; }
-.asideContent { position: relative; z-index: 1; display: flex; flex: 1; flex-direction: column; justify-content: center; gap: 22px; animation: fadeSlide .5s .12s both; }
+.asideContent { 
+  position: relative; 
+  z-index: 1; 
+  display: flex; 
+  flex: 0 1 auto;
+  flex-direction: column; 
+  justify-content: center; 
+  gap: 10px; 
+  animation: fadeSlide .5s .12s both;
+  margin-bottom: 0;
+  overflow: hidden;
+}
 .asideEyebrow, .eyebrow { display: inline-flex; align-items: center; width: fit-content; border-radius: 999px; padding: 6px 10px; background: var(--blue-light); color: var(--blue-strong); font-size: 10px; font-weight: 700; letter-spacing: .03em; }
-.asideHeading { max-width: 330px; margin: 0 0 10px; font-size: clamp(26px, 2.5vw, 34px); line-height: 1.08; letter-spacing: -.055em; color: var(--navy); }
+.asideHeading { 
+  max-width: 380px; 
+  margin: 0 0 8px; 
+  font-size: clamp(30px, 3vw, 38px); 
+  line-height: 1.12; 
+  letter-spacing: -.045em; 
+  color: var(--navy); 
+}
 .asideHeading em { color: var(--blue-strong); font-style: normal; }
-.asideText { max-width: 330px; margin: 0; color: var(--navy-2); font-size: 13px; line-height: 1.55; }
+.asideText { 
+  max-width: 380px; 
+  margin: 0; 
+  color: var(--navy-2); 
+  font-size: 16px; 
+  line-height: 1.6; 
+}
 
 .recruitmentVisual { position: relative; min-height: 166px; margin: 2px 0 0; }
 .talentBoard { position: absolute; left: 8px; bottom: 0; width: min(275px, 78%); height: 142px; padding: 15px 12px; border: 1px solid var(--blue-mid); border-radius: 11px; background: color-mix(in srgb, var(--card) 85%, var(--blue-light)); box-shadow: 0 18px 30px color-mix(in srgb, var(--navy) 14%, transparent); }
@@ -159,101 +191,153 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 .footer { display: flex; justify-content: center; gap: 6px; margin: 18px 0 0; color: var(--text-muted); font-size: 11px; }.footer p { margin: 0; }
 
 .metricCard, .dotsRow, .dot, .dotActive { display: none; }
-@keyframes pageIn { from { opacity: 0; } to { opacity: 1; } } @keyframes cardIn { from { opacity: 0; transform: translateY(22px) scale(.985); } to { opacity: 1; transform: none; } } @keyframes fadeSlide { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } } @keyframes floatBlob { to { transform: translate(20px, 18px) scale(1.08); } } @keyframes spin { to { transform: rotate(360deg); } }
-@media (max-width: 900px) { .shell { padding: 18px; }.card { grid-template-columns: 1fr; max-width: 620px; }.aside { min-height: 390px; }.asideContent { justify-content: flex-start; }.panel { padding: 34px; }.recruitmentVisual { max-width: 380px; }.featureGrid { max-width: 440px; } }
-@media (max-width: 560px) { .shell { display: block; padding: 0; }.card { min-height: 100vh; border: 0; border-radius: 0; }.aside { min-height: 355px; padding: 28px 23px; }.asideLogo { width: 148px; }.asideHeading { font-size: 27px; }.panel { padding: 31px 23px; }.formRow, .roleGrid { grid-template-columns: 1fr; }.recruitmentVisual { min-height: 145px; }.featureGrid { gap: 4px; padding: 11px 8px; }.featureCard { font-size: 8px; }.featureCard strong { font-size: 10px; } }
 
-/* Fade animations for auto-rotating content */
-.fadeIn {
-  animation: fadeIn 0.4s ease forwards;
+/* ===== FIXED ANIMATIONS - LEFT TO RIGHT FLOW ===== */
+/* Text slides in from LEFT, slides out to RIGHT */
+.slideIn {
+  animation: slideInFromLeft 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
 
-.fadeOut {
-  animation: fadeOut 0.3s ease forwards;
+.slideOut {
+  animation: slideOutToRight 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
 
-@keyframes fadeIn {
-  from {
+@keyframes slideInFromLeft {
+  0% {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateX(-60px) scale(0.96);
   }
-  to {
+  100% {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(0) scale(1);
   }
 }
 
-@keyframes fadeOut {
-  from {
+@keyframes slideOutToRight {
+  0% {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(0) scale(1);
   }
-  to {
+  100% {
     opacity: 0;
-    transform: translateY(-8px);
-  }
-}
-/* Fade animations for auto-rotating content */
-.fadeIn {
-  animation: fadeIn 0.4s ease forwards;
-}
-
-.fadeOut {
-  animation: fadeOut 0.3s ease forwards;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+    transform: translateX(60px) scale(0.96);
   }
 }
 
-@keyframes fadeOut {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-}
-/* Fade animations for auto-rotating content */
-.fadeIn {
-  animation: fadeIn 0.4s ease forwards;
+@keyframes pageIn { 
+  from { opacity: 0; } 
+  to { opacity: 1; } 
 }
 
-.fadeOut {
-  animation: fadeOut 0.3s ease forwards;
+@keyframes cardIn { 
+  from { opacity: 0; transform: translateY(22px) scale(.985); } 
+  to { opacity: 1; transform: none; } 
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
+@keyframes fadeSlide { 
+  from { opacity: 0; transform: translateY(9px); } 
+  to { opacity: 1; transform: none; } 
+}
+
+@keyframes floatBlob { 
+  to { transform: translate(20px, 18px) scale(1.08); } 
+}
+
+@keyframes spin { 
+  to { transform: rotate(360deg); } 
+}
+
+@media (max-width: 900px) { 
+  .shell { padding: 18px; }
+  .card { grid-template-columns: 1fr; max-width: 620px; }
+  .aside { min-height: 390px; }
+  .asideContent { justify-content: flex-start; }
+  .panel { padding: 34px; }
+  .recruitmentVisual { max-width: 380px; }
+  .featureGrid { max-width: 440px; } 
+}
+
+@media (max-width: 560px) { 
+  .shell { display: block; padding: 0; }
+  .card { min-height: 100vh; border: 0; border-radius: 0; }
+  .aside { min-height: 355px; padding: 28px 23px; }
+  .asideLogo { width: 148px; }
+  .asideHeading { font-size: 27px; }
+  .panel { padding: 31px 23px; }
+  .formRow, .roleGrid { grid-template-columns: 1fr; }
+  .recruitmentVisual { min-height: 145px; }
+  .featureGrid { gap: 4px; padding: 11px 8px; }
+  .featureCard { font-size: 8px; }
+  .featureCard strong { font-size: 10px; } 
+}
+
+/* Mascot container - LOWER POSITION WITH LARGER SIZE */
+.mascotContainer {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  flex: 1;
+  padding: 0 0 10px 0;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 250px;
+  margin-top: auto;
+}
+
+/* Wrap the rotating content to maintain spacing */
+.rotatingContent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+
+/* Ensure aside content uses flex column properly */
+.aside {
+  display: flex;
+  flex-direction: column;
+}
+
+.asideContent {
+  flex: 0 1 auto;
+  margin-bottom: 0;
+  overflow: hidden;
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .mascotContainer {
+    min-height: 200px;
+    padding: 0 0 8px 0;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+  .mascotContainer svg {
+    width: 190px !important;
+    height: 190px !important;
+  }
+  .asideHeading {
+    font-size: clamp(26px, 2.8vw, 32px) !important;
+  }
+  .asideText {
+    font-size: 15px !important;
   }
 }
 
-@keyframes fadeOut {
-  from {
-    opacity: 1;
-    transform: translateY(0);
+@media (max-width: 560px) {
+  .mascotContainer {
+    min-height: 170px;
+    padding: 0 0 6px 0;
   }
-  to {
-    opacity: 0;
-    transform: translateY(-8px);
+  .mascotContainer svg {
+    width: 150px !important;
+    height: 150px !important;
   }
-
-
+  .asideHeading {
+    font-size: 24px !important;
+  }
+  .asideText {
+    font-size: 14px !important;
+  }
 }
 
 /* Verify Email Page Specific Styles */

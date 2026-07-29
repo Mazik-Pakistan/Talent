@@ -16,6 +16,7 @@ import {
   preservePkMobileCaret,
 } from "@/utils/phone";
 import styles from "@/app/styles/auth.module.css";
+import MascotStatic from "@/components/MascotStatic";
 
 const initialForm = {
   first_name: "",
@@ -30,8 +31,8 @@ const initialForm = {
 // Content variants for auto-rotation
 const ROTATING_CONTENT = [
   {
-    heading: "People operations, made more connected.",
-    text: "Talent gives recruitment teams a clear, secure path from candidate selection to successful onboarding.",
+   heading: "Connected people operations.",
+  text: "A clear, secure path from candidate selection to successful onboarding.",
   },
   {
     heading: "AI-powered matching for better hires.",
@@ -120,15 +121,15 @@ export default function RegisterPage() {
 
   const strength = useMemo(() => getPasswordStrength(form.password), [form.password]);
 
-  // Auto-rotation effect
+  // Auto-rotation effect with smooth left-to-right transition
   useEffect(() => {
     const interval = setInterval(() => {
       setIsTransitioning(true);
       setTimeout(() => {
         setContentIndex((prev) => (prev + 1) % ROTATING_CONTENT.length);
         setIsTransitioning(false);
-      }, 300);
-    }, 2500);
+      }, 500);
+    }, 3500);
 
     return () => clearInterval(interval);
   }, []);
@@ -211,14 +212,18 @@ export default function RegisterPage() {
           </div>
 
           <div className={styles.asideContent} key={contentIndex}>
-            <div>
-              <h2 className={`${styles.asideHeading} ${isTransitioning ? styles.fadeOut : styles.fadeIn}`}>
+            <div className={styles.rotatingContent}>
+              <h2 className={`${styles.asideHeading} ${isTransitioning ? styles.slideOut : styles.slideIn}`}>
                 {ROTATING_CONTENT[contentIndex].heading}
               </h2>
-              <p className={`${styles.asideText} ${isTransitioning ? styles.fadeOut : styles.fadeIn}`}>
+              <p className={`${styles.asideText} ${isTransitioning ? styles.slideOut : styles.slideIn}`}>
                 {ROTATING_CONTENT[contentIndex].text}
               </p>
             </div>
+          </div>
+
+          <div className={styles.mascotContainer}>
+            <MascotStatic />
           </div>
         </aside>
 
