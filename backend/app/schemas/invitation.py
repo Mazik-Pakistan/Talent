@@ -279,7 +279,9 @@ class OnboardingEmploymentInfo(BaseModel):
 
 class EducationEntry(BaseModel):
     institution: str = Field(min_length=2, max_length=200)
-    city: str = Field(min_length=2, max_length=100)
+    # city is optional — it is not collected by the post-hire profile form or the AI
+    # assistant, so requiring it would block employees from saving education entries.
+    city: str | None = Field(default=None, max_length=100)
     board_university: str | None = Field(default=None, max_length=200)
     degree: str = Field(min_length=2, max_length=120)
     field_of_study: str = Field(min_length=2, max_length=120)
@@ -498,6 +500,9 @@ class OnboardingSignature(BaseModel):
     full_legal_name: str = Field(min_length=2, max_length=100)
     agreed: bool
     signed_at: str | None = None
+    # signature is a base64 data URL drawn or uploaded by the employee in the UI.
+    # It is optional so the AI path (typed name + agreed) continues to work.
+    signature: str | None = None
 
     @model_validator(mode="after")
     def require_agreement(self):

@@ -955,9 +955,16 @@ const AgentChatCoreInner = forwardRef(function AgentChatCoreInner({ variant = "f
       formData.append("category", hint.category || categoryForDocType(hint.doc_type));
       formData.append("doc_type", hint.doc_type);
       const purpose = purposeForDocType(hint.doc_type);
-      if (purpose) formData.append("purpose", purpose);
 
-      await uploadDocument(formData, auth.accessToken);
+      // For onboarding-purpose doc types (cnic, passport, transcript, resume) use the
+      // purpose-aware endpoint so employee.onboarding is kept in sync via attach_uploaded_file.
+      // For generic/unsupported types fall back to the general document upload endpoint.
+      if (purpose) {
+        formData.append("purpose", purpose);
+        await uploadOnboardingFile(formData, auth.accessToken);
+      } else {
+        await uploadDocument(formData, auth.accessToken);
+      }
       const label = DOC_TYPE_LABEL[hint.doc_type] || hint.doc_type;
       await doSend(`I've uploaded my ${label}.`);
     } catch (err) {

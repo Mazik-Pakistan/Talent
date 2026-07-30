@@ -1984,6 +1984,9 @@ async def _tool_get_status(user: CurrentUser, args: dict) -> ToolResult:
                     "percentage": progress.get("percentage"),
                     "missing_sections": progress.get("missing_fields", []),
                     "documents_on_file": [d.get("doc_type") for d in docs.get("documents", [])],
+                    # Remote employees enter their own banking; on-site banking is managed by recruiter.
+                    "is_remote": bool(progress.get("is_remote")),
+                    "banking_managed_by": progress.get("banking_managed_by", "recruiter"),
                 },
             )
         # candidate
@@ -2048,18 +2051,27 @@ async def _tool_save_step(user: CurrentUser, args: dict) -> ToolResult:
 async def _tool_list_documents(user: CurrentUser, args: dict) -> ToolResult:
     try:
         result = await document_service.list_mine(user)
-        docs = [
-            {
-                "id": d.get("id") or d.get("document_id"),
-                "doc_type": d.get("doc_type"),
-                "category": d.get("category"),
-                "status": d.get("status"),
-                "file_name": d.get("file_name"),
-                "rejection_reason": d.get("rejection_reason"),
-            }
-            for d in result.get("documents", [])
-        ]
-        return ToolResult(ok=True, data={"documents": docs})
+        status_filter = (args.get("status") or "").strip().lower() or None
+        category_filter = (args.get("category") or "").strip().lower() or None
+        docs = []
+        for d in result.get("documents", []):
+            doc_status = (d.get("status") or "").lower()
+            doc_category = (d.get("category") or "").lower()
+            if status_filter and doc_status != status_filter:
+                continue
+            if category_filter and doc_category != category_filter:
+                continue
+            docs.append(
+                {
+                    "id": d.get("id") or d.get("document_id"),
+                    "doc_type": d.get("doc_type"),
+                    "category": d.get("category"),
+                    "status": d.get("status"),
+                    "file_name": d.get("file_name"),
+                    "rejection_reason": d.get("rejection_reason"),
+                }
+            )
+        return ToolResult(ok=True, data={"documents": docs, "count": len(docs)})
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
 
@@ -2091,7 +2103,7 @@ SELF_SERVE_TOOLS: list[Tool] = [
             "emergency": "object {name, relationship, phone}, for step=emergency (employee only)",
             "employment": "object {bank_name, account_holder_name, account_number, iban, branch, branch_code}, for step=employment (employee only)",
             "references": "object {references: [{full_name, relationship, email, phone, company}, ...]} (min 2), for step=references (employee only)",
-            "documents": "object {accepted_code_of_conduct: true, accepted_privacy_policy: true, accepted_employee_handbook: true}, for step=documents (employee only)",
+            "documents": "object {accepted_privacy_policy: true, accepted_employee_handbook: true}, for step=documents (employee only)",
             "nda": "object {full_legal_name, agreed: true}, for step=nda (Self Declaration in the UI)",
         },
         handler=_tool_save_step,
@@ -2099,8 +2111,15 @@ SELF_SERVE_TOOLS: list[Tool] = [
     ),
     Tool(
         name="list_documents",
-        description="List documents the caller has already uploaded, with id/type/category/verification status.",
-        parameters={},
+        description=(
+            "List documents the caller has already uploaded, with id/type/category/verification status. "
+            "Optionally filter by status (pending|verified|rejected|reupload_required) or category "
+            "(identity|education|banking|certificate|photo|other)."
+        ),
+        parameters={
+            "status": "optional: pending|verified|rejected|reupload_required",
+            "category": "optional: identity|education|banking|certificate|photo|other",
+        },
         handler=_tool_list_documents,
         roles=("candidate", "employee"),
     ),

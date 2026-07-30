@@ -50,6 +50,7 @@ from app.services.agent_tools import (  # noqa: E402
     _err,
     _resolve_candidate,
     _resolve_employee,
+    _tool_list_documents,
     confirm_gate,
 )
 
@@ -247,26 +248,6 @@ async def _tool_update_recruiter_profile(user: CurrentUser, args: dict) -> ToolR
 # ─────────────────────────────────────────────────────────────────────────
 # Candidate / Employee shared document + notifications
 # ─────────────────────────────────────────────────────────────────────────
-
-
-async def _tool_list_documents_rich(user: CurrentUser, args: dict) -> ToolResult:
-    try:
-        result = await document_service.list_mine(user)
-        docs = []
-        for d in result.get("documents", []):
-            docs.append(
-                {
-                    "id": d.get("id") or d.get("document_id"),
-                    "doc_type": d.get("doc_type"),
-                    "category": d.get("category"),
-                    "status": d.get("status"),
-                    "file_name": d.get("file_name"),
-                    "rejection_reason": d.get("rejection_reason"),
-                }
-            )
-        return ToolResult(ok=True, data={"documents": docs})
-    except Exception as exc:  # noqa: BLE001
-        return _err(exc)
 
 
 async def _tool_get_my_document_link(user: CurrentUser, args: dict) -> ToolResult:
@@ -1520,6 +1501,77 @@ RECRUITER_PARITY_TOOLS: list[Tool] = [
 ]
 
 
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Employee-only tools: Day-1 info, close HR thread, role matches
+# ─────────────────────────────────────────────────────────────────────────
+
+
+async def _tool_get_my_day1_info(user: CurrentUser, args: dict) -> ToolResult:
+    """Return the employee's assigned assets and scheduled orientation from their profile.
+
+    Reuses employee_service.get_my_profile — no new DB queries needed.
+    """
+    try:
+        result = await employee_service.get_my_profile(user)
+        emp = result.get("employee") or {}
+        assets = emp.get("assets") or []
+        orientation = emp.get("orientation")
+        company_email = emp.get("company_email")
+        return ToolResult(
+            ok=True,
+            data={
+                "company_email": company_email,
+                "assets": [
+                    {
+                        "asset_id": a.get("id") or a.get("asset_id"),
+                        "name": a.get("name"),
+                        "asset_type": a.get("asset_type"),
+                        "serial_number": a.get("serial_number"),
+                        "status": a.get("status"),
+                        "assigned_at": a.get("assigned_at"),
+                    }
+                    for a in assets
+                ],
+                "orientation": orientation,
+                "has_assets": len(assets) > 0,
+                "has_orientation": orientation is not None,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_close_hr_thread(user: CurrentUser, args: dict) -> ToolResult:
+    """Close an HR message thread by thread_id. Reuses message_service.close_thread."""
+    thread_id = (args.get("thread_id") or "").strip()
+    if not thread_id:
+        return ToolResult(ok=False, error="thread_id is required.")
+    if not args.get("confirm"):
+        return confirm_gate(
+            "close_hr_thread",
+            {"thread_id": thread_id},
+            f"Close HR thread {thread_id}?",
+        )
+    try:
+        from app.services.message_service import message_service
+
+        result = await message_service.close_thread(user, thread_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_get_role_matches(user: CurrentUser, args: dict) -> ToolResult:
+    """Match employee profile against recruiter KB roles. Reuses learning_service.get_role_matches."""
+    try:
+        result = await learning_service.get_role_matches(user, refresh=bool(args.get("refresh")))
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 SHARED_SELF_DOCUMENT_TOOLS: list[Tool] = [
     Tool(
         name="get_my_document_link",
@@ -1901,6 +1953,33 @@ EMPLOYEE_PARITY_TOOLS: list[Tool] = [
         description="Reply in an existing HR conversation by thread_id.",
         parameters={"thread_id": "required", "body": "required"},
         handler=_tool_reply_hr_thread,
+        roles=("employee",),
+    ),
+    Tool(
+        name="get_my_day1_info",
+        description=(
+            "Show the employee's Day-1 information: assigned company assets (laptop, phone, badge, etc.) "
+            "and scheduled orientation details. Reuses data already on the employee profile."
+        ),
+        parameters={},
+        handler=_tool_get_my_day1_info,
+        roles=("employee",),
+    ),
+    Tool(
+        name="close_hr_thread",
+        description="Close (resolve) an HR message thread. Requires confirm=true.",
+        parameters={"thread_id": "required", "confirm": "boolean required"},
+        handler=_tool_close_hr_thread,
+        roles=("employee",),
+    ),
+    Tool(
+        name="get_role_matches",
+        description=(
+            "Compare the employee's skills and certifications against recruiter knowledge-base roles "
+            "to see which roles they match and by how much. Optionally refresh=true to bypass cache."
+        ),
+        parameters={"refresh": "boolean, optional — force fresh calculation"},
+        handler=_tool_get_role_matches,
         roles=("employee",),
     ),
 ]
