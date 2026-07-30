@@ -807,7 +807,7 @@ function RecruiterInvitePageInner() {
                         onChange={(raw) =>
                           updateAllowance(index, "amount", raw)
                         }
-                        placeholder="0.00"
+                        placeholder="e.g. 10,000"
                         style={{
                           width: "100%",
                           padding: "8px 48px 8px 12px",
