@@ -25,6 +25,7 @@ from app.schemas.dashboard import CreateAnnouncementRequest
 from app.schemas.document import DocumentVerifyRequest
 from app.schemas.employee_profile import EmployeeProfileSaveRequest
 from app.schemas.invitation import CreateInvitationRequest, OnboardingSaveRequest
+from app.schemas.offer import OfferTermsPayload
 from app.schemas.offer import OfferApproveRequest, OfferCreateRequest
 from app.schemas.onboarding_assignment import (
     AssetAssignRequest,
@@ -257,6 +258,12 @@ async def _tool_list_candidates(user: CurrentUser, args: dict) -> ToolResult:
     if status_filter:
         query["conversion_status"] = status_filter
     docs = await database.candidates.find(query).sort("created_at", -1).to_list(length=50)
+    active_docs = [
+        d
+        for d in docs
+        if (d.get("conversion_status") or "").strip().lower() != "converted"
+        and (d.get("status") or "").strip().lower() != "converted"
+    ]
     items = [
         {
             "candidate_id": d.get("user_id") or str(d.get("_id")),
@@ -271,7 +278,7 @@ async def _tool_list_candidates(user: CurrentUser, args: dict) -> ToolResult:
                 else None
             ),
         }
-        for d in docs
+        for d in active_docs
     ]
     return ToolResult(ok=True, data={"candidates": items, "count": len(items)})
 
@@ -387,6 +394,24 @@ async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResul
 
 async def _tool_send_invitation(user: CurrentUser, args: dict) -> ToolResult:
     try:
+        offer_kwargs = {
+            "job_title": args["job_title"],
+            "department": args["department"],
+            "employment_type": args.get("employment_type") or "Full-time",
+            "office_location": args.get("office_location"),
+            "is_remote": bool(args.get("is_remote")),
+            "reporting_manager": args["reporting_manager"],
+            "start_date": args.get("start_date") or None,
+            "monthly_salary": args["monthly_salary"],
+            "currency": args.get("currency") or "PKR",
+            "allowances": args.get("allowances") or args.get("salary_breakdown") or [],
+            "benefits": args.get("benefits") or [],
+            "offer_expiry_days": args.get("offer_expiry_days"),
+            "message_to_candidate": args.get("message_to_candidate"),
+        }
+        if args.get("terms"):
+            offer_kwargs["terms"] = args["terms"]
+
         payload = CreateInvitationRequest(
             email=args["email"],
             full_name=args["full_name"],
@@ -395,6 +420,7 @@ async def _tool_send_invitation(user: CurrentUser, args: dict) -> ToolResult:
             office_location=args.get("office_location"),
             is_remote=bool(args.get("is_remote")),
             start_date=args.get("start_date") or None,
+            offer=OfferTermsPayload(**offer_kwargs),
             expires_in_days=365,
         )
         result = await invitation_service.create_invitation(payload, user)
@@ -1462,15 +1488,24 @@ async def _tool_create_announcement(user: CurrentUser, args: dict) -> ToolResult
 RECRUITER_TOOLS: list[Tool] = [
     Tool(
         name="send_invitation",
-        description="Invite a single candidate by email so they can create an account and start onboarding.",
+        description="Invite a single candidate with a full offer letter so they can create an account and start onboarding.",
         parameters={
             "email": "string, required",
             "full_name": "string, required",
             "job_title": "string, required",
             "department": "string, required",
+            "reporting_manager": "string, required",
+            "monthly_salary": "number, required",
+            "currency": "string, optional, default PKR",
+            "employment_type": "string, optional, default Full-time",
             "office_location": "string, optional",
             "is_remote": "boolean, optional, true if remote employee (self-manages banking)",
             "start_date": "string YYYY-MM-DD or relative text like 'tomorrow', optional",
+            "offer_expiry_days": "integer, optional",
+            "allowances": "array of {label, amount}, optional",
+            "benefits": "array of strings, optional",
+            "terms": "string, optional",
+            "message_to_candidate": "string, optional",
         },
         handler=_tool_send_invitation,
         roles=("recruiter", "super_admin"),
@@ -1496,8 +1531,8 @@ RECRUITER_TOOLS: list[Tool] = [
     Tool(
         name="list_candidates",
         description=(
-            "List candidates and their pre-hire onboarding/conversion status. "
-            "For converted people, use list_employees or get_candidate_status to see post-hire Complete Profile progress."
+            "List active candidates only. Converted people are employees; use list_employees or get_candidate_status "
+            "to see post-hire Complete Profile progress."
         ),
         parameters={"status": "optional conversion_status filter"},
         handler=_tool_list_candidates,

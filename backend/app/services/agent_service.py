@@ -60,6 +60,8 @@ Contextual suggested_replies (critical):
 - If the talk is about a CANDIDATE (or pre-hire): suggest candidate actions only, e.g. check status, remind \
 onboarding (remind_candidate), send/resend offer, review documents, verify/reject docs, approve & activate if \
 signed, send joining letter, list pipeline. Name the person when known.
+- When the recruiter asks to show candidates, show only active candidates; converted people are employees and \
+should be shown via list_employees or get_candidate_status instead.
 - If the talk is about an EMPLOYEE (post-hire): suggest employee actions only, e.g. profile progress, remind \
 Complete Profile, set company email, assign asset, schedule orientation, career event, list documents, assign \
 course, competency evaluation, HR message reply.

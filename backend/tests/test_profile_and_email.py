@@ -93,6 +93,56 @@ def test_offer_invitation_email_includes_offer_details(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_agent_send_invitation_forwards_offer_payload(monkeypatch):
+    from app.core.rbac import CurrentUser
+    from app.services import agent_tools
+
+    captured = {}
+
+    async def fake_create_invitation(request, actor):
+        captured["request"] = request
+        captured["actor"] = actor
+        return {
+            "message": "Invitation and offer letter created and emailed to the candidate.",
+            "email_sent": True,
+            "invitation": {"token": "test-token", "email": request.email},
+        }
+
+    monkeypatch.setattr(agent_tools.invitation_service, "create_invitation", fake_create_invitation)
+
+    user = CurrentUser(
+        id="recruiter-1",
+        email="recruiter@example.com",
+        full_name="Test Recruiter",
+        role="recruiter",
+        access_token="token",
+    )
+    result = await agent_tools._tool_send_invitation(
+        user,
+        {
+            "email": "candidate@example.com",
+            "full_name": "Test Candidate",
+            "job_title": "Intern, IT",
+            "department": "IT",
+            "reporting_manager": "Sara Ali",
+            "monthly_salary": 1000,
+            "currency": "PKR",
+            "employment_type": "Internship",
+            "start_date": "2026-07-31",
+            "offer_expiry_days": 14,
+        },
+    )
+
+    assert result.ok is True
+    assert captured["actor"].id == "recruiter-1"
+    assert captured["request"].offer.reporting_manager == "Sara Ali"
+    assert captured["request"].offer.monthly_salary == 1000
+    assert captured["request"].offer.currency == "PKR"
+    assert captured["request"].offer.start_date == "2026-07-31"
+    assert result.data["message"] == "Invitation sent to candidate@example.com."
+
+
+@pytest.mark.asyncio
 async def test_save_profile_photo_rejects_non_image(monkeypatch):
     from fastapi import UploadFile, HTTPException
     from io import BytesIO
