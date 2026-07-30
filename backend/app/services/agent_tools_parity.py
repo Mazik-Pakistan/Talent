@@ -1086,6 +1086,8 @@ async def _tool_list_hr_threads(user: CurrentUser, args: dict) -> ToolResult:
 
         if user.role in ("recruiter", "super_admin"):
             return ToolResult(ok=True, data=await message_service.list_threads_for_recruiter(user))
+        if user.role == "candidate":
+            return ToolResult(ok=True, data=await message_service.list_threads_for_candidate(user))
         return ToolResult(ok=True, data=await message_service.list_threads_for_employee(user))
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
@@ -1098,12 +1100,20 @@ async def _tool_message_recruiter(user: CurrentUser, args: dict) -> ToolResult:
         body = (args.get("body") or args.get("message") or "").strip()
         if not body:
             return ToolResult(ok=False, error="body is required.")
-        result = await message_service.employee_send(
-            user,
-            body=body,
-            subject=args.get("subject"),
-            thread_id=args.get("thread_id"),
-        )
+        if user.role == "candidate":
+            result = await message_service.candidate_send(
+                user,
+                body=body,
+                subject=args.get("subject"),
+                thread_id=args.get("thread_id"),
+            )
+        else:
+            result = await message_service.employee_send(
+                user,
+                body=body,
+                subject=args.get("subject"),
+                thread_id=args.get("thread_id"),
+            )
         return ToolResult(ok=True, data=result)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
@@ -1147,6 +1157,8 @@ async def _tool_reply_hr_thread(user: CurrentUser, args: dict) -> ToolResult:
             return ToolResult(ok=False, error="thread_id and body are required.")
         if user.role in ("recruiter", "super_admin"):
             result = await message_service.recruiter_reply(user, thread_id, body=body)
+        elif user.role == "candidate":
+            result = await message_service.candidate_send(user, body=body, thread_id=thread_id)
         else:
             result = await message_service.employee_send(user, body=body, thread_id=thread_id)
         return ToolResult(ok=True, data=result)
@@ -1557,10 +1569,24 @@ SHARED_SELF_DOCUMENT_TOOLS: list[Tool] = [
 CANDIDATE_PARITY_TOOLS: list[Tool] = [
     *SHARED_SELF_DOCUMENT_TOOLS,
     Tool(
+        name="list_hr_threads",
+        description="List the candidate's conversations with HR/recruiter.",
+        parameters={},
+        handler=_tool_list_hr_threads,
+        roles=("candidate",),
+    ),
+    Tool(
         name="get_my_offer",
         description="Fetch the candidate's current offer letter and status.",
         parameters={},
         handler=_tool_get_my_offer,
+        roles=("candidate",),
+    ),
+    Tool(
+        name="message_recruiter",
+        description="Send a message to the assigned recruiter/HR (starts or continues a thread).",
+        parameters={"body": "required", "subject": "optional for new thread", "thread_id": "optional to reply"},
+        handler=_tool_message_recruiter,
         roles=("candidate",),
     ),
     Tool(
@@ -1582,6 +1608,13 @@ CANDIDATE_PARITY_TOOLS: list[Tool] = [
         description="Decline the candidate's offer. Requires confirm=true. Optional reason.",
         parameters={"confirm": "boolean required", "reason": "optional", "offer_id": "optional"},
         handler=_tool_decline_offer,
+        roles=("candidate",),
+    ),
+    Tool(
+        name="reply_hr_thread",
+        description="Reply in an existing HR conversation by thread_id.",
+        parameters={"thread_id": "required", "body": "required"},
+        handler=_tool_reply_hr_thread,
         roles=("candidate",),
     ),
 ]

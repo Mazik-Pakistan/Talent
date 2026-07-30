@@ -42,6 +42,10 @@ class MessageService:
             "employee_id": doc.get("employee_id"),
             "employee_name": doc.get("employee_name"),
             "employee_email": doc.get("employee_email"),
+            "candidate_user_id": doc.get("candidate_user_id"),
+            "candidate_id": doc.get("candidate_id"),
+            "candidate_name": doc.get("candidate_name"),
+            "candidate_email": doc.get("candidate_email"),
             "recruiter_id": doc.get("recruiter_id"),
             "recruiter_name": doc.get("recruiter_name"),
             "subject": doc.get("subject"),
@@ -82,6 +86,28 @@ class MessageService:
             raise HTTPException(status_code=404, detail="Employee profile not found.")
         return employee
 
+    async def _get_candidate_for_user(self, user: CurrentUser) -> dict:
+        candidate = await database.candidates.find_one(
+            {
+                "$or": [{"user_id": user.id}, {"email": (user.email or "").lower()}],
+                "status": "active",
+            }
+        )
+        if not candidate:
+            converted = await database.candidates.find_one(
+                {
+                    "$or": [{"user_id": user.id}, {"email": (user.email or "").lower()}],
+                    "status": "converted",
+                }
+            )
+            if converted:
+                raise HTTPException(
+                    status_code=403,
+                    detail="This candidate has already been converted to an employee. Sign in as Employee.",
+                )
+            raise HTTPException(status_code=404, detail="Candidate profile not found.")
+        return candidate
+
     async def _get_recruiter_name(self, recruiter_id: str) -> str:
         if not recruiter_id:
             return "HR"
@@ -102,6 +128,22 @@ class MessageService:
         if not docs:
             docs = (
                 await database.hr_threads.find({"employee_id": employee.get("employee_id")})
+                .sort("updated_at", -1)
+                .to_list(length=50)
+            )
+        return {"threads": [self._public_thread(d, include_messages=False) for d in docs]}
+
+    async def list_threads_for_candidate(self, user: CurrentUser) -> dict:
+        candidate = await self._get_candidate_for_user(user)
+        candidate_user_id = candidate.get("user_id") or user.id
+        docs = (
+            await database.hr_threads.find({"candidate_user_id": candidate_user_id})
+            .sort("updated_at", -1)
+            .to_list(length=50)
+        )
+        if not docs:
+            docs = (
+                await database.hr_threads.find({"candidate_id": candidate.get("candidate_id")})
                 .sort("updated_at", -1)
                 .to_list(length=50)
             )
@@ -206,6 +248,93 @@ class MessageService:
         refreshed = await database.hr_threads.find_one({"_id": thread["_id"]})
         return {"thread": self._public_thread(refreshed or thread)}
 
+    async def candidate_send(
+        self,
+        user: CurrentUser,
+        *,
+        body: str,
+        subject: str | None = None,
+        thread_id: str | None = None,
+    ) -> dict:
+        text = (body or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Message body is required.")
+        candidate = await self._get_candidate_for_user(user)
+        recruiter_id = candidate.get("recruiter_id")
+        if not recruiter_id:
+            raise HTTPException(status_code=400, detail="No recruiter is assigned to your profile yet.")
+
+        thread = None
+        if thread_id:
+            thread = await self._load_thread(thread_id)
+            self._assert_access(user, thread)
+            if thread.get("status") == "closed":
+                raise HTTPException(status_code=400, detail="This conversation is closed.")
+        else:
+            thread = await database.hr_threads.find_one(
+                {
+                    "candidate_user_id": user.id,
+                    "recruiter_id": recruiter_id,
+                    "status": "open",
+                }
+            )
+
+        now = _now()
+        msg = {
+            "id": token_urlsafe(10),
+            "sender_role": "candidate",
+            "sender_user_id": user.id,
+            "sender_name": candidate.get("full_name") or user.full_name,
+            "body": text,
+            "created_at": now,
+            "email_sent": False,
+        }
+
+        if thread:
+            await database.hr_threads.update_one(
+                {"_id": thread["_id"]},
+                {
+                    "$push": {"messages": msg},
+                    "$set": {"updated_at": now, "subject": thread.get("subject") or (subject or "HR conversation")},
+                },
+            )
+            thread = await database.hr_threads.find_one({"_id": thread["_id"]})
+        else:
+            recruiter_name = await self._get_recruiter_name(str(recruiter_id))
+            doc = {
+                "candidate_user_id": user.id,
+                "candidate_id": candidate.get("candidate_id") or candidate.get("user_id") or str(candidate.get("_id")),
+                "candidate_name": candidate.get("full_name") or user.full_name,
+                "candidate_email": candidate.get("email") or user.email,
+                "recruiter_id": recruiter_id,
+                "recruiter_name": recruiter_name,
+                "subject": (subject or "").strip() or "Message to HR",
+                "status": "open",
+                "messages": [msg],
+                "created_at": now,
+                "updated_at": now,
+            }
+            result = await database.hr_threads.insert_one(doc)
+            doc["_id"] = result.inserted_id
+            thread = doc
+
+        email_sent = await self._notify_counterpart(
+            thread=thread,
+            message=msg,
+            recipient_user_id=str(recruiter_id),
+            recipient_role="recruiter",
+            recipient_email=await self._recruiter_email(str(recruiter_id)),
+            recipient_name=thread.get("recruiter_name") or "HR",
+            sender_label=thread.get("candidate_name") or "Candidate",
+            link=f"/dashboard/recruiter/messages?thread={thread['_id']}",
+        )
+        await database.hr_threads.update_one(
+            {"_id": thread["_id"], "messages.id": msg["id"]},
+            {"$set": {"messages.$.email_sent": email_sent}},
+        )
+        refreshed = await database.hr_threads.find_one({"_id": thread["_id"]})
+        return {"thread": self._public_thread(refreshed or thread)}
+
     async def recruiter_reply(self, user: CurrentUser, thread_id: str, *, body: str) -> dict:
         text = (body or "").strip()
         if not text:
@@ -231,15 +360,23 @@ class MessageService:
         )
         thread = await database.hr_threads.find_one({"_id": thread["_id"]})
 
+        recipient_user_id = str(thread.get("employee_user_id") or thread.get("candidate_user_id") or "")
+        recipient_role = "employee" if thread.get("employee_user_id") else "candidate"
+        recipient_email = thread.get("employee_email") or thread.get("candidate_email")
+        recipient_name = thread.get("employee_name") or thread.get("candidate_name") or "there"
         email_sent = await self._notify_counterpart(
             thread=thread,
             message=msg,
-            recipient_user_id=str(thread.get("employee_user_id") or ""),
-            recipient_role="employee",
-            recipient_email=thread.get("employee_email"),
-            recipient_name=thread.get("employee_name") or "there",
+            recipient_user_id=recipient_user_id,
+            recipient_role=recipient_role,
+            recipient_email=recipient_email,
+            recipient_name=recipient_name,
             sender_label=user.full_name or "HR",
-            link=f"/dashboard/employee/messages?thread={thread['_id']}",
+            link=(
+                f"/dashboard/employee/messages?thread={thread['_id']}"
+                if recipient_role == "employee"
+                else f"/dashboard/candidate/ai-assistant?thread={thread['_id']}"
+            ),
         )
         await database.hr_threads.update_one(
             {"_id": thread["_id"], "messages.id": msg["id"]},
@@ -357,6 +494,10 @@ class MessageService:
             return
         if user.role == "employee":
             if thread.get("employee_user_id") != user.id:
+                raise HTTPException(status_code=403, detail="Not allowed.")
+            return
+        if user.role == "candidate":
+            if thread.get("candidate_user_id") != user.id:
                 raise HTTPException(status_code=403, detail="Not allowed.")
             return
         raise HTTPException(status_code=403, detail="Not allowed.")
