@@ -123,6 +123,22 @@ const FormattedNumberInput = ({ value, onChange, placeholder, style, className }
   );
 };
 
+// ------------------ Loading primitives ------------------
+const Spinner = ({ variant = "dark", size = 16 }) => (
+  <span
+    className={`${styles.spinner} ${variant === "light" ? styles.spinnerLight : styles.spinnerDark}`}
+    style={{ width: size, height: size }}
+    aria-hidden="true"
+  />
+);
+
+const InviteLoader = () => (
+  <div className={styles.pageLoader} role="status" aria-live="polite">
+    <Spinner size={22} />
+    <span>Loading invite &amp; offer form…</span>
+  </div>
+);
+
 // ------------------ SVG Icon Components ------------------
 const IconCandidate = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--navy)" }}>
@@ -167,7 +183,7 @@ const IconTerms = () => (
 
 export default function RecruiterInvitePage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<InviteLoader />}>
       <RecruiterInvitePageInner />
     </Suspense>
   );
@@ -493,7 +509,8 @@ function RecruiterInvitePageInner() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               >
-          <form data-partner-coach onSubmit={handleCreateInvite}>
+          <form data-partner-coach onSubmit={handleCreateInvite} aria-busy={isCreating}>
+            <fieldset disabled={isCreating} className={styles.formFieldset}>
             {/* ---------- Candidate card ---------- */}
             <div style={cardStyle}>
               <div style={sectionHeadStyle}>
@@ -546,14 +563,33 @@ function RecruiterInvitePageInner() {
                     background: personHistory?.active_conflict ? "#fff8eb" : "#f8fbff",
                   }}
                 >
-                  <div style={{ fontWeight: 600, marginBottom: 6, color: "var(--navy)" }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      marginBottom: 6,
+                      color: "var(--navy)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    {historyLoading ? <Spinner size={13} /> : null}
                     AI history suggestion
                   </div>
-                  <p className={styles.mutedText} style={{ marginTop: 0, marginBottom: 10 }}>
-                    {historyLoading
-                      ? "Checking prior candidate and employee records…"
-                      : personHistory?.suggestion_summary}
-                  </p>
+                  {historyLoading ? (
+                    <div
+                      className={styles.skeletonGroup}
+                      aria-hidden="true"
+                      style={{ marginBottom: 10 }}
+                    >
+                      <span className={styles.skeletonLine} style={{ width: "72%" }} />
+                      <span className={styles.skeletonLine} style={{ width: "46%" }} />
+                    </div>
+                  ) : (
+                    <p className={styles.mutedText} style={{ marginTop: 0, marginBottom: 10 }}>
+                      {personHistory?.suggestion_summary}
+                    </p>
+                  )}
                   {!historyLoading && (personHistory?.matches || []).length > 0 ? (
                     <ul className={styles.miniList} style={{ margin: 0 }}>
                       {personHistory.matches.map((match) => (
@@ -765,9 +801,8 @@ function RecruiterInvitePageInner() {
                   </div>
                   <button
                     type="button"
-                    className={styles.secondaryButton}
+                    className={`${styles.secondaryButton} ${styles.btnSm}`}
                     onClick={addAllowanceRow}
-                    style={{ padding: "6px 14px", fontSize: 13 }}
                   >
                     + Add allowance
                   </button>
@@ -794,6 +829,7 @@ function RecruiterInvitePageInner() {
                         borderRadius: 8,
                         border: "1px solid var(--border)",
                         background: "#fff",
+                        minHeight: 38,
                       }}
                       placeholder="Allowance name (e.g. Housing)"
                       value={row.label}
@@ -814,6 +850,8 @@ function RecruiterInvitePageInner() {
                           borderRadius: 8,
                           border: "1px solid var(--border)",
                           background: "#fff",
+                          minHeight: 38,
+                          boxSizing: "border-box",
                         }}
                       />
                       <span
@@ -833,15 +871,8 @@ function RecruiterInvitePageInner() {
                     <button
                       type="button"
                       onClick={() => removeAllowanceRow(index)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: "#c92a2a",
-                        cursor: "pointer",
-                        fontSize: 18,
-                        padding: "4px 6px",
-                        lineHeight: 1,
-                      }}
+                      className={styles.iconButtonSm}
+                      aria-label={`Remove ${row.label || "allowance"} row`}
                       title="Remove row"
                     >
                       ✕
@@ -947,6 +978,8 @@ function RecruiterInvitePageInner() {
                     borderRadius: 8,
                     border: "1px solid var(--border)",
                     background: "#fff",
+                    minHeight: 40,
+                    boxSizing: "border-box",
                   }}
                   placeholder="Add custom benefit"
                   value={customBenefit}
@@ -999,6 +1032,7 @@ function RecruiterInvitePageInner() {
                 </label>
               </div>
             </div>
+            </fieldset>
 
             {/* Messages and link */}
             {inviteMessage && (
@@ -1054,11 +1088,19 @@ function RecruiterInvitePageInner() {
 
             <button
               type="submit"
-              className={styles.primaryButton}
+              className={`${styles.primaryButton} ${styles.primaryButtonLg}`}
               disabled={isCreating}
-              style={{ marginTop: 20, width: "100%" }}
+              aria-busy={isCreating}
+              style={{ marginTop: 20 }}
             >
-              {isCreating ? "Sending…" : "Send invitation & offer letter"}
+              {isCreating ? (
+                <>
+                  <Spinner variant="light" size={16} />
+                  Sending invitation…
+                </>
+              ) : (
+                "Send invitation & offer letter"
+              )}
             </button>
           </form>
               </motion.div>
