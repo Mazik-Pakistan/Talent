@@ -7,6 +7,7 @@ import RequireAccess from "@/components/RequireAccess";
 import DocumentManager from "@/components/DocumentManager";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import {
   clearLocalSession,
   getApiErrorMessage,
@@ -47,6 +48,7 @@ function DocumentsPageContent() {
   const [loadError, setLoadError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
 
   const isEmployee = user?.role === "employee";
   const isCandidate = user?.role === "candidate";
@@ -153,6 +155,8 @@ function DocumentsPageContent() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken || !user) return;
 
+    setPageLoading(true);
+
     try {
       const notificationData = await getNotifications(accessToken).catch(() => ({
         notifications: [],
@@ -171,6 +175,8 @@ function DocumentsPageContent() {
       setLoadError("");
     } catch (error) {
       setLoadError(getApiErrorMessage(error, "Could not load your profile context."));
+    } finally {
+      setPageLoading(false);
     }
   }, [user]);
 
@@ -202,8 +208,8 @@ function DocumentsPageContent() {
     if (notification.link) router.push(notification.link);
   }
 
-  if (!user) {
-    return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
+  if (!user || pageLoading) {
+    return <RecruiterLoader />;
   }
 
   const subtitle = isEmployee

@@ -349,7 +349,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
   );
 
   if (loading) {
-    return <p className={compact ? "widget-placeholder" : "form-message"}>Loading documents…</p>;
+    return null;
   }
 
   if (error) {

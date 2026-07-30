@@ -391,7 +391,7 @@ function EmployeeDashboardContent() {
     document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  if (!user) {
+  if (!user || loading) {
     return <RecruiterLoader />;
   }
 
