@@ -45,7 +45,7 @@ export default function RecruiterCandidatesPage() {
   const [extendingOfferId, setExtendingOfferId] = useState(null);
   const [itBusyOfferId, setItBusyOfferId] = useState(null);
   const [negoBusyId, setNegoBusyId] = useState(null);
-  const [negoBusyAction, setNegoBusyAction] = useState(null); // "accept" | "reject" | "edit"
+  const [negoBusyAction, setNegoBusyAction] = useState(null);
   const [itEmailDrafts, setItEmailDrafts] = useState({});
   const [negoNotes, setNegoNotes] = useState({});
   const [counterTerms, setCounterTerms] = useState({});
@@ -646,7 +646,10 @@ export default function RecruiterCandidatesPage() {
               </div>
             </div>
             {historicalLoading ? (
-              <p className={styles.emptySub}>Loading historical candidates…</p>
+              <div className={styles.pageLoader}>
+                <div className={styles.spinner} />
+                <span>Loading historical candidates…</span>
+              </div>
             ) : historicalCandidates.length ? (
               <ul className={styles.miniList}>
                 {historicalCandidates.map((candidate) => (
@@ -690,6 +693,401 @@ export default function RecruiterCandidatesPage() {
           </div>
         </div>
       ) : null}
+
+      {pipelineView === "active" && loading && <RecruiterLoader />}
+
+      {pipelineView === "active" && !loading && (
+        <>
+          <div className={styles.section}>
+            <div className={styles.sectionHead}>
+              <div className={styles.sectionHeadLeft}>
+                <div className={`${styles.bar} ${styles.orange}`} />
+                <div>
+                  <div className={styles.sectionTitle}>Offer clarifications</div>
+                  <div className={styles.sectionDesc}>
+                    Candidate questions on the offer letter. Respond here so they can continue signing.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className={styles.sectionBody}>
+              {negotiations.length ? (
+                negotiations.map((offer) => (
+                  <div className={styles.candidateCard} key={offer.id}>
+                    <div className={styles.candidateHead}>
+                      <div>
+                        <h4>{offer.candidate_name}</h4>
+                        <span>
+                          {offer.candidate_email} · {offer.job_title} · v{offer.version || 1}
+                        </span>
+                      </div>
+                      <div className={styles.rowActions}>
+                        <button type="button" className={styles.primaryButton} onClick={() => openClarificationPopup(offer)}>
+                          Review
+                        </button>
+                      </div>
+                    </div>
+                    <div className={styles.mutedText} style={{ marginTop: 6 }}>
+                      <strong style={{ color: "var(--navy)" }}>Clarification:</strong>{" "}
+                      {offer.negotiation?.note || "No clarification note provided."}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className={styles.emptySub}>No pending clarifications.</p>
+              )}
+            </div>
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.sectionHead}>
+              <div className={styles.sectionHeadLeft}>
+                <div className={`${styles.bar} ${styles.cyan}`} />
+                <div>
+                  <div className={styles.sectionTitle}>Awaiting offer response</div>
+                  <div className={styles.sectionDesc}>
+                    Registered candidates who have not signed or declined yet.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className={styles.sectionBody}>
+              {awaitingOffers.length ? (
+                <ul className={styles.miniList}>
+                  {awaitingOffers.map((offer) => (
+                    <li className={styles.miniListItem} key={offer.id}>
+                      <div style={{ flex: 1 }}>
+                        <strong>{offer.candidate_name}</strong>
+                        <div className={styles.mutedText}>
+                          {offer.candidate_email} · {offer.job_title} · {offer.status}
+                          {offer.negotiation?.status === "closed" ? " · clarification closed" : ""}
+                        </div>
+                        <div className={styles.chipRow} style={{ marginTop: 8 }}>
+                          {offer.is_expired ? (
+                            <span
+                              className={styles.chip}
+                              style={{
+                                background: "var(--red-light)",
+                                color: "var(--red)",
+                              }}
+                            >
+                              Offer expired
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className={styles.rowActions}>
+                        {offer.is_expired ? (
+                          <button
+                            type="button"
+                            className={styles.primaryButton}
+                            disabled={extendingOfferId === offer.id}
+                            title="Extend validity for this expired unsigned offer"
+                            onClick={() => handleExtendOfferValidity(offer)}
+                          >
+                            {extendingOfferId === offer.id ? "Extending…" : "Extend validity"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className={styles.emptySub}>No unsigned offers waiting on candidates.</p>
+              )}
+            </div>
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.sectionHead}>
+              <div className={styles.sectionHeadLeft}>
+                <div className={`${styles.bar} ${styles.orange}`} />
+                <div>
+                  <div className={styles.sectionTitle}>Documents in progress</div>
+                  <div className={styles.sectionDesc}>
+                    Candidates who signed (or received) an offer and are completing profile / documents.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className={styles.sectionBody}>
+              <div className={styles.formGrid} style={{ marginBottom: 16 }}>
+                <label className={styles.field}>
+                  <span>Search</span>
+                  <input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search candidates..."
+                  />
+                </label>
+              </div>
+              {visibleNewCandidates.length ? (
+                <div style={{ display: "grid", gap: 12 }}>
+                  {visibleNewCandidates.map((candidate) => (
+                    <NewSignupCard
+                      key={candidate.id}
+                      candidate={candidate}
+                      reminding={false}
+                      onView={() => router.push(`/dashboard/recruiter/candidates/${candidate.id}`)}
+                      onRemind={() => handleReminder(candidate)}
+                      expanded={expandedCandidateId === candidate.id}
+                      onToggleDocs={() =>
+                        setExpandedCandidateId((current) => (current === candidate.id ? null : candidate.id))
+                      }
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className={styles.emptySub}>
+                  {search ? "No candidates match your search." : "No candidates are mid-documents."}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.sectionHead}>
+              <div className={styles.sectionHeadLeft}>
+                <div className={`${styles.bar} ${styles.green}`} />
+                <div>
+                  <div className={styles.sectionTitle}>Ready for IT & activation</div>
+                  <div className={styles.sectionDesc}>
+                    Signed offers — send IT provisioning after documents are complete, then activate.
+                    Select multiple people to bulk-email IT in one click.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className={styles.sectionBody}>
+              {readyCandidates.length ? (
+                <>
+                  {itActionableCandidates.length ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 12,
+                        alignItems: "flex-end",
+                        marginBottom: 16,
+                        padding: 14,
+                        borderRadius: 12,
+                        border: "1px solid var(--border)",
+                        background: "#f7faf8",
+                      }}
+                    >
+                      <label className={styles.field} style={{ margin: 0, minWidth: 220, flex: 1 }}>
+                        <span>Shared IT manager email (optional)</span>
+                        <input
+                          type="email"
+                          value={bulkItEmail}
+                          onChange={(e) => setBulkItEmail(e.target.value)}
+                          placeholder="Uses server default if blank"
+                        />
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, paddingBottom: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={
+                            selectedItOfferIds.length > 0 &&
+                            selectedItOfferIds.length === itActionableCandidates.length
+                          }
+                          onChange={(e) => selectAllItActionable(e.target.checked)}
+                        />
+                        Select all ({selectedItOfferIds.length})
+                      </label>
+                      <button
+                        type="button"
+                        className={styles.primaryButton}
+                        disabled={
+                          bulkItBusy ||
+                          !selectedItOfferIds.some((id) =>
+                            itNotSentCandidates.some((c) => c.offer_id === id)
+                          )
+                        }
+                        onClick={() =>
+                          handleBulkSendIt(
+                            selectedItOfferIds.filter((id) =>
+                              itNotSentCandidates.some((c) => c.offer_id === id)
+                            )
+                          )
+                        }
+                      >
+                        {bulkItBusy ? "Sending…" : "Send IT for selected"}
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        disabled={
+                          bulkItBusy ||
+                          !selectedItOfferIds.some((id) =>
+                            itPendingCandidates.some((c) => c.offer_id === id)
+                          )
+                        }
+                        onClick={() =>
+                          handleBulkRemindIt(
+                            selectedItOfferIds.filter((id) =>
+                              itPendingCandidates.some((c) => c.offer_id === id)
+                            )
+                          )
+                        }
+                      >
+                        Follow up selected
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        disabled={bulkItBusy || itNotSentCandidates.length === 0}
+                        onClick={() => handleBulkSendIt(itNotSentCandidates.map((c) => c.offer_id))}
+                      >
+                        Send IT to all pending
+                      </button>
+                    </div>
+                  ) : null}
+                  <ul className={styles.miniList}>
+                    {readyCandidates.map((candidate) => {
+                      const it = candidate.it_provisioning;
+                      const itComplete = Boolean(candidate.can_activate);
+                      const itPending = it && !itComplete;
+                      const isExpired = Boolean(candidate.is_expired);
+                      const approveLabel = approvingOfferId === candidate.offer_id
+                        ? "Activating…"
+                        : itComplete
+                        ? isExpired
+                          ? "Force approve & activate"
+                          : "Approve & activate"
+                        : "Waiting for IT";
+                      const busy = itBusyOfferId === candidate.offer_id;
+                      return (
+                        <li
+                          className={styles.miniListItem}
+                          key={candidate.offer_id}
+                          style={{ alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}
+                        >
+                          <div style={{ flex: 1, minWidth: 220 }}>
+                            <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                              {!itComplete ? (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedItOfferIds.includes(candidate.offer_id)}
+                                  onChange={(e) => toggleItSelection(candidate.offer_id, e.target.checked)}
+                                  style={{ marginTop: 4 }}
+                                  aria-label={`Select ${candidate.full_name} for bulk IT`}
+                                />
+                              ) : null}
+                              <div>
+                                <strong>{candidate.full_name}</strong>
+                                <div className={styles.mutedText}>
+                                  {candidate.email} · {candidate.department || "—"} · Signed{" "}
+                                  {formatDate(candidate.signed_at)}
+                                </div>
+                                <div className={styles.chipRow} style={{ marginTop: 8 }}>
+                                  <span
+                                    className={styles.chip}
+                                    style={{
+                                      background: itComplete
+                                        ? "var(--green-light)"
+                                        : itPending
+                                        ? "var(--orange-light)"
+                                        : "var(--bg)",
+                                      color: itComplete
+                                        ? "var(--green)"
+                                        : itPending
+                                        ? "var(--orange)"
+                                        : "var(--text-muted)",
+                                    }}
+                                  >
+                                    {itComplete
+                                      ? `IT complete · ${it?.company_email || "email set"}`
+                                      : itPending
+                                      ? `IT pending · ${it?.it_manager_email || "awaiting form"}`
+                                      : "IT not requested"}
+                                  </span>
+                                  {isExpired ? (
+                                    <span
+                                      className={styles.chip}
+                                      style={{
+                                        background: "var(--red-light)",
+                                        color: "var(--red)",
+                                      }}
+                                    >
+                                      Offer expired
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {!itComplete && (
+                                  <label className={styles.field} style={{ marginTop: 10, maxWidth: 320 }}>
+                                    <span>IT manager email</span>
+                                    <input
+                                      type="email"
+                                      value={itEmailDrafts[candidate.offer_id] ?? (it?.it_manager_email || "")}
+                                      onChange={(event) =>
+                                        setItEmailDrafts((current) => ({
+                                          ...current,
+                                          [candidate.offer_id]: event.target.value,
+                                        }))
+                                      }
+                                      placeholder="it@company.com"
+                                    />
+                                  </label>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className={styles.rowActions} style={{ flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              className={styles.secondaryButton}
+                              onClick={() =>
+                                setExpandedCandidateId((current) =>
+                                  current === candidate.id ? null : candidate.id
+                                )
+                              }
+                            >
+                              {expandedCandidateId === candidate.id ? "Hide documents" : "View documents"}
+                            </button>
+                            {!itComplete && (
+                              <button
+                                type="button"
+                                className={styles.secondaryButton}
+                                disabled={busy}
+                                onClick={() => (itPending ? handleRemindIt(candidate) : handleSendIt(candidate))}
+                              >
+                                {busy ? "Sending…" : itPending ? "Follow up IT" : "Send email to IT"}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className={styles.primaryButton}
+                              disabled={!itComplete || approvingOfferId === candidate.offer_id}
+                              title={
+                                itComplete
+                                  ? isExpired
+                                    ? "Force approve expired offer and activate employee account"
+                                    : "Activate employee account"
+                                  : "Waiting for IT to submit company email and assets"
+                              }
+                              onClick={() => handleApproveOffer(candidate.offer_id, isExpired)}
+                            >
+                              {approveLabel}
+                            </button>
+                          </div>
+                          {expandedCandidateId === candidate.id && (
+                            <div style={{ width: "100%", marginTop: 8 }}>
+                              <RecruiterDocumentReview ownerId={candidate.id} />
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              ) : (
+                <p className={styles.emptySub}>No signed offers are waiting for IT or activation.</p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {pipelineView === "active" && negoPopup && (
         <div
@@ -1174,405 +1572,6 @@ export default function RecruiterCandidatesPage() {
         </div>
       )}
 
-      {pipelineView === "active" ? (
-        <>
-      <div className={styles.section}>
-        <div className={styles.sectionHead}>
-          <div className={styles.sectionHeadLeft}>
-            <div className={`${styles.bar} ${styles.orange}`} />
-            <div>
-              <div className={styles.sectionTitle}>Offer clarifications</div>
-              <div className={styles.sectionDesc}>
-                Candidate questions on the offer letter. Respond here so they can continue signing.
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className={styles.sectionBody}>
-          {loading ? (
-            <RecruiterLoader inline />
-          ) : negotiations.length ? (
-            negotiations.map((offer) => (
-              <div className={styles.candidateCard} key={offer.id}>
-                <div className={styles.candidateHead}>
-                  <div>
-                    <h4>{offer.candidate_name}</h4>
-                    <span>
-                      {offer.candidate_email} · {offer.job_title} · v{offer.version || 1}
-                    </span>
-                  </div>
-                  <div className={styles.rowActions}>
-                    <button type="button" className={styles.primaryButton} onClick={() => openClarificationPopup(offer)}>
-                      Review
-                    </button>
-                  </div>
-                </div>
-                <div className={styles.mutedText} style={{ marginTop: 6 }}>
-                  <strong style={{ color: "var(--navy)" }}>Clarification:</strong>{" "}
-                  {offer.negotiation?.note || "No clarification note provided."}
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className={styles.emptySub}>No pending clarifications.</p>
-          )}
-        </div>
-      </div>
-
-      <div className={styles.section}>
-        <div className={styles.sectionHead}>
-          <div className={styles.sectionHeadLeft}>
-            <div className={`${styles.bar} ${styles.cyan}`} />
-            <div>
-              <div className={styles.sectionTitle}>Awaiting offer response</div>
-              <div className={styles.sectionDesc}>
-                Registered candidates who have not signed or declined yet.
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className={styles.sectionBody}>
-          {loading ? (
-            <RecruiterLoader inline />
-          ) : awaitingOffers.length ? (
-            <ul className={styles.miniList}>
-              {awaitingOffers.map((offer) => (
-                <li className={styles.miniListItem} key={offer.id}>
-                  <div style={{ flex: 1 }}>
-                    <strong>{offer.candidate_name}</strong>
-                    <div className={styles.mutedText}>
-                      {offer.candidate_email} · {offer.job_title} · {offer.status}
-                      {offer.negotiation?.status === "closed" ? " · clarification closed" : ""}
-                    </div>
-                    <div className={styles.chipRow} style={{ marginTop: 8 }}>
-                      {offer.is_expired ? (
-                        <span
-                          className={styles.chip}
-                          style={{
-                            background: "var(--red-light)",
-                            color: "var(--red)",
-                          }}
-                        >
-                          Offer expired
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className={styles.rowActions}>
-                    {offer.is_expired ? (
-                      <button
-                        type="button"
-                        className={styles.primaryButton}
-                        disabled={extendingOfferId === offer.id}
-                        title="Extend validity for this expired unsigned offer"
-                        onClick={() => handleExtendOfferValidity(offer)}
-                      >
-                        {extendingOfferId === offer.id ? "Extending…" : "Extend validity"}
-                      </button>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className={styles.emptySub}>No unsigned offers waiting on candidates.</p>
-          )}
-        </div>
-      </div>
-
-      <div className={styles.section}>
-        <div className={styles.sectionHead}>
-          <div className={styles.sectionHeadLeft}>
-            <div className={`${styles.bar} ${styles.orange}`} />
-            <div>
-              <div className={styles.sectionTitle}>Documents in progress</div>
-              <div className={styles.sectionDesc}>
-                Candidates who signed (or received) an offer and are completing profile / documents.
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className={styles.sectionBody}>
-          <div className={styles.formGrid} style={{ marginBottom: 16 }}>
-            <label className={styles.field}>
-              <span>Search</span>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search candidates..."
-              />
-            </label>
-          </div>
-          {loading ? (
-            <RecruiterLoader inline />
-          ) : visibleNewCandidates.length ? (
-            <div style={{ display: "grid", gap: 12 }}>
-              {visibleNewCandidates.map((candidate) => (
-                <NewSignupCard
-                  key={candidate.id}
-                  candidate={candidate}
-                  reminding={false}
-                  onView={() => router.push(`/dashboard/recruiter/candidates/${candidate.id}`)}
-                  onRemind={() => handleReminder(candidate)}
-                  expanded={expandedCandidateId === candidate.id}
-                  onToggleDocs={() =>
-                    setExpandedCandidateId((current) => (current === candidate.id ? null : candidate.id))
-                  }
-                />
-              ))}
-            </div>
-          ) : (
-            <p className={styles.emptySub}>
-              {search ? "No candidates match your search." : "No candidates are mid-documents."}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className={styles.section}>
-        <div className={styles.sectionHead}>
-          <div className={styles.sectionHeadLeft}>
-            <div className={`${styles.bar} ${styles.green}`} />
-            <div>
-              <div className={styles.sectionTitle}>Ready for IT & activation</div>
-              <div className={styles.sectionDesc}>
-                Signed offers — send IT provisioning after documents are complete, then activate.
-                Select multiple people to bulk-email IT in one click.
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className={styles.sectionBody}>
-          {loading ? (
-            <RecruiterLoader inline />
-          ) : readyCandidates.length ? (
-            <>
-              {itActionableCandidates.length ? (
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 12,
-                    alignItems: "flex-end",
-                    marginBottom: 16,
-                    padding: 14,
-                    borderRadius: 12,
-                    border: "1px solid var(--border)",
-                    background: "#f7faf8",
-                  }}
-                >
-                  <label className={styles.field} style={{ margin: 0, minWidth: 220, flex: 1 }}>
-                    <span>Shared IT manager email (optional)</span>
-                    <input
-                      type="email"
-                      value={bulkItEmail}
-                      onChange={(e) => setBulkItEmail(e.target.value)}
-                      placeholder="Uses server default if blank"
-                    />
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, paddingBottom: 8 }}>
-                    <input
-                      type="checkbox"
-                      checked={
-                        selectedItOfferIds.length > 0 &&
-                        selectedItOfferIds.length === itActionableCandidates.length
-                      }
-                      onChange={(e) => selectAllItActionable(e.target.checked)}
-                    />
-                    Select all ({selectedItOfferIds.length})
-                  </label>
-                  <button
-                    type="button"
-                    className={styles.primaryButton}
-                    disabled={
-                      bulkItBusy ||
-                      !selectedItOfferIds.some((id) =>
-                        itNotSentCandidates.some((c) => c.offer_id === id)
-                      )
-                    }
-                    onClick={() =>
-                      handleBulkSendIt(
-                        selectedItOfferIds.filter((id) =>
-                          itNotSentCandidates.some((c) => c.offer_id === id)
-                        )
-                      )
-                    }
-                  >
-                    {bulkItBusy ? "Sending…" : "Send IT for selected"}
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    disabled={
-                      bulkItBusy ||
-                      !selectedItOfferIds.some((id) =>
-                        itPendingCandidates.some((c) => c.offer_id === id)
-                      )
-                    }
-                    onClick={() =>
-                      handleBulkRemindIt(
-                        selectedItOfferIds.filter((id) =>
-                          itPendingCandidates.some((c) => c.offer_id === id)
-                        )
-                      )
-                    }
-                  >
-                    Follow up selected
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    disabled={bulkItBusy || itNotSentCandidates.length === 0}
-                    onClick={() => handleBulkSendIt(itNotSentCandidates.map((c) => c.offer_id))}
-                  >
-                    Send IT to all pending
-                  </button>
-                </div>
-              ) : null}
-            <ul className={styles.miniList}>
-              {readyCandidates.map((candidate) => {
-                const it = candidate.it_provisioning;
-                const itComplete = Boolean(candidate.can_activate);
-                const itPending = it && !itComplete;
-                const isExpired = Boolean(candidate.is_expired);
-                const approveLabel = approvingOfferId === candidate.offer_id
-                  ? "Activating…"
-                  : itComplete
-                  ? isExpired
-                    ? "Force approve & activate"
-                    : "Approve & activate"
-                  : "Waiting for IT";
-                const busy = itBusyOfferId === candidate.offer_id;
-                return (
-                  <li
-                    className={styles.miniListItem}
-                    key={candidate.offer_id}
-                    style={{ alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}
-                  >
-                    <div style={{ flex: 1, minWidth: 220 }}>
-                      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                        {!itComplete ? (
-                          <input
-                            type="checkbox"
-                            checked={selectedItOfferIds.includes(candidate.offer_id)}
-                            onChange={(e) => toggleItSelection(candidate.offer_id, e.target.checked)}
-                            style={{ marginTop: 4 }}
-                            aria-label={`Select ${candidate.full_name} for bulk IT`}
-                          />
-                        ) : null}
-                        <div>
-                      <strong>{candidate.full_name}</strong>
-                      <div className={styles.mutedText}>
-                        {candidate.email} · {candidate.department || "—"} · Signed{" "}
-                        {formatDate(candidate.signed_at)}
-                      </div>
-                      <div className={styles.chipRow} style={{ marginTop: 8 }}>
-                        <span
-                          className={styles.chip}
-                          style={{
-                            background: itComplete
-                              ? "var(--green-light)"
-                              : itPending
-                              ? "var(--orange-light)"
-                              : "var(--bg)",
-                            color: itComplete
-                              ? "var(--green)"
-                              : itPending
-                              ? "var(--orange)"
-                              : "var(--text-muted)",
-                          }}
-                        >
-                          {itComplete
-                            ? `IT complete · ${it?.company_email || "email set"}`
-                            : itPending
-                            ? `IT pending · ${it?.it_manager_email || "awaiting form"}`
-                            : "IT not requested"}
-                        </span>
-                        {isExpired ? (
-                          <span
-                            className={styles.chip}
-                            style={{
-                              background: "var(--red-light)",
-                              color: "var(--red)",
-                            }}
-                          >
-                            Offer expired
-                          </span>
-                        ) : null}
-                      </div>
-                      {!itComplete && (
-                        <label className={styles.field} style={{ marginTop: 10, maxWidth: 320 }}>
-                          <span>IT manager email</span>
-                          <input
-                            type="email"
-                            value={itEmailDrafts[candidate.offer_id] ?? (it?.it_manager_email || "")}
-                            onChange={(event) =>
-                              setItEmailDrafts((current) => ({
-                                ...current,
-                                [candidate.offer_id]: event.target.value,
-                              }))
-                            }
-                            placeholder="it@company.com"
-                          />
-                        </label>
-                      )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className={styles.rowActions} style={{ flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        className={styles.secondaryButton}
-                        onClick={() =>
-                          setExpandedCandidateId((current) =>
-                            current === candidate.id ? null : candidate.id
-                          )
-                        }
-                      >
-                        {expandedCandidateId === candidate.id ? "Hide documents" : "View documents"}
-                      </button>
-                      {!itComplete && (
-                        <button
-                          type="button"
-                          className={styles.secondaryButton}
-                          disabled={busy}
-                          onClick={() => (itPending ? handleRemindIt(candidate) : handleSendIt(candidate))}
-                        >
-                          {busy ? "Sending…" : itPending ? "Follow up IT" : "Send email to IT"}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className={styles.primaryButton}
-                        disabled={!itComplete || approvingOfferId === candidate.offer_id}
-                        title={
-                          itComplete
-                            ? isExpired
-                              ? "Force approve expired offer and activate employee account"
-                              : "Activate employee account"
-                            : "Waiting for IT to submit company email and assets"
-                        }
-                        onClick={() => handleApproveOffer(candidate.offer_id, isExpired)}
-                      >
-                        {approveLabel}
-                      </button>
-                    </div>
-                    {expandedCandidateId === candidate.id && (
-                      <div style={{ width: "100%", marginTop: 8 }}>
-                        <RecruiterDocumentReview ownerId={candidate.id} />
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-            </>
-          ) : (
-            <p className={styles.emptySub}>No signed offers are waiting for IT or activation.</p>
-          )}
-        </div>
-      </div>
-
       <SendReminderModal
         open={Boolean(reminderTarget)}
         target={reminderTarget}
@@ -1584,12 +1583,11 @@ export default function RecruiterCandidatesPage() {
           loadCandidates();
         }}
       />
-        </>
-      ) : null}
     </RecruiterShell>
   );
 }
 
+// --- Helpers ---
 function unformatMoney(value) {
   if (value === null || value === undefined) return "";
   return String(value).replace(/,/g, "").trim();

@@ -49,6 +49,7 @@ export default function RecruiterEmployeesPage() {
   const loadEmployees = useCallback(async (page = 1, filters = dirFilters) => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
+    // No global loading for subsequent fetches, only initial one
     try {
       const data = await listEmployees(accessToken, {
         q: filters.q || undefined,
@@ -70,13 +71,14 @@ export default function RecruiterEmployeesPage() {
     } catch (err) {
       setError(getApiErrorMessage(err, "Could not load employee directory."));
     } finally {
-      setLoading(false);
+      // Only turn off the initial loader once
+      if (loading) setLoading(false);
     }
-  }, [dirFilters]);
+  }, [dirFilters, loading]);
 
   useEffect(() => {
     loadEmployees(1);
-  }, [loadEmployees]);
+  }, []); // Initial load only once
 
   async function handleExport() {
     const accessToken = localStorage.getItem("access_token");
@@ -94,6 +96,18 @@ export default function RecruiterEmployeesPage() {
     a.download = "employees.csv";
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  if (loading) {
+    return (
+      <RecruiterShell
+        activeKey="employees"
+        title="Employee directory"
+        subtitle="Loading employee data…"
+      >
+        <RecruiterLoader />
+      </RecruiterShell>
+    );
   }
 
   return (
@@ -201,7 +215,7 @@ export default function RecruiterEmployeesPage() {
               <button type="button" className={styles.secondaryButton} onClick={handleExport}>Export CSV</button>
             </div>
           </div>
-          {loading ? <RecruiterLoader inline /> : employees.length ? (
+          {employees.length ? (
             <>
               <ul className={styles.miniList}>
                 {employees.map((employee) => (
@@ -251,12 +265,14 @@ export default function RecruiterEmployeesPage() {
                 ))}
               </ul>
               <div className={styles.actions} style={{ marginTop: 12 }}>
-                <button type="button" className={styles.secondaryButton} disabled={employeePage <= 1} onClick={() => loadEmployees(employeePage - 1)}>Previous</button>
+                <button type="button" className={styles.secondaryButton} disabled={employeePage <= 1} onClick={() => loadEmployees(employeePage - 1, dirFilters)}>Previous</button>
                 <span className={styles.mutedText}>Page {employeePage} / {employeePages}</span>
-                <button type="button" className={styles.secondaryButton} disabled={employeePage >= employeePages} onClick={() => loadEmployees(employeePage + 1)}>Next</button>
+                <button type="button" className={styles.secondaryButton} disabled={employeePage >= employeePages} onClick={() => loadEmployees(employeePage + 1, dirFilters)}>Next</button>
               </div>
             </>
-          ) : <p className={styles.emptySub}>No employees match these filters.</p>}
+          ) : (
+            <p className={styles.emptySub}>No employees match these filters.</p>
+          )}
         </div>
       </div>
 
