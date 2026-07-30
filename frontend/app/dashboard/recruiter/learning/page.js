@@ -8,6 +8,7 @@ import { useSearchParams } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./learning.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
@@ -143,7 +144,7 @@ function LearningPageContent() {
 
 export default function RecruiterLearningPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<RecruiterLoader />}>
       <LearningPageContent />
     </Suspense>
   );
@@ -266,7 +267,7 @@ function CatalogTab({ onAssignCourse }) {
             </>
           )}
         </div>
-        {loading && <p className={styles.inlineNote}>Loading…</p>}
+        {loading && <RecruiterLoader inline />}
         {!loading && !(result.courses || []).length && (
           <p className={styles.inlineNote}>No courses found for this source. Try another pill or clear your search.</p>
         )}
@@ -419,7 +420,7 @@ function KnowledgeBaseTab() {
             <input className={styles.searchInput} placeholder="Description" value={roleForm.description} onChange={(e) => setRoleForm((f) => ({ ...f, description: e.target.value }))} />
             <button type="submit" className={styles.smallBtn} disabled={saving}>Add role</button>
           </form>
-          {loading && <p className={styles.inlineNote}>Loading…</p>}
+          {loading && <RecruiterLoader inline />}
           <div className={styles.courseGrid}>
             {roles.map((r) => (
               <div key={r.id} className={styles.courseCard}>
@@ -1012,7 +1013,7 @@ function AssignmentsTab() {
         </div>
       </div>
       <div className={shellStyles.sectionBody}>
-        {loading && <p className={styles.inlineNote}>Loading…</p>}
+        {loading && <RecruiterLoader inline />}
         {!loading && assignments.length === 0 && <p className={shellStyles.emptySub}>No assignments yet — assign a course from the Assign tab.</p>}
         {assignments.map((a) => (
           <div key={a.id} className={styles.listRow}>
@@ -1107,7 +1108,7 @@ function CertificatesTab({ selectedCertificateId = null }) {
         </div>
       </div>
       <div className={shellStyles.sectionBody}>
-        {loading && <p className={styles.inlineNote}>Loading…</p>}
+        {loading && <RecruiterLoader inline />}
         {!loading && certificates.length === 0 && <p className={shellStyles.emptySub}>Nothing pending review.</p>}
         {certificates.map((c) => (
           <div key={c.id} id={`certificate-${c.id}`} className={styles.listRow}>

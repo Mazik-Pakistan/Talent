@@ -1,0 +1,211 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@600&display=swap");
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #ffffff;
+}
+
+.shellInline {
+  min-height: 0;
+  padding: 16px 0;
+  background: transparent;
+}
+
+.loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.grid {
+  --s: 30px;
+  --gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(2, var(--s));
+  grid-template-rows: repeat(2, var(--s));
+  gap: var(--gap);
+}
+
+.chip {
+  border-radius: 7px;
+  opacity: 0;
+  transform: scale(0.4);
+  animation:
+    chipIn 0.6s cubic-bezier(0.2, 0.9, 0.25, 1.2) forwards,
+    chipPulse 2.8s ease-in-out 0.9s infinite;
+}
+
+.chip:nth-child(1) {
+  background: #6fb644;
+  animation-delay: 0s, 0s;
+}
+
+.chip:nth-child(2) {
+  background: #4986bd;
+  animation-delay: 0.08s, 0.18s;
+}
+
+.chip:nth-child(3) {
+  background: #2a6381;
+  animation-delay: 0.24s, 0.54s;
+}
+
+.chip:nth-child(4) {
+  background: #ee3124;
+  animation-delay: 0.16s, 0.36s;
+}
+
+.wordmark {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  font-family: "Poppins", system-ui, sans-serif;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+.mazik {
+  color: #9a938f;
+}
+
+.global {
+  color: #2a6381;
+}
+
+.dotTrail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 10px;
+}
+
+.dotTrail span {
+  display: block;
+  border-radius: 50%;
+  background: var(--dc);
+  opacity: 0.35;
+  animation: dotWave 1.4s ease-in-out infinite;
+}
+
+.dotTrail span:nth-child(1) {
+  width: 4px;
+  height: 4px;
+  --dc: #8fd3d8;
+  animation-delay: 0s;
+}
+
+.dotTrail span:nth-child(2) {
+  width: 5px;
+  height: 5px;
+  --dc: #7ecbd4;
+  animation-delay: 0.08s;
+}
+
+.dotTrail span:nth-child(3) {
+  width: 6px;
+  height: 6px;
+  --dc: #6cbfd0;
+  animation-delay: 0.16s;
+}
+
+.dotTrail span:nth-child(4) {
+  width: 7px;
+  height: 7px;
+  --dc: #5cadc8;
+  animation-delay: 0.24s;
+}
+
+.dotTrail span:nth-child(5) {
+  width: 8px;
+  height: 8px;
+  --dc: #4f97bf;
+  animation-delay: 0.32s;
+}
+
+.dotTrail span:nth-child(6) {
+  width: 9px;
+  height: 9px;
+  --dc: #42809e;
+  animation-delay: 0.4s;
+}
+
+.dotTrail span:nth-child(7) {
+  width: 10px;
+  height: 10px;
+  --dc: #356879;
+  animation-delay: 0.48s;
+}
+
+.dotTrail span:nth-child(8) {
+  width: 11px;
+  height: 11px;
+  --dc: #2a6381;
+  animation-delay: 0.56s;
+}
+
+.caption {
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 12px;
+  color: #9aa3a8;
+  letter-spacing: 0.03em;
+  opacity: 0;
+  animation: fadeIn 0.6s ease-out 1s forwards;
+}
+
+@keyframes chipIn {
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes chipPulse {
+  0%,
+  76%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  38% {
+    transform: scale(1.22);
+    opacity: 0.7;
+  }
+}
+
+@keyframes fadeIn {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dotWave {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .dotTrail span,
+  .caption {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

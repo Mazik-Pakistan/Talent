@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import {
   clearLocalSession,
   getNotifications,
@@ -384,11 +385,15 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
   }
 
   if (!user) {
-    return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
+    return <RecruiterLoader />;
   }
 
   return (
-    <RequireAccess anyOf={["recruitment.view", "recruitment.invite"]} roles={["recruiter", "super_admin"]}>
+    <RequireAccess
+      anyOf={["recruitment.view", "recruitment.invite"]}
+      roles={["recruiter", "super_admin"]}
+      fallback={<RecruiterLoader />}
+    >
       <div className={styles.root} data-app-shell>
         <div className={styles.app}>
           <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.sidebarCollapsed : ""}`}>
