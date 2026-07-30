@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 
 import EmployeeShell from "@/components/employee/EmployeeShell";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import dashStyles from "@/app/dashboard/employee/employee-dashboard.module.css";
 import styles from "./learning.module.css";
@@ -60,7 +61,7 @@ const CAREER_SUGGESTIONS = [
 
 export default function EmployeeLearningPage() {
   return (
-    <Suspense fallback={<p style={{ textAlign: "center", marginTop: "2rem" }}>Loading learning…</p>}>
+    <Suspense fallback={<RecruiterLoader />}>
       <EmployeeLearningPageInner />
     </Suspense>
   );
@@ -108,7 +109,7 @@ function EmployeeLearningPageInner() {
     loadDashboard();
   }, [loadDashboard]);
 
-  // Page-scoped Copilot assist — switch tabs / point at next learning action only.
+  // Page-scoped Copilot assist â€” switch tabs / point at next learning action only.
   useEffect(() => {
     return registerPageAssist({
       propose: () => {
@@ -121,11 +122,11 @@ function EmployeeLearningPageInner() {
 
         if (tab !== "my-courses" && (assigned || inProgress)) {
           return {
-            message: `You have learning work waiting. I can switch you to My Learning so you can start or resume — I won't leave Learning.`,
+            message: `You have learning work waiting. I can switch you to My Learning so you can start or resume â€” I won't leave Learning.`,
             items,
             applyLabel: "Open My Learning",
-            busyMessage: "Switching to My Learning…",
-            doneMessage: "✓ You're on My Learning — pick a course to continue.",
+            busyMessage: "Switching to My Learningâ€¦",
+            doneMessage: "âœ“ You're on My Learning â€” pick a course to continue.",
             meta: { tab: "my-courses" },
           };
         }
@@ -133,8 +134,8 @@ function EmployeeLearningPageInner() {
           return {
             message: "Nothing is overdue. I can open the Course Catalog so you can pick something that closes a skill gap.",
             applyLabel: "Browse catalog",
-            busyMessage: "Opening the catalog…",
-            doneMessage: "✓ Catalog is open — enroll in anything that fits your role.",
+            busyMessage: "Opening the catalogâ€¦",
+            doneMessage: "âœ“ Catalog is open â€” enroll in anything that fits your role.",
             meta: { tab: "catalog" },
           };
         }
@@ -142,8 +143,8 @@ function EmployeeLearningPageInner() {
           return {
             message: "Your skill profile drives recommendations. I can open Career Path next so you can see role matches and gaps.",
             applyLabel: "Open Career Path",
-            busyMessage: "Opening Career Path…",
-            doneMessage: "✓ Career Path is open — review matches and gaps.",
+            busyMessage: "Opening Career Pathâ€¦",
+            doneMessage: "âœ“ Career Path is open â€” review matches and gaps.",
             meta: { tab: "career" },
           };
         }
@@ -160,7 +161,7 @@ function EmployeeLearningPageInner() {
     <EmployeeShell
       activeKey="learning"
       title="Learning"
-      subtitle={dashboard ? `${dashboard.employee?.job_title || "Employee"} · ${dashboard.employee?.department || "—"}` : "Loading…"}
+      subtitle={dashboard ? `${dashboard.employee?.job_title || "Employee"} Â· ${dashboard.employee?.department || "â€”"}` : ""}
     >
       {loadError && <div className={dashStyles.loadError}>{loadError}</div>}
 
@@ -192,7 +193,7 @@ function EmployeeLearningPageInner() {
 // ------------------------------------------------------------------------ //
 function OverviewTab({ dashboard, onGo, onRefresh }) {
   const [startingUid, setStartingUid] = useState("");
-  if (!dashboard) return <p className={styles.inlineNote}>Loading your learning summary…</p>;
+  if (!dashboard) return <RecruiterLoader inline />;
   const s = dashboard.summary || {};
 
   const stats = [
@@ -211,7 +212,7 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
       if (data.redirect_url) window.open(data.redirect_url, "_blank", "noopener,noreferrer");
       onRefresh?.();
       onGo("my-courses");
-      toast.success("Course started — tracking your progress.");
+      toast.success("Course started â€” tracking your progress.");
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not start this course."));
     } finally {
@@ -226,7 +227,7 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
           <div className={dashStyles.heroEyebrow}>Learning &amp; Development</div>
           <h1>Grow your skills with Microsoft Learn</h1>
           <div className={dashStyles.heroMeta}>
-            Overall progress: <b>{s.overall_progress_percent ?? 0}%</b> · Learning hours logged:{" "}
+            Overall progress: <b>{s.overall_progress_percent ?? 0}%</b> Â· Learning hours logged:{" "}
             <b>{s.total_learning_hours ?? 0}</b>
           </div>
           <div className={dashStyles.heroChips}>
@@ -244,7 +245,7 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
         {stats.map((stat) => (
           <div key={stat.label} className={dashStyles.statCard}>
             <div className={dashStyles.statTop}>
-              <span className={`${dashStyles.statIcon} ${dashStyles[stat.color]}`}>●</span>
+              <span className={`${dashStyles.statIcon} ${dashStyles[stat.color]}`}>â—</span>
             </div>
             <div className={dashStyles.statValue}>{stat.value}</div>
             <div className={dashStyles.statLabel}>{stat.label}</div>
@@ -303,14 +304,14 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
           </div>
           <div className={dashStyles.sectionBody}>
             {(dashboard.upcoming_due || []).length === 0 && (
-              <p className={styles.inlineNote}>No pending assignments — you&apos;re caught up.</p>
+              <p className={styles.inlineNote}>No pending assignments â€” you&apos;re caught up.</p>
             )}
             {(dashboard.upcoming_due || []).map((a, index) => (
               <div key={a.id || `${a.course_uid}-${a.due_date || index}`} className={styles.courseListRow}>
                 <div className={styles.courseListInfo}>
                   <div className={styles.courseListTitle}>{a.course_title}</div>
                   <div className={styles.courseListMeta}>
-                    {a.due_date ? `Due ${String(a.due_date).slice(0, 10)}` : "No due date"} · {a.status}
+                    {a.due_date ? `Due ${String(a.due_date).slice(0, 10)}` : "No due date"} Â· {a.status}
                   </div>
                 </div>
                 <button
@@ -319,7 +320,7 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
                   disabled={startingUid === a.course_uid}
                   onClick={() => startAssigned(a.course_uid)}
                 >
-                  {startingUid === a.course_uid ? "Starting…" : "Start"}
+                  {startingUid === a.course_uid ? "Startingâ€¦" : "Start"}
                 </button>
               </div>
             ))}
@@ -342,7 +343,7 @@ const CATALOG_SOURCES = [
   {
     key: "coursera",
     label: "Coursera Courses",
-    hint: "Industry soft-skills courses from Coursera (English) — communication, leadership, and more.",
+    hint: "Industry soft-skills courses from Coursera (English) â€” communication, leadership, and more.",
   },
   {
     key: "recruiter_kb",
@@ -422,7 +423,7 @@ function CatalogTab({ onEnroll }) {
     try {
       const data = await startCourse(token, course.uid);
       window.open(data.redirect_url || course.url, "_blank", "noopener,noreferrer");
-      toast.success("Course started — tracking your progress. Complete it on the provider's site, then upload your certificate here.");
+      toast.success("Course started â€” tracking your progress. Complete it on the provider's site, then upload your certificate here.");
       onEnroll?.();
       load();
     } catch (err) {
@@ -464,7 +465,7 @@ function CatalogTab({ onEnroll }) {
           <div>
             <div className={dashStyles.sectionTitle}>{activeSource.label}</div>
             <p className={dashStyles.sectionDesc}>
-              {result.total} results · pick a source below to browse
+              {result.total} results Â· pick a source below to browse
             </p>
           </div>
         </div>
@@ -491,10 +492,10 @@ function CatalogTab({ onEnroll }) {
             className={styles.searchInput}
             placeholder={
               isSoftSkills
-                ? "Search soft skills, e.g. negotiation, leadership…"
+                ? "Search soft skills, e.g. negotiation, leadershipâ€¦"
                 : source === "recruiter_kb"
-                  ? "Search recruiter / company courses…"
-                  : "Search by title, skill, product…"
+                  ? "Search recruiter / company coursesâ€¦"
+                  : "Search by title, skill, productâ€¦"
             }
             value={q}
             onChange={(e) => { setPage(1); setQ(e.target.value); }}
@@ -558,7 +559,7 @@ function CatalogTab({ onEnroll }) {
         </div>
 
         {error && <div className={styles.errorNote}>{error}</div>}
-        {loading && <p className={styles.inlineNote}>Loading courses…</p>}
+        {loading && <p className={styles.inlineNote}>Loading coursesâ€¦</p>}
 
         <div className={styles.courseGrid}>
           {result.courses.map((course) => (
@@ -602,7 +603,7 @@ function CatalogTab({ onEnroll }) {
                 </button>
               </div>
               <div className={styles.courseTitle}>{course.title}</div>
-              <div className={styles.courseSummary}>{(course.summary || "").slice(0, 130)}{(course.summary || "").length > 130 ? "…" : ""}</div>
+              <div className={styles.courseSummary}>{(course.summary || "").slice(0, 130)}{(course.summary || "").length > 130 ? "â€¦" : ""}</div>
               <div className={styles.courseMeta}>
                 {course.category && <span className={styles.levelBadge}>{course.category}</span>}
                 {(course.levels || [])[0] && <span className={styles.levelBadge}>{course.levels[0]}</span>}
@@ -620,7 +621,7 @@ function CatalogTab({ onEnroll }) {
                   </span>
                 ) : (
                   <button type="button" className={styles.smallBtnPrimary} disabled={busyUid === course.uid} onClick={() => handleStart(course)}>
-                    {busyUid === course.uid ? "Starting…" : "Start Learning"}
+                    {busyUid === course.uid ? "Startingâ€¦" : "Start Learning"}
                   </button>
                 )}
                 {course.assigned && <span className={styles.statusChip + " " + styles.assigned}>Assigned</span>}
@@ -690,7 +691,7 @@ function MyCoursesTab({ onChange }) {
       if (data.redirect_url) window.open(data.redirect_url, "_blank", "noopener,noreferrer");
       load();
       onChange?.();
-      toast.success("Course started — tracking your progress.");
+      toast.success("Course started â€” tracking your progress.");
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not start this course."));
     } finally {
@@ -716,7 +717,7 @@ function MyCoursesTab({ onChange }) {
         </select>
       </div>
       <div className={dashStyles.sectionBody}>
-        {loading && <p className={styles.inlineNote}>Loading…</p>}
+        {loading && <RecruiterLoader inline />}
         {!loading && enrollments.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>Nothing here yet</div>
@@ -730,15 +731,15 @@ function MyCoursesTab({ onChange }) {
               <div className={styles.courseListInfo}>
                 <div className={styles.courseListTitle}>{e.course_title}</div>
                 <div className={styles.courseListMeta}>
-                  {e.assigned || isAssignedOnly ? "Assigned by recruiter · " : ""}
-                  {e.due_date ? `Due ${String(e.due_date).slice(0, 10)} · ` : ""}
+                  {e.assigned || isAssignedOnly ? "Assigned by recruiter Â· " : ""}
+                  {e.due_date ? `Due ${String(e.due_date).slice(0, 10)} Â· ` : ""}
                   {isAssignedOnly
                     ? "Not started yet"
-                    : `Started ${e.started_at ? new Date(e.started_at).toLocaleDateString() : "—"}`}
+                    : `Started ${e.started_at ? new Date(e.started_at).toLocaleDateString() : "â€”"}`}
                 </div>
               </div>
               <div className={styles.courseListProgress}>
-                <div className={styles.progressLabel}>{isAssignedOnly ? "—" : `${e.progress_percent}%`}</div>
+                <div className={styles.progressLabel}>{isAssignedOnly ? "â€”" : `${e.progress_percent}%`}</div>
                 {!isAssignedOnly && (
                   <div className={styles.progressTrackSm}>
                     <div className={styles.progressFillSm} style={{ width: `${e.progress_percent}%` }} />
@@ -753,7 +754,7 @@ function MyCoursesTab({ onChange }) {
                     disabled={startingUid === e.course_uid}
                     onClick={() => startAssigned(e.course_uid)}
                   >
-                    {startingUid === e.course_uid ? "Starting…" : "Start"}
+                    {startingUid === e.course_uid ? "Startingâ€¦" : "Start"}
                   </button>
                 ) : (
                   <>
@@ -881,19 +882,19 @@ function SkillsTab() {
             <div className={dashStyles.sectionTitle}>Skill profile</div>
             <p className={dashStyles.sectionDesc}>
               Merged from resume, certifications, and manual skills
-              {cacheMeta?.lastAnalyzedAt ? ` · Last analyzed ${new Date(cacheMeta.lastAnalyzedAt).toLocaleString()}` : ""}
+              {cacheMeta?.lastAnalyzedAt ? ` Â· Last analyzed ${new Date(cacheMeta.lastAnalyzedAt).toLocaleString()}` : ""}
             </p>
           </div>
         </div>
         <button type="button" className={dashStyles.btnPrimary} disabled={assessing} onClick={handleAssess}>
-          {assessing ? "Assessing…" : "Run AI skill assessment"}
+          {assessing ? "Assessingâ€¦" : "Run AI skill assessment"}
         </button>
       </div>
       <div className={dashStyles.sectionBody}>
         {assessment && (
           <div className={styles.assessmentBanner}>
             <div>
-              <strong>Role fit: {assessment.role_fit_percentage ?? "—"}%</strong>
+              <strong>Role fit: {assessment.role_fit_percentage ?? "â€”"}%</strong>
               <p>{assessment.summary}</p>
             </div>
             {(assessment.gaps || []).length > 0 && (
@@ -943,10 +944,10 @@ function SkillsTab() {
             Years
             <input type="number" min="0" max="50" step="0.5" value={form.years_experience} onChange={(e) => setForm((f) => ({ ...f, years_experience: e.target.value }))} />
           </label>
-          <button type="submit" className={dashStyles.btnPrimary} disabled={saving}>{saving ? "Saving…" : "Add / Update"}</button>
+          <button type="submit" className={dashStyles.btnPrimary} disabled={saving}>{saving ? "Savingâ€¦" : "Add / Update"}</button>
         </form>
 
-        {loading && <p className={styles.inlineNote}>Loading…</p>}
+        {loading && <RecruiterLoader inline />}
         {!loading && skills.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>No skills recorded yet</div>
@@ -961,9 +962,9 @@ function SkillsTab() {
                   <div className={styles.skillName}>{s.skill_name}</div>
                   <div className={styles.skillCategory}>
                     {s.category}
-                    {s.years_experience ? ` · ${s.years_experience} yrs` : ""}
-                    {s.source ? ` · ${s.source}` : ""}
-                    {s.confidence != null ? ` · ${s.confidence}% conf.` : ""}
+                    {s.years_experience ? ` Â· ${s.years_experience} yrs` : ""}
+                    {s.source ? ` Â· ${s.source}` : ""}
+                    {s.confidence != null ? ` Â· ${s.confidence}% conf.` : ""}
                   </div>
                 </div>
                 {s.id && (
@@ -1055,7 +1056,7 @@ function CareerTab() {
       const gapData = await getSkillGap(token, target.trim(), true);
       setGap(gapData);
       loadRecommendations(true);
-      toast.success(`Career goal set to “${target.trim()}”.`);
+      toast.success(`Career goal set to â€œ${target.trim()}â€.`);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not set your career goal."));
     } finally {
@@ -1079,7 +1080,7 @@ function CareerTab() {
     const url = step?.course?.url;
     if (!token) return;
 
-    // KB cert placeholders — open official URL / send to certificates tab
+    // KB cert placeholders â€” open official URL / send to certificates tab
     if (!uid || String(uid).startsWith("kb-cert:")) {
       if (url) window.open(url, "_blank", "noopener,noreferrer");
       else toast.info("Upload this certification under Certificates when you earn it.");
@@ -1092,7 +1093,7 @@ function CareerTab() {
       if (data.redirect_url || url) {
         window.open(data.redirect_url || url, "_blank", "noopener,noreferrer");
       }
-      toast.success("Course started — mark progress in My Learning when done.");
+      toast.success("Course started â€” mark progress in My Learning when done.");
       if (savedGoal) loadGapAndPath(savedGoal, true);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not start this path step."));
@@ -1117,12 +1118,12 @@ function CareerTab() {
           </div>
         </div>
         <div className={dashStyles.sectionBody}>
-          {ladderLoading && <p className={styles.inlineNote}>Loading your progression ladder…</p>}
+          {ladderLoading && <RecruiterLoader inline />}
           {!ladderLoading && (!ladder?.ladder || ladder.ladder.length === 0) && (
             <div className={dashStyles.emptyState}>
               <div className={dashStyles.emptyTitle}>No org roles configured yet</div>
               <div className={dashStyles.emptySub}>
-                Your recruiter hasn&apos;t added roles to the knowledge base yet — set a free-form goal below instead.
+                Your recruiter hasn&apos;t added roles to the knowledge base yet â€” set a free-form goal below instead.
               </div>
             </div>
           )}
@@ -1197,14 +1198,14 @@ function CareerTab() {
               onChange={(e) => setGoal(e.target.value)}
             />
             <button type="button" className={dashStyles.btnPrimary} onClick={() => handleSetGoal()} disabled={gapLoading}>
-              {gapLoading ? "Analyzing…" : "Analyze"}
+              {gapLoading ? "Analyzingâ€¦" : "Analyze"}
             </button>
           </div>
           <div className={styles.chipSuggestions}>
             {(roleMatches.length > 0 ? roleMatches.map((r) => r.role) : CAREER_SUGGESTIONS).map((s) => (
               <button key={s} type="button" className={styles.chipSuggestion} onClick={() => handleSetGoal(s)}>
                 {s}
-                {roleMatches.find((r) => r.role === s) ? ` · ${Math.round(roleMatches.find((r) => r.role === s).readiness_score)}%` : ""}
+                {roleMatches.find((r) => r.role === s) ? ` Â· ${Math.round(roleMatches.find((r) => r.role === s).readiness_score)}%` : ""}
               </button>
             ))}
           </div>
@@ -1217,11 +1218,11 @@ function CareerTab() {
                 <ReadinessRing percentage={gap.readiness_percentage ?? 0} />
                 <div className={styles.readinessSummary}>
                   {gap.summary}
-                  {gap.cached ? <div className={styles.inlineNote}>Cached analysis — click Analyze after completing path steps</div> : null}
+                  {gap.cached ? <div className={styles.inlineNote}>Cached analysis â€” click Analyze after completing path steps</div> : null}
                   {(gap.skill_match_percent != null || gap.certification_match_percent != null) && (
                     <div className={styles.inlineNote}>
-                      Skills {gap.skill_match_percent ?? "—"}% · Certs {gap.certification_match_percent ?? "—"}%
-                      {gap.learning_priority ? ` · Priority: ${gap.learning_priority}` : ""}
+                      Skills {gap.skill_match_percent ?? "â€”"}% Â· Certs {gap.certification_match_percent ?? "â€”"}%
+                      {gap.learning_priority ? ` Â· Priority: ${gap.learning_priority}` : ""}
                     </div>
                   )}
                 </div>
@@ -1271,9 +1272,9 @@ function CareerTab() {
                 <div className={dashStyles.sectionTitle}>Your learning path</div>
                 <p className={dashStyles.sectionDesc}>
                   Toward: {path.target_role}
-                  {path.progress_percent != null ? ` · ${path.progress_percent}% complete` : ""}
-                  {path.estimated_total_hours ? ` · ~${path.estimated_total_hours}h` : ""}
-                  {" · "}Start each step, finish in My Learning (or upload certs), then Analyze again
+                  {path.progress_percent != null ? ` Â· ${path.progress_percent}% complete` : ""}
+                  {path.estimated_total_hours ? ` Â· ~${path.estimated_total_hours}h` : ""}
+                  {" Â· "}Start each step, finish in My Learning (or upload certs), then Analyze again
                 </p>
               </div>
             </div>
@@ -1300,20 +1301,20 @@ function CareerTab() {
                   <div key={step.step} className={`${styles.pathStep} ${step.completed ? styles.pathStepDone : ""}`}>
                     <div className={styles.pathStepMarker}>
                       <div className={`${styles.pathStepNum} ${step.completed ? styles.pathStepNumDone : ""}`}>
-                        {step.completed ? "✓" : step.step}
+                        {step.completed ? "âœ“" : step.step}
                       </div>
                       <div className={styles.pathStepLine} />
                     </div>
                     <div className={styles.pathStepBody}>
                       <div className={styles.pathSkillLabel}>
                         Step {step.step}: {step.skill}
-                        {step.completed ? " · Done" : ""}
-                        {step.kind === "certification" ? " · Certification" : ""}
+                        {step.completed ? " Â· Done" : ""}
+                        {step.kind === "certification" ? " Â· Certification" : ""}
                       </div>
                       <div className={styles.pathCourseTitle}>{step.course?.title}</div>
                       <div className={styles.pathCourseMeta}>
                         {step.course?.source || step.course?.provider || "Catalog"}
-                        {step.course?.duration_minutes ? ` · ${step.course.duration_minutes} min` : ""}
+                        {step.course?.duration_minutes ? ` Â· ${step.course.duration_minutes} min` : ""}
                       </div>
                       <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                         {!step.completed && (
@@ -1323,7 +1324,7 @@ function CareerTab() {
                             disabled={busy}
                             onClick={() => startPathStep(step)}
                           >
-                            {busy ? "Starting…" : step.kind === "certification" ? "Open / earn cert" : "Start step"}
+                            {busy ? "Startingâ€¦" : step.kind === "certification" ? "Open / earn cert" : "Start step"}
                           </button>
                         )}
                         {step.course?.url ? (
@@ -1353,11 +1354,11 @@ function CareerTab() {
             </div>
           </div>
           <button type="button" className={styles.smallBtn} onClick={() => loadRecommendations(true)} disabled={recsLoading}>
-            {recsLoading ? "Refreshing…" : "Refresh"}
+            {recsLoading ? "Refreshingâ€¦" : "Refresh"}
           </button>
         </div>
         <div className={dashStyles.sectionBody}>
-          {recsLoading && <p className={styles.inlineNote}>Thinking…</p>}
+          {recsLoading && <p className={styles.inlineNote}>Thinkingâ€¦</p>}
           {!recsLoading && (!recs?.recommendations || recs.recommendations.length === 0) && (
             <div className={dashStyles.emptyState}>
               <div className={dashStyles.emptyTitle}>No recommendations yet</div>
@@ -1554,17 +1555,17 @@ function CertificatesTab({ onChange }) {
             Public certificate URL (optional)
             <input
               type="url"
-              placeholder="https://…"
+              placeholder="https://â€¦"
               value={form.source_url || ""}
               onChange={(e) => setForm((f) => ({ ...f, source_url: e.target.value }))}
             />
           </label>
           <button type="submit" className={dashStyles.btnPrimary} disabled={saving} style={{ gridColumn: "1 / -1", justifySelf: "start" }}>
-            {saving ? "Uploading…" : "Submit for verification"}
+            {saving ? "Uploadingâ€¦" : "Submit for verification"}
           </button>
         </form>
 
-        {loading && <p className={styles.inlineNote}>Loading…</p>}
+        {loading && <RecruiterLoader inline />}
         {!loading && certificates.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>No certificates uploaded yet</div>
@@ -1601,10 +1602,10 @@ function CertificatesTab({ onChange }) {
                 <div className={styles.certInfo}>
                   <div className={styles.certTitle}>{c.course_title}</div>
                   <div className={styles.certMeta}>
-                    {c.completion_date ? `Completed ${c.completion_date} · ` : ""}
-                    {c.learning_hours ? `${c.learning_hours} hrs · ` : ""}
+                    {c.completion_date ? `Completed ${c.completion_date} Â· ` : ""}
+                    {c.learning_hours ? `${c.learning_hours} hrs Â· ` : ""}
                     Submitted {new Date(c.created_at).toLocaleDateString()}
-                    {c.rejection_reason ? ` · ${c.rejection_reason}` : ""}
+                    {c.rejection_reason ? ` Â· ${c.rejection_reason}` : ""}
                   </div>
                 </div>
                 <span className={`${styles.certStatus} ${styles[c.verification_status]}`}>
@@ -1635,3 +1636,4 @@ function CertificatesTab({ onChange }) {
     </div>
   );
 }
+

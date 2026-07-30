@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import {
   clearLocalSession,
   getApiErrorMessage,
@@ -200,7 +201,7 @@ function CandidateDashboardContent() {
   }
 
   if (!user) {
-    return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
+    return <RecruiterLoader />;
   }
 
   return (

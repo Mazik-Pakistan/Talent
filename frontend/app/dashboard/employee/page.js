@@ -8,6 +8,7 @@ import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import AnimatedNumber from "@/components/ai-experience/AnimatedNumber";
 import SidebarBrand from "@/components/SidebarBrand";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import { publishGuideContext } from "@/lib/ai/guideContext";
 import {
   clearLocalSession,
@@ -391,7 +392,7 @@ function EmployeeDashboardContent() {
   }
 
   if (!user) {
-    return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
+    return <RecruiterLoader />;
   }
 
   const displayName = employee?.full_name || user.full_name;

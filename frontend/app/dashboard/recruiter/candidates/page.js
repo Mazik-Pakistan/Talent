@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
   acceptOfferNegotiation,
@@ -1189,7 +1190,7 @@ export default function RecruiterCandidatesPage() {
         </div>
         <div className={styles.sectionBody}>
           {loading ? (
-            <p className={styles.emptySub}>Loading…</p>
+            <RecruiterLoader inline />
           ) : negotiations.length ? (
             negotiations.map((offer) => (
               <div className={styles.candidateCard} key={offer.id}>
@@ -1232,7 +1233,7 @@ export default function RecruiterCandidatesPage() {
         </div>
         <div className={styles.sectionBody}>
           {loading ? (
-            <p className={styles.emptySub}>Loading…</p>
+            <RecruiterLoader inline />
           ) : awaitingOffers.length ? (
             <ul className={styles.miniList}>
               {awaitingOffers.map((offer) => (
@@ -1303,7 +1304,7 @@ export default function RecruiterCandidatesPage() {
             </label>
           </div>
           {loading ? (
-            <p className={styles.emptySub}>Loading…</p>
+            <RecruiterLoader inline />
           ) : visibleNewCandidates.length ? (
             <div style={{ display: "grid", gap: 12 }}>
               {visibleNewCandidates.map((candidate) => (
@@ -1343,7 +1344,7 @@ export default function RecruiterCandidatesPage() {
         </div>
         <div className={styles.sectionBody}>
           {loading ? (
-            <p className={styles.emptySub}>Loading…</p>
+            <RecruiterLoader inline />
           ) : readyCandidates.length ? (
             <>
               {itActionableCandidates.length ? (

@@ -13,6 +13,7 @@ import {
   uploadOfferSignature,
 } from "@/services/authService";
 import SignaturePad from "@/components/SignaturePad";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
 import styles from "@/app/styles/auth.module.css";
@@ -627,7 +628,7 @@ function OfferLetterPageContent() {
         </header>
 
         {loading ? (
-          <p style={{ textAlign: "center", padding: "3rem 1rem" }}>Loading your offer letter...</p>
+          <RecruiterLoader inline />
         ) : !offer ? (
           <div className={styles.offerEmptyState}>
             <h2>No offer letter yet</h2>
@@ -966,9 +967,7 @@ export default function OfferLetterPage() {
     <Suspense
       fallback={
         <main className={styles.offerShell}>
-          <div className={styles.offerCard}>
-            <p style={{ textAlign: "center", padding: "2rem" }}>Loading your offer letter...</p>
-          </div>
+          <RecruiterLoader inline />
         </main>
       }
     >

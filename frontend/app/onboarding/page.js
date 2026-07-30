@@ -18,6 +18,7 @@ import Toast from "@/components/Toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { CANDIDATE_STEP_HELP } from "@/lib/ai/candidateFieldHelp";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
@@ -194,11 +195,7 @@ export default function OnboardingPage() {
   return (
     <Suspense
       fallback={
-        <div className={styles.root} data-app-shell>
-          <div className={styles.content}>
-            <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading onboarding…</p>
-          </div>
-        </div>
+        <RecruiterLoader />
       }
     >
       <OnboardingContent />
@@ -1791,7 +1788,7 @@ function OnboardingContent() {
 
           <div className={styles.content}>
             {loading ? (
-              <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading onboarding…</p>
+              <RecruiterLoader inline />
             ) : (
               <section className={styles.card}>
                 {isEditMode && (

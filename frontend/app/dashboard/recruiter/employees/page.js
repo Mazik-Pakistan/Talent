@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import {
@@ -200,7 +201,7 @@ export default function RecruiterEmployeesPage() {
               <button type="button" className={styles.secondaryButton} onClick={handleExport}>Export CSV</button>
             </div>
           </div>
-          {loading ? <p className={styles.emptySub}>Loading…</p> : employees.length ? (
+          {loading ? <RecruiterLoader inline /> : employees.length ? (
             <>
               <ul className={styles.miniList}>
                 {employees.map((employee) => (
