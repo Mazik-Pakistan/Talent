@@ -793,7 +793,13 @@ class AgentService:
 
         for _ in range(MAX_TOOL_STEPS):
             prompt = _build_prompt(user, system_prompt, tool_spec, history_text, scratchpad, message, context)
-            parsed = await call_llm_json(prompt, max_tokens=1200, temperature=0.2)
+            # Agent prompts are large (tools + history + RAG); OmniRoute auto-routing
+            # can take well over the default 60s when upstream models are slow.
+            # max_tokens must leave room for long reply messages + suggested_replies
+            # (1200 was truncating valid JSON mid-object).
+            parsed = await call_llm_json(
+                prompt, max_tokens=2048, temperature=0.2, timeout=120.0
+            )
             if not parsed:
                 return _pack_reply(
                     message="I'm having trouble reaching the AI service right now — please try again in a moment.",
