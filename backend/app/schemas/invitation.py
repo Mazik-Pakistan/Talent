@@ -157,11 +157,11 @@ class OnboardingPersonalInfo(BaseModel):
     gender: Literal["male", "female", "other", "prefer_not_to_say"]
     nationality: str = Field(min_length=2, max_length=80)
     marital_status: Literal["single", "married", "divorced", "widowed", "other"]
-    blood_group: Literal["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "N/A"] = "N/A"
+    blood_group: Literal["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "N/A"]
     national_id: str = Field(min_length=5, max_length=40)
     profile_picture: str | None = None
-    # Optional fields populated from CNIC/Passport OCR (editable by candidate)
-    father_name: str | None = Field(default=None, max_length=120)
+    # Required fields — collected during pre-hire intake
+    father_name: str = Field(min_length=2, max_length=120)
     id_issue_date: str | None = Field(default=None, max_length=40)
     id_expiry_date: str | None = Field(default=None, max_length=40)
     # Contact (US-026)
@@ -185,10 +185,10 @@ class OnboardingPersonalInfo(BaseModel):
     @field_validator("blood_group", mode="before")
     @classmethod
     def normalize_blood_group(cls, value: str | None) -> str:
-        """Map legacy 'unknown' / empty values to N/A."""
+        """Reject missing/empty — but 'N/A' is a valid explicit choice."""
         raw = (value or "").strip()
         if not raw or raw.lower() == "unknown":
-            return "N/A"
+            raise ValueError("Blood group is required. Select your blood group (e.g. A+, O-, or N/A).")
         return raw
 
     @field_validator("alternate_phone")

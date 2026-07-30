@@ -85,6 +85,13 @@ function purposeForDocType(docType) {
   return undefined;
 }
 
+function categoryForDocType(docType) {
+  if (docType === "cnic" || docType === "passport") return "identity";
+  if (docType === "transcript") return "education";
+  // resume, certificate, skill_certificate, and anything else go to "other"
+  return "other";
+}
+
 function canShowUploadHint(uiHint, isRecruiter) {
   if (!uiHint || uiHint.type !== "upload" || isSpreadsheetHint(uiHint)) return false;
   if (!isRecruiter) return true;
@@ -945,7 +952,7 @@ const AgentChatCoreInner = forwardRef(function AgentChatCoreInner({ variant = "f
 
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("category", hint.category || "other");
+      formData.append("category", hint.category || categoryForDocType(hint.doc_type));
       formData.append("doc_type", hint.doc_type);
       const purpose = purposeForDocType(hint.doc_type);
       if (purpose) formData.append("purpose", purpose);
@@ -1182,7 +1189,7 @@ const AgentChatCoreInner = forwardRef(function AgentChatCoreInner({ variant = "f
         </button>
       </form>
 
-      <input ref={docInputRef} type="file" accept=".jpg,.jpeg,.png,.pdf" className={styles.visuallyHidden} onChange={handleDocFileChosen} />
+      <input ref={docInputRef} type="file" accept=".jpg,.jpeg,.png,.pdf,.doc,.docx" className={styles.visuallyHidden} onChange={handleDocFileChosen} />
     </div>
   );
 });

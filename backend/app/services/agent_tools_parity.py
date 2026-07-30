@@ -1566,8 +1566,69 @@ SHARED_SELF_DOCUMENT_TOOLS: list[Tool] = [
 ]
 
 
+async def _tool_update_my_profile(user: CurrentUser, args: dict) -> ToolResult:
+    """Persist individual personal-info fields into the candidate's profile.
+
+    Uses CandidateService.partial_update_personal which merges only the supplied
+    fields without requiring a signed offer or government ID co-field.  This is
+    the right call whenever the candidate provides isolated facts (name, gender,
+    city, …) during conversation — use save_step only when *all* required fields
+    for a complete step are available.
+    """
+    from app.services.candidate_service import CandidateService
+
+    personal_fields = {
+        k: v
+        for k, v in args.items()
+        if k
+        not in ("step", "confirm")  # strip meta-keys the LLM might accidentally send
+        and v not in (None, "")
+    }
+    if not personal_fields:
+        return ToolResult(ok=False, error="Provide at least one personal field to update (e.g. first_name, gender).")
+    try:
+        svc = CandidateService()
+        result = await svc.partial_update_personal(user, personal_fields)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 CANDIDATE_PARITY_TOOLS: list[Tool] = [
     *SHARED_SELF_DOCUMENT_TOOLS,
+    Tool(
+        name="update_my_profile",
+        description=(
+            "Persist one or more personal-info fields the candidate just provided "
+            "(first_name, last_name, date_of_birth YYYY-MM-DD, gender, nationality, "
+            "marital_status, blood_group, father_name, alternate_phone, current_address, "
+            "permanent_address, same_as_current, city, state, postal_code, country). "
+            "Use this whenever the candidate tells you individual facts about themselves — "
+            "it merges only the supplied fields and never requires a government ID or signed "
+            "offer to be present first. Use save_step only when ALL required fields for a "
+            "complete step are available."
+        ),
+        parameters={
+            "first_name": "string, optional",
+            "last_name": "string, optional",
+            "date_of_birth": "string YYYY-MM-DD, optional",
+            "gender": "male|female|other|prefer_not_to_say, optional",
+            "nationality": "string, optional",
+            "marital_status": "single|married|divorced|widowed|other, optional",
+            "blood_group": "A+|A-|B+|B-|AB+|AB-|O+|O-, optional",
+            "father_name": "string, optional",
+            "alternate_phone": "string, optional",
+            "current_address": "string, optional",
+            "permanent_address": "string, optional",
+            "same_as_current": "boolean, optional",
+            "city": "string, optional",
+            "state": "string, optional",
+            "postal_code": "string, optional",
+            "country": "string, optional",
+        },
+        handler=_tool_update_my_profile,
+        roles=("candidate",),
+    ),
     Tool(
         name="list_hr_threads",
         description="List the candidate's conversations with HR/recruiter.",

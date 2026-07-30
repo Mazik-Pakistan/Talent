@@ -179,7 +179,7 @@ function validateDateNotFuture(value, fieldName) {
 
 function validateCNIC(value) {
   const text = String(value || "").replace(/[^0-9]/g, "");
-  if (text.length !== 13) return { isValid: false, error: "CNIC must be exactly 13 digits." };
+  if (text.length !== 13) return { isValid: false, error: "CNIC must be in format XXXXX-XXXXXXX-X." };
   return { isValid: true, normalized: `${text.slice(0, 5)}-${text.slice(5, 12)}-${text.slice(12)}` };
 }
 
@@ -1581,6 +1581,9 @@ function OnboardingContent() {
       // Validate required dropdowns
       if (!personal.gender) errors.gender = "Gender is required.";
       if (!personal.marital_status) errors.marital_status = "Marital status is required.";
+      if (!personal.father_name || !personal.father_name.trim()) errors.father_name = "Father's name is required.";
+      const bloodGroupValue = normalizeBloodGroup(personal.blood_group);
+      if (!bloodGroupValue) errors.blood_group = "Blood group is required. Select your blood group (e.g. A+, O-, or N/A).";
 
       const requiredOk = Object.keys(errors).length === 0;
       if (!requiredOk) {
@@ -2063,18 +2066,32 @@ function OnboardingContent() {
                               <Field
                                 styles={styles}
                                 label="Father's name"
+                                required
                                 value={personal.father_name || ""}
-                                onChange={(e) => setPersonal({ ...personal, father_name: e.target.value })}
+                                error={fieldErrors.father_name}
+                                onChange={(e) => {
+                                  setPersonal({ ...personal, father_name: e.target.value });
+                                  setFieldErrors((prev) => ({ ...prev, father_name: false }));
+                                }}
                                 {...fillAnimProps("father_name")}
                               />
                               <Field
                                 styles={styles}
                                 label="National ID / CNIC"
                                 required
+                                placeholder="XXXXX-XXXXXXX-X"
                                 value={personal.national_id}
                                 error={fieldErrors.national_id}
                                 onChange={(e) => {
-                                  setPersonal({ ...personal, national_id: e.target.value });
+                                  // Strip everything except digits, then auto-format XXXXX-XXXXXXX-X
+                                  const digits = e.target.value.replace(/[^0-9]/g, "").slice(0, 13);
+                                  let formatted = digits;
+                                  if (digits.length > 12) {
+                                    formatted = `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+                                  } else if (digits.length > 5) {
+                                    formatted = `${digits.slice(0, 5)}-${digits.slice(5)}`;
+                                  }
+                                  setPersonal({ ...personal, national_id: formatted });
                                   setFieldErrors((prev) => ({ ...prev, national_id: false }));
                                 }}
                                 {...fillAnimProps("national_id")}
@@ -2132,12 +2149,13 @@ function OnboardingContent() {
                                   <option value="other">Other</option>
                                 </select>
                               </label>
-                              <label className={styles.field}>
-                                <span>Blood group</span>
+                              <label className={`${styles.field} ${fieldErrors.blood_group ? styles.fieldError : ""}`} data-field-error={fieldErrors.blood_group ? "true" : undefined}>
+                                <span>Blood group <span style={{ color: "red", marginLeft: 2 }}>*</span></span>
                                 <select
                                   value={normalizeBloodGroup(personal.blood_group)}
                                   onChange={(e) => {
                                     const val = e.target.value;
+                                    setFieldErrors((prev) => ({ ...prev, blood_group: false }));
                                     if (val === "N/A" || val === personal.blood_group) {
                                       setPersonal({ ...personal, blood_group: val });
                                       return;
@@ -2149,7 +2167,11 @@ function OnboardingContent() {
                                     <option key={g} value={g}>{g}</option>
                                   ))}
                                 </select>
-                                <small style={{ color: "var(--text-muted)", fontWeight: 500 }}>{BLOOD_GROUP_HINT}</small>
+                                {fieldErrors.blood_group ? (
+                                  <span style={{ color: "var(--error, red)", fontSize: 12 }}>{fieldErrors.blood_group}</span>
+                                ) : (
+                                  <small style={{ color: "var(--text-muted)", fontWeight: 500 }}>{BLOOD_GROUP_HINT}</small>
+                                )}
                               </label>
                               <Field
                                 styles={styles}
