@@ -101,6 +101,7 @@ const emptyPersonal = {
 
 const emptyEducationEntry = {
   institution: "",
+  city: "",
   board_university: "",
   degree: "",
   field_of_study: "",
@@ -336,7 +337,22 @@ function OnboardingContent() {
         last_name: p.last_name || "",
       });
     }
-    if (data.education?.entries?.length) setEducationEntries(data.education.entries);
+    if (data.education?.entries?.length) {
+      setEducationEntries(
+        data.education.entries.map((entry) => ({
+          ...emptyEducationEntry,
+          ...entry,
+          institution: entry.institution || "",
+          city: entry.city || "",
+          board_university: entry.board_university || "",
+          degree: entry.degree || "",
+          field_of_study: entry.field_of_study || "",
+          year_completed: entry.year_completed || "",
+          cgpa_or_percentage: entry.cgpa_or_percentage || "",
+          certificate_file: entry.certificate_file || null,
+        }))
+      );
+    }
     if (data.skills) {
       const tech = Array.isArray(data.skills.technical_skills)
         ? data.skills.technical_skills
@@ -867,6 +883,7 @@ function OnboardingContent() {
             return {
               ...emptyEducationEntry,
               institution: ed.institute || ed.institution || "",
+              city: ed.city || "",
               degree: ed.degree || "",
               field_of_study: ed.major || ed.program || ed.field_of_study || "",
               year_completed: String(ed.year || ed.passing_year || "").slice(0, 4),
@@ -882,6 +899,16 @@ function OnboardingContent() {
                 setEducationEntries((prev) => {
                   const next = [...prev];
                   next[0] = { ...(next[0] || emptyEducationEntry), institution: v };
+                  return next;
+                }),
+            },
+            firstEd.city && {
+              key: "edu_0_city",
+              value: firstEd.city,
+              apply: (v) =>
+                setEducationEntries((prev) => {
+                  const next = [...prev];
+                  next[0] = { ...(next[0] || emptyEducationEntry), city: v };
                   return next;
                 }),
             },
@@ -948,6 +975,7 @@ function OnboardingContent() {
       const year = String(yearRaw).match(/(19|20)\d{2}/)?.[0] || String(yearRaw).slice(0, 4);
       const mapped = {
         institution: fields.institute || fields.institution || fields.university || "",
+        city: fields.city || "",
         degree: fields.degree || fields.program || fields.qualification || "",
         field_of_study: fields.major || fields.program || fields.field_of_study || "",
         year_completed: year || "",
@@ -968,6 +996,17 @@ function OnboardingContent() {
               setEducationEntries((prev) => {
                 const next = [...prev];
                 next[index] = { ...(next[index] || emptyEducationEntry), institution: v, board_university: "" };
+                return next;
+              }),
+          },
+        !cur.city &&
+          mapped.city && {
+            key: `${prefix}city`,
+            value: mapped.city,
+            apply: (v) =>
+              setEducationEntries((prev) => {
+                const next = [...prev];
+                next[index] = { ...(next[index] || emptyEducationEntry), city: v };
                 return next;
               }),
           },
@@ -1068,7 +1107,7 @@ function OnboardingContent() {
     return (
       educationEntries.length > 0 &&
       educationEntries.every(
-        (entry) => entry.institution && entry.degree && entry.field_of_study && entry.year_completed
+        (entry) => entry.institution && entry.city && entry.degree && entry.field_of_study && entry.year_completed
       )
     );
   }
@@ -1603,6 +1642,9 @@ function OnboardingContent() {
         
         const institutionValidation = validateTextField(entry.institution, 2, 200, "Institution");
         if (!institutionValidation.isValid) entryErrors.institution = institutionValidation.error;
+
+        const cityValidation = validateTextField(entry.city, 2, 100, "City");
+        if (!cityValidation.isValid) entryErrors.city = cityValidation.error;
         
         const degreeValidation = validateTextField(entry.degree, 2, 120, "Degree");
         if (!degreeValidation.isValid) entryErrors.degree = degreeValidation.error;
@@ -2256,7 +2298,7 @@ function OnboardingContent() {
                               <div className={styles.sectionCardHead}>
                                 <div>
                                   <h3>Education {educationEntries.length > 1 ? `#${index + 1}` : "entry"}</h3>
-                                  <p>Institution, degree, and transcript</p>
+                                  <p>Institution, city, degree, and transcript</p>
                                 </div>
                                 {entry.certificate_file && <span className={styles.pillOk}>Transcript uploaded</span>}
                               </div>
@@ -2273,7 +2315,7 @@ function OnboardingContent() {
                                   wide
                                 />
                                 <UniversityAutocomplete
-                                  value={entry.institution}
+                                  value={entry.institution || ""}
                                   onChange={(val) => {
                                     const next = [...educationEntries];
                                     next[index] = { ...next[index], institution: val };
@@ -2286,17 +2328,31 @@ function OnboardingContent() {
                                   fillAnimStyle={fillAnimLabelStyle(`edu_${index}_institution`)}
                                   dataOcrKey={`edu_${index}_institution`}
                                 />
-                                <Field styles={styles} label="Degree" required value={entry.degree} onChange={(e) => {
+                                <Field
+                                  styles={styles}
+                                  label="City"
+                                  required
+                                  value={entry.city || ""}
+                                  error={fieldErrors[`edu_${index}_city`]}
+                                  onChange={(e) => {
+                                    const next = [...educationEntries];
+                                    next[index] = { ...next[index], city: e.target.value };
+                                    setEducationEntries(next);
+                                    setFieldErrors((prev) => ({ ...prev, [`edu_${index}_city`]: false }));
+                                  }}
+                                  {...fillAnimProps(`edu_${index}_city`)}
+                                />
+                                <Field styles={styles} label="Degree" required value={entry.degree || ""} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], degree: e.target.value };
                                   setEducationEntries(next);
                                 }} {...fillAnimProps(`edu_${index}_degree`)} />
-                                <Field styles={styles} label="Major / Field of study" required value={entry.field_of_study} onChange={(e) => {
+                                <Field styles={styles} label="Major / Field of study" required value={entry.field_of_study || ""} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], field_of_study: e.target.value };
                                   setEducationEntries(next);
                                 }} {...fillAnimProps(`edu_${index}_field_of_study`)} />
-                                <Field styles={styles} label="Year completed" required value={entry.year_completed} onChange={(e) => {
+                                <Field styles={styles} label="Year completed" required value={entry.year_completed || ""} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], year_completed: e.target.value };
                                   setEducationEntries(next);
@@ -2557,6 +2613,7 @@ function OnboardingContent() {
                                     </strong>
                                     <dl className={styles.reviewGrid}>
                                       <ReviewRow styles={styles} label="Institute / University" value={entry.institution} />
+                                      <ReviewRow styles={styles} label="City" value={entry.city} />
                                       <ReviewRow styles={styles} label="Field of study" value={entry.field_of_study} />
                                       <ReviewRow styles={styles} label="Year completed" value={entry.year_completed} />
                                       <ReviewRow styles={styles} label="CGPA / %" value={entry.cgpa_or_percentage} />
@@ -2815,6 +2872,7 @@ function FileUploadField({ styles, label, accept, disabled, onChange, onRemove, 
 }
 
 function Field({ label, name, value, onChange, type = "text", wide, styles, error, hint, required, fillAnim, fillDelay, ocrKey, ocrTyping }) {
+  const safeValue = value ?? "";
   return (
     <label
       className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""} ${fillAnim ? styles.fieldFillAnim : ""} ${ocrTyping ? styles.fieldOcrTyping : ""}`}
@@ -2823,7 +2881,7 @@ function Field({ label, name, value, onChange, type = "text", wide, styles, erro
       data-ocr-key={ocrKey || undefined}
     >
       <span>{label}{required && <span style={{ color: "red", marginLeft: 4 }}>*</span>}</span>
-      <input name={name} type={type} value={value} onChange={onChange} aria-invalid={!!error} aria-busy={ocrTyping || undefined} />
+      <input name={name} type={type} value={safeValue} onChange={onChange} aria-invalid={!!error} aria-busy={ocrTyping || undefined} />
       {error && <em className={styles.fieldErrorText}>Required</em>}
       {!error && hint ? <small>{hint}</small> : null}
     </label>

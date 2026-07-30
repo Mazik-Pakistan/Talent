@@ -266,6 +266,7 @@ class OnboardingEmploymentInfo(BaseModel):
 
 class EducationEntry(BaseModel):
     institution: str = Field(min_length=2, max_length=200)
+    city: str = Field(min_length=2, max_length=100)
     board_university: str | None = Field(default=None, max_length=200)
     degree: str = Field(min_length=2, max_length=120)
     field_of_study: str = Field(min_length=2, max_length=120)
@@ -336,7 +337,7 @@ class EducationEntry(BaseModel):
         """Validate certificate file URL format."""
         return validate_url_format(value, "certificate file URL")
 
-    @field_validator("institution", "degree", "field_of_study", "board_university")
+    @field_validator("institution", "city", "degree", "field_of_study", "board_university")
     @classmethod
     def sanitize_text(cls, value: str | None) -> str | None:
         """Basic HTML sanitization for text fields."""

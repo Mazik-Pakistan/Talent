@@ -39,7 +39,7 @@ async def search_universities(
     starts_with_filter = {"name": {"$regex": f"^{escaped}", "$options": "i"}}
     contains_filter    = {"name": {"$regex": escaped,       "$options": "i"}}
 
-    projection = {"_id": 0, "name": 1, "country": 1, "city": 1}
+    projection = {"_id": 0, "name": 1, "country": 1, "city": 1, "state": 1}
 
     starts_with_docs = (
         await _col.find(starts_with_filter, projection)

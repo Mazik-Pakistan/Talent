@@ -272,6 +272,7 @@ class CandidateService:
                 entries = [
                     {
                         "institution": "",
+                        "city": "",
                         "board_university": "",
                         "degree": "",
                         "field_of_study": "",
@@ -546,6 +547,7 @@ class CandidateService:
                 entries.append(
                     {
                         "institution": "",
+                        "city": "",
                         "board_university": "",
                         "degree": "",
                         "field_of_study": "",

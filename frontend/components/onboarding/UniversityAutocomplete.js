@@ -198,9 +198,9 @@ export default function UniversityAutocomplete({
               }}
             >
               <span style={{ fontWeight: 500, fontSize: 14 }}>{uni.name}</span>
-              {(uni.city || uni.country) && (
+              {uni.country && (
                 <span style={{ marginLeft: 8, fontSize: 12, color: "#6b7280" }}>
-                  {[uni.city, uni.country].filter(Boolean).join(", ")}
+                  {uni.country}
                 </span>
               )}
             </li>
