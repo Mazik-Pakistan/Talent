@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Canvas-based digital signature capture. Used for the offer letter and NDA
+ * Canvas-based digital signature capture. Used for the offer letter and Self Declaration
  * signing steps. Produces a base64 PNG data URL via getDataUrl().
  */
 export default function SignaturePad({ onChange, disabled }) {

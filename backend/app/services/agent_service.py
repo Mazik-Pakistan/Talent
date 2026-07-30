@@ -27,8 +27,8 @@ from app.core.rbac import CurrentUser
 from app.services import agent_tools
 from app.services.llm_service import call_llm_json, llm_configured
 
-MAX_TOOL_STEPS = 8
-HISTORY_TURNS = 6
+MAX_TOOL_STEPS = 4
+HISTORY_TURNS = 3
 
 RECRUITER_SYSTEM_PROMPT = """You are the TalentAI Hiring Agent for recruiters. You can run almost any \
 recruiting or post-hire action the recruiter dashboard supports — for one person or in bulk — via your tools. \
@@ -79,7 +79,7 @@ Rules:
 is outside your tools, say so briefly and suggest the closest supported action.
 - Ask the recruiter for any required field you don't have yet (e.g. reporting manager, start date, asset name) \
 instead of guessing.
-- Dates should be confirmed in a clear format before calling a tool that needs one.
+- Dates can be interpreted relatively in plain language (tomorrow, today, next Monday, in 3 days); convert them to a clear YYYY-MM-DD date before calling a tool that needs one.
 - When the user asks to act on everyone / all incomplete / all signed offers / a pasted list, prefer the \
 bulk_* tools (bulk_invite, bulk_approve_offers, bulk_remind_profiles, bulk_remind_candidates, \
 bulk_assign_assets, bulk_schedule_orientation, bulk_set_company_email, bulk_verify_documents). Cap is handled by tools.
@@ -102,7 +102,7 @@ clearly and include email_error when present.
 
 Profile / onboarding status (critical):
 - Pre-hire candidate onboarding (personal, education, skills, government docs, resume) is NOT the same as \
-post-hire employee Complete Profile (emergency contact, banking, references, policies, NDA).
+post-hire employee Complete Profile (emergency contact, banking, references, policies, Self Declaration).
 - After someone is converted to an employee, always use get_candidate_status, get_employee_detail, or \
 list_employees/directory_employees and report post_hire_profile_complete / post_hire_missing / profile_status. \
 Never say their profile is complete just because pre-hire fields are on file.
@@ -184,7 +184,7 @@ Profile, documents, Learning, Talent (journey/opportunities), and day-to-day pro
 
 Rules:
 - Always check get_status first for post-hire steps: emergency, employment (banking), references, documents \
-(policies), nda, submit.
+(policies), Self Declaration, submit.
 - Ask only for missing information; extract free text into save_step payloads.
 - Documents: list_documents, get_my_document_link, delete_document (confirm=true), reextract_document; use \
 ui_hint upload when a file is needed (cnic/passport/transcript/resume).
@@ -335,8 +335,8 @@ def _history_text(messages: list[dict]) -> str:
     for m in recent:
         speaker = "User" if m["role"] == "user" else "Agent"
         content = m.get("content") or ""
-        if len(content) > 600:
-            content = content[:597] + "…"
+        if len(content) > 300:
+            content = content[:297] + "…"
         lines.append(f"{speaker}: {content}")
     return "\n".join(lines) if lines else "(no previous messages)"
 
@@ -634,6 +634,41 @@ async def _fallback_reply(user: CurrentUser, context: dict | None = None) -> dic
     return {"message": msg, "suggested_replies": [], "actions": _default_actions_for_role(user), "ui_hint": None}
 
 
+async def _quick_offline_reply(user: CurrentUser, context: dict | None = None) -> dict:
+    """Fast no-LLM reply used when the model call fails."""
+    if user.role in ("recruiter", "super_admin"):
+        return {
+            "message": (
+                "AI is temporarily unavailable, but I can still help fast. "
+                "Tell me the person or action, or use the invite form and I’ll work with the fields you enter."
+            ),
+            "suggested_replies": [
+                "Invite one candidate",
+                "Show pipeline",
+                "Bulk invite",
+            ],
+            "actions": _default_actions_for_role(user),
+            "ui_hint": None,
+        }
+    if user.role == "employee":
+        return {
+            "message": "AI is temporarily unavailable, but your dashboard still works. Open Complete Profile, Learning, Talent, or Messages to continue.",
+            "suggested_replies": [
+                "Open Complete Profile",
+                "Open Learning",
+                "Message HR",
+            ],
+            "actions": _default_actions_for_role(user),
+            "ui_hint": None,
+        }
+    return {
+        "message": "AI is temporarily unavailable right now. Please try again in a moment.",
+        "suggested_replies": [],
+        "actions": _default_actions_for_role(user),
+        "ui_hint": None,
+    }
+
+
 def _sanitize_ui_hint(user: CurrentUser, ui_hint: dict | None) -> dict | None:
     """Keep ui_hints role-safe. Recruiters must not get candidate document upload hints."""
     if not ui_hint or not isinstance(ui_hint, dict):
@@ -793,13 +828,16 @@ class AgentService:
 
         for _ in range(MAX_TOOL_STEPS):
             prompt = _build_prompt(user, system_prompt, tool_spec, history_text, scratchpad, message, context)
-            parsed = await call_llm_json(prompt, max_tokens=1200, temperature=0.2)
+            parsed = await call_llm_json(prompt, max_tokens=384, temperature=0.1)
             if not parsed:
+                offline = await _quick_offline_reply(user, context)
                 return _pack_reply(
-                    message="I'm having trouble reaching the AI service right now — please try again in a moment.",
+                    message=offline["message"],
                     user=user,
                     scratchpad=scratchpad,
                     context=context,
+                    suggested_replies=offline.get("suggested_replies") or [],
+                    ui_hint=offline.get("ui_hint"),
                 )
 
             action = parsed.get("action")

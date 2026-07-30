@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.date_utils import parse_natural_date
+
 OFFER_STATUSES = (
     "draft",
     "sent",
@@ -77,6 +79,7 @@ class OfferTermsPayload(BaseModel):
     monthly_salary: float = Field(..., ge=0)
     currency: str = Field(default="PKR", max_length=8)
     allowances: list[AllowanceItem] = Field(default_factory=list)          # <-- renamed
+    salary_breakdown: list[AllowanceItem] = Field(default_factory=list)     # legacy alias
     benefits: list[BenefitItem] = Field(default_factory=list)
     offer_expiry_days: int | None = Field(default=None, ge=1, le=90)
     terms: str = Field(default=DEFAULT_OFFER_TERMS, max_length=8000)
@@ -95,9 +98,12 @@ class OfferTermsPayload(BaseModel):
         normalized = " ".join(value.split())
         return normalized or None
 
-    @field_validator("start_date")
+    @field_validator("start_date", mode="before")
     @classmethod
-    def _normalize_start_date(cls, value: str) -> str:
+    def _normalize_start_date(cls, value) -> str:
+        parsed = parse_natural_date(value)
+        if parsed is not None:
+            return parsed.isoformat()
         normalized = " ".join(str(value or "").split())
         if "T" in normalized:
             normalized = normalized.split("T", 1)[0]

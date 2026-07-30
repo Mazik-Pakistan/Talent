@@ -35,9 +35,11 @@ export const FIELD_HELP = {
   "personal.current_address": "Where you currently live.",
   "personal.permanent_address": "Your permanent / home address if different.",
 
-  // NDA
+  // Self Declaration
   "nda.full_legal_name": "Type your full legal name exactly as on your ID.",
-  "nda.agreed": "Confirm you have read and agree to the NDA terms.",
+  "nda.agreed": "Confirm you have read and agree to the Self Declaration terms.",
+  "self_declaration.full_legal_name": "Type your full legal name exactly as on your ID.",
+  "self_declaration.agreed": "Confirm you have read and agree to the Self Declaration terms.",
 };
 
 export const HOVER_HELP = {

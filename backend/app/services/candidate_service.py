@@ -16,7 +16,7 @@ from app.services import storage_service
 # ------------------------------------------------------------------------
 # PHASE 2 FLOW: pre-offer INTAKE = personal/contact, education, skills,
 # government ID, resume. Post-hire (EmployeeService): emergency, banking,
-# references, NDA, policies. Internal career history is recruiter-managed.
+# references, Self Declaration, policies. Internal career history is recruiter-managed.
 # ------------------------------------------------------------------------
 ONBOARDING_TASK_DEFS = [
     {

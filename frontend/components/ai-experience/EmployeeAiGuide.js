@@ -372,7 +372,14 @@ export default function EmployeeAiGuide() {
       const idx = Math.max(0, order.indexOf(currentSection || "personal"));
       return order.map((id, i) => ({
         id,
-        label: id === "employment" ? "Bank details" : id === "documents" ? "Policies" : id.replace(/_/g, " "),
+        label:
+          id === "employment"
+            ? "Bank details"
+            : id === "documents"
+              ? "Policies"
+              : id === "nda"
+                ? "Self Declaration"
+                : id.replace(/_/g, " "),
         status: i < idx ? "done" : i === idx ? "active" : "pending",
       }));
     }

@@ -72,7 +72,7 @@ def _gemini_key_usable() -> bool:
         "GEMINI_API_KEY does not look like a Google AI Studio key (expected AIza… or AQ.…). "
         "Get one from https://aistudio.google.com/apikey"
     )
-    return True
+    return False
 
 
 async def call_llm_json(
@@ -130,7 +130,21 @@ async def _call_openrouter_json(
                 )
                 if response.status_code == 200:
                     data = response.json()
-                    text = data["choices"][0]["message"]["content"]
+                    choices = data.get("choices") or []
+                    if not choices:
+                        logger.error(
+                            "OpenRouter returned 200 without choices. Body preview: {}",
+                            response.text[:400],
+                        )
+                        return None
+                    message = choices[0].get("message") or {}
+                    text = message.get("content")
+                    if not isinstance(text, str) or not text.strip():
+                        logger.error(
+                            "OpenRouter returned 200 with an empty message payload. Body preview: {}",
+                            response.text[:400],
+                        )
+                        return None
                     usage = data.get("usage") or {}
                     if usage:
                         logger.info(

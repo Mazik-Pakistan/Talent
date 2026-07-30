@@ -51,7 +51,7 @@ ACTIVITY_LABELS: dict[str, str] = {
     "profile_employment_saved": "Employee banking details saved",
     "profile_references_saved": "Employee references saved",
     "profile_documents_saved": "Employee policies acknowledged",
-    "profile_nda_saved": "Employee NDA signed",
+    "profile_nda_saved": "Employee Self Declaration signed",
     "employee_profile_completed": "Employee profile completed",
     "profile_completion_reminder": "Profile completion reminder sent",
 }

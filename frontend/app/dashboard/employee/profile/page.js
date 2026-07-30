@@ -284,7 +284,7 @@ function EmployeeProfileContent() {
       items.push({ id: "sec-banking", label: "Banking", icon: <IconBank />, done: sectionComplete.banking });
       items.push(
         { id: "sec-references", label: "References", icon: <IconUsers />, done: sectionComplete.references },
-        { id: "sec-policies", label: "Policies & NDA", icon: <IconShield />, done: sectionComplete.policies },
+        { id: "sec-policies", label: "Policies & Self Declaration", icon: <IconShield />, done: sectionComplete.policies },
       );
       return items;
     },
@@ -1307,11 +1307,11 @@ function EmployeeProfileContent() {
                   id="sec-policies"
                   icon={<IconShield />}
                   complete={sectionComplete.policies}
-                  title="Policies & NDA"
+                  title="Policies & Self Declaration"
                   subtitle={
                     profileIncomplete
-                      ? "Complete policy acknowledgements and NDA signing in the onboarding checklist."
-                      : "Policy acknowledgements and NDA on file."
+                      ? "Complete policy acknowledgements and Self Declaration signing in the onboarding checklist."
+                      : "Policy acknowledgements and Self Declaration on file."
                   }
                 >
                   <div className={styles.subBlock} style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
@@ -1326,7 +1326,7 @@ function EmployeeProfileContent() {
                     />
                   </div>
                   <div className={styles.subBlock}>
-                    <h4>Non-Disclosure Agreement</h4>
+                    <h4>Self Declaration</h4>
                     {nda.full_legal_name ? (
                       <dl className={styles.grid}>
                         <Row label="Signed by" value={nda.full_legal_name} />
@@ -1344,7 +1344,7 @@ function EmployeeProfileContent() {
                         className={styles.primaryBtn}
                         onClick={() => router.push("/dashboard/employee/complete-profile")}
                       >
-                        Complete policies & NDA
+                        Complete policies & Self Declaration
                       </button>
                     </div>
                   )}

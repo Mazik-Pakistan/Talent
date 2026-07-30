@@ -239,7 +239,7 @@ def _employee_status_payload(employee: dict) -> dict:
         "email": employee.get("email"),
         "job_title": employee.get("job_title"),
         "department": employee.get("department"),
-        # Post-hire Complete Profile (emergency, banking, references, policies, NDA)
+        # Post-hire Complete Profile (emergency, banking, references, policies, Self Declaration)
         "profile_status": profile_status,
         "post_hire_profile_complete": profile_status == "complete" and not missing,
         "post_hire_missing": missing,
@@ -1470,7 +1470,7 @@ RECRUITER_TOOLS: list[Tool] = [
             "department": "string, required",
             "office_location": "string, optional",
             "is_remote": "boolean, optional, true if remote employee (self-manages banking)",
-            "start_date": "string YYYY-MM-DD, optional",
+            "start_date": "string YYYY-MM-DD or relative text like 'tomorrow', optional",
         },
         handler=_tool_send_invitation,
         roles=("recruiter", "super_admin"),
@@ -1480,6 +1480,7 @@ RECRUITER_TOOLS: list[Tool] = [
         description=(
             "Invite many candidates at once WITH offer letters. Each row MUST include email, "
             "full_name, job_title, department, reporting_manager, start_date, monthly_salary — "
+            "relative dates like 'tomorrow' are accepted and normalized — "
             "same as Create invitation / bulk Excel template. Prefer directing recruiters to "
             "/dashboard/recruiter/invite bulk Excel for history review. Never invent missing fields."
         ),
@@ -1659,7 +1660,7 @@ RECRUITER_TOOLS: list[Tool] = [
             "employment_type": "string, optional, default Full-time",
             "office_location": "string, optional",
             "reporting_manager": "string, required",
-            "start_date": "string, required",
+            "start_date": "string, required; relative dates like 'tomorrow' are accepted and normalized",
             "monthly_salary": "number, optional",
             "currency": "string, optional, default PKR",
             "offer_expiry_days": "integer, optional",
@@ -2056,7 +2057,7 @@ SELF_SERVE_TOOLS: list[Tool] = [
             "employment": "object {bank_name, account_holder_name, account_number, iban, branch, branch_code}, for step=employment (employee only)",
             "references": "object {references: [{full_name, relationship, email, phone, company}, ...]} (min 2), for step=references (employee only)",
             "documents": "object {accepted_code_of_conduct: true, accepted_privacy_policy: true, accepted_employee_handbook: true}, for step=documents (employee only)",
-            "nda": "object {full_legal_name, agreed: true}, for step=nda",
+            "nda": "object {full_legal_name, agreed: true}, for step=nda (Self Declaration in the UI)",
         },
         handler=_tool_save_step,
         roles=("candidate", "employee"),

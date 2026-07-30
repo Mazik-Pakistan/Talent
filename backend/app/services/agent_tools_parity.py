@@ -40,6 +40,7 @@ from app.services.learning_service import learning_service
 from app.services.offer_service import offer_service
 from app.services.recruiter_kb_service import recruiter_kb_service
 from app.services.talent_service import talent_service
+from app.schemas.date_utils import parse_natural_date
 
 # Imported late-safe symbols from agent_tools (loaded after base helpers exist).
 from app.services.agent_tools import (  # noqa: E402
@@ -57,12 +58,7 @@ employee_service = EmployeeService()
 
 
 def _parse_date(value: Any) -> date | None:
-    if value is None or value == "":
-        return None
-    if isinstance(value, date) and not isinstance(value, datetime):
-        return value
-    text = str(value).strip()[:10]
-    return date.fromisoformat(text)
+    return parse_natural_date(value)
 
 
 # ─────────────────────────────────────────────────────────────────────────

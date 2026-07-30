@@ -2778,7 +2778,7 @@ function SubmittedState({ candidate, onEdit, onDashboard, styles }) {
         <li>Your recruiter reviews your documents (OCR speeds this up automatically).</li>
         <li>You&apos;ll receive an <strong>offer letter</strong> to review and digitally sign.</li>
         <li>Once HR approves your signed offer, you become an employee with your own Employee ID.</li>
-        <li>You&apos;ll then complete a short post-hire profile (emergency contact, banking, references, NDA).</li>
+        <li>You&apos;ll then complete a short post-hire profile (emergency contact, banking, references, Self Declaration).</li>
       </ol>
       <div className={`${styles.actions} ${styles.center}`}>
         <button type="button" className={styles.secondaryButton} onClick={onEdit}>Edit my details</button>

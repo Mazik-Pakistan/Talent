@@ -2,7 +2,7 @@ from datetime import date
 from typing import Literal
 import re
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.auth import (
     PASSWORD_PATTERN,
@@ -13,6 +13,7 @@ from app.schemas.auth import (
     validate_date_not_future,
     validate_url_format,
 )
+from app.schemas.date_utils import parse_natural_date
 from app.schemas.offer import OfferTermsPayload
 
 # Pakistani IBAN: PK + 2 check digits + 4-letter bank code + 16 digits = 24 chars
@@ -20,7 +21,7 @@ IBAN_PATTERN = __import__("re").compile(r"^PK\d{2}[A-Z]{4}\d{16}$", __import__("
 
 
 class CreateInvitationRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(min_length=5, max_length=254)
     full_name: str = Field(min_length=2, max_length=100)
     job_title: str = Field(min_length=2, max_length=120)
     department: str = Field(min_length=2, max_length=120)
@@ -50,8 +51,20 @@ class CreateInvitationRequest(BaseModel):
 
     @field_validator("email")
     @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
-        return value.lower()
+    def normalize_email(cls, value: str) -> str:
+        normalized = " ".join(value.split()).lower()
+        if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
+            raise ValueError("Invalid email address.")
+        local, domain = normalized.rsplit("@", 1)
+        if len(local) < 1 or len(domain) < 3 or "." not in domain:
+            raise ValueError("Invalid email address.")
+        return normalized
+
+    @field_validator("start_date", mode="before")
+    @classmethod
+    def normalize_start_date_input(cls, value):
+        parsed = parse_natural_date(value)
+        return parsed if parsed is not None else value
 
     @field_validator("start_date")
     @classmethod
