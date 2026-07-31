@@ -53,7 +53,10 @@ export default function ForgotPasswordPage() {
             </div>
           </div>
           <div className={styles.mascotContainer}>
-            <MascotStatic />
+            <MascotStatic
+              mood={message ? "green" : error ? "red" : "neutral"}
+              message={message ? "Code sent — hooray! ✨" : undefined}
+            />
           </div>
         </aside>
 

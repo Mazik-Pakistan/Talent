@@ -101,9 +101,9 @@ function getPasswordStrength(password) {
   if (/\d/.test(password)) score += 1;
   if (/[^\w\s]/.test(password)) score += 1;
 
-  if (score <= 1) return { score: 20, label: "Weak", color: "var(--blue-strong)" };
-  if (score <= 3) return { score: 60, label: "Medium", color: "var(--blue)" };
-  return { score: 100, label: "Strong", color: "var(--navy-2)" };
+  if (score <= 1) return { score: 25, label: "Weak", color: "#dc2626", tone: "strengthWeak", mood: "red" };
+  if (score <= 3) return { score: 60, label: "Getting there", color: "#eab308", tone: "strengthMedium", mood: "yellow" };
+  return { score: 100, label: "Strong", color: "#16a34a", tone: "strengthStrong", mood: "green" };
 }
 
 export default function RegisterPage() {
@@ -223,7 +223,10 @@ export default function RegisterPage() {
           </div>
 
           <div className={styles.mascotContainer}>
-            <MascotStatic />
+            <MascotStatic
+              mood={form.password ? strength.mood : "neutral"}
+              message={!form.password ? undefined : strength.mood === "red" ? "Let’s make it stronger!" : strength.mood === "yellow" ? "You’re building it!" : "Perfect — nice work!"}
+            />
           </div>
         </aside>
 
@@ -294,7 +297,7 @@ export default function RegisterPage() {
                 <span className={styles.inputShell}>
                   <FieldIcon type="password" />
                   <input
-                    className={styles.input}
+                    className={`${styles.input} ${showError("password") ? styles.passwordInvalid : ""}`}
                     aria-invalid={form.password ? Boolean(showError("password")) : undefined}
                     aria-describedby={showError("password") ? "password-error" : undefined}
                     name="password"
@@ -317,7 +320,7 @@ export default function RegisterPage() {
                 <div className={styles.strengthTrack} aria-hidden="true">
                   <div className={styles.strengthFill} style={{ width: `${strength.score}%`, background: strength.color }} />
                 </div>
-                {strength.label && <span className={styles.strengthLabel}>Password strength: {strength.label}</span>}
+                {strength.label && <span className={`${styles.strengthLabel} ${styles[strength.tone]}`}>Password strength: {strength.label}</span>}
                 
                 <div className={styles.requirementsRow}>
                   <span className={`${styles.reqItem} ${form.password.length >= 8 ? styles.reqMet : ""}`}>
@@ -352,7 +355,7 @@ export default function RegisterPage() {
                 <span className={styles.inputShell}>
                   <FieldIcon type="confirm_password" />
                   <input
-                    className={styles.input}
+                    className={`${styles.input} ${(form.confirm_password && form.password !== form.confirm_password) || showError("confirm_password") ? styles.passwordInvalid : ""}`}
                     aria-invalid={form.confirm_password ? Boolean(showError("confirm_password")) : undefined}
                     aria-describedby={showError("confirm_password") ? "confirm_password-error" : undefined}
                     name="confirm_password"
