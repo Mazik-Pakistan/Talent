@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
@@ -8,6 +8,7 @@ import Toast from "@/components/Toast";
 import ProfilePhotoEditor from "@/components/ProfilePhotoEditor";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import {
   clearLocalSession,
   getApiErrorMessage,
@@ -166,7 +167,7 @@ function EmployeeProfileContent() {
     });
   }, [editingSection]);
 
-  // Page-scoped Copilot assist — guidance only (no auto-fill). Mascot highlights fields.
+  // Page-scoped Copilot assist â€” guidance only (no auto-fill). Mascot highlights fields.
   useEffect(() => {
     return registerPageAssist(null);
   }, []);
@@ -255,7 +256,7 @@ function EmployeeProfileContent() {
   const documents = onboarding?.documents || {};
   const nda = onboarding?.nda || {};
 
-  // ── Section completeness (drives status badges, nav dots, and the ring) ──
+  // â”€â”€ Section completeness (drives status badges, nav dots, and the ring) â”€â”€
   const sectionComplete = useMemo(() => ({
     employment: !!employee?.employee_id,
     personal: !!(personal.first_name || personal.national_id),
@@ -284,7 +285,7 @@ function EmployeeProfileContent() {
       items.push({ id: "sec-banking", label: "Banking", icon: <IconBank />, done: sectionComplete.banking });
       items.push(
         { id: "sec-references", label: "References", icon: <IconUsers />, done: sectionComplete.references },
-        { id: "sec-policies", label: "Policies & NDA", icon: <IconShield />, done: sectionComplete.policies },
+        { id: "sec-policies", label: "Policies & Self Declaration", icon: <IconShield />, done: sectionComplete.policies },
       );
       return items;
     },
@@ -559,7 +560,7 @@ function EmployeeProfileContent() {
   }
 
   if (!user) {
-    return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
+    return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loadingâ€¦</p>;
   }
 
   const displayName = employee?.full_name || user.full_name;
@@ -591,7 +592,7 @@ function EmployeeProfileContent() {
                     type="button"
                     className={`${dashStyles.navItem} ${isActive ? dashStyles.active : ""} ${disabled ? dashStyles.disabled : ""}`}
                     onClick={() => item.href && router.push(item.href)}
-                    title={disabled ? `${item.label} — coming in Phase 3` : item.label}
+                    title={disabled ? `${item.label} â€” coming in Phase 3` : item.label}
                     disabled={disabled}
                   >
                     {item.icon}
@@ -624,7 +625,7 @@ function EmployeeProfileContent() {
             <div className={dashStyles.topbarLeft}>
               <div className={dashStyles.topbarTitle}>My Profile</div>
               <div className={dashStyles.topbarSub}>
-                {employee?.employee_id || "—"} · {employee?.department || "—"}
+                {employee?.employee_id || "â€”"} Â· {employee?.department || "â€”"}
               </div>
             </div>
             <div className={dashStyles.topbarActions}>
@@ -648,7 +649,7 @@ function EmployeeProfileContent() {
             )}
 
             {loading ? (
-              <p className={styles.empty}>Loading your profile…</p>
+              <RecruiterLoader inline />
             ) : (
               <div className={styles.layout}>
                 <nav className={styles.sectionsNav} aria-label="Profile sections">
@@ -688,7 +689,7 @@ function EmployeeProfileContent() {
                     <h1>{displayName}</h1>
                     <p>
                       {user.email}
-                      {employee?.company_email ? ` · ${employee.company_email}` : ""}
+                      {employee?.company_email ? ` Â· ${employee.company_email}` : ""}
                     </p>
                     <div className={styles.chips}>
                       {employee?.employee_id && <span className={styles.chip}>{employee.employee_id}</span>}
@@ -732,7 +733,7 @@ function EmployeeProfileContent() {
                     {employee?.orientation?.date && (
                       <Row
                         label="Orientation"
-                        value={`${formatDate(employee.orientation.date)}${employee.orientation.time ? ` · ${employee.orientation.time}` : ""}`}
+                        value={`${formatDate(employee.orientation.date)}${employee.orientation.time ? ` Â· ${employee.orientation.time}` : ""}`}
                         wide
                       />
                     )}
@@ -743,7 +744,7 @@ function EmployeeProfileContent() {
                           .map((a) => {
                             const bits = [a.name];
                             if (a.serial_number) bits.push(`SN ${a.serial_number}`);
-                            return bits.join(" · ");
+                            return bits.join(" Â· ");
                           })
                           .filter(Boolean)
                           .join(", ")}
@@ -807,7 +808,7 @@ function EmployeeProfileContent() {
                       </div>
                       <div className={styles.editActions}>
                         <button type="button" className={styles.secondaryBtn} onClick={cancelEdit} disabled={saving}>Cancel</button>
-                        <button type="button" className={styles.primaryBtn} onClick={savePersonal} disabled={saving}>{saving ? "Saving…" : "Save personal information"}</button>
+                        <button type="button" className={styles.primaryBtn} onClick={savePersonal} disabled={saving}>{saving ? "Savingâ€¦" : "Save personal information"}</button>
                       </div>
                     </div>
                   }
@@ -817,7 +818,7 @@ function EmployeeProfileContent() {
                       <div>
                         <strong>Blood group needs verification</strong>
                         <p>
-                          You saved N/A for now. Please confirm your blood group as soon as you can —
+                          You saved N/A for now. Please confirm your blood group as soon as you can â€”
                           it is used in emergencies.
                         </p>
                       </div>
@@ -868,7 +869,7 @@ function EmployeeProfileContent() {
                               <strong>{doc.doc_type === "passport" ? "Passport" : "CNIC / NIC"}</strong>
                               <dl className={styles.grid}>
                                 <Row label="Document number" value={doc.document_number} />
-                                <Row label="File" value={doc.file_name || (doc.file_url ? "On file" : "—")} />
+                                <Row label="File" value={doc.file_name || (doc.file_url ? "On file" : "â€”")} />
                               </dl>
                             </div>
                           ))}
@@ -908,7 +909,7 @@ function EmployeeProfileContent() {
                       <button type="button" className={`${styles.secondaryBtn} ${styles.addRefBtn}`} onClick={() => setEducationDrafts((items) => [...items, { ...emptyEducationEntry }])}>Add education</button>
                       <div className={styles.editActions}>
                         <button type="button" className={styles.secondaryBtn} onClick={cancelEdit} disabled={saving}>Cancel</button>
-                        <button type="button" className={styles.primaryBtn} onClick={saveEducation} disabled={saving}>{saving ? "Saving…" : "Save education"}</button>
+                        <button type="button" className={styles.primaryBtn} onClick={saveEducation} disabled={saving}>{saving ? "Savingâ€¦" : "Save education"}</button>
                       </div>
                     </div>
                   }
@@ -925,7 +926,7 @@ function EmployeeProfileContent() {
                           <Row label="CGPA / percentage" value={entry.cgpa_or_percentage} />
                           <Row
                             label="Certificate"
-                            value={entry.certificate_file ? "On file" : "—"}
+                            value={entry.certificate_file ? "On file" : "â€”"}
                           />
                         </dl>
                       </div>
@@ -953,8 +954,8 @@ function EmployeeProfileContent() {
                       {skills.certifications.map((cert, index) => (
                         <p key={index} className={styles.mutedLine}>
                           {cert.name}
-                          {cert.expiry_date ? ` · expires ${formatDate(cert.expiry_date)}` : ""}
-                          {cert.document_url ? " · document on file" : ""}
+                          {cert.expiry_date ? ` Â· expires ${formatDate(cert.expiry_date)}` : ""}
+                          {cert.document_url ? " Â· document on file" : ""}
                         </p>
                       ))}
                     </div>
@@ -1038,7 +1039,7 @@ function EmployeeProfileContent() {
                           Cancel
                         </button>
                         <button type="button" className={styles.primaryBtn} onClick={saveEmergency} disabled={saving}>
-                          {saving ? "Saving…" : "Save emergency contact"}
+                          {saving ? "Savingâ€¦" : "Save emergency contact"}
                         </button>
                       </div>
                     </div>
@@ -1145,7 +1146,7 @@ function EmployeeProfileContent() {
                           Cancel
                         </button>
                         <button type="button" className={styles.primaryBtn} onClick={saveEmployment} disabled={saving}>
-                          {saving ? "Saving…" : "Save banking details"}
+                          {saving ? "Savingâ€¦" : "Save banking details"}
                         </button>
                       </div>
                     </div>
@@ -1278,7 +1279,7 @@ function EmployeeProfileContent() {
                           Cancel
                         </button>
                         <button type="button" className={styles.primaryBtn} onClick={saveReferences} disabled={saving}>
-                          {saving ? "Saving…" : "Save references"}
+                          {saving ? "Savingâ€¦" : "Save references"}
                         </button>
                       </div>
                     </div>
@@ -1307,11 +1308,11 @@ function EmployeeProfileContent() {
                   id="sec-policies"
                   icon={<IconShield />}
                   complete={sectionComplete.policies}
-                  title="Policies & NDA"
+                  title="Policies & Self Declaration"
                   subtitle={
                     profileIncomplete
-                      ? "Complete policy acknowledgements and NDA signing in the onboarding checklist."
-                      : "Policy acknowledgements and NDA on file."
+                      ? "Complete policy acknowledgements and Self Declaration signing in the onboarding checklist."
+                      : "Policy acknowledgements and Self Declaration on file."
                   }
                 >
                   <div className={styles.subBlock} style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
@@ -1326,7 +1327,7 @@ function EmployeeProfileContent() {
                     />
                   </div>
                   <div className={styles.subBlock}>
-                    <h4>Non-Disclosure Agreement</h4>
+                    <h4>Self Declaration</h4>
                     {nda.full_legal_name ? (
                       <dl className={styles.grid}>
                         <Row label="Signed by" value={nda.full_legal_name} />
@@ -1344,7 +1345,7 @@ function EmployeeProfileContent() {
                         className={styles.primaryBtn}
                         onClick={() => router.push("/dashboard/employee/complete-profile")}
                       >
-                        Complete policies & NDA
+                        Complete policies & Self Declaration
                       </button>
                     </div>
                   )}
@@ -1377,7 +1378,7 @@ function EmployeeProfileContent() {
                     {sectionsMeta.filter((item) => !item.done).length === 0 ? (
                       <div className={styles.insightRow}>
                         <span className={styles.insightIconOk}><IconCheckSmall /></span>
-                        <span>Every section on your profile is complete — nicely done.</span>
+                        <span>Every section on your profile is complete â€” nicely done.</span>
                       </div>
                     ) : (
                       sectionsMeta
@@ -1419,7 +1420,7 @@ function EmployeeProfileContent() {
               </div>
             )}
 
-            <div className={dashStyles.footerNote}>Talent by  · Employee Profile</div>
+            <div className={dashStyles.footerNote}>Talent by  Â· Employee Profile</div>
           </div>
         </main>
       </div>
@@ -1490,7 +1491,7 @@ function CompanyEmailPasswordReveal() {
       </p>
       {!otpSent ? (
         <button type="button" className={styles.secondaryBtn} disabled={busy} onClick={sendOtp}>
-          {busy ? "Sending…" : "Send OTP to my personal email"}
+          {busy ? "Sendingâ€¦" : "Send OTP to my personal email"}
         </button>
       ) : (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
@@ -1505,7 +1506,7 @@ function CompanyEmailPasswordReveal() {
             />
           </label>
           <button type="button" className={styles.primaryBtn} disabled={busy} onClick={reveal}>
-            {busy ? "Checking…" : "Reveal password"}
+            {busy ? "Checkingâ€¦" : "Reveal password"}
           </button>
           <button type="button" className={styles.secondaryBtn} disabled={busy} onClick={sendOtp}>
             Resend OTP
@@ -1568,7 +1569,7 @@ function ProfileSection({
   );
 }
 
-/* ── Section icons ────────────────────────────────────────────────────── */
+/* â”€â”€ Section icons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function IconBriefcase() {
   return (
@@ -1669,7 +1670,7 @@ function IconPhone() {
 }
 
 function Row({ label, value, wide }) {
-  const display = value === null || value === undefined || value === "" ? "—" : value;
+  const display = value === null || value === undefined || value === "" ? "â€”" : value;
   return (
     <div className={`${styles.row} ${wide ? styles.rowWide : ""}`}>
       <dt>{label}</dt>
@@ -1715,7 +1716,7 @@ function PolicyStatus({ label, accepted }) {
   return (
     <div className={styles.policyRow}>
       <span className={accepted ? styles.policyOk : styles.policyPending}>
-        {accepted ? "✓" : "○"}
+        {accepted ? "âœ“" : "â—‹"}
       </span>
       <span>{label}</span>
       <span className={accepted ? styles.policyOk : styles.policyPending}>
@@ -1726,14 +1727,14 @@ function PolicyStatus({ label, accepted }) {
 }
 
 function formatDate(value) {
-  if (!value) return "—";
+  if (!value) return "â€”";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 function formatDateTime(value) {
-  if (!value) return "—";
+  if (!value) return "â€”";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString(undefined, {
@@ -1746,23 +1747,25 @@ function formatDateTime(value) {
 }
 
 function formatPhoneDisplay(value) {
-  if (!value) return "—";
+  if (!value) return "â€”";
   return formatPkMobileInput(value);
 }
 
 function joinList(value) {
-  if (!value) return "—";
+  if (!value) return "â€”";
   if (Array.isArray(value)) {
     const items = value.filter(Boolean);
-    return items.length ? items.join(", ") : "—";
+    return items.length ? items.join(", ") : "â€”";
   }
-  return value || "—";
+  return value || "â€”";
 }
 
 function titleCase(value) {
-  if (!value) return "—";
+  if (!value) return "â€”";
   return String(value)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
+
+
 

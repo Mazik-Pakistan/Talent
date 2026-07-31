@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
+
 const ROLE_HOME = {
   recruiter: "/dashboard/recruiter",
   candidate: "/dashboard/candidate",
@@ -24,5 +26,5 @@ export default function DashboardIndexPage() {
     router.replace(ROLE_HOME[user.role] || "/login");
   }, [router]);
 
-  return <p style={{ textAlign: "center", marginTop: "2rem" }}>Opening your dashboard…</p>;
+  return <RecruiterLoader />;
 }

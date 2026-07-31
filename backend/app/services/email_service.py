@@ -397,7 +397,7 @@ class EmailService:
 </p>
 <p style="margin:0;color:#1a1a2e;font-size:15px;line-height:1.7;">
   Please complete your post-hire profile (emergency contact, banking,
-  references, policies, and NDA) so HR can finish your onboarding.
+  references, policies, and Self Declaration) so HR can finish your onboarding.
 </p>
 """
         self._send(

@@ -6,6 +6,7 @@ from fastapi import HTTPException, UploadFile
 from pydantic import ValidationError
 
 from app.core.rbac import CurrentUser
+from app.schemas.date_utils import parse_natural_date
 from app.schemas.invitation import CreateInvitationRequest
 from app.schemas.offer import DEFAULT_BENEFITS, DEFAULT_OFFER_TERMS, OfferTermsPayload
 from app.services.invitation_service import InvitationService
@@ -65,10 +66,8 @@ def _benefit_items(row: dict) -> list[dict]:
 
 def candidate_row_to_request(row: dict) -> CreateInvitationRequest:
     """Build a validated CreateInvitationRequest from a parsed roster row."""
-    from datetime import date as date_cls
-
-    start_raw = str(row.get("start_date") or "").strip()[:10]
-    start_date = date_cls.fromisoformat(start_raw) if start_raw else None
+    start_raw = str(row.get("start_date") or "").strip()
+    start_date = parse_natural_date(start_raw) if start_raw else None
 
     offer = OfferTermsPayload(
         job_title=row["job_title"],
@@ -77,7 +76,7 @@ def candidate_row_to_request(row: dict) -> CreateInvitationRequest:
         office_location=row.get("office_location"),
         is_remote=bool(row.get("is_remote")),
         reporting_manager=row["reporting_manager"],
-        start_date=start_raw,
+        start_date=(start_date.isoformat() if start_date else start_raw),
         monthly_salary=float(row["monthly_salary"]),
         currency=(row.get("currency") or "PKR").upper(),
         salary_breakdown=row.get("salary_breakdown") or [],

@@ -70,7 +70,7 @@ def _gemini_key_usable() -> bool:
         "GEMINI_API_KEY does not look like a Google AI Studio key (expected AIza… or AQ.…). "
         "Get one from https://aistudio.google.com/apikey"
     )
-    return True
+    return False
 
 
 async def call_llm_json(

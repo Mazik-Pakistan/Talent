@@ -33,7 +33,7 @@ const EMPLOYEE_COMMAND_FIELDS = {
   swift_code: ["swift", "bic"],
   full_name: ["full name", "reference name", "legal name"],
   company: ["company"],
-  full_legal_name: ["legal name", "nda name"],
+  full_legal_name: ["legal name", "self declaration name"],
 };
 
 function readGreeted() {

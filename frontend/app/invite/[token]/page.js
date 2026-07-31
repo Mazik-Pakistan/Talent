@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { candidateRegister, getApiErrorMessage, getInvitation } from "@/services/authService";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import {
   formatPkMobileInput,
   isValidPkMobile,
@@ -113,12 +114,7 @@ export default function InviteRegisterPage() {
 
   if (inviteState.status === "loading") {
     return (
-      <main className="verification-shell">
-        <section className="verification-card">
-          <span className="loading-dot" aria-label="Loading" />
-          <p className="verification-message">Validating your invitation…</p>
-        </section>
-      </main>
+      <RecruiterLoader />
     );
   }
 

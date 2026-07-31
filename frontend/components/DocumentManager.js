@@ -9,6 +9,7 @@ import {
   listMyDocuments,
   reextractDocument,
   uploadDocument,
+  uploadOnboardingFile,
 } from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
@@ -238,19 +239,25 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     formData.append("category", category);
     formData.append("doc_type", docType);
 
+    // Derive purpose for onboarding-aware doc types.
+    let purpose = null;
     if (docType === "resume") {
-      formData.append("purpose", "resume");
+      purpose = "resume";
     } else if (docType === "transcript") {
-      formData.append("purpose", "education_cert");
+      purpose = "education_cert";
     } else if (docType === "cnic" || docType === "passport") {
-      formData.append("purpose", "government_doc");
+      purpose = "government_doc";
     }
+    if (purpose) formData.append("purpose", purpose);
 
     setUploading(true);
     setUploadMessage(null);
     try {
-      const data = await uploadDocument(formData, accessToken);
-      const ocr = data?.document?.ocr_result;
+      // For onboarding-purpose types use the purpose-aware endpoint so
+      // employee.onboarding is kept in sync via attach_uploaded_file.
+      const uploader = purpose ? uploadOnboardingFile : uploadDocument;
+      const data = await uploader(formData, accessToken);
+      const ocr = (data?.document?.ocr_result) || (data?.ocr_result);
       if (ocr?.status === "rejected_type") {
         setUploadMessage({ type: "error", text: ocr.rejection_message || "The document type was rejected." });
       } else {
@@ -320,15 +327,28 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
 
+    const replacedDocType = doc.doc_type || "other";
     const formData = new FormData();
     formData.append("file", replacementFile);
-    formData.append("category", doc.category || inferCategory(doc.doc_type));
-    formData.append("doc_type", doc.doc_type || "other");
+    formData.append("category", doc.category || inferCategory(replacedDocType));
+    formData.append("doc_type", replacedDocType);
+
+    // Derive purpose so the replacement also syncs employee.onboarding.
+    let replacePurpose = null;
+    if (replacedDocType === "resume") {
+      replacePurpose = "resume";
+    } else if (replacedDocType === "transcript") {
+      replacePurpose = "education_cert";
+    } else if (replacedDocType === "cnic" || replacedDocType === "passport") {
+      replacePurpose = "government_doc";
+    }
+    if (replacePurpose) formData.append("purpose", replacePurpose);
 
     setReplacementUploadingId(doc.id);
     setReplacementMessage(null);
     try {
-      await uploadDocument(formData, accessToken);
+      const uploader = replacePurpose ? uploadOnboardingFile : uploadDocument;
+      await uploader(formData, accessToken);
       setReplacementDocId(null);
       setReplacementFile(null);
       if (replacementInputRef.current) replacementInputRef.current.value = "";
@@ -349,7 +369,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
   );
 
   if (loading) {
-    return <p className={compact ? "widget-placeholder" : "form-message"}>Loading documents…</p>;
+    return null;
   }
 
   if (error) {

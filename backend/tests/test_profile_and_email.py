@@ -48,6 +48,23 @@ def test_bootstrap_super_admin_accepts_any_valid_email():
     assert model.email == "admin@mazikglobal.com"
 
 
+def test_candidate_register_request_import_and_validation():
+    from app.schemas.invitation import CandidateRegisterRequest
+
+    model = CandidateRegisterRequest(
+        invitation_token="invitation-token-12345",
+        full_name="Test Candidate",
+        email="candidate@example.com",
+        phone="03001234567",
+        password="SecurePass1!",
+        confirm_password="SecurePass1!",
+        terms_accepted=True,
+    )
+
+    assert model.email == "candidate@example.com"
+    assert model.full_name == "Test Candidate"
+
+
 def test_profile_photo_allowed_extensions():
     from app.services.profile_photo_service import ALLOWED_EXTENSIONS, MAX_BYTES
 
@@ -90,6 +107,94 @@ def test_offer_invitation_email_includes_offer_details(monkeypatch):
     assert "Software Engineer" in captured["html_body"]
     assert "PKR 250000" in captured["html_body"]
     assert "https://example.com/invite/test-token" in captured["html_body"]
+
+
+@pytest.mark.asyncio
+async def test_agent_send_invitation_forwards_offer_payload(monkeypatch):
+    from app.core.rbac import CurrentUser
+    from app.services import agent_tools
+
+    captured = {}
+
+    async def fake_create_invitation(request, actor):
+        captured["request"] = request
+        captured["actor"] = actor
+        return {
+            "message": "Invitation and offer letter created and emailed to the candidate.",
+            "email_sent": True,
+            "invitation": {"token": "test-token", "email": request.email},
+        }
+
+    monkeypatch.setattr(agent_tools.invitation_service, "create_invitation", fake_create_invitation)
+
+    user = CurrentUser(
+        id="recruiter-1",
+        email="recruiter@example.com",
+        full_name="Test Recruiter",
+        role="recruiter",
+        access_token="token",
+    )
+    result = await agent_tools._tool_send_invitation(
+        user,
+        {
+            "email": "candidate@example.com",
+            "full_name": "Test Candidate",
+            "job_title": "Intern, IT",
+            "department": "IT",
+            "reporting_manager": "Sara Ali",
+            "monthly_salary": 1000,
+            "currency": "PKR",
+            "employment_type": "Internship",
+            "start_date": "2026-07-31",
+            "offer_expiry_days": 14,
+        },
+    )
+
+    assert result.ok is True
+    assert captured["actor"].id == "recruiter-1"
+    assert captured["request"].offer.reporting_manager == "Sara Ali"
+    assert captured["request"].offer.monthly_salary == 1000
+    assert captured["request"].offer.currency == "PKR"
+    assert captured["request"].offer.start_date == "2026-07-31"
+    assert result.data["message"] == "Invitation sent to candidate@example.com."
+
+
+@pytest.mark.asyncio
+async def test_candidate_agent_message_recruiter_uses_candidate_thread(monkeypatch):
+    from app.core.rbac import CurrentUser
+    from app.services import agent_tools_parity
+
+    captured = {}
+
+    async def fake_candidate_send(user, *, body, subject=None, thread_id=None):
+        captured["user"] = user
+        captured["body"] = body
+        captured["subject"] = subject
+        captured["thread_id"] = thread_id
+        return {"thread": {"id": "thread-1", "subject": subject or "Message to HR"}}
+
+    monkeypatch.setattr(
+        "app.services.message_service.message_service.candidate_send",
+        fake_candidate_send,
+    )
+
+    user = CurrentUser(
+        id="candidate-1",
+        email="candidate@example.com",
+        full_name="Test Candidate",
+        role="candidate",
+        access_token="token",
+    )
+    result = await agent_tools_parity._tool_message_recruiter(
+        user,
+        {"body": "Hi HR, I have a question about onboarding.", "subject": "Onboarding help"},
+    )
+
+    assert result.ok is True
+    assert captured["user"].id == "candidate-1"
+    assert captured["body"] == "Hi HR, I have a question about onboarding."
+    assert captured["subject"] == "Onboarding help"
+    assert result.data["thread"]["id"] == "thread-1"
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,7 @@ from app.schemas.auth import (
     validate_date_not_future,
     validate_url_format,
 )
+from app.schemas.date_utils import parse_natural_date
 from app.schemas.offer import OfferTermsPayload
 
 # Pakistani IBAN: PK + 2 check digits + 4-letter bank code + 16 digits = 24 chars
@@ -20,7 +21,7 @@ IBAN_PATTERN = __import__("re").compile(r"^PK\d{2}[A-Z]{4}\d{16}$", __import__("
 
 
 class CreateInvitationRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(min_length=5, max_length=254)
     full_name: str = Field(min_length=2, max_length=100)
     job_title: str = Field(min_length=2, max_length=120)
     department: str = Field(min_length=2, max_length=120)
@@ -50,8 +51,20 @@ class CreateInvitationRequest(BaseModel):
 
     @field_validator("email")
     @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
-        return value.lower()
+    def normalize_email(cls, value: str) -> str:
+        normalized = " ".join(value.split()).lower()
+        if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
+            raise ValueError("Invalid email address.")
+        local, domain = normalized.rsplit("@", 1)
+        if len(local) < 1 or len(domain) < 3 or "." not in domain:
+            raise ValueError("Invalid email address.")
+        return normalized
+
+    @field_validator("start_date", mode="before")
+    @classmethod
+    def normalize_start_date_input(cls, value):
+        parsed = parse_natural_date(value)
+        return parsed if parsed is not None else value
 
     @field_validator("start_date")
     @classmethod
@@ -144,11 +157,11 @@ class OnboardingPersonalInfo(BaseModel):
     gender: Literal["male", "female", "other", "prefer_not_to_say"]
     nationality: str = Field(min_length=2, max_length=80)
     marital_status: Literal["single", "married", "divorced", "widowed", "other"]
-    blood_group: Literal["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "N/A"] = "N/A"
+    blood_group: Literal["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "N/A"]
     national_id: str = Field(min_length=5, max_length=40)
     profile_picture: str | None = None
-    # Optional fields populated from CNIC/Passport OCR (editable by candidate)
-    father_name: str | None = Field(default=None, max_length=120)
+    # Required fields — collected during pre-hire intake
+    father_name: str = Field(min_length=2, max_length=120)
     id_issue_date: str | None = Field(default=None, max_length=40)
     id_expiry_date: str | None = Field(default=None, max_length=40)
     # Contact (US-026)
@@ -172,10 +185,10 @@ class OnboardingPersonalInfo(BaseModel):
     @field_validator("blood_group", mode="before")
     @classmethod
     def normalize_blood_group(cls, value: str | None) -> str:
-        """Map legacy 'unknown' / empty values to N/A."""
+        """Reject missing/empty — but 'N/A' is a valid explicit choice."""
         raw = (value or "").strip()
         if not raw or raw.lower() == "unknown":
-            return "N/A"
+            raise ValueError("Blood group is required. Select your blood group (e.g. A+, O-, or N/A).")
         return raw
 
     @field_validator("alternate_phone")
@@ -266,6 +279,9 @@ class OnboardingEmploymentInfo(BaseModel):
 
 class EducationEntry(BaseModel):
     institution: str = Field(min_length=2, max_length=200)
+    # city is optional — it is not collected by the post-hire profile form or the AI
+    # assistant, so requiring it would block employees from saving education entries.
+    city: str | None = Field(default=None, max_length=100)
     board_university: str | None = Field(default=None, max_length=200)
     degree: str = Field(min_length=2, max_length=120)
     field_of_study: str = Field(min_length=2, max_length=120)
@@ -336,7 +352,7 @@ class EducationEntry(BaseModel):
         """Validate certificate file URL format."""
         return validate_url_format(value, "certificate file URL")
 
-    @field_validator("institution", "degree", "field_of_study", "board_university")
+    @field_validator("institution", "city", "degree", "field_of_study", "board_university")
     @classmethod
     def sanitize_text(cls, value: str | None) -> str | None:
         """Basic HTML sanitization for text fields."""
@@ -484,6 +500,9 @@ class OnboardingSignature(BaseModel):
     full_legal_name: str = Field(min_length=2, max_length=100)
     agreed: bool
     signed_at: str | None = None
+    # signature is a base64 data URL drawn or uploaded by the employee in the UI.
+    # It is optional so the AI path (typed name + agreed) continues to work.
+    signature: str | None = None
 
     @model_validator(mode="after")
     def require_agreement(self):

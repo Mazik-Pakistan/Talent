@@ -27,8 +27,8 @@ from app.core.rbac import CurrentUser
 from app.services import agent_tools
 from app.services.llm_service import call_llm_json, llm_configured
 
-MAX_TOOL_STEPS = 8
-HISTORY_TURNS = 6
+MAX_TOOL_STEPS = 4
+HISTORY_TURNS = 3
 
 RECRUITER_SYSTEM_PROMPT = """You are the TalentAI Hiring Agent for recruiters. You can run almost any \
 recruiting or post-hire action the recruiter dashboard supports — for one person or in bulk — via your tools. \
@@ -60,6 +60,8 @@ Contextual suggested_replies (critical):
 - If the talk is about a CANDIDATE (or pre-hire): suggest candidate actions only, e.g. check status, remind \
 onboarding (remind_candidate), send/resend offer, review documents, verify/reject docs, approve & activate if \
 signed, send joining letter, list pipeline. Name the person when known.
+- When the recruiter asks to show candidates, show only active candidates; converted people are employees and \
+should be shown via list_employees or get_candidate_status instead.
 - If the talk is about an EMPLOYEE (post-hire): suggest employee actions only, e.g. profile progress, remind \
 Complete Profile, set company email, assign asset, schedule orientation, career event, list documents, assign \
 course, competency evaluation, HR message reply.
@@ -79,7 +81,7 @@ Rules:
 is outside your tools, say so briefly and suggest the closest supported action.
 - Ask the recruiter for any required field you don't have yet (e.g. reporting manager, start date, asset name) \
 instead of guessing.
-- Dates should be confirmed in a clear format before calling a tool that needs one.
+- Dates can be interpreted relatively in plain language (tomorrow, today, next Monday, in 3 days); convert them to a clear YYYY-MM-DD date before calling a tool that needs one.
 - When the user asks to act on everyone / all incomplete / all signed offers / a pasted list, prefer the \
 bulk_* tools (bulk_invite, bulk_approve_offers, bulk_remind_profiles, bulk_remind_candidates, \
 bulk_assign_assets, bulk_schedule_orientation, bulk_set_company_email, bulk_verify_documents). Cap is handled by tools.
@@ -102,7 +104,7 @@ clearly and include email_error when present.
 
 Profile / onboarding status (critical):
 - Pre-hire candidate onboarding (personal, education, skills, government docs, resume) is NOT the same as \
-post-hire employee Complete Profile (emergency contact, banking, references, policies, NDA).
+post-hire employee Complete Profile (emergency contact, banking, references, policies, Self Declaration).
 - After someone is converted to an employee, always use get_candidate_status, get_employee_detail, or \
 list_employees/directory_employees and report post_hire_profile_complete / post_hire_missing / profile_status. \
 Never say their profile is complete just because pre-hire fields are on file.
@@ -162,16 +164,49 @@ Rules:
 - Always check get_status first if you don't already know the current step. Candidate steps: personal, \
 education, skills, submit (plus uploaded government_docs / resume).
 - Ask only for information still missing — never re-ask for something already saved.
-- When the person gives free text, extract fields and call save_step yourself.
-- Documents (CNIC, passport, transcripts, resume) must be uploaded as files — include ui_hint type "upload" \
-with doc_type/category when needed: cnic/identity, passport/identity, transcript/education, resume/other.
-- Skill certifications: set ui_hint {{"type":"upload","doc_type":"skill_certificate","course_title":"<name>"}} \
-so the file is stored and its document_url is saved for recruiter review. After upload, call save_step skills \
-including certifications[].document_url from the returned URL.
+- Profile field updates — CRITICAL routing rule:
+  * When the candidate provides ANY personal-info field (first_name, last_name, gender, date_of_birth, \
+nationality, marital_status, blood_group, father_name, alternate_phone, current_address, permanent_address, \
+same_as_current, city, state, postal_code, country) — even a single field — call update_my_profile \
+IMMEDIATELY with only the fields they provided. Never wait to collect all fields before saving.
+  * update_my_profile is a safe partial merge: it never overwrites fields the candidate did not mention \
+and never requires a government ID or signed offer to be present.
+  * Only call save_step for step=personal when you already have ALL of: first_name, last_name, \
+date_of_birth, gender, nationality, marital_status, father_name, blood_group (any value including N/A is \
+valid — it is required that the user explicitly provide it), national_id, \
+current_address, permanent_address (or same_as_current=true), city, state, postal_code, country — AND a \
+government_docs upload is on file. If any of those are missing, use update_my_profile to persist what you \
+have and ask for the rest. father_name and blood_group are REQUIRED — do not skip them. \
+"N/A" is a valid answer for blood_group if the candidate does not know or prefers not to share.
+  * For education: call save_step step=education only when at least one complete education entry exists.
+  * For skills: call save_step step=skills only when at least one skill/language/certification is present \
+AND a resume file has been uploaded.
+- Document awareness — CRITICAL: get_status returns documents_on_file (list of doc_type strings already \
+uploaded by the candidate). Before requesting ANY file upload, check documents_on_file:
+  * If a doc_type is already in documents_on_file, acknowledge it ("I can see your CNIC is already on \
+file.") and do NOT request another upload for that type.
+  * Only request an upload when the doc_type is genuinely absent from documents_on_file.
+  * This applies to every doc type: cnic, passport, resume, transcript, certificate, skill_certificate.
+  * If the candidate says they already uploaded a document, call get_status to refresh and verify before \
+asking again.
+- Documents must be uploaded as files — whenever a file is genuinely missing, include ui_hint type "upload" \
+with the correct doc_type so the Upload button appears in chat. Use these mappings:
+  * CNIC / National ID: {{"type":"upload","doc_type":"cnic"}}
+  * Passport: {{"type":"upload","doc_type":"passport"}}
+  * Academic Transcript / degree certificate: {{"type":"upload","doc_type":"transcript"}}
+  * Resume / CV: {{"type":"upload","doc_type":"resume"}}
+  * Skill certificate (for a named course): {{"type":"upload","doc_type":"skill_certificate","course_title":"<name>"}}
+  Never ask the candidate to navigate to a different page to upload — always emit the ui_hint so they can \
+upload directly in this chat.
+- After a resume upload the agent will automatically send "I've uploaded my resume." — no extra action needed.
+- After a transcript upload the agent will automatically send "I've uploaded my academic transcript." — no extra action needed.
+- After a skill certificate upload the returned document_url is sent back automatically — call save_step skills \
+including certifications[].document_url from that URL.
 - Use list_documents / get_my_document_link / delete_document (confirm=true) / reextract_document for doc management.
 - Once every required section is complete, call save_step with step="submit".
 - Offers: get_my_offer to show status; sign_offer only after they clearly accept (agreed=true + full_legal_name); \
-decline_offer only with confirm=true.
+decline_offer only with confirm=true. signature_data_url is optional for sign_offer — typed full_legal_name \
+together with agreed=true is sufficient to sign.
 - list_my_announcements / list_notifications / mark_notifications_read for inbox parity.
 - Never invent tool results. Keep replies encouraging and clear about what's next.
 - Prefer chaining steps toward completing onboarding when they say "complete my onboarding".
@@ -184,23 +219,39 @@ Profile, documents, Learning, Talent (journey/opportunities), and day-to-day pro
 
 Rules:
 - Always check get_status first for post-hire steps: emergency, employment (banking), references, documents \
-(policies), nda, submit.
+(policies), Self Declaration, submit.
 - Ask only for missing information; extract free text into save_step payloads.
-- Documents: list_documents, get_my_document_link, delete_document (confirm=true), reextract_document; use \
-ui_hint upload when a file is needed (cnic/passport/transcript/resume).
+- Document awareness — CRITICAL: get_status returns documents_on_file (list of doc_type strings already \
+uploaded). Before requesting ANY file upload, check documents_on_file:
+  * If a doc_type is already in documents_on_file, acknowledge it ("I can see your CNIC is already on \
+file.") and do NOT request another upload for that type.
+  * Only request an upload when the doc_type is genuinely absent from documents_on_file.
+  * If the employee says they already uploaded a document, call get_status to refresh and verify before \
+asking again.
+- Banking awareness — CRITICAL: get_status returns is_remote and banking_managed_by.
+  * If banking_managed_by is "recruiter" (on-site employee), do NOT ask the employee for banking \
+details — they are entered by HR. Explain that their recruiter manages payroll banking.
+  * Only guide the employee through the employment (banking) step when banking_managed_by is "employee" \
+(remote employee).
+- Documents: list_documents (supports optional status/category filters), get_my_document_link, \
+delete_document (confirm=true), reextract_document; use ui_hint upload when a file is needed \
+(cnic/passport/transcript/resume).
 - Profile photo: ui_hint {{"type":"upload","doc_type":"photo"}}.
-- Bank slip OCR (employment step): ui_hint {{"type":"upload","doc_type":"bank_slip"}} — after OCR results arrive \
-in chat, call save_step with the employment/banking fields the person confirms.
+- Bank slip OCR (employment step, remote employees only): ui_hint {{"type":"upload","doc_type":"bank_slip"}} \
+— after OCR results arrive in chat, call save_step with the employment/banking fields the person confirms.
 - Learning: my_learning_dashboard, browse_learning_catalog, start_course, update_course_progress, bookmarks, \
 skills CRUD/assess, career goal/path/gap, recommendations, certificates list/update/delete.
 - Certificate file upload: ui_hint {{"type":"upload","doc_type":"certificate","course_title":"<title>","course_uid":"<optional>","source_url":"<optional public URL>"}}. \
 After upload the file_url is stored so recruiters can open and verify it — always mention that URL in your reply.
 - Talent: my_talent_journey, my_achievements, my_career_progression, list_opportunities, apply_to_opportunity \
-(confirm=true).
-- Message HR: list_hr_threads, message_recruiter (new or continue), reply_hr_thread — each message emails HR too.
+(confirm=true), get_role_matches (shows how employee skills match recruiter KB roles).
+- Day-1 info: get_my_day1_info — shows assigned company assets and scheduled orientation. Use this when \
+the employee asks about their assets, laptop, badge, orientation, or first day details.
+- Message HR: list_hr_threads, message_recruiter (new or continue), reply_hr_thread, \
+close_hr_thread (confirm=true) — each message emails HR too.
 - Announcements/notifications: list_my_announcements, list_notifications, mark_notifications_read.
-- Confirm before destructive actions (delete document/skill/certificate, apply to opportunity) by calling the \
-tool without confirm so Approve/Cancel buttons appear.
+- Confirm before destructive actions (delete document/skill/certificate, apply to opportunity, close thread) \
+by calling the tool without confirm so Approve/Cancel buttons appear.
 - Chain tools toward goals (e.g. "continue onboarding", "start my assigned course", "apply to the frontend rotation", \
 "message HR about my documents").
 - Never invent tool results. Be clear and action-oriented.
@@ -335,8 +386,8 @@ def _history_text(messages: list[dict]) -> str:
     for m in recent:
         speaker = "User" if m["role"] == "user" else "Agent"
         content = m.get("content") or ""
-        if len(content) > 600:
-            content = content[:597] + "…"
+        if len(content) > 300:
+            content = content[:297] + "…"
         lines.append(f"{speaker}: {content}")
     return "\n".join(lines) if lines else "(no previous messages)"
 
@@ -634,6 +685,41 @@ async def _fallback_reply(user: CurrentUser, context: dict | None = None) -> dic
     return {"message": msg, "suggested_replies": [], "actions": _default_actions_for_role(user), "ui_hint": None}
 
 
+async def _quick_offline_reply(user: CurrentUser, context: dict | None = None) -> dict:
+    """Fast no-LLM reply used when the model call fails."""
+    if user.role in ("recruiter", "super_admin"):
+        return {
+            "message": (
+                "AI is temporarily unavailable, but I can still help fast. "
+                "Tell me the person or action, or use the invite form and I’ll work with the fields you enter."
+            ),
+            "suggested_replies": [
+                "Invite one candidate",
+                "Show pipeline",
+                "Bulk invite",
+            ],
+            "actions": _default_actions_for_role(user),
+            "ui_hint": None,
+        }
+    if user.role == "employee":
+        return {
+            "message": "AI is temporarily unavailable, but your dashboard still works. Open Complete Profile, Learning, Talent, or Messages to continue.",
+            "suggested_replies": [
+                "Open Complete Profile",
+                "Open Learning",
+                "Message HR",
+            ],
+            "actions": _default_actions_for_role(user),
+            "ui_hint": None,
+        }
+    return {
+        "message": "AI is temporarily unavailable right now. Please try again in a moment.",
+        "suggested_replies": [],
+        "actions": _default_actions_for_role(user),
+        "ui_hint": None,
+    }
+
+
 def _sanitize_ui_hint(user: CurrentUser, ui_hint: dict | None) -> dict | None:
     """Keep ui_hints role-safe. Recruiters must not get candidate document upload hints."""
     if not ui_hint or not isinstance(ui_hint, dict):
@@ -801,11 +887,14 @@ class AgentService:
                 prompt, max_tokens=2048, temperature=0.2, timeout=120.0
             )
             if not parsed:
+                offline = await _quick_offline_reply(user, context)
                 return _pack_reply(
-                    message="I'm having trouble reaching the AI service right now — please try again in a moment.",
+                    message=offline["message"],
                     user=user,
                     scratchpad=scratchpad,
                     context=context,
+                    suggested_replies=offline.get("suggested_replies") or [],
+                    ui_hint=offline.get("ui_hint"),
                 )
 
             action = parsed.get("action")

@@ -35,7 +35,7 @@ PROFILE_TASK_DEFS = [
     {"id": "employment", "label": "Complete bank & payroll details", "step": "employment"},
     {"id": "references", "label": "Provide professional references", "step": "references"},
     {"id": "documents", "label": "Acknowledge company policies", "step": "documents"},
-    {"id": "nda", "label": "Sign the NDA", "step": "nda"},
+    {"id": "nda", "label": "Sign the Self Declaration", "step": "nda"},
 ]
 PROFILE_REQUIRED_KEYS = ["emergency", "employment", "references", "documents", "nda"]
 PROFILE_STEP_FLOW = {
@@ -1710,7 +1710,7 @@ class EmployeeService:
             "employment": ("employment", request.employment, "Banking information is required."),
             "references": ("references", request.references, "At least two references are required."),
             "documents": ("documents", request.documents, "Policy acknowledgements are required."),
-            "nda": ("nda", request.nda, "NDA signature is required."),
+            "nda": ("nda", request.nda, "Self Declaration signature is required."),
         }
 
         if request.step in step_handlers:
@@ -1731,7 +1731,7 @@ class EmployeeService:
                 if not names_match(data.get("full_legal_name"), expected_name):
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"NDA full legal name must match your registered name: {expected_name}",
+                        detail=f"Self Declaration full legal name must match your registered name: {expected_name}",
                     )
                 data["full_legal_name"] = " ".join((expected_name or data.get("full_legal_name") or "").split())
                 if not data.get("signed_at"):

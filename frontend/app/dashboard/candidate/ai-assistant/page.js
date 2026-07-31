@@ -24,6 +24,10 @@ const QUICK_ACTIONS = [
     label: "Next steps",
     prompt: "What should I do next for my onboarding?",
   },
+  {
+    label: "Message HR",
+    prompt: "Message HR about my onboarding",
+  },
 ];
 
 export default function CandidateAIAssistantPage() {
@@ -49,7 +53,7 @@ export default function CandidateAIAssistantPage() {
     <CandidateShell
       activeKey="assistant"
       title="AI Assistant"
-      subtitle="Onboarding help · documents · next steps"
+      subtitle="Onboarding help · documents · offers · messages · next steps"
     >
       <AssistantPageShell
         eyebrow="Chat workspace"

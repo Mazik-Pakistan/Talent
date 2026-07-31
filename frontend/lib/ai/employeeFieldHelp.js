@@ -12,7 +12,7 @@ export const EMPLOYEE_PAGE_SUMMARIES = {
   },
   onboarding: {
     title: "Employee onboarding",
-    what: "Complete emergency contact, banking, references, policies, and NDA.",
+    what: "Complete emergency contact, banking, references, policies, and Self Declaration.",
     why: "HR needs these details before payroll and day-one access can finish.",
   },
   documents: {
@@ -60,6 +60,7 @@ export function employeeFieldHelpFor(field) {
     `employment.${name}`,
     `references.${name}`,
     `nda.${name}`,
+    `self_declaration.${name}`,
     `documents.${name}`,
   ].filter(Boolean);
 

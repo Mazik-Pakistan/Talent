@@ -18,6 +18,7 @@ import Toast from "@/components/Toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { CANDIDATE_STEP_HELP } from "@/lib/ai/candidateFieldHelp";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
@@ -101,6 +102,7 @@ const emptyPersonal = {
 
 const emptyEducationEntry = {
   institution: "",
+  city: "",
   board_university: "",
   degree: "",
   field_of_study: "",
@@ -178,7 +180,7 @@ function validateDateNotFuture(value, fieldName) {
 
 function validateCNIC(value) {
   const text = String(value || "").replace(/[^0-9]/g, "");
-  if (text.length !== 13) return { isValid: false, error: "CNIC must be exactly 13 digits." };
+  if (text.length !== 13) return { isValid: false, error: "CNIC must be in format XXXXX-XXXXXXX-X." };
   return { isValid: true, normalized: `${text.slice(0, 5)}-${text.slice(5, 12)}-${text.slice(12)}` };
 }
 
@@ -193,11 +195,7 @@ export default function OnboardingPage() {
   return (
     <Suspense
       fallback={
-        <div className={styles.root} data-app-shell>
-          <div className={styles.content}>
-            <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading onboarding…</p>
-          </div>
-        </div>
+        <RecruiterLoader />
       }
     >
       <OnboardingContent />
@@ -336,7 +334,22 @@ function OnboardingContent() {
         last_name: p.last_name || "",
       });
     }
-    if (data.education?.entries?.length) setEducationEntries(data.education.entries);
+    if (data.education?.entries?.length) {
+      setEducationEntries(
+        data.education.entries.map((entry) => ({
+          ...emptyEducationEntry,
+          ...entry,
+          institution: entry.institution || "",
+          city: entry.city || "",
+          board_university: entry.board_university || "",
+          degree: entry.degree || "",
+          field_of_study: entry.field_of_study || "",
+          year_completed: entry.year_completed || "",
+          cgpa_or_percentage: entry.cgpa_or_percentage || "",
+          certificate_file: entry.certificate_file || null,
+        }))
+      );
+    }
     if (data.skills) {
       const tech = Array.isArray(data.skills.technical_skills)
         ? data.skills.technical_skills
@@ -867,6 +880,7 @@ function OnboardingContent() {
             return {
               ...emptyEducationEntry,
               institution: ed.institute || ed.institution || "",
+              city: ed.city || "",
               degree: ed.degree || "",
               field_of_study: ed.major || ed.program || ed.field_of_study || "",
               year_completed: String(ed.year || ed.passing_year || "").slice(0, 4),
@@ -882,6 +896,16 @@ function OnboardingContent() {
                 setEducationEntries((prev) => {
                   const next = [...prev];
                   next[0] = { ...(next[0] || emptyEducationEntry), institution: v };
+                  return next;
+                }),
+            },
+            firstEd.city && {
+              key: "edu_0_city",
+              value: firstEd.city,
+              apply: (v) =>
+                setEducationEntries((prev) => {
+                  const next = [...prev];
+                  next[0] = { ...(next[0] || emptyEducationEntry), city: v };
                   return next;
                 }),
             },
@@ -948,6 +972,7 @@ function OnboardingContent() {
       const year = String(yearRaw).match(/(19|20)\d{2}/)?.[0] || String(yearRaw).slice(0, 4);
       const mapped = {
         institution: fields.institute || fields.institution || fields.university || "",
+        city: fields.city || "",
         degree: fields.degree || fields.program || fields.qualification || "",
         field_of_study: fields.major || fields.program || fields.field_of_study || "",
         year_completed: year || "",
@@ -968,6 +993,17 @@ function OnboardingContent() {
               setEducationEntries((prev) => {
                 const next = [...prev];
                 next[index] = { ...(next[index] || emptyEducationEntry), institution: v, board_university: "" };
+                return next;
+              }),
+          },
+        !cur.city &&
+          mapped.city && {
+            key: `${prefix}city`,
+            value: mapped.city,
+            apply: (v) =>
+              setEducationEntries((prev) => {
+                const next = [...prev];
+                next[index] = { ...(next[index] || emptyEducationEntry), city: v };
                 return next;
               }),
           },
@@ -1068,7 +1104,7 @@ function OnboardingContent() {
     return (
       educationEntries.length > 0 &&
       educationEntries.every(
-        (entry) => entry.institution && entry.degree && entry.field_of_study && entry.year_completed
+        (entry) => entry.institution && entry.city && entry.degree && entry.field_of_study && entry.year_completed
       )
     );
   }
@@ -1542,6 +1578,9 @@ function OnboardingContent() {
       // Validate required dropdowns
       if (!personal.gender) errors.gender = "Gender is required.";
       if (!personal.marital_status) errors.marital_status = "Marital status is required.";
+      if (!personal.father_name || !personal.father_name.trim()) errors.father_name = "Father's name is required.";
+      const bloodGroupValue = normalizeBloodGroup(personal.blood_group);
+      if (!bloodGroupValue) errors.blood_group = "Blood group is required. Select your blood group (e.g. A+, O-, or N/A).";
 
       const requiredOk = Object.keys(errors).length === 0;
       if (!requiredOk) {
@@ -1603,6 +1642,9 @@ function OnboardingContent() {
         
         const institutionValidation = validateTextField(entry.institution, 2, 200, "Institution");
         if (!institutionValidation.isValid) entryErrors.institution = institutionValidation.error;
+
+        const cityValidation = validateTextField(entry.city, 2, 100, "City");
+        if (!cityValidation.isValid) entryErrors.city = cityValidation.error;
         
         const degreeValidation = validateTextField(entry.degree, 2, 120, "Degree");
         if (!degreeValidation.isValid) entryErrors.degree = degreeValidation.error;
@@ -1746,7 +1788,7 @@ function OnboardingContent() {
 
           <div className={styles.content}>
             {loading ? (
-              <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading onboarding…</p>
+              <RecruiterLoader inline />
             ) : (
               <section className={styles.card}>
                 {isEditMode && (
@@ -2021,18 +2063,32 @@ function OnboardingContent() {
                               <Field
                                 styles={styles}
                                 label="Father's name"
+                                required
                                 value={personal.father_name || ""}
-                                onChange={(e) => setPersonal({ ...personal, father_name: e.target.value })}
+                                error={fieldErrors.father_name}
+                                onChange={(e) => {
+                                  setPersonal({ ...personal, father_name: e.target.value });
+                                  setFieldErrors((prev) => ({ ...prev, father_name: false }));
+                                }}
                                 {...fillAnimProps("father_name")}
                               />
                               <Field
                                 styles={styles}
                                 label="National ID / CNIC"
                                 required
+                                placeholder="XXXXX-XXXXXXX-X"
                                 value={personal.national_id}
                                 error={fieldErrors.national_id}
                                 onChange={(e) => {
-                                  setPersonal({ ...personal, national_id: e.target.value });
+                                  // Strip everything except digits, then auto-format XXXXX-XXXXXXX-X
+                                  const digits = e.target.value.replace(/[^0-9]/g, "").slice(0, 13);
+                                  let formatted = digits;
+                                  if (digits.length > 12) {
+                                    formatted = `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+                                  } else if (digits.length > 5) {
+                                    formatted = `${digits.slice(0, 5)}-${digits.slice(5)}`;
+                                  }
+                                  setPersonal({ ...personal, national_id: formatted });
                                   setFieldErrors((prev) => ({ ...prev, national_id: false }));
                                 }}
                                 {...fillAnimProps("national_id")}
@@ -2090,12 +2146,13 @@ function OnboardingContent() {
                                   <option value="other">Other</option>
                                 </select>
                               </label>
-                              <label className={styles.field}>
-                                <span>Blood group</span>
+                              <label className={`${styles.field} ${fieldErrors.blood_group ? styles.fieldError : ""}`} data-field-error={fieldErrors.blood_group ? "true" : undefined}>
+                                <span>Blood group <span style={{ color: "red", marginLeft: 2 }}>*</span></span>
                                 <select
                                   value={normalizeBloodGroup(personal.blood_group)}
                                   onChange={(e) => {
                                     const val = e.target.value;
+                                    setFieldErrors((prev) => ({ ...prev, blood_group: false }));
                                     if (val === "N/A" || val === personal.blood_group) {
                                       setPersonal({ ...personal, blood_group: val });
                                       return;
@@ -2107,7 +2164,11 @@ function OnboardingContent() {
                                     <option key={g} value={g}>{g}</option>
                                   ))}
                                 </select>
-                                <small style={{ color: "var(--text-muted)", fontWeight: 500 }}>{BLOOD_GROUP_HINT}</small>
+                                {fieldErrors.blood_group ? (
+                                  <span style={{ color: "var(--error, red)", fontSize: 12 }}>{fieldErrors.blood_group}</span>
+                                ) : (
+                                  <small style={{ color: "var(--text-muted)", fontWeight: 500 }}>{BLOOD_GROUP_HINT}</small>
+                                )}
                               </label>
                               <Field
                                 styles={styles}
@@ -2256,7 +2317,7 @@ function OnboardingContent() {
                               <div className={styles.sectionCardHead}>
                                 <div>
                                   <h3>Education {educationEntries.length > 1 ? `#${index + 1}` : "entry"}</h3>
-                                  <p>Institution, degree, and transcript</p>
+                                  <p>Institution, city, degree, and transcript</p>
                                 </div>
                                 {entry.certificate_file && <span className={styles.pillOk}>Transcript uploaded</span>}
                               </div>
@@ -2273,7 +2334,7 @@ function OnboardingContent() {
                                   wide
                                 />
                                 <UniversityAutocomplete
-                                  value={entry.institution}
+                                  value={entry.institution || ""}
                                   onChange={(val) => {
                                     const next = [...educationEntries];
                                     next[index] = { ...next[index], institution: val };
@@ -2286,17 +2347,31 @@ function OnboardingContent() {
                                   fillAnimStyle={fillAnimLabelStyle(`edu_${index}_institution`)}
                                   dataOcrKey={`edu_${index}_institution`}
                                 />
-                                <Field styles={styles} label="Degree" required value={entry.degree} onChange={(e) => {
+                                <Field
+                                  styles={styles}
+                                  label="City"
+                                  required
+                                  value={entry.city || ""}
+                                  error={fieldErrors[`edu_${index}_city`]}
+                                  onChange={(e) => {
+                                    const next = [...educationEntries];
+                                    next[index] = { ...next[index], city: e.target.value };
+                                    setEducationEntries(next);
+                                    setFieldErrors((prev) => ({ ...prev, [`edu_${index}_city`]: false }));
+                                  }}
+                                  {...fillAnimProps(`edu_${index}_city`)}
+                                />
+                                <Field styles={styles} label="Degree" required value={entry.degree || ""} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], degree: e.target.value };
                                   setEducationEntries(next);
                                 }} {...fillAnimProps(`edu_${index}_degree`)} />
-                                <Field styles={styles} label="Major / Field of study" required value={entry.field_of_study} onChange={(e) => {
+                                <Field styles={styles} label="Major / Field of study" required value={entry.field_of_study || ""} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], field_of_study: e.target.value };
                                   setEducationEntries(next);
                                 }} {...fillAnimProps(`edu_${index}_field_of_study`)} />
-                                <Field styles={styles} label="Year completed" required value={entry.year_completed} onChange={(e) => {
+                                <Field styles={styles} label="Year completed" required value={entry.year_completed || ""} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], year_completed: e.target.value };
                                   setEducationEntries(next);
@@ -2557,6 +2632,7 @@ function OnboardingContent() {
                                     </strong>
                                     <dl className={styles.reviewGrid}>
                                       <ReviewRow styles={styles} label="Institute / University" value={entry.institution} />
+                                      <ReviewRow styles={styles} label="City" value={entry.city} />
                                       <ReviewRow styles={styles} label="Field of study" value={entry.field_of_study} />
                                       <ReviewRow styles={styles} label="Year completed" value={entry.year_completed} />
                                       <ReviewRow styles={styles} label="CGPA / %" value={entry.cgpa_or_percentage} />
@@ -2721,7 +2797,7 @@ function SubmittedState({ candidate, onEdit, onDashboard, styles }) {
         <li>Your recruiter reviews your documents (OCR speeds this up automatically).</li>
         <li>You&apos;ll receive an <strong>offer letter</strong> to review and digitally sign.</li>
         <li>Once HR approves your signed offer, you become an employee with your own Employee ID.</li>
-        <li>You&apos;ll then complete a short post-hire profile (emergency contact, banking, references, NDA).</li>
+        <li>You&apos;ll then complete a short post-hire profile (emergency contact, banking, references, Self Declaration).</li>
       </ol>
       <div className={`${styles.actions} ${styles.center}`}>
         <button type="button" className={styles.secondaryButton} onClick={onEdit}>Edit my details</button>
@@ -2815,6 +2891,7 @@ function FileUploadField({ styles, label, accept, disabled, onChange, onRemove, 
 }
 
 function Field({ label, name, value, onChange, type = "text", wide, styles, error, hint, required, fillAnim, fillDelay, ocrKey, ocrTyping }) {
+  const safeValue = value ?? "";
   return (
     <label
       className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""} ${fillAnim ? styles.fieldFillAnim : ""} ${ocrTyping ? styles.fieldOcrTyping : ""}`}
@@ -2823,7 +2900,7 @@ function Field({ label, name, value, onChange, type = "text", wide, styles, erro
       data-ocr-key={ocrKey || undefined}
     >
       <span>{label}{required && <span style={{ color: "red", marginLeft: 4 }}>*</span>}</span>
-      <input name={name} type={type} value={value} onChange={onChange} aria-invalid={!!error} aria-busy={ocrTyping || undefined} />
+      <input name={name} type={type} value={safeValue} onChange={onChange} aria-invalid={!!error} aria-busy={ocrTyping || undefined} />
       {error && <em className={styles.fieldErrorText}>Required</em>}
       {!error && hint ? <small>{hint}</small> : null}
     </label>

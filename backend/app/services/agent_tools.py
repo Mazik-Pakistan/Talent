@@ -25,6 +25,7 @@ from app.schemas.dashboard import CreateAnnouncementRequest
 from app.schemas.document import DocumentVerifyRequest
 from app.schemas.employee_profile import EmployeeProfileSaveRequest
 from app.schemas.invitation import CreateInvitationRequest, OnboardingSaveRequest
+from app.schemas.offer import OfferTermsPayload
 from app.schemas.offer import OfferApproveRequest, OfferCreateRequest
 from app.schemas.onboarding_assignment import (
     AssetAssignRequest,
@@ -239,7 +240,7 @@ def _employee_status_payload(employee: dict) -> dict:
         "email": employee.get("email"),
         "job_title": employee.get("job_title"),
         "department": employee.get("department"),
-        # Post-hire Complete Profile (emergency, banking, references, policies, NDA)
+        # Post-hire Complete Profile (emergency, banking, references, policies, Self Declaration)
         "profile_status": profile_status,
         "post_hire_profile_complete": profile_status == "complete" and not missing,
         "post_hire_missing": missing,
@@ -257,6 +258,12 @@ async def _tool_list_candidates(user: CurrentUser, args: dict) -> ToolResult:
     if status_filter:
         query["conversion_status"] = status_filter
     docs = await database.candidates.find(query).sort("created_at", -1).to_list(length=50)
+    active_docs = [
+        d
+        for d in docs
+        if (d.get("conversion_status") or "").strip().lower() != "converted"
+        and (d.get("status") or "").strip().lower() != "converted"
+    ]
     items = [
         {
             "candidate_id": d.get("user_id") or str(d.get("_id")),
@@ -271,7 +278,7 @@ async def _tool_list_candidates(user: CurrentUser, args: dict) -> ToolResult:
                 else None
             ),
         }
-        for d in docs
+        for d in active_docs
     ]
     return ToolResult(ok=True, data={"candidates": items, "count": len(items)})
 
@@ -387,6 +394,24 @@ async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResul
 
 async def _tool_send_invitation(user: CurrentUser, args: dict) -> ToolResult:
     try:
+        offer_kwargs = {
+            "job_title": args["job_title"],
+            "department": args["department"],
+            "employment_type": args.get("employment_type") or "Full-time",
+            "office_location": args.get("office_location"),
+            "is_remote": bool(args.get("is_remote")),
+            "reporting_manager": args["reporting_manager"],
+            "start_date": args.get("start_date") or None,
+            "monthly_salary": args["monthly_salary"],
+            "currency": args.get("currency") or "PKR",
+            "allowances": args.get("allowances") or args.get("salary_breakdown") or [],
+            "benefits": args.get("benefits") or [],
+            "offer_expiry_days": args.get("offer_expiry_days"),
+            "message_to_candidate": args.get("message_to_candidate"),
+        }
+        if args.get("terms"):
+            offer_kwargs["terms"] = args["terms"]
+
         payload = CreateInvitationRequest(
             email=args["email"],
             full_name=args["full_name"],
@@ -395,6 +420,7 @@ async def _tool_send_invitation(user: CurrentUser, args: dict) -> ToolResult:
             office_location=args.get("office_location"),
             is_remote=bool(args.get("is_remote")),
             start_date=args.get("start_date") or None,
+            offer=OfferTermsPayload(**offer_kwargs),
             expires_in_days=365,
         )
         result = await invitation_service.create_invitation(payload, user)
@@ -1462,15 +1488,24 @@ async def _tool_create_announcement(user: CurrentUser, args: dict) -> ToolResult
 RECRUITER_TOOLS: list[Tool] = [
     Tool(
         name="send_invitation",
-        description="Invite a single candidate by email so they can create an account and start onboarding.",
+        description="Invite a single candidate with a full offer letter so they can create an account and start onboarding.",
         parameters={
             "email": "string, required",
             "full_name": "string, required",
             "job_title": "string, required",
             "department": "string, required",
+            "reporting_manager": "string, required",
+            "monthly_salary": "number, required",
+            "currency": "string, optional, default PKR",
+            "employment_type": "string, optional, default Full-time",
             "office_location": "string, optional",
             "is_remote": "boolean, optional, true if remote employee (self-manages banking)",
-            "start_date": "string YYYY-MM-DD, optional",
+            "start_date": "string YYYY-MM-DD or relative text like 'tomorrow', optional",
+            "offer_expiry_days": "integer, optional",
+            "allowances": "array of {label, amount}, optional",
+            "benefits": "array of strings, optional",
+            "terms": "string, optional",
+            "message_to_candidate": "string, optional",
         },
         handler=_tool_send_invitation,
         roles=("recruiter", "super_admin"),
@@ -1480,6 +1515,7 @@ RECRUITER_TOOLS: list[Tool] = [
         description=(
             "Invite many candidates at once WITH offer letters. Each row MUST include email, "
             "full_name, job_title, department, reporting_manager, start_date, monthly_salary — "
+            "relative dates like 'tomorrow' are accepted and normalized — "
             "same as Create invitation / bulk Excel template. Prefer directing recruiters to "
             "/dashboard/recruiter/invite bulk Excel for history review. Never invent missing fields."
         ),
@@ -1495,8 +1531,8 @@ RECRUITER_TOOLS: list[Tool] = [
     Tool(
         name="list_candidates",
         description=(
-            "List candidates and their pre-hire onboarding/conversion status. "
-            "For converted people, use list_employees or get_candidate_status to see post-hire Complete Profile progress."
+            "List active candidates only. Converted people are employees; use list_employees or get_candidate_status "
+            "to see post-hire Complete Profile progress."
         ),
         parameters={"status": "optional conversion_status filter"},
         handler=_tool_list_candidates,
@@ -1659,7 +1695,7 @@ RECRUITER_TOOLS: list[Tool] = [
             "employment_type": "string, optional, default Full-time",
             "office_location": "string, optional",
             "reporting_manager": "string, required",
-            "start_date": "string, required",
+            "start_date": "string, required; relative dates like 'tomorrow' are accepted and normalized",
             "monthly_salary": "number, optional",
             "currency": "string, optional, default PKR",
             "offer_expiry_days": "integer, optional",
@@ -1948,6 +1984,9 @@ async def _tool_get_status(user: CurrentUser, args: dict) -> ToolResult:
                     "percentage": progress.get("percentage"),
                     "missing_sections": progress.get("missing_fields", []),
                     "documents_on_file": [d.get("doc_type") for d in docs.get("documents", [])],
+                    # Remote employees enter their own banking; on-site banking is managed by recruiter.
+                    "is_remote": bool(progress.get("is_remote")),
+                    "banking_managed_by": progress.get("banking_managed_by", "recruiter"),
                 },
             )
         # candidate
@@ -2012,18 +2051,27 @@ async def _tool_save_step(user: CurrentUser, args: dict) -> ToolResult:
 async def _tool_list_documents(user: CurrentUser, args: dict) -> ToolResult:
     try:
         result = await document_service.list_mine(user)
-        docs = [
-            {
-                "id": d.get("id") or d.get("document_id"),
-                "doc_type": d.get("doc_type"),
-                "category": d.get("category"),
-                "status": d.get("status"),
-                "file_name": d.get("file_name"),
-                "rejection_reason": d.get("rejection_reason"),
-            }
-            for d in result.get("documents", [])
-        ]
-        return ToolResult(ok=True, data={"documents": docs})
+        status_filter = (args.get("status") or "").strip().lower() or None
+        category_filter = (args.get("category") or "").strip().lower() or None
+        docs = []
+        for d in result.get("documents", []):
+            doc_status = (d.get("status") or "").lower()
+            doc_category = (d.get("category") or "").lower()
+            if status_filter and doc_status != status_filter:
+                continue
+            if category_filter and doc_category != category_filter:
+                continue
+            docs.append(
+                {
+                    "id": d.get("id") or d.get("document_id"),
+                    "doc_type": d.get("doc_type"),
+                    "category": d.get("category"),
+                    "status": d.get("status"),
+                    "file_name": d.get("file_name"),
+                    "rejection_reason": d.get("rejection_reason"),
+                }
+            )
+        return ToolResult(ok=True, data={"documents": docs, "count": len(docs)})
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
 
@@ -2055,16 +2103,23 @@ SELF_SERVE_TOOLS: list[Tool] = [
             "emergency": "object {name, relationship, phone}, for step=emergency (employee only)",
             "employment": "object {bank_name, account_holder_name, account_number, iban, branch, branch_code}, for step=employment (employee only)",
             "references": "object {references: [{full_name, relationship, email, phone, company}, ...]} (min 2), for step=references (employee only)",
-            "documents": "object {accepted_code_of_conduct: true, accepted_privacy_policy: true, accepted_employee_handbook: true}, for step=documents (employee only)",
-            "nda": "object {full_legal_name, agreed: true}, for step=nda",
+            "documents": "object {accepted_privacy_policy: true, accepted_employee_handbook: true}, for step=documents (employee only)",
+            "nda": "object {full_legal_name, agreed: true}, for step=nda (Self Declaration in the UI)",
         },
         handler=_tool_save_step,
         roles=("candidate", "employee"),
     ),
     Tool(
         name="list_documents",
-        description="List documents the caller has already uploaded, with id/type/category/verification status.",
-        parameters={},
+        description=(
+            "List documents the caller has already uploaded, with id/type/category/verification status. "
+            "Optionally filter by status (pending|verified|rejected|reupload_required) or category "
+            "(identity|education|banking|certificate|photo|other)."
+        ),
+        parameters={
+            "status": "optional: pending|verified|rejected|reupload_required",
+            "category": "optional: identity|education|banking|certificate|photo|other",
+        },
         handler=_tool_list_documents,
         roles=("candidate", "employee"),
     ),

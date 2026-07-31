@@ -44,7 +44,7 @@ const SECTION_LABELS = {
   employment: "bank details",
   references: "professional references",
   documents: "policy acknowledgements",
-  nda: "signed NDA",
+  nda: "signed Self Declaration",
   personal: "personal details",
   education: "education history",
   submit: "final review",
@@ -73,7 +73,7 @@ const ONBOARDING_SECTION_HELP = {
   },
   nda: {
     message:
-      "You're on the NDA. Confirm your full legal name matches your ID, agree to the terms, and sign to lock this step.",
+      "You're on the Self Declaration. Confirm your full legal name matches your ID, agree to the terms, and sign to lock this step.",
     fields: ["Full legal name", "Agreement checkbox", "Signature"],
   },
   submit: {
@@ -308,7 +308,7 @@ export async function buildEmployeeInsights(pathname, accessToken, rawContext = 
       push(insights, {
         id: "onboarding-complete",
         priority: COPILOT_PRIORITY.tip,
-        message: `You're fully onboarded${firstName ? `, ${firstName}` : ""}. Your profile, banking, and NDA are on file.`,
+        message: `You're fully onboarded${firstName ? `, ${firstName}` : ""}. Your profile, banking, and Self Declaration are on file.`,
         actions: [{ label: "View my profile", href: "/dashboard/employee/profile" }],
       });
     }

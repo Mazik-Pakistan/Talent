@@ -40,6 +40,7 @@ from app.services.learning_service import learning_service
 from app.services.offer_service import offer_service
 from app.services.recruiter_kb_service import recruiter_kb_service
 from app.services.talent_service import talent_service
+from app.schemas.date_utils import parse_natural_date
 
 # Imported late-safe symbols from agent_tools (loaded after base helpers exist).
 from app.services.agent_tools import (  # noqa: E402
@@ -49,6 +50,7 @@ from app.services.agent_tools import (  # noqa: E402
     _err,
     _resolve_candidate,
     _resolve_employee,
+    _tool_list_documents,
     confirm_gate,
 )
 
@@ -57,12 +59,7 @@ employee_service = EmployeeService()
 
 
 def _parse_date(value: Any) -> date | None:
-    if value is None or value == "":
-        return None
-    if isinstance(value, date) and not isinstance(value, datetime):
-        return value
-    text = str(value).strip()[:10]
-    return date.fromisoformat(text)
+    return parse_natural_date(value)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -251,26 +248,6 @@ async def _tool_update_recruiter_profile(user: CurrentUser, args: dict) -> ToolR
 # ─────────────────────────────────────────────────────────────────────────
 # Candidate / Employee shared document + notifications
 # ─────────────────────────────────────────────────────────────────────────
-
-
-async def _tool_list_documents_rich(user: CurrentUser, args: dict) -> ToolResult:
-    try:
-        result = await document_service.list_mine(user)
-        docs = []
-        for d in result.get("documents", []):
-            docs.append(
-                {
-                    "id": d.get("id") or d.get("document_id"),
-                    "doc_type": d.get("doc_type"),
-                    "category": d.get("category"),
-                    "status": d.get("status"),
-                    "file_name": d.get("file_name"),
-                    "rejection_reason": d.get("rejection_reason"),
-                }
-            )
-        return ToolResult(ok=True, data={"documents": docs})
-    except Exception as exc:  # noqa: BLE001
-        return _err(exc)
 
 
 async def _tool_get_my_document_link(user: CurrentUser, args: dict) -> ToolResult:
@@ -1090,6 +1067,8 @@ async def _tool_list_hr_threads(user: CurrentUser, args: dict) -> ToolResult:
 
         if user.role in ("recruiter", "super_admin"):
             return ToolResult(ok=True, data=await message_service.list_threads_for_recruiter(user))
+        if user.role == "candidate":
+            return ToolResult(ok=True, data=await message_service.list_threads_for_candidate(user))
         return ToolResult(ok=True, data=await message_service.list_threads_for_employee(user))
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
@@ -1102,12 +1081,20 @@ async def _tool_message_recruiter(user: CurrentUser, args: dict) -> ToolResult:
         body = (args.get("body") or args.get("message") or "").strip()
         if not body:
             return ToolResult(ok=False, error="body is required.")
-        result = await message_service.employee_send(
-            user,
-            body=body,
-            subject=args.get("subject"),
-            thread_id=args.get("thread_id"),
-        )
+        if user.role == "candidate":
+            result = await message_service.candidate_send(
+                user,
+                body=body,
+                subject=args.get("subject"),
+                thread_id=args.get("thread_id"),
+            )
+        else:
+            result = await message_service.employee_send(
+                user,
+                body=body,
+                subject=args.get("subject"),
+                thread_id=args.get("thread_id"),
+            )
         return ToolResult(ok=True, data=result)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
@@ -1151,6 +1138,8 @@ async def _tool_reply_hr_thread(user: CurrentUser, args: dict) -> ToolResult:
             return ToolResult(ok=False, error="thread_id and body are required.")
         if user.role in ("recruiter", "super_admin"):
             result = await message_service.recruiter_reply(user, thread_id, body=body)
+        elif user.role == "candidate":
+            result = await message_service.candidate_send(user, body=body, thread_id=thread_id)
         else:
             result = await message_service.employee_send(user, body=body, thread_id=thread_id)
         return ToolResult(ok=True, data=result)
@@ -1512,6 +1501,77 @@ RECRUITER_PARITY_TOOLS: list[Tool] = [
 ]
 
 
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Employee-only tools: Day-1 info, close HR thread, role matches
+# ─────────────────────────────────────────────────────────────────────────
+
+
+async def _tool_get_my_day1_info(user: CurrentUser, args: dict) -> ToolResult:
+    """Return the employee's assigned assets and scheduled orientation from their profile.
+
+    Reuses employee_service.get_my_profile — no new DB queries needed.
+    """
+    try:
+        result = await employee_service.get_my_profile(user)
+        emp = result.get("employee") or {}
+        assets = emp.get("assets") or []
+        orientation = emp.get("orientation")
+        company_email = emp.get("company_email")
+        return ToolResult(
+            ok=True,
+            data={
+                "company_email": company_email,
+                "assets": [
+                    {
+                        "asset_id": a.get("id") or a.get("asset_id"),
+                        "name": a.get("name"),
+                        "asset_type": a.get("asset_type"),
+                        "serial_number": a.get("serial_number"),
+                        "status": a.get("status"),
+                        "assigned_at": a.get("assigned_at"),
+                    }
+                    for a in assets
+                ],
+                "orientation": orientation,
+                "has_assets": len(assets) > 0,
+                "has_orientation": orientation is not None,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_close_hr_thread(user: CurrentUser, args: dict) -> ToolResult:
+    """Close an HR message thread by thread_id. Reuses message_service.close_thread."""
+    thread_id = (args.get("thread_id") or "").strip()
+    if not thread_id:
+        return ToolResult(ok=False, error="thread_id is required.")
+    if not args.get("confirm"):
+        return confirm_gate(
+            "close_hr_thread",
+            {"thread_id": thread_id},
+            f"Close HR thread {thread_id}?",
+        )
+    try:
+        from app.services.message_service import message_service
+
+        result = await message_service.close_thread(user, thread_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_get_role_matches(user: CurrentUser, args: dict) -> ToolResult:
+    """Match employee profile against recruiter KB roles. Reuses learning_service.get_role_matches."""
+    try:
+        result = await learning_service.get_role_matches(user, refresh=bool(args.get("refresh")))
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 SHARED_SELF_DOCUMENT_TOOLS: list[Tool] = [
     Tool(
         name="get_my_document_link",
@@ -1558,13 +1618,88 @@ SHARED_SELF_DOCUMENT_TOOLS: list[Tool] = [
 ]
 
 
+async def _tool_update_my_profile(user: CurrentUser, args: dict) -> ToolResult:
+    """Persist individual personal-info fields into the candidate's profile.
+
+    Uses CandidateService.partial_update_personal which merges only the supplied
+    fields without requiring a signed offer or government ID co-field.  This is
+    the right call whenever the candidate provides isolated facts (name, gender,
+    city, …) during conversation — use save_step only when *all* required fields
+    for a complete step are available.
+    """
+    from app.services.candidate_service import CandidateService
+
+    personal_fields = {
+        k: v
+        for k, v in args.items()
+        if k
+        not in ("step", "confirm")  # strip meta-keys the LLM might accidentally send
+        and v not in (None, "")
+    }
+    if not personal_fields:
+        return ToolResult(ok=False, error="Provide at least one personal field to update (e.g. first_name, gender).")
+    try:
+        svc = CandidateService()
+        result = await svc.partial_update_personal(user, personal_fields)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 CANDIDATE_PARITY_TOOLS: list[Tool] = [
     *SHARED_SELF_DOCUMENT_TOOLS,
+    Tool(
+        name="update_my_profile",
+        description=(
+            "Persist one or more personal-info fields the candidate just provided "
+            "(first_name, last_name, date_of_birth YYYY-MM-DD, gender, nationality, "
+            "marital_status, blood_group, father_name, alternate_phone, current_address, "
+            "permanent_address, same_as_current, city, state, postal_code, country). "
+            "Use this whenever the candidate tells you individual facts about themselves — "
+            "it merges only the supplied fields and never requires a government ID or signed "
+            "offer to be present first. Use save_step only when ALL required fields for a "
+            "complete step are available."
+        ),
+        parameters={
+            "first_name": "string, optional",
+            "last_name": "string, optional",
+            "date_of_birth": "string YYYY-MM-DD, optional",
+            "gender": "male|female|other|prefer_not_to_say, optional",
+            "nationality": "string, optional",
+            "marital_status": "single|married|divorced|widowed|other, optional",
+            "blood_group": "A+|A-|B+|B-|AB+|AB-|O+|O-, optional",
+            "father_name": "string, optional",
+            "alternate_phone": "string, optional",
+            "current_address": "string, optional",
+            "permanent_address": "string, optional",
+            "same_as_current": "boolean, optional",
+            "city": "string, optional",
+            "state": "string, optional",
+            "postal_code": "string, optional",
+            "country": "string, optional",
+        },
+        handler=_tool_update_my_profile,
+        roles=("candidate",),
+    ),
+    Tool(
+        name="list_hr_threads",
+        description="List the candidate's conversations with HR/recruiter.",
+        parameters={},
+        handler=_tool_list_hr_threads,
+        roles=("candidate",),
+    ),
     Tool(
         name="get_my_offer",
         description="Fetch the candidate's current offer letter and status.",
         parameters={},
         handler=_tool_get_my_offer,
+        roles=("candidate",),
+    ),
+    Tool(
+        name="message_recruiter",
+        description="Send a message to the assigned recruiter/HR (starts or continues a thread).",
+        parameters={"body": "required", "subject": "optional for new thread", "thread_id": "optional to reply"},
+        handler=_tool_message_recruiter,
         roles=("candidate",),
     ),
     Tool(
@@ -1586,6 +1721,13 @@ CANDIDATE_PARITY_TOOLS: list[Tool] = [
         description="Decline the candidate's offer. Requires confirm=true. Optional reason.",
         parameters={"confirm": "boolean required", "reason": "optional", "offer_id": "optional"},
         handler=_tool_decline_offer,
+        roles=("candidate",),
+    ),
+    Tool(
+        name="reply_hr_thread",
+        description="Reply in an existing HR conversation by thread_id.",
+        parameters={"thread_id": "required", "body": "required"},
+        handler=_tool_reply_hr_thread,
         roles=("candidate",),
     ),
 ]
@@ -1811,6 +1953,33 @@ EMPLOYEE_PARITY_TOOLS: list[Tool] = [
         description="Reply in an existing HR conversation by thread_id.",
         parameters={"thread_id": "required", "body": "required"},
         handler=_tool_reply_hr_thread,
+        roles=("employee",),
+    ),
+    Tool(
+        name="get_my_day1_info",
+        description=(
+            "Show the employee's Day-1 information: assigned company assets (laptop, phone, badge, etc.) "
+            "and scheduled orientation details. Reuses data already on the employee profile."
+        ),
+        parameters={},
+        handler=_tool_get_my_day1_info,
+        roles=("employee",),
+    ),
+    Tool(
+        name="close_hr_thread",
+        description="Close (resolve) an HR message thread. Requires confirm=true.",
+        parameters={"thread_id": "required", "confirm": "boolean required"},
+        handler=_tool_close_hr_thread,
+        roles=("employee",),
+    ),
+    Tool(
+        name="get_role_matches",
+        description=(
+            "Compare the employee's skills and certifications against recruiter knowledge-base roles "
+            "to see which roles they match and by how much. Optionally refresh=true to bypass cache."
+        ),
+        parameters={"refresh": "boolean, optional — force fresh calculation"},
+        handler=_tool_get_role_matches,
         roles=("employee",),
     ),
 ]

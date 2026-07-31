@@ -8,6 +8,7 @@ import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import AnimatedNumber from "@/components/ai-experience/AnimatedNumber";
 import SidebarBrand from "@/components/SidebarBrand";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import { publishGuideContext } from "@/lib/ai/guideContext";
 import {
   clearLocalSession,
@@ -369,7 +370,7 @@ function EmployeeDashboardContent() {
       { label: "Personal", value: summarize(onboarding.personal), anchor: "onboarding-section" },
       { label: "Emergency contact", value: summarize(onboarding.emergency), anchor: "onboarding-section" },
       { label: "Payroll", value: summarize(onboarding.employment), anchor: "onboarding-section" },
-      { label: "NDA", value: onboarding.nda?.full_legal_name || "Not on file", anchor: "onboarding-section" },
+      { label: "Self Declaration", value: onboarding.nda?.full_legal_name || "Not on file", anchor: "onboarding-section" },
       { label: "Resume", value: onboarding.resume?.file_name || "Not on file", anchor: "onboarding-section" },
       ...announcements.map((a) => ({ label: "Announcement", value: a.title, anchor: "announcements-section" })),
     ];
@@ -390,8 +391,8 @@ function EmployeeDashboardContent() {
     document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  if (!user) {
-    return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
+  if (!user || loading) {
+    return <RecruiterLoader />;
   }
 
   const displayName = employee?.full_name || user.full_name;
@@ -1132,7 +1133,7 @@ function EmployeeDashboardContent() {
                       />
                       <RecordItem
                         styles={styles}
-                        label="NDA"
+                        label="Self Declaration"
                         value={onboarding.nda?.full_legal_name ? `Signed · ${onboarding.nda.full_legal_name}` : "Not on file"}
                         icon={<><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></>}
                       />

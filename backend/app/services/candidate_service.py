@@ -16,7 +16,7 @@ from app.services import storage_service
 # ------------------------------------------------------------------------
 # PHASE 2 FLOW: pre-offer INTAKE = personal/contact, education, skills,
 # government ID, resume. Post-hire (EmployeeService): emergency, banking,
-# references, NDA, policies. Internal career history is recruiter-managed.
+# references, Self Declaration, policies. Internal career history is recruiter-managed.
 # ------------------------------------------------------------------------
 ONBOARDING_TASK_DEFS = [
     {
@@ -272,6 +272,7 @@ class CandidateService:
                 entries = [
                     {
                         "institution": "",
+                        "city": "",
                         "board_university": "",
                         "degree": "",
                         "field_of_study": "",
@@ -546,6 +547,7 @@ class CandidateService:
                 entries.append(
                     {
                         "institution": "",
+                        "city": "",
                         "board_university": "",
                         "degree": "",
                         "field_of_study": "",
@@ -685,6 +687,70 @@ class CandidateService:
         )
         refreshed = await database.candidates.find_one({"_id": candidate["_id"]})
         return {"message": "Document removed.", "onboarding": refreshed.get("onboarding")}
+
+    # Allowed scalar fields that the AI assistant may update individually without
+    # requiring a full step save (which needs all co-fields like government_docs).
+    _PERSONAL_SCALAR_FIELDS = frozenset(
+        {
+            "first_name",
+            "last_name",
+            "date_of_birth",
+            "gender",
+            "nationality",
+            "marital_status",
+            "blood_group",
+            "father_name",
+            "alternate_phone",
+            "current_address",
+            "permanent_address",
+            "same_as_current",
+            "city",
+            "state",
+            "postal_code",
+            "country",
+        }
+    )
+
+    async def partial_update_personal(
+        self,
+        current_user: CurrentUser,
+        fields: dict,
+    ) -> dict:
+        """Persist a subset of personal-info fields supplied by the AI assistant.
+
+        This is intentionally a *merge* — it touches only the keys in ``fields``
+        and leaves every other ``onboarding.personal`` field untouched.  It does
+        NOT run the full step-save validation pipeline (which requires a signed
+        offer and a government ID doc to be present), so the candidate can tell
+        the assistant their name or gender before they have uploaded their CNIC.
+
+        Only keys in ``_PERSONAL_SCALAR_FIELDS`` are accepted; unknown keys are
+        silently dropped so the LLM cannot accidentally overwrite sensitive data.
+        """
+        candidate = await self._require_active_candidate(current_user)
+        safe_fields = {
+            k: v for k, v in fields.items()
+            if k in self._PERSONAL_SCALAR_FIELDS and v not in (None, "")
+        }
+        if not safe_fields:
+            return {"message": "No recognised personal fields to update.", "updated": {}}
+
+        # Start from whatever is already saved so we merge, not overwrite.
+        onboarding = candidate.get("onboarding") or {}
+        existing_personal = dict(onboarding.get("personal") or {})
+        existing_personal.update(safe_fields)
+
+        now = datetime.now(UTC)
+        await database.candidates.update_one(
+            {"_id": candidate["_id"]},
+            {
+                "$set": {
+                    "onboarding.personal": existing_personal,
+                    "updated_at": now,
+                }
+            },
+        )
+        return {"message": "Profile updated.", "updated": safe_fields}
 
     async def _require_active_candidate(self, current_user: CurrentUser) -> dict:
         candidate = await database.candidates.find_one(

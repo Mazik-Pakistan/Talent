@@ -326,16 +326,16 @@ export function buildOnboardingPlan({ accessToken, onSectionSaved, requestBankSc
       },
     },
 
-    // ── 7. NDA ──────────────────────────────────────────────────────
+    // ── 7. Self Declaration ────────────────────────────────────────
     {
       id: "nda",
-      label: "Setting up your NDA",
+      label: "Setting up your Self Declaration",
       run: async (ctx) => {
-        await ctx.goToSection("nda", "Moving to your NDA…");
+        await ctx.goToSection("nda", "Moving to your Self Declaration…");
         const employee = ctx.memory.employee || {};
 
         if (ctx.memory.onboarding?.nda?.agreed) {
-          await ctx.think("Your NDA is already signed and on file.", 620);
+          await ctx.think("Your Self Declaration is already signed and on file.", 620);
           return;
         }
 
@@ -351,7 +351,7 @@ export function buildOnboardingPlan({ accessToken, onSectionSaved, requestBankSc
 
         ctx.notify({
           tone: "success",
-          message: "Draw your signature below to finish the NDA.",
+          message: "Draw your signature below to finish the Self Declaration.",
           byAi: true,
           duration: 4600,
         });
@@ -424,7 +424,7 @@ export function buildOnboardingPlan({ accessToken, onSectionSaved, requestBankSc
         const remaining = [];
         if (!ctx.memory.savedSections?.includes("employment")) remaining.push("bank details");
         if (!ctx.memory.onboarding?.references?.references?.length) remaining.push("reference contact details");
-        if (!ctx.memory.onboarding?.nda?.agreed) remaining.push("your NDA signature");
+        if (!ctx.memory.onboarding?.nda?.agreed) remaining.push("your Self Declaration signature");
 
         ctx.log(
           remaining.length ? `Still needs you: ${remaining.join(", ")}.` : "Everything I filled checks out."

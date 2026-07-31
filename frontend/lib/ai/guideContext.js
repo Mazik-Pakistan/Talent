@@ -30,7 +30,7 @@ export const ONBOARDING_WORKFLOW = [
   { id: "employment", label: "Bank Details" },
   { id: "references", label: "References" },
   { id: "documents", label: "Policies" },
-  { id: "nda", label: "NDA" },
+  { id: "nda", label: "Self Declaration" },
   { id: "submit", label: "Review & Submit" },
 ];
 
