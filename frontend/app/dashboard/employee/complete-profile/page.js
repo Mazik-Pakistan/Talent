@@ -10,6 +10,7 @@ import {
   saveProfileCompletion,
 } from "@/services/authService";
 import EmployeeShell from "@/components/employee/EmployeeShell";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import SignaturePad from "@/components/SignaturePad";
 import AiField, { AiCheckRow } from "@/components/ai-experience/AiField";
 import AiSaveToast from "@/components/ai-experience/AiSaveToast";
@@ -592,7 +593,7 @@ function CompleteProfileContent() {
     showToast(result.ok ? "success" : "error", result.ok ? result.message || "Progress saved." : result.message);
   }
 
-  if (loading) return <LoadingSkeleton />;
+  if (loading) return <RecruiterLoader />;
 
   const percentage = progress?.percentage ?? (complete ? 100 : 0);
   const remaining = (progress?.missing_fields || []).filter((key) => key !== "submit").length;
@@ -1441,16 +1442,6 @@ function HistoryRow({ label, value }) {
     <div className={styles.historyRow}>
       <dt>{label}</dt>
       <dd>{value || "—"}</dd>
-    </div>
-  );
-}
-
-function LoadingSkeleton() {
-  return (
-    <div className={styles.skeletonPage} aria-busy="true" aria-label="Loading your onboarding">
-      <div className={`ai-skeleton ${styles.skelHero}`} />
-      <div className={`ai-skeleton ${styles.skelRow}`} />
-      <div className={`ai-skeleton ${styles.skelCard}`} />
     </div>
   );
 }

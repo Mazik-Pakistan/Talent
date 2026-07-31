@@ -13,7 +13,6 @@ import {
   uploadOfferSignature,
 } from "@/services/authService";
 import SignaturePad from "@/components/SignaturePad";
-import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
 import styles from "@/app/styles/auth.module.css";
@@ -594,6 +593,13 @@ function OfferLetterPageContent() {
     </svg>
   );
 
+  // No local loader anymore - let the app's universal/global loader stay
+  // visible until the offer has fully loaded, instead of stacking a
+  // second spinner on top of it.
+  if (loading) {
+    return null;
+  }
+
   return (
     <main className={styles.offerShell}>
       <div className={styles.offerCard}>
@@ -627,9 +633,7 @@ function OfferLetterPageContent() {
           </div>
         </header>
 
-        {loading ? (
-          <RecruiterLoader inline />
-        ) : !offer ? (
+        {!offer ? (
           <div className={styles.offerEmptyState}>
             <h2>No offer letter yet</h2>
             <p>
@@ -990,13 +994,7 @@ function OfferLetterPageContent() {
 
 export default function OfferLetterPage() {
   return (
-    <Suspense
-      fallback={
-        <main className={styles.offerShell}>
-          <RecruiterLoader inline />
-        </main>
-      }
-    >
+    <Suspense fallback={null}>
       <OfferLetterPageContent />
     </Suspense>
   );

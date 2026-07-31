@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ModuleNav } from "@/components/RequireAccess";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import { bootstrapSuperAdmin, clearLocalSession, getApiErrorMessage, logout } from "@/services/authService";
 import { can } from "@/services/rbac";
 
@@ -67,9 +68,7 @@ export default function SuperAdminDashboardPage() {
     }
   }
 
-  if (!user && !needsBootstrap) {
-    return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
-  }
+  if (!user && !needsBootstrap) return <RecruiterLoader />;
 
   if (needsBootstrap && !user) {
     return (

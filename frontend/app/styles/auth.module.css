@@ -656,7 +656,9 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 
 /* ===== OFFER PAGE - SINGLE PANEL BLUE BACKGROUND ===== */
 .offerShell {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh; /* locks the shell to the viewport so it can never grow taller
+                     than the screen — this removes the outer/page scrollbar */
   display: grid;
   place-items: center;
   padding: clamp(18px, 3vw, 38px);
@@ -696,25 +698,32 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   position: relative;
   z-index: 1;
   width: min(100%, 900px);
-  max-height: calc(100vh - 54px);
+  max-height: 100%; /* never exceeds the shell's padded area, so this is the ONLY scrollbar */
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--card);
   border-radius: 24px;
   box-shadow: 0 30px 80px color-mix(in srgb, var(--navy) 43%, transparent), var(--shadow);
   padding: clamp(30px, 4vw, 48px);
   animation: cardIn .65s var(--ease) both;
+  scrollbar-width: thin;
+  scrollbar-color: var(--blue-mid) transparent;
 }
 
 .offerCard::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 .offerCard::-webkit-scrollbar-track {
-  background: var(--border);
-  border-radius: 4px;
+  background: transparent;
 }
 .offerCard::-webkit-scrollbar-thumb {
+  background: var(--blue-mid);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+.offerCard::-webkit-scrollbar-thumb:hover {
   background: var(--blue);
-  border-radius: 4px;
 }
 
 .offerPageHeader {

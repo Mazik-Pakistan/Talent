@@ -560,7 +560,7 @@ function EmployeeProfileContent() {
   }
 
   if (!user) {
-    return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loadingâ€¦</p>;
+    return <RecruiterLoader />;
   }
 
   const displayName = employee?.full_name || user.full_name;
