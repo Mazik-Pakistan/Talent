@@ -625,7 +625,7 @@ function EmployeeProfileContent() {
             <div className={dashStyles.topbarLeft}>
               <div className={dashStyles.topbarTitle}>My Profile</div>
               <div className={dashStyles.topbarSub}>
-                {employee?.employee_id || "â€”"} Â· {employee?.department || "â€”"}
+                {employee?.employee_id || "Null"} Â· {employee?.department || "Null"}
               </div>
             </div>
             <div className={dashStyles.topbarActions}>
@@ -869,7 +869,7 @@ function EmployeeProfileContent() {
                               <strong>{doc.doc_type === "passport" ? "Passport" : "CNIC / NIC"}</strong>
                               <dl className={styles.grid}>
                                 <Row label="Document number" value={doc.document_number} />
-                                <Row label="File" value={doc.file_name || (doc.file_url ? "On file" : "â€”")} />
+                                <Row label="File" value={doc.file_name || (doc.file_url ? "On file" : "Null")} />
                               </dl>
                             </div>
                           ))}
@@ -926,7 +926,7 @@ function EmployeeProfileContent() {
                           <Row label="CGPA / percentage" value={entry.cgpa_or_percentage} />
                           <Row
                             label="Certificate"
-                            value={entry.certificate_file ? "On file" : "â€”"}
+                            value={entry.certificate_file ? "On file" : "Null"}
                           />
                         </dl>
                       </div>
@@ -1670,7 +1670,7 @@ function IconPhone() {
 }
 
 function Row({ label, value, wide }) {
-  const display = value === null || value === undefined || value === "" ? "â€”" : value;
+  const display = value === null || value === undefined || value === "" ? "Null" : value;
   return (
     <div className={`${styles.row} ${wide ? styles.rowWide : ""}`}>
       <dt>{label}</dt>
@@ -1727,14 +1727,14 @@ function PolicyStatus({ label, accepted }) {
 }
 
 function formatDate(value) {
-  if (!value) return "â€”";
+  if (!value) return "Null";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 function formatDateTime(value) {
-  if (!value) return "â€”";
+  if (!value) return "Null";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString(undefined, {
@@ -1747,25 +1747,22 @@ function formatDateTime(value) {
 }
 
 function formatPhoneDisplay(value) {
-  if (!value) return "â€”";
+  if (!value) return "Null";
   return formatPkMobileInput(value);
 }
 
 function joinList(value) {
-  if (!value) return "â€”";
+  if (!value) return "Null";
   if (Array.isArray(value)) {
     const items = value.filter(Boolean);
-    return items.length ? items.join(", ") : "â€”";
+    return items.length ? items.join(", ") : "Null";
   }
-  return value || "â€”";
+  return value || "Null";
 }
 
 function titleCase(value) {
-  if (!value) return "â€”";
+  if (!value) return "Null";
   return String(value)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
-
-
-
