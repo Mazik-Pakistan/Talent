@@ -4,6 +4,7 @@ import Image from "next/image";
 import { cloneElement, useEffect, useState } from "react";
 
 import styles from "@/app/styles/auth.module.css";
+import MascotStatic from "@/components/MascotStatic";
 
 const ICONS = {
   roles: (
@@ -227,7 +228,7 @@ const ICON_SVG_STYLE = {
   height: "20px",
 };
 
-export default function AuthAside({ slides, ariaLabel = "Talent platform introduction" }) {
+export default function AuthAside({ slides, ariaLabel = "Talent platform introduction", mascotMood = "neutral", mascotMessage }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const safeSlides = Array.isArray(slides) && slides.length ? slides : LOGIN_SLIDES;
@@ -312,6 +313,9 @@ export default function AuthAside({ slides, ariaLabel = "Talent platform introdu
             />
           );
         })}
+      </div>
+      <div className={styles.mascotContainer}>
+        <MascotStatic mood={mascotMood} message={mascotMessage} />
       </div>
     </aside>
   );

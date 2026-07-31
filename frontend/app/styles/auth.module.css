@@ -212,7 +212,8 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 .input::placeholder { color: var(--text-faint); }
 .input:hover:not(:disabled) { border-color: var(--blue-mid); }
 .input:focus { outline: 0; border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 19%, transparent), 0 7px 15px color-mix(in srgb, var(--blue) 12%, transparent); }
-.input[aria-invalid="true"] { border-color: var(--auth-error, var(--blue-strong)); }
+.input[aria-invalid="true"], .input.passwordInvalid { border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220, 38, 38, .12); }
+.input.passwordSuccess { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22, 163, 74, .12); }
 .input[aria-invalid="false"]:not(:placeholder-shown) { border-color: var(--blue-strong); }
 
 .hint { margin-top: -1px; color: var(--text-muted); font-size: 9px; }
@@ -243,7 +244,10 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 
 .strengthTrack { height: 4px; overflow: hidden; border-radius: 99px; background: var(--border); }
 .strengthFill { height: 100%; border-radius: inherit; transition: width .35s var(--ease); }
-.strengthLabel { color: var(--blue-strong); font-size: 9px; font-weight: 700; }
+.strengthLabel { font-size: 9px; font-weight: 700; }
+.strengthWeak { color: #dc2626; }
+.strengthMedium { color: #ca8a04; }
+.strengthStrong { color: #16a34a; }
 
 .checkboxField { 
   display: flex; 

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage, verifyOtp, resendOtp, persistLoginSession } from "@/services/authService";
 import styles from "@/app/styles/auth.module.css";
+import MascotStatic from "@/components/MascotStatic";
 
 export default function VerifyEmailPage() {
   const router = useRouter();
@@ -129,6 +130,9 @@ export default function VerifyEmailPage() {
                   : "Enter the 6-digit verification code sent to your email to activate your account."}
               </p>
             </div>
+          </div>
+          <div className={styles.mascotContainer}>
+            <MascotStatic />
           </div>
         </aside>
 

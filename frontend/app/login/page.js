@@ -93,6 +93,7 @@ function LoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
+  const [loginFeedback, setLoginFeedback] = useState("idle");
   
   // Auto-rotation state
   const [contentIndex, setContentIndex] = useState(0);
@@ -137,6 +138,7 @@ function LoginForm() {
 
   function handlePasswordChange(value) {
     setPassword(value);
+    setLoginFeedback(value ? "typing" : "idle");
     if (touched.password) {
       setErrors((current) => ({ ...current, ...validateForm({ email, password: value }) }));
     }
@@ -149,10 +151,12 @@ function LoginForm() {
     const validationErrors = validateForm({ email, password });
     setErrors(validationErrors);
     if (Object.keys(validationErrors).length) {
+      setLoginFeedback("error");
       toast.error("Please fix the errors below and try again.");
       return;
     }
 
+    setLoginFeedback("checking");
     setIsSubmitting(true);
     try {
       const data = await login({
@@ -165,16 +169,21 @@ function LoginForm() {
         rememberMe,
         email: email.trim(),
       });
+      setLoginFeedback("success");
       toast.success("Signed in successfully. Redirecting…");
       router.push(data.redirect_to);
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "Login failed. Please check your credentials."));
+      const message = getApiErrorMessage(error, "Login failed. Please check your credentials.");
+      setErrors((current) => ({ ...current, password: message }));
+      setLoginFeedback("error");
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
   }
 
   const selected = ROLES.find((item) => item.id === role);
+  const mascotMood = loginFeedback === "success" ? "green" : loginFeedback === "error" ? "red" : password ? "yellow" : "neutral";
 
   return (
     <main className={styles.shell}>
@@ -205,7 +214,10 @@ function LoginForm() {
           </div>
 
           <div className={styles.mascotContainer}>
-            <MascotStatic />
+            <MascotStatic
+              mood={mascotMood}
+              message={loginFeedback === "success" ? "Welcome back! 🎉" : undefined}
+            />
           </div>
         </aside>
 
@@ -270,13 +282,13 @@ function LoginForm() {
               <span className={styles.inputShell}>
                 <FieldIcon type="password" />
                 <input
-                  className={styles.input}
+                  className={`${styles.input} ${loginFeedback === "error" ? styles.passwordInvalid : loginFeedback === "success" ? styles.passwordSuccess : ""}`}
                   type={showPassword ? "text" : "password"}
                   name="password"
                   value={password}
                   onChange={(e) => handlePasswordChange(e.target.value)}
                   onBlur={() => handleBlur("password")}
-                  aria-invalid={Boolean(touched.password && errors.password)}
+                  aria-invalid={loginFeedback === "error"}
                   aria-describedby={touched.password && errors.password ? "password-error" : undefined}
                   autoComplete="current-password"
                   placeholder="••••••••"

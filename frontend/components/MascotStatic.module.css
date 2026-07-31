@@ -1,4 +1,7 @@
 .mascotWrapper {
+  --mascot-accent: #38a2ff;
+  --mascot-soft: #e9f4ff;
+  position: relative;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -12,17 +15,32 @@
   width: 250px;
   height: 250px;
   display: block;
-  transition: transform 0.2s ease;
 }
 
-.mascotWrapper:hover .mascotSvg {
-  transform: scale(1.05);
+.greeting {
+  position: absolute;
+  top: 10%;
+  right: 5%;
+  z-index: 1;
+  padding: 7px 12px;
+  border: 1px solid var(--mascot-accent);
+  border-radius: 16px 16px 16px 4px;
+  color: #153d5e;
+  background: var(--mascot-soft);
+  box-shadow: 0 8px 18px rgba(12, 42, 65, .12), inset 0 1px 0 rgba(255, 255, 255, .8);
+  font-size: 13px;
+  font-weight: 800;
+  transition: color .25s ease, border-color .25s ease, background .25s ease;
 }
+
+.moodRed { --mascot-accent: #ef4444; --mascot-soft: #fef2f2; }
+.moodYellow { --mascot-accent: #eab308; --mascot-soft: #fefce8; }
+.moodGreen { --mascot-accent: #22c55e; --mascot-soft: #f0fdf4; }
 
 /* Static colors - no animations */
 .headShell {
   fill: #0c2a41;
-  stroke: #38a2ff;
+  stroke: var(--mascot-accent);
   stroke-width: 2.2;
 }
 
@@ -33,16 +51,8 @@
 }
 
 .eye {
-  fill: #38a2ff;
-  transition: cx 0.15s ease, cy 0.15s ease;
-}
-
-.leftEye {
-  transform-origin: 42px 39px;
-}
-
-.rightEye {
-  transform-origin: 58px 39px;
+  fill: var(--mascot-accent);
+  transition: cx .15s ease, cy .15s ease, fill .25s ease;
 }
 
 .robotNeck {
@@ -53,7 +63,7 @@
 
 .bodyBase {
   fill: #153d5e;
-  stroke: #38a2ff;
+  stroke: var(--mascot-accent);
   stroke-width: 1.5;
 }
 
@@ -62,7 +72,7 @@
 }
 
 .thrusterGlow {
-  fill: #38a2ff;
+  fill: var(--mascot-accent);
   opacity: 0.4;
 }
 
@@ -71,12 +81,12 @@
 }
 
 .antennaTip {
-  fill: #38a2ff;
+  fill: var(--mascot-accent);
 }
 
 .leftArm,
 .rightArm {
   fill: #153d5e;
-  stroke: #38a2ff;
+  stroke: var(--mascot-accent);
   stroke-width: 1.5;
 }

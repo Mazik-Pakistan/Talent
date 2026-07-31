@@ -97,7 +97,12 @@ export default function ResetPasswordPage() {
     <main className={styles.shell}>
       <div className={styles.card}>
         {/* Brand / marketing panel now renders first so it sits on the left */}
-        <AuthAside slides={RECOVERY_SLIDES} ariaLabel="Password reset help" />
+        <AuthAside
+          slides={RECOVERY_SLIDES}
+          ariaLabel="Password reset help"
+          mascotMood={message ? "green" : error ? "red" : "neutral"}
+          mascotMessage={message ? "Password reset — yay! 🎉" : undefined}
+        />
 
         <section
           className={styles.panel}
