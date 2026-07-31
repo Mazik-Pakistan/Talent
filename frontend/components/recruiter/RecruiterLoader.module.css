@@ -1,17 +1,13 @@
 @import url("https://fonts.googleapis.com/css2?family=Poppins:wght@600&display=swap");
 
 .shell {
-  min-height: 100vh;
+  position: fixed;
+  z-index: 2147483647;
+  inset: 0;
   display: grid;
   place-items: center;
   padding: 24px;
   background: #ffffff;
-}
-
-.shellInline {
-  min-height: 0;
-  padding: 16px 0;
-  background: transparent;
 }
 
 .loader {

@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
+import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import {
   clearLocalSession,
   getMyEmployeeProfile,
@@ -166,7 +167,7 @@ function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, c
   }
 
   if (!user) {
-    return <p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>;
+    return <RecruiterLoader />;
   }
 
   const modules = moduleAccess(user?.role);

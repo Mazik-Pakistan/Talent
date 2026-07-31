@@ -2,9 +2,11 @@
 
 import styles from "./RecruiterLoader.module.css";
 
-export default function RecruiterLoader({ inline = false } = {}) {
+// This is the single application loading experience. It must obscure the
+// dashboard shell as well as the content being fetched.
+export default function RecruiterLoader() {
   return (
-    <div className={`${styles.shell} ${inline ? styles.shellInline : ""}`}>
+    <div className={styles.shell}>
       <div className={styles.loader} role="status" aria-live="polite" aria-label="Loading your workspace">
         <div className={styles.grid} aria-hidden="true">
           <span className={styles.chip} />
