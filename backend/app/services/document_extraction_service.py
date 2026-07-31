@@ -127,7 +127,6 @@ BANK_FIELD_KEYS = (
     "swift_code",
 )
 
-
 class DocumentExtractionService:
     def __init__(self):
         self._easyocr_reader = None
@@ -171,8 +170,36 @@ class DocumentExtractionService:
             with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
         except UnicodeDecodeError:
-            with open(file_path, "r", encoding="latin-1") as f:
+            with open(file_path, "r", encoding="cp1252", errors="replace") as f:
                 return f.read()
+
+    @staticmethod
+    def _fix_mojibake(text: str) -> str:
+        """Repair UTF-8 bytes that got misread as cp1252 (e.g. â€" -> —)."""
+        if not text:
+            return text
+        try:
+            repaired = text.encode("cp1252").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            return text
+        return repaired
+
+    @staticmethod
+    def _nullify(value):
+        """Turn None/empty values into the literal string 'Null' for display."""
+        if value is None or value == "" or value == [] or value == {}:
+            return "Null"
+        if isinstance(value, dict):
+            return {k: DocumentExtractionService._nullify(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [DocumentExtractionService._nullify(v) for v in value]
+        return value
+
+    @classmethod
+    def _nullify_fields(cls, fields: dict) -> dict:
+        if not fields:
+            return fields
+        return {k: cls._nullify(v) for k, v in fields.items()}
 
     def extract_text_from_docx(self, file_path: str) -> str:
         import docx
@@ -277,14 +304,16 @@ class DocumentExtractionService:
     def extract_text(self, file_path: str) -> str:
         file_type = self.detect_file_type(file_path)
         if file_type == "pdf":
-            return self.extract_text_from_pdf(file_path)
-        if file_type == "docx":
-            return self.extract_text_from_docx(file_path)
-        if file_type == "txt":
-            return self.extract_text_from_txt(file_path)
-        if file_type == "image":
-            return self.extract_text_from_image(file_path)
-        return ""
+            raw = self.extract_text_from_pdf(file_path)
+        elif file_type == "docx":
+            raw = self.extract_text_from_docx(file_path)
+        elif file_type == "txt":
+            raw = self.extract_text_from_txt(file_path)
+        elif file_type == "image":
+            raw = self.extract_text_from_image(file_path)
+        else:
+            return ""
+        return self._fix_mojibake(raw)
 
     @staticmethod
     def resolve_expected_categories(
@@ -482,7 +511,7 @@ Document Text:
                     class_conf = float(parsed.get("classification_confidence") or 0.85)
                     return {
                         "category": parsed["category"],
-                        "fields": fields,
+                        "fields": self._nullify_fields(fields),
                         "classification_confidence": class_conf,
                         "extraction_confidence": self._field_completeness(fields),
                     }
@@ -490,7 +519,9 @@ Document Text:
             except Exception as e:
                 logger.error(f"LLM document parse failed: {e}. Falling back to heuristics.")
 
-        return self._heuristic_fallback_parse(raw_text)
+        result = self._heuristic_fallback_parse(raw_text)
+        result["fields"] = self._nullify_fields(result.get("fields"))
+        return result
 
     def _heuristic_fallback_parse(self, text: str) -> dict:
         lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
@@ -1056,13 +1087,12 @@ Document Text:
             field_confidence[key] = min(field_confidence.get(key, 0.6), 0.55)
 
         return {
-            "fields": fields,
+            "fields": self._nullify_fields(fields),
             "field_confidence": field_confidence,
             "alternatives": alternatives,
             "extraction_confidence": self._field_completeness(fields),
             "is_bank_document": is_bank_document,
             "engine": engine,
         }
-
 
 document_extraction_service = DocumentExtractionService()
