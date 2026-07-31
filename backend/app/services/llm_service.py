@@ -73,6 +73,24 @@ def _gemini_key_usable() -> bool:
     return False
 
 
+_JSON_SYSTEM = (
+    "You are a precise API. Output a single JSON object. "
+    "Never write explanations, analysis, or chain-of-thought — JSON only."
+)
+_JSON_SYSTEM_COMPACT = (
+    "JSON API only. Continue the JSON object that was started. "
+    "No prose, no reasoning, no markdown. Short values."
+)
+_COMPACT_RETRY_SUFFIX = (
+    "\n\nCRITICAL: Do NOT think out loud. Continue the JSON object now. "
+    'Keep message under 200 chars and at most 3 short suggested_replies. '
+    'Valid shapes: {"action":"tool","tool":"...","args":{...}} '
+    'or {"action":"reply","message":"...","suggested_replies":[],"ui_hint":null}'
+)
+# Prefill forces stubborn free models (e.g. big-pickle) to emit JSON instead of CoT prose.
+_JSON_ASSISTANT_PREFILL = '{"action":'
+
+
 async def call_llm_json(
     prompt: str,
     *,
@@ -105,19 +123,23 @@ async def _call_openrouter_json(
     actual_tokens = max_tokens if max_tokens is not None else _default_max_tokens()
     actual_temp = temperature if temperature is not None else 0.2
 
-    # First attempt, then one retry if OpenRouter says we can't afford max_tokens.
-    for attempt_tokens in (actual_tokens, None):
-        tokens = attempt_tokens if attempt_tokens is not None else actual_tokens
+    # normal (with JSON prefill) → compact retry with the same token budget.
+    attempts: list[tuple[str, str, int]] = [
+        ("normal", _JSON_SYSTEM, actual_tokens),
+        ("compact", _JSON_SYSTEM_COMPACT, actual_tokens),
+    ]
+
+    for attempt_name, system_content, tokens in attempts:
+        user_content = prompt if attempt_name == "normal" else prompt + _COMPACT_RETRY_SUFFIX
         payload: dict[str, Any] = {
             "model": model,
             "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a precise API. Always respond with a single valid JSON object only — no markdown fences.",
-                },
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
+                # Assistant prefill — completion must continue this JSON.
+                {"role": "assistant", "content": _JSON_ASSISTANT_PREFILL},
             ],
-            "temperature": actual_temp,
+            "temperature": actual_temp if attempt_name == "normal" else 0.0,
             "max_tokens": tokens,
             "stream": False,
         }
@@ -128,12 +150,14 @@ async def _call_openrouter_json(
                 response = await client.post(
                     settings.OPENROUTER_BASE_URL, headers=_openrouter_headers(), json=payload
                 )
-                result = _process_openrouter_response(response, model)
+                result, meta = _process_openrouter_response(
+                    response, model, prefill=_JSON_ASSISTANT_PREFILL
+                )
                 if result is not None:
                     return result
 
-                # 402 retry: OpenRouter credit-limit — reduce tokens and retry once.
-                if response.status_code == 402 and attempt_tokens is not None:
+                # 402 retry: OpenRouter credit-limit — reduce tokens and retry once (same attempt style).
+                if response.status_code == 402:
                     affordable = _affordable_tokens_from_error(response.text[:500], requested=tokens)
                     if affordable and affordable < tokens:
                         logger.warning(
@@ -141,12 +165,32 @@ async def _call_openrouter_json(
                             affordable,
                             tokens,
                         )
-                        actual_tokens = affordable
-                        continue
-                    logger.error(
-                        "LLM provider credits nearly exhausted. "
-                        "Add credits at https://openrouter.ai/settings/credits"
+                        payload["max_tokens"] = affordable
+                        response = await client.post(
+                            settings.OPENROUTER_BASE_URL,
+                            headers=_openrouter_headers(),
+                            json=payload,
+                        )
+                        result, meta = _process_openrouter_response(
+                            response, model, prefill=_JSON_ASSISTANT_PREFILL
+                        )
+                        if result is not None:
+                            return result
+                    else:
+                        logger.error(
+                            "LLM provider credits nearly exhausted. "
+                            "Add credits at https://openrouter.ai/settings/credits"
+                        )
+                        return None
+
+                # Empty / truncated / non-JSON → try compact pass once, then give up.
+                if attempt_name == "normal" and meta.get("retryable"):
+                    logger.warning(
+                        "LLM JSON parse failed (finish_reason={}, empty={}); retrying compact.",
+                        meta.get("finish_reason"),
+                        meta.get("empty_content"),
                     )
+                    continue
                 return None
         except httpx.TimeoutException as exc:
             logger.error(
@@ -169,15 +213,53 @@ async def _call_openrouter_json(
     return None
 
 
-def _process_openrouter_response(response: httpx.Response, model: str) -> dict | None:
+def _message_text(message: Any) -> str:
+    """Normalize OpenAI-compatible message content to a plain string."""
+    if message is None:
+        return ""
+    if isinstance(message, str):
+        return message
+    if not isinstance(message, dict):
+        return str(message)
+
+    content = message.get("content")
+    if isinstance(content, str) and content.strip():
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str) and part.strip():
+                parts.append(part)
+            elif isinstance(part, dict):
+                text = part.get("text") or part.get("content")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text)
+        if parts:
+            return "\n".join(parts)
+
+    # Some routed models put the useful text in reasoning / refusal fields.
+    for key in ("reasoning_content", "reasoning", "refusal"):
+        alt = message.get(key)
+        if isinstance(alt, str) and alt.strip():
+            return alt
+    return content if isinstance(content, str) else ""
+
+
+def _process_openrouter_response(
+    response: httpx.Response,
+    model: str,
+    *,
+    prefill: str = "",
+) -> tuple[dict | None, dict[str, Any]]:
     """Parse and validate an OpenAI-compatible Chat Completions response.
 
-    Logs detailed diagnostic information on any failure.
-    Returns the parsed JSON dict on success, None on any error.
+    Returns (parsed_dict_or_None, meta). meta.retryable is True when a compact
+    retry may help (empty content, truncation, or non-JSON text).
     """
     raw_body = response.text
     headers = dict(response.headers)
     status = response.status_code
+    meta: dict[str, Any] = {"retryable": False, "finish_reason": None, "empty_content": False}
 
     if status != 200:
         logger.error(
@@ -188,7 +270,7 @@ def _process_openrouter_response(response: httpx.Response, model: str) -> dict |
             headers,
             raw_body[:1000],
         )
-        return None
+        return None, meta
 
     if not raw_body or not raw_body.strip():
         logger.error(
@@ -197,7 +279,9 @@ def _process_openrouter_response(response: httpx.Response, model: str) -> dict |
             model,
             headers,
         )
-        return None
+        meta["retryable"] = True
+        meta["empty_content"] = True
+        return None, meta
 
     content_type = headers.get("content-type", "")
     if "application/json" not in content_type and "text/json" not in content_type:
@@ -220,10 +304,14 @@ def _process_openrouter_response(response: httpx.Response, model: str) -> dict |
             content_type,
             raw_body[:1000],
         )
-        return None
+        return None, meta
 
     try:
-        text = data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        message = choice.get("message") or {}
+        finish_reason = choice.get("finish_reason") or choice.get("native_finish_reason")
+        meta["finish_reason"] = finish_reason
+        text = _message_text(message)
     except (KeyError, IndexError, TypeError):
         logger.error(
             "LLM call returned 200 with unexpected structure. url={} model={} data={}",
@@ -231,29 +319,47 @@ def _process_openrouter_response(response: httpx.Response, model: str) -> dict |
             model,
             json.dumps(data, default=str)[:500],
         )
-        return None
+        meta["retryable"] = True
+        return None, meta
 
     routed_model = data.get("model") or model
     usage = data.get("usage") or {}
     if usage:
         logger.info(
-            "LLM usage requested={} routed={} prompt_tokens={} completion_tokens={} total={}",
+            "LLM usage requested={} routed={} prompt_tokens={} completion_tokens={} total={} finish_reason={}",
             model,
             routed_model,
             usage.get("prompt_tokens"),
             usage.get("completion_tokens"),
             usage.get("total_tokens"),
+            meta.get("finish_reason"),
         )
 
-    result = _parse_json_content(text)
-    if result is None:
+    if not (text or "").strip():
+        meta["empty_content"] = True
+        meta["retryable"] = True
         logger.warning(
-            "LLM response could not be parsed as JSON. url={} model={} text={}",
+            "LLM call returned empty message content. url={} model={} finish_reason={} message_keys={}",
             settings.OPENROUTER_BASE_URL,
             model,
+            meta.get("finish_reason"),
+            list(message.keys()) if isinstance(message, dict) else type(message).__name__,
+        )
+        return None, meta
+
+    result = _parse_json_content(text, prefill=prefill)
+    if result is None:
+        truncated = str(meta.get("finish_reason") or "").lower() in ("length", "max_tokens")
+        meta["retryable"] = True
+        logger.warning(
+            "LLM response could not be parsed as JSON. url={} model={} finish_reason={} truncated={} text={}",
+            settings.OPENROUTER_BASE_URL,
+            model,
+            meta.get("finish_reason"),
+            truncated,
             text[:500],
         )
-    return result
+    return result, meta
 
 
 async def _call_gemini_json(prompt: str, *, timeout: float) -> dict | None:
@@ -336,14 +442,18 @@ async def _call_gemini_json(prompt: str, *, timeout: float) -> dict | None:
         return None
 
 
-def _parse_json_content(text: str) -> dict | None:
-    if not text:
+def _parse_json_content(text: str, *, prefill: str = "") -> dict | None:
+    if not text and not prefill:
         return None
-    cleaned = text.strip()
+    cleaned = (text or "").strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.strip("`")
         if cleaned.lower().startswith("json"):
             cleaned = cleaned[4:].strip()
+    # Provider may return only the continuation after our assistant prefill.
+    if prefill and cleaned and not cleaned.startswith("{"):
+        cleaned = prefill + cleaned
+
     try:
         parsed = json.loads(cleaned)
         return parsed if isinstance(parsed, dict) else None
@@ -353,7 +463,95 @@ def _parse_json_content(text: str) -> dict | None:
         if start >= 0 and end > start:
             try:
                 parsed = json.loads(cleaned[start : end + 1])
-                return parsed if isinstance(parsed, dict) else None
+                if isinstance(parsed, dict):
+                    return parsed
             except json.JSONDecodeError:
-                return None
+                pass
+        # Common with free models: hit max_tokens mid-object. Close strings/brackets.
+        salvaged = _salvage_truncated_json(cleaned)
+        if salvaged is not None:
+            logger.info(
+                "Salvaged truncated LLM JSON (action={})",
+                salvaged.get("action"),
+            )
+        return salvaged
+
+
+def _salvage_truncated_json(text: str) -> dict | None:
+    """Best-effort repair when the model hit max_tokens mid-JSON."""
+    start = text.find("{")
+    if start < 0:
         return None
+    chunk = text[start:]
+
+    in_string = False
+    escape = False
+    stack: list[str] = []
+    for ch in chunk:
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            stack.append("}")
+        elif ch == "[":
+            stack.append("]")
+        elif ch in "}]":
+            if stack and stack[-1] == ch:
+                stack.pop()
+
+    repaired = chunk.rstrip()
+    if in_string:
+        repaired += '"'
+    repaired = repaired.rstrip()
+    if repaired.endswith(","):
+        repaired = repaired[:-1]
+    while stack:
+        repaired += stack.pop()
+
+    try:
+        parsed = json.loads(repaired)
+        if isinstance(parsed, dict) and parsed.get("action") in ("tool", "reply"):
+            if parsed.get("action") == "reply" and not isinstance(parsed.get("message"), str):
+                return None
+            if parsed.get("action") == "tool" and not parsed.get("tool"):
+                return None
+            replies = parsed.get("suggested_replies")
+            if isinstance(replies, list):
+                parsed["suggested_replies"] = [
+                    r for r in replies if isinstance(r, str) and len(r.strip()) >= 3
+                ]
+            else:
+                parsed["suggested_replies"] = []
+            parsed.setdefault("ui_hint", None)
+            if parsed.get("action") == "tool":
+                parsed.setdefault("args", {})
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    # Last resort: pull action + message even if the rest is garbage.
+    action_m = re.search(r'"action"\s*:\s*"(tool|reply)"', chunk)
+    if not action_m or action_m.group(1) != "reply":
+        return None
+    msg_m = re.search(r'"message"\s*:\s*"((?:\\.|[^"\\])*)(?:"|$)', chunk, re.DOTALL)
+    if not msg_m:
+        return None
+    try:
+        message = json.loads(f'"{msg_m.group(1)}"')
+    except json.JSONDecodeError:
+        message = msg_m.group(1)
+    if not isinstance(message, str) or not message.strip():
+        return None
+    return {
+        "action": "reply",
+        "message": message.strip(),
+        "suggested_replies": [],
+        "ui_hint": None,
+    }

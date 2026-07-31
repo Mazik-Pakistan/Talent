@@ -338,27 +338,71 @@ async def _tool_mark_notifications_read(user: CurrentUser, args: dict) -> ToolRe
 async def _tool_get_my_offer(user: CurrentUser, args: dict) -> ToolResult:
     try:
         result = await offer_service.get_mine(user)
-        return ToolResult(ok=True, data=result)
+        offer = result.get("offer") if isinstance(result, dict) else None
+        if not offer:
+            return ToolResult(
+                ok=True,
+                data={
+                    "offer": None,
+                    "is_signed": False,
+                    "status": None,
+                    "offer_page": "/offer",
+                    "guidance": "No offer letter on file yet.",
+                },
+            )
+        status = (offer.get("status") or "").lower()
+        is_signed = status == "signed" or bool(offer.get("signed_at"))
+        return ToolResult(
+            ok=True,
+            data={
+                "offer": offer,
+                "is_signed": is_signed,
+                "status": status,
+                "offer_page": "/offer",
+                "job_title": offer.get("job_title") or offer.get("title"),
+                "guidance": (
+                    "Offer is ALREADY SIGNED. Tell them clearly it is signed. "
+                    "Do NOT ask them to sign or look for a signature pad. "
+                    "Do NOT write /offer or offer_page in your message — the UI shows a View signed offer link."
+                    if is_signed
+                    else "Offer is not signed yet. Tell them they can review it from the offer button, "
+                    "or call sign_offer only after they clearly accept "
+                    "(agreed=true + full_legal_name). Typed name is enough — no signature pad. "
+                    "Do NOT write /offer in your message."
+                ),
+            },
+        )
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
 
 
 async def _tool_sign_offer(user: CurrentUser, args: dict) -> ToolResult:
-    if not args.get("agreed"):
-        return ToolResult(
-            ok=False,
-            error="agreed must be true. Confirm the candidate accepts the offer terms before signing.",
-        )
     try:
-        offer = await offer_service.get_mine(user)
-        offer_id = (args.get("offer_id") or (offer.get("offer") or offer).get("id") or "").strip()
-        if not offer_id and isinstance(offer.get("offer"), dict):
-            offer_id = str(offer["offer"].get("id") or "")
+        offer_wrap = await offer_service.get_mine(user)
+        offer_obj = (offer_wrap.get("offer") if isinstance(offer_wrap, dict) else None) or {}
+        status = (offer_obj.get("status") or "").lower()
+        if status == "signed" or offer_obj.get("signed_at"):
+            return ToolResult(
+                ok=True,
+                data={
+                    "message": "Your offer letter is already signed — nothing more to sign.",
+                    "already_signed": True,
+                    "is_signed": True,
+                    "status": "signed",
+                    "offer": offer_obj,
+                    "offer_page": "/offer",
+                },
+            )
+
+        if not args.get("agreed"):
+            return ToolResult(
+                ok=False,
+                error="agreed must be true. Confirm the candidate accepts the offer terms before signing.",
+            )
+        offer_id = (args.get("offer_id") or offer_obj.get("id") or "").strip()
         if not offer_id:
             return ToolResult(ok=False, error="No offer found to sign.")
-        full_legal_name = (
-            args.get("full_legal_name") or user.full_name or ""
-        ).strip()
+        full_legal_name = (args.get("full_legal_name") or user.full_name or "").strip()
         if len(full_legal_name) < 2:
             return ToolResult(ok=False, error="full_legal_name is required to sign.")
         payload = OfferSignRequest(
@@ -367,6 +411,9 @@ async def _tool_sign_offer(user: CurrentUser, args: dict) -> ToolResult:
             agreed=True,
         )
         result = await offer_service.sign(user, offer_id, payload)
+        if isinstance(result, dict):
+            result.setdefault("offer_page", "/offer")
+            result.setdefault("is_signed", True)
         return ToolResult(ok=True, data=result)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
@@ -1690,7 +1737,11 @@ CANDIDATE_PARITY_TOOLS: list[Tool] = [
     ),
     Tool(
         name="get_my_offer",
-        description="Fetch the candidate's current offer letter and status.",
+        description=(
+            "Fetch the candidate's current offer letter and status. "
+            "Response includes is_signed, status, offer_page (/offer), and guidance — "
+            "if is_signed=true do not ask them to sign again."
+        ),
         parameters={},
         handler=_tool_get_my_offer,
         roles=("candidate",),
@@ -1706,7 +1757,9 @@ CANDIDATE_PARITY_TOOLS: list[Tool] = [
         name="sign_offer",
         description=(
             "Digitally sign the candidate's offer. Requires agreed=true and full_legal_name. "
-            "Only call after the candidate clearly confirms they accept the terms."
+            "Only call after the candidate clearly confirms they accept the terms AND get_my_offer "
+            "shows is_signed=false. Typed full_legal_name is enough — no signature pad is required. "
+            "If already signed, the tool returns already_signed=true (do not keep asking)."
         ),
         parameters={
             "agreed": "boolean, must be true",

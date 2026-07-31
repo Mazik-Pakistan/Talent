@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL: str = "openrouter/free"
     # Keep default under typical free-tier affordability; 402 retries lower further.
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1/chat/completions"
-    OPENROUTER_MAX_TOKENS: int = 2048
+    OPENROUTER_MAX_TOKENS: int = 4096
     # Direct Gemini fallback model (only used if OpenRouter fails / missing)
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/models"
     GEMINI_MODEL: str = "gemini-2.0-flash"

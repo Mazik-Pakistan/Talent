@@ -377,6 +377,10 @@ class EmployeeService:
             expires_at = offer.get("expires_at")
             if expires_at and expires_at.tzinfo is None:
                 expires_at = expires_at.replace(tzinfo=UTC)
+            status = (offer.get("status") or "").lower()
+            is_signed = status == "signed" or bool(offer.get("signed_at"))
+            # Calendar validity matters only for unsigned offers. Signed = accepted.
+            past_validity = bool(expires_at and expires_at < now)
             docs_complete = True
             ready.append(
                 {
@@ -389,7 +393,7 @@ class EmployeeService:
                     "office_location": offer.get("office_location") or candidate.get("office_location"),
                     "start_date": offer.get("start_date") or candidate.get("start_date"),
                     "expires_at": expires_at.isoformat() if hasattr(expires_at, "isoformat") else expires_at,
-                    "is_expired": bool(expires_at and expires_at < now),
+                    "is_expired": past_validity and not is_signed,
                     "signed_at": offer.get("signed_at").isoformat() if hasattr(offer.get("signed_at"), "isoformat") else offer.get("signed_at"),
                     "monthly_salary": offer.get("monthly_salary"),
                     "reporting_manager": offer.get("reporting_manager"),

@@ -269,16 +269,16 @@ function buildAssistantContext({ pathname, searchParams, auth, extraContext }) {
 }
 
 /**
- * DocumentsAttachment — recruiter-facing document review cards rendered inline
- * in the agent chat. Verify / reject / request-reupload act directly against
- * the documents API (not through the LLM) so the outcome is instant; a short
- * confirmation line is then appended to the conversation for continuity.
+ * DocumentsAttachment — role-aware document cards in agent chat.
+ * Recruiters: verify / reject / request-reupload.
+ * Candidates & employees: view + open + re-upload their own files (no recruiter actions).
  */
-function DocumentsAttachment({ attachment, auth, onLocalNote }) {
+function DocumentsAttachment({ attachment, auth, onLocalNote, onSelfReupload }) {
   const [busyId, setBusyId] = useState(null);
   const [reasonFor, setReasonFor] = useState(null); // { id, kind }
   const [reason, setReason] = useState("");
   const [docs, setDocs] = useState(attachment.data.documents || []);
+  const isRecruiter = auth?.user?.role === "recruiter" || auth?.user?.role === "super_admin";
 
   useEffect(() => {
     setDocs(attachment.data.documents || []);
@@ -293,7 +293,7 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
   }
 
   async function act(doc, status, rejectionReason) {
-    if (!auth) return;
+    if (!auth || !isRecruiter) return;
     const id = docKey(doc);
     if (!id) return;
     setBusyId(id);
@@ -356,9 +356,11 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
         const isVerified = status === "verified";
         const isFinalReject = status === "rejected";
         const awaitingReupload = status === "reupload_required";
-        const canVerify = !isVerified && !awaitingReupload;
-        const canReject = !isVerified && !awaitingReupload && !isFinalReject;
-        const canRequestReupload = !isVerified && !awaitingReupload;
+        const canVerify = isRecruiter && !isVerified && !awaitingReupload;
+        const canReject = isRecruiter && !isVerified && !awaitingReupload && !isFinalReject;
+        const canRequestReupload = isRecruiter && !isVerified && !awaitingReupload;
+        const canSelfReupload =
+          !isRecruiter && typeof onSelfReupload === "function" && !isVerified;
         const reasonOpen = reasonFor?.id === id ? reasonFor.kind : null;
 
         return (
@@ -407,6 +409,17 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
                 <span className={styles.docDoneHint}>Re-upload requested</span>
               ) : null}
 
+              {canSelfReupload ? (
+                <button
+                  type="button"
+                  className={styles.docReuploadBtn}
+                  disabled={busy}
+                  onClick={() => onSelfReupload(doc)}
+                >
+                  Re-upload
+                </button>
+              ) : null}
+
               {canVerify ? (
                 <button
                   type="button"
@@ -441,7 +454,7 @@ function DocumentsAttachment({ attachment, auth, onLocalNote }) {
               ) : null}
             </div>
 
-            {reasonOpen ? (
+            {isRecruiter && reasonOpen ? (
               <div className={styles.reasonRow}>
                 <input
                   className={styles.reasonInput}
@@ -635,17 +648,19 @@ function OfferAttachment({ attachment }) {
   if (!offer || typeof offer !== "object") {
     return <div className={styles.attachmentEmpty}>No offer on file.</div>;
   }
+  const status = (offer.status || "unknown").toString().toLowerCase();
+  const isSigned = status === "signed" || Boolean(offer.signed_at);
   return (
     <div className={styles.personCard}>
       <div className={styles.personName}>{offer.job_title || "Offer letter"}</div>
       <div className={styles.personMeta}>
         {[offer.department, offer.employment_type, offer.start_date].filter(Boolean).join(" · ")}
       </div>
-      <span className={`${styles.statusPill} ${styles.tone_neutral}`}>
-        {(offer.status || "unknown").toString().replaceAll("_", " ")}
+      <span className={`${styles.statusPill} ${isSigned ? styles.tone_good : styles.tone_neutral}`}>
+        {status.replaceAll("_", " ")}
       </span>
       <a className={styles.docOpenBtn} href="/offer" style={{ marginTop: 8, display: "inline-flex" }}>
-        Open offer page
+        {isSigned ? "View signed offer" : "Review & sign offer"}
       </a>
     </div>
   );
@@ -709,10 +724,17 @@ function ConfirmationGate({ confirmation, onApprove, onCancel, disabled }) {
   );
 }
 
-function Attachment({ attachment, auth, onLocalNote }) {
+function Attachment({ attachment, auth, onLocalNote, onSelfReupload }) {
   if (!attachment) return null;
   if (attachment.type === "documents") {
-    return <DocumentsAttachment attachment={attachment} auth={auth} onLocalNote={onLocalNote} />;
+    return (
+      <DocumentsAttachment
+        attachment={attachment}
+        auth={auth}
+        onLocalNote={onLocalNote}
+        onSelfReupload={onSelfReupload}
+      />
+    );
   }
   if (attachment.type === "candidates" || attachment.type === "employees") {
     return <PeopleAttachment attachment={attachment} />;
@@ -959,14 +981,30 @@ const AgentChatCoreInner = forwardRef(function AgentChatCoreInner({ variant = "f
       // For onboarding-purpose doc types (cnic, passport, transcript, resume) use the
       // purpose-aware endpoint so employee.onboarding is kept in sync via attach_uploaded_file.
       // For generic/unsupported types fall back to the general document upload endpoint.
+      let uploadResult = null;
       if (purpose) {
         formData.append("purpose", purpose);
-        await uploadOnboardingFile(formData, auth.accessToken);
+        uploadResult = await uploadOnboardingFile(formData, auth.accessToken);
       } else {
-        await uploadDocument(formData, auth.accessToken);
+        uploadResult = await uploadDocument(formData, auth.accessToken);
       }
       const label = DOC_TYPE_LABEL[hint.doc_type] || hint.doc_type;
-      await doSend(`I've uploaded my ${label}.`);
+      const ocr = uploadResult?.ocr_result || uploadResult?.document?.ocr_result;
+      const fields = ocr?.fields && typeof ocr.fields === "object" ? ocr.fields : null;
+      if (fields && Object.keys(fields).length > 0 && ocr?.status !== "rejected_type") {
+        await doSend(
+          `I've uploaded my ${label}. OCR extracted these fields — save them into my onboarding/profile now ` +
+            `(use update_my_profile and/or save_step with only real extracted values; ask me to confirm anything uncertain): ` +
+            JSON.stringify(fields)
+        );
+      } else if (ocr?.status === "rejected_type") {
+        await doSend(
+          `I've uploaded a file meant to be my ${label}, but OCR rejected the document type` +
+            `${ocr.rejection_message ? ` (${ocr.rejection_message})` : ""}. Please tell me what to do next.`
+        );
+      } else {
+        await doSend(`I've uploaded my ${label}.`);
+      }
     } catch (err) {
       setErrorBanner(getApiErrorMessage(err, "That upload didn't go through — please try again."));
     } finally {
@@ -1089,7 +1127,18 @@ const AgentChatCoreInner = forwardRef(function AgentChatCoreInner({ variant = "f
                   ) : null}
                   {!isUser && attachment ? (
                     <div className={styles.attachmentWrap}>
-                      <Attachment attachment={attachment} auth={auth} onLocalNote={onLocalNote} />
+                      <Attachment
+                        attachment={attachment}
+                        auth={auth}
+                        onLocalNote={onLocalNote}
+                        onSelfReupload={(doc) =>
+                          openDocPicker({
+                            type: "upload",
+                            doc_type: doc.doc_type || "other",
+                            category: categoryForDocType(doc.doc_type),
+                          })
+                        }
+                      />
                     </div>
                   ) : null}
                   {!isUser && confirmation && isLatest ? (
@@ -1100,7 +1149,8 @@ const AgentChatCoreInner = forwardRef(function AgentChatCoreInner({ variant = "f
                       onCancel={cancelConfirmation}
                     />
                   ) : null}
-                  {!isUser && actions.length > 0 ? (
+                  {/* Only the latest reply shows nav chips — repeating them on every bubble looks spammy. */}
+                  {!isUser && isLatest && actions.length > 0 ? (
                     <div className={styles.suggestions}>
                       {actions.map((action) => (
                         <button

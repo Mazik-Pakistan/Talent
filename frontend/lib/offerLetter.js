@@ -141,6 +141,25 @@ export function buildOfferLetterHtml(offer, options = {}) {
   }
   <h3>Terms & Conditions</h3>
   <div class="terms">${offer?.terms || ""}</div>
+  ${
+    offer?.expires_at
+      ? `<p class="body-text" style="margin-top: 18px;">
+    <strong>Response deadline:</strong> ${new Date(offer.expires_at).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    })}.
+    Please sign and return this offer on or before this date.
+  </p>`
+      : ""
+  }
+  ${
+    offer?.extension_note || offer?.message_to_candidate
+      ? `<p class="body-text" style="margin-top: 12px; padding: 12px 14px; background: #f0f7ff; border-radius: 8px;">
+    <strong>Note from recruiter:</strong> ${offer.extension_note || offer.message_to_candidate}
+  </p>`
+      : ""
+  }
   <p class="body-text" style="margin-top: 25px;">
     To accept this offer, please sign below and return the signed copy by the offer expiry date.
     We look forward to welcoming you aboard.

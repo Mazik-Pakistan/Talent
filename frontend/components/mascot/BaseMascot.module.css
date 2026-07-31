@@ -10,7 +10,8 @@
   pointer-events: none;
   font-family: var(--font-geist-sans), 'Inter', -apple-system, sans-serif;
   max-width: min(320px, calc(100vw - 16px));
-  max-height: calc(100vh - 16px);
+  /* Do not clip the tip bubble — panel max-height is computed from free viewport space. */
+  max-height: none;
 }
 
 .panelAlignStart {
@@ -153,6 +154,7 @@
   position: absolute;
   top: 8px;
   right: 10px;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -650,17 +652,52 @@
     0 4px 12px rgba(0, 0, 0, 0.04),
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
   width: min(312px, calc(100vw - 48px));
-  /* Real max-height is set inline from free space around the FAB */
   max-height: min(520px, calc(100vh - 24px));
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
+  flex: 0 0 auto;
+  /* Clip sheen/transforms without ever creating a scrollbar (unlike overflow:auto/hidden quirks). */
+  overflow: clip;
   overscroll-behavior: contain;
   pointer-events: auto;
   animation: panelRise 0.42s cubic-bezier(0.2, 0.9, 0.25, 1);
   color: #123a63;
   z-index: 960;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panelBody {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+/* Only the long coaching checklist needs an inner scroller — short page tips never do. */
+.panelBodyScrollable {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.panelSheen {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.55) 45%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  animation: panelSheen 5.5s ease-in-out infinite;
 }
 
 .panelLive {
@@ -685,20 +722,6 @@
 
 .panelReady {
   border-color: rgba(16, 185, 129, 0.45);
-}
-
-.panelSheen {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    110deg,
-    transparent 20%,
-    rgba(255, 255, 255, 0.55) 45%,
-    transparent 70%
-  );
-  transform: translateX(-120%);
-  animation: panelSheen 5.5s ease-in-out infinite;
 }
 
 .aiLiveBar {
@@ -1022,8 +1045,9 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 148px;
-  overflow: auto;
+  /* Grow with the checklist; outer panel scrolls only when the viewport is tight. */
+  max-height: none;
+  overflow: visible;
 }
 
 .stepItem {

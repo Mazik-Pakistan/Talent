@@ -63,6 +63,18 @@ export default function OfferSummaryCard({
         </div>
       </div>
 
+      {offer.extension_note || (offer.extended_at && offer.extended_by_name) ? (
+        <div className="offer-summary-section">
+          <p className="offer-summary-label">Validity extension</p>
+          <p className="offer-summary-desc" style={{ margin: 0 }}>
+            {offer.extended_by_name
+              ? `Extended by ${offer.extended_by_name}${offer.extended_at ? ` on ${formatDate(offer.extended_at)}` : ""}.`
+              : "This offer validity was extended."}
+            {offer.extension_note ? ` ${offer.extension_note}` : ""}
+          </p>
+        </div>
+      ) : null}
+
       {(offer.salary_breakdown || []).length > 0 && (
         <div className="offer-summary-section">
           <p className="offer-summary-label">Salary breakdown / allowances</p>

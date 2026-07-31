@@ -1993,6 +1993,9 @@ async def _tool_get_status(user: CurrentUser, args: dict) -> ToolResult:
         onboarding = await candidate_service.get_onboarding(user)
         progress = await candidate_service.get_progress(user)
         docs = await document_service.list_mine(user)
+        ob = onboarding.get("onboarding") or {}
+        resume = ob.get("resume") or {}
+        summary = (resume.get("summary") or "").strip()
         return ToolResult(
             ok=True,
             data={
@@ -2003,6 +2006,9 @@ async def _tool_get_status(user: CurrentUser, args: dict) -> ToolResult:
                 "missing_fields": progress.get("missing_fields"),
                 "steps": progress.get("steps"),
                 "documents_on_file": [d.get("doc_type") for d in docs.get("documents", [])],
+                "resume_file_on_file": bool(resume.get("file_url") or resume.get("file_name")),
+                "resume_summary_ready": len(summary) >= 20,
+                "resume_summary_length": len(summary),
             },
         )
     except Exception as exc:  # noqa: BLE001
@@ -2011,6 +2017,38 @@ async def _tool_get_status(user: CurrentUser, args: dict) -> ToolResult:
 
 EMPLOYEE_STEP_FIELDS = ("personal", "education", "emergency", "employment", "references", "documents", "nda")
 CANDIDATE_STEP_FIELDS = ("personal", "education", "skills", "government_docs", "resume")
+
+
+def _extract_resume_summary(args: dict) -> str | None:
+    """Accept summary from common places the model might put it."""
+    for key in ("summary", "resume_summary"):
+        val = args.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    resume_arg = args.get("resume")
+    if isinstance(resume_arg, dict):
+        val = resume_arg.get("summary")
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    skills_arg = args.get("skills")
+    if isinstance(skills_arg, dict):
+        val = skills_arg.get("summary")
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return None
+
+
+def _merge_candidate_resume(existing: dict | None, args: dict, incoming: dict | None) -> dict:
+    """Merge uploaded resume file metadata with any summary provided in this turn."""
+    resume = dict(existing or {})
+    if isinstance(incoming, dict):
+        for key in ("file_url", "file_name", "summary"):
+            if incoming.get(key) is not None and str(incoming.get(key)).strip() != "":
+                resume[key] = incoming[key]
+    summary = _extract_resume_summary(args)
+    if summary:
+        resume["summary"] = summary
+    return resume
 
 
 async def _tool_save_step(user: CurrentUser, args: dict) -> ToolResult:
@@ -2029,18 +2067,46 @@ async def _tool_save_step(user: CurrentUser, args: dict) -> ToolResult:
             payload_dict = {"step": step}
             for key in CANDIDATE_STEP_FIELDS:
                 if args.get(key) is not None:
-                    payload_dict[key] = args[key]
-            # `personal` and `skills` steps must be submitted together with the identity
-            # document / resume metadata. Those are written directly onto the candidate
-            # record when a file is uploaded (see attach_uploaded_file) — reuse whatever
-            # is already on file instead of asking the LLM to invent file URLs.
-            if step in ("personal", "skills"):
+                    # Don't copy a nested skills.summary into the skills schema.
+                    if key == "skills" and isinstance(args.get(key), dict):
+                        skills = {k: v for k, v in args[key].items() if k != "summary"}
+                        payload_dict[key] = skills
+                    else:
+                        payload_dict[key] = args[key]
+            # `personal` and `skills` must include identity / resume file metadata already on file.
+            if step in ("personal", "skills", "resume"):
                 existing = await candidate_service.get_onboarding(user)
                 existing_onboarding = existing.get("onboarding") or {}
                 if step == "personal" and "government_docs" not in payload_dict and existing_onboarding.get("government_docs"):
                     payload_dict["government_docs"] = existing_onboarding["government_docs"]
-                if step == "skills" and "resume" not in payload_dict and existing_onboarding.get("resume"):
-                    payload_dict["resume"] = existing_onboarding["resume"]
+                if step in ("skills", "resume"):
+                    resume = _merge_candidate_resume(
+                        existing_onboarding.get("resume"),
+                        args,
+                        payload_dict.get("resume") if isinstance(payload_dict.get("resume"), dict) else None,
+                    )
+                    has_file = bool(resume.get("file_url") or resume.get("file_name"))
+                    summary = (resume.get("summary") or "").strip()
+                    if step == "skills" and not has_file:
+                        return ToolResult(
+                            ok=False,
+                            error=(
+                                "Resume file is missing. Ask for an upload with "
+                                'ui_hint {"type":"upload","doc_type":"resume"} — do not invent file URLs.'
+                            ),
+                        )
+                    if has_file and len(summary) < 20:
+                        return ToolResult(
+                            ok=False,
+                            error=(
+                                "Resume summary must be at least 20 characters. "
+                                'Retry save_step with resume: {"summary": "<text from the user chat>"} '
+                                "(include skills: {...} when step=skills). "
+                                "If the user already wrote a summary in this conversation, use that text — do not ask again."
+                            ),
+                        )
+                    if has_file:
+                        payload_dict["resume"] = {**resume, "summary": summary}
             payload = OnboardingSaveRequest.model_validate(payload_dict)
             result = await candidate_service.save_onboarding(user, payload)
         return ToolResult(ok=True, data={"message": result.get("message", "Saved.")})
@@ -2087,19 +2153,23 @@ SELF_SERVE_TOOLS: list[Tool] = [
     Tool(
         name="save_step",
         description=(
-            "Save one onboarding/profile step from structured fields extracted out of the conversation. "
+            "Save one onboarding/profile step; for candidate skills pass skills plus resume.summary (≥20 chars). "
             "`step` must be one of the step names returned by get_status (e.g. personal, education, skills, "
             "emergency, employment, references, documents, nda, submit). Put the step's data directly under a "
             "key matching the step name, e.g. {\"step\": \"personal\", \"personal\": {...fields...}}. Only "
-            "'personal' and 'skills' steps need identity-document / resume metadata too, but you never have to "
-            "supply that yourself — it's filled in automatically from whatever the person already uploaded. "
-            "For step 'submit', pass no extra keys."
+            "'personal' and 'skills' steps need identity-document / resume file metadata too, but you never have to "
+            "supply file URLs yourself — they're filled in automatically from whatever the person already uploaded. "
+            "For candidate skills: also pass resume.summary (or top-level summary) with ≥20 characters of "
+            "professional summary text from the chat, together with skills: {technical_skills, soft_skills, "
+            "languages, certifications}. For step 'submit', pass no extra keys."
         ),
         parameters={
             "step": "string, required",
             "personal": "object, for step=personal — first_name, last_name, date_of_birth (YYYY-MM-DD), gender, nationality, marital_status, national_id, current_address, permanent_address, city, state, postal_code, country",
             "education": "object {entries: [{institution, degree, field_of_study, year_completed, board_university?, cgpa_or_percentage?}]}, for step=education",
             "skills": "object {technical_skills: [], soft_skills: [], languages: [], certifications: []}, for step=skills",
+            "resume": "object {summary: string ≥20 chars}, for candidate step=skills or step=resume — file_url is auto-filled from upload",
+            "summary": "optional alias for resume.summary (≥20 chars) when saving skills/resume",
             "emergency": "object {name, relationship, phone}, for step=emergency (employee only)",
             "employment": "object {bank_name, account_holder_name, account_number, iban, branch, branch_code}, for step=employment (employee only)",
             "references": "object {references: [{full_name, relationship, email, phone, company}, ...]} (min 2), for step=references (employee only)",

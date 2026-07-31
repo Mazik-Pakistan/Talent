@@ -677,6 +677,20 @@ function OfferLetterPageContent() {
                   {negotiation.recruiter_note ? `: ${negotiation.recruiter_note}` : "."} You can continue with this offer.
                 </p>
               )}
+              {offer.extended_at && ["sent", "viewed"].includes(offer.status) && (
+                <p className={`${styles.offerFormMessage} ${styles.offerFormMessageWarning}`}>
+                  Your recruiter extended this offer
+                  {offer.extended_by_name ? ` (${offer.extended_by_name})` : ""}
+                  {offer.expires_at
+                    ? ` — new response deadline ${new Date(offer.expires_at).toLocaleDateString(undefined, {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}`
+                    : ""}
+                  {offer.extension_note ? `. Note: ${offer.extension_note}` : "."}
+                </p>
+              )}
 
               {/* Role Details */}
               <section className={styles.offerSection}>
@@ -708,6 +722,18 @@ function OfferLetterPageContent() {
                     <dt>Start date</dt>
                     <dd>{offer.start_date}</dd>
                   </div>
+                  {offer.expires_at ? (
+                    <div className={styles.offerTerm}>
+                      <dt>Response deadline</dt>
+                      <dd>
+                        {new Date(offer.expires_at).toLocaleDateString(undefined, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </dd>
+                    </div>
+                  ) : null}
                 </dl>
               </section>
 
