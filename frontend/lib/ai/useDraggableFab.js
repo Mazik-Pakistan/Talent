@@ -430,8 +430,7 @@ export default function useDraggableFab(
         style.top = Math.max(MARGIN, live.top);
         style.bottom = "auto";
       }
-      // Cap the whole stack so FAB+panel never leave the viewport.
-      style.maxHeight = `${window.innerHeight - MARGIN * 2}px`;
+      // Panel max-height (not wrapper) keeps tips inside the viewport.
     }
   }
 

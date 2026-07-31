@@ -245,13 +245,14 @@ export default function BaseMascot({
   const [skippedOptionalKeys, setSkippedOptionalKeys] = useState([]);
   const [coachEngaged, setCoachEngaged] = useState(false);
   const [browsingTips, setBrowsingTips] = useState(false);
+  const panelRef = useRef(null);
 
   const { wrapRef, style: fabStyle, dragging, didDrag, handleProps, alignH, alignV, panelMaxHeight } =
     useDraggableFab(resolvedFabKey, {
       fabRef: mascotBtnRef,
       panelOpen,
-      // Reflow when guide expands (Guide me through it) or tip browsing changes height.
-      panelLayoutKey: `${coachEngaged ? "guide" : "idle"}:${browsingTips ? "tips" : "home"}`,
+      // Reflow when guide expands, tip browsing, or tip pager changes height.
+      panelLayoutKey: `${coachEngaged ? "guide" : "idle"}:${browsingTips ? "tips" : "home"}:${suggestionIndex}:${insightCount}`,
     });
 
   const bubbleTimerRef = useRef(null);
@@ -1402,13 +1403,10 @@ export default function BaseMascot({
                   .filter(Boolean)
                   .join(" ")}
                 data-mascot-panel
+                ref={panelRef}
                 role="status"
                 aria-live="polite"
-                style={
-                  panelMaxHeight
-                    ? { maxHeight: panelMaxHeight, overflowX: "hidden", overflowY: "auto" }
-                    : undefined
-                }
+                style={panelMaxHeight ? { maxHeight: panelMaxHeight } : undefined}
               >
                 <div className={styles.panelSheen} aria-hidden="true" />
                 <button
@@ -1431,6 +1429,11 @@ export default function BaseMascot({
                   &times;
                 </button>
 
+                <div
+                  className={[styles.panelBody, coaching ? styles.panelBodyScrollable : ""]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
                 <div className={styles.aiLiveBar} aria-hidden="true">
                   <span className={`${styles.aiLiveDots} ${isWorking ? styles.aiLiveDotsActive : ""}`}>
                     <i />
@@ -1747,6 +1750,7 @@ export default function BaseMascot({
                     </ul>
                   </details>
                 ) : null}
+                </div>
 
                 <div className={styles.bubbleArrow} />
               </div>

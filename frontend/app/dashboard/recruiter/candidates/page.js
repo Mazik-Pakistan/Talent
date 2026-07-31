@@ -11,7 +11,6 @@ import {
   approveOffer,
   counterOfferNegotiation,
   editAndResendOffer,
-  extendOfferValidity,
   getApiErrorMessage,
   getOnboardingInProgress,
   getReadyForConversion,
@@ -27,6 +26,7 @@ import {
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
 import OfferSummaryCard from "@/components/offers/OfferSummaryCard";
 import SendReminderModal from "@/components/recruiter/SendReminderModal";
+import ExtendOfferValidityModal from "@/components/recruiter/ExtendOfferValidityModal";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -42,7 +42,6 @@ export default function RecruiterCandidatesPage() {
   const [error, setError] = useState("");
   const [expandedCandidateId, setExpandedCandidateId] = useState(null);
   const [approvingOfferId, setApprovingOfferId] = useState(null);
-  const [extendingOfferId, setExtendingOfferId] = useState(null);
   const [itBusyOfferId, setItBusyOfferId] = useState(null);
   const [negoBusyId, setNegoBusyId] = useState(null);
   const [negoBusyAction, setNegoBusyAction] = useState(null);
@@ -52,6 +51,7 @@ export default function RecruiterCandidatesPage() {
   const [conversionMessage, setConversionMessage] = useState("");
   const [search, setSearch] = useState("");
   const [reminderTarget, setReminderTarget] = useState(null);
+  const [extendOfferTarget, setExtendOfferTarget] = useState(null);
   const [negoPopup, setNegoPopup] = useState(null);
   const [editingOffer, setEditingOffer] = useState(false);
   const [editDraft, setEditDraft] = useState(null);
@@ -273,27 +273,8 @@ export default function RecruiterCandidatesPage() {
     }
   }
 
-  async function handleExtendOfferValidity(offer) {
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-    const input = window.prompt("Extend offer validity by how many days?", "7");
-    if (input === null) return;
-    const extraDays = Number(input);
-    if (!Number.isInteger(extraDays) || extraDays < 1 || extraDays > 90) {
-      toast.error("Enter a whole number of days between 1 and 90.");
-      return;
-    }
-
-    setExtendingOfferId(offer.id);
-    try {
-      const data = await extendOfferValidity(offer.id, { extra_days: extraDays }, accessToken);
-      toast.success(data.message || "Offer validity extended.");
-      await loadCandidates();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not extend offer validity."));
-    } finally {
-      setExtendingOfferId(null);
-    }
+  function openExtendOfferValidity(offer) {
+    setExtendOfferTarget(offer);
   }
 
   async function handleSendIt(candidate) {
@@ -781,11 +762,10 @@ export default function RecruiterCandidatesPage() {
                           <button
                             type="button"
                             className={styles.primaryButton}
-                            disabled={extendingOfferId === offer.id}
                             title="Extend validity for this expired unsigned offer"
-                            onClick={() => handleExtendOfferValidity(offer)}
+                            onClick={() => openExtendOfferValidity(offer)}
                           >
-                            {extendingOfferId === offer.id ? "Extending…" : "Extend validity"}
+                            Extend validity
                           </button>
                         ) : null}
                       </div>
@@ -948,7 +928,7 @@ export default function RecruiterCandidatesPage() {
                       const it = candidate.it_provisioning;
                       const itComplete = Boolean(candidate.can_activate);
                       const itPending = it && !itComplete;
-                      const isExpired = Boolean(candidate.is_expired);
+                      const isExpired = Boolean(candidate.is_expired) && !candidate.signed_at;
                       const approveLabel = approvingOfferId === candidate.offer_id
                         ? "Activating…"
                         : itComplete
@@ -1580,6 +1560,17 @@ export default function RecruiterCandidatesPage() {
         onClose={() => setReminderTarget(null)}
         onSent={(data) => {
           toast.success(data?.message || "Reminder sent.");
+          loadCandidates();
+        }}
+      />
+
+      <ExtendOfferValidityModal
+        open={Boolean(extendOfferTarget)}
+        offer={extendOfferTarget}
+        accessToken={typeof window !== "undefined" ? localStorage.getItem("access_token") : null}
+        onClose={() => setExtendOfferTarget(null)}
+        onExtended={(data) => {
+          toast.success(data?.message || "Offer validity extended. Candidate notified.");
           loadCandidates();
         }}
       />

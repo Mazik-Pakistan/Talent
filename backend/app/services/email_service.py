@@ -446,6 +446,67 @@ class EmailService:
             self._branded_shell("Offer Letter", f"You&rsquo;ve been offered a role, {_escape_text(full_name)}!", body)
         )
 
+    def send_offer_validity_extended(
+        self,
+        *,
+        to_email: str,
+        full_name: str,
+        job_title: str,
+        recruiter_name: str,
+        extra_days: int,
+        new_expires_at: str,
+        note: str | None = None,
+        offer_link: str | None = None,
+    ) -> None:
+        """Notify candidate that an expired offer was reopened with a new response deadline."""
+        days_label = f"{extra_days} day" if extra_days == 1 else f"{extra_days} days"
+        safe_link = _escape_text(
+            offer_link or f"{settings.frontend_base_url.rstrip('/')}/offer",
+            quote=True,
+        )
+        note_block = ""
+        if note and str(note).strip():
+            note_block = f"""
+<p style="margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;
+          background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;padding:16px 18px;">
+  <strong style="display:block;margin-bottom:6px;color:#0D5C91;">Message from {_escape_text(recruiter_name or 'your recruiter')}</strong>
+  {_escape_text(note.strip())}
+</p>
+"""
+        subject = f"Your offer letter was extended — {job_title or 'TalentAI'}"
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  {_escape_text(recruiter_name or 'Your recruiter')} extended the validity of your offer for
+  <strong>{_escape_text(job_title or 'the role')}</strong> by <strong>{_escape_text(days_label)}</strong>.
+</p>
+<p style="margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Your updated response deadline is <strong>{_escape_text(new_expires_at)}</strong>.
+  Review the letter and sign before then.
+</p>
+{note_block}
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 8px;">
+  <tr>
+    <td align="center">
+      <a href="{safe_link}" class="cta-btn"
+         style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                font-weight:600;font-size:15px;letter-spacing:0.2px;
+                box-shadow:0 4px 16px rgba(13,92,145,.2);">
+        Review updated offer
+      </a>
+    </td>
+  </tr>
+</table>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell(
+                "Offer extended",
+                f"Good news, {_escape_text(full_name)} — your offer window was extended",
+                body,
+            ),
+        )
+
     # ------------------------------------------------------------------ #
     # Offer clarification emails
     # ------------------------------------------------------------------ #

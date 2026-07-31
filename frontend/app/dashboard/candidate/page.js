@@ -435,14 +435,25 @@ function CandidateDashboardContent() {
             {offer && !["signed", "approved", "declined", "expired"].includes(offer.status) && (
               <div className={styles.banner}>
                 <div className={styles.bannerCopy}>
-                  <h3>Sign your offer letter first</h3>
+                  <h3>
+                    {offer.extended_at ? "Your offer letter was extended" : "Sign your offer letter first"}
+                  </h3>
                   <p>
-                    Review compensation and benefits from Mazik Global Pakistan. Accept, negotiate once, or decline.
-                    Document upload unlocks after you sign.
+                    {offer.extended_at
+                      ? `Validity was extended${
+                          offer.expires_at
+                            ? ` through ${new Date(offer.expires_at).toLocaleDateString(undefined, {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              })}`
+                            : ""
+                        }. Review the updated letter and sign when ready.`
+                      : "Review compensation and benefits from Mazik Global Pakistan. Accept, negotiate once, or decline. Document upload unlocks after you sign."}
                   </p>
                 </div>
                 <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer?from=candidate-dashboard")}>
-                  Review and sign offer
+                  {offer.extended_at ? "Review updated offer" : "Review and sign offer"}
                 </button>
               </div>
             )}

@@ -814,8 +814,12 @@ class OfferService:
         expires_at = offer.get("expires_at")
         if expires_at and expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=UTC)
-        is_expired = bool(expires_at and expires_at < datetime.now(UTC))
-        if is_expired and not request.force:
+        # Validity window only blocks unsigned offers. A signed acceptance stays valid;
+        # recruiters should not see "Offer expired" or need force just because the
+        # original response deadline has passed.
+        past_validity = bool(expires_at and expires_at < datetime.now(UTC))
+        needs_force = past_validity and not is_signed_offer
+        if needs_force and not request.force:
             raise HTTPException(
                 status_code=410,
                 detail="This offer has expired. Use force approval to activate it anyway.",
@@ -831,7 +835,7 @@ class OfferService:
                 "email": current_user.email,
                 "actor_email": current_user.email,
                 "module": "offers",
-                "action": "offer_approved_force" if (is_expired or offer["status"] != "signed") and request.force else "offer_approved",
+                "action": "offer_approved_force" if (needs_force or offer["status"] != "signed") and request.force else "offer_approved",
                 "outcome": "success",
                 "created_at": datetime.now(UTC),
             }
@@ -839,7 +843,7 @@ class OfferService:
         return {
             "message": (
                 "Expired offer force-approved and employee activated with IT-provisioned email and assets — they'll be asked to complete their profile."
-                if is_expired and request.force
+                if needs_force and request.force
                 else "Employee activated with IT-provisioned email and assets — they'll be asked to complete their profile."
             ),
             "employee": result["employee"],
@@ -848,7 +852,7 @@ class OfferService:
     async def extend_validity(
         self, current_user: CurrentUser, offer_id: str, request: OfferExtendValidityRequest
     ) -> dict:
-        """Recruiter extends an expired unsigned offer for a specific candidate."""
+        """Recruiter extends an expired unsigned offer — updates letter dates, emails, and notifies."""
         offer = await self._find(offer_id)
         self._assert_recruiter(current_user, offer)
         if offer.get("signed_at"):
@@ -867,21 +871,41 @@ class OfferService:
         if not is_expired:
             raise HTTPException(status_code=409, detail="This offer has not expired yet.")
 
+        note = (request.note or "").strip() or None
         next_status = "viewed" if offer.get("viewed_at") else "sent"
         next_expires_at = now + timedelta(days=request.extra_days)
+        expiry_display = next_expires_at.strftime("%b %d, %Y")
+
+        set_fields: dict = {
+            "status": next_status,
+            "expires_at": next_expires_at,
+            "updated_at": now,
+            "reopened_at": now,
+            "extended_at": now,
+            "extended_by": current_user.id,
+            "extended_by_name": current_user.full_name,
+            "extension_extra_days": request.extra_days,
+            "extension_note": note,
+            "previous_expires_at": expires_at,
+        }
+        # Surface the extension on the letter copy candidates see / print.
+        if note:
+            set_fields["message_to_candidate"] = note
+
         await database.offer_letters.update_one(
             {"_id": offer["_id"]},
-            {
-                "$set": {
-                    "status": next_status,
-                    "expires_at": next_expires_at,
-                    "updated_at": now,
-                    "reopened_at": now,
-                }
-            },
+            {"$set": set_fields},
         )
 
         candidate_id = offer.get("candidate_id")
+        days_label = f"{request.extra_days} day" if request.extra_days == 1 else f"{request.extra_days} days"
+        notif_message = (
+            f"{current_user.full_name} extended your offer by {days_label}. "
+            f"New deadline: {expiry_display}. Open your offer letter to review and sign."
+        )
+        if note:
+            notif_message = f"{notif_message} Note: {note}"
+
         if candidate_id:
             await database.candidates.update_one(
                 {"user_id": candidate_id},
@@ -891,25 +915,23 @@ class OfferService:
                 recipient_id=candidate_id,
                 recipient_role="candidate",
                 notif_type="offer_validity_extended",
-                title="Offer validity extended",
-                message=(
-                    f"{current_user.full_name} extended your offer validity by {request.extra_days} day"
-                    f"{'' if request.extra_days == 1 else 's'}. Review and sign it before it expires again."
-                ),
+                title="Offer letter extended",
+                message=notif_message[:500],
                 link="/offer",
                 related_id=str(offer["_id"]),
             )
 
-        try:
-            email_service.send_offer_letter(
-                to_email=offer["candidate_email"],
-                full_name=offer.get("candidate_name") or "Candidate",
-                job_title=offer.get("job_title") or "",
-                department=offer.get("department") or "",
-                start_date=offer.get("start_date") or "",
-            )
-        except Exception:
-            pass
+        _send_email_bg(
+            email_service.send_offer_validity_extended,
+            to_email=offer["candidate_email"],
+            full_name=offer.get("candidate_name") or "Candidate",
+            job_title=offer.get("job_title") or "",
+            recruiter_name=current_user.full_name or "Your recruiter",
+            extra_days=request.extra_days,
+            new_expires_at=expiry_display,
+            note=note,
+            offer_link=f"{settings.frontend_base_url.rstrip('/')}/offer",
+        )
 
         await database.audit_logs.insert_one(
             {
@@ -923,7 +945,7 @@ class OfferService:
                 "outcome": "success",
                 "metadata": {
                     "extra_days": request.extra_days,
-                    "note": request.note,
+                    "note": note,
                     "previous_status": offer.get("status"),
                     "new_status": next_status,
                     "previous_expires_at": _iso(expires_at),
@@ -935,7 +957,10 @@ class OfferService:
 
         refreshed = await database.offer_letters.find_one({"_id": offer["_id"]})
         return {
-            "message": f"Offer validity extended by {request.extra_days} day{'' if request.extra_days == 1 else 's'}.",
+            "message": (
+                f"Offer extended by {days_label}. Letter updated, email sent, "
+                "and candidate notified on their dashboard."
+            ),
             "offer": self._public(refreshed),
         }
 
@@ -1142,6 +1167,10 @@ class OfferService:
             "benefits": offer.get("benefits") or [],
             "terms": offer.get("terms"),
             "message_to_candidate": offer.get("message_to_candidate"),
+            "extension_note": offer.get("extension_note"),
+            "extended_at": _iso(offer.get("extended_at")),
+            "extended_by_name": offer.get("extended_by_name"),
+            "extension_extra_days": offer.get("extension_extra_days"),
             "status": offer.get("status"),
             "version": offer.get("version") or 1,
             "parent_offer_id": offer.get("parent_offer_id"),
@@ -1154,8 +1183,11 @@ class OfferService:
             "recruiter_name": offer.get("recruiter_name"),
             "sent_at": _iso(offer.get("sent_at")),
             "expires_at": _iso(offer.get("expires_at")),
+            # Signed offers are accepted — do not flag them expired just because
+            # the original response deadline date has passed.
             "is_expired": bool(
-                offer.get("expires_at")
+                not (offer.get("signed_at") or (offer.get("status") or "").lower() == "signed")
+                and offer.get("expires_at")
                 and (
                     offer["expires_at"].replace(tzinfo=UTC)
                     if getattr(offer.get("expires_at"), "tzinfo", None) is None

@@ -18,6 +18,7 @@ questions so the feature degrades gracefully instead of breaking.
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from secrets import token_urlsafe
 from typing import Any
@@ -28,7 +29,44 @@ from app.services import agent_tools
 from app.services.llm_service import call_llm_json, llm_configured
 
 MAX_TOOL_STEPS = 4
-HISTORY_TURNS = 3
+HISTORY_TURNS = 8
+
+# Read-only tools — calling them more than once in a single turn wastes steps.
+READONLY_TOOLS = frozenset({
+    "get_status",
+    "get_my_offer",
+    "get_my_profile",
+    "list_documents",
+    "list_candidate_documents",
+    "list_person_documents",
+    "list_candidates",
+    "list_employees",
+    "get_candidate_status",
+    "get_employee_detail",
+    "get_dashboard_summary",
+    "my_learning_dashboard",
+    "list_opportunities",
+    "list_my_announcements",
+    "list_notifications",
+    "list_hr_threads",
+    "get_my_day1_info",
+})
+
+# Shared across every role — keeps behavior consistent without per-role copy/paste.
+SHARED_AGENT_RULES = """
+Shared behavior (all roles):
+- Never re-ask for facts already in Conversation so far or the latest user message — extract them into tool args.
+- When a tool returns ok=false, read the error, fix the args from known chat data, and retry. Do not ask the user to repeat the same info.
+- Prefer one tool call that saves everything you already have over multiple clarifying questions.
+- Only ask for fields that get_status (or the tool error) still lists as missing.
+- Keep JSON compact: short message, at most 3 short suggested_replies, ui_hint only when an upload/spreadsheet is needed.
+- Never call the same read-only tool (get_status, get_my_offer, list_documents, etc.) more than once per turn — after you have the data, reply or call a write tool.
+- Stay in-role: candidates only use candidate tools; employees only employee tools; recruiters only recruiter tools. Never imply verify/reject of someone else's documents unless you are a recruiter.
+- When the user uploads a file and the message includes OCR extracted fields JSON, immediately persist them with the right write tool (update_my_profile / save_step / employment fields) — do not ignore OCR data.
+- Be context-aware: if they ask about offer/profile/documents/learning/messages, acknowledge the current state from tools. The app attaches one clear button when needed — do not list pages or dump every option.
+- Never write raw routes or paths in the message (no /offer, /onboarding, /documents, offer_page=, or "open page offer"). Say natural language only, e.g. "Your offer is already signed — use the button below to view it."
+- Never contradict tool data (e.g. if is_signed=true, do not say they still need to sign).
+"""
 
 RECRUITER_SYSTEM_PROMPT = """You are the TalentAI Hiring Agent for recruiters. You can run almost any \
 recruiting or post-hire action the recruiter dashboard supports — for one person or in bulk — via your tools. \
@@ -179,8 +217,12 @@ government_docs upload is on file. If any of those are missing, use update_my_pr
 have and ask for the rest. father_name and blood_group are REQUIRED — do not skip them. \
 "N/A" is a valid answer for blood_group if the candidate does not know or prefers not to share.
   * For education: call save_step step=education only when at least one complete education entry exists.
-  * For skills: call save_step step=skills only when at least one skill/language/certification is present \
-AND a resume file has been uploaded.
+  * For skills: call save_step step=skills when you have at least one skill/language/certification AND a \
+resume file is on file (resume_file_on_file from get_status). Always include resume.summary or summary with \
+≥20 characters of professional summary text taken from the chat (or invent a short dummy only if they \
+explicitly asked for a dummy summary). Never invent a separate "summary" step.
+  * If resume_summary_ready is false, pass the summary together with skills in the same save_step call — \
+do not save skills alone then re-ask for the summary if they already wrote it.
 - Document awareness — CRITICAL: get_status returns documents_on_file (list of doc_type strings already \
 uploaded by the candidate). Before requesting ANY file upload, check documents_on_file:
   * If a doc_type is already in documents_on_file, acknowledge it ("I can see your CNIC is already on \
@@ -203,10 +245,16 @@ upload directly in this chat.
 - After a skill certificate upload the returned document_url is sent back automatically — call save_step skills \
 including certifications[].document_url from that URL.
 - Use list_documents / get_my_document_link / delete_document (confirm=true) / reextract_document for doc management.
+- Candidates never verify/reject documents — that is recruiter-only. If docs show mismatch or reupload_required, \
+explain the status and offer a ui_hint upload so they can replace the file.
 - Once every required section is complete, call save_step with step="submit".
-- Offers: get_my_offer to show status; sign_offer only after they clearly accept (agreed=true + full_legal_name); \
-decline_offer only with confirm=true. signature_data_url is optional for sign_offer — typed full_legal_name \
-together with agreed=true is sufficient to sign.
+- Offers: ALWAYS call get_my_offer first when the topic is the offer. Read is_signed / status / guidance.
+  * If is_signed=true (or status=signed): say it is already signed, never ask for a signature pad, \
+never call sign_offer. Do not paste routes — the offer card/button opens the letter.
+  * If not signed: they can review via the offer button, or you may call sign_offer only after they clearly accept \
+(agreed=true + full_legal_name). Typed legal name is enough — do NOT invent a signature-pad UI in chat.
+  * decline_offer only with confirm=true.
+- When discussing profile/onboarding/documents/offer, use plain names ("onboarding form", "documents", "offer letter") — never URLs or /paths.
 - list_my_announcements / list_notifications / mark_notifications_read for inbox parity.
 - Never invent tool results. Keep replies encouraging and clear about what's next.
 - Prefer chaining steps toward completing onboarding when they say "complete my onboarding".
@@ -276,6 +324,7 @@ RENDERABLE_TOOLS = {
     "list_pending_certificates": "certificates",
     "list_my_certificates": "certificates",
     "get_my_offer": "offer",
+    "sign_offer": "offer",
     "export_employees": "csv_export",
 }
 
@@ -386,8 +435,10 @@ def _history_text(messages: list[dict]) -> str:
     for m in recent:
         speaker = "User" if m["role"] == "user" else "Agent"
         content = m.get("content") or ""
-        if len(content) > 300:
-            content = content[:297] + "…"
+        # Keep enough of user text so skills/summaries aren't lost across turns.
+        limit = 500 if m["role"] == "user" else 300
+        if len(content) > limit:
+            content = content[: limit - 3] + "…"
         lines.append(f"{speaker}: {content}")
     return "\n".join(lines) if lines else "(no previous messages)"
 
@@ -454,7 +505,7 @@ def _build_prompt(
     context_text = _context_text(context)
 
     return f"""{system_prompt}
-
+{SHARED_AGENT_RULES}
 Caller: {user.full_name} ({user.email}), role={user.role}.
 
 Current page context:
@@ -469,13 +520,16 @@ Conversation so far:
 New message from caller: {new_message!r}
 {scratch_text}
 
-Respond with ONE JSON object only:
+Respond with ONE compact JSON object only (no markdown, no prose outside JSON):
 1) {{"action":"tool","tool":"<name>","args":{{...}}}}
 2) {{"action":"reply","message":"<text>","suggested_replies":["…"],"ui_hint":null}}
-suggested_replies: 3–5 chips matching the current topic (candidate vs employee vs bulk); include the person's name when known.
+Keep message under ~400 chars. suggested_replies: 2–4 short chips. Prefer a tool call over a long reply when saving data.
+For save_step: step must be a real step from get_status; put fields under that step key (e.g. personal/education/skills) — never invent a "summary" step.
+If the user asks for a "summary" (candidate), pass it as resume.summary / summary with skills on step=skills.
 ui_hint for recruiters: {{"type":"spreadsheet"}} for Excel/CSV roster, or {{"type":"upload","doc_type":"photo"}} for profile photo, otherwise null.
 ui_hint for candidate/employee: {{"type":"upload","doc_type":"cnic|passport|transcript|resume|photo|certificate|bank_slip"}} \
-(for certificate include course_title and optional course_uid)."""
+(for certificate include course_title and optional course_uid).
+IMPORTANT: Your entire response must be that JSON object. Do not write analysis or planning text."""
 
 
 def _action(kind: str, label: str, *, route: str | None = None, prompt: str | None = None) -> dict:
@@ -493,25 +547,66 @@ def _default_actions_for_role(user: CurrentUser) -> list[dict]:
             _action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates"),
             _action("navigate", "Open Employees", route="/dashboard/recruiter/employees"),
             _action("navigate", "Open Learning", route="/dashboard/recruiter/learning"),
-            _action("navigate", "Open Talent", route="/dashboard/recruiter/talent"),
             _action("navigate", "Open Messages", route="/dashboard/recruiter/messages"),
-            _action("navigate", "Open Announcements", route="/dashboard/recruiter/announcements"),
         ]
     if user.role == "employee":
         return [
             _action("navigate", "Open Profile", route="/dashboard/employee/profile"),
+            _action("navigate", "Complete Profile", route="/dashboard/employee/complete-profile"),
             _action("navigate", "Open Learning", route="/dashboard/employee/learning"),
-            _action("navigate", "Open Complete Profile", route="/dashboard/employee/complete-profile"),
-            _action("navigate", "Open Talent", route="/dashboard/employee/talent"),
             _action("navigate", "Message HR", route="/dashboard/employee/messages"),
-            _action("navigate", "Open Documents", route="/documents"),
         ]
     return [
-        _action("navigate", "Open Dashboard", route="/dashboard/candidate"),
         _action("navigate", "Continue Onboarding", route="/onboarding"),
         _action("navigate", "Open Documents", route="/documents"),
         _action("navigate", "View Offer", route="/offer"),
+        _action("navigate", "Open Dashboard", route="/dashboard/candidate"),
     ]
+
+
+def _topic_text(*parts: str) -> str:
+    return " ".join(str(p or "") for p in parts).lower()
+
+
+def _actions_from_topic(user: CurrentUser, topic: str) -> list[dict] | None:
+    """One primary navigate CTA matching the topic — never a full menu of identical pills."""
+    t = topic or ""
+    if user.role in ("recruiter", "super_admin"):
+        if any(k in t for k in ("candidate", "pipeline", "invite", "offer")):
+            return [_action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates")]
+        if any(k in t for k in ("employee", "day-1", "day1", "joining", "asset")):
+            return [_action("navigate", "Open Employees", route="/dashboard/recruiter/employees")]
+        if any(k in t for k in ("learning", "course", "certificate")):
+            return [_action("navigate", "Open Learning", route="/dashboard/recruiter/learning")]
+        if any(k in t for k in ("talent", "opportunity", "competenc")):
+            return [_action("navigate", "Open Talent", route="/dashboard/recruiter/talent")]
+        if any(k in t for k in ("message", "inbox", "announcement")):
+            return [_action("navigate", "Open Messages", route="/dashboard/recruiter/messages")]
+        return None
+
+    if user.role == "employee":
+        if any(k in t for k in ("learning", "course", "certificate", "skill")):
+            return [_action("navigate", "Open Learning", route="/dashboard/employee/learning")]
+        if any(k in t for k in ("talent", "opportunity", "career", "rotation")):
+            return [_action("navigate", "Open Talent", route="/dashboard/employee/talent")]
+        if any(k in t for k in ("message", "hr", "recruiter", "inbox")):
+            return [_action("navigate", "Message HR", route="/dashboard/employee/messages")]
+        if any(k in t for k in ("document", "upload", "cnic", "resume", "bank")):
+            return [_action("navigate", "Open Documents", route="/documents")]
+        if any(k in t for k in ("profile", "onboarding", "complete", "emergency", "banking", "reference")):
+            return [_action("navigate", "Complete Profile", route="/dashboard/employee/complete-profile")]
+        return None
+
+    # candidate — one button for the active topic
+    if any(k in t for k in ("offer", "sign", "salary", "letter", "accept", "decline")):
+        return [_action("navigate", "View offer", route="/offer")]
+    if any(k in t for k in ("document", "upload", "cnic", "resume", "transcript", "passport")):
+        return [_action("navigate", "Open documents", route="/documents")]
+    if any(k in t for k in ("profile", "onboarding", "personal", "education", "skills", "summary", "fill")):
+        return [_action("navigate", "Open onboarding", route="/onboarding")]
+    if any(k in t for k in ("message", "hr", "recruiter")):
+        return [_action("navigate", "Open dashboard", route="/dashboard/candidate")]
+    return None
 
 
 def _system_prompt_for_role(role: str) -> str:
@@ -522,14 +617,24 @@ def _system_prompt_for_role(role: str) -> str:
     return CANDIDATE_SYSTEM_PROMPT
 
 
-def _detail_actions(user: CurrentUser, scratchpad: list[dict], context: dict | None) -> list[dict]:
-    actions = _default_actions_for_role(user)
+def _detail_actions(
+    user: CurrentUser,
+    scratchpad: list[dict],
+    context: dict | None,
+    *,
+    user_message: str = "",
+    reply_message: str = "",
+) -> list[dict]:
+    """At most one primary navigate CTA for this turn — avoid repeating the same pill row."""
     selected = (context or {}).get("selected_record") if isinstance(context, dict) else None
     selected_id = None
     selected_kind = None
     if isinstance(selected, dict):
         selected_id = selected.get("employee_id") or selected.get("candidate_id") or selected.get("id")
         selected_kind = selected.get("kind") or selected.get("type")
+
+    attachment = _last_renderable_attachment(scratchpad)
+    attachment_type = (attachment or {}).get("type") if isinstance(attachment, dict) else None
 
     for entry in reversed(scratchpad):
         result = entry.get("result") or {}
@@ -538,65 +643,135 @@ def _detail_actions(user: CurrentUser, scratchpad: list[dict], context: dict | N
         data = result.get("data") or {}
         tool = entry.get("tool")
 
+        if tool in ("get_my_offer", "sign_offer"):
+            # Offer card already has "View signed offer" / "Review & sign" — no duplicate chip.
+            if attachment_type == "offer":
+                return []
+            offer = data.get("offer") if isinstance(data.get("offer"), dict) else data
+            status = str(data.get("status") or (offer or {}).get("status") or "").lower()
+            is_signed = bool(data.get("is_signed") or data.get("already_signed") or status == "signed")
+            label = "View signed offer" if is_signed else "Review & sign offer"
+            return [_action("navigate", label, route="/offer")]
+
+        if tool in ("get_status", "save_step", "update_my_profile"):
+            if user.role == "candidate":
+                return [_action("navigate", "Open onboarding", route="/onboarding")]
+            if user.role == "employee":
+                return [_action("navigate", "Complete Profile", route="/dashboard/employee/complete-profile")]
+
+        if tool == "get_my_profile" and user.role == "employee":
+            return [_action("navigate", "Open Profile", route="/dashboard/employee/profile")]
+
         if tool == "get_employee_detail" or data.get("employee_id"):
             employee_id = data.get("employee_id") or selected_id
             if employee_id and user.role in ("recruiter", "super_admin"):
-                actions = [
-                    _action("navigate", f"Open {data.get('full_name') or 'Employee'} Profile", route=f"/dashboard/recruiter/employees/{employee_id}"),
-                    _action("navigate", "View Learning", route="/dashboard/recruiter/learning"),
-                    _action("navigate", "View Activity", route="/dashboard/recruiter/activity"),
-                    _action("navigate", "Open Employees", route="/dashboard/recruiter/employees"),
+                return [
+                    _action(
+                        "navigate",
+                        f"Open {data.get('full_name') or 'employee'}",
+                        route=f"/dashboard/recruiter/employees/{employee_id}",
+                    )
                 ]
-            elif employee_id and user.role == "employee":
-                actions = [
-                    _action("navigate", "Open Profile", route="/dashboard/employee/profile"),
-                    _action("navigate", "Open Learning", route="/dashboard/employee/learning"),
-                    _action("navigate", "Open Complete Profile", route="/dashboard/employee/complete-profile"),
-                ]
-            break
+            if user.role == "employee":
+                return [_action("navigate", "Open Profile", route="/dashboard/employee/profile")]
 
         if tool == "get_candidate_status" or data.get("candidate_id"):
             candidate_id = data.get("candidate_id") or selected_id
             if candidate_id and user.role in ("recruiter", "super_admin"):
-                label = data.get("full_name") or "Candidate"
-                actions = [
-                    _action("navigate", f"Open {label} Profile", route=f"/dashboard/recruiter/candidates/{candidate_id}"),
-                    _action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates"),
-                    _action("navigate", "Open Pipeline", route="/dashboard/recruiter/candidates"),
-                    _action("navigate", "Open Employees", route="/dashboard/recruiter/employees"),
+                label = data.get("full_name") or "candidate"
+                return [
+                    _action(
+                        "navigate",
+                        f"Open {label}",
+                        route=f"/dashboard/recruiter/candidates/{candidate_id}",
+                    )
                 ]
-            else:
-                actions = [
-                    _action("navigate", "Open Profile", route="/dashboard/candidate"),
-                    _action("navigate", "Check Onboarding", route="/dashboard/candidate"),
-                ]
-            break
+            if user.role == "candidate":
+                return [_action("navigate", "Open onboarding", route="/onboarding")]
 
         if tool in ("list_person_documents", "list_candidate_documents", "list_documents"):
             owner = data.get("owner") or {}
             employee_id = owner.get("employee_id") or data.get("employee_id")
             candidate_id = owner.get("candidate_id") or data.get("candidate_id")
-            label = data.get("full_name") or owner.get("full_name") or "Profile"
+            label = data.get("full_name") or owner.get("full_name") or "profile"
             if employee_id and user.role in ("recruiter", "super_admin"):
-                actions = [
-                    _action("navigate", f"Open {label} Profile", route=f"/dashboard/recruiter/employees/{employee_id}"),
-                    _action("navigate", "View Learning", route="/dashboard/recruiter/learning"),
-                    _action("navigate", "View Activity", route="/dashboard/recruiter/activity"),
+                return [
+                    _action(
+                        "navigate",
+                        f"Open {label}",
+                        route=f"/dashboard/recruiter/employees/{employee_id}",
+                    )
                 ]
-            elif candidate_id and user.role in ("recruiter", "super_admin"):
-                actions = [
-                    _action("navigate", f"Open {label} Profile", route=f"/dashboard/recruiter/candidates/{candidate_id}"),
-                    _action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates"),
+            if candidate_id and user.role in ("recruiter", "super_admin"):
+                return [
+                    _action(
+                        "navigate",
+                        f"Open {label}",
+                        route=f"/dashboard/recruiter/candidates/{candidate_id}",
+                    )
                 ]
-            break
+            if user.role in ("candidate", "employee"):
+                return [_action("navigate", "Open documents", route="/documents")]
 
+        if tool in ("my_learning_dashboard", "browse_learning_catalog", "start_course"):
+            if user.role == "employee":
+                return [_action("navigate", "Open Learning", route="/dashboard/employee/learning")]
+            if user.role in ("recruiter", "super_admin"):
+                return [_action("navigate", "Open Learning", route="/dashboard/recruiter/learning")]
+
+    topic = _topic_text(user_message, reply_message)
+    topic_actions = _actions_from_topic(user, topic)
+    if topic_actions:
+        # Avoid duplicating the offer card link.
+        if attachment_type == "offer":
+            topic_actions = [a for a in topic_actions if a.get("route") != "/offer"]
+        return topic_actions[:1]
+
+    # No generic default pill row — empty is better than the same four buttons every turn.
     if selected_id and selected_kind and user.role in ("recruiter", "super_admin"):
-        if selected_kind in ("employee", "employees") and not any(a.get("route", "").endswith(f"/employees/{selected_id}") for a in actions):
-            actions.insert(0, _action("navigate", "Open selected employee", route=f"/dashboard/recruiter/employees/{selected_id}"))
-        if selected_kind in ("candidate", "candidates") and not any(a.get("route", "").endswith(f"/candidates/{selected_id}") for a in actions):
-            actions.insert(0, _action("navigate", "Open selected candidate", route=f"/dashboard/recruiter/candidates/{selected_id}"))
+        if selected_kind in ("employee", "employees"):
+            return [
+                _action(
+                    "navigate",
+                    "Open selected employee",
+                    route=f"/dashboard/recruiter/employees/{selected_id}",
+                )
+            ]
+        if selected_kind in ("candidate", "candidates"):
+            return [
+                _action(
+                    "navigate",
+                    "Open selected candidate",
+                    route=f"/dashboard/recruiter/candidates/{selected_id}",
+                )
+            ]
+    return []
 
-    return actions[:4]
+
+def _sanitize_reply_message(message: str) -> str:
+    """Replace raw app routes the model pastes with natural wording."""
+    if not message:
+        return message
+    cleaned = message
+    replacements = (
+        (r"\s*offer_page\s*=\s*/?offer\b", " the offer letter"),
+        (r"\s*\(\s*/offer\s*\)", ""),
+        (r"\s*\[\s*/offer\s*\]", ""),
+        (r"(?<![A-Za-z0-9])/offer\b", " the offer letter"),
+        (r"\s*\(\s*/onboarding\s*\)", ""),
+        (r"(?<![A-Za-z0-9])/onboarding\b", " the onboarding form"),
+        (r"\s*\(\s*/documents\s*\)", ""),
+        (r"(?<![A-Za-z0-9])/documents\b", " the documents page"),
+        (r"\s*\(\s*/dashboard/[\w/-]+\s*\)", ""),
+        (r"(?<![A-Za-z0-9])/dashboard/[\w/-]+", " the dashboard"),
+    )
+    for pattern, repl in replacements:
+        cleaned = re.sub(pattern, repl, cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r" +\n", "\n", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"\s+([.,!?])", r"\1", cleaned)
+    return cleaned.strip()
 
 
 def _last_renderable_attachment(scratchpad: list[dict]) -> dict | None:
@@ -610,16 +785,47 @@ def _last_renderable_attachment(scratchpad: list[dict]) -> dict | None:
 
 
 def _progress_from_scratchpad(scratchpad: list[dict]) -> list[dict]:
+    """Collapse duplicate tool labels so the UI doesn't show 'Loaded offer' x3."""
     steps: list[dict] = []
+    seen_readonly: set[str] = set()
     for entry in scratchpad:
         result = entry.get("result") or {}
         data = result.get("data") if isinstance(result.get("data"), dict) else {}
         if data.get("needs_confirm"):
             continue
         tool = entry.get("tool") or ""
+        if tool in READONLY_TOOLS:
+            if tool in seen_readonly:
+                continue
+            seen_readonly.add(tool)
         label = TOOL_STEP_LABELS.get(tool) or tool.replace("_", " ").strip().title()
         steps.append({"tool": tool, "ok": bool(result.get("ok")), "label": label})
     return steps
+
+
+def _message_from_scratchpad(scratchpad: list[dict]) -> str | None:
+    """Build a user-facing summary when the LLM dies after tools already ran."""
+    if not scratchpad:
+        return None
+    lines: list[str] = []
+    for entry in scratchpad:
+        result = entry.get("result") or {}
+        tool = entry.get("tool") or "tool"
+        label = TOOL_STEP_LABELS.get(tool) or tool.replace("_", " ")
+        data = result.get("data") if isinstance(result.get("data"), dict) else {}
+        if result.get("ok"):
+            detail = data.get("message") if isinstance(data.get("message"), str) else None
+            lines.append(f"✓ {label}" + (f" — {detail}" if detail else ""))
+        else:
+            err = (result.get("error") or "failed").strip()
+            lines.append(f"✗ {label} — {err}")
+    if not lines:
+        return None
+    return (
+        "I started this request, but the model stopped before a final reply.\n\n"
+        + "\n".join(lines)
+        + "\n\nTry again, or tell me the exact step/fields to save (e.g. personal or skills)."
+    )
 
 
 def _confirmation_from_result(tool_name: str, result: agent_tools.ToolResult) -> dict | None:
@@ -642,13 +848,21 @@ def _pack_reply(
     suggested_replies: list | None = None,
     ui_hint: dict | None = None,
     confirmation: dict | None = None,
+    user_message: str = "",
 ) -> dict:
+    clean_message = _sanitize_reply_message(message)
     return {
-        "message": message,
+        "message": clean_message,
         "suggested_replies": suggested_replies or [],
         "ui_hint": _sanitize_ui_hint(user, ui_hint),
         "attachment": _last_renderable_attachment(scratchpad),
-        "actions": _detail_actions(user, scratchpad, context),
+        "actions": _detail_actions(
+            user,
+            scratchpad,
+            context,
+            user_message=user_message,
+            reply_message=clean_message,
+        ),
         "progress": _progress_from_scratchpad(scratchpad),
         "confirmation": confirmation,
     }
@@ -879,22 +1093,59 @@ class AgentService:
 
         for _ in range(MAX_TOOL_STEPS):
             prompt = _build_prompt(user, system_prompt, tool_spec, history_text, scratchpad, message, context)
-            parsed = await call_llm_json(prompt, max_tokens=384, temperature=0.1)
+            # Use OPENROUTER_MAX_TOKENS (default 4096) so replies aren't cut mid-JSON.
+            # OmniRoute can be slow; timeout covers routing + generation.
+            parsed = await call_llm_json(prompt, temperature=0.1, timeout=120.0)
             if not parsed:
+                scratch_msg = _message_from_scratchpad(scratchpad)
                 offline = await _quick_offline_reply(user, context)
                 return _pack_reply(
-                    message=offline["message"],
+                    message=scratch_msg or offline["message"],
                     user=user,
                     scratchpad=scratchpad,
                     context=context,
                     suggested_replies=offline.get("suggested_replies") or [],
                     ui_hint=offline.get("ui_hint"),
+                    user_message=message,
                 )
 
             action = parsed.get("action")
             if action == "tool":
                 tool_name = parsed.get("tool")
                 args = parsed.get("args") or {}
+                # Skip repeating successful read-only lookups in the same turn.
+                if tool_name in READONLY_TOOLS:
+                    prior = next(
+                        (
+                            s
+                            for s in scratchpad
+                            if s.get("tool") == tool_name
+                            and isinstance(s.get("result"), dict)
+                            and s["result"].get("ok")
+                        ),
+                        None,
+                    )
+                    if prior:
+                        scratchpad.append(
+                            {
+                                "tool": tool_name,
+                                "result": {
+                                    "ok": True,
+                                    "data": {
+                                        "message": (
+                                            f"{tool_name} was already loaded this turn — "
+                                            "reply to the user now (do not call it again)."
+                                        ),
+                                        **(
+                                            prior["result"].get("data")
+                                            if isinstance(prior["result"].get("data"), dict)
+                                            else {}
+                                        ),
+                                    },
+                                },
+                            }
+                        )
+                        continue
                 result = await agent_tools.run_tool(user, tool_name, args)
                 scratchpad.append({"tool": tool_name, "result": result.to_json()})
                 confirmation = _confirmation_from_result(tool_name or "", result)
@@ -906,6 +1157,7 @@ class AgentService:
                         context=context,
                         suggested_replies=[],
                         confirmation=confirmation,
+                        user_message=message,
                     )
                 continue
 
@@ -917,6 +1169,7 @@ class AgentService:
                     context=context,
                     suggested_replies=parsed.get("suggested_replies") or [],
                     ui_hint=parsed.get("ui_hint"),
+                    user_message=message,
                 )
 
             # Unrecognized shape — treat whatever text we got as the reply.
@@ -925,6 +1178,7 @@ class AgentService:
                 user=user,
                 scratchpad=scratchpad,
                 context=context,
+                user_message=message,
             )
 
         return _pack_reply(
@@ -932,6 +1186,7 @@ class AgentService:
             user=user,
             scratchpad=scratchpad,
             context=context,
+            user_message=message,
         )
 
     async def get_history(self, user: CurrentUser, session_id: str) -> dict:

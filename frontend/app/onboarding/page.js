@@ -233,6 +233,7 @@ function OnboardingContent() {
   const [pendingReplace, setPendingReplace] = useState(null);
   const [bloodGroupPending, setBloodGroupPending] = useState(null);
   const [scanPulse, setScanPulse] = useState(false);
+  const [offerUnsigned, setOfferUnsigned] = useState(false);
   const [otherSelections, setOtherSelections] = useState({ country: false, city: false, state: false });
   const [ocrSession, setOcrSession] = useState(null);
   const ocrFillAbortRef = useRef(null);
@@ -269,10 +270,8 @@ function OnboardingContent() {
           setFillMode("manual");
         }
         const data = await getOnboarding(accessToken);
-        if (data.offer_signed === false) {
-          router.replace("/offer");
-          return;
-        }
+        // Never auto-redirect to /offer — Profile/Onboarding stay open; offer is opt-in via nav/CTA.
+        setOfferUnsigned(data.offer_signed === false);
         setCandidate(data.candidate);
         setOnboarding(data.onboarding);
         setProgress(data.progress);
@@ -1797,6 +1796,15 @@ function OnboardingContent() {
                       <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                     </svg>
                     <span>Edit mode — changes save automatically as you move through each step.</span>
+                  </div>
+                )}
+
+                {offerUnsigned && (
+                  <div className={styles.offerHintBanner}>
+                    <span>You still have an unsigned offer letter.</span>
+                    <button type="button" className={styles.offerHintBtn} onClick={() => router.push("/offer")}>
+                      View offer
+                    </button>
                   </div>
                 )}
 
