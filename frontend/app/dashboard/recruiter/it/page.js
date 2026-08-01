@@ -14,7 +14,6 @@ import {
   getItOfficersOverview,
   listEmployees,
   listItServiceRequests,
-  listItKits,
   sendItServiceRequest,
 } from "@/services/authService";
 
@@ -39,6 +38,25 @@ const TYPE_LABELS = {
   access: "Access",
   other: "Other",
 };
+
+function StatusChip({ status }) {
+  const colors = STATUS_COLORS[status] || STATUS_COLORS.draft;
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "3px 10px",
+        borderRadius: 999,
+        fontSize: 11,
+        fontWeight: 800,
+        background: colors.bg,
+        color: colors.color,
+      }}
+    >
+      {STATUS_LABELS[status] || status}
+    </span>
+  );
+}
 
 function RequestTimeline({ r }) {
   const isCancelled = r.status === "cancelled";
@@ -500,7 +518,7 @@ export default function RecruiterItHubPage() {
                         <div style={{ flex: 1, minWidth: 220 }}>
                           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                             <strong style={{ fontSize: 14 }}>{r.title}</strong>
-                            {chip(r.status)}
+                            <StatusChip status={r.status} />
                             <span style={{ fontSize: 11, color: "#6b7a8f" }}>
                               {TYPE_LABELS[r.request_type] || r.request_type}
                             </span>
@@ -523,6 +541,7 @@ export default function RecruiterItHubPage() {
                               {r.serial_number ? ` · Serial: ${r.serial_number}` : ""}
                             </div>
                           )}
+                          <RequestTimeline r={r} />
                         </div>
                         <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                           {r.status === "draft" || r.status === "reviewing" ? (
