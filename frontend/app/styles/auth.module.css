@@ -265,7 +265,7 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 
 .rolePicker { margin: 0; padding: 0; border: 0; }
 .rolePicker legend { margin-bottom: 8px; }
-.roleGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.roleGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 
 .roleOption { 
   position: relative; 
@@ -329,6 +329,24 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 .footer a { font-size: 13px; }
 
 .metricCard, .dotsRow, .dot, .dotActive { display: none; }
+
+.restrictedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-bottom: 14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--navy) 22%, var(--blue-mid));
+  background: var(--navy);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.restrictedBadge svg { width: 12px; height: 12px; }
 
 @keyframes pageIn { from { opacity: 0; } to { opacity: 1; } } 
 @keyframes cardIn { from { opacity: 0; transform: translateY(22px) scale(.985); } to { opacity: 1; transform: none; } } 
