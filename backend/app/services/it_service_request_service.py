@@ -51,9 +51,12 @@ def _out(doc: dict) -> dict:
         "created_by": doc.get("created_by"),
         "requested_by_name": doc.get("requested_by_name"),
         "created_at": _iso(doc.get("created_at")),
+        "reviewed_at": _iso(doc.get("reviewed_at")),
         "sent_at": _iso(doc.get("sent_at")),
         "fulfilled_at": _iso(doc.get("fulfilled_at")),
+        "cancelled_at": _iso(doc.get("cancelled_at")),
         "fulfilled_by_name": doc.get("fulfilled_by_name"),
+        "cancel_reason": doc.get("cancel_reason"),
     }
 
 
@@ -110,6 +113,36 @@ class ItServiceRequestService:
         if status_filter:
             query["status"] = status_filter
         docs = await database.it_service_requests.find(query).sort("created_at", -1).to_list(length=200)
+        # auto-mark any unreviewed employee-raised drafts as "reviewing"
+        now = datetime.now(UTC)
+        ids_to_review = [
+            d["_id"]
+            for d in docs
+            if d.get("status") == "draft"
+            and d.get("created_by") == "employee"
+            and not d.get("reviewed_at")
+        ]
+        if ids_to_review:
+            await database.it_service_requests.update_many(
+                {"_id": {"$in": ids_to_review}},
+                {"$set": {"status": "reviewing", "reviewed_at": now, "updated_at": now}},
+            )
+            for d in docs:
+                if d["_id"] in ids_to_review:
+                    d["status"] = "reviewing"
+                    d["reviewed_at"] = now
+            # notify employees that HR has seen their request
+            for d in docs:
+                if d["_id"] in ids_to_review and d.get("employee_user_id"):
+                    await create_notification(
+                        recipient_id=str(d["employee_user_id"]),
+                        recipient_role="employee",
+                        notif_type="it_service_request_reviewing",
+                        title="HR is reviewing your IT request",
+                        message=f"HR has seen your IT request: {d.get('title')}.",
+                        link="/dashboard/employee/it-support",
+                        related_id=str(d["_id"]),
+                    )
         return {"requests": [_out(d) for d in docs], "count": len(docs)}
 
     async def list_employee(self, current_user: CurrentUser) -> dict:
@@ -192,7 +225,7 @@ class ItServiceRequestService:
 
     async def _send_to_it_doc(self, doc: dict, it_email: str, note: str | None, now: datetime) -> None:
         await database.it_service_requests.update_one(
-            {"_id": doc["_id"], "status": {"$in": ["draft", "sent"]}},
+            {"_id": doc["_id"], "status": {"$in": ["draft", "reviewing", "sent"]}},
             {
                 "$set": {
                     "it_manager_email": it_email,
@@ -242,7 +275,7 @@ class ItServiceRequestService:
         now = datetime.now(UTC)
         await database.it_service_requests.update_one(
             {"_id": doc["_id"]},
-            {"$set": {"status": "cancelled", "cancel_reason": reason, "updated_at": now}},
+            {"$set": {"status": "cancelled", "cancel_reason": reason, "cancelled_at": now, "updated_at": now}},
         )
         if doc.get("employee_user_id"):
             await create_notification(
@@ -385,7 +418,7 @@ class ItServiceRequestService:
                 continue
             status = doc.get("status")
             info["service_total"] += 1
-            if status in ("draft", "sent"):
+            if status in ("draft", "reviewing", "sent"):
                 info["service_open"] += 1
             elif status == "fulfilled":
                 info["service_fulfilled"] += 1

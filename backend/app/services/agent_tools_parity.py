@@ -1661,6 +1661,43 @@ async def _tool_cancel_it_service_request(user: CurrentUser, args: dict) -> Tool
         return _err(exc)
 
 
+async def _tool_list_my_it_requests(user: CurrentUser, args: dict) -> ToolResult:
+    from app.services.it_service_request_service import it_service_request_service
+
+    try:
+        return ToolResult(ok=True, data=await it_service_request_service.list_employee(user))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_create_my_it_request(user: CurrentUser, args: dict) -> ToolResult:
+    from app.schemas.it_service_request import ItServiceRequestEmployeeCreate
+    from app.services.it_service_request_service import it_service_request_service
+
+    try:
+        result = await it_service_request_service.create_employee_draft(
+            user,
+            ItServiceRequestEmployeeCreate(
+                request_type=args.get("request_type") or "other",
+                title=args.get("title"),
+                description=args.get("description"),
+            ),
+        )
+        return ToolResult(
+            ok=True,
+            data={
+                **result,
+                "message": (
+                    "Your IT request has been sent to HR. "
+                    "They will review it and forward it to IT. "
+                    "You can check progress on the IT support page."
+                ),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Tool registrations
 # ─────────────────────────────────────────────────────────────────────────
@@ -1835,9 +1872,9 @@ RECRUITER_PARITY_TOOLS: list[Tool] = [
         name="list_it_service_requests",
         description=(
             "List IT service requests (post-activation help like replacement laptops). "
-            "Filter by status: draft|sent|fulfilled|cancelled."
+            "Filter by status: draft|reviewing|sent|fulfilled|cancelled."
         ),
-        parameters={"status": "string, optional: draft|sent|fulfilled|cancelled"},
+        parameters={"status": "string, optional: draft|reviewing|sent|fulfilled|cancelled"},
         handler=_tool_list_it_service_requests,
         roles=("recruiter", "super_admin"),
     ),
@@ -2702,6 +2739,35 @@ EMPLOYEE_PARITY_TOOLS: list[Tool] = [
         ),
         parameters={"refresh": "boolean, optional — force fresh calculation"},
         handler=_tool_get_role_matches,
+        roles=("employee",),
+    ),
+    Tool(
+        name="list_my_it_requests",
+        description=(
+            "Show all the employee's IT support requests — drafts waiting for HR, "
+            "ones sent to IT, fulfilled, and cancelled. Use this when the employee asks "
+            "'what happened to my laptop request' or 'check my IT ticket status'."
+        ),
+        parameters={},
+        handler=_tool_list_my_it_requests,
+        roles=("employee",),
+    ),
+    Tool(
+        name="create_my_it_request",
+        description=(
+            "Raise an IT help request on behalf of the employee. HR is notified immediately "
+            "and will forward it to IT. Use this when the employee says things like "
+            "'my laptop is not working', 'I need a new monitor', 'I don't have access to Jira', "
+            "'can you get me a replacement keyboard', etc. "
+            "request_type must be: new_asset | replacement | license | access | other. "
+            "Always confirm the title back to the employee before submitting."
+        ),
+        parameters={
+            "request_type": "new_asset | replacement | license | access | other",
+            "title": "string, required — short description e.g. 'Laptop not turning on, need replacement'",
+            "description": "string, optional — extra detail for HR and IT",
+        },
+        handler=_tool_create_my_it_request,
         roles=("employee",),
     ),
 ]

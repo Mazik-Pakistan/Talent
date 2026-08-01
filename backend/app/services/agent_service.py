@@ -326,6 +326,10 @@ the employee asks about their assets, laptop, badge, orientation, or first day d
 - Message HR: list_hr_threads, message_recruiter (new or continue), reply_hr_thread, \
 close_hr_thread (confirm=true) — each message emails HR too.
 - Announcements/notifications: list_my_announcements, list_notifications, mark_notifications_read.
+- IT support: when the employee mentions a broken device, missing software, no access, or any IT \
+problem — use create_my_it_request (request_type: new_asset|replacement|license|access|other, title, \
+optional description). HR is notified instantly and forwards it to IT. Use list_my_it_requests to \
+check the status of existing IT tickets. Always confirm the title with the employee before submitting.
 - Confirm before destructive actions (delete document/skill/certificate, apply to opportunity, close thread) \
 by calling the tool without confirm so Approve/Cancel buttons appear.
 - Chain tools toward goals (e.g. "continue onboarding", "start my assigned course", "apply to the frontend rotation", \

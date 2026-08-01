@@ -18,9 +18,16 @@ import {
   sendItServiceRequest,
 } from "@/services/authService";
 
-const STATUS_LABELS = { draft: "Draft", sent: "Sent", fulfilled: "Fulfilled", cancelled: "Cancelled" };
+const STATUS_LABELS = {
+  draft: "Waiting for HR",
+  reviewing: "HR reviewing",
+  sent: "With IT",
+  fulfilled: "Resolved",
+  cancelled: "Cancelled",
+};
 const STATUS_COLORS = {
   draft: { bg: "#eef2f7", color: "#475569" },
+  reviewing: { bg: "#e8f0fd", color: "#1d4ed8" },
   sent: { bg: "#fff3d6", color: "#92610a" },
   fulfilled: { bg: "#def3ed", color: "#087a55" },
   cancelled: { bg: "#f1f1f3", color: "#8b8b94" },
@@ -33,23 +40,170 @@ const TYPE_LABELS = {
   other: "Other",
 };
 
-function chip(status) {
-  const c = STATUS_COLORS[status] || STATUS_COLORS.draft;
+function RequestTimeline({ r }) {
+  const isCancelled = r.status === "cancelled";
+  const steps = [
+    {
+      key: "submitted",
+      label: "Submitted",
+      ts: r.created_at,
+      done: true,
+    },
+    {
+      key: "reviewing",
+      label: "HR reviewing",
+      ts: r.reviewed_at,
+      done: !!r.reviewed_at,
+    },
+    {
+      key: "sent",
+      label: "Sent to IT",
+      ts: r.sent_at,
+      done: !!r.sent_at,
+    },
+    {
+      key: "resolved",
+      label: "Resolved",
+      ts: r.fulfilled_at,
+      done: r.status === "fulfilled",
+    },
+  ];
+
   return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "3px 10px",
-        borderRadius: 999,
-        fontSize: 11,
-        fontWeight: 800,
-        background: c.bg,
-        color: c.color,
-      }}
-    >
-      {STATUS_LABELS[status] || status}
-    </span>
+    <div style={{ marginTop: 12, padding: "6px 0" }}>
+      {isCancelled ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 14px",
+            borderRadius: 10,
+            background: "#f8f8fa",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <span
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              background: "#e2e8f0",
+              color: "#8b8b94",
+              display: "grid",
+              placeItems: "center",
+              fontSize: 14,
+              fontWeight: 800,
+              flexShrink: 0,
+            }}
+          >
+            ✕
+          </span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#475569" }}>Cancelled</div>
+            {r.cancel_reason && (
+              <div style={{ fontSize: 12, color: "#8b8b94", marginTop: 2 }}>{r.cancel_reason}</div>
+            )}
+            {r.cancelled_at && (
+              <div style={{ fontSize: 11, color: "#aab4bf", marginTop: 2 }}>{fmt(r.cancelled_at)}</div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+          {steps.map((step, i) => {
+            const isLast = i === steps.length - 1;
+            const isActive = step.done && (isLast || !steps[i + 1]?.done);
+            const fmt = (iso) => {
+              if (!iso) return "";
+              const d = new Date(iso);
+              if (isNaN(d.getTime())) return "";
+              return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) +
+                " · " +
+                d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+            };
+            return (
+              <div key={step.key} style={{ display: "flex", gap: 12, alignItems: "stretch" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    width: 28,
+                    flexShrink: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: "50%",
+                      background: step.done
+                        ? isActive
+                          ? "#0d5c91"
+                          : "#def3ed"
+                        : "#eef2f7",
+                      border: step.done
+                        ? isActive
+                          ? "2px solid #0d5c91"
+                          : "2px solid #087a55"
+                        : "2px solid #d1dce6",
+                      display: "grid",
+                      placeItems: "center",
+                      fontSize: 13,
+                      fontWeight: 800,
+                      color: step.done
+                        ? isActive
+                          ? "#fff"
+                          : "#087a55"
+                        : "#aab4bf",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {step.done ? (isActive ? "●" : "✓") : "○"}
+                  </div>
+                  {!isLast && (
+                    <div
+                      style={{
+                        flex: 1,
+                        width: 2,
+                        background: steps[i + 1]?.done ? "#087a55" : "#e2e8f0",
+                        minHeight: 20,
+                        margin: "2px 0",
+                      }}
+                    />
+                  )}
+                </div>
+                <div style={{ paddingBottom: isLast ? 0 : 16, paddingTop: 2, flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: step.done ? (isActive ? "#0d5c91" : "#1a1a2e") : "#aab4bf",
+                    }}
+                  >
+                    {step.label}
+                  </div>
+                  {step.ts && (
+                    <div style={{ fontSize: 11, color: "#aab4bf", marginTop: 2 }}>{fmt(step.ts)}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
+}
+
+function fmt(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) +
+    " · " +
+    d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 export default function RecruiterItHubPage() {
@@ -310,7 +464,7 @@ export default function RecruiterItHubPage() {
             ) : (
               <>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-                  {["", "draft", "sent", "fulfilled", "cancelled"].map((s) => (
+                  {["", "draft", "reviewing", "sent", "fulfilled", "cancelled"].map((s) => (
                     <button
                       key={s || "all"}
                       type="button"
@@ -371,7 +525,7 @@ export default function RecruiterItHubPage() {
                           )}
                         </div>
                         <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                          {r.status === "draft" && (
+                          {r.status === "draft" || r.status === "reviewing" ? (
                             <button
                               type="button"
                               className={styles.primaryButton}
@@ -382,8 +536,8 @@ export default function RecruiterItHubPage() {
                             >
                               Send to IT
                             </button>
-                          )}
-                          {(r.status === "draft" || r.status === "sent") && (
+                          ) : null}
+                          {(r.status === "draft" || r.status === "reviewing" || r.status === "sent") && (
                             <button
                               type="button"
                               className={styles.secondaryButton}
