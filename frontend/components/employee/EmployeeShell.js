@@ -7,6 +7,7 @@ import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
+import RoleSwitchButton from "@/components/shared/shell/RoleSwitchButton";
 import { getMyEmployeeProfile } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
 import { getEmployeeNavItems, isEmployeeNavActive } from "@/utils/employeeNav";
@@ -111,6 +112,17 @@ function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, c
   const navItems = getEmployeeNavItems({ profileComplete });
   const displayName = employee?.full_name || user.full_name;
   const photoUrl = employee?.profile_picture || user?.profile_picture || null;
+  // A migration can add the recruiter profile after this browser session was
+  // saved. The profile endpoint supplies the current server-side answer so
+  // the switch button appears immediately for those legacy recruiters.
+  const roleSwitchUser = employee?.can_switch_to_recruiter
+    ? {
+        ...user,
+        available_roles: Array.from(
+          new Set([user.role, ...(user.available_roles || []), "recruiter"])
+        ),
+      }
+    : user;
 
   return (
     <div className={styles.root} data-app-shell>
@@ -170,6 +182,7 @@ function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, c
             </div>
             <div className={styles.topbarActions}>
               {actions}
+              <RoleSwitchButton user={roleSwitchUser} />
               <div className={styles.dropdownWrap}>
                 <div
                   className={styles.iconBtn}

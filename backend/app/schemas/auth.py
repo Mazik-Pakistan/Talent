@@ -184,6 +184,12 @@ class LoginRequest(BaseModel):
     remember_me: bool = False
 
 
+class SwitchRoleRequest(BaseModel):
+    """Re-authenticate the current session under another role the same
+    account holds (e.g. an employee who is also a recruiter)."""
+    role: Literal["employee", "recruiter"]
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=1)
 

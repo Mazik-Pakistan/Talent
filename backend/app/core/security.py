@@ -73,11 +73,11 @@ async def get_current_user(authorization: str | None = Header(default=None)) -> 
             detail="Authentication required.",
         ) from error
 
-    profile, active_role = await _resolve_active_profile(user_id)
+    profile, active_role = await _resolve_active_profile(user_id, preferred_role=role)
     if not profile or not active_role:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No active role profile found for this account.",
+            detail="No active role profile found for this account. Please sign in again.",
         )
 
     # Return the user_id or supabase_user_id as ID
@@ -95,13 +95,40 @@ async def get_current_user(authorization: str | None = Header(default=None)) -> 
     )
 
 
-async def _resolve_active_profile(user_id: str) -> tuple[dict | None, str | None]:
+async def _resolve_active_profile(
+    user_id: str, preferred_role: str | None = None
+) -> tuple[dict | None, str | None]:
     lookups = (
         ("super_admin", database.super_admins),
         ("recruiter", database.recruiters),
         ("employee", database.employees),
         ("candidate", database.candidates),
     )
+    collections_by_role = dict(lookups)
+
+    # Dual-role accounts (e.g. an employee who is also a recruiter) can have an
+    # active profile in more than one collection. The session must stay pinned
+    # to whichever role the access token was actually issued for — otherwise a
+    # user who switched to "employee" would silently keep being treated as
+    # "recruiter" (or vice versa) on every subsequent request.
+    if preferred_role and preferred_role in collections_by_role:
+        collection = collections_by_role[preferred_role]
+        profile = await collection.find_one({
+            "$or": [
+                {"user_id": user_id},
+                {"supabase_user_id": user_id},
+            ],
+            "status": "active",
+        })
+        if profile:
+            return profile, preferred_role
+        # The token names a role this account no longer has an active profile
+        # for (e.g. it was deactivated after the token was issued) — do not
+        # silently reassign the session to a different role.
+        return None, None
+
+    # No role claim on the token (legacy/edge case) — fall back to the
+    # original fixed-priority scan.
     for role, collection in lookups:
         profile = await collection.find_one({
             "$or": [

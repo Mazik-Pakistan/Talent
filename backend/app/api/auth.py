@@ -10,6 +10,7 @@ from app.schemas.auth import (
     RegisterRequest,
     ResendOTPRequest,
     ResetPasswordRequest,
+    SwitchRoleRequest,
     VerifyEmailRequest,
     VerifyOTPRequest,
 )
@@ -34,6 +35,14 @@ async def register(request: RegisterRequest):
 async def candidate_register(request: CandidateRegisterRequest):
     """US-010: Candidate registers via recruiter invitation link — sends OTP email."""
     return await candidate_service.register(request)
+
+
+@router.post("/switch-role")
+async def switch_role(request: SwitchRoleRequest, current_user: RequireUser):
+    """Dual-role accounts only (e.g. an employee who is also a recruiter):
+    re-authenticate the current session under the other role, without
+    re-entering credentials."""
+    return await service.switch_role(current_user, request.role)
 
 
 @router.post("/bootstrap-super-admin", status_code=201)

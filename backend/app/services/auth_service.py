@@ -411,8 +411,20 @@ class AuthService:
         await self._clear_failed_login(email)
         user_id = str(user_doc["_id"])
 
-        # Resolve the role profile
+        # Resolve the role profile. The public login screen only offers
+        # "Employee" and "Candidate" — a recruiter-only account (no employee
+        # profile) signs in through the same "Employee" option and lands on
+        # the recruiter dashboard instead, so nobody needs a dedicated
+        # recruiter login button. A dual-role account (employee AND
+        # recruiter) always lands on the employee dashboard first and can
+        # switch to Recruiter from inside the app.
+        effective_role = request.role
         profile = await self._resolve_role_profile(user_id, request.role)
+        if not profile and request.role == "employee":
+            profile = await self._resolve_role_profile(user_id, "recruiter")
+            if profile:
+                effective_role = "recruiter"
+
         if not profile:
             # Helpful message when candidate was converted to employee
             if request.role == "candidate":
@@ -429,8 +441,8 @@ class AuthService:
                 detail=f"No active {request.role.replace('_', ' ')} account found for these credentials.",
             )
 
-        redirect_to = self.ROLE_REDIRECTS[request.role]
-        if request.role == "candidate":
+        redirect_to = self.ROLE_REDIRECTS[effective_role]
+        if effective_role == "candidate":
             from app.services.offer_service import offer_service
 
             has_signed = await offer_service.has_signed_offer(user_id, email)
@@ -441,13 +453,15 @@ class AuthService:
                 redirect_to = (
                     "/dashboard/candidate" if onboarding_status == "submitted" else "/onboarding"
                 )
-        if request.role == "employee":
+        if effective_role == "employee":
             redirect_to = "/dashboard/employee"
 
-        access_token = create_access_token({"user_id": user_id, "email": email, "role": request.role})
+        available_roles = await self._available_switch_roles(user_id, effective_role)
+
+        access_token = create_access_token({"user_id": user_id, "email": email, "role": effective_role})
         refresh_days = 30 if request.remember_me else 7
         refresh_token_str = create_refresh_token(
-            {"user_id": user_id, "email": email, "role": request.role},
+            {"user_id": user_id, "email": email, "role": effective_role},
             expires_days=refresh_days,
         )
         await self._store_refresh_token(user_id, refresh_token_str, remember_me=request.remember_me)
@@ -457,7 +471,7 @@ class AuthService:
                 "user_id": user_id,
                 "email": email,
                 "module": "authentication",
-                "action": f"{request.role}_login",
+                "action": f"{effective_role}_login",
                 "outcome": "success",
                 "created_at": datetime.now(UTC),
             }
@@ -470,11 +484,12 @@ class AuthService:
                 "full_name": profile["full_name"],
                 "email": profile["email"],
                 "phone": profile.get("phone"),
-                "role": request.role,
+                "role": effective_role,
                 "job_title": profile.get("job_title"),
                 "department": profile.get("department"),
                 "employee_id": profile.get("employee_id"),
                 "profile_picture": profile.get("profile_picture"),
+                "available_roles": available_roles,
             },
             "session": {
                 "access_token": access_token,
@@ -482,6 +497,109 @@ class AuthService:
                 "expires_in": settings.JWT_EXPIRE_MINUTES * 60,
                 "token_type": "bearer",
                 "remember_me": request.remember_me,
+            },
+            "redirect_to": redirect_to,
+        }
+
+    # ------------------------------------------------------------------ #
+    # ROLE SWITCH (dual employee + recruiter accounts)                    #
+    # ------------------------------------------------------------------ #
+
+    async def _available_switch_roles(self, user_id: str, primary_role: str) -> list[str]:
+        """Which of {employee, recruiter} this account has an active profile for.
+
+        Only these two roles support switching today. The primary (currently
+        active) role is always listed first.
+        """
+        if primary_role not in ("employee", "recruiter"):
+            return [primary_role]
+
+        found: list[str] = []
+        for role_name in ("employee", "recruiter"):
+            profile = await self._resolve_role_profile(user_id, role_name)
+            if profile:
+                found.append(role_name)
+
+        if primary_role in found:
+            found.remove(primary_role)
+        return [primary_role, *found]
+
+    async def switch_role(self, current_user: CurrentUser, target_role: str) -> dict:
+        """Re-authenticate the current session under a different role the same
+        account also holds (e.g. an employee who is also a recruiter). Issues
+        a fresh token pair and rotates out the old refresh token so the
+        session can't silently fall back to the previous role."""
+        if target_role not in ("employee", "recruiter"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only Employee and Recruiter roles support switching.",
+            )
+        if target_role == current_user.role:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"You are already signed in as {target_role.replace('_', ' ')}.",
+            )
+
+        profile = await self._resolve_role_profile(current_user.id, target_role)
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"No active {target_role.replace('_', ' ')} account is linked to this login.",
+            )
+
+        # Preserve the "remember me" duration from the session being replaced.
+        existing_token = await database.refresh_tokens.find_one({"user_id": current_user.id})
+        remember_me = bool(existing_token.get("remember_me")) if existing_token else False
+        refresh_days = 30 if remember_me else 7
+
+        access_token = create_access_token(
+            {"user_id": current_user.id, "email": current_user.email, "role": target_role}
+        )
+        refresh_token_str = create_refresh_token(
+            {"user_id": current_user.id, "email": current_user.email, "role": target_role},
+            expires_days=refresh_days,
+        )
+
+        # Rotate: invalidate the previous role's session, issue a fresh one.
+        await database.refresh_tokens.delete_many({"user_id": current_user.id})
+        await self._store_refresh_token(current_user.id, refresh_token_str, remember_me=remember_me)
+
+        available_roles = await self._available_switch_roles(current_user.id, target_role)
+
+        await database.audit_logs.insert_one(
+            {
+                "user_id": current_user.id,
+                "email": current_user.email,
+                "module": "authentication",
+                "action": "role_switch",
+                "detail": f"{current_user.role} -> {target_role}",
+                "outcome": "success",
+                "created_at": datetime.now(UTC),
+            }
+        )
+
+        redirect_to = "/offer" if target_role == "candidate" else self.ROLE_REDIRECTS[target_role]
+
+        return {
+            "message": f"Switched to {target_role.replace('_', ' ').title()}.",
+            "user": {
+                "id": current_user.id,
+                "full_name": profile["full_name"],
+                "email": profile["email"],
+                "phone": profile.get("phone"),
+                "role": target_role,
+                "job_title": profile.get("job_title"),
+                "department": profile.get("department"),
+                "employee_id": profile.get("employee_id"),
+                "profile_picture": profile.get("profile_picture"),
+                "available_roles": available_roles,
+            },
+            "session": {
+                "access_token": access_token,
+                "refresh_token": refresh_token_str,
+                "expires_in": settings.JWT_EXPIRE_MINUTES * 60,
+                "token_type": "bearer",
+                "remember_me": remember_me,
             },
             "redirect_to": redirect_to,
         }

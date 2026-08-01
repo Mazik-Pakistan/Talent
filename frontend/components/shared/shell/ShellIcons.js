@@ -44,3 +44,14 @@ export function SearchIcon(props) {
     </svg>
   );
 }
+
+export function SwitchRoleIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <path d="M17 2.5 21 6.5l-4 4" />
+      <path d="M3 11.5v-1a4 4 0 0 1 4-4h14" />
+      <path d="M7 21.5 3 17.5l4-4" />
+      <path d="M21 12.5v1a4 4 0 0 1-4 4H3" />
+    </svg>
+  );
+}

@@ -6,6 +6,7 @@ import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
+import RoleSwitchButton from "@/components/shared/shell/RoleSwitchButton";
 import { BellIcon, LogoutIcon, SearchIcon } from "@/components/shared/shell/ShellIcons";
 import { useLogout } from "@/hooks/useLogout";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
@@ -217,6 +218,8 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                     </div>
                   )}
                 </div>
+
+                <RoleSwitchButton user={user} />
 
                 <div className={styles.dropdownWrap}>
                   <button

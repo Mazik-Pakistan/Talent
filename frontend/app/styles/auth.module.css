@@ -265,7 +265,8 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 
 .rolePicker { margin: 0; padding: 0; border: 0; }
 .rolePicker legend { margin-bottom: 8px; }
-.roleGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.rolePickerHint { margin: -4px 0 8px; color: var(--text-muted); font-size: 11.5px; line-height: 1.4; }
+.roleGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 
 .roleOption { 
   position: relative; 
