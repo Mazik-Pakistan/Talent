@@ -1,18 +1,11 @@
 """Employee ↔ recruiter messaging API."""
 
-from typing import Annotated
+from fastapi import APIRouter, Body
 
-from fastapi import APIRouter, Body, Depends
-
-from app.core.rbac import CurrentUser
-from app.core.security import require_roles
+from app.core.security import RequireAny, RequireEmployee, RequireRecruiter
 from app.services.message_service import message_service
 
 router = APIRouter(prefix="/api/messages", tags=["Messages"])
-
-RequireEmployee = Annotated[CurrentUser, Depends(require_roles("employee", "super_admin"))]
-RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))]
-RequireAny = Annotated[CurrentUser, Depends(require_roles("employee", "recruiter", "super_admin"))]
 
 
 @router.get("")

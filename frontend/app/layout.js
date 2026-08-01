@@ -1,4 +1,4 @@
-import { Geist, Geist_Mono } from "next/font/google";
+const Geist = () => ({ variable: "" }); const Geist_Mono = () => ({ variable: "" });
 
 import AgentChatWidget from "@/components/ai/Agentchatwidget";
 import SessionTimeout from "@/components/SessionTimeout";

@@ -1,11 +1,9 @@
 from datetime import date
 from pathlib import Path
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 
-from app.core.rbac import CurrentUser
-from app.core.security import require_roles
+from app.core.security import RequireAny, RequireEmployee, RequireRecruiter
 from app.schemas.learning import (
     BookmarkRequest,
     CareerGoalRequest,
@@ -17,10 +15,6 @@ from app.schemas.learning import (
 from app.services.learning_service import learning_service
 
 router = APIRouter(prefix="/api/learning", tags=["Learning"])
-
-RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))]
-RequireEmployee = Annotated[CurrentUser, Depends(require_roles("employee", "super_admin"))]
-RequireAny = Annotated[CurrentUser, Depends(require_roles("employee", "recruiter", "super_admin"))]
 
 MAX_CERT_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_CERT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
