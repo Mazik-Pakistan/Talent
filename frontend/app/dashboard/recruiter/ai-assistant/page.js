@@ -24,6 +24,14 @@ const QUICK_ACTIONS = [
     label: "Ready to activate",
     prompt: "Show candidates with signed offers who are ready to activate.",
   },
+  {
+    label: "Send IT provisioning",
+    prompt: "Send IT provisioning to the IT manager for the candidates with signed offers who are ready — send ONE batch roster email listing them all (company email and assets setup).",
+  },
+  {
+    label: "Follow up with IT",
+    prompt: "Remind IT about pending provisioning requests that are still awaiting submission.",
+  },
 ];
 
 export default function RecruiterAIAssistantPage() {

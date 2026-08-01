@@ -10,6 +10,7 @@ from app.api.documents import router as documents_router
 from app.api.employees import router as employees_router
 from app.api.invitations import router as invitations_router
 from app.api.it_provisioning import router as it_provisioning_router
+from app.api.it_service_requests import router as it_service_requests_router
 from app.api.learning import router as learning_router
 from app.api.messages import router as messages_router
 from app.api.offers import router as offers_router
@@ -60,6 +61,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(invitations_router)
 app.include_router(it_provisioning_router)
+app.include_router(it_service_requests_router)
 app.include_router(onboarding_router)
 app.include_router(universities_router)
 app.include_router(rbac_router)

@@ -49,6 +49,13 @@ export const EMPLOYEE_NAV_ICONS = {
       <path d="M12 2l2.9 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l7.1-1z" />
     </svg>
   ),
+  it: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+      <path d="M9.5 8.5a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0" />
+    </svg>
+  ),
 };
 
 /**
@@ -99,6 +106,13 @@ export function getEmployeeNavItems({ profileComplete = false } = {}) {
       module: null,
       href: "/dashboard/employee/ai-assistant",
       icon: EMPLOYEE_NAV_ICONS.ai,
+    },
+    {
+      key: "it-support",
+      label: "IT support",
+      module: null,
+      href: "/dashboard/employee/it-support",
+      icon: EMPLOYEE_NAV_ICONS.it,
     },
     {
       key: "messages",

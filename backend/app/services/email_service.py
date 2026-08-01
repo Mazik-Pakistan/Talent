@@ -553,7 +553,96 @@ class EmailService:
         self._send(
             to_email,
             subject,
-            self._branded_shell("Offer Clarification", "A candidate needs clarification", body),
+            self._branded_shell("IT Provisioning", "IT setup requested for a batch", body),
+        )
+
+    def send_it_service_request(
+        self,
+        *,
+        to_email: str,
+        recruiter_name: str,
+        employee_name: str,
+        employee_email: str,
+        job_title: str | None,
+        department: str | None,
+        request_type: str,
+        title: str,
+        description: str | None,
+        note: str | None,
+        fulfill_link: str,
+        created_at,
+    ) -> None:
+        """IT help request for an existing employee (e.g. replacement laptop)."""
+        safe_note = _escape_text(note or "")
+        note_html = (
+            f"""
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#fff8ef;border:1px solid #f3e0c2;border-radius:12px;margin:0 0 24px;">
+  <tr>
+    <td style="padding:18px 22px;">
+      <p style="margin:0 0 6px;color:#9a6700;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Note from HR</p>
+      <p style="margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;">{safe_note}</p>
+    </td>
+  </tr>
+</table>
+"""
+            if safe_note
+            else ""
+        )
+        safe_description = _escape_text(description or "")
+        description_html = (
+            f"""
+<p style="margin:0 0 18px;color:#1a1a2e;font-size:14px;line-height:1.6;
+          background:#f7f9fc;border:1px solid #e8edf3;border-radius:10px;padding:14px 16px;">
+  {safe_description}
+</p>
+"""
+            if safe_description
+            else ""
+        )
+        safe_link = _escape_text(fulfill_link or "", quote=True)
+        subject = f"IT request: {title} — {employee_name}"
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  <strong>{_escape_text(recruiter_name or 'HR')}</strong> needs IT help for an existing employee.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#ffffff;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;">
+  <tr>
+    <td style="padding:18px 22px;">
+      <p style="margin:0 0 4px;color:#6b7a8f;font-size:11px;text-transform:uppercase;letter-spacing:0.8px;">Request</p>
+      <p style="margin:0 0 12px;color:#1a1a2e;font-size:16px;font-weight:700;">{_escape_text(title)}</p>
+      <p style="margin:0;color:#6b7a8f;font-size:13px;line-height:1.6;">
+        Employee: <strong>{_escape_text(employee_name)}</strong> ({_escape_text(employee_email)})<br/>
+        Role: {_escape_text(job_title or '—')} · {_escape_text(department or '—')}<br/>
+        Type: {_escape_text(request_type)}
+      </p>
+    </td>
+  </tr>
+</table>
+{description_html}
+{note_html}
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
+  <tr>
+    <td align="center">
+      <a href="{safe_link}" class="cta-btn"
+         style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                font-weight:600;font-size:15px;letter-spacing:0.2px;
+                box-shadow:0 4px 16px rgba(13,92,145,.2);">
+        Open IT request
+      </a>
+    </td>
+  </tr>
+</table>
+<p style="margin:0;color:#6b7a8f;font-size:13px;line-height:1.6;">
+  Open the link to mark this request as fulfilled (add serial numbers or notes as needed).
+</p>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("IT Support", "New IT help request", body),
         )
 
     def send_offer_clarification_result(
@@ -851,6 +940,184 @@ class EmailService:
             to_email,
             subject,
             self._branded_shell("IT Provisioning", headline, body),
+        )
+
+    def send_it_provisioning_batch_request(
+        self,
+        *,
+        to_email: str,
+        recruiter_name: str,
+        entries: list[dict],
+        expires_at: str,
+        note: str | None = None,
+    ) -> None:
+        """One consolidated email to IT covering several new hires, each with
+        their own secure form link (batch request)."""
+        safe_note = _escape_text(note or "")
+        note_html = (
+            f"""
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#fff8ef;border:1px solid #f3e0c2;border-radius:12px;margin:0 0 24px;">
+  <tr>
+    <td style="padding:18px 22px;">
+      <p style="margin:0 0 6px;color:#9a6700;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Recruiter note</p>
+      <p style="margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;">{safe_note}</p>
+    </td>
+  </tr>
+</table>
+"""
+            if safe_note
+            else ""
+        )
+        rows = []
+        for i, entry in enumerate(entries, start=1):
+            name = entry.get("full_name") or "a new hire"
+            job_title = entry.get("job_title") or "—"
+            department = entry.get("department") or "—"
+            start_date = entry.get("start_date") or "—"
+            personal_email = entry.get("email") or "—"
+            safe_link = _escape_text(entry.get("form_link") or "", quote=True)
+            rows.append(
+                f"""
+<tr>
+  <td style="padding:14px 18px;border-bottom:1px solid #e8edf3;vertical-align:top;width:28px;color:#6b7a8f;font-weight:600;font-size:13px;">{i}</td>
+  <td style="padding:14px 18px;border-bottom:1px solid #e8edf3;vertical-align:top;">
+    <p style="margin:0 0 4px;color:#1a1a2e;font-size:14px;font-weight:700;">{_escape_text(name)}</p>
+    <p style="margin:0;color:#6b7a8f;font-size:13px;line-height:1.5;">
+      {_escape_text(job_title)} · {_escape_text(department)} · starts {_escape_text(start_date)}
+      · {_escape_text(personal_email)}
+    </p>
+  </td>
+  <td style="padding:14px 18px;border-bottom:1px solid #e8edf3;vertical-align:middle;text-align:right;width:150px;">
+    <a href="{safe_link}" class="cta-btn"
+       style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:9px 18px;border-radius:8px;font-weight:600;font-size:13px;">
+      Open form
+    </a>
+  </td>
+</tr>
+"""
+            )
+        roster = "".join(rows)
+        subject = f"IT provisioning for {len(entries)} new hire(s) — TalentAI"
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hi, <strong>{_escape_text(recruiter_name or 'a recruiter')}</strong> requested IT provisioning for
+  <strong>{len(entries)} new hire(s)</strong>. Each person has their own secure form below — open each
+  form to assign a company email, password, assets, and licenses.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#ffffff;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;">
+  <thead>
+    <tr style="background:#f7f9fc;">
+      <th style="padding:10px 18px;color:#6b7a8f;font-size:11px;text-transform:uppercase;letter-spacing:0.8px;text-align:left;">#</th>
+      <th style="padding:10px 18px;color:#6b7a8f;font-size:11px;text-transform:uppercase;letter-spacing:0.8px;text-align:left;">New hire</th>
+      <th style="padding:10px 18px;color:#6b7a8f;font-size:11px;text-transform:uppercase;letter-spacing:0.8px;text-align:right;">Form</th>
+    </tr>
+  </thead>
+  <tbody>{roster}</tbody>
+</table>
+{note_html}
+<p style="margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  The links expire on <strong>{_escape_text(expires_at)}</strong>. Follow up with the recruiter if any
+  form is missing details.
+</p>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("IT Provisioning", "IT setup requested for a batch", body),
+        )
+
+    def send_it_provisioning_batch_form_request(
+        self,
+        *,
+        to_email: str,
+        recruiter_name: str,
+        entries: list[dict],
+        form_link: str,
+        expires_at: str,
+        note: str | None = None,
+    ) -> None:
+        """One email to IT with a SINGLE bulk form link covering all new hires."""
+        safe_note = _escape_text(note or "")
+        note_html = (
+            f"""
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#fff8ef;border:1px solid #f3e0c2;border-radius:12px;margin:0 0 24px;">
+  <tr>
+    <td style="padding:18px 22px;">
+      <p style="margin:0 0 6px;color:#9a6700;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Recruiter note</p>
+      <p style="margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;">{safe_note}</p>
+    </td>
+  </tr>
+</table>
+"""
+            if safe_note
+            else ""
+        )
+        rows = []
+        for i, entry in enumerate(entries, start=1):
+            name = entry.get("full_name") or "a new hire"
+            job_title = entry.get("job_title") or "—"
+            department = entry.get("department") or "—"
+            start_date = entry.get("start_date") or "—"
+            personal_email = entry.get("email") or "—"
+            rows.append(
+                f"""
+<tr>
+  <td style="padding:10px 18px;border-bottom:1px solid #e8edf3;vertical-align:top;color:#6b7a8f;font-weight:600;font-size:13px;">{i}</td>
+  <td style="padding:10px 18px;border-bottom:1px solid #e8edf3;vertical-align:top;">
+    <p style="margin:0;color:#1a1a2e;font-size:14px;font-weight:700;">{_escape_text(name)}</p>
+    <p style="margin:0;color:#6b7a8f;font-size:13px;line-height:1.5;">
+      {_escape_text(job_title)} · {_escape_text(department)} · starts {_escape_text(start_date)}
+      · {_escape_text(personal_email)}
+    </p>
+  </td>
+</tr>
+"""
+            )
+        roster = "".join(rows)
+        safe_link = _escape_text(form_link or "", quote=True)
+        subject = f"IT provisioning for {len(entries)} new hire(s) — one form — TalentAI"
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hi, <strong>{_escape_text(recruiter_name or 'a recruiter')}</strong> requested IT provisioning for
+  <strong>{len(entries)} new hire(s)</strong>. Use the single form below to assign company emails,
+  passwords, assets, and licenses for everyone on this list at once.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#ffffff;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;">
+  <thead>
+    <tr style="background:#f7f9fc;">
+      <th style="padding:10px 18px;color:#6b7a8f;font-size:11px;text-transform:uppercase;letter-spacing:0.8px;text-align:left;">#</th>
+      <th style="padding:10px 18px;color:#6b7a8f;font-size:11px;text-transform:uppercase;letter-spacing:0.8px;text-align:left;">New hire</th>
+    </tr>
+  </thead>
+  <tbody>{roster}</tbody>
+</table>
+{note_html}
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
+  <tr>
+    <td align="center">
+      <a href="{safe_link}" class="cta-btn"
+         style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                font-weight:600;font-size:15px;letter-spacing:0.2px;
+                box-shadow:0 4px 16px rgba(13,92,145,.2);">
+        Open bulk IT form
+      </a>
+    </td>
+  </tr>
+</table>
+<p style="margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  The link expires on <strong>{_escape_text(expires_at)}</strong>.
+</p>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("IT Provisioning", "IT setup requested for a batch", body),
         )
 
     def send_it_provisioning_complete(
