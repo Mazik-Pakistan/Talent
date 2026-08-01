@@ -7,7 +7,7 @@ import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
 import OfferSummaryCard from "@/components/offers/OfferSummaryCard";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
-import { getApiErrorMessage, getCandidateDetail } from "@/services/authService";
+import { getApiErrorMessage, getCandidateDetail, getItProvisioningForCandidate } from "@/services/authService";
 import SendReminderModal from "@/components/recruiter/SendReminderModal";
 import {
   clearRecruiterContext,
@@ -22,6 +22,7 @@ export default function CandidateProfilePage({ params }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reminderOpen, setReminderOpen] = useState(false);
+  const [itProvisioning, setItProvisioning] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -32,6 +33,9 @@ export default function CandidateProfilePage({ params }) {
         const data = await getCandidateDetail(id, accessToken);
         setCandidate(data.candidate);
         setError("");
+        getItProvisioningForCandidate(id, accessToken)
+          .then((it) => setItProvisioning(it))
+          .catch(() => setItProvisioning(null));
       } catch (err) { setError(getApiErrorMessage(err, "Could not load candidate profile.")); }
       finally { setLoading(false); }
     }
@@ -147,7 +151,20 @@ export default function CandidateProfilePage({ params }) {
       )}
     </DetailSection>
 
-    <DetailSection tone="cyan" title="Documents" description="Identity and uploaded onboarding documents.">{governmentDocs.length ? <ul className={styles.miniList}>{governmentDocs.map((document, index) => <li key={`${document.doc_type}-${index}`} className={styles.miniListItem}><div><strong>{humanize(document.doc_type)}</strong><div className={styles.mutedText}>{document.file_name || "No filename"}</div>{document.file_url && <a href={document.file_url} target="_blank" rel="noreferrer" className={styles.linkButton}>Open document</a>}</div></li>)}</ul> : <p className={styles.emptySub}>No identity documents have been submitted yet.</p>}<div style={{ marginTop: 16 }}><RecruiterDocumentReview ownerId={candidate.id} /></div></DetailSection>
+    <DetailSection tone="cyan" title="Documents" description="Identity and uploaded onboarding documents.">{governmentDocs.length ? <ul className={styles.miniList}>{governmentDocs.map((document, index) => <li key={`${document.doc_type}-${index}`} className={styles.miniListItem}><div><strong>{humanize(document.doc_type)}</strong><div className={styles.mutedText}>{document.file_name || "No filename"}</div>{document.file_url && <a href={document.file_url} target="_blank" rel="noreferrer" className={styles.linkButton}>Open document</a>}</div></li>)}</ul> : <p className={styles.emptySub}>No identity documents have been submitted yet.</p>}<div style={{ marginTop: 16 }}><RecruiterDocumentReview ownerId={candidate.id} /></div>    </DetailSection>
+    <DetailSection tone="navy" title="IT provisioning" description="IT officer, status, and what they submitted for this candidate.">
+      {!itProvisioning ? <p className={styles.emptySub}>No IT provisioning has been requested for this candidate yet.</p> : <>
+        <dl className={styles.employeeFactGrid}>
+          <Fact label="IT officer" value={itProvisioning.it_manager_email} />
+          <Fact label="Status" value={humanize(itProvisioning.status)} />
+          <Fact label="Company email" value={itProvisioning.company_email} />
+          <Fact label="Submitted" value={itProvisioning.submitted_at ? formatDate(itProvisioning.submitted_at) : "—"} />
+        </dl>
+        {itProvisioning.assets?.length > 0 && <div style={{ marginBottom: 10 }}><strong style={{ fontSize: 13 }}>Assets issued</strong><ul className={styles.miniList}>{itProvisioning.assets.map((asset, index) => <li key={`${asset.name}-${index}`} className={styles.miniListItem}><div><strong>{asset.name}</strong>{asset.serial_number ? <div className={styles.mutedText}>Serial: {asset.serial_number}</div> : null}</div></li>)}</ul></div>}
+        {itProvisioning.licenses?.length > 0 && <div style={{ marginBottom: 10 }}><strong style={{ fontSize: 13 }}>Licenses issued</strong><ul className={styles.miniList}>{itProvisioning.licenses.map((license, index) => <li key={`${license.name}-${index}`} className={styles.miniListItem}><div><strong>{license.name}</strong>{license.vendor ? <div className={styles.mutedText}>{license.vendor}</div> : null}</div></li>)}</ul></div>}
+        {itProvisioning.form_link && <a href={itProvisioning.form_link} target="_blank" rel="noreferrer" className={styles.linkButton}>Open IT form</a>}
+      </>}
+    </DetailSection>
     <SendReminderModal
       open={reminderOpen}
       target={candidate ? { id: candidate.id, full_name: candidate.full_name, role: "candidate" } : null}

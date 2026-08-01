@@ -1195,6 +1195,473 @@ async def _tool_reply_hr_thread(user: CurrentUser, args: dict) -> ToolResult:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# IT provisioning (pre-activation company email + assets)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+async def _resolve_it_provisioning_offer(
+    user: CurrentUser, args: dict
+) -> tuple[str | None, dict | None, str | None]:
+    """Resolve a signed offer id for IT provisioning from email/name/offer_id.
+
+    Returns (offer_id, person, error). `person` is the ready-list candidate row
+    (has email/full_name/offer_id) used for messaging.
+    """
+    offer_id = (args.get("offer_id") or "").strip()
+    email = (args.get("email") or args.get("candidate_email") or "").strip()
+    name = (args.get("name") or args.get("full_name") or "").strip()
+    if not offer_id and email and "@" not in email and not name:
+        name, email = email, ""
+    try:
+        ready = await employee_service.list_ready_for_conversion(user)
+    except Exception as exc:  # noqa: BLE001
+        return None, None, f"Could not load ready-to-activate candidates: {_err(exc).error}"
+    candidates = ready.get("candidates") or []
+    if offer_id:
+        return offer_id, None, None
+    if email:
+        for c in candidates:
+            if (c.get("email") or "").lower() == email.lower():
+                return c.get("offer_id"), c, None
+        return None, None, await _it_eligibility_reason(user, email=email, name=None)
+    if name:
+        for c in candidates:
+            if name.lower() in (c.get("full_name") or "").lower():
+                return c.get("offer_id"), c, None
+        return None, None, await _it_eligibility_reason(user, email=None, name=name)
+    return None, None, "Provide offer_id, email, or name of a candidate with a signed offer."
+
+
+async def _it_eligibility_reason(user: CurrentUser, *, email: str | None, name: str | None) -> str:
+    """Tailored message when a person is not in the ready-to-activate list."""
+    lookup = {"email": email} if email else ({"name": name} if name else {})
+    if not lookup:
+        return "No signed candidate found."
+    emp, _ = await _resolve_employee(user, lookup)
+    if emp:
+        who = email or name
+        return f"{who} is already an employee — IT provisioning only applies to signed candidates before activation."
+    cand, _ = await _resolve_candidate(user, lookup)
+    who = email or name
+    if cand:
+        signed = (cand.get("status") or "").lower() == "signed"
+        onboarding_submitted = ((cand.get("onboarding") or {}).get("status") or "") == "submitted"
+        if not signed:
+            return f"{who} has no signed offer yet — IT provisioning starts after the candidate signs the offer."
+        if not onboarding_submitted:
+            return (
+                f"{who} signed but hasn't finished onboarding intake yet. "
+                "Complete onboarding first, then send IT provisioning."
+            )
+        return f"{who} isn't in the ready-to-activate list yet."
+    return f"No candidate found for {who}."
+
+
+def _it_person(c: dict) -> dict:
+    return {
+        "email": c.get("email"),
+        "full_name": c.get("full_name"),
+        "offer_id": c.get("offer_id"),
+    }
+
+
+async def _it_provisioning_targets(
+    user: CurrentUser, args: dict, *, mode: str
+) -> tuple[list[dict], list[str], list[dict]]:
+    """Classify ready-to-activate candidates for bulk IT send/remind.
+
+    mode "send" → not yet requested (never emailed IT); mode "remind" → pending only.
+    Returns (targets, not_found, skipped) where targets are candidate rows and
+    not_found are requested emails that don't match anyone at the IT-ready stage.
+    """
+    emails = [e.lower().strip() for e in (args.get("emails") or []) if e]
+    offer_ids_arg = [str(o).strip() for o in (args.get("offer_ids") or []) if o]
+    ready = await employee_service.list_ready_for_conversion(user)
+    candidates = ready.get("candidates") or []
+    selected = [
+        c
+        for c in candidates
+        if c.get("offer_id")
+        and (not emails or (c.get("email") or "").lower() in emails)
+        and (not offer_ids_arg or c.get("offer_id") in offer_ids_arg)
+    ]
+    not_found: list[str] = []
+    if emails:
+        found = {(c.get("email") or "").lower() for c in candidates}
+        not_found = [e for e in emails if e not in found]
+
+    targets: list[dict] = []
+    skipped: list[dict] = []
+    for c in selected:
+        if c.get("can_activate"):
+            skipped.append({**_it_person(c), "reason": "already_submitted"})
+            continue
+        status = (c.get("it_provisioning") or {}).get("status")
+        if mode == "send":
+            if status == "pending":
+                skipped.append({**_it_person(c), "reason": "already_pending"})
+            else:
+                targets.append(c)
+        else:  # remind
+            if status == "pending":
+                targets.append(c)
+            else:
+                skipped.append({**_it_person(c), "reason": "not_sent_yet"})
+    return targets[:BULK_CAP], not_found, skipped
+
+
+async def _tool_send_it_provisioning(user: CurrentUser, args: dict) -> ToolResult:
+    from app.schemas.it_provisioning import SendItProvisioningRequest
+    from app.services.it_provisioning_service import it_provisioning_service
+
+    offer_id, person, err = await _resolve_it_provisioning_offer(user, args)
+    if err:
+        return ToolResult(ok=False, error=err)
+    who = (person or {}).get("full_name") or (person or {}).get("email") or offer_id
+    try:
+        existing = await it_provisioning_service.get_for_offer(offer_id)
+        if existing and existing.get("status") in ("submitted", "applied"):
+            return ToolResult(
+                ok=False,
+                error=(
+                    f"IT has already submitted provisioning for {who}. "
+                    "You can activate the employee instead (approve_offer)."
+                ),
+            )
+        if existing and existing.get("status") == "pending" and not args.get("resend"):
+            return ToolResult(
+                ok=False,
+                error=(
+                    f"IT provisioning for {who} is already pending (sent to "
+                    f"{existing.get('it_manager_email')}). Use remind_it_provisioning to follow up, "
+                    "or call this tool with resend=true to email IT a fresh request."
+                ),
+            )
+        result = await it_provisioning_service.send_request(
+            user,
+            SendItProvisioningRequest(
+                offer_id=offer_id,
+                it_manager_email=args.get("it_manager_email"),
+                note=args.get("note"),
+            ),
+        )
+        return ToolResult(
+            ok=True,
+            data={
+                "message": result.get("message"),
+                "email_sent": result.get("email_sent"),
+                "email_error": result.get("email_error"),
+                "form_link": result.get("form_link"),
+                "provisioning": result.get("provisioning"),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_remind_it_provisioning(user: CurrentUser, args: dict) -> ToolResult:
+    from app.schemas.it_provisioning import RemindItProvisioningRequest
+    from app.services.it_provisioning_service import it_provisioning_service
+
+    offer_id, person, err = await _resolve_it_provisioning_offer(user, args)
+    if err:
+        return ToolResult(ok=False, error=err)
+    who = (person or {}).get("full_name") or (person or {}).get("email") or offer_id
+    try:
+        existing = await it_provisioning_service.get_for_offer(offer_id)
+        if not existing:
+            return ToolResult(
+                ok=False,
+                error=(
+                    f"No IT provisioning request exists for {who} yet. "
+                    "Send the IT email first (send_it_provisioning)."
+                ),
+            )
+        if existing.get("status") in ("submitted", "applied"):
+            return ToolResult(
+                ok=False,
+                error=(
+                    f"IT already submitted provisioning for {who}. "
+                    "You can activate the employee instead (approve_offer)."
+                ),
+            )
+        result = await it_provisioning_service.remind(
+            user,
+            RemindItProvisioningRequest(offer_id=offer_id, note=args.get("note")),
+        )
+        return ToolResult(
+            ok=True,
+            data={
+                "message": result.get("message"),
+                "email_sent": result.get("email_sent"),
+                "email_error": result.get("email_error"),
+                "form_link": result.get("form_link"),
+                "provisioning": result.get("provisioning"),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_bulk_send_it_provisioning(user: CurrentUser, args: dict) -> ToolResult:
+    from app.schemas.it_provisioning import BulkSendItProvisioningRequest
+    from app.services.it_provisioning_service import it_provisioning_service
+
+    try:
+        targets, not_found, skipped = await _it_provisioning_targets(user, args, mode="send")
+        if targets and not args.get("confirm"):
+            return confirm_gate(
+                "bulk_send_it_provisioning",
+                {
+                    "emails": args.get("emails"),
+                    "offer_ids": args.get("offer_ids"),
+                    "it_manager_email": args.get("it_manager_email"),
+                    "note": args.get("note"),
+                    "batch_email": bool(args.get("batch_email")),
+                    "batch_form": bool(args.get("batch_form")),
+                },
+                f"Email IT to provision {len(targets)} candidate(s)?",
+            )
+        if not targets:
+            return ToolResult(
+                ok=True,
+                data={
+                    "message": "No candidates are ready for a fresh IT email right now.",
+                    "sent": [],
+                    "failed": [],
+                    "not_found": not_found,
+                    "skipped": skipped,
+                    "summary": {"sent": 0, "failed": 0},
+                },
+            )
+        result = await it_provisioning_service.bulk_send(
+            user,
+            BulkSendItProvisioningRequest(
+                offer_ids=[c["offer_id"] for c in targets],
+                it_manager_email=args.get("it_manager_email"),
+                note=args.get("note"),
+                batch_email=bool(args.get("batch_email")),
+                batch_form=bool(args.get("batch_form")),
+            ),
+        )
+        data = result if isinstance(result, dict) else {"message": str(result)}
+        data["not_found"] = not_found
+        data["skipped"] = skipped
+        data["targeted"] = [_it_person(c) for c in targets]
+        return ToolResult(ok=True, data=data)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_bulk_remind_it_provisioning(user: CurrentUser, args: dict) -> ToolResult:
+    from app.schemas.it_provisioning import BulkRemindItProvisioningRequest
+    from app.services.it_provisioning_service import it_provisioning_service
+
+    try:
+        targets, not_found, skipped = await _it_provisioning_targets(user, args, mode="remind")
+        if targets and not args.get("confirm"):
+            return confirm_gate(
+                "bulk_remind_it_provisioning",
+                {
+                    "emails": args.get("emails"),
+                    "offer_ids": args.get("offer_ids"),
+                    "note": args.get("note"),
+                },
+                f"Send IT follow-up emails for {len(targets)} pending request(s)?",
+            )
+        if not targets:
+            return ToolResult(
+                ok=True,
+                data={
+                    "message": "No pending IT provisioning requests to remind about.",
+                    "sent": [],
+                    "failed": [],
+                    "not_found": not_found,
+                    "skipped": skipped,
+                    "summary": {"sent": 0, "failed": 0},
+                },
+            )
+        result = await it_provisioning_service.bulk_remind(
+            user,
+            BulkRemindItProvisioningRequest(offer_ids=[c["offer_id"] for c in targets], note=args.get("note")),
+        )
+        data = result if isinstance(result, dict) else {"message": str(result)}
+        data["not_found"] = not_found
+        data["skipped"] = skipped
+        data["targeted"] = [_it_person(c) for c in targets]
+        return ToolResult(ok=True, data=data)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_it_kits(user: CurrentUser, args: dict) -> ToolResult:
+    from app.services.it_kit_service import it_kit_service
+
+    try:
+        return ToolResult(ok=True, data=await it_kit_service.list_kits(user))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_create_it_kit(user: CurrentUser, args: dict) -> ToolResult:
+    from app.schemas.it_provisioning import ItKitCreateRequest
+    from app.services.it_kit_service import it_kit_service
+
+    try:
+        result = await it_kit_service.create_kit(
+            user,
+            ItKitCreateRequest(
+                name=args.get("name"),
+                description=args.get("description"),
+                assets=args.get("assets") or [],
+                licenses=args.get("licenses") or [],
+                roles=args.get("roles") or [],
+                is_default=bool(args.get("is_default")),
+            ),
+        )
+        return ToolResult(
+            ok=True,
+            data={**result, "message": f"IT kit '{result.get('name')}' created with {len(result.get('assets') or [])} asset(s) and {len(result.get('licenses') or [])} license(s)."},
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_update_it_kit(user: CurrentUser, args: dict) -> ToolResult:
+    from app.schemas.it_provisioning import ItKitUpdateRequest
+    from app.services.it_kit_service import it_kit_service
+
+    try:
+        result = await it_kit_service.update_kit(
+            user,
+            args.get("kit_id"),
+            ItKitUpdateRequest(
+                name=args.get("name"),
+                description=args.get("description"),
+                assets=args.get("assets"),
+                licenses=args.get("licenses"),
+                roles=args.get("roles"),
+                is_default=args.get("is_default"),
+            ),
+        )
+        return ToolResult(ok=True, data={**result, "message": f"IT kit '{result.get('name')}' updated."})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_delete_it_kit(user: CurrentUser, args: dict) -> ToolResult:
+    from app.services.it_kit_service import it_kit_service
+
+    try:
+        if not args.get("confirm"):
+            return confirm_gate(
+                "delete_it_kit",
+                {"kit_id": args.get("kit_id")},
+                f"Delete the IT kit '{args.get('name') or args.get('kit_id')}'? This removes the template.",
+            )
+        result = await it_kit_service.delete_kit(user, args.get("kit_id"))
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_it_officers(user: CurrentUser, args: dict) -> ToolResult:
+    from app.services.it_service_request_service import it_service_request_service
+
+    try:
+        return ToolResult(ok=True, data=await it_service_request_service.officers_overview(user))
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_list_it_service_requests(user: CurrentUser, args: dict) -> ToolResult:
+    from app.services.it_service_request_service import it_service_request_service
+
+    try:
+        return ToolResult(
+            ok=True,
+            data=await it_service_request_service.list_recruiter(user, args.get("status")),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_create_it_service_request(user: CurrentUser, args: dict) -> ToolResult:
+    from app.schemas.it_service_request import ItServiceRequestCreate
+    from app.services.it_service_request_service import it_service_request_service
+
+    try:
+        result = await it_service_request_service.create_for_employee(
+            user,
+            ItServiceRequestCreate(
+                employee_id=args.get("employee_id"),
+                request_type=args.get("request_type") or "other",
+                title=args.get("title"),
+                description=args.get("description"),
+                it_manager_email=args.get("it_manager_email"),
+                note=args.get("note"),
+            ),
+        )
+        message = (
+            f"IT request sent to {result.get('it_manager_email')} for {result.get('employee_name')}."
+            if result.get("status") == "sent"
+            else f"IT request draft created for {result.get('employee_name')} — send it to an IT officer to email them."
+        )
+        return ToolResult(ok=True, data={**result, "message": message})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_send_it_service_request(user: CurrentUser, args: dict) -> ToolResult:
+    from app.schemas.it_service_request import ItServiceRequestSendRequest
+    from app.services.it_service_request_service import it_service_request_service
+
+    try:
+        if not args.get("confirm"):
+            return confirm_gate(
+                "send_it_service_request",
+                {
+                    "request_id": args.get("request_id"),
+                    "it_manager_email": args.get("it_manager_email"),
+                    "note": args.get("note"),
+                },
+                f"Send IT request '{args.get('title') or args.get('request_id')}' to {args.get('it_manager_email')}?",
+            )
+        result = await it_service_request_service.send_to_it(
+            user,
+            ItServiceRequestSendRequest(
+                request_id=args.get("request_id"),
+                it_manager_email=args.get("it_manager_email"),
+                note=args.get("note"),
+            ),
+        )
+        return ToolResult(
+            ok=True,
+            data={**result, "message": f"IT request sent to {result.get('it_manager_email')}."},
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_cancel_it_service_request(user: CurrentUser, args: dict) -> ToolResult:
+    from app.services.it_service_request_service import it_service_request_service
+
+    try:
+        if not args.get("confirm"):
+            return confirm_gate(
+                "cancel_it_service_request",
+                {"request_id": args.get("request_id"), "reason": args.get("reason")},
+                f"Cancel IT request '{args.get('title') or args.get('request_id')}'?",
+            )
+        return ToolResult(
+            ok=True,
+            data=await it_service_request_service.cancel(user, args.get("request_id"), args.get("reason")),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Tool registrations
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -1220,6 +1687,208 @@ RECRUITER_PARITY_TOOLS: list[Tool] = [
         description="Remind all (or listed) candidates still in onboarding to finish intake.",
         parameters={"emails": "optional array", "note": "optional", "force": "boolean, optional"},
         handler=_tool_bulk_remind_candidates,
+        roles=("recruiter", "super_admin"),
+    ),
+    # IT provisioning (pre-activation company email + assets)
+    Tool(
+        name="send_it_provisioning",
+        description=(
+            "Email the IT manager a secure form link so IT can provision a signed candidate's company "
+            "email and assets before activation. Resolve the person by email/name or pass offer_id. "
+            "Optional it_manager_email overrides the default IT inbox; note is included in the email. "
+            "If a request is already pending, the tool returns an error — prefer remind_it_provisioning, "
+            "or pass resend=true to email IT a fresh request. Never invent an it_manager_email."
+        ),
+        parameters={
+            "email": "string, optional",
+            "name": "string, optional",
+            "offer_id": "string, optional",
+            "it_manager_email": "string, optional",
+            "note": "string, optional",
+            "resend": "boolean, optional — resend a fresh email when a request is already pending",
+        },
+        handler=_tool_send_it_provisioning,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="remind_it_provisioning",
+        description=(
+            "Send a follow-up email to IT for an already-sent provisioning request that is still "
+            "pending. Resolve the person by email/name or pass offer_id."
+        ),
+        parameters={
+            "email": "string, optional",
+            "name": "string, optional",
+            "offer_id": "string, optional",
+            "note": "string, optional",
+        },
+        handler=_tool_remind_it_provisioning,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="bulk_send_it_provisioning",
+        description=(
+            "Send IT provisioning requests for many signed candidates at once. Only emails candidates "
+            "who have never been sent one — anyone already pending is reported as skipped. Defaults "
+            "to every ready-to-activate candidate; narrow with emails[] or offer_ids[]. "
+            "Modes: batch_form=true sends IT ONE bulk form link covering everyone (IT assigns emails, "
+            "passwords, assets, and licenses for all of them in a single form — best when they need "
+            "the same resources); batch_email=true sends ONE roster email with each person's own link; "
+            "otherwise one email per candidate. Requires confirmation (call without confirm first so "
+            "Approve/Cancel appears). Optional shared it_manager_email and note. "
+            "Never invent an it_manager_email."
+        ),
+        parameters={
+            "emails": "optional array",
+            "offer_ids": "optional array",
+            "it_manager_email": "string, optional",
+            "note": "string, optional",
+            "batch_email": "boolean, optional — one roster email to IT instead of one email per candidate",
+            "batch_form": "boolean, optional — ONE bulk form link where IT provisions everyone at once",
+            "confirm": "boolean, required for the action to run",
+        },
+        handler=_tool_bulk_send_it_provisioning,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="bulk_remind_it_provisioning",
+        description=(
+            "Send follow-up emails to IT for all (or listed) pending provisioning requests that "
+            "are still awaiting submission. Requires confirmation (call without confirm first so "
+            "Approve/Cancel appears)."
+        ),
+        parameters={
+            "emails": "optional array",
+            "offer_ids": "optional array",
+            "note": "string, optional",
+            "confirm": "boolean, required for the action to run",
+        },
+        handler=_tool_bulk_remind_it_provisioning,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="list_it_kits",
+        description=(
+            "List the reusable IT kits (standard asset + software license setups) available for "
+            "provisioning new hires. Use these when IT needs a standard setup."
+        ),
+        parameters={},
+        handler=_tool_list_it_kits,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="create_it_kit",
+        description=(
+            "Create a reusable IT kit: name, optional description, assets (each with name, "
+            "asset_type laptop|monitor|phone|headset|badge|license|other, optional serial_number "
+            "and notes), licenses (name, vendor, notes), and optional applicable roles. "
+            "At least one asset or license is required."
+        ),
+        parameters={
+            "name": "string, required",
+            "description": "string, optional",
+            "assets": "optional array of {name, asset_type, serial_number?, notes?}",
+            "licenses": "optional array of {name, vendor?, notes?}",
+            "roles": "optional array of role titles",
+            "is_default": "boolean, optional",
+        },
+        handler=_tool_create_it_kit,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="update_it_kit",
+        description="Edit an existing IT kit (name, description, assets, licenses, roles).",
+        parameters={
+            "kit_id": "string, required",
+            "name": "optional",
+            "description": "optional",
+            "assets": "optional array",
+            "licenses": "optional array",
+            "roles": "optional array",
+            "is_default": "boolean, optional",
+        },
+        handler=_tool_update_it_kit,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="delete_it_kit",
+        description="Delete an IT kit template. Requires confirmation (call without confirm first).",
+        parameters={
+            "kit_id": "string, required",
+            "name": "string, optional (for the confirm message)",
+            "confirm": "boolean, required for the action to run",
+        },
+        handler=_tool_delete_it_kit,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="list_it_officers",
+        description=(
+            "Show every IT officer this recruiter has worked with, their workload (pending/submitted "
+            "provisioning, open/fulfilled service requests), and the employees each one provisioned."
+        ),
+        parameters={},
+        handler=_tool_list_it_officers,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="list_it_service_requests",
+        description=(
+            "List IT service requests (post-activation help like replacement laptops). "
+            "Filter by status: draft|sent|fulfilled|cancelled."
+        ),
+        parameters={"status": "string, optional: draft|sent|fulfilled|cancelled"},
+        handler=_tool_list_it_service_requests,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="create_it_service_request",
+        description=(
+            "Raise an IT help request for an existing employee (e.g. 'new laptop — current one broke'). "
+            "Provide employee_id (EMP...), request_type new_asset|replacement|license|access|other, title, "
+            "optional description, and an it_manager_email to send it immediately (otherwise it stays a "
+            "draft until sent with send_it_service_request). Never invent an it_manager_email."
+        ),
+        parameters={
+            "employee_id": "string, required (e.g. EMP-0001)",
+            "request_type": "new_asset|replacement|license|access|other",
+            "title": "string, required",
+            "description": "string, optional",
+            "it_manager_email": "string, optional",
+            "note": "string, optional",
+        },
+        handler=_tool_create_it_service_request,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="send_it_service_request",
+        description=(
+            "Send a draft IT service request to an IT officer by email (they fulfill it from a link). "
+            "Requires confirmation (call without confirm first so Approve/Cancel appears)."
+        ),
+        parameters={
+            "request_id": "string, required",
+            "it_manager_email": "string, required",
+            "note": "string, optional",
+            "title": "string, optional (for the confirm message)",
+            "confirm": "boolean, required for the action to run",
+        },
+        handler=_tool_send_it_service_request,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="cancel_it_service_request",
+        description=(
+            "Cancel an IT service request that is still a draft or in progress. "
+            "Requires confirmation (call without confirm first)."
+        ),
+        parameters={
+            "request_id": "string, required",
+            "reason": "string, optional",
+            "title": "string, optional (for the confirm message)",
+            "confirm": "boolean, required for the action to run",
+        },
+        handler=_tool_cancel_it_service_request,
         roles=("recruiter", "super_admin"),
     ),
     Tool(

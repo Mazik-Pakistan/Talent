@@ -61,6 +61,8 @@ export default function RecruiterCandidatesPage() {
   const [historicalLoading, setHistoricalLoading] = useState(false);
   const [selectedItOfferIds, setSelectedItOfferIds] = useState([]);
   const [bulkItEmail, setBulkItEmail] = useState("");
+  const [bulkItBatch, setBulkItBatch] = useState(false);
+  const [bulkItForm, setBulkItForm] = useState(false);
   const [bulkItBusy, setBulkItBusy] = useState(false);
 
   useEffect(() => {
@@ -203,7 +205,7 @@ export default function RecruiterCandidatesPage() {
     setBulkItBusy(true);
     setConversionMessage("");
     try {
-      const payload = { offer_ids: offerIds };
+      const payload = { offer_ids: offerIds, batch_email: bulkItBatch, batch_form: bulkItForm };
       const shared = bulkItEmail.trim();
       if (shared) payload.it_manager_email = shared;
       const data = await bulkSendItProvisioning(payload, accessToken);
@@ -867,6 +869,22 @@ export default function RecruiterCandidatesPage() {
                       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, paddingBottom: 8 }}>
                         <input
                           type="checkbox"
+                          checked={bulkItBatch}
+                          onChange={(e) => setBulkItBatch(e.target.checked)}
+                        />
+                        One batch email
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, paddingBottom: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={bulkItForm}
+                          onChange={(e) => setBulkItForm(e.target.checked)}
+                        />
+                        Bulk form for IT (they do all in one form)
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, paddingBottom: 8 }}>
+                        <input
+                          type="checkbox"
                           checked={
                             selectedItOfferIds.length > 0 &&
                             selectedItOfferIds.length === itActionableCandidates.length
@@ -915,9 +933,18 @@ export default function RecruiterCandidatesPage() {
                       </button>
                       <button
                         type="button"
-                        className={styles.secondaryButton}
+                        className={styles.primaryButton}
                         disabled={bulkItBusy || itNotSentCandidates.length === 0}
-                        onClick={() => handleBulkSendIt(itNotSentCandidates.map((c) => c.offer_id))}
+                        onClick={() => {
+                          const count = itNotSentCandidates.length;
+                          if (
+                            window.confirm(
+                              `Email IT to provision ${count} candidate${count === 1 ? "" : "s"}?`
+                            )
+                          ) {
+                            handleBulkSendIt(itNotSentCandidates.map((c) => c.offer_id));
+                          }
+                        }}
                       >
                         Send IT to all pending
                       </button>

@@ -980,6 +980,109 @@ export async function bulkRemindItProvisioning(payload, accessToken) {
   return data;
 }
 
+export async function listItKits(accessToken) {
+  const { data } = await apiClient.get("/api/it-provisioning/kits", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function createItKit(payload, accessToken) {
+  const { data } = await apiClient.post("/api/it-provisioning/kits", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function updateItKit(kitId, payload, accessToken) {
+  const { data } = await apiClient.patch(`/api/it-provisioning/kits/${kitId}`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function deleteItKit(kitId, accessToken) {
+  const { data } = await apiClient.delete(`/api/it-provisioning/kits/${kitId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getItProvisioningForCandidate(candidateId, accessToken) {
+  const { data } = await apiClient.get(
+    `/api/it-provisioning/candidate/${encodeURIComponent(candidateId)}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  return data;
+}
+
+// ─── IT service requests (post-activation help) ────────────────────────────
+
+export async function getItOfficersOverview(accessToken) {
+  const { data } = await apiClient.get("/api/it-service-requests/officers/overview", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function listItServiceRequests(accessToken, status) {
+  const { data } = await apiClient.get("/api/it-service-requests", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: status ? { status } : {},
+  });
+  return data;
+}
+
+export async function createItServiceRequest(payload, accessToken) {
+  const { data } = await apiClient.post("/api/it-service-requests", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function sendItServiceRequest(payload, accessToken) {
+  const { data } = await apiClient.post("/api/it-service-requests/send", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function cancelItServiceRequest(requestId, payload, accessToken) {
+  const { data } = await apiClient.post(
+    `/api/it-service-requests/${requestId}/cancel`,
+    payload || {},
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  return data;
+}
+
+export async function listMyItServiceRequests(accessToken) {
+  const { data } = await apiClient.get("/api/it-service-requests/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function createMyItServiceRequest(payload, accessToken) {
+  const { data } = await apiClient.post("/api/it-service-requests/me", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getItServiceRequestPublic(token) {
+  const { data } = await apiClient.get(`/api/it-service-requests/public/${encodeURIComponent(token)}`);
+  return data;
+}
+
+export async function fulfillItServiceRequestPublic(token, payload) {
+  const { data } = await apiClient.post(
+    `/api/it-service-requests/public/${encodeURIComponent(token)}/fulfill`,
+    payload
+  );
+  return data;
+}
+
 export async function getItProvisioningPublic(token) {
   const { data } = await apiClient.get(`/api/it-provisioning/${encodeURIComponent(token)}`);
   return data;
@@ -988,6 +1091,19 @@ export async function getItProvisioningPublic(token) {
 export async function submitItProvisioningPublic(token, payload) {
   const { data } = await apiClient.post(
     `/api/it-provisioning/${encodeURIComponent(token)}/submit`,
+    payload
+  );
+  return data;
+}
+
+export async function getItProvisioningBatchPublic(token) {
+  const { data } = await apiClient.get(`/api/it-provisioning/batch/${encodeURIComponent(token)}`);
+  return data;
+}
+
+export async function submitItProvisioningBatchPublic(token, payload) {
+  const { data } = await apiClient.post(
+    `/api/it-provisioning/batch/${encodeURIComponent(token)}/submit`,
     payload
   );
   return data;

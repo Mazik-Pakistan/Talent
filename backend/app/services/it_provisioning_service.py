@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from bson import ObjectId
 from fastapi import HTTPException, status
+from pymongo import ReturnDocument
 
 from app.core.config import settings
 from app.core.crypto import decrypt_text, encrypt_text
@@ -20,6 +21,7 @@ from app.core.rbac import CurrentUser
 from app.schemas.it_provisioning import (
     BulkRemindItProvisioningRequest,
     BulkSendItProvisioningRequest,
+    ItProvisioningBatchSubmitRequest,
     ItProvisioningSubmitRequest,
     RemindItProvisioningRequest,
     SendItProvisioningRequest,
@@ -37,7 +39,9 @@ def _iso(value):
 
 
 class ItProvisioningService:
-    async def send_request(self, current_user: CurrentUser, request: SendItProvisioningRequest) -> dict:
+    async def send_request(
+        self, current_user: CurrentUser, request: SendItProvisioningRequest, *, send_email: bool = True
+    ) -> dict:
         offer = await self._find_offer(request.offer_id)
         self._assert_recruiter_owns_offer(current_user, offer)
         if offer.get("status") != "signed":
@@ -127,37 +131,38 @@ class ItProvisioningService:
         link = settings.it_provisioning_link(token)
         email_sent = False
         email_error = None
-        try:
-            email_service.send_it_provisioning_request(
-                to_email=it_email,
-                recruiter_name=current_user.full_name,
-                employee=snapshot,
-                form_link=link,
-                expires_at=expires_at.strftime("%B %d, %Y at %H:%M UTC"),
-                note=request.note,
-                is_reminder=False,
-            )
-            email_sent = True
-        except Exception as exc:
-            email_error = str(exc)
-
-        await create_notification(
-            recipient_id=current_user.id,
-            recipient_role=current_user.role if current_user.role in ("recruiter", "super_admin") else "recruiter",
-            notif_type="it_provisioning_sent",
-            title="IT provisioning requested" if email_sent else "IT request created (email failed)",
-            message=(
-                f"IT setup request for {snapshot.get('full_name')} emailed to {it_email}."
-                if email_sent
-                else (
-                    f"IT setup for {snapshot.get('full_name')} was saved, but the email to {it_email} failed"
-                    + (f": {email_error}" if email_error else ".")
-                    + " Use Follow up IT or share the form link manually."
+        if send_email:
+            try:
+                email_service.send_it_provisioning_request(
+                    to_email=it_email,
+                    recruiter_name=current_user.full_name,
+                    employee=snapshot,
+                    form_link=link,
+                    expires_at=expires_at.strftime("%B %d, %Y at %H:%M UTC"),
+                    note=request.note,
+                    is_reminder=False,
                 )
-            ),
-            link="/dashboard/recruiter/candidates",
-            related_id=str(offer["_id"]),
-        )
+                email_sent = True
+            except Exception as exc:
+                email_error = str(exc)
+
+            await create_notification(
+                recipient_id=current_user.id,
+                recipient_role=current_user.role if current_user.role in ("recruiter", "super_admin") else "recruiter",
+                notif_type="it_provisioning_sent",
+                title="IT provisioning requested" if email_sent else "IT request created (email failed)",
+                message=(
+                    f"IT setup request for {snapshot.get('full_name')} emailed to {it_email}."
+                    if email_sent
+                    else (
+                        f"IT setup for {snapshot.get('full_name')} was saved, but the email to {it_email} failed"
+                        + (f": {email_error}" if email_error else ".")
+                        + " Use Follow up IT or share the form link manually."
+                    )
+                ),
+                link="/dashboard/recruiter/candidates",
+                related_id=str(offer["_id"]),
+            )
 
         await database.audit_logs.insert_one(
             {
@@ -172,22 +177,44 @@ class ItProvisioningService:
             }
         )
 
-        message = (
-            f"IT provisioning request emailed to {it_email}."
-            if email_sent
-            else f"Request created, but email to {it_email} failed. Copy the link to share manually."
-        )
+        if send_email:
+            message = (
+                f"IT provisioning request emailed to {it_email}."
+                if email_sent
+                else f"Request created, but email to {it_email} failed. Copy the link to share manually."
+            )
+        else:
+            message = f"IT provisioning request created for {snapshot.get('full_name')} — included in the batch email."
         return {
             "message": message,
             "email_sent": email_sent,
             "email_error": email_error,
             "provisioning": self._public_status(doc if existing else {**doc, "token": token}),
             "form_link": link,
+            "employee_name": snapshot.get("full_name"),
+            "job_title": snapshot.get("job_title"),
+            "department": snapshot.get("department"),
+            "start_date": snapshot.get("start_date"),
+            "employee_email": snapshot.get("email"),
         }
 
     async def bulk_send(self, current_user: CurrentUser, request: BulkSendItProvisioningRequest) -> dict:
         sent: list[dict] = []
         failed: list[dict] = []
+        entries: list[dict] = []
+        batch_form = bool(request.batch_form)
+        batch_email = bool(request.batch_email) and not batch_form
+        use_one_email = batch_email or batch_form
+        it_email = ""
+        if use_one_email:
+            it_email = (str(request.it_manager_email or settings.IT_MANAGER_EMAIL or "")).strip().lower()
+            if not it_email:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Provide an IT manager email, or set IT_MANAGER_EMAIL in the server configuration.",
+                )
+
+        offer_ids_created: list[str] = []
         for offer_id in request.offer_ids:
             try:
                 result = await self.send_request(
@@ -197,27 +224,126 @@ class ItProvisioningService:
                         it_manager_email=request.it_manager_email,
                         note=request.note,
                     ),
+                    send_email=not use_one_email,
                 )
-                sent.append(
-                    {
-                        "offer_id": offer_id,
-                        "email_sent": result.get("email_sent", False),
-                        "form_link": result.get("form_link"),
-                        "message": result.get("message"),
-                        "employee_name": ((result.get("provisioning") or {}).get("employee_name")),
-                        "it_manager_email": ((result.get("provisioning") or {}).get("it_manager_email")),
-                    }
-                )
+                row = {
+                    "offer_id": offer_id,
+                    "email_sent": result.get("email_sent", False),
+                    "form_link": result.get("form_link"),
+                    "message": result.get("message"),
+                    "employee_name": result.get("employee_name"),
+                    "it_manager_email": ((result.get("provisioning") or {}).get("it_manager_email")),
+                }
+                sent.append(row)
+                offer_ids_created.append(offer_id)
+                if batch_email:
+                    entries.append(
+                        {
+                            "offer_id": offer_id,
+                            "full_name": result.get("employee_name"),
+                            "job_title": result.get("job_title"),
+                            "department": result.get("department"),
+                            "start_date": result.get("start_date"),
+                            "email": result.get("employee_email"),
+                            "form_link": result.get("form_link"),
+                            "expires_at": ((result.get("provisioning") or {}).get("expires_at")),
+                        }
+                    )
             except HTTPException as exc:
                 failed.append({"offer_id": offer_id, "error": str(exc.detail)})
             except Exception as exc:  # noqa: BLE001
                 failed.append({"offer_id": offer_id, "error": str(exc)})
 
+        batch_email_sent = False
+        batch_email_error = None
+        batch_link = None
+        batch_id = None
+
+        if batch_form and offer_ids_created:
+            try:
+                batch = await self.create_batch(current_user, offer_ids_created, it_email, request.note)
+                batch_id = str(batch["_id"])
+                batch_link = settings.it_provisioning_batch_link(batch["token"])
+                batch_email_sent = await self._send_batch_form_email(batch)
+                if not batch_email_sent:
+                    batch_email_error = "The batch form email could not be sent (mail provider error)."
+            except Exception as exc:  # noqa: BLE001
+                batch_email_error = str(exc)
+            await create_notification(
+                recipient_id=current_user.id,
+                recipient_role=current_user.role if current_user.role in ("recruiter", "super_admin") else "recruiter",
+                notif_type="it_provisioning_sent",
+                title="Bulk IT form requested" if batch_email_sent else "Bulk IT form created (email failed)",
+                message=(
+                    f"Bulk IT form for {len(offer_ids_created)} candidate(s) emailed to {it_email} — "
+                    "IT provisions everyone from one form."
+                    if batch_email_sent
+                    else (
+                        f"Bulk IT form for {len(offer_ids_created)} candidate(s) was saved, but the email to {it_email} failed"
+                        + (f": {batch_email_error}" if batch_email_error else ".")
+                        + " Use Follow up IT or share the batch link manually."
+                    )
+                ),
+                link="/dashboard/recruiter/candidates",
+            )
+        elif batch_email and entries:
+            try:
+                first_expiry = next((e.get("expires_at") for e in entries if e.get("expires_at")), "")
+                email_service.send_it_provisioning_batch_request(
+                    to_email=it_email,
+                    recruiter_name=current_user.full_name or current_user.email,
+                    entries=entries,
+                    expires_at=first_expiry or "",
+                    note=request.note,
+                )
+                batch_email_sent = True
+            except Exception as exc:  # noqa: BLE001
+                batch_email_error = str(exc)
+            await create_notification(
+                recipient_id=current_user.id,
+                recipient_role=current_user.role if current_user.role in ("recruiter", "super_admin") else "recruiter",
+                notif_type="it_provisioning_sent",
+                title="Batch IT provisioning requested" if batch_email_sent else "Batch IT request created (email failed)",
+                message=(
+                    f"Batch IT setup request for {len(entries)} candidate(s) emailed to {it_email}."
+                    if batch_email_sent
+                    else (
+                        f"Batch IT setup request for {len(entries)} candidate(s) was saved, but the email to {it_email} failed"
+                        + (f": {batch_email_error}" if batch_email_error else ".")
+                        + " Use Follow up IT or share the form links manually."
+                    )
+                ),
+                link="/dashboard/recruiter/candidates",
+            )
+        elif use_one_email and not offer_ids_created:
+            batch_email_error = "No candidate records could be created for this batch."
+
+        if batch_form:
+            if batch_email_sent:
+                message = (
+                    f"Bulk IT form emailed to {it_email} for {len(offer_ids_created)} candidate(s) — "
+                    "IT provisions everyone from one form."
+                )
+            else:
+                message = f"Bulk IT form created, but the email to {it_email} failed: {batch_email_error}"
+        elif batch_email and entries and batch_email_sent:
+            message = f"Batch IT email sent to {it_email} for {len(entries)} candidate(s)."
+        elif batch_email and entries and not batch_email_sent:
+            message = f"Batch IT request created, but the email to {it_email} failed: {batch_email_error}"
+        else:
+            message = f"Bulk IT send finished — sent {len(sent)}, failed {len(failed)}."
+
         return {
-            "message": f"Bulk IT send finished — sent {len(sent)}, failed {len(failed)}.",
+            "message": message,
             "sent": sent,
             "failed": failed,
             "summary": {"sent": len(sent), "failed": len(failed)},
+            "batch_email": batch_email,
+            "batch_email_sent": batch_email_sent,
+            "batch_email_error": batch_email_error,
+            "batch_form": batch_form,
+            "batch_link": batch_link,
+            "batch_id": batch_id,
         }
 
     async def bulk_remind(self, current_user: CurrentUser, request: BulkRemindItProvisioningRequest) -> dict:
@@ -280,17 +406,29 @@ class ItProvisioningService:
         it_email = doc.get("it_manager_email")
         email_sent = False
         email_error = None
+        batch_link = None
+        batch = None
+        batch_id = doc.get("batch_id")
+        if batch_id:
+            batch = await database.it_provisioning_batches.find_one({"_id": ObjectId(batch_id)})
+            if batch:
+                batch_link = settings.it_provisioning_batch_link(batch["token"])
         try:
-            email_service.send_it_provisioning_request(
-                to_email=it_email,
-                recruiter_name=current_user.full_name,
-                employee=snapshot,
-                form_link=link,
-                expires_at=_iso(doc.get("expires_at")),
-                note=request.note,
-                is_reminder=True,
-            )
-            email_sent = True
+            if batch_link:
+                email_sent = await self._send_batch_form_email(batch)
+                if not email_sent:
+                    email_error = "The batch form email could not be sent (mail provider error)."
+            if not batch_link or not email_sent:
+                email_service.send_it_provisioning_request(
+                    to_email=it_email,
+                    recruiter_name=current_user.full_name,
+                    employee=snapshot,
+                    form_link=link,
+                    expires_at=_iso(doc.get("expires_at")),
+                    note=request.note,
+                    is_reminder=True,
+                )
+                email_sent = True
         except Exception as exc:
             email_error = str(exc)
 
@@ -357,23 +495,21 @@ class ItProvisioningService:
             ),
         }
 
-    async def submit_public(self, token: str, request: ItProvisioningSubmitRequest) -> dict:
-        doc = await self._find_by_token(token)
-        if doc.get("status") == "submitted":
-            raise HTTPException(status_code=409, detail="This form has already been submitted.")
-        if doc.get("status") not in (None, "pending"):
-            raise HTTPException(status_code=409, detail="This provisioning request is no longer open.")
-
-        now = datetime.now(UTC)
-        expires = doc.get("expires_at")
-        if expires:
-            if getattr(expires, "tzinfo", None) is None:
-                expires = expires.replace(tzinfo=UTC)
-            if now > expires:
-                raise HTTPException(status_code=410, detail="This IT provisioning link has expired.")
-
+    async def _apply_submission(
+        self,
+        doc: dict,
+        *,
+        company_email: str,
+        password: str,
+        assets_raw: list,
+        licenses_raw: list,
+        it_notes: str | None,
+        submitted_by_name: str | None,
+        now: datetime,
+    ) -> dict:
+        """Atomically mark one provisioning doc as submitted (shared by single + batch forms)."""
         assets = []
-        for item in request.assets:
+        for item in assets_raw:
             assets.append(
                 {
                     "id": str(uuid4()),
@@ -395,14 +531,29 @@ class ItProvisioningService:
                 "vendor": lic.vendor,
                 "notes": lic.notes,
             }
-            for lic in request.licenses
+            for lic in licenses_raw
         ]
 
-        company_email = str(request.company_email).strip().lower()
-        encrypted_password = encrypt_text(request.company_email_password)
+        company_email = company_email.strip().lower()
+        encrypted_password = encrypt_text(password)
 
-        await database.it_provisioning_requests.update_one(
-            {"_id": doc["_id"]},
+        dup = await database.it_provisioning_requests.find_one(
+            {
+                "_id": {"$ne": doc["_id"]},
+                "company_email": company_email,
+                "status": {"$in": ["pending", "submitted", "applied"]},
+            },
+            {"employee_snapshot": 1},
+        )
+        if dup:
+            owner = (dup.get("employee_snapshot") or {}).get("full_name") or "another employee"
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Company email {company_email} is already assigned to {owner}. Use a different mailbox.",
+            )
+
+        updated = await database.it_provisioning_requests.find_one_and_update(
+            {"_id": doc["_id"], "status": {"$in": [None, "pending"]}},
             {
                 "$set": {
                     "status": "submitted",
@@ -410,13 +561,19 @@ class ItProvisioningService:
                     "company_email_password_encrypted": encrypted_password,
                     "assets": assets,
                     "licenses": licenses,
-                    "it_notes": request.it_notes,
-                    "submitted_by_name": request.submitted_by_name,
+                    "it_notes": it_notes,
+                    "submitted_by_name": submitted_by_name,
                     "submitted_at": now,
                     "updated_at": now,
                 }
             },
+            return_document=ReturnDocument.AFTER,
         )
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This form has already been submitted.",
+            )
 
         snapshot = doc.get("employee_snapshot") or {}
         recruiter_id = doc.get("recruiter_id")
@@ -464,9 +621,230 @@ class ItProvisioningService:
             "licenses_count": len(licenses),
             "asset_names": [a.get("name") for a in assets if a.get("name")],
             "license_names": [l.get("name") for l in licenses if l.get("name")],
-            "employee_name": (doc.get("employee_snapshot") or {}).get("full_name"),
-            "submitted_by_name": request.submitted_by_name,
+            "employee_name": snapshot.get("full_name"),
+            "submitted_by_name": submitted_by_name,
         }
+
+    async def submit_public(self, token: str, request: ItProvisioningSubmitRequest) -> dict:
+        doc = await self._find_by_token(token)
+        if doc.get("status") == "submitted":
+            raise HTTPException(status_code=409, detail="This form has already been submitted.")
+        if doc.get("status") not in (None, "pending"):
+            raise HTTPException(status_code=409, detail="This provisioning request is no longer open.")
+
+        now = datetime.now(UTC)
+        expires = doc.get("expires_at")
+        if expires:
+            if getattr(expires, "tzinfo", None) is None:
+                expires = expires.replace(tzinfo=UTC)
+            if now > expires:
+                raise HTTPException(status_code=410, detail="This IT provisioning link has expired.")
+
+        return await self._apply_submission(
+            doc,
+            company_email=request.company_email,
+            password=request.company_email_password,
+            assets_raw=request.assets,
+            licenses_raw=request.licenses,
+            it_notes=request.it_notes,
+            submitted_by_name=request.submitted_by_name,
+            now=now,
+        )
+
+    async def _find_batch_by_token(self, token: str) -> dict:
+        if not token:
+            raise HTTPException(status_code=404, detail="Provisioning batch not found.")
+        batch = await database.it_provisioning_batches.find_one({"token": token})
+        if not batch:
+            raise HTTPException(status_code=404, detail="Provisioning batch not found.")
+        return batch
+
+    def _check_batch_expiry(self, batch: dict, now: datetime) -> None:
+        expires = batch.get("expires_at")
+        if expires:
+            if getattr(expires, "tzinfo", None) is None:
+                expires = expires.replace(tzinfo=UTC)
+            if now > expires and batch.get("status") != "submitted":
+                raise HTTPException(status_code=410, detail="This IT provisioning batch link has expired.")
+
+    async def _batch_public_view(self, batch: dict) -> dict:
+        offer_ids = batch.get("offer_ids") or []
+        docs = await database.it_provisioning_requests.find(
+            {"offer_id": {"$in": offer_ids}},
+            {"employee_snapshot": 1, "status": 1, "company_email": 1},
+        ).to_list(length=100)
+        docs_by_offer = {str(d.get("offer_id")): d for d in docs}
+        rows = []
+        for offer_id in offer_ids:
+            doc = docs_by_offer.get(offer_id) or {}
+            snap = doc.get("employee_snapshot") or {}
+            rows.append(
+                {
+                    "offer_id": offer_id,
+                    "full_name": snap.get("full_name"),
+                    "personal_email": snap.get("email"),
+                    "job_title": snap.get("job_title"),
+                    "department": snap.get("department"),
+                    "start_date": snap.get("start_date"),
+                    "status": doc.get("status") or "pending",
+                    "already_submitted": doc.get("status") == "submitted",
+                    "company_email": doc.get("company_email"),
+                }
+            )
+        kits_docs = await database.it_kits.find({}).sort("name", 1).to_list(length=200)
+        kits = [
+            {
+                "kit_id": str(k["_id"]),
+                "name": k.get("name"),
+                "description": k.get("description"),
+                "assets": k.get("assets") or [],
+                "licenses": k.get("licenses") or [],
+                "roles": k.get("roles") or [],
+                "is_default": bool(k.get("is_default")),
+            }
+            for k in kits_docs
+        ]
+        return {
+            "batch_id": str(batch["_id"]),
+            "it_manager_email": batch.get("it_manager_email"),
+            "recruiter_name": batch.get("recruiter_name"),
+            "note": batch.get("note"),
+            "status": batch.get("status"),
+            "expires_at": _iso(batch.get("expires_at")),
+            "entries": rows,
+            "kits": kits,
+            "submitted_count": sum(1 for r in rows if r["already_submitted"]),
+        }
+
+    async def get_batch_public(self, token: str) -> dict:
+        batch = await self._find_batch_by_token(token)
+        self._check_batch_expiry(batch, datetime.now(UTC))
+        return await self._batch_public_view(batch)
+
+    async def submit_batch_public(self, token: str, request: ItProvisioningBatchSubmitRequest) -> dict:
+        batch = await self._find_batch_by_token(token)
+        now = datetime.now(UTC)
+        self._check_batch_expiry(batch, now)
+
+        offer_ids = set(batch.get("offer_ids") or [])
+        submitted: list[dict] = []
+        failed: list[dict] = []
+        for entry in request.entries:
+            if entry.offer_id not in offer_ids:
+                failed.append({"offer_id": entry.offer_id, "error": "This person is not part of the batch."})
+                continue
+            try:
+                doc = await database.it_provisioning_requests.find_one(
+                    {"offer_id": entry.offer_id, "status": {"$in": [None, "pending"]}},
+                    sort=[("created_at", -1)],
+                )
+                if not doc:
+                    failed.append(
+                        {"offer_id": entry.offer_id, "error": "No open provisioning request for this person."}
+                    )
+                    continue
+                result = await self._apply_submission(
+                    doc,
+                    company_email=entry.company_email,
+                    password=entry.company_email_password,
+                    assets_raw=request.assets,
+                    licenses_raw=request.licenses,
+                    it_notes=request.it_notes,
+                    submitted_by_name=request.submitted_by_name,
+                    now=now,
+                )
+                submitted.append({"offer_id": entry.offer_id, **result})
+            except HTTPException as exc:
+                failed.append({"offer_id": entry.offer_id, "error": str(exc.detail)})
+            except Exception as exc:  # noqa: BLE001
+                failed.append({"offer_id": entry.offer_id, "error": str(exc)})
+
+        if submitted:
+            remaining = await database.it_provisioning_requests.count_documents(
+                {"offer_id": {"$in": list(offer_ids)}, "status": {"$in": [None, "pending"]}}
+            )
+            if remaining == 0:
+                await database.it_provisioning_batches.update_one(
+                    {"_id": batch["_id"]},
+                    {"$set": {"status": "submitted", "submitted_at": now, "updated_at": now}},
+                )
+            else:
+                await database.it_provisioning_batches.update_one(
+                    {"_id": batch["_id"]}, {"$set": {"updated_at": now}}
+                )
+
+        message = (
+            f"Batch provisioning submitted — {len(submitted)} saved, {len(failed)} failed."
+            if failed
+            else f"Batch provisioning submitted for {len(submitted)} new hire(s)."
+        )
+        return {
+            "message": message,
+            "submitted": submitted,
+            "failed": failed,
+            "summary": {"submitted": len(submitted), "failed": len(failed)},
+        }
+
+    async def create_batch(
+        self, current_user: CurrentUser, offer_ids: list[str], it_email: str, note: str | None
+    ) -> dict:
+        now = datetime.now(UTC)
+        token = token_urlsafe(32)
+        batch = {
+            "token": token,
+            "it_manager_email": it_email,
+            "offer_ids": offer_ids,
+            "recruiter_id": current_user.id,
+            "recruiter_name": current_user.full_name,
+            "recruiter_email": current_user.email,
+            "note": note,
+            "status": "pending",
+            "submitted_at": None,
+            "expires_at": now + timedelta(days=settings.IT_PROVISIONING_EXPIRE_DAYS),
+            "created_at": now,
+            "updated_at": now,
+        }
+        result = await database.it_provisioning_batches.insert_one(batch)
+        batch["_id"] = result.inserted_id
+        await database.it_provisioning_requests.update_many(
+            {"offer_id": {"$in": offer_ids}, "status": {"$in": [None, "pending"]}},
+            {"$set": {"batch_id": str(result.inserted_id), "batch_token": token}},
+        )
+        return batch
+
+    async def _batch_entries(self, batch: dict) -> list[dict]:
+        docs = await database.it_provisioning_requests.find(
+            {"offer_id": {"$in": batch.get("offer_ids") or []}}, {"employee_snapshot": 1}
+        ).to_list(length=100)
+        by_offer = {str(d.get("offer_id")): d for d in docs}
+        entries = []
+        for offer_id in batch.get("offer_ids") or []:
+            snap = (by_offer.get(offer_id) or {}).get("employee_snapshot") or {}
+            entries.append(
+                {
+                    "full_name": snap.get("full_name"),
+                    "job_title": snap.get("job_title"),
+                    "department": snap.get("department"),
+                    "start_date": snap.get("start_date"),
+                    "email": snap.get("email"),
+                }
+            )
+        return entries
+
+    async def _send_batch_form_email(self, batch: dict, *, is_reminder: bool = False) -> bool:
+        try:
+            entries = await self._batch_entries(batch)
+            email_service.send_it_provisioning_batch_form_request(
+                to_email=batch["it_manager_email"],
+                recruiter_name=batch.get("recruiter_name") or "a recruiter",
+                entries=entries,
+                form_link=settings.it_provisioning_batch_link(batch["token"]),
+                expires_at=batch["expires_at"].strftime("%B %d, %Y at %H:%M UTC"),
+                note=batch.get("note"),
+            )
+            return True
+        except Exception:
+            return False
 
     async def get_for_offer(self, offer_id: str) -> dict | None:
         doc = await database.it_provisioning_requests.find_one(
@@ -477,8 +855,55 @@ class ItProvisioningService:
             return None
         return self._public_status(doc)
 
+    async def get_for_candidate(self, candidate_id: str) -> dict | None:
+        """Recruiter-facing provisioning history for one candidate (for the candidate profile)."""
+        query_or = [{"candidate_id": candidate_id}]
+        candidate = await self._find_candidate(candidate_id)
+        if candidate:
+            alt = candidate.get("user_id") or str(candidate.get("_id", ""))
+            if alt and alt != candidate_id:
+                query_or.append({"candidate_id": alt})
+            if candidate.get("email"):
+                query_or.append({"candidate_email": candidate["email"].lower()})
+        docs = (
+            await database.it_provisioning_requests.find(
+                {"$or": query_or, "status": {"$in": ["pending", "submitted", "applied"]}},
+                sort=[("created_at", -1)],
+            )
+            .to_list(length=10)
+        )
+        if not docs:
+            return None
+        latest = docs[0]
+        view = self._public_status(latest)
+        view["it_manager_email"] = latest.get("it_manager_email")
+        view["form_link"] = settings.it_provisioning_link(latest["token"])
+        view["history"] = [self._public_status(d) for d in docs]
+        return view
+
+    async def _submitted_candidate_docs(self, candidate_id: str) -> list[dict]:
+        """All submitted provisioning docs for a candidate (any id form)."""
+        query_or = [{"candidate_id": candidate_id}]
+        candidate = await self._find_candidate(candidate_id)
+        if candidate:
+            alt = candidate.get("user_id") or str(candidate.get("_id", ""))
+            if alt and alt != candidate_id:
+                query_or.append({"candidate_id": alt})
+            if candidate.get("email"):
+                query_or.append({"candidate_email": candidate["email"].lower()})
+        cursor = database.it_provisioning_requests.find(
+            {"$or": query_or, "status": "submitted"},
+            sort=[("submitted_at", -1)],
+        )
+        return [doc async for doc in cursor]
+
     async def require_submitted_for_candidate(self, candidate_id: str, offer_id: str | None = None) -> dict:
-        """Used by activation — returns submitted provisioning or raises 400."""
+        """Used by activation — returns the offer-scoped submitted provisioning or raises 400.
+
+        Prefers the exact offer so activation never consumes another offer's IT setup
+        (e.g. after a reinvite). Falls back to a candidate-level submission only when
+        it is unambiguous (exactly one record).
+        """
         if offer_id:
             doc = await database.it_provisioning_requests.find_one(
                 {"offer_id": str(offer_id), "status": "submitted"},
@@ -486,29 +911,17 @@ class ItProvisioningService:
             )
             if doc:
                 return doc
-
-        doc = await database.it_provisioning_requests.find_one(
-            {
-                "candidate_id": candidate_id,
-                "status": "submitted",
-            },
-            sort=[("submitted_at", -1)],
-        )
-        if not doc:
-            # Also allow lookup by alternate candidate id forms
-            query_or = [{"candidate_id": candidate_id}]
-            candidate = await self._find_candidate(candidate_id)
-            if candidate:
-                alt = candidate.get("user_id") or str(candidate.get("_id", ""))
-                if alt and alt != candidate_id:
-                    query_or.append({"candidate_id": alt})
-                if candidate.get("email"):
-                    query_or.append({"candidate_email": candidate["email"].lower()})
-            doc = await database.it_provisioning_requests.find_one(
-                {"$or": query_or, "status": "submitted"},
-                sort=[("submitted_at", -1)],
-            )
-        if not doc:
+            docs = await self._submitted_candidate_docs(candidate_id)
+            if len(docs) == 1:
+                return docs[0]
+            if len(docs) > 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "Multiple IT provisioning records exist for this candidate. "
+                        "Send IT provisioning for this offer and wait for IT to submit, then activate."
+                    ),
+                )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
@@ -516,7 +929,16 @@ class ItProvisioningService:
                     "Send the IT provisioning request and wait for their form submission."
                 ),
             )
-        return doc
+        docs = await self._submitted_candidate_docs(candidate_id)
+        if not docs:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "IT must assign a company email and assets before activation. "
+                    "Send the IT provisioning request and wait for their form submission."
+                ),
+            )
+        return docs[0]
 
     async def mark_applied(self, provisioning_id, employee_id: str) -> None:
         await database.it_provisioning_requests.update_one(
@@ -616,6 +1038,8 @@ class ItProvisioningService:
             "send_count": doc.get("send_count") or 1,
             "submitted_at": _iso(doc.get("submitted_at")),
             "company_email": doc.get("company_email") if doc.get("status") in ("submitted", "applied") else None,
+            "assets": (doc.get("assets") or []) if doc.get("status") in ("submitted", "applied") else [],
+            "licenses": (doc.get("licenses") or []) if doc.get("status") in ("submitted", "applied") else [],
             "assets_count": len(doc.get("assets") or []) if doc.get("status") in ("submitted", "applied") else 0,
             "licenses_count": len(doc.get("licenses") or []) if doc.get("status") in ("submitted", "applied") else 0,
             "expires_at": _iso(doc.get("expires_at")),

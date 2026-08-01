@@ -131,5 +131,13 @@ class Settings(BaseSettings):
         base = (self.FRONTEND_URL or self.frontend_base_url).rstrip("/")
         return f"{base}/it-setup/{token}"
 
+    def it_provisioning_batch_link(self, token: str) -> str:
+        base = (self.FRONTEND_URL or self.frontend_base_url).rstrip("/")
+        return f"{base}/it-setup/batch/{token}"
+
+    def it_service_request_link(self, token: str) -> str:
+        base = (self.FRONTEND_URL or self.frontend_base_url).rstrip("/")
+        return f"{base}/it-support/{token}"
+
 
 settings = Settings()
