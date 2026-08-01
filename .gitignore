@@ -9,6 +9,7 @@ backend/.env
 backend/uploads/
 backend/__pycache__/
 backend/.pytest_cache/
+backend/.venv/
 
 # Python
 *.pyc
