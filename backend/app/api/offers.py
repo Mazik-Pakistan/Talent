@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, UploadFile
 
 from app.core.rbac import CurrentUser
-from app.core.security import require_roles
+from app.core.security import RequireRecruiter, require_roles
 from app.schemas.offer import (
     NegotiationRespondRequest,
     OfferApproveRequest,
@@ -19,7 +19,9 @@ from app.services import storage_service
 
 router = APIRouter(prefix="/api/offers", tags=["Offers"])
 
-RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))]
+# Note: this role set ("candidate", "super_admin") is specific to offers and
+# differs from the "onboarding.self"-permission-based RequireCandidate used
+# in employees.py, so it stays local rather than being centralized.
 RequireCandidate = Annotated[CurrentUser, Depends(require_roles("candidate", "super_admin"))]
 
 

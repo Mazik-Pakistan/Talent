@@ -158,3 +158,18 @@ def require_roles(*roles: str) -> Callable:
 
 RequireUser = Annotated[CurrentUser, Depends(get_current_user)]
 
+# Shared role/permission dependency combinations.
+#
+# These exact `Annotated[CurrentUser, Depends(...)]` expressions used to be
+# re-declared, byte-for-byte identically, at the top of eight different
+# routers (dashboard, documents, employees, it_provisioning, learning,
+# messages, offers, talent). Centralizing them here means the role/
+# permission rule for e.g. "recruiter or super_admin" now has exactly one
+# definition. Routers that need a role combination not covered here still
+# declare their own local alias (e.g. RequireInvite, RequireSelf) — those
+# are genuinely router-specific and are left where they are.
+RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))]
+RequireEmployee = Annotated[CurrentUser, Depends(require_roles("employee", "super_admin"))]
+RequireAny = Annotated[CurrentUser, Depends(require_roles("employee", "recruiter", "super_admin"))]
+RequireOnboardingSelf = Annotated[CurrentUser, Depends(require_permissions("onboarding.self"))]
+

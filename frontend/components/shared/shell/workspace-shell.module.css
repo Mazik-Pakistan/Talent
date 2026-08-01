@@ -1,0 +1,50 @@
+/*
+ * Rules byte-identical between employee-dashboard.module.css and
+ * candidate-dashboard.module.css specifically (the two "workspace"
+ * style shells, as opposed to the recruiter shell which differs more).
+ * Composed from both role files; output CSS is unchanged.
+ */
+
+.aiChipGhost {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .3px;
+  padding: 4px 9px; border-radius: 20px;
+  background: var(--blue-light); color: var(--blue-strong);
+}
+
+.announcementMeta { margin-top: 8px !important; font-size: 11px !important; color: var(--text-faint) !important; }
+
+.announcementStack { display: flex; flex-direction: column; gap: 10px; }
+
+.heroRecommendTitle { font-weight: 700; color: var(--navy); margin-bottom: 2px; }
+
+.moduleDesc { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+
+.moduleTitle { font-size: 14.5px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+
+.notifHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 4px 8px; }
+
+.notifList { display: grid; gap: 5px; max-height: 360px; overflow-y: auto; }
+
+.p1 { font-size: 15px; font-weight: 700; letter-spacing: .2px; font-family: 'Sora', system-ui, sans-serif; color: var(--navy); }
+
+.phaseBadge { position: absolute; top: 16px; right: 16px; font-size: 10px; font-weight: 700; letter-spacing: .3px; color: var(--orange); background: var(--orange-light); padding: 4px 9px; border-radius: 20px; }
+
+.root {
+  background:
+    radial-gradient(1200px 620px at 86% -10%, rgba(56, 162, 255, 0.10), transparent 60%),
+    radial-gradient(820px 460px at -8% 4%, rgba(56, 162, 255, 0.07), transparent 55%),
+    var(--bg);
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  /* Document flow — never lock viewport height (OS file dialogs shrink the visual viewport). */
+  width: 100%;
+  min-height: 100vh;
+  max-width: 100vw;
+}
+
+.sectionDesc { font-size: 12.5px; color: var(--text-muted); margin: 2px 0 0 0; }
+
+.statusPill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 20px; background: var(--green-light); color: var(--green); }
+
