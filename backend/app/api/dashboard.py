@@ -1,9 +1,6 @@
-from typing import Annotated
+from fastapi import APIRouter, File, Query, UploadFile
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
-
-from app.core.rbac import CurrentUser
-from app.core.security import RequireUser, require_permissions, require_roles
+from app.core.security import RequireOnboardingSelf, RequireRecruiter, RequireUser
 from app.schemas.dashboard import (
     CreateAnnouncementRequest,
     MarkNotificationsReadRequest,
@@ -18,9 +15,6 @@ from app.services.recruiter_mascot_service import generate_mascot_brief
 router = APIRouter(tags=["Dashboard"])
 service = DashboardService()
 candidate_service = CandidateService()
-
-RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))]
-RequireOnboardingSelf = Annotated[CurrentUser, Depends(require_permissions("onboarding.self"))]
 
 
 @router.get("/api/dashboard/summary")

@@ -3,13 +3,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from app.core.rbac import CurrentUser
-from app.core.security import RequireUser, require_roles
+from app.core.security import RequireRecruiter, RequireUser, require_roles
 from app.schemas.document import DOCUMENT_CATEGORIES, PROFILE_DOCUMENT_TYPES, DocumentVerifyRequest
 from app.services.document_service import document_service
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
-RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))]
 RequireSelf = Annotated[CurrentUser, Depends(require_roles("candidate", "employee", "super_admin"))]
 
 

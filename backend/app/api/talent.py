@@ -1,9 +1,6 @@
-from typing import Annotated
+from fastapi import APIRouter, Query
 
-from fastapi import APIRouter, Depends, Query
-
-from app.core.rbac import CurrentUser
-from app.core.security import require_roles
+from app.core.security import RequireAny, RequireEmployee, RequireRecruiter
 from app.schemas.talent import (
     CompetencyEvaluationRequest,
     DevelopmentPlanUpdateRequest,
@@ -14,10 +11,6 @@ from app.schemas.talent import (
 from app.services.talent_service import talent_service
 
 router = APIRouter(prefix="/api/talent", tags=["Talent Management"])
-
-RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))]
-RequireEmployee = Annotated[CurrentUser, Depends(require_roles("employee", "super_admin"))]
-RequireAny = Annotated[CurrentUser, Depends(require_roles("employee", "recruiter", "super_admin"))]
 
 
 # ---------------------------------------------------------------------- #

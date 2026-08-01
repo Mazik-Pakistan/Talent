@@ -1,9 +1,6 @@
-from typing import Annotated
+from fastapi import APIRouter
 
-from fastapi import APIRouter, Depends
-
-from app.core.rbac import CurrentUser
-from app.core.security import require_roles
+from app.core.security import RequireEmployee, RequireRecruiter
 from app.schemas.it_provisioning import (
     BulkRemindItProvisioningRequest,
     BulkSendItProvisioningRequest,
@@ -19,9 +16,6 @@ from app.services.it_provisioning_service import it_provisioning_service
 from app.services.it_kit_service import it_kit_service
 
 router = APIRouter(prefix="/api/it-provisioning", tags=["IT Provisioning"])
-
-RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))]
-RequireEmployee = Annotated[CurrentUser, Depends(require_roles("employee", "super_admin"))]
 
 
 @router.get("/kits")

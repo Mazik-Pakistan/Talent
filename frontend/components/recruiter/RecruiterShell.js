@@ -1,345 +1,50 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
-import {
-  clearLocalSession,
-  getNotifications,
-  globalSearch,
-  logout,
-  markNotificationsRead,
-} from "@/services/authService";
+import { BellIcon, LogoutIcon, SearchIcon } from "@/components/shared/shell/ShellIcons";
+import { useLogout } from "@/hooks/useLogout";
+import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
+import { useUserSession } from "@/hooks/useUserSession";
+import { useNotificationsCenter } from "@/hooks/useNotificationsCenter";
+import { useGlobalSearch } from "@/hooks/useGlobalSearch";
+import { RECRUITER_NAV_ITEMS } from "@/components/recruiter/recruiterNav";
 import styles from "./recruiter-shell.module.css";
 
-const SEARCH_DEBOUNCE_MS = 350;
 const COLLAPSE_KEY = "recruiter_sidebar_collapsed";
-
-const NAV_ITEMS = [
-  {
-    key: "overview",
-    label: "Overview",
-    href: "/dashboard/recruiter/overview",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="7" height="9" rx="1.5" />
-        <rect x="14" y="3" width="7" height="5" rx="1.5" />
-        <rect x="14" y="12" width="7" height="9" rx="1.5" />
-        <rect x="3" y="16" width="7" height="5" rx="1.5" />
-      </svg>
-    ),
-  },
-  {
-    key: "candidates",
-    label: "Candidates",
-    href: "/dashboard/recruiter/candidates",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-    ),
-  },
-  {
-    key: "invite",
-    label: "Invite & offer",
-    href: "/dashboard/recruiter/invite",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="8.5" cy="7" r="4" />
-        <line x1="20" y1="8" x2="20" y2="14" />
-        <line x1="23" y1="11" x2="17" y2="11" />
-      </svg>
-    ),
-  },
-  {
-    key: "employees",
-    label: "Employees",
-    href: "/dashboard/recruiter/employees",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="2" y="7" width="20" height="14" rx="2" />
-        <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-      </svg>
-    ),
-  },
-  {
-    key: "learning",
-    label: "Learning",
-    href: "/dashboard/recruiter/learning",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-      </svg>
-    ),
-  },
-  {
-    key: "talent",
-    label: "Talent",
-    href: "/dashboard/recruiter/talent",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2l2.9 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l7.1-1z" />
-      </svg>
-    ),
-  },
-  {
-    key: "messages",
-    label: "Messages",
-    href: "/dashboard/recruiter/messages",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      </svg>
-    ),
-  },
-  {
-    key: "announcements",
-    label: "Announcements",
-    href: "/dashboard/recruiter/announcements",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-        <path d="M13.7 21a2 2 0 0 1-3.4 0" />
-      </svg>
-    ),
-  },
-  {
-    key: "it-provisioning",
-    label: "IT & support",
-    href: "/dashboard/recruiter/it",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="2" y="7" width="20" height="14" rx="2" />
-        <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-        <path d="M2 13h20" />
-      </svg>
-    ),
-  },
-  {
-    key: "activity",
-    label: "Activity",
-    href: "/dashboard/recruiter/activity",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-      </svg>
-    ),
-  },
-  {
-    key: "assistant",
-    label: "AI Assistant",
-    href: "/dashboard/recruiter/ai-assistant",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" />
-        <path d="M19 11a7 7 0 0 1-14 0" />
-        <path d="M12 18v4" />
-      </svg>
-    ),
-  },
-  {
-    key: "profile",
-    label: "Profile",
-    href: "/dashboard/recruiter/profile",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
-      </svg>
-    ),
-  },
-];
-
-const POLL_MS = 20000;
 
 export default function RecruiterShell({ activeKey, title, subtitle, children }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [notifBusy, setNotifBusy] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [selectedPerson, setSelectedPerson] = useState(null);
-  const searchTimerRef = useRef(null);
-  const lastUnreadRef = useRef(null);
 
-  const refreshUser = useCallback(() => {
-    const storedUser = localStorage.getItem("user");
-    setUser(storedUser ? JSON.parse(storedUser) : null);
-  }, []);
+  const user = useUserSession({ pathname, watchEvents: ["talent-user-updated", "storage"] });
+  const [sidebarCollapsed, toggleSidebar] = useSidebarCollapse(COLLAPSE_KEY);
+  const handleLogout = useLogout();
 
-  useEffect(() => {
-    refreshUser();
-  }, [pathname, refreshUser]);
+  const {
+    notifOpen,
+    setNotifOpen,
+    notifications,
+    unreadCount,
+    notifBusy,
+    markAllRead,
+    markOneRead,
+  } = useNotificationsCenter({
+    limit: 20,
+    toastIdPrefix: "recruiter-notif",
+    broadcastOnRefresh: true,
+    broadcastOnMarkAll: true,
+    broadcastOnMarkOne: true,
+  });
 
-  useEffect(() => {
-    setSidebarCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
-  }, []);
-
-  useEffect(() => {
-    const onUserUpdated = () => refreshUser();
-    window.addEventListener("talent-user-updated", onUserUpdated);
-    window.addEventListener("storage", onUserUpdated);
-    return () => {
-      window.removeEventListener("talent-user-updated", onUserUpdated);
-      window.removeEventListener("storage", onUserUpdated);
-    };
-  }, [refreshUser]);
-
-  function toggleSidebar() {
-    setSidebarCollapsed((value) => {
-      const next = !value;
-      localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
-      return next;
-    });
-  }
-
-  const refreshNotifications = useCallback(async (silent = true) => {
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-    try {
-      const data = await getNotifications(accessToken, 20);
-      const nextUnread = data.unread_count || 0;
-      const nextList = data.notifications || [];
-      if (
-        silent &&
-        lastUnreadRef.current != null &&
-        nextUnread > lastUnreadRef.current &&
-        nextList[0]
-      ) {
-        const newest = nextList[0];
-        toast.info(`${newest.title}: ${newest.message?.slice(0, 100) || "New notification"}`, {
-          toastId: `recruiter-notif-${newest.id || newest.title}`,
-        });
-      }
-      lastUnreadRef.current = nextUnread;
-      setNotifications(nextList);
-      setUnreadCount(nextUnread);
-      window.dispatchEvent(new CustomEvent('talent-notifications-updated', {
-        detail: { unreadCount: nextUnread, notifications: nextList }
-      }));
-    } catch {
-      // Non-critical polling failure
-    }
-  }, []);
-
-  useEffect(() => {
-    refreshNotifications(false);
-    const timer = setInterval(() => refreshNotifications(true), POLL_MS);
-    return () => clearInterval(timer);
-  }, [pathname, refreshNotifications]);
-
-  const runGlobalSearch = useCallback(async (query) => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-    setSearching(true);
-    try {
-      const data = await globalSearch(trimmed, accessToken);
-      setSearchResults(data.results || []);
-      setSearchOpen(true);
-    } catch {
-      setSearchResults([]);
-    } finally {
-      setSearching(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    const trimmed = searchQuery.trim();
-    if (trimmed.length < 2) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
-
-    searchTimerRef.current = setTimeout(() => {
-      runGlobalSearch(trimmed);
-    }, SEARCH_DEBOUNCE_MS);
-
-    return () => {
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    };
-  }, [searchQuery, runGlobalSearch]);
-
-  async function handleLogout() {
-    const accessToken = localStorage.getItem("access_token");
-    await logout(accessToken);
-    clearLocalSession();
-    router.replace("/login");
-  }
-
-  async function handleMarkAllRead() {
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken || unreadCount === 0) return;
-    setNotifBusy(true);
-    try {
-      await markNotificationsRead({ all: true }, accessToken);
-      setNotifications((current) => {
-        const nextList = current.map((n) => ({ ...n, read: true }));
-        window.dispatchEvent(new CustomEvent('talent-notifications-updated', {
-          detail: { unreadCount: 0, notifications: nextList }
-        }));
-        return nextList;
-      });
-      setUnreadCount(0);
-      lastUnreadRef.current = 0;
-      toast.success("All notifications marked as read.");
-    } catch {
-      toast.error("Could not update notifications.");
-    } finally {
-      setNotifBusy(false);
-    }
-  }
-
-  async function handleMarkOneRead(notificationId) {
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-    try {
-      await markNotificationsRead({ ids: [notificationId] }, accessToken);
-      let updatedList = [];
-      setNotifications((current) => {
-        const nextList = current.map((n) => (n.id === notificationId ? { ...n, read: true } : n));
-        updatedList = nextList;
-        return nextList;
-      });
-      setUnreadCount((count) => {
-        const next = Math.max(0, count - 1);
-        lastUnreadRef.current = next;
-        window.dispatchEvent(new CustomEvent('talent-notifications-updated', {
-          detail: { unreadCount: next, notifications: updatedList }
-        }));
-        return next;
-      });
-    } catch {
-      // Non-critical
-    }
-  }
+  const search = useGlobalSearch();
 
   function handleNotificationClick(notification) {
-    if (!notification.read) handleMarkOneRead(notification.id);
+    if (!notification.read) markOneRead(notification.id);
     setNotifOpen(false);
     if (!notification.link) return;
     if (notification.type === "certificate_uploaded" || notification.link.startsWith("/dashboard/recruiter/learning")) {
@@ -378,9 +83,9 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
   }
 
   function handleSearchSelect(result) {
-    setSelectedPerson(result);
-    setSearchOpen(false);
-    setSearchQuery(result.full_name || "");
+    search.setSelected(result);
+    search.setOpen(false);
+    search.setQuery(result.full_name || "");
     if (result.href) {
       router.push(result.href);
       return;
@@ -418,22 +123,22 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
 
             <div className={styles.navSectionLabel}>Recruiting</div>
             <ul className={styles.nav}>
-              {NAV_ITEMS.map((item) => {
+              {RECRUITER_NAV_ITEMS.map((item) => {
                 const isActive = activeKey
                   ? activeKey === item.key
                   : pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
-                <li key={item.key}>
-                  <button
-                    type="button"
-                    className={`${styles.navItem} ${isActive ? styles.navItemActive : ""}`}
-                    onClick={() => router.push(item.href)}
-                    title={item.label}
-                  >
-                    <span className={styles.navIcon}>{item.icon}</span>
-                    <span className={styles.navLabel}>{item.label}</span>
-                  </button>
-                </li>
+                  <li key={item.key}>
+                    <button
+                      type="button"
+                      className={`${styles.navItem} ${isActive ? styles.navItemActive : ""}`}
+                      onClick={() => router.push(item.href)}
+                      title={item.label}
+                    >
+                      <span className={styles.navIcon}>{item.icon}</span>
+                      <span className={styles.navLabel}>{item.label}</span>
+                    </button>
+                  </li>
                 );
               })}
             </ul>
@@ -452,11 +157,7 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                 </div>
               </button>
               <button type="button" className={styles.logoutBtn} title="Log out" onClick={handleLogout}>
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                  <path d="M16 17l5-5-5-5" />
-                  <path d="M21 12H9" />
-                </svg>
+                <LogoutIcon />
               </button>
             </div>
           </aside>
@@ -471,36 +172,32 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
               <div className={styles.topbarActions}>
                 <div className={styles.searchWrap}>
                   <div className={styles.searchBox}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="11" cy="11" r="7" />
-                      <path d="M21 21l-4.3-4.3" />
-                    </svg>
+                    <SearchIcon />
                     <input
-                      value={searchQuery}
+                      value={search.query}
                       onChange={(event) => {
-                        setSearchQuery(event.target.value);
-                        setSearchOpen(true);
+                        search.setQuery(event.target.value);
+                        search.setOpen(true);
                       }}
-                      onFocus={() => setSearchOpen(true)}
+                      onFocus={() => search.setOpen(true)}
                       onKeyDown={(event) => {
                         if (event.key !== "Enter") return;
                         event.preventDefault();
-                        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-                        runGlobalSearch(searchQuery);
+                        search.submitNow();
                       }}
-                      onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+                      onBlur={() => setTimeout(() => search.setOpen(false), 150)}
                       placeholder="Ask AI or search candidates…"
                       aria-label="Search"
                     />
                   </div>
-                  {searchOpen && searchQuery.trim().length >= 2 && (
+                  {search.open && search.query.trim().length >= 2 && (
                     <div className={styles.searchResults}>
-                      {searching && <p className={styles.searchEmpty}>Searching…</p>}
-                      {!searching && searchResults.length === 0 && (
-                        <p className={styles.searchEmpty}>No matches for “{searchQuery.trim()}”.</p>
+                      {search.searching && <p className={styles.searchEmpty}>Searching…</p>}
+                      {!search.searching && search.results.length === 0 && (
+                        <p className={styles.searchEmpty}>No matches for “{search.query.trim()}”.</p>
                       )}
-                      {!searching &&
-                        searchResults.map((result) => (
+                      {!search.searching &&
+                        search.results.map((result) => (
                           <button
                             type="button"
                             className={styles.searchResultItem}
@@ -529,10 +226,7 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                     aria-label="Notifications"
                     onClick={() => setNotifOpen((value) => !value)}
                   >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-                      <path d="M13.7 21a2 2 0 0 1-3.4 0" />
-                    </svg>
+                    <BellIcon />
                     {unreadCount > 0 && (
                       <span className={styles.badgeCount}>{unreadCount > 99 ? "99+" : unreadCount}</span>
                     )}
@@ -544,7 +238,7 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
                         <button
                           type="button"
                           className={styles.linkButton}
-                          onClick={handleMarkAllRead}
+                          onClick={markAllRead}
                           disabled={notifBusy || unreadCount === 0}
                         >
                           Mark all read
@@ -578,15 +272,15 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
             </div>
 
             <div className={styles.content}>
-              {selectedPerson && (
+              {search.selected && (
                 <div className={styles.selectionBox}>
                   <div>
-                    <strong>{selectedPerson.full_name}</strong>
+                    <strong>{search.selected.full_name}</strong>
                     <div className={styles.mutedText}>
-                      {selectedPerson.type} · {selectedPerson.email || "—"} · {selectedPerson.department || "—"}
+                      {search.selected.type} · {search.selected.email || "—"} · {search.selected.department || "—"}
                     </div>
                   </div>
-                  <button type="button" className={styles.secondaryButton} onClick={() => setSelectedPerson(null)}>
+                  <button type="button" className={styles.secondaryButton} onClick={() => search.setSelected(null)}>
                     Clear
                   </button>
                 </div>
@@ -612,5 +306,3 @@ function formatDateTime(value) {
     minute: "2-digit",
   });
 }
-
-

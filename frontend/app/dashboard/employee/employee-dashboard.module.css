@@ -50,17 +50,7 @@
 .root, .root *, .root *::before, .root *::after { box-sizing: border-box; }
 
 .root {
-  background:
-    radial-gradient(1200px 620px at 86% -10%, rgba(56, 162, 255, 0.10), transparent 60%),
-    radial-gradient(820px 460px at -8% 4%, rgba(56, 162, 255, 0.07), transparent 55%),
-    var(--bg);
-  font-family: 'Inter', system-ui, sans-serif;
-  color: var(--text);
-  -webkit-font-smoothing: antialiased;
-  /* Document flow — never lock viewport height (OS file dialogs shrink the visual viewport). */
-  width: 100%;
-  min-height: 100vh;
-  max-width: 100vw;
+  composes: root from "../../../components/shared/shell/workspace-shell.module.css";
 }
 .root h1, .root h2, .root h3 { font-family: 'Sora', system-ui, sans-serif; letter-spacing: -0.015em; }
 
@@ -119,7 +109,9 @@
   margin: 0 auto;
 }
 .brandText { line-height: 1.22; }
-.p1 { font-size: 15px; font-weight: 700; letter-spacing: .2px; font-family: 'Sora', system-ui, sans-serif; color: var(--navy); }
+.p1 {
+  composes: p1 from "../../../components/shared/shell/workspace-shell.module.css";
+}
 .p2 { font-size: 12px; color: var(--blue-strong); letter-spacing: .3px; }
 
 .navSectionLabel { font-size: 10.5px; text-transform: uppercase; letter-spacing: .9px; color: var(--text-faint); padding: 6px 12px 4px 12px; font-weight: 700; }
@@ -203,7 +195,9 @@
 .sidebar.collapsed .logoutBtn { margin-left: 0; }
 
 /* =============================== Main =============================== */
-.main { flex: 1; min-width: 0; max-width: 100%; }
+.main {
+  composes: main from "../../../components/shared/shell/shell-base.module.css";
+}
 .topbar {
   position: sticky; top: 0; z-index: 5;
   background: rgba(242, 247, 253, .82);
@@ -212,12 +206,15 @@
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   border-bottom: 1px solid var(--border-soft);
 }
-.topbarLeft { flex: 1; min-width: 0; }
-.topbarActions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: 12px; }
+.topbarLeft {
+  composes: topbarLeft from "../../../components/shared/shell/shell-base.module.css";
+}
+.topbarActions {
+  composes: topbarActions from "../../../components/shared/shell/shell-base.module.css";
+}
 .topbarTitle { font-size: 18px; font-weight: 700; color: var(--navy); letter-spacing: -0.01em; }
 .topbarSub {
-  font-size: 12px; color: var(--text-muted); margin-top: 2px; line-height: 1.35;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+  composes: topbarSub from "../../../components/shared/shell/shell-base.module.css";
 }
 
 .searchWrap { position: relative; flex: 1; max-width: 560px; }
@@ -241,9 +238,15 @@
 }
 .searchResultItem { padding: 10px 12px; border-radius: 9px; cursor: pointer; transition: background .14s var(--ease); }
 .searchResultItem:hover { background: var(--blue-light); }
-.searchResultLabel { font-size: 12.5px; font-weight: 700; color: var(--navy); }
-.searchResultMeta { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
-.searchEmpty { padding: 14px 12px; font-size: 12.5px; color: var(--text-muted); text-align: center; }
+.searchResultLabel {
+  composes: searchResultLabel from "../../../components/shared/shell/shell-base.module.css";
+}
+.searchResultMeta {
+  composes: searchResultMeta from "../../../components/shared/shell/shell-base.module.css";
+}
+.searchEmpty {
+  composes: searchEmpty from "../../../components/shared/shell/shell-base.module.css";
+}
 
 .iconBtn {
   width: 40px; height: 40px; border-radius: 12px;
@@ -266,7 +269,9 @@
 .userChipName { font-size: 12.5px; font-weight: 700; color: var(--navy); }
 .userChipRole { font-size: 10.5px; color: var(--text-faint); }
 
-.dropdownWrap { position: relative; }
+.dropdownWrap {
+  composes: dropdownWrap from "../../../components/shared/shell/shell-base.module.css";
+}
 .notifPanel {
   position: absolute; top: calc(100% + 8px); right: 0; width: 320px;
   background: #fff; border: 1px solid var(--border); border-radius: 14px;
@@ -274,10 +279,14 @@
   animation: dropIn .18s var(--ease) both;
 }
 .notifPanel strong { color: var(--navy); display: block; margin-bottom: 4px; font-size: 13px; }
-.notifHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 4px 8px; }
+.notifHeading {
+  composes: notifHeading from "../../../components/shared/shell/workspace-shell.module.css";
+}
 .notifHeading strong { margin: 0; }
 .notifHeading span { color: var(--blue-strong); font-size: 11px; font-weight: 800; }
-.notifList { display: grid; gap: 5px; max-height: 360px; overflow-y: auto; }
+.notifList {
+  composes: notifList from "../../../components/shared/shell/workspace-shell.module.css";
+}
 .notifItem { width: 100%; padding: 10px; border: 1px solid transparent; border-radius: 9px; background: var(--blue-lighter); color: var(--text-muted); text-align: left; cursor: pointer; transition: background .15s var(--ease), transform .15s var(--ease); }
 .notifItem:hover { transform: translateX(2px); }
 .notifItem strong { display: block; margin: 0 0 2px; font-size: 12px; color: var(--navy); }
@@ -291,18 +300,11 @@
 
 /* ============================ AI badge chip ============================ */
 .aiChip {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 10.5px; font-weight: 800; letter-spacing: .3px;
-  padding: 4px 9px; border-radius: 20px;
-  background: linear-gradient(135deg, var(--blue), var(--navy-2));
-  color: #fff;
+  composes: aiChip from "../../../components/shared/shell/shell-base.module.css";
 }
 .aiChip svg { width: 11px; height: 11px; animation: sparklePulse 2.4s ease-in-out infinite; }
 .aiChipGhost {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 10.5px; font-weight: 800; letter-spacing: .3px;
-  padding: 4px 9px; border-radius: 20px;
-  background: var(--blue-light); color: var(--blue-strong);
+  composes: aiChipGhost from "../../../components/shared/shell/workspace-shell.module.css";
 }
 .aiChipGhost svg { width: 11px; height: 11px; }
 
@@ -398,7 +400,9 @@
 }
 .heroRecommend svg { width: 16px; height: 16px; color: var(--blue-strong); flex-shrink: 0; margin-top: 1px; }
 .heroRecommend b { color: var(--navy); }
-.heroRecommendTitle { font-weight: 700; color: var(--navy); margin-bottom: 2px; }
+.heroRecommendTitle {
+  composes: heroRecommendTitle from "../../../components/shared/shell/workspace-shell.module.css";
+}
 
 .heroRingCol { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 1; position: relative; }
 .ringOuter { position: relative; width: 168px; height: 168px; display: flex; align-items: center; justify-content: center; }
@@ -429,7 +433,9 @@
   box-shadow: 0 10px 28px -14px rgba(15, 42, 74, 0.22);
 }
 /* .statTop kept for backward compatibility */
-.statTop { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.statTop {
+  composes: statTop from "../../../components/shared/shell/shell-base.module.css";
+}
 .statIcon {
   width: 46px; height: 46px; border-radius: 14px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -441,9 +447,13 @@
 .statIcon.orange { background: var(--orange);  color: #fff; box-shadow: 0 10px 20px -10px rgba(245, 165, 36, .55); }
 .statIcon.green  { background: var(--green);   color: #fff; box-shadow: 0 10px 20px -10px rgba(31, 174, 122, .5); }
 .statIcon.navy   { background: var(--navy-2);  color: #fff; box-shadow: 0 10px 20px -10px rgba(21, 61, 94, .45); }
-.statText { min-width: 0; }
+.statText {
+  composes: statText from "../../../components/shared/shell/shell-base.module.css";
+}
 .statValue { font-size: 22px; font-weight: 700; color: var(--navy); font-family: 'Sora', system-ui, sans-serif; text-transform: capitalize; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.statLabel { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.statLabel {
+  composes: statLabel from "../../../components/shared/shell/shell-base.module.css";
+}
 .statSub { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
 
 .stats[data-stagger] > .statCard { animation: statRise .55s var(--ease) backwards; }
@@ -650,21 +660,31 @@
 .section:has(.bar.navy)   { border-top: 3px solid var(--navy-2); }
 .section:has(.bar.purple) { border-top: 3px solid var(--purple); }
 .sectionHead { display: flex; align-items: center; justify-content: space-between; padding: 18px 18px 8px 18px; flex-wrap: wrap; gap: 10px; }
-.sectionHeadLeft { display: flex; align-items: center; gap: 12px; }
-.bar { width: 5px; height: 24px; border-radius: 4px; }
+.sectionHeadLeft {
+  composes: sectionHeadLeft from "../../../components/shared/shell/shell-base.module.css";
+}
+.bar {
+  composes: bar from "../../../components/shared/shell/shell-base.module.css";
+}
 .bar.cyan   { background: var(--blue); }
 .bar.orange { background: var(--orange); }
 .bar.green  { background: var(--green); }
 .bar.navy   { background: var(--navy-2); }
-.sectionTitle { font-size: 16.5px; font-weight: 800; color: var(--navy); letter-spacing: -.1px; }
-.sectionDesc { font-size: 12.5px; color: var(--text-muted); margin: 2px 0 0 0; }
+.sectionTitle {
+  composes: sectionTitle from "../../../components/shared/shell/shell-base.module.css";
+}
+.sectionDesc {
+  composes: sectionDesc from "../../../components/shared/shell/workspace-shell.module.css";
+}
 .sectionBody { padding: 8px 18px 18px 18px; }
 
 .fieldGrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px 16px; }
 .fieldLabel { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-faint); font-weight: 700; margin-bottom: 5px; }
 .fieldValue { font-size: 14.5px; font-weight: 650; color: var(--navy); }
 .fieldValue.dim { color: var(--text-faint); font-weight: 500; }
-.statusPill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 20px; background: var(--green-light); color: var(--green); }
+.statusPill {
+  composes: statusPill from "../../../components/shared/shell/workspace-shell.module.css";
+}
 .statusPill.incomplete { background: var(--orange-light); color: var(--orange); }
 .statusPill svg { width: 11px; height: 11px; }
 
@@ -703,15 +723,23 @@
 .modulesGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .moduleCard { border: 1px solid var(--border); border-radius: 14px; padding: 20px; background: linear-gradient(180deg, var(--blue-lighter), #fff); position: relative; transition: transform .2s var(--ease), box-shadow .2s var(--ease); }
 .moduleCard:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
-.phaseBadge { position: absolute; top: 16px; right: 16px; font-size: 10px; font-weight: 700; letter-spacing: .3px; color: var(--orange); background: var(--orange-light); padding: 4px 9px; border-radius: 20px; }
+.phaseBadge {
+  composes: phaseBadge from "../../../components/shared/shell/workspace-shell.module.css";
+}
 .moduleIcon { width: 38px; height: 38px; border-radius: 11px; background: linear-gradient(135deg, var(--blue), var(--navy-2)); color: #fff; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
 .moduleIcon svg { width: 19px; height: 19px; }
-.moduleTitle { font-size: 14.5px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
-.moduleDesc { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+.moduleTitle {
+  composes: moduleTitle from "../../../components/shared/shell/workspace-shell.module.css";
+}
+.moduleDesc {
+  composes: moduleDesc from "../../../components/shared/shell/workspace-shell.module.css";
+}
 .progressTrack { height: 6px; border-radius: 4px; background: var(--border-soft); margin-top: 14px; overflow: hidden; }
 .progressFill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--blue), var(--blue-strong)); transition: width 1s var(--ease); }
 
-.footerNote { text-align: center; font-size: 11.5px; color: var(--text-faint); margin-top: 8px; padding-bottom: 10px; }
+.footerNote {
+  composes: footerNote from "../../../components/shared/shell/shell-base.module.css";
+}
 
 .banner {
   display: flex; align-items: center; gap: 20px; border-radius: 16px;
@@ -731,12 +759,16 @@
 
 .loadError { background: var(--red-light); color: var(--red); padding: 14px 18px; border-radius: 12px; font-size: 13px; margin-bottom: 20px; }
 
-.announcementStack { display: flex; flex-direction: column; gap: 10px; }
+.announcementStack {
+  composes: announcementStack from "../../../components/shared/shell/workspace-shell.module.css";
+}
 .announcementCard { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: var(--blue-lighter); transition: transform .18s var(--ease), border-color .18s var(--ease); }
 .announcementCard:hover { transform: translateY(-2px); border-color: var(--blue-mid); }
 .announcementCard h4 { margin: 0 0 4px; font-size: 13.5px; font-weight: 700; color: var(--navy); }
 .announcementCard p { margin: 0; font-size: 12.5px; color: var(--text-muted); line-height: 1.55; }
-.announcementMeta { margin-top: 8px !important; font-size: 11px !important; color: var(--text-faint) !important; }
+.announcementMeta {
+  composes: announcementMeta from "../../../components/shared/shell/workspace-shell.module.css";
+}
 
 /* Loading skeletons */
 .skeletonLine {

@@ -1,10 +1,10 @@
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Response, UploadFile, status
 
-from app.core.rbac import CurrentUser
-from app.core.security import require_permissions, require_roles
+from app.core.security import RequireOnboardingSelf as RequireCandidate
+from app.core.security import RequireEmployee, RequireRecruiter
 from app.schemas.career import CareerEventCreateRequest, RoleAssignRequest
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
 from app.schemas.employee_exit import EmployeeExitRequest
@@ -21,10 +21,6 @@ from app.services.employee_service import EmployeeService
 router = APIRouter(prefix="/api/employees", tags=["Employees"])
 service = EmployeeService()
 candidate_service = CandidateService()
-
-RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))]
-RequireEmployee = Annotated[CurrentUser, Depends(require_roles("employee", "super_admin"))]
-RequireCandidate = Annotated[CurrentUser, Depends(require_permissions("onboarding.self"))]
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx"}
