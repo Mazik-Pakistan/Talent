@@ -1291,6 +1291,20 @@ class EmployeeService:
         if not employee:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee profile not found.")
         payload = self._public_employee(employee, include_onboarding=True)
+        # A legacy recruiter may be migrated while already signed in. Their
+        # browser session will still contain the old one-role user payload,
+        # so expose the server-truth here for the EmployeeShell to show the
+        # Recruiter switch control without requiring a second login.
+        recruiter_profile = await database.recruiters.find_one(
+            {
+                "$or": [
+                    {"user_id": current_user.id},
+                    {"email": current_user.email},
+                ],
+                "status": "active",
+            }
+        )
+        payload["can_switch_to_recruiter"] = bool(recruiter_profile)
         onboarding = dict(payload.get("onboarding") or {})
         onboarding["employment"] = decrypt_banking_payload(onboarding.get("employment"), mask=False)
         payload["onboarding"] = onboarding

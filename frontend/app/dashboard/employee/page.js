@@ -9,6 +9,7 @@ import ProfileAvatar from "@/components/ProfileAvatar";
 import AnimatedNumber from "@/components/ai-experience/AnimatedNumber";
 import SidebarBrand from "@/components/SidebarBrand";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
+import RoleSwitchButton from "@/components/shared/shell/RoleSwitchButton";
 import { publishGuideContext } from "@/lib/ai/guideContext";
 import {
   clearLocalSession,
@@ -397,6 +398,14 @@ function EmployeeDashboardContent() {
 
   const displayName = employee?.full_name || user.full_name;
   const photoUrl = employee?.profile_picture || user?.profile_picture || null;
+  const roleSwitchUser = employee?.can_switch_to_recruiter
+    ? {
+        ...user,
+        available_roles: Array.from(
+          new Set([user.role, ...(user.available_roles || []), "recruiter"])
+        ),
+      }
+    : user;
 
   return (
     <div className={styles.root} data-app-shell>
@@ -494,6 +503,8 @@ function EmployeeDashboardContent() {
                   </div>
                 )}
               </div>
+
+              <RoleSwitchButton user={roleSwitchUser} />
 
               <div className={styles.dropdownWrap}>
                 <div

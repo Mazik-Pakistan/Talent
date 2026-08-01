@@ -67,6 +67,20 @@ export async function login(payload) {
   return data;
 }
 
+/**
+ * Dual-role accounts only (e.g. an employee who is also a recruiter):
+ * re-authenticate the current session under the other role without
+ * re-entering credentials. Returns the same shape as login().
+ */
+export async function switchRole(role, accessToken) {
+  const { data } = await apiClient.post(
+    "/api/auth/switch-role",
+    { role },
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  return data;
+}
+
 // ─── Logout ──────────────────────────────────────────────────────────────────
 
 /**

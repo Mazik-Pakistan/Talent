@@ -13,11 +13,6 @@ import MascotStatic from "@/components/MascotStatic";
 
 const ROLES = [
   {
-    id: "recruiter",
-    label: "Recruiter",
-    hint: "Hiring & invitations",
-  },
-  {
     id: "candidate",
     label: "Candidate",
     hint: "Offer & onboarding",
@@ -80,7 +75,7 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [role, setRole] = useState("recruiter");
+  const [role, setRole] = useState("employee");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -225,6 +220,7 @@ function LoginForm() {
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
             <fieldset className={styles.rolePicker}>
               <legend>Sign in as</legend>
+              <p className={styles.rolePickerHint}>Recruiters and other platform staff also sign in as Employee.</p>
               <div className={styles.roleGrid} role="radiogroup" aria-label="Account role">
                 {ROLES.map((item) => {
                   const isSelected = role === item.id;
