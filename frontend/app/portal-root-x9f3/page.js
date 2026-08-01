@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
@@ -10,44 +9,6 @@ import "react-toastify/dist/ReactToastify.css";
 import { getApiErrorMessage, login, persistLoginSession } from "@/services/authService";
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic";
-
-const ROLES = [
-  {
-    id: "recruiter",
-    label: "Recruiter",
-    hint: "Hiring & invitations",
-  },
-  {
-    id: "candidate",
-    label: "Candidate",
-    hint: "Offer & onboarding",
-  },
-  {
-    id: "employee",
-    label: "Employee",
-    hint: "Workplace portal",
-  },
-];
-
-// Content variants for auto-rotation - with larger text
-const ROTATING_CONTENT = [
-  {
-  heading: "One platform for your entire hiring workflow.",
-  text: "Post roles, screen candidates, and onboard new hires — all in one connected dashboard.",
-  },
-  {
-    heading: "AI-powered matching for better hires.",
-    text: "Our algorithms analyze skills, experience, and culture fit to find your ideal candidates faster.",
-  },
-  {
-    heading: "Seamless onboarding from day one.",
-    text: "Move new hires through paperwork, training, and integration without breaking stride.",
-  },
-  {
-    heading: "Data-driven decisions at every step.",
-    text: "Real-time analytics help you refine your hiring strategy and reduce time-to-hire.",
-  },
-];
 
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
 
@@ -69,18 +30,17 @@ function validateForm(values) {
   return errors;
 }
 
-export default function LoginPage() {
+export default function SuperAdminLoginPage() {
   return (
     <Suspense fallback={<p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>}>
-      <LoginForm />
+      <SuperAdminLoginForm />
     </Suspense>
   );
 }
 
-function LoginForm() {
+function SuperAdminLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [role, setRole] = useState("recruiter");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -89,11 +49,6 @@ function LoginForm() {
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [loginFeedback, setLoginFeedback] = useState("idle");
-  
-  // Auto-rotation state
-  const [contentIndex, setContentIndex] = useState(0);
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [direction, setDirection] = useState(1); // 1 = right, -1 = left
 
   useEffect(() => {
     const reason = searchParams.get("reason");
@@ -103,21 +58,6 @@ function LoginForm() {
       toast.info("Your session expired. Please sign in again.");
     }
   }, [searchParams]);
-
-  // Auto-rotation effect with left-to-right animation
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setIsTransitioning(true);
-      setDirection(1); // Slide right
-      setTimeout(() => {
-        setContentIndex((prev) => (prev + 1) % ROTATING_CONTENT.length);
-        setIsTransitioning(false);
-        setDirection(-1); // Slide left for next
-      }, 400);
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, []);
 
   function handleBlur(field) {
     setTouched((current) => ({ ...current, [field]: true }));
@@ -157,7 +97,7 @@ function LoginForm() {
       const data = await login({
         email: email.trim(),
         password,
-        role,
+        role: "super_admin",
         remember_me: rememberMe,
       });
       persistLoginSession(data.session, data.user, {
@@ -177,7 +117,6 @@ function LoginForm() {
     }
   }
 
-  const selected = ROLES.find((item) => item.id === role);
   const mascotMood = loginFeedback === "success" ? "green" : loginFeedback === "error" ? "red" : password ? "yellow" : "neutral";
 
   return (
@@ -197,13 +136,12 @@ function LoginForm() {
             />
           </div>
 
-          <div className={styles.asideContent} key={contentIndex}>
+          <div className={styles.asideContent}>
             <div className={styles.rotatingContent}>
-              <h2 className={`${styles.asideHeading} ${isTransitioning ? styles.slideOut : styles.slideIn}`}>
-                {ROTATING_CONTENT[contentIndex].heading}
-              </h2>
-              <p className={`${styles.asideText} ${isTransitioning ? styles.slideOut : styles.slideIn}`}>
-                {ROTATING_CONTENT[contentIndex].text}
+              <h2 className={styles.asideHeading}>Platform control, in trusted hands.</h2>
+              <p className={styles.asideText}>
+                This console governs every workspace on Talent — access is limited to
+                verified super administrators only.
               </p>
             </div>
           </div>
@@ -218,37 +156,20 @@ function LoginForm() {
 
         <section className={styles.panel} aria-labelledby="login-heading">
           <div className={styles.intro}>
-            <h1 id="login-heading" className={styles.heading}>Sign in to Talent</h1>
-            <p className={styles.subtext}>Choose your role, then enter your credentials to open that dashboard.</p>
+            <span className={styles.restrictedBadge}>
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <rect x="4" y="9" width="12" height="8" rx="1.5" />
+                <path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" />
+              </svg>
+              Restricted access
+            </span>
+            <h1 id="login-heading" className={styles.heading}>Super Admin sign in</h1>
+            <p className={styles.subtext}>
+              This page isn&apos;t linked from the public site. Enter your super admin credentials to continue.
+            </p>
           </div>
 
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
-            <fieldset className={styles.rolePicker}>
-              <legend>Sign in as</legend>
-              <div className={styles.roleGrid} role="radiogroup" aria-label="Account role">
-                {ROLES.map((item) => {
-                  const isSelected = role === item.id;
-                  return (
-                    <label
-                      key={item.id}
-                      className={`${styles.roleOption} ${isSelected ? styles.roleOptionSelected : ""}`}
-                    >
-                      <input
-                        type="radio"
-                        name="role"
-                        value={item.id}
-                        checked={isSelected}
-                        onChange={() => setRole(item.id)}
-                      />
-                      {isSelected && <span className={styles.roleCheck}>✓</span>}
-                      <strong>{item.label}</strong>
-                      <span>{item.hint}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </fieldset>
-
             <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: "80ms" }}>
               <span>Email</span>
               <span className={styles.inputShell}>
@@ -263,7 +184,7 @@ function LoginForm() {
                   aria-invalid={Boolean(touched.email && errors.email)}
                   aria-describedby={touched.email && errors.email ? "email-error" : undefined}
                   autoComplete="email"
-                  placeholder="you@company.com"
+                  placeholder="admin@company.com"
                   required
                 />
               </span>
@@ -314,13 +235,12 @@ function LoginForm() {
 
             <button className={styles.primaryButton} type="submit" disabled={isSubmitting} style={{ animationDelay: "200ms" }}>
               {isSubmitting && <span className={styles.spinner} />}
-              {isSubmitting ? "Signing in…" : `Sign in as ${selected?.label}`}
+              {isSubmitting ? "Signing in…" : "Sign in as Super Admin"}
             </button>
           </form>
 
           <div className={styles.footer}>
-            <p><Link href="/forgot-password">Forgot password?</Link></p>
-            <p>Recruiter account? <Link href="/register">Create one</Link></p>
+            <p>Not a super admin? Use the <a href="/login">standard sign-in</a>.</p>
           </div>
         </section>
       </div>
