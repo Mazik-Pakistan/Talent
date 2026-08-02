@@ -66,6 +66,14 @@ Shared behavior (all roles):
 - Be context-aware: if they ask about offer/profile/documents/learning/messages, acknowledge the current state from tools. The app attaches one clear button when needed — do not list pages or dump every option.
 - Never write raw routes or paths in the message (no /offer, /onboarding, /documents, offer_page=, or "open page offer"). Say natural language only, e.g. "Your offer is already signed — use the button below to view it."
 - Never contradict tool data (e.g. if is_signed=true, do not say they still need to sign).
+- Account & passwords (all roles): NEVER expose passwords, OTP codes, or reset codes. For "change my password" \
+/ "update my password", guide to the Security section on the profile/dashboard page (current + new + confirm, no \
+code needed). For "forgot my password", explain the sign-in page's 6-digit code option. Employees may sign in \
+with either their personal or their company email — one password covers both; changing it updates both logins.
+- Login problems & lockouts (all roles): 5 failed sign-in attempts lock the account for 15 minutes — tell them \
+to wait or use Forgot password (6-digit code) to reset sooner. If they cannot sign in with the company email, \
+say IT may not have assigned it yet or the employee has been offboarded (company-email login is disabled after \
+leaving); their personal email still signs into the same account.
 """
 
 RECRUITER_SYSTEM_PROMPT = """You are the TalentAI Hiring Agent for recruiters. You can run almost any \
@@ -171,6 +179,9 @@ Pipeline & activation:
   at once (optionally from an IT kit).
 - send_it_provisioning refuses to re-email someone whose request is already pending — switch to
   remind_it_provisioning instead, or pass resend=true only if the recruiter explicitly asks for a fresh email.
+- IT provisioning status questions ("has IT done X?", "provisioning status?"): use get_status for one \
+candidate — it reports whether IT setup is pending, submitted (company email + asset/license counts visible), \
+or applied/activated. Report the status naturally; if submitted, tell the recruiter they can Approve & activate.
 - Bulk IT sends need confirmation: call the bulk tool without confirm so the app shows Approve/Cancel.
 - Always report exactly who was emailed (targeted/sent) and who was skipped or not found (not_found /
   skipped) when a pasted list contains names the assistant couldn't match.
@@ -284,6 +295,9 @@ never call sign_offer. Do not paste routes — the offer card/button opens the l
   * decline_offer only with confirm=true.
 - When discussing profile/onboarding/documents/offer, use plain names ("onboarding form", "documents", "offer letter") — never URLs or /paths.
 - list_my_announcements / list_notifications / mark_notifications_read for inbox parity.
+- Account & security: for "change my password", guide to the Security section on their dashboard \
+(current + new + confirm, no code needed). For "forgot my password", explain the sign-in page's \
+6-digit code option. Never expose passwords or OTP codes.
 - Never invent tool results. Keep replies encouraging and clear about what's next.
 - Prefer chaining steps toward completing onboarding when they say "complete my onboarding".
 - When a tool needs confirmation, call it without confirm first so the app can show Approve/Cancel — do not ask \
@@ -323,6 +337,14 @@ After upload the file_url is stored so recruiters can open and verify it — alw
 (confirm=true), get_role_matches (shows how employee skills match recruiter KB roles).
 - Day-1 info: get_my_day1_info — shows assigned company assets and scheduled orientation. Use this when \
 the employee asks about their assets, laptop, badge, orientation, or first day details.
+- Account & company email: get_my_profile returns company_email and has_company_email_password. Employees \
+can sign in with either their personal email or their company email — ONE password covers both logins. \
+Use get_my_profile to answer "what is my company email?", "has IT assigned my company email?" (if \
+company_email is empty, say IT has not assigned one yet — it will appear here after IT provisioning), and \
+"my company email isn't working" (confirm the assigned address, then explain they can sign in with either \
+address or use Forgot password on the sign-in page). For "change my password" / "update my password", \
+direct them to the Security section on their profile page — current password + new password + confirm, no \
+verification code needed. Never expose passwords or OTP codes.
 - Message HR: list_hr_threads, message_recruiter (new or continue), reply_hr_thread, \
 close_hr_thread (confirm=true) — each message emails HR too.
 - Announcements/notifications: list_my_announcements, list_notifications, mark_notifications_read.
@@ -604,7 +626,7 @@ def _actions_from_topic(user: CurrentUser, topic: str) -> list[dict] | None:
     """One primary navigate CTA matching the topic — never a full menu of identical pills."""
     t = topic or ""
     if user.role in ("recruiter", "super_admin"):
-        if any(k in t for k in ("candidate", "pipeline", "invite", "offer")):
+        if any(k in t for k in ("candidate", "pipeline", "invite", "offer", "provision")):
             return [_action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates")]
         if any(k in t for k in ("employee", "day-1", "day1", "joining", "asset")):
             return [_action("navigate", "Open Employees", route="/dashboard/recruiter/employees")]
@@ -627,6 +649,8 @@ def _actions_from_topic(user: CurrentUser, topic: str) -> list[dict] | None:
             return [_action("navigate", "Open Documents", route="/documents")]
         if any(k in t for k in ("profile", "onboarding", "complete", "emergency", "banking", "reference")):
             return [_action("navigate", "Complete Profile", route="/dashboard/employee/complete-profile")]
+        if any(k in t for k in ("password", "company email", "mailbox", "forgot", "login", "security", "otp", "locked")):
+            return [_action("navigate", "Open Profile & Security", route="/dashboard/employee/profile")]
         return None
 
     # candidate — one button for the active topic
@@ -636,6 +660,8 @@ def _actions_from_topic(user: CurrentUser, topic: str) -> list[dict] | None:
         return [_action("navigate", "Open documents", route="/documents")]
     if any(k in t for k in ("profile", "onboarding", "personal", "education", "skills", "summary", "fill")):
         return [_action("navigate", "Open onboarding", route="/onboarding")]
+    if any(k in t for k in ("password", "security", "forgot", "login")):
+        return [_action("navigate", "Open Security", route="/dashboard/candidate")]
     if any(k in t for k in ("message", "hr", "recruiter")):
         return [_action("navigate", "Open dashboard", route="/dashboard/candidate")]
     return None

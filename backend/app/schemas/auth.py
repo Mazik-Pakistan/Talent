@@ -180,7 +180,10 @@ class ResendOTPRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
-    role: Literal["recruiter", "candidate", "employee", "super_admin"]
+    # Optional for backwards compatibility: when omitted, the server
+    # auto-detects the account's role (candidate → employee → recruiter →
+    # super_admin) and routes to the matching dashboard.
+    role: Literal["recruiter", "candidate", "employee", "super_admin"] | None = None
     remember_me: bool = False
 
 

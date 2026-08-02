@@ -178,7 +178,14 @@ class ItLicenseItem(BaseModel):
 
 class ItProvisioningSubmitRequest(BaseModel):
     company_email: EmailStr
-    company_email_password: str = Field(min_length=4, max_length=128)
+    # No separate mailbox password anymore — the employee's single account
+    # password covers both the personal and company email login. Kept optional
+    # for backward compatibility with older clients; its value is ignored.
+    company_email_password: str | None = Field(default=None, min_length=4, max_length=128)
+    # First-time password: IT sets (or generates) a temporary password used for
+    # the very first sign-in. The employee is then forced to set their own
+    # password, which covers both the personal and company email login.
+    temporary_password: str | None = Field(default=None, min_length=8, max_length=128)
     assets: list[ItAssetItem] = Field(default_factory=list, max_length=40)
     licenses: list[ItLicenseItem] = Field(default_factory=list, max_length=40)
     it_notes: str | None = Field(default=None, max_length=2000)
@@ -186,10 +193,35 @@ class ItProvisioningSubmitRequest(BaseModel):
 
     @field_validator("company_email_password")
     @classmethod
-    def strip_password(cls, value: str) -> str:
+    def strip_password(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         cleaned = value.strip()
+        if not cleaned:
+            return None
         if len(cleaned) < 4:
             raise ValueError("Company email password must be at least 4 characters.")
+        return cleaned
+
+    @field_validator("temporary_password")
+    @classmethod
+    def validate_temporary_password(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        if len(cleaned) < 8:
+            raise ValueError("First-time password must be at least 8 characters.")
+        if not (
+            any(c.isupper() for c in cleaned)
+            and any(c.islower() for c in cleaned)
+            and any(c.isdigit() for c in cleaned)
+            and any(c in "!@#$%&*" for c in cleaned)
+        ):
+            raise ValueError(
+                "First-time password needs an uppercase letter, a lowercase letter, a number, and a special character."
+            )
         return cleaned
 
     @field_validator("it_notes", "submitted_by_name")
@@ -302,7 +334,12 @@ class ItBatchSubmitEntry(BaseModel):
 
     offer_id: str
     company_email: EmailStr
-    company_email_password: str = Field(min_length=4, max_length=128)
+    # No separate mailbox password — kept optional for backward compatibility;
+    # its value is ignored (one password covers both login emails).
+    company_email_password: str | None = Field(default=None, min_length=4, max_length=128)
+    # Optional per-person first-time password. When omitted the system
+    # generates one and it is emailed to the employee at activation.
+    temporary_password: str | None = Field(default=None, min_length=8, max_length=128)
 
     @field_validator("offer_id")
     @classmethod
@@ -314,10 +351,35 @@ class ItBatchSubmitEntry(BaseModel):
 
     @field_validator("company_email_password")
     @classmethod
-    def strip_password(cls, value: str) -> str:
+    def strip_password(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         cleaned = value.strip()
+        if not cleaned:
+            return None
         if len(cleaned) < 4:
             raise ValueError("Company email password must be at least 4 characters.")
+        return cleaned
+
+    @field_validator("temporary_password")
+    @classmethod
+    def validate_temporary_password(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        if len(cleaned) < 8:
+            raise ValueError("First-time password must be at least 8 characters.")
+        if not (
+            any(c.isupper() for c in cleaned)
+            and any(c.islower() for c in cleaned)
+            and any(c.isdigit() for c in cleaned)
+            and any(c in "!@#$%&*" for c in cleaned)
+        ):
+            raise ValueError(
+                "First-time password needs an uppercase letter, a lowercase letter, a number, and a special character."
+            )
         return cleaned
 
 

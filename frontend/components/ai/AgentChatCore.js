@@ -51,6 +51,7 @@ const ROLE_COPY = {
       "What do I still need to upload?",
       "Show my offer letter",
       "List my documents",
+      "How do I change my password?",
     ],
   },
   employee: {
@@ -63,6 +64,8 @@ const ROLE_COPY = {
       "Show my learning dashboard",
       "Browse internal opportunities",
       "Check my progress",
+      "How do I change my password?",
+      "What is my company email?",
     ],
   },
 };

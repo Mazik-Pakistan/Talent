@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     FRONTEND_URL: str
     BACKEND_URL: str
     OTP_EXPIRE_MINUTES: int = 10
+    OTP_MAX_ATTEMPTS: int = 5
+    OTP_RESEND_COOLDOWN_SECONDS: int = 60
     INVITATION_EXPIRE_HOURS: int = 48
 
     # ── Phase 2: Document management / OCR / embeddings ──────────────────

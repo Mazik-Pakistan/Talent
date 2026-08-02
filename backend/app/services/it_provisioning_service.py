@@ -7,7 +7,7 @@ Flow: signed offer → recruiter emails IT public link → IT submits email/asse
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from secrets import token_urlsafe, randbelow
+from secrets import choice, randbelow, token_urlsafe
 from uuid import uuid4
 
 from bson import ObjectId
@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.core.crypto import decrypt_text, encrypt_text
 from app.core.database import database
 from app.core.rbac import CurrentUser
+from app.core.security import hash_password
 from app.schemas.it_provisioning import (
     BulkRemindItProvisioningRequest,
     BulkSendItProvisioningRequest,
@@ -32,6 +33,23 @@ from app.services.email_service import email_service
 
 def _generate_otp() -> str:
     return f"{randbelow(1_000_000):06d}"
+
+
+_TEMP_PASSWORD_ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*"
+
+
+def _generate_temp_password() -> str:
+    """12-character temporary password meeting the account policy
+    (uppercase, lowercase, digit, special character)."""
+    while True:
+        pwd = "".join(choice(_TEMP_PASSWORD_ALPHABET) for _ in range(12))
+        if (
+            any(c.isupper() for c in pwd)
+            and any(c.islower() for c in pwd)
+            and any(c.isdigit() for c in pwd)
+            and any(c in "!@#$%&*" for c in pwd)
+        ):
+            return pwd
 
 
 def _iso(value):
@@ -466,6 +484,7 @@ class ItProvisioningService:
         return {
             "status": doc.get("status"),
             "already_submitted": doc.get("status") == "submitted",
+            "company_email": doc.get("company_email") if doc.get("status") in ("submitted", "applied") else None,
             "expires_at": _iso(doc.get("expires_at")),
             "employee": {
                 "full_name": snapshot.get("full_name"),
@@ -487,27 +506,35 @@ class ItProvisioningService:
                     "licenses_count": len(doc.get("licenses") or []),
                     "asset_names": [a.get("name") for a in (doc.get("assets") or []) if a.get("name")],
                     "license_names": [l.get("name") for l in (doc.get("licenses") or []) if l.get("name")],
+                    "assets": [
+                        {
+                            "name": a.get("name"),
+                            "asset_type": a.get("asset_type"),
+                            "serial_number": a.get("serial_number"),
+                            "notes": a.get("notes"),
+                        }
+                        for a in (doc.get("assets") or [])
+                    ],
+                    "licenses": [
+                        {
+                            "name": l.get("name"),
+                            "vendor": l.get("vendor"),
+                            "notes": l.get("notes"),
+                        }
+                        for l in (doc.get("licenses") or [])
+                    ],
+                    "it_notes": doc.get("it_notes"),
                     "submitted_at": _iso(doc.get("submitted_at")),
                     "submitted_by_name": doc.get("submitted_by_name"),
+                    "has_temporary_password": bool(doc.get("has_temporary_password")),
                 }
                 if doc.get("status") == "submitted"
                 else None
             ),
         }
 
-    async def _apply_submission(
-        self,
-        doc: dict,
-        *,
-        company_email: str,
-        password: str,
-        assets_raw: list,
-        licenses_raw: list,
-        it_notes: str | None,
-        submitted_by_name: str | None,
-        now: datetime,
-    ) -> dict:
-        """Atomically mark one provisioning doc as submitted (shared by single + batch forms)."""
+    def _build_assets_licenses(self, doc: dict, assets_raw: list, licenses_raw: list, now: datetime) -> tuple:
+        """Normalize IT-entered assets + licenses into stored records."""
         assets = []
         for item in assets_raw:
             assets.append(
@@ -523,7 +550,6 @@ class ItProvisioningService:
                     "assigned_by_email": doc.get("it_manager_email"),
                 }
             )
-
         licenses = [
             {
                 "id": str(uuid4()),
@@ -533,10 +559,39 @@ class ItProvisioningService:
             }
             for lic in licenses_raw
         ]
+        return assets, licenses
 
+    async def _apply_submission(
+        self,
+        doc: dict,
+        *,
+        company_email: str,
+        assets_raw: list,
+        licenses_raw: list,
+        it_notes: str | None,
+        submitted_by_name: str | None,
+        temporary_password: str | None,
+        now: datetime,
+    ) -> dict:
+        """Atomically mark one provisioning doc as submitted (shared by single + batch forms).
+
+        IT assigns the company email, assets, and a FIRST-TIME temporary
+        password. The temporary password (encrypted on the request, applied to
+        the user's account at activation) is used once — the employee is then
+        forced to set their own password, which covers both the personal and
+        company email login.
+        """
+        assets, licenses = self._build_assets_licenses(doc, assets_raw, licenses_raw, now)
         company_email = company_email.strip().lower()
-        encrypted_password = encrypt_text(password)
 
+        # First-time password: use what IT provided, otherwise auto-generate.
+        # Always stored Fernet-encrypted (plaintext needed once at activation
+        # to email it and set the account hash).
+        temp_password = (temporary_password or "").strip() or _generate_temp_password()
+        temp_password_encrypted = encrypt_text(temp_password)
+
+        # Company email must be unique across open provisioning requests AND
+        # across existing employee records (active tenures keep their mailbox).
         dup = await database.it_provisioning_requests.find_one(
             {
                 "_id": {"$ne": doc["_id"]},
@@ -551,6 +606,18 @@ class ItProvisioningService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Company email {company_email} is already assigned to {owner}. Use a different mailbox.",
             )
+        existing_employee = await database.employees.find_one(
+            {"company_email": company_email},
+            {"full_name": 1, "status": 1},
+        )
+        if existing_employee:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Company email {company_email} is already assigned to "
+                    f"{existing_employee.get('full_name') or 'an existing employee'}. Use a different mailbox."
+                ),
+            )
 
         updated = await database.it_provisioning_requests.find_one_and_update(
             {"_id": doc["_id"], "status": {"$in": [None, "pending"]}},
@@ -558,14 +625,16 @@ class ItProvisioningService:
                 "$set": {
                     "status": "submitted",
                     "company_email": company_email,
-                    "company_email_password_encrypted": encrypted_password,
                     "assets": assets,
                     "licenses": licenses,
                     "it_notes": it_notes,
                     "submitted_by_name": submitted_by_name,
+                    "temporary_password_encrypted": temp_password_encrypted,
+                    "has_temporary_password": True,
                     "submitted_at": now,
                     "updated_at": now,
-                }
+                },
+                "$unset": {"company_email_password_encrypted": "", "has_company_email_password": ""},
             },
             return_document=ReturnDocument.AFTER,
         )
@@ -643,13 +712,249 @@ class ItProvisioningService:
         return await self._apply_submission(
             doc,
             company_email=request.company_email,
-            password=request.company_email_password,
             assets_raw=request.assets,
             licenses_raw=request.licenses,
             it_notes=request.it_notes,
             submitted_by_name=request.submitted_by_name,
+            temporary_password=request.temporary_password,
             now=now,
         )
+
+    async def edit_public(self, token: str, request: ItProvisioningSubmitRequest) -> dict:
+        """Public: IT corrects a submitted provisioning request before the
+        recruiter activates the employee. After activation the record is
+        locked and can no longer be edited."""
+        doc = await self._find_by_token(token)
+        if doc.get("status") != "submitted":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only submitted provisioning can be edited before activation.",
+            )
+
+        now = datetime.now(UTC)
+        expires = doc.get("expires_at")
+        if expires:
+            if getattr(expires, "tzinfo", None) is None:
+                expires = expires.replace(tzinfo=UTC)
+            if now > expires:
+                raise HTTPException(status_code=410, detail="This IT provisioning link has expired.")
+
+        assets, licenses = self._build_assets_licenses(doc, request.assets, request.licenses, now)
+        company_email = request.company_email.strip().lower()
+
+        # Re-check uniqueness (excluding this request itself), including
+        # existing employee records — same rules as the original submit.
+        dup = await database.it_provisioning_requests.find_one(
+            {
+                "_id": {"$ne": doc["_id"]},
+                "company_email": company_email,
+                "status": {"$in": ["pending", "submitted", "applied"]},
+            },
+            {"employee_snapshot": 1},
+        )
+        if dup:
+            owner = (dup.get("employee_snapshot") or {}).get("full_name") or "another employee"
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Company email {company_email} is already assigned to {owner}. Use a different mailbox.",
+            )
+        existing_employee = await database.employees.find_one(
+            {"company_email": company_email},
+            {"full_name": 1, "status": 1},
+        )
+        if existing_employee:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Company email {company_email} is already assigned to "
+                    f"{existing_employee.get('full_name') or 'an existing employee'}. Use a different mailbox."
+                ),
+            )
+
+        set_fields = {
+            "status": "submitted",
+            "company_email": company_email,
+            "assets": assets,
+            "licenses": licenses,
+            "it_notes": request.it_notes,
+            "submitted_by_name": request.submitted_by_name,
+            "edited_at": now,
+            "updated_at": now,
+        }
+        # A new first-time password on edit replaces the stored one; leaving it
+        # blank keeps the previously submitted password.
+        if (request.temporary_password or "").strip():
+            set_fields["temporary_password_encrypted"] = encrypt_text(request.temporary_password.strip())
+            set_fields["has_temporary_password"] = True
+
+        updated = await database.it_provisioning_requests.find_one_and_update(
+            {"_id": doc["_id"], "status": "submitted"},
+            {"$set": set_fields},
+            return_document=ReturnDocument.AFTER,
+        )
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This provisioning request has already been applied and can no longer be edited.",
+            )
+
+        snapshot = doc.get("employee_snapshot") or {}
+        recruiter_id = doc.get("recruiter_id")
+        if recruiter_id:
+            await create_notification(
+                recipient_id=recruiter_id,
+                recipient_role="recruiter",
+                notif_type="it_provisioning_edited",
+                title="IT provisioning updated",
+                message=(
+                    f"IT updated the company email or assets for {snapshot.get('full_name')}. "
+                    "Review the latest details before activating."
+                ),
+                link="/dashboard/recruiter/candidates",
+                related_id=doc.get("offer_id"),
+            )
+        try:
+            if doc.get("recruiter_email"):
+                email_service.send_it_provisioning_edited(
+                    to_email=doc["recruiter_email"],
+                    employee_name=snapshot.get("full_name") or "the candidate",
+                    company_email=company_email,
+                    assets_count=len(assets),
+                    licenses_count=len(licenses),
+                )
+        except Exception:
+            pass  # Best-effort
+
+        await database.audit_logs.insert_one(
+            {
+                "candidate_id": doc.get("candidate_id"),
+                "email": doc.get("it_manager_email"),
+                "module": "it_provisioning",
+                "action": "it_provisioning_edited",
+                "outcome": "success",
+                "created_at": now,
+            }
+        )
+
+        return {
+            "message": "Provisioning updated. The recruiter will see the latest details before activation.",
+            "company_email": company_email,
+            "assets_count": len(assets),
+            "licenses_count": len(licenses),
+            "asset_names": [a.get("name") for a in assets if a.get("name")],
+            "license_names": [l.get("name") for l in licenses if l.get("name")],
+        }
+
+    async def reset_password_public(self, token: str) -> dict:
+        """Public: IT resets the linked employee's account password using the
+        provisioning link. There is ONE password per account — both the
+        personal and company email logins immediately use the new temporary
+        password. The temporary password is returned once and emailed to both
+        addresses."""
+        doc = await self._find_by_token(token)
+        now = datetime.now(UTC)
+        expires = doc.get("expires_at")
+        if expires:
+            if getattr(expires, "tzinfo", None) is None:
+                expires = expires.replace(tzinfo=UTC)
+            if now > expires:
+                raise HTTPException(status_code=410, detail="This IT provisioning link has expired.")
+
+        if doc.get("status") not in ("submitted", "applied"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="IT must submit provisioning before the employee password can be reset.",
+            )
+
+        user_doc = await self._resolve_user_for_provisioning(doc)
+        if not user_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No account is linked to this provisioning request yet.",
+            )
+
+        temp_password = _generate_temp_password()
+        await database.users.update_one(
+            {"_id": user_doc["_id"]},
+            {
+                "$set": {
+                    "password_hash": hash_password(temp_password),
+                    "must_change_password": True,
+                    "updated_at": now,
+                }
+            },
+        )
+        # Force re-login everywhere: both personal and company email logins.
+        await database.refresh_tokens.delete_many({"user_id": str(user_doc["_id"])})
+
+        snapshot = doc.get("employee_snapshot") or {}
+        personal_email = (snapshot.get("email") or user_doc.get("email") or "").strip().lower()
+        company_email = doc.get("company_email")
+
+        try:
+            await create_notification(
+                recipient_id=str(user_doc["_id"]),
+                recipient_role=user_doc.get("role") or "employee",
+                notif_type="password_reset_by_it",
+                title="Password reset by IT",
+                message=(
+                    "Your password was reset by IT. A temporary password was sent to your "
+                    "personal and company email — use it once, then you'll set your own."
+                ),
+                link="/login",
+            )
+        except Exception:
+            pass  # Best-effort
+
+        try:
+            email_service.send_to_both(
+                personal_email,
+                company_email,
+                email_service.send_it_password_reset,
+                snapshot.get("full_name") or user_doc.get("full_name"),
+                temp_password,
+            )
+        except Exception:
+            pass  # Best-effort
+
+        await database.audit_logs.insert_one(
+            {
+                "user_id": str(user_doc["_id"]),
+                "email": doc.get("it_manager_email"),
+                "module": "it_provisioning",
+                "action": "employee_password_reset_by_it",
+                "outcome": "success",
+                "created_at": now,
+            }
+        )
+
+        return {
+            "message": "Password reset. The employee received a temporary password by email (personal + company) — they'll set their own on next sign-in.",
+            "temporary_password": temp_password,
+            "company_email": company_email,
+            "personal_email": personal_email,
+            "full_name": snapshot.get("full_name") or user_doc.get("full_name"),
+        }
+
+    async def _resolve_user_for_provisioning(self, doc: dict) -> dict | None:
+        """Resolve the single users document linked to a provisioning request
+        (works both before and after activation — it is the same account)."""
+        user_id = None
+        candidate = await self._find_candidate(doc.get("candidate_id") or "")
+        if candidate and candidate.get("user_id"):
+            user_id = candidate["user_id"]
+        elif doc.get("employee_id"):
+            employee = await database.employees.find_one(
+                {"_id": ObjectId(doc["employee_id"]) if ObjectId.is_valid(doc["employee_id"]) else doc["employee_id"]},
+                {"user_id": 1},
+            )
+            if employee and employee.get("user_id"):
+                user_id = employee["user_id"]
+        if not user_id:
+            return None
+        if ObjectId.is_valid(user_id):
+            return await database.users.find_one({"_id": ObjectId(user_id)})
+        return await database.users.find_one({"email": user_id})
 
     async def _find_batch_by_token(self, token: str) -> dict:
         if not token:
@@ -746,11 +1051,11 @@ class ItProvisioningService:
                 result = await self._apply_submission(
                     doc,
                     company_email=entry.company_email,
-                    password=entry.company_email_password,
                     assets_raw=request.assets,
                     licenses_raw=request.licenses,
                     it_notes=request.it_notes,
                     submitted_by_name=request.submitted_by_name,
+                    temporary_password=entry.temporary_password,
                     now=now,
                 )
                 submitted.append({"offer_id": entry.offer_id, **result})

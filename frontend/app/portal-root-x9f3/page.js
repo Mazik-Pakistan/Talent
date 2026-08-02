@@ -105,6 +105,11 @@ function SuperAdminLoginForm() {
         email: email.trim(),
       });
       setLoginFeedback("success");
+      if (data.user?.must_change_password) {
+        toast.info("First-time sign-in — set your own password to continue.");
+        router.push("/set-password");
+        return;
+      }
       toast.success("Signed in successfully. Redirecting…");
       router.push(data.redirect_to);
     } catch (error) {

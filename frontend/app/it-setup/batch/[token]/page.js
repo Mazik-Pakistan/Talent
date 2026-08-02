@@ -118,9 +118,7 @@ export default function ItSetupBatchPage() {
   const [assets, setAssets] = useState([emptyAsset()]);
   const [licenses, setLicenses] = useState([emptyLicense()]);
   const [emails, setEmails] = useState({});
-  const [passwords, setPasswords] = useState({});
   const [domain, setDomain] = useState("");
-  const [defaultPassword, setDefaultPassword] = useState("");
   const [submittedByName, setSubmittedByName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
@@ -172,19 +170,6 @@ export default function ItSetupBatchPage() {
     setLicenses((l) => l.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
   }
 
-  function applyDefaultPassword() {
-    const value = defaultPassword.trim();
-    if (!value) return;
-    const next = {};
-    Object.keys(passwords).forEach((oid) => {
-      next[oid] = passwords[oid] || value;
-    });
-    (data?.entries || []).forEach((e) => {
-      if (!e.already_submitted) next[e.offer_id] = next[e.offer_id] || value;
-    });
-    setPasswords(next);
-  }
-
   function fillEmails() {
     const value = domain.trim().replace(/^@/, "");
     const next = {};
@@ -199,9 +184,9 @@ export default function ItSetupBatchPage() {
   async function handleSubmit() {
     if (submitting) return;
     const rows = (data?.entries || []).filter((e) => !e.already_submitted);
-    const missing = rows.filter((e) => !(emails[e.offer_id] || "").trim() || !(passwords[e.offer_id] || "").trim());
+    const missing = rows.filter((e) => !(emails[e.offer_id] || "").trim());
     if (missing.length) {
-      setError(`Set a company email and password for ${missing.map((m) => m.full_name || m.offer_id).join(", ")}.`);
+      setError(`Set a company email for ${missing.map((m) => m.full_name || m.offer_id).join(", ")}.`);
       return;
     }
     const assetsPayload = assets.filter((a) => a.name.trim()).map((a) => ({
@@ -222,7 +207,6 @@ export default function ItSetupBatchPage() {
     const entries = rows.map((e) => ({
       offer_id: e.offer_id,
       company_email: emails[e.offer_id].trim().toLowerCase(),
-      company_email_password: passwords[e.offer_id].trim(),
     }));
     setSubmitting(true);
     setError("");
@@ -287,8 +271,10 @@ export default function ItSetupBatchPage() {
         <h1 className="it-title">Provision {pendingRows.length} new hire(s)</h1>
         <p className="it-sub">
           Requested by <strong>{data?.recruiter_name || "a recruiter"}</strong> for the people below.
-          Apply a kit (or add assets/licenses manually), then set each person&apos;s company email and
-          password. People already provisioned are marked done. Link expires {data?.expires_at || "soon"}.
+          Apply a kit (or add assets/licenses manually), then set each person&apos;s company email.
+          No separate password is needed — each employee signs in with their existing account
+          password on both their personal and company email. People already provisioned are
+          marked done. Link expires {data?.expires_at || "soon"}.
         </p>
         {data?.note && <p className="it-note">{data.note}</p>}
         {error && <p className="it-alert" style={{ marginTop: 12 }}>{error}</p>}
@@ -382,8 +368,8 @@ export default function ItSetupBatchPage() {
         <div className="it-section">
           <div className="it-section-head">
             <div>
-              <h2>2 · Company emails & passwords</h2>
-              <p>Set each person&apos;s company mailbox and initial password.</p>
+              <h2>2 · Company emails</h2>
+              <p>Set each person&apos;s company mailbox. No separate password is needed — the employee&apos;s existing account password works for both logins.</p>
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
@@ -391,22 +377,16 @@ export default function ItSetupBatchPage() {
               <span>Email domain (for auto-fill)</span>
               <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="@acme.com" />
             </label>
-            <label className="it-field">
-              <span>Default password (for all)</span>
-              <input value={defaultPassword} onChange={(e) => setDefaultPassword(e.target.value)} placeholder="TemporaryPass#123" type="text" />
-            </label>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
             <button type="button" className="it-btn" onClick={fillEmails}>Auto-fill emails</button>
-            <button type="button" className="it-btn" onClick={applyDefaultPassword}>Apply password to all</button>
           </div>
 
           <table className="it-table">
             <thead>
               <tr>
                 <th>New hire</th>
-                <th style={{ width: "30%" }}>Company email</th>
-                <th style={{ width: "30%" }}>Password</th>
+                <th style={{ width: "40%" }}>Company email</th>
                 <th style={{ width: 90 }}>Status</th>
               </tr>
             </thead>
@@ -428,14 +408,6 @@ export default function ItSetupBatchPage() {
                     />
                   </td>
                   <td>
-                    <input
-                      value={passwords[e.offer_id] || ""}
-                      onChange={(ev) => setPasswords((m) => ({ ...m, [e.offer_id]: ev.target.value }))}
-                      placeholder="Temporary password"
-                      type="text"
-                    />
-                  </td>
-                  <td>
                     <span className="it-chip pending">Pending</span>
                   </td>
                 </tr>
@@ -446,7 +418,7 @@ export default function ItSetupBatchPage() {
                     <div className="it-name">{e.full_name || "—"}</div>
                     <div className="it-meta">{e.job_title || "—"}</div>
                   </td>
-                  <td colSpan={2}>
+                  <td>
                     <div className="it-meta">{e.company_email || "—"}</div>
                   </td>
                   <td>
@@ -456,7 +428,7 @@ export default function ItSetupBatchPage() {
               ))}
               {data?.entries?.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="it-meta">No new hires in this batch.</td>
+                  <td colSpan={3} className="it-meta">No new hires in this batch.</td>
                 </tr>
               )}
             </tbody>
@@ -490,7 +462,8 @@ export default function ItSetupBatchPage() {
           {submitting ? "Submitting…" : `Submit provisioning for ${pendingRows.length} new hire(s)`}
         </button>
         <p className="it-hint" style={{ marginTop: 10, textAlign: "center" }}>
-          Submitted credentials are encrypted; the recruiter gets notified per person when ready to activate.
+          No passwords are collected here — each employee signs in with their existing account
+          password. The recruiter gets notified per person when ready to activate.
         </p>
       </div>
       <style>{SHARED_STYLES}</style>

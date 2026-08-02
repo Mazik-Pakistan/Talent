@@ -898,6 +898,11 @@ function profileInsights() {
       priority: MASCOT_PRIORITY.tip,
       message: "Add a profile photo so teammates recognize you in the product.",
     },
+    {
+      id: "profile-security",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Change your password anytime from the Security section below — no verification code needed.",
+    },
   ];
 }
 

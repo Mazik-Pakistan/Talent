@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import ProfilePhotoEditor from "@/components/ProfilePhotoEditor";
+import SecuritySection from "@/components/SecuritySection";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import {
@@ -250,6 +251,24 @@ export default function RecruiterProfilePage() {
                   {saving ? "Saving…" : "Save profile"}
                 </button>
               </form>
+            </div>
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.sectionHead}>
+              <div className={styles.sectionHeadLeft}>
+                <div className={`${styles.bar} ${styles.green}`} />
+                <div>
+                  <div className={styles.sectionTitle}>Security</div>
+                  <div className={styles.sectionDesc}>
+                    Change your account password. One password covers your sign-in — no verification code needed when
+                    you know your current password.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className={styles.sectionBody}>
+              <SecuritySection />
             </div>
           </div>
         </>
