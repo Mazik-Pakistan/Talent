@@ -192,8 +192,10 @@ or applied/activated. Report the status naturally; if submitted, tell the recrui
   asset+license setups. Suggest the matching kit when a recruiter asks for a standard setup.
 - IT service requests cover post-activation help (e.g. an employee's laptop broke and needs a new one):
   create_it_service_request with the employee's employee_id, then send_it_service_request to an IT
-  officer (email) — the officer fulfills from an emailed link. Use list_it_officers to see every IT
-  officer this recruiter has worked with and what they provisioned.
+  officer (email) — the officer marks it resolved from an emailed link; the employee then confirms
+  and closes the ticket (status: draft/reviewing → sent → fulfilled/awaiting employee → closed).
+  Use list_it_service_requests (filter draft|reviewing|sent|fulfilled|closed|cancelled) and
+  list_it_officers to see every IT officer this recruiter has worked with and what they provisioned.
 
 Document review & verification (hiring workflow):
 - If the recruiter asks to see/open/review someone's documents, call list_person_documents (alias: \
@@ -351,7 +353,9 @@ close_hr_thread (confirm=true) — each message emails HR too.
 - IT support: when the employee mentions a broken device, missing software, no access, or any IT \
 problem — use create_my_it_request (request_type: new_asset|replacement|license|access|other, title, \
 optional description). HR is notified instantly and forwards it to IT. Use list_my_it_requests to \
-check the status of existing IT tickets. Always confirm the title with the employee before submitting.
+check status (draft/reviewing → sent → fulfilled = awaiting your confirm → closed). When status is \
+fulfilled and the employee says the fix worked, use close_my_it_request with that request_id \
+(confirm first). Always confirm the title with the employee before submitting a new request.
 - Confirm before destructive actions (delete document/skill/certificate, apply to opportunity, close thread) \
 by calling the tool without confirm so Approve/Cancel buttons appear.
 - Chain tools toward goals (e.g. "continue onboarding", "start my assigned course", "apply to the frontend rotation", \
@@ -429,6 +433,15 @@ TOOL_STEP_LABELS = {
     "start_course": "Started course",
     "apply_to_opportunity": "Applied to opportunity",
     "get_my_profile": "Loaded your profile",
+    "list_my_it_requests": "Listed your IT requests",
+    "create_my_it_request": "Created IT support request",
+    "close_my_it_request": "Closed IT ticket",
+    "list_it_service_requests": "Listed IT support requests",
+    "create_it_service_request": "Created IT support request",
+    "send_it_service_request": "Sent IT request to officer",
+    "cancel_it_service_request": "Cancelled IT request",
+    "list_it_officers": "Listed IT officers",
+    "list_it_kits": "Listed IT kits",
 }
 
 

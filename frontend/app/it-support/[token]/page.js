@@ -63,11 +63,18 @@ const SHARED_STYLES = `
   .it-icon.err { background: #fee9e7; color: #b42318; }
   .it-chip { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; }
   .it-chip.sent { background: #fff3d6; color: #92610a; }
-  .it-chip.fulfilled { background: #def3ed; color: #087a55; }
+  .it-chip.fulfilled { background: #e8f0fd; color: #1d4ed8; }
+  .it-chip.closed { background: #def3ed; color: #087a55; }
   .it-chip.cancelled { background: #f1f1f3; color: #8b8b94; }
 `;
 
-const STATUS_LABELS = { draft: "Not sent yet", sent: "Pending", fulfilled: "Fulfilled", cancelled: "Cancelled" };
+const STATUS_LABELS = {
+  draft: "Not sent yet",
+  sent: "Pending",
+  fulfilled: "Awaiting employee",
+  closed: "Closed",
+  cancelled: "Cancelled",
+};
 
 export default function ItSupportPublicPage() {
   const params = useParams();
@@ -142,7 +149,7 @@ export default function ItSupportPublicPage() {
     );
   }
 
-  const isFulfilled = data?.status === "fulfilled";
+  const isFulfilled = data?.status === "fulfilled" || data?.status === "closed";
   const isCancelled = data?.status === "cancelled";
 
   return (

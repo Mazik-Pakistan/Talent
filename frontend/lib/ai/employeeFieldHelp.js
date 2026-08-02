@@ -40,6 +40,11 @@ export const EMPLOYEE_PAGE_SUMMARIES = {
     what: "Start or continue a conversation with your recruiter — they also get an email copy.",
     why: "Keeps HR questions in one place so you get a reply in-app and by email.",
   },
+  "it-support": {
+    title: "IT support",
+    what: "Raise a help request for hardware, software, or access — HR forwards it to IT.",
+    why: "Tracks your ticket from submission through IT resolution and your confirm & close.",
+  },
 };
 
 /** Adapter: BaseMascot passes a DOM field; employee FIELD_HELP is path-keyed. */
@@ -101,6 +106,9 @@ export function employeePageSummaryFor(pathname, context = null) {
   if (pathname.includes("/learning")) return { key: "learning", ...EMPLOYEE_PAGE_SUMMARIES.learning };
   if (pathname.includes("/talent")) return { key: "talent", ...EMPLOYEE_PAGE_SUMMARIES.talent };
   if (pathname.includes("/messages")) return { key: "messages", ...EMPLOYEE_PAGE_SUMMARIES.messages };
+  if (pathname.includes("/it-support")) {
+    return { key: "it-support", ...EMPLOYEE_PAGE_SUMMARIES["it-support"] };
+  }
   if (pathname.includes("/profile")) {
     const section = context?.section;
     if (section && HOVER_HELP[section]) {

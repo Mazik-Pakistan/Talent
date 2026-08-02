@@ -7,6 +7,7 @@ import EmployeeShell from "@/components/employee/EmployeeShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import dashStyles from "@/app/dashboard/employee/employee-dashboard.module.css";
 import {
+  closeMyItServiceRequest,
   createMyItServiceRequest,
   getApiErrorMessage,
   listMyItServiceRequests,
@@ -76,12 +77,19 @@ function RequestTimeline({ r }) {
     },
     {
       key: "resolved",
-      label: "Resolved",
+      label: "Resolved by IT",
       desc: r.fulfillment_note
         ? `IT resolved this: ${r.fulfillment_note}${r.serial_number ? ` (Serial: ${r.serial_number})` : ""}`
         : "IT has resolved your request.",
       ts: r.fulfilled_at,
-      done: r.status === "fulfilled",
+      done: r.status === "fulfilled" || r.status === "closed",
+    },
+    {
+      key: "closed",
+      label: "Closed",
+      desc: "You confirmed the fix and closed this ticket.",
+      ts: r.closed_at,
+      done: r.status === "closed",
     },
   ];
 
@@ -129,7 +137,8 @@ function RequestTimeline({ r }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
           {steps.map((step, i) => {
             const isLast = i === steps.length - 1;
-            const isActive = step.done && (isLast || !steps[i + 1]?.done);
+            // Last step done = fully complete (green ✓), not "current" (blue ●).
+            const isActive = step.done && !isLast && !steps[i + 1]?.done;
             return (
               <div key={step.key} style={{ display: "flex", gap: 12, alignItems: "stretch" }}>
                 <div
@@ -216,6 +225,7 @@ export default function EmployeeItSupportPage() {
   const [requests, setRequests] = useState([]);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [closingId, setClosingId] = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [form, setForm] = useState({ request_type: "replacement", title: "", description: "" });
 
@@ -264,8 +274,24 @@ export default function EmployeeItSupportPage() {
     }
   }
 
+  async function handleClose(requestId) {
+    const token = localStorage.getItem("access_token");
+    if (!token || closingId) return;
+    setClosingId(requestId);
+    try {
+      const result = await closeMyItServiceRequest(requestId, token);
+      toast.success(result.message || "Ticket closed.");
+      await load();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not close the ticket."));
+    } finally {
+      setClosingId(null);
+    }
+  }
+
   function statusSummary(r) {
-    if (r.status === "fulfilled") return { label: "Resolved", bg: "#def3ed", color: "#087a55" };
+    if (r.status === "closed") return { label: "Closed", bg: "#def3ed", color: "#087a55" };
+    if (r.status === "fulfilled") return { label: "Confirm & close", bg: "#e8f0fd", color: "#1d4ed8" };
     if (r.status === "cancelled") return { label: "Cancelled", bg: "#f1f1f3", color: "#8b8b94" };
     if (r.status === "sent") return { label: "With IT", bg: "#fff3d6", color: "#92610a" };
     if (r.reviewed_at) return { label: "HR reviewing", bg: "#e8f0fd", color: "#1d4ed8" };
@@ -309,6 +335,7 @@ export default function EmployeeItSupportPage() {
                 </span>
                 <select
                   style={inputStyle}
+                  name="request_type"
                   value={form.request_type}
                   onChange={(e) => setForm((f) => ({ ...f, request_type: e.target.value }))}
                 >
@@ -333,6 +360,7 @@ export default function EmployeeItSupportPage() {
                 </span>
                 <input
                   style={inputStyle}
+                  name="it_request_title"
                   value={form.title}
                   onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                   placeholder="e.g. Laptop not turning on, need replacement"
@@ -353,6 +381,7 @@ export default function EmployeeItSupportPage() {
               </span>
               <textarea
                 style={{ ...inputStyle, resize: "vertical" }}
+                name="it_request_description"
                 rows={3}
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
@@ -486,6 +515,44 @@ export default function EmployeeItSupportPage() {
                             {r.description}
                           </p>
                         )}
+                        {r.status === "fulfilled" ? (
+                          <div
+                            style={{
+                              marginBottom: 12,
+                              padding: "12px 14px",
+                              borderRadius: 10,
+                              background: "#eef5ff",
+                              border: "1px solid #c7dbf8",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <div style={{ fontSize: 13, color: "#1e3a5f", lineHeight: 1.45 }}>
+                              IT marked this resolved. If the issue is fixed, close the ticket so HR can see it’s done.
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleClose(r.request_id)}
+                              disabled={closingId === r.request_id}
+                              style={{
+                                border: "none",
+                                borderRadius: 8,
+                                background: "#0d5c91",
+                                color: "#fff",
+                                padding: "9px 14px",
+                                fontWeight: 700,
+                                fontSize: 13,
+                                cursor: closingId === r.request_id ? "wait" : "pointer",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {closingId === r.request_id ? "Closing…" : "Confirm & close ticket"}
+                            </button>
+                          </div>
+                        ) : null}
                         <RequestTimeline r={r} />
                       </div>
                     )}

@@ -1,7 +1,11 @@
 "use client";
 
 import { getLearningDashboard } from "@/services/learningService";
-import { getProfileCompletion, listMyDocuments } from "@/services/authService";
+import {
+  getProfileCompletion,
+  listMyDocuments,
+  listMyItServiceRequests,
+} from "@/services/authService";
 import { COPILOT_PRIORITY, ONBOARDING_WORKFLOW } from "@/lib/ai/guideContext";
 import { buildDocumentStatusInsights } from "@/lib/ai/documentStatusInsights";
 import { scopedContext } from "@/lib/ai/contextScope";
@@ -168,6 +172,7 @@ function pageTitle(pathname) {
   if (pathname.startsWith("/dashboard/employee/learning")) return "learning";
   if (pathname.startsWith("/dashboard/employee/talent")) return "My Talent";
   if (pathname.startsWith("/dashboard/employee/messages")) return "Message HR";
+  if (pathname.startsWith("/dashboard/employee/it-support")) return "IT support";
   if (pathname.startsWith("/dashboard/employee/ai-assistant")) return "AI Assistant";
   if (pathname.startsWith("/dashboard/employee/ai-coach")) return "AI Coach";
   if (pathname.startsWith("/documents")) return "documents";
@@ -524,6 +529,59 @@ export async function buildEmployeeInsights(pathname, accessToken, rawContext = 
     });
   }
 
+  // ── IT support ───────────────────────────────────────────────────────
+  if (pathname?.startsWith("/dashboard/employee/it-support")) {
+    let myRequests = [];
+    try {
+      const data = accessToken
+        ? await cached("my-it-requests", () => listMyItServiceRequests(accessToken))
+        : null;
+      myRequests = data?.requests || [];
+    } catch {
+      myRequests = [];
+    }
+    const awaitingClose = myRequests.filter((r) => r.status === "fulfilled");
+    const withIt = myRequests.filter((r) => r.status === "sent");
+    const waitingHr = myRequests.filter((r) => r.status === "draft" || r.status === "reviewing");
+
+    if (awaitingClose.length) {
+      push(insights, {
+        id: "it-confirm-close",
+        priority: COPILOT_PRIORITY.task,
+        message:
+          awaitingClose.length === 1
+            ? "IT marked a request resolved — expand it and Confirm & close ticket if the fix looks good."
+            : `${awaitingClose.length} requests need your confirm & close after IT resolved them.`,
+      });
+    }
+    if (withIt.length) {
+      push(insights, {
+        id: "it-with-it",
+        priority: COPILOT_PRIORITY.insight,
+        message:
+          withIt.length === 1
+            ? "1 request is with IT — you’ll be notified when they mark it resolved."
+            : `${withIt.length} requests are with IT — you’ll be notified when each is resolved.`,
+      });
+    }
+    if (waitingHr.length) {
+      push(insights, {
+        id: "it-waiting-hr",
+        priority: COPILOT_PRIORITY.insight,
+        message:
+          waitingHr.length === 1
+            ? "1 request is with HR — they’ll review and forward it to IT."
+            : `${waitingHr.length} requests are with HR for review before IT.`,
+      });
+    }
+    push(insights, {
+      id: "it-how",
+      priority: COPILOT_PRIORITY.tip,
+      message:
+        "Need a laptop, license, or access? Pick a type, add a short title, and Send request to HR. Expand a card below for the full timeline.",
+    });
+  }
+
   // ── AI Assistant (Agent chat — Copilot only points, never runs it) ───
   if (pathname?.startsWith("/dashboard/employee/ai-assistant")) {
     push(insights, {
@@ -569,6 +627,7 @@ export async function buildEmployeeInsights(pathname, accessToken, rawContext = 
     if (pathname?.startsWith("/dashboard/employee/learning")) return "learning";
     if (pathname?.startsWith("/dashboard/employee/talent")) return "talent";
     if (pathname?.startsWith("/dashboard/employee/messages")) return "messages";
+    if (pathname?.startsWith("/dashboard/employee/it-support")) return "it-support";
     if (pathname?.startsWith("/dashboard/employee/profile")) return "profile";
     if (pathname === "/dashboard/employee") return "dashboard";
     return null;

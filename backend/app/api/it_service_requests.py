@@ -57,6 +57,12 @@ async def create_my_it_service_request(request: ItServiceRequestEmployeeCreate, 
     return await it_service_request_service.create_employee_draft(current_user, request)
 
 
+@router.post("/me/{request_id}/close")
+async def close_my_it_service_request(request_id: str, current_user: RequireEmployee):
+    """Employee confirms IT resolved the issue and closes the ticket."""
+    return await it_service_request_service.close_by_employee(current_user, request_id)
+
+
 @router.get("/public/{token}")
 async def get_it_service_request_public(token: str):
     return await it_service_request_service.get_public(token)

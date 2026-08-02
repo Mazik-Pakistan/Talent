@@ -3,11 +3,13 @@
 import {
   getDashboardActivity,
   getDashboardSummary,
+  getItOfficersOverview,
   getOnboardingInProgress,
   getPendingReview,
   getReadyForConversion,
   getRecruiterMascotBrief,
   listEmployees,
+  listItServiceRequests,
 } from "@/services/authService";
 import {
   getLearningAnalytics,
@@ -19,6 +21,7 @@ import {
   EMPLOYEE_TAB_HELP,
   LEARNING_TAB_HELP,
   TALENT_TAB_HELP,
+  pathMatchesPageKey,
 } from "@/lib/ai/recruiterFieldHelp";
 import { buildDocumentStatusInsights } from "@/lib/ai/documentStatusInsights";
 import { scopedContext } from "@/lib/ai/contextScope";
@@ -77,18 +80,20 @@ function sortByPriority(insights) {
 
 function recruiterPageKey(pathname) {
   if (!pathname) return "unknown";
-  if (pathname.includes("/overview")) return "overview";
-  if (pathname.includes("/invite")) return "invite";
+  if (pathMatchesPageKey(pathname, "overview")) return "overview";
+  if (pathMatchesPageKey(pathname, "invite")) return "invite";
   if (pathname.includes("/candidates/")) return "candidate_detail";
-  if (pathname.includes("/candidates")) return "candidates";
+  if (pathMatchesPageKey(pathname, "candidates")) return "candidates";
   if (pathname.includes("/employees/")) return "employee_detail";
-  if (pathname.includes("/employees")) return "employees";
-  if (pathname.includes("/learning")) return "learning";
-  if (pathname.includes("/talent")) return "talent";
-  if (pathname.includes("/announcements")) return "announcements";
-  if (pathname.includes("/messages")) return "messages";
-  if (pathname.includes("/activity")) return "activity";
-  if (pathname.includes("/profile")) return "profile";
+  if (pathMatchesPageKey(pathname, "employees")) return "employees";
+  if (pathMatchesPageKey(pathname, "learning")) return "learning";
+  if (pathMatchesPageKey(pathname, "talent")) return "talent";
+  if (pathMatchesPageKey(pathname, "announcements")) return "announcements";
+  if (pathMatchesPageKey(pathname, "messages")) return "messages";
+  if (pathMatchesPageKey(pathname, "activity")) return "activity";
+  if (pathMatchesPageKey(pathname, "profile")) return "profile";
+  if (pathMatchesPageKey(pathname, "it-kits")) return "it-kits";
+  if (pathMatchesPageKey(pathname, "it")) return "it";
   return "other";
 }
 
@@ -906,6 +911,105 @@ function profileInsights() {
   ];
 }
 
+async function itHubInsights(accessToken) {
+  const insights = [];
+  if (!accessToken) {
+    return [
+      {
+        id: "it-hub-basic",
+        priority: MASCOT_PRIORITY.tip,
+        message:
+          "IT officers tracks who provisions new hires; Requests is for post-activation help (broken laptop, access, licenses).",
+      },
+    ];
+  }
+
+  const [overview, requestsData] = await Promise.all([
+    cached("it-officers", () => getItOfficersOverview(accessToken).catch(() => null)),
+    cached("it-requests", () => listItServiceRequests(accessToken).catch(() => null)),
+  ]);
+
+  const officers = overview?.officers || [];
+  const requests = requestsData?.requests || [];
+  const waitingHr = requests.filter((r) => r.status === "draft" || r.status === "reviewing");
+  const withIt = requests.filter((r) => r.status === "sent");
+  const awaitingEmployee = requests.filter((r) => r.status === "fulfilled");
+
+  if (waitingHr.length) {
+    insights.push({
+      id: "it-send-drafts",
+      priority: MASCOT_PRIORITY.task,
+      message:
+        waitingHr.length === 1
+          ? `1 support request is waiting for HR — open Requests and Send to IT when ready.`
+          : `${waitingHr.length} support requests need HR action — open Requests, pick one, and Send to IT.`,
+    });
+  }
+  if (withIt.length) {
+    insights.push({
+      id: "it-with-it",
+      priority: MASCOT_PRIORITY.insight,
+      message:
+        withIt.length === 1
+          ? "1 ticket is with IT — they’ll mark it resolved from their email link."
+          : `${withIt.length} tickets are with IT — they’ll mark each resolved from their email link.`,
+    });
+  }
+  if (awaitingEmployee.length) {
+    insights.push({
+      id: "it-awaiting-emp",
+      priority: MASCOT_PRIORITY.insight,
+      message:
+        awaitingEmployee.length === 1
+          ? "1 ticket is awaiting the employee to confirm & close after IT resolved it."
+          : `${awaitingEmployee.length} tickets await employee confirm & close after IT resolved them.`,
+    });
+  }
+  if (officers.length) {
+    insights.push({
+      id: "it-officers",
+      priority: MASCOT_PRIORITY.tip,
+      message: `You have ${officers.length} IT officer${officers.length === 1 ? "" : "s"} on file — expand a row for provisioning people and their support tickets.`,
+    });
+  } else {
+    insights.push({
+      id: "it-no-officers",
+      priority: MASCOT_PRIORITY.tip,
+      message:
+        "No IT officers yet — send a provisioning request or create a support ticket and they’ll appear here.",
+    });
+  }
+  insights.push({
+    id: "it-create",
+    priority: MASCOT_PRIORITY.tip,
+    message:
+      "Need help for someone already employed? Tap Request IT help — or Manage kits for reusable asset setups.",
+  });
+  return insights;
+}
+
+function itKitsInsights() {
+  return [
+    {
+      id: "it-kits-why",
+      priority: MASCOT_PRIORITY.insight,
+      message:
+        "Kits are reusable asset + license packages. Suggest the matching kit when provisioning a standard role.",
+    },
+    {
+      id: "it-kits-create",
+      priority: MASCOT_PRIORITY.task,
+      message:
+        "Create a kit with a clear name, role tags, and the assets/licenses IT should assign every time.",
+    },
+    {
+      id: "it-kits-back",
+      priority: MASCOT_PRIORITY.tip,
+      message: "When you’re done here, go back to IT & support to raise tickets or review officers.",
+    },
+  ];
+}
+
 async function maybeAiBrief(accessToken, page, snapshot, firstName) {
   if (!accessToken || page !== "overview") return null;
 
@@ -992,6 +1096,10 @@ export async function buildRecruiterInsights(pathname, accessToken, rawContext =
     insights.push(...activityInsights(snapshot));
   } else if (page === "profile") {
     insights.push(...profileInsights());
+  } else if (page === "it") {
+    insights.push(...(await itHubInsights(accessToken)));
+  } else if (page === "it-kits") {
+    insights.push(...itKitsInsights());
   }
 
   // Keep tips on this screen only — no AI brief (it invents off-page content).

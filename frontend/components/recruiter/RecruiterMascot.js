@@ -55,6 +55,11 @@ const COMMAND_FIELDS = {
   rejectNote: ["reject note", "rejection"],
   required_skills: ["required skills", "skills"],
   description: ["description"],
+  request_type: ["request type", "type", "what do you need"],
+  it_manager_email: ["it officer", "it email", "it manager"],
+  it_request_title: ["what's needed", "short title", "request title"],
+  kit_name: ["kit name", "name"],
+  kit_roles: ["roles"],
 };
 
 /**

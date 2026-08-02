@@ -1698,6 +1698,18 @@ async def _tool_create_my_it_request(user: CurrentUser, args: dict) -> ToolResul
         return _err(exc)
 
 
+async def _tool_close_my_it_request(user: CurrentUser, args: dict) -> ToolResult:
+    from app.services.it_service_request_service import it_service_request_service
+
+    try:
+        return ToolResult(
+            ok=True,
+            data=await it_service_request_service.close_by_employee(user, args.get("request_id")),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Tool registrations
 # ─────────────────────────────────────────────────────────────────────────
@@ -1872,9 +1884,9 @@ RECRUITER_PARITY_TOOLS: list[Tool] = [
         name="list_it_service_requests",
         description=(
             "List IT service requests (post-activation help like replacement laptops). "
-            "Filter by status: draft|reviewing|sent|fulfilled|cancelled."
+            "Filter by status: draft|reviewing|sent|fulfilled|closed|cancelled."
         ),
-        parameters={"status": "string, optional: draft|reviewing|sent|fulfilled|cancelled"},
+        parameters={"status": "string, optional: draft|reviewing|sent|fulfilled|closed|cancelled"},
         handler=_tool_list_it_service_requests,
         roles=("recruiter", "super_admin"),
     ),
@@ -2745,8 +2757,9 @@ EMPLOYEE_PARITY_TOOLS: list[Tool] = [
         name="list_my_it_requests",
         description=(
             "Show all the employee's IT support requests — drafts waiting for HR, "
-            "ones sent to IT, fulfilled, and cancelled. Use this when the employee asks "
-            "'what happened to my laptop request' or 'check my IT ticket status'."
+            "ones sent to IT, awaiting employee confirm (fulfilled), closed, and cancelled. "
+            "Use this when the employee asks 'what happened to my laptop request' or "
+            "'check my IT ticket status'."
         ),
         parameters={},
         handler=_tool_list_my_it_requests,
@@ -2768,6 +2781,20 @@ EMPLOYEE_PARITY_TOOLS: list[Tool] = [
             "description": "string, optional — extra detail for HR and IT",
         },
         handler=_tool_create_my_it_request,
+        roles=("employee",),
+    ),
+    Tool(
+        name="close_my_it_request",
+        description=(
+            "Employee confirms IT resolved the issue and closes the ticket. "
+            "Only works when status is fulfilled (IT marked resolved, awaiting employee). "
+            "Use after list_my_it_requests when the employee says the fix worked / close my ticket. "
+            "Confirm with the employee before calling."
+        ),
+        parameters={
+            "request_id": "string, required — from list_my_it_requests",
+        },
+        handler=_tool_close_my_it_request,
         roles=("employee",),
     ),
 ]

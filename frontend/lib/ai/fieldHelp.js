@@ -40,6 +40,11 @@ export const FIELD_HELP = {
   "nda.agreed": "Confirm you have read and agree to the Self Declaration terms.",
   "self_declaration.full_legal_name": "Type your full legal name exactly as on your ID.",
   "self_declaration.agreed": "Confirm you have read and agree to the Self Declaration terms.",
+
+  // IT support
+  request_type: "What kind of help — replacement hardware, new asset, license, access, or other.",
+  it_request_title: "Short title HR and IT will see — e.g. “Laptop not turning on”.",
+  it_request_description: "Optional details: symptoms, urgency, or anything IT should know.",
 };
 
 export const HOVER_HELP = {
