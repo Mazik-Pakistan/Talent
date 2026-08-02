@@ -277,6 +277,16 @@
   border: 1px solid var(--ai-line, #dfe6f5);
   border-bottom-left-radius: 4px;
   box-shadow: 0 1px 2px rgba(16, 26, 51, 0.04);
+  overflow: hidden;
+}
+
+/* Nested blocks should not inherit bubble pre-wrap spacing. */
+.bubbleAgent .progressList,
+.bubbleAgent .bubbleActions,
+.bubbleAgent .attachmentWrap,
+.bubbleAgent .uploadHint,
+.bubbleAgent .confirmGate {
+  white-space: normal;
 }
 
 .bubbleError {
@@ -646,18 +656,19 @@
 
 .progressList {
   list-style: none;
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   padding: 8px 10px;
   display: grid;
   gap: 6px;
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.04);
   border: 1px solid rgba(15, 23, 42, 0.06);
+  white-space: normal;
 }
 
 .progressList li {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   font-size: 0.78rem;
   line-height: 1.35;
@@ -668,6 +679,8 @@
   flex: none;
   width: 16px;
   font-weight: 700;
+  text-align: center;
+  line-height: 1;
 }
 
 .progressOk .progressMark {
@@ -676,6 +689,40 @@
 
 .progressFail .progressMark {
   color: #b45309;
+}
+
+/* In-bubble nav chips — edge-to-edge footer, not the composer suggestion strip. */
+.bubbleActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px -13px -10px;
+  padding: 10px 13px;
+  border-top: 1px solid var(--ai-line, #dfe6f5);
+  background: var(--ai-surface-sunken, #f3f6fd);
+  white-space: normal;
+}
+
+.canvasBody .bubbleActions {
+  margin: 8px -12px -8px;
+  padding: 9px 12px;
+}
+
+.bubbleActionChip {
+  border: 1px solid var(--ai-line, #dfe6f5);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ai-blue, #2f6bff);
+  padding: 6px 12px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.bubbleActionChip:hover {
+  background: #eef3ff;
+  border-color: rgba(47, 107, 255, 0.35);
 }
 
 .confirmGate {

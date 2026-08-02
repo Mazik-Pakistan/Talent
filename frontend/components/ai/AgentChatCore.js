@@ -1154,12 +1154,12 @@ const AgentChatCoreInner = forwardRef(function AgentChatCoreInner({ variant = "f
                   ) : null}
                   {/* Only the latest reply shows nav chips — repeating them on every bubble looks spammy. */}
                   {!isUser && isLatest && actions.length > 0 ? (
-                    <div className={styles.suggestions}>
+                    <div className={styles.bubbleActions}>
                       {actions.map((action) => (
                         <button
                           key={`${action.kind}-${action.label}`}
                           type="button"
-                          className={styles.suggestionChip}
+                          className={styles.bubbleActionChip}
                           onClick={() => handleAction(action)}
                         >
                           {action.label}

@@ -340,6 +340,7 @@ export default function RecruiterItKitsPage() {
               <span className={styles.label}>Name</span>
               <input
                 className={styles.input}
+                name="kit_name"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="e.g. Engineer Standard"
@@ -350,6 +351,7 @@ export default function RecruiterItKitsPage() {
               <span className={styles.label}>Description</span>
               <input
                 className={styles.input}
+                name="kit_description"
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                 placeholder="Standard setup for engineering roles"
@@ -360,6 +362,7 @@ export default function RecruiterItKitsPage() {
               <span className={styles.label}>Roles (comma separated)</span>
               <input
                 className={styles.input}
+                name="kit_roles"
                 value={form.roles}
                 onChange={(e) => setForm((f) => ({ ...f, roles: e.target.value }))}
                 placeholder="Engineer, Developer, SDE"

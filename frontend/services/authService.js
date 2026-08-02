@@ -1084,6 +1084,15 @@ export async function createMyItServiceRequest(payload, accessToken) {
   return data;
 }
 
+export async function closeMyItServiceRequest(requestId, accessToken) {
+  const { data } = await apiClient.post(
+    `/api/it-service-requests/me/${encodeURIComponent(requestId)}/close`,
+    {},
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  return data;
+}
+
 export async function getItServiceRequestPublic(token) {
   const { data } = await apiClient.get(`/api/it-service-requests/public/${encodeURIComponent(token)}`);
   return data;

@@ -21,15 +21,22 @@ const STATUS_LABELS = {
   draft: "Waiting for HR",
   reviewing: "HR reviewing",
   sent: "With IT",
-  fulfilled: "Resolved",
+  fulfilled: "Awaiting employee",
+  closed: "Closed",
   cancelled: "Cancelled",
 };
 const STATUS_COLORS = {
   draft: { bg: "#eef2f7", color: "#475569" },
   reviewing: { bg: "#e8f0fd", color: "#1d4ed8" },
   sent: { bg: "#fff3d6", color: "#92610a" },
-  fulfilled: { bg: "#def3ed", color: "#087a55" },
+  fulfilled: { bg: "#e8f0fd", color: "#1d4ed8" },
+  closed: { bg: "#def3ed", color: "#087a55" },
   cancelled: { bg: "#f1f1f3", color: "#8b8b94" },
+};
+const PROVISIONING_STATUS_LABELS = {
+  pending: "Waiting for IT",
+  submitted: "Ready to activate",
+  applied: "Activated",
 };
 const TYPE_LABELS = {
   new_asset: "New asset",
@@ -38,6 +45,8 @@ const TYPE_LABELS = {
   access: "Access",
   other: "Other",
 };
+/** Nested lists inside an officer card — keep the page usable with 100+ items. */
+const NESTED_LIST_PREVIEW = 8;
 
 function StatusChip({ status }) {
   const colors = STATUS_COLORS[status] || STATUS_COLORS.draft;
@@ -81,9 +90,15 @@ function RequestTimeline({ r }) {
     },
     {
       key: "resolved",
-      label: "Resolved",
+      label: "Resolved by IT",
       ts: r.fulfilled_at,
-      done: r.status === "fulfilled",
+      done: r.status === "fulfilled" || r.status === "closed",
+    },
+    {
+      key: "closed",
+      label: "Closed by employee",
+      ts: r.closed_at,
+      done: r.status === "closed",
     },
   ];
 
@@ -131,7 +146,8 @@ function RequestTimeline({ r }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
           {steps.map((step, i) => {
             const isLast = i === steps.length - 1;
-            const isActive = step.done && (isLast || !steps[i + 1]?.done);
+            // Last step done = fully complete (green ✓), not "current" (blue ●).
+            const isActive = step.done && !isLast && !steps[i + 1]?.done;
             const fmt = (iso) => {
               if (!iso) return "";
               const d = new Date(iso);
@@ -231,7 +247,12 @@ export default function RecruiterItHubPage() {
   const [officers, setOfficers] = useState([]);
   const [requests, setRequests] = useState([]);
   const [requestFilter, setRequestFilter] = useState("");
+  const [requestSearch, setRequestSearch] = useState("");
+  const [officerSearch, setOfficerSearch] = useState("");
   const [expandedOfficer, setExpandedOfficer] = useState("");
+  const [expandedRequest, setExpandedRequest] = useState("");
+  /** Keys like `${email}:people` / `${email}:tickets` — show full nested list. */
+  const [officerListAll, setOfficerListAll] = useState({});
   const [showCreate, setShowCreate] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [employeeSearch, setEmployeeSearch] = useState("");
@@ -367,6 +388,36 @@ export default function RecruiterItHubPage() {
         .includes(employeeSearch.trim().toLowerCase())
   );
 
+  const officerQ = officerSearch.trim().toLowerCase();
+  const filteredOfficers = officers.filter(
+    (o) =>
+      !officerQ ||
+      (o.email || "").toLowerCase().includes(officerQ) ||
+      (o.provisioned_people || []).some(
+        (p) =>
+          `${p.full_name || ""} ${p.company_email || ""}`.toLowerCase().includes(officerQ)
+      ) ||
+      (o.service_requests || []).some(
+        (r) =>
+          `${r.title || ""} ${r.employee_name || ""} ${r.employee_email || ""}`
+            .toLowerCase()
+            .includes(officerQ)
+      )
+  );
+
+  const requestQ = requestSearch.trim().toLowerCase();
+  const filteredRequests = requests.filter(
+    (r) =>
+      !requestQ ||
+      `${r.title || ""} ${r.employee_name || ""} ${r.employee_email || ""} ${r.it_manager_email || ""} ${r.description || ""}`
+        .toLowerCase()
+        .includes(requestQ)
+  );
+
+  function toggleOfficerList(key) {
+    setOfficerListAll((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
   return (
     <RecruiterShell>
       <div className={styles.content}>
@@ -424,65 +475,223 @@ export default function RecruiterItHubPage() {
                 </p>
               ) : (
                 <div style={{ display: "grid", gap: 14 }}>
-                  {officers.map((o) => (
-                    <div
-                      key={o.email}
-                      style={{
-                        border: "1px solid var(--border)",
-                        borderRadius: 12,
-                        padding: 16,
-                        background: "#fff",
-                      }}
-                    >
+                  {officers.length > 6 ? (
+                    <input
+                      className={styles.input}
+                      value={officerSearch}
+                      onChange={(e) => setOfficerSearch(e.target.value)}
+                      placeholder="Search officers, people, or tickets…"
+                      style={{ maxWidth: 420 }}
+                    />
+                  ) : null}
+                  {filteredOfficers.length === 0 ? (
+                    <p className={styles.emptySub}>No officers match your search.</p>
+                  ) : null}
+                  {filteredOfficers.map((o) => {
+                    const supportParts = [
+                      `${o.service_open || 0} open`,
+                      `${o.service_fulfilled || 0} awaiting employee`,
+                      `${o.service_closed || 0} closed`,
+                    ];
+                    if ((o.service_cancelled || 0) > 0) {
+                      supportParts.push(`${o.service_cancelled} cancelled`);
+                    }
+                    const isOpen = expandedOfficer === o.email;
+                    const people = o.provisioned_people || [];
+                    const tickets = o.service_requests || [];
+                    const peopleKey = `${o.email}:people`;
+                    const ticketsKey = `${o.email}:tickets`;
+                    const showAllPeople = !!officerListAll[peopleKey];
+                    const showAllTickets = !!officerListAll[ticketsKey];
+                    const visiblePeople = showAllPeople ? people : people.slice(0, NESTED_LIST_PREVIEW);
+                    const visibleTickets = showAllTickets ? tickets : tickets.slice(0, NESTED_LIST_PREVIEW);
+                    return (
                       <div
-                        style={{ display: "flex", justifyContent: "space-between", gap: 12, cursor: "pointer" }}
-                        onClick={() => setExpandedOfficer(expandedOfficer === o.email ? "" : o.email)}
+                        key={o.email}
+                        style={{
+                          border: "1px solid var(--border)",
+                          borderRadius: 12,
+                          padding: 16,
+                          background: "#fff",
+                        }}
                       >
-                        <div>
-                          <strong style={{ fontSize: 15 }}>{o.email}</strong>
-                          <div style={{ fontSize: 12, color: "#6b7a8f", marginTop: 2 }}>
-                            {o.provisioning_total} provisioning · {o.service_total} support requests
+                        <div
+                          style={{ display: "flex", justifyContent: "space-between", gap: 12, cursor: "pointer" }}
+                          onClick={() => setExpandedOfficer(isOpen ? "" : o.email)}
+                        >
+                          <div>
+                            <strong style={{ fontSize: 15 }}>{o.email}</strong>
+                            <div style={{ fontSize: 12, color: "#6b7a8f", marginTop: 2 }}>
+                              {o.provisioning_total} new-hire setup
+                              {o.provisioning_total === 1 ? "" : "s"} · {o.service_total} support ticket
+                              {o.service_total === 1 ? "" : "s"}
+                            </div>
                           </div>
+                          <span style={{ fontSize: 13, color: "#0d5c91", fontWeight: 700 }}>
+                            {isOpen ? "▲" : "▼"}
+                          </span>
                         </div>
-                        <span style={{ fontSize: 13, color: "#0d5c91", fontWeight: 700 }}>
-                          {expandedOfficer === o.email ? "▲" : "▼"}
-                        </span>
-                      </div>
-                      {expandedOfficer === o.email && (
-                        <div style={{ marginTop: 12, borderTop: "1px solid #eef2f7", paddingTop: 12 }}>
-                          <div style={{ display: "flex", gap: 18, fontSize: 13, marginBottom: 12 }}>
-                            <span>
-                              Provisioning: <strong>{o.provisioning_pending}</strong> pending ·{" "}
-                              <strong>{o.provisioning_submitted}</strong> submitted ·{" "}
-                              <strong>{o.provisioning_applied}</strong> applied
-                            </span>
-                            <span>
-                              Support: <strong>{o.service_open}</strong> open ·{" "}
-                              <strong>{o.service_fulfilled}</strong> fulfilled
-                            </span>
-                          </div>
-                          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
-                            Provisioned people ({o.provisioned_people?.length || 0})
-                          </div>
-                          {o.provisioned_people?.length ? (
-                            o.provisioned_people.map((p, i) => (
-                              <div key={i} style={{ fontSize: 13, lineHeight: 1.6 }}>
-                                • {p.full_name || "—"} {p.company_email ? `(${p.company_email})` : ""} — {p.status}
+                        {isOpen && (
+                          <div style={{ marginTop: 12, borderTop: "1px solid #eef2f7", paddingTop: 14, display: "grid", gap: 16 }}>
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                                gap: 12,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  padding: "12px 14px",
+                                  borderRadius: 10,
+                                  background: "#f7fafc",
+                                  border: "1px solid #e8eef5",
+                                }}
+                              >
+                                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", color: "#64748b", textTransform: "uppercase" }}>
+                                  New-hire provisioning
+                                </div>
+                                <div style={{ fontSize: 12, color: "#6b7a8f", marginTop: 4, marginBottom: 8 }}>
+                                  IT setting up accounts for people before activation
+                                </div>
+                                <div style={{ fontSize: 13, color: "#1e293b", lineHeight: 1.55 }}>
+                                  <strong>{o.provisioning_pending}</strong> waiting ·{" "}
+                                  <strong>{o.provisioning_submitted}</strong> ready ·{" "}
+                                  <strong>{o.provisioning_applied}</strong> activated
+                                </div>
                               </div>
-                            ))
-                          ) : (
-                            <div style={{ fontSize: 13, color: "#999" }}>None yet.</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                              <div
+                                style={{
+                                  padding: "12px 14px",
+                                  borderRadius: 10,
+                                  background: "#f7fafc",
+                                  border: "1px solid #e8eef5",
+                                }}
+                              >
+                                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", color: "#64748b", textTransform: "uppercase" }}>
+                                  Support tickets
+                                </div>
+                                <div style={{ fontSize: 12, color: "#6b7a8f", marginTop: 4, marginBottom: 8 }}>
+                                  Help requests for people who already have accounts
+                                </div>
+                                <div style={{ fontSize: 13, color: "#1e293b", lineHeight: 1.55 }}>
+                                  {supportParts.map((part, i) => (
+                                    <span key={part}>
+                                      {i > 0 ? " · " : ""}
+                                      <strong>{part.split(" ")[0]}</strong> {part.split(" ").slice(1).join(" ")}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+                                Provisioned people ({people.length})
+                              </div>
+                              {people.length ? (
+                                <>
+                                  {visiblePeople.map((p, i) => (
+                                    <div key={i} style={{ fontSize: 13, lineHeight: 1.7, color: "#334155" }}>
+                                      • {p.full_name || "—"}
+                                      {p.company_email ? ` (${p.company_email})` : ""} —{" "}
+                                      {PROVISIONING_STATUS_LABELS[p.status] || p.status}
+                                    </div>
+                                  ))}
+                                  {people.length > NESTED_LIST_PREVIEW ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleOfficerList(peopleKey)}
+                                      style={{
+                                        marginTop: 6,
+                                        border: "none",
+                                        background: "none",
+                                        color: "#0d5c91",
+                                        fontWeight: 700,
+                                        fontSize: 12.5,
+                                        cursor: "pointer",
+                                        padding: 0,
+                                      }}
+                                    >
+                                      {showAllPeople
+                                        ? "Show less"
+                                        : `Show all ${people.length} people`}
+                                    </button>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <div style={{ fontSize: 13, color: "#999" }}>None yet.</div>
+                              )}
+                            </div>
+
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+                                Support tickets ({tickets.length})
+                              </div>
+                              {tickets.length ? (
+                                <>
+                                  {visibleTickets.map((r) => (
+                                    <div
+                                      key={r.request_id}
+                                      style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        gap: 12,
+                                        alignItems: "center",
+                                        fontSize: 13,
+                                        lineHeight: 1.6,
+                                        padding: "6px 0",
+                                        borderBottom: "1px solid #f1f5f9",
+                                      }}
+                                    >
+                                      <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontWeight: 600, color: "#1e293b" }}>
+                                          {r.title || TYPE_LABELS[r.request_type] || "Support request"}
+                                        </div>
+                                        <div style={{ fontSize: 12, color: "#6b7a8f" }}>
+                                          {r.employee_name || r.employee_email || "Employee"}
+                                          {r.request_type ? ` · ${TYPE_LABELS[r.request_type] || r.request_type}` : ""}
+                                        </div>
+                                      </div>
+                                      <StatusChip status={r.status} />
+                                    </div>
+                                  ))}
+                                  {tickets.length > NESTED_LIST_PREVIEW ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleOfficerList(ticketsKey)}
+                                      style={{
+                                        marginTop: 8,
+                                        border: "none",
+                                        background: "none",
+                                        color: "#0d5c91",
+                                        fontWeight: 700,
+                                        fontSize: 12.5,
+                                        cursor: "pointer",
+                                        padding: 0,
+                                      }}
+                                    >
+                                      {showAllTickets
+                                        ? "Show less"
+                                        : `Show all ${tickets.length} tickets`}
+                                    </button>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <div style={{ fontSize: 13, color: "#999" }}>No support tickets for this officer.</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )
             ) : (
               <>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-                  {["", "draft", "reviewing", "sent", "fulfilled", "cancelled"].map((s) => (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
+                  {["", "draft", "reviewing", "sent", "fulfilled", "closed", "cancelled"].map((s) => (
                     <button
                       key={s || "all"}
                       type="button"
@@ -491,83 +700,138 @@ export default function RecruiterItHubPage() {
                         background: requestFilter === s ? "#e7f1f9" : "#fff",
                         borderColor: requestFilter === s ? "#0d5c91" : undefined,
                       }}
-                      onClick={() => setRequestFilter(s)}
+                      onClick={() => {
+                        setRequestFilter(s);
+                        setExpandedRequest("");
+                      }}
                     >
                       {s === "" ? "All" : STATUS_LABELS[s]}
                     </button>
                   ))}
                 </div>
-                {requests.length === 0 ? (
-                  <p className={styles.emptySub}>No IT support requests match this filter.</p>
+                {requests.length > 6 ? (
+                  <input
+                    className={styles.input}
+                    value={requestSearch}
+                    onChange={(e) => setRequestSearch(e.target.value)}
+                    placeholder="Search by title, employee, or IT email…"
+                    style={{ maxWidth: 420, marginBottom: 14 }}
+                  />
+                ) : null}
+                {filteredRequests.length === 0 ? (
+                  <p className={styles.emptySub}>
+                    {requests.length === 0
+                      ? "No IT support requests match this filter."
+                      : "No requests match your search."}
+                  </p>
                 ) : (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    {requests.map((r) => (
-                      <div
-                        key={r.request_id}
-                        style={{
-                          border: "1px solid var(--border)",
-                          borderRadius: 12,
-                          padding: 14,
-                          background: "#fff",
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div style={{ flex: 1, minWidth: 220 }}>
-                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                            <strong style={{ fontSize: 14 }}>{r.title}</strong>
-                            <StatusChip status={r.status} />
-                            <span style={{ fontSize: 11, color: "#6b7a8f" }}>
-                              {TYPE_LABELS[r.request_type] || r.request_type}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: 12.5, color: "#475569", marginTop: 4 }}>
-                            {r.employee_name} {r.employee_email ? `(${r.employee_email})` : ""} ·{" "}
-                            {r.job_title || "—"} · {r.department || "—"}
-                          </div>
-                          {r.description && (
-                            <div style={{ fontSize: 12.5, color: "#6b7a8f", marginTop: 4 }}>{r.description}</div>
-                          )}
-                          {r.it_manager_email && (
-                            <div style={{ fontSize: 12, color: "#0d5c91", marginTop: 4 }}>
-                              → {r.it_manager_email}
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {filteredRequests.map((r) => {
+                      const isOpen = expandedRequest === r.request_id;
+                      const canSend = r.status === "draft" || r.status === "reviewing";
+                      const canCancel =
+                        r.status === "draft" || r.status === "reviewing" || r.status === "sent";
+                      return (
+                        <div
+                          key={r.request_id}
+                          style={{
+                            border: "1px solid var(--border)",
+                            borderRadius: 12,
+                            padding: 14,
+                            background: "#fff",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              alignItems: "flex-start",
+                              cursor: "pointer",
+                            }}
+                            onClick={() => setExpandedRequest(isOpen ? "" : r.request_id)}
+                          >
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                <strong style={{ fontSize: 14 }}>{r.title}</strong>
+                                <StatusChip status={r.status} />
+                                <span style={{ fontSize: 11, color: "#6b7a8f" }}>
+                                  {TYPE_LABELS[r.request_type] || r.request_type}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 12.5, color: "#475569", marginTop: 4 }}>
+                                {r.employee_name}
+                                {r.employee_email ? ` (${r.employee_email})` : ""}
+                                {r.job_title || r.department
+                                  ? ` · ${[r.job_title, r.department].filter(Boolean).join(" · ")}`
+                                  : ""}
+                              </div>
+                              {!isOpen && r.it_manager_email ? (
+                                <div style={{ fontSize: 12, color: "#0d5c91", marginTop: 3 }}>
+                                  → {r.it_manager_email}
+                                </div>
+                              ) : null}
                             </div>
-                          )}
-                          {r.fulfillment_note && (
-                            <div style={{ fontSize: 12.5, color: "#087a55", marginTop: 4 }}>
-                              Fulfilled: {r.fulfillment_note}
-                              {r.serial_number ? ` · Serial: ${r.serial_number}` : ""}
+                            <div
+                              style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {canSend ? (
+                                <button
+                                  type="button"
+                                  className={styles.primaryButton}
+                                  onClick={() => {
+                                    setSendTarget(r);
+                                    setSendItEmail(r.it_manager_email || "");
+                                  }}
+                                >
+                                  Send to IT
+                                </button>
+                              ) : null}
+                              {canCancel ? (
+                                <button
+                                  type="button"
+                                  className={styles.secondaryButton}
+                                  onClick={() => setCancelTarget(r)}
+                                >
+                                  Cancel
+                                </button>
+                              ) : null}
+                              <span style={{ fontSize: 13, color: "#0d5c91", fontWeight: 700, minWidth: 16 }}>
+                                {isOpen ? "▲" : "▼"}
+                              </span>
                             </div>
-                          )}
-                          <RequestTimeline r={r} />
-                        </div>
-                        <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                          {r.status === "draft" || r.status === "reviewing" ? (
-                            <button
-                              type="button"
-                              className={styles.primaryButton}
-                              onClick={() => {
-                                setSendTarget(r);
-                                setSendItEmail(r.it_manager_email || "");
+                          </div>
+                          {isOpen ? (
+                            <div
+                              style={{
+                                marginTop: 12,
+                                borderTop: "1px solid #eef2f7",
+                                paddingTop: 12,
                               }}
                             >
-                              Send to IT
-                            </button>
+                              {r.description ? (
+                                <div style={{ fontSize: 12.5, color: "#6b7a8f", marginBottom: 8 }}>
+                                  {r.description}
+                                </div>
+                              ) : null}
+                              {r.it_manager_email ? (
+                                <div style={{ fontSize: 12, color: "#0d5c91", marginBottom: 6 }}>
+                                  → {r.it_manager_email}
+                                </div>
+                              ) : null}
+                              {r.fulfillment_note ? (
+                                <div style={{ fontSize: 12.5, color: "#087a55", marginBottom: 8 }}>
+                                  Fulfilled: {r.fulfillment_note}
+                                  {r.serial_number ? ` · Serial: ${r.serial_number}` : ""}
+                                </div>
+                              ) : null}
+                              <RequestTimeline r={r} />
+                            </div>
                           ) : null}
-                          {(r.status === "draft" || r.status === "reviewing" || r.status === "sent") && (
-                            <button
-                              type="button"
-                              className={styles.secondaryButton}
-                              onClick={() => setCancelTarget(r)}
-                            >
-                              Cancel
-                            </button>
-                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </>
@@ -603,6 +867,7 @@ export default function RecruiterItHubPage() {
               />
               <select
                 className={styles.input}
+                name="employee_id"
                 value={form.employee_id}
                 onChange={(e) => setForm((f) => ({ ...f, employee_id: e.target.value }))}
               >
@@ -618,6 +883,7 @@ export default function RecruiterItHubPage() {
               <span className={styles.label}>Type</span>
               <select
                 className={styles.input}
+                name="request_type"
                 value={form.request_type}
                 onChange={(e) => setForm((f) => ({ ...f, request_type: e.target.value }))}
               >
@@ -632,6 +898,7 @@ export default function RecruiterItHubPage() {
               <span className={styles.label}>What&apos;s needed</span>
               <input
                 className={styles.input}
+                name="it_request_title"
                 value={form.title}
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                 placeholder="e.g. New laptop — current one is not working"
@@ -641,6 +908,7 @@ export default function RecruiterItHubPage() {
               <span className={styles.label}>Details (optional)</span>
               <textarea
                 className={styles.input}
+                name="it_request_description"
                 rows={3}
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
@@ -651,6 +919,7 @@ export default function RecruiterItHubPage() {
               <span className={styles.label}>IT officer email (optional — leave blank to save as draft)</span>
               <input
                 className={styles.input}
+                name="it_manager_email"
                 type="email"
                 value={form.it_manager_email}
                 onChange={(e) => setForm((f) => ({ ...f, it_manager_email: e.target.value }))}

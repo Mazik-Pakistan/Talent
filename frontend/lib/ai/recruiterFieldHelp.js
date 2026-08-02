@@ -113,6 +113,17 @@ export const RECRUITER_FIELD_HELP = {
   actionReason: "Pick why the document needs re-upload or rejection (blurry, wrong type, expired…).",
   actionNote: "Optional detail for the candidate/employee about what to fix.",
 
+  // IT support request (hub + create modal)
+  request_type: "What kind of help — new asset, replacement, license, access, or other.",
+  it_request_title: "Short summary of what’s needed — IT and the employee see this title.",
+  it_manager_email: "IT officer email. Leave blank to save a draft; fill it to email them the fulfill link.",
+  it_request_description: "Extra context for HR/IT — symptoms, urgency, or serial numbers.",
+
+  // IT kits
+  kit_name: "Name of this standard setup (e.g. Engineer Standard).",
+  kit_description: "When to use this kit — roles or scenarios it covers.",
+  kit_roles: "Comma-separated roles this kit is meant for (helps matching suggestions).",
+
   // Recruiter profile
   phone: "Your contact number for teammates and escalation.",
   // full_name / job_title / department / office_location reused above
@@ -153,6 +164,11 @@ const LABEL_ALIASES = [
   [/provider/i, "provider"],
   [/commitment/i, "commitment"],
   [/description/i, "description"],
+  [/what.?s needed|short title|request title/i, "it_request_title"],
+  [/it officer|it manager|it email/i, "it_manager_email"],
+  [/what do you need|request type|^type$/i, "request_type"],
+  [/kit name|^name$/i, "kit_name"],
+  [/roles \(comma/i, "kit_roles"],
 ];
 
 export const RECRUITER_PAGE_HELP = {
@@ -166,7 +182,24 @@ export const RECRUITER_PAGE_HELP = {
   messages: "Employee inbox — reply to HR threads; each reply also emails the employee.",
   activity: "Live audit of invitations, offers, activations, and related actions.",
   profile: "Keep your recruiter profile current for teammates.",
+  "it-kits": "Reusable asset + license setups IT applies when provisioning new hires.",
+  it: "Track IT officers, new-hire provisioning, and post-activation support tickets.",
 };
+
+/** Match `/it` without also matching `/invite` (substring) or treating kits as hub. */
+export function pathMatchesPageKey(pathname, key) {
+  if (!pathname || !key) return false;
+  const needle = `/${key}`;
+  let from = 0;
+  while (from < pathname.length) {
+    const idx = pathname.indexOf(needle, from);
+    if (idx === -1) return false;
+    const after = pathname[idx + needle.length];
+    if (after === undefined || after === "/" || after === "?" || after === "#") return true;
+    from = idx + 1;
+  }
+  return false;
+}
 
 /** Short page briefs for partner intro (what + why) before field coaching. */
 export const RECRUITER_PAGE_SUMMARIES = {
@@ -219,6 +252,16 @@ export const RECRUITER_PAGE_SUMMARIES = {
     title: "Your profile",
     what: "Update your recruiter details for teammates.",
     why: "Keeps ownership and contact info accurate across hiring.",
+  },
+  it: {
+    title: "IT provisioning & support",
+    what: "See IT officers, new-hire setups, and support tickets — send drafts to IT or cancel open ones.",
+    why: "Keeps hardware, access, and post-hire IT help moving without email chaos.",
+  },
+  "it-kits": {
+    title: "IT kits",
+    what: "Define reusable asset + license packages for standard roles.",
+    why: "Speeds provisioning so IT applies the same setup every time.",
   },
 };
 
@@ -332,8 +375,10 @@ export function recruiterFieldHelpFor(field) {
 
 export function recruiterPageHelpFor(pathname) {
   if (!pathname) return null;
-  for (const [key, tip] of Object.entries(RECRUITER_PAGE_HELP)) {
-    if (pathname.includes(`/${key}`)) return tip;
+  // Longer keys first so it-kits wins over it, and /it does not match /invite.
+  const ordered = Object.entries(RECRUITER_PAGE_HELP).sort((a, b) => b[0].length - a[0].length);
+  for (const [key, tip] of ordered) {
+    if (pathMatchesPageKey(pathname, key)) return tip;
   }
   return "I'm your hiring partner — focus a field for tips, or tap me for the next suggested action.";
 }
@@ -367,8 +412,9 @@ export function recruiterPageSummaryFor(pathname, context = null) {
     }
   }
 
-  for (const [key, summary] of Object.entries(RECRUITER_PAGE_SUMMARIES)) {
-    if (pathname.includes(`/${key}`)) return { key, ...summary };
+  const ordered = Object.entries(RECRUITER_PAGE_SUMMARIES).sort((a, b) => b[0].length - a[0].length);
+  for (const [key, summary] of ordered) {
+    if (pathMatchesPageKey(pathname, key)) return { key, ...summary };
   }
   return {
     key: "recruiter",

@@ -2,8 +2,8 @@
 
 Flow: recruiter/HR raises a request for an existing employee (optionally the
 employee creates a draft first) → recruiter sends it to an IT officer by email
-→ IT opens the fulfillment link and marks it fulfilled → recruiter and employee
-are notified.
+→ IT opens the fulfillment link and marks it fulfilled → employee confirms the
+fix was done (closes the ticket) → recruiter sees it as closed.
 """
 
 from __future__ import annotations
@@ -11,7 +11,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from secrets import token_urlsafe
 
+from bson import ObjectId
 from fastapi import HTTPException
+from pymongo import ReturnDocument
 
 from app.core.config import settings
 from app.core.database import database
@@ -54,6 +56,7 @@ def _out(doc: dict) -> dict:
         "reviewed_at": _iso(doc.get("reviewed_at")),
         "sent_at": _iso(doc.get("sent_at")),
         "fulfilled_at": _iso(doc.get("fulfilled_at")),
+        "closed_at": _iso(doc.get("closed_at")),
         "cancelled_at": _iso(doc.get("cancelled_at")),
         "fulfilled_by_name": doc.get("fulfilled_by_name"),
         "cancel_reason": doc.get("cancel_reason"),
@@ -85,8 +88,6 @@ class ItServiceRequestService:
         if not request_id:
             raise HTTPException(status_code=404, detail="IT request not found.")
         try:
-            from bson import ObjectId
-
             oid = ObjectId(request_id)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=404, detail="IT request not found.") from exc
@@ -218,7 +219,7 @@ class ItServiceRequestService:
 
     async def send_to_it(self, current_user: CurrentUser, request: ItServiceRequestSendRequest) -> dict:
         doc = await self._get_owned(request.request_id, current_user)
-        if doc.get("status") in ("fulfilled", "cancelled"):
+        if doc.get("status") in ("fulfilled", "closed", "cancelled"):
             raise HTTPException(status_code=409, detail="This request is already closed.")
         await self._send_to_it_doc(doc, str(request.it_manager_email).strip().lower(), request.note, datetime.now(UTC))
         return _out(doc)
@@ -270,7 +271,7 @@ class ItServiceRequestService:
 
     async def cancel(self, current_user: CurrentUser, request_id: str, reason: str | None = None) -> dict:
         doc = await self._get_owned(request_id, current_user)
-        if doc.get("status") in ("fulfilled", "cancelled"):
+        if doc.get("status") in ("fulfilled", "closed", "cancelled"):
             raise HTTPException(status_code=409, detail="This request is already closed.")
         now = datetime.now(UTC)
         await database.it_service_requests.update_one(
@@ -295,7 +296,7 @@ class ItServiceRequestService:
 
     async def fulfill_public(self, token: str, request: ItServiceRequestFulfillRequest) -> dict:
         doc = await self._find_by_token(token)
-        if doc.get("status") in ("fulfilled", "cancelled"):
+        if doc.get("status") in ("fulfilled", "closed", "cancelled"):
             raise HTTPException(status_code=409, detail="This request is already closed.")
         if doc.get("status") != "sent":
             raise HTTPException(status_code=409, detail="This request has not been sent to IT yet.")
@@ -327,10 +328,10 @@ class ItServiceRequestService:
                 recipient_id=str(doc["recruiter_id"]),
                 recipient_role="recruiter",
                 notif_type="it_service_request_fulfilled",
-                title="IT request fulfilled",
+                title="IT marked request resolved",
                 message=(
-                    f"IT fulfilled the request for {doc.get('employee_name')}: "
-                    f"{doc.get('title')}."
+                    f"IT resolved '{doc.get('title')}' for {doc.get('employee_name')}. "
+                    "Waiting for the employee to confirm and close the ticket."
                 ),
                 link="/dashboard/recruiter/it",
                 related_id=str(doc["_id"]),
@@ -340,12 +341,60 @@ class ItServiceRequestService:
                 recipient_id=doc["employee_user_id"],
                 recipient_role="employee",
                 notif_type="it_service_request_fulfilled",
-                title="IT request fulfilled",
-                message=f"IT fulfilled your request: {doc.get('title')}.",
+                title="IT resolved your request",
+                message=(
+                    f"IT resolved '{doc.get('title')}'. "
+                    "Please confirm and close the ticket if everything looks good."
+                ),
                 link="/dashboard/employee/it-support",
                 related_id=str(doc["_id"]),
             )
         return _out(doc)
+
+    async def close_by_employee(self, current_user: CurrentUser, request_id: str) -> dict:
+        """Employee confirms IT's resolution and closes the ticket."""
+        emp = await self._employee_by_user(current_user)
+        if not request_id:
+            raise HTTPException(status_code=404, detail="IT request not found.")
+        try:
+            oid = ObjectId(request_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail="IT request not found.") from exc
+
+        doc = await database.it_service_requests.find_one({"_id": oid})
+        if not doc or doc.get("employee_id") != emp.get("employee_id"):
+            raise HTTPException(status_code=404, detail="IT request not found.")
+        if doc.get("status") == "closed":
+            return {"message": "Ticket already closed.", "request": _out(doc)}
+        if doc.get("status") != "fulfilled":
+            raise HTTPException(
+                status_code=409,
+                detail="You can only close a ticket after IT has marked it resolved.",
+            )
+
+        now = datetime.now(UTC)
+        updated = await database.it_service_requests.find_one_and_update(
+            {"_id": doc["_id"], "status": "fulfilled"},
+            {"$set": {"status": "closed", "closed_at": now, "updated_at": now}},
+            return_document=ReturnDocument.AFTER,
+        )
+        if not updated:
+            raise HTTPException(status_code=409, detail="This request could not be closed.")
+
+        if doc.get("recruiter_id"):
+            await create_notification(
+                recipient_id=str(doc["recruiter_id"]),
+                recipient_role="recruiter",
+                notif_type="it_service_request_closed",
+                title="Employee closed IT ticket",
+                message=(
+                    f"{doc.get('employee_name') or 'Employee'} confirmed and closed "
+                    f"'{doc.get('title')}'."
+                ),
+                link="/dashboard/recruiter/it",
+                related_id=str(doc["_id"]),
+            )
+        return {"message": "Ticket closed. Thanks for confirming.", "request": _out(updated)}
 
     async def _find_by_token(self, token: str) -> dict:
         if not token:
@@ -381,6 +430,8 @@ class ItServiceRequestService:
                     "service_total": 0,
                     "service_open": 0,
                     "service_fulfilled": 0,
+                    "service_closed": 0,
+                    "service_cancelled": 0,
                     "provisioned_people": [],
                     "service_requests": [],
                 }
@@ -422,6 +473,10 @@ class ItServiceRequestService:
                 info["service_open"] += 1
             elif status == "fulfilled":
                 info["service_fulfilled"] += 1
+            elif status == "closed":
+                info["service_closed"] += 1
+            elif status == "cancelled":
+                info["service_cancelled"] += 1
             info["service_requests"].append(_out(doc))
 
         officers = sorted(

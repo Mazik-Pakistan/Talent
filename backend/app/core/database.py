@@ -7,7 +7,10 @@ from app.core.config import settings
 mongo_client = AsyncIOMotorClient(settings.MONGODB_URI)
 database: AsyncIOMotorDatabase = mongo_client[settings.DATABASE_NAME]
 
-supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+# Optional — app storage uses Cloudinary; only wire Supabase when configured.
+supabase: Client | None = None
+if settings.SUPABASE_URL and settings.SUPABASE_KEY:
+    supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
 # Index already exists under another name / with conflicting options — do not abort startup.
 _INDEX_CONFLICT_CODES = {85, 86}

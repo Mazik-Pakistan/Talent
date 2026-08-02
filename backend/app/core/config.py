@@ -20,9 +20,9 @@ class Settings(BaseSettings):
     CLOUDINARY_API_SECRET: str = ""
     CLOUDINARY_FOLDER: str = "talent"
 
-    SUPABASE_URL: str
-    SUPABASE_KEY: str
-    SUPABASE_BUCKET: str
+    SUPABASE_URL: str = ""
+    SUPABASE_KEY: str = ""
+    SUPABASE_BUCKET: str = ""
 
     GEMINI_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
