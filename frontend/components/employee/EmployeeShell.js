@@ -103,6 +103,14 @@ function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, c
     if (notification.link) router.push(notification.link);
   }
 
+  // First-time sign-in guard: a temporary password was set at activation, so
+  // the employee must create their own password before using the dashboard.
+  useEffect(() => {
+    if (user?.must_change_password) {
+      router.replace("/set-password");
+    }
+  }, [user, router]);
+
   if (!user) {
     return <RecruiterLoader />;
   }

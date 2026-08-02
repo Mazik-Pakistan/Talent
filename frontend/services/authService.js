@@ -1110,6 +1110,21 @@ export async function submitItProvisioningPublic(token, payload) {
   return data;
 }
 
+export async function editItProvisioningPublic(token, payload) {
+  const { data } = await apiClient.post(
+    `/api/it-provisioning/${encodeURIComponent(token)}/edit`,
+    payload
+  );
+  return data;
+}
+
+export async function resetItProvisioningPasswordPublic(token) {
+  const { data } = await apiClient.post(
+    `/api/it-provisioning/${encodeURIComponent(token)}/reset-password`
+  );
+  return data;
+}
+
 export async function getItProvisioningBatchPublic(token) {
   const { data } = await apiClient.get(`/api/it-provisioning/batch/${encodeURIComponent(token)}`);
   return data;

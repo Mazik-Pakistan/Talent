@@ -367,6 +367,11 @@ function pageInsights(page, snapshot, context = {}) {
     });
     const docsItem = documentSummaryInsight(snapshot?.docs || []);
     if (docsItem) push(insights, docsItem);
+    push(insights, {
+      id: "cand-security",
+      priority: CANDIDATE_MASCOT_PRIORITY.tip,
+      message: "Change your password anytime from the Security section on this page — no verification code needed.",
+    });
     seedPageTips("dashboard").forEach((item) => push(insights, item));
     return insights;
   }

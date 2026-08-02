@@ -324,6 +324,19 @@ export async function buildEmployeeInsights(pathname, accessToken, rawContext = 
       priority: COPILOT_PRIORITY.tip,
       message: "Welcome back. Here's today's summary from your workspace — announcements, documents, and onboarding status live on this page.",
     });
+    if (employee?.company_email) {
+      push(insights, {
+        id: "account-company-email",
+        priority: COPILOT_PRIORITY.tip,
+        message: `You can sign in with either your personal or company email — one password covers both.`,
+      });
+    } else {
+      push(insights, {
+        id: "account-company-email-pending",
+        priority: COPILOT_PRIORITY.tip,
+        message: "Your company email will appear here after IT provisioning.",
+      });
+    }
   }
 
   // ── Complete profile / onboarding ────────────────────────────────────
@@ -402,6 +415,12 @@ export async function buildEmployeeInsights(pathname, accessToken, rawContext = 
         message: "Your salary account is on file and encrypted. Only you and payroll can see the full IBAN.",
       });
     }
+    // Security: change password guidance
+    push(insights, {
+      id: "profile-security",
+      priority: COPILOT_PRIORITY.tip,
+      message: "Change your password anytime from the Security section below — no verification code needed.",
+    });
   }
 
   // ── Documents ────────────────────────────────────────────────────────

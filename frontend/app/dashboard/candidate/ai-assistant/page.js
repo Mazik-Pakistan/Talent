@@ -28,6 +28,10 @@ const QUICK_ACTIONS = [
     label: "Message HR",
     prompt: "Message HR about my onboarding",
   },
+  {
+    label: "Change my password",
+    prompt: "How do I change my password?",
+  },
 ];
 
 export default function CandidateAIAssistantPage() {

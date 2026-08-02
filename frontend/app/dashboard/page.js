@@ -23,6 +23,10 @@ export default function DashboardIndexPage() {
       return;
     }
     const user = JSON.parse(storedUser);
+    if (user.must_change_password) {
+      router.replace("/set-password");
+      return;
+    }
     router.replace(ROLE_HOME[user.role] || "/login");
   }, [router]);
 

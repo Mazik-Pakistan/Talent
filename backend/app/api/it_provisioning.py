@@ -89,5 +89,17 @@ async def get_it_provisioning_public(token: str):
 
 @router.post("/{token}/submit")
 async def submit_it_provisioning_public(token: str, request: ItProvisioningSubmitRequest):
-    """Public: IT submits company email, password, assets, and licenses."""
+    """Public: IT submits company email, assets, and licenses."""
     return await it_provisioning_service.submit_public(token, request)
+
+
+@router.post("/{token}/edit")
+async def edit_it_provisioning_public(token: str, request: ItProvisioningSubmitRequest):
+    """Public: IT corrects a submitted provisioning request before activation."""
+    return await it_provisioning_service.edit_public(token, request)
+
+
+@router.post("/{token}/reset-password")
+async def reset_it_provisioning_password_public(token: str):
+    """Public: IT resets the linked employee's account password via the provisioning link."""
+    return await it_provisioning_service.reset_password_public(token)

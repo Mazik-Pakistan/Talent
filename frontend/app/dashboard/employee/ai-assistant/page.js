@@ -21,6 +21,10 @@ const QUICK_ACTIONS = [
     prompt: "Check my progress",
   },
   {
+    label: "Company email & password",
+    prompt: "What is my company email and how do I change my password?",
+  },
+  {
     label: "HR help",
     prompt: "What HR and workday questions can you help me with?",
   },

@@ -16,6 +16,18 @@ def _escape_text(value: object, *, quote: bool = False) -> str:
     return escape("" if value is None else str(value), quote=quote)
 
 
+def unique_emails(*emails) -> list[str]:
+    """Deduplicated, lowercased list of non-empty recipient emails."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for email in emails:
+        cleaned = (email or "").strip().lower()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            out.append(cleaned)
+    return out
+
+
 class EmailService:
     # ============================================================
     #  Logo loaded from Cloudinary CDN
@@ -52,6 +64,17 @@ class EmailService:
                 exc_info=True
             )
             raise RuntimeError(f"Failed to send email to {to_email}: {exc}") from exc
+
+    def send_to_both(self, primary_email: str, company_email: str | None, send_fn, *args, **kwargs) -> None:
+        """Send the same email to the primary (personal) email and, when a
+        company email exists, to the company email as well. A failure on one
+        recipient never blocks the other."""
+        for to_email in unique_emails(primary_email, company_email):
+            try:
+                send_fn(to_email, *args, **kwargs)
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"Email send failed to {to_email}", exc_info=True)
+                raise RuntimeError(f"Failed to send email to {to_email}: {exc}") from exc
 
     # ------------------------------------------------------------------ #
     # Premium branded shell - Modern Clean Design
@@ -1157,6 +1180,107 @@ class EmailService:
         )
 
     # ------------------------------------------------------------------ #
+    # IT updated a submitted provisioning request
+    # ------------------------------------------------------------------ #
+    def send_it_provisioning_edited(
+        self,
+        *,
+        to_email: str,
+        employee_name: str,
+        company_email: str,
+        assets_count: int = 0,
+        licenses_count: int = 0,
+    ) -> None:
+        safe_name = _escape_text(employee_name or "the candidate")
+        subject = f"IT provisioning updated for {employee_name or 'candidate'} — TalentAI"
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  IT updated the provisioning for <strong>{safe_name}</strong>. The latest details below
+  are what will be used when you activate the employee.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 8px;">
+  <tr>
+    <td style="padding:18px 22px;">
+      <p style="margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;">
+        <strong>Company email:</strong> {_escape_text(company_email)}
+      </p>
+      <p style="margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;">
+        <strong>Assets:</strong> {int(assets_count)} · <strong>Licenses:</strong> {int(licenses_count)}
+      </p>
+    </td>
+  </tr>
+</table>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("IT Provisioning", "Provisioning updated", body),
+        )
+
+    # ------------------------------------------------------------------ #
+    # IT reset the employee's account password (emailed to both logins)
+    # ------------------------------------------------------------------ #
+    def send_it_password_reset(
+        self,
+        to_email: str,
+        full_name: str | None = None,
+        temp_password: str | None = None,
+    ) -> None:
+        subject = "Your password was reset by IT — TalentAI"
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hello {escape(full_name or "there")}, the IT team reset your TalentAI password.
+</p>
+<p style="margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;">
+  Your temporary password is:
+</p>
+<p style="margin:0 0 18px;font-size:20px;font-weight:800;color:#1e3a5f;font-family:Consolas,Menlo,monospace;">
+  {escape(temp_password or "")}
+</p>
+<p style="margin:0;color:#8a9bb0;font-size:13px;line-height:1.6;">
+  You can sign in with either your personal or company email using this password.
+  Change it anytime from the Security section of your profile.
+</p>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("Account security", "Your password was reset", body),
+        )
+
+    # ------------------------------------------------------------------ #
+    # First-time password (sent at activation / IT reset)
+    # ------------------------------------------------------------------ #
+    def send_first_time_password(
+        self,
+        to_email: str,
+        full_name: str | None = None,
+        temp_password: str | None = None,
+    ) -> None:
+        subject = "Your employee account is ready — TalentAI"
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hello {escape(full_name or "there")}, your employee account is ready.
+</p>
+<p style="margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;">
+  Sign in with your personal or company email using this one-time password:
+</p>
+<p style="margin:0 0 18px;font-size:20px;font-weight:800;color:#1e3a5f;font-family:Consolas,Menlo,monospace;">
+  {escape(temp_password or "")}
+</p>
+<p style="margin:0;color:#8a9bb0;font-size:13px;line-height:1.6;">
+  After signing in you will be asked to create your own password. From then on,
+  that single password covers both your personal and company email logins.
+</p>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("Account ready", "Set your password", body),
+        )
+
+    # ------------------------------------------------------------------ #
     # Banking details notice (employee — after recruiter adds/updates)
     # ------------------------------------------------------------------ #
     def send_banking_details_notice(
@@ -1624,6 +1748,49 @@ class EmailService:
         self._send(
             to_email, subject,
             self._branded_shell("New message", subject_line, body)
+        )
+
+    # ------------------------------------------------------------------ #
+    # send_password_changed_notification
+    # ------------------------------------------------------------------ #
+    def send_password_changed_notification(self, to_email: str, full_name: str | None = None) -> None:
+        subject = "Your password was changed — TalentAI"
+        body = f"""
+<p style="margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hello {escape(full_name or "there")}, the password for your TalentAI account was
+  recently changed. The new password now applies to <strong>both</strong> your
+  personal and company email sign-in.
+</p>
+<p style="margin:0;color:#8a9bb0;font-size:13px;line-height:1.6;">
+  If this wasn&rsquo;t you, use the forgot-password option on the sign-in page to
+  recover your account, then contact HR.
+</p>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("Account security", "Your password was changed", body),
+        )
+
+    # ------------------------------------------------------------------ #
+    # send_password_reset_completed
+    # ------------------------------------------------------------------ #
+    def send_password_reset_completed(self, to_email: str, full_name: str | None = None) -> None:
+        subject = "Your password was reset — TalentAI"
+        body = f"""
+<p style="margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Hello {escape(full_name or "there")}, your TalentAI password was reset using the
+  account recovery option. The new password works with <strong>both</strong> your
+  personal and company email sign-in.
+</p>
+<p style="margin:0;color:#8a9bb0;font-size:13px;line-height:1.6;">
+  If this wasn&rsquo;t you, contact HR right away.
+</p>
+"""
+        self._send(
+            to_email,
+            subject,
+            self._branded_shell("Account recovery", "Your password was reset", body),
         )
 
 

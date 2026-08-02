@@ -3,6 +3,7 @@
 import random
 from datetime import UTC, datetime, timedelta
 
+from bson import ObjectId
 from fastapi import HTTPException, status
 from jose import jwt
 from pymongo import ReturnDocument
@@ -21,7 +22,8 @@ from app.schemas.auth import (
     LoginRequest,
     RegisterRequest,
 )
-from app.services.email_service import email_service
+from app.services.dashboard_service import create_notification
+from app.services.email_service import email_service, unique_emails
 
 # ---------- Brute-force protection constants ----------
 LOCKOUT_THRESHOLD = 5
@@ -386,18 +388,31 @@ class AuthService:
         "super_admin": "/dashboard/super-admin",
     }
 
+    # Order used when the client does not specify a role on login: the first
+    # active profile this account holds wins, so a candidate lands on the
+    # candidate board, an employee on the employee board, and a recruiter-only
+    # account on the recruiter dashboard.
+    ROLE_DETECT_ORDER = ("candidate", "employee", "recruiter", "super_admin")
+
     async def login(self, request: LoginRequest) -> dict:
         """
-        Authenticate with email + password, scoped to the requested role.
+        Authenticate with email + password. When the client does not specify
+        a role (the public login screen no longer asks), the active role
+        profile is auto-detected and the user is routed to the matching
+        dashboard.
         Business rule: max 5 failed attempts, 15-minute lockout.
         """
         email = request.email.lower().strip()
-        await self._check_account_lock(email)
+        # Both the personal email and an assigned company email resolve to the
+        # SAME account. The lockout counter and audit trail use the canonical
+        # personal email so both login methods protect one account.
+        account_email = await self._resolve_account_email(email) or email
+        await self._check_account_lock(account_email)
 
-        # Verify credentials against the users collection
-        user_doc = await database.users.find_one({"email": email})
+        # Verify credentials against the users collection (canonical account).
+        user_doc = await self._find_user_doc_by_login_email(email)
         if not user_doc or not verify_password(request.password, user_doc.get("password_hash", "")):
-            await self._register_failed_login(email)
+            await self._register_failed_login(account_email)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password.",
@@ -408,38 +423,50 @@ class AuthService:
                 detail="This account is archived. Use a new invitation to rejoin as a candidate.",
             )
 
-        await self._clear_failed_login(email)
+        await self._clear_failed_login(account_email)
         user_id = str(user_doc["_id"])
+        # Use the canonical personal email for the token, audit trail, and all
+        # downstream lookups — the company email is a login alias only.
+        email = user_doc["email"]
 
-        # Resolve the role profile. The public login screen only offers
-        # "Employee" and "Candidate" — a recruiter-only account (no employee
-        # profile) signs in through the same "Employee" option and lands on
-        # the recruiter dashboard instead, so nobody needs a dedicated
-        # recruiter login button. A dual-role account (employee AND
-        # recruiter) always lands on the employee dashboard first and can
-        # switch to Recruiter from inside the app.
-        effective_role = request.role
-        profile = await self._resolve_role_profile(user_id, request.role)
-        if not profile and request.role == "employee":
-            profile = await self._resolve_role_profile(user_id, "recruiter")
-            if profile:
-                effective_role = "recruiter"
-
-        if not profile:
-            # Helpful message when candidate was converted to employee
-            if request.role == "candidate":
-                converted = await database.candidates.find_one(
-                    {"email": email, "status": "converted"}
+        # Resolve the role profile. The public login screen no longer asks
+        # for a role — it is auto-detected from the active profiles this
+        # account holds. A recruiter-only account (no employee profile) lands
+        # on the recruiter dashboard, and a dual-role account (employee AND
+        # recruiter) lands on the employee dashboard first and can switch to
+        # Recruiter from inside the app. An explicit role (legacy clients,
+        # super admin portal) keeps the previous scoped behavior.
+        if request.role is None:
+            effective_role = await self._auto_detect_role(user_id)
+            if effective_role is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No active account found for these credentials.",
                 )
-                if converted:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Your candidate profile was converted to an employee. Sign in with the Employee role.",
+            profile = await self._resolve_role_profile(user_id, effective_role)
+        else:
+            effective_role = request.role
+            profile = await self._resolve_role_profile(user_id, request.role)
+            if not profile and request.role == "employee":
+                profile = await self._resolve_role_profile(user_id, "recruiter")
+                if profile:
+                    effective_role = "recruiter"
+
+            if not profile:
+                # Helpful message when candidate was converted to employee
+                if request.role == "candidate":
+                    converted = await database.candidates.find_one(
+                        {"email": email, "status": "converted"}
                     )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"No active {request.role.replace('_', ' ')} account found for these credentials.",
-            )
+                    if converted:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Your candidate profile was converted to an employee. Sign in with the Employee role.",
+                        )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"No active {request.role.replace('_', ' ')} account found for these credentials.",
+                )
 
         redirect_to = self.ROLE_REDIRECTS[effective_role]
         if effective_role == "candidate":
@@ -490,6 +517,7 @@ class AuthService:
                 "employee_id": profile.get("employee_id"),
                 "profile_picture": profile.get("profile_picture"),
                 "available_roles": available_roles,
+                "must_change_password": bool(user_doc.get("must_change_password")),
             },
             "session": {
                 "access_token": access_token,
@@ -689,49 +717,76 @@ class AuthService:
     # ------------------------------------------------------------------ #
 
     async def forgot_password(self, email: str) -> dict:
-        """Generate a password-reset OTP and send it by email."""
+        """Generate a password-reset OTP and send it by email.
+
+        Works with either the personal email or an assigned company email —
+        both resolve to the same account. The OTP is emailed to the personal
+        email and, when assigned, the company email as well.
+        """
         email = email.lower().strip()
+        account_email = await self._resolve_account_email(email) or email
+        user_doc = await self._find_user_doc_by_login_email(email)
 
         # Check if the user exists across all role collections
         user_exists = False
-        for collection_name in ("recruiters", "candidates", "employees", "super_admins"):
-            profile = await database[collection_name].find_one({"email": email})
-            if profile and profile.get("status") == "active":
-                user_exists = True
-                await database.audit_logs.insert_one(
-                    {
-                        "user_id": profile.get("user_id"),
-                        "email": email,
-                        "role": profile.get("role"),
-                        "module": "authentication",
-                        "action": "password_reset_requested",
-                        "outcome": "requested",
-                        "created_at": datetime.now(UTC),
-                    }
-                )
-                break
+        if user_doc:
+            for collection_name in ("recruiters", "candidates", "employees", "super_admins"):
+                profile = await database[collection_name].find_one({"email": account_email})
+                if profile and profile.get("status") == "active":
+                    user_exists = True
+                    await database.audit_logs.insert_one(
+                        {
+                            "user_id": profile.get("user_id"),
+                            "email": account_email,
+                            "role": profile.get("role"),
+                            "module": "authentication",
+                            "action": "password_reset_requested",
+                            "outcome": "requested",
+                            "created_at": datetime.now(UTC),
+                        }
+                    )
+                    break
 
         # Always return a generic message — don't leak whether the email exists
         if user_exists:
-            otp = _generate_otp()
             now = datetime.now(UTC)
+
+            # Simple resend cooldown: repeated requests inside the window skip
+            # generating a new code so IT/attackers can't spam the inbox.
+            existing = await database.otp_verifications.find_one(
+                {"email": account_email, "purpose": "reset_password"},
+                {"last_requested_at": 1},
+            )
+            if existing and existing.get("last_requested_at"):
+                last = existing["last_requested_at"]
+                if getattr(last, "tzinfo", None) is None:
+                    last = last.replace(tzinfo=UTC)
+                if now - last < timedelta(seconds=settings.OTP_RESEND_COOLDOWN_SECONDS):
+                    return {
+                        "message": "If an account with that email exists, a password reset code has been sent. Check your inbox and spam folder."
+                    }
+
+            otp = _generate_otp()
             otp_expires_at = now + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
 
             await database.otp_verifications.replace_one(
-                {"email": email, "purpose": "reset_password"},
+                {"email": account_email, "purpose": "reset_password"},
                 {
-                    "email": email,
+                    "email": account_email,
                     "purpose": "reset_password",
                     "otp": otp,
                     "used": False,
+                    "attempts": 0,
                     "expires_at": otp_expires_at,
+                    "last_requested_at": now,
                     "created_at": now,
                 },
                 upsert=True,
             )
 
             try:
-                email_service.send_forgot_password_otp(email, otp)
+                for to_email in await self._notification_emails(account_email):
+                    email_service.send_forgot_password_otp(to_email, otp)
             except Exception:
                 pass  # Best-effort; don't reveal failures
 
@@ -744,11 +799,16 @@ class AuthService:
     # ------------------------------------------------------------------ #
 
     async def reset_password(self, email: str, otp: str, password: str) -> dict:
-        """Verify the reset OTP and update the user's password."""
+        """Verify the reset OTP and update the user's password.
+
+        The email may be the personal or the company email — both resolve to
+        the same account, and the reset applies to that single account.
+        """
         email = email.lower().strip()
+        account_email = await self._resolve_account_email(email) or email
 
         otp_record = await database.otp_verifications.find_one(
-            {"email": email, "purpose": "reset_password"}
+            {"email": account_email, "purpose": "reset_password"}
         )
         if not otp_record:
             raise HTTPException(
@@ -773,15 +833,31 @@ class AuthService:
             )
 
         if otp_record["otp"] != otp.strip():
+            # Max 5 incorrect attempts — after that the code is invalidated
+            # and the user must request a new one.
+            new_attempts = (otp_record.get("attempts") or 0) + 1
+            if new_attempts >= settings.OTP_MAX_ATTEMPTS:
+                await database.otp_verifications.update_one(
+                    {"_id": otp_record["_id"]},
+                    {"$set": {"used": True, "attempts": new_attempts}},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many incorrect attempts. Please request a new code.",
+                )
+            await database.otp_verifications.update_one(
+                {"_id": otp_record["_id"]},
+                {"$set": {"attempts": new_attempts}},
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid reset code. Please try again.",
             )
 
-        # Update the password
+        # Update the password on the single canonical account
         new_hash = hash_password(password)
         result = await database.users.update_one(
-            {"email": email},
+            {"email": account_email},
             {"$set": {"password_hash": new_hash, "updated_at": datetime.now(UTC)}},
         )
         if result.matched_count == 0:
@@ -792,16 +868,36 @@ class AuthService:
 
         # Invalidate the OTP and all existing refresh tokens
         await database.otp_verifications.update_one(
-            {"email": email, "purpose": "reset_password"},
+            {"email": account_email, "purpose": "reset_password"},
             {"$set": {"used": True}},
         )
-        user_doc = await database.users.find_one({"email": email})
+        user_doc = await database.users.find_one({"email": account_email})
         if user_doc:
             await database.refresh_tokens.delete_many({"user_id": str(user_doc["_id"])})
+            try:
+                await create_notification(
+                    recipient_id=str(user_doc["_id"]),
+                    recipient_role=user_doc.get("role") or "employee",
+                    notif_type="password_reset_completed",
+                    title="Password reset completed",
+                    message=(
+                        "Your account password was reset. It now applies to both your "
+                        "personal and company email sign-in."
+                    ),
+                    link="/login",
+                )
+            except Exception:
+                pass
+            try:
+                for to_email in await self._notification_emails(account_email):
+                    email_service.send_password_reset_completed(to_email, user_doc.get("full_name"))
+            except Exception:
+                pass  # Best-effort; don't reveal failures
 
         await database.audit_logs.insert_one(
             {
-                "email": email,
+                "user_id": str(user_doc["_id"]) if user_doc else None,
+                "email": account_email,
                 "module": "authentication",
                 "action": "password_reset_completed",
                 "outcome": "success",
@@ -816,7 +912,11 @@ class AuthService:
     # ------------------------------------------------------------------ #
 
     async def change_password(self, current_user: CurrentUser, current_password: str, new_password: str) -> dict:
-        """Allow authenticated users to change their own password."""
+        """Allow authenticated users to change their own password.
+
+        There is exactly ONE password for the account — it applies to both the
+        personal email and the company email login.
+        """
         user_doc = await database.users.find_one({"email": current_user.email})
         if not user_doc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
@@ -830,7 +930,13 @@ class AuthService:
         new_hash = hash_password(new_password)
         await database.users.update_one(
             {"email": current_user.email},
-            {"$set": {"password_hash": new_hash, "updated_at": datetime.now(UTC)}},
+            {
+                "$set": {
+                    "password_hash": new_hash,
+                    "must_change_password": False,
+                    "updated_at": datetime.now(UTC),
+                }
+            },
         )
 
         # Invalidate all refresh tokens for security
@@ -846,6 +952,30 @@ class AuthService:
                 "created_at": datetime.now(UTC),
             }
         )
+
+        # Notify the user in-app and by email (personal + company email).
+        try:
+            await create_notification(
+                recipient_id=current_user.id,
+                recipient_role=current_user.role
+                if current_user.role in ("employee", "recruiter", "candidate", "super_admin")
+                else "employee",
+                notif_type="password_changed",
+                title="Password changed",
+                message=(
+                    "Your account password was updated. It applies to both your "
+                    "personal and company email sign-in."
+                ),
+                link="/dashboard/employee/profile" if current_user.role == "employee" else None,
+            )
+        except Exception:
+            pass  # Best-effort; the password change itself already succeeded
+        try:
+            for to_email in await self._notification_emails(current_user.email):
+                email_service.send_password_changed_notification(to_email, current_user.full_name)
+        except Exception:
+            pass  # Best-effort
+
         return {"message": "Password updated successfully."}
 
     # ------------------------------------------------------------------ #
@@ -914,6 +1044,60 @@ class AuthService:
     # Helpers: profile resolution & refresh tokens                        #
     # ------------------------------------------------------------------ #
 
+    async def _find_user_doc_by_login_email(self, email: str) -> dict | None:
+        """Resolve the canonical users document from either the personal email
+        or an employee's assigned company email.
+
+        Both login emails map to the SAME account — a company email lookup
+        follows the employee profile's user_id back to the existing user doc,
+        so no second account is ever created.
+        """
+        email = (email or "").strip().lower()
+        if not email:
+            return None
+
+        user_doc = await database.users.find_one({"email": email})
+        if user_doc:
+            return user_doc
+
+        # Company-email alias login only works for active tenures: once an
+        # employee is offboarded (history_bucket = historical, status
+        # resigned/terminated/exited) the company email stops resolving, so
+        # the mailbox cannot be reused to access their old account. The
+        # personal-email login is governed by the user account itself.
+        employee = await database.employees.find_one(
+            {
+                "company_email": email,
+                "history_bucket": {"$ne": "historical"},
+                "status": {"$nin": ["resigned", "terminated", "exited"]},
+            },
+            {"user_id": 1, "email": 1},
+        )
+        if not employee or not employee.get("user_id"):
+            return None
+        user_id = employee["user_id"]
+        if ObjectId.is_valid(user_id):
+            return await database.users.find_one({"_id": ObjectId(user_id)})
+        return await database.users.find_one({"email": user_id})
+
+    async def _resolve_account_email(self, email: str) -> str | None:
+        """Return the canonical personal email for a login email (personal or
+        company). None if the email matches no account."""
+        user_doc = await self._find_user_doc_by_login_email(email)
+        return user_doc["email"] if user_doc else None
+
+    async def _notification_emails(self, account_email: str) -> list[str]:
+        """Recipients for account emails: always the personal email, plus the
+        company email when one has been assigned."""
+        emails = [account_email]
+        employee = await database.employees.find_one(
+            {"email": (account_email or "").lower()},
+            {"company_email": 1},
+        )
+        if employee and employee.get("company_email"):
+            emails.append(employee["company_email"])
+        return unique_emails(*emails)
+
     async def _resolve_role_profile(self, user_id: str, role: str) -> dict | None:
         collections = {
             "recruiter": database.recruiters,
@@ -928,6 +1112,20 @@ class AuthService:
         if not profile or profile.get("status") != "active":
             return None
         return profile
+
+    async def _auto_detect_role(self, user_id: str) -> str | None:
+        """Return the first active role profile this account holds.
+
+        Priority: candidate → employee → recruiter → super_admin. A converted
+        candidate has a non-active ("converted") candidate profile, so they
+        fall through to their active employee profile and land on the
+        employee dashboard.
+        """
+        for role_name in self.ROLE_DETECT_ORDER:
+            profile = await self._resolve_role_profile(user_id, role_name)
+            if profile:
+                return role_name
+        return None
 
     async def _store_refresh_token(self, user_id: str, token: str, remember_me: bool = False) -> None:
         days = 30 if remember_me else 7

@@ -9,9 +9,10 @@ from bson.errors import InvalidId
 from fastapi import HTTPException, status
 
 from app.core.config import settings
-from app.core.crypto import decrypt_banking_payload, encrypt_banking_payload, iban_fingerprint
+from app.core.crypto import decrypt_banking_payload, decrypt_text, encrypt_banking_payload, iban_fingerprint
 from app.core.database import database
 from app.core.rbac import CurrentUser
+from app.core.security import hash_password
 from app.schemas.auth import names_match
 from app.services.candidate_service import CandidateService, onboarding_missing_keys
 from app.services.dashboard_service import DashboardService, create_notification
@@ -404,6 +405,34 @@ class EmployeeService:
             )
         return {"candidates": ready, "count": len(ready)}
 
+    async def _apply_first_time_password(self, it_doc: dict, user_id: str | None, now: datetime) -> str | None:
+        """Apply the IT-set first-time password to the single account at activation.
+
+        Returns the plaintext temporary password (for emailing it to the
+        employee) or None when there is nothing to apply. The employee uses it
+        once; `must_change_password` forces them to set their own password on
+        first sign-in (that new password then covers both login emails).
+        """
+        temp_password = None
+        if it_doc.get("temporary_password_encrypted") and user_id:
+            try:
+                temp_password = decrypt_text(it_doc["temporary_password_encrypted"])
+            except Exception:
+                temp_password = None
+        if temp_password and user_id:
+            await database.users.update_one(
+                {"_id": ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id},
+                {
+                    "$set": {
+                        "password_hash": hash_password(temp_password),
+                        "must_change_password": True,
+                        "temporary_password_set_at": now,
+                        "updated_at": now,
+                    }
+                },
+            )
+        return temp_password
+
     async def create_from_candidate(self, current_user: CurrentUser, candidate_id: str, *, allow_unsigned: bool = False) -> dict:
         """US-023: Convert a fully onboarded candidate into an employee (once)."""
         candidate = await self._find_candidate(candidate_id)
@@ -521,7 +550,9 @@ class EmployeeService:
             "company_email": company_email,
             "company_email_assigned_at": it_doc.get("submitted_at") or now,
             "company_email_assigned_by": "it",
-            "company_email_password_encrypted": it_doc.get("company_email_password_encrypted"),
+            # No separate mailbox password exists: the employee's single
+            # account password covers both the personal and company email
+            # login. Legacy records may still carry an encrypted copy.
             "has_company_email_password": bool(it_doc.get("company_email_password_encrypted")),
             "assets": it_assets,
             "licenses": it_licenses,
@@ -539,6 +570,51 @@ class EmployeeService:
             "updated_at": now,
         }
         await database.employees.insert_one(employee_doc)
+
+        # First-time password: IT set a temporary password during provisioning.
+        # Apply it to the single account at activation — the employee uses it
+        # ONCE to sign in and is then forced to set their own password, which
+        # covers both the personal and company email login.
+        temp_password = await self._apply_first_time_password(it_doc, user_id, now)
+
+        if company_email:
+            # Notify the new employee that their company email is live and
+            # that the first-time password is ready.
+            try:
+                await self._notify_employee(
+                    employee_doc,
+                    notif_type="company_email_assigned",
+                    title="Company email assigned",
+                    message=(
+                        f"Your company email is {company_email}. Sign in with your personal "
+                        "or company email using the first-time password sent to you — "
+                        "you'll create your own password on first sign-in."
+                    ),
+                    link="/dashboard/employee/profile",
+                )
+            except Exception:
+                pass  # Best-effort; activation already succeeded
+            try:
+                email_service.send_to_both(
+                    employee_doc.get("email"),
+                    company_email,
+                    email_service.send_company_email_assigned,
+                    employee_doc.get("full_name") or "Team member",
+                    company_email,
+                )
+            except Exception:
+                pass  # Best-effort
+            if temp_password:
+                try:
+                    email_service.send_to_both(
+                        employee_doc.get("email"),
+                        company_email,
+                        email_service.send_first_time_password,
+                        employee_doc.get("full_name") or "Team member",
+                        temp_password,
+                    )
+                except Exception:
+                    pass  # Best-effort
 
         await it_provisioning_service.mark_applied(it_doc["_id"], employee_id)
 
@@ -2186,10 +2262,12 @@ class EmployeeService:
             link="/dashboard/employee",
         )
         try:
-            email_service.send_company_email_assigned(
-                to_email=employee.get("email") or email,
-                full_name=employee.get("full_name") or "Team member",
-                company_email=email,
+            email_service.send_to_both(
+                employee.get("email") or email,
+                email,
+                email_service.send_company_email_assigned,
+                employee.get("full_name") or "Team member",
+                email,
             )
         except Exception:
             pass

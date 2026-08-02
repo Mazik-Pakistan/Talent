@@ -6,8 +6,10 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
+  editItProvisioningPublic,
   getApiErrorMessage,
   getItProvisioningPublic,
+  resetItProvisioningPasswordPublic,
   submitItProvisioningPublic,
 } from "@/services/authService";
 
@@ -33,6 +35,33 @@ const emptyLicense = () => ({
   vendor: "",
   notes: "",
 });
+
+const TEMP_PASSWORD_SPECIALS = "!@#$%&*";
+
+function generateTempPassword() {
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghijkmnopqrstuvwxyz";
+  const digits = "23456789";
+  const pick = (chars, count) =>
+    Array.from({ length: count }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  const pool = upper + lower + digits + TEMP_PASSWORD_SPECIALS;
+  const pwd =
+    pick(upper, 2) + pick(lower, 3) + pick(digits, 2) + pick(TEMP_PASSWORD_SPECIALS, 1) + pick(pool, 3);
+  return pwd
+    .split("")
+    .sort(() => Math.random() - 0.5)
+    .join("");
+}
+
+function tempPasswordError(value, editing) {
+  const cleaned = (value || "").trim();
+  if (editing && !cleaned) return null;
+  if (cleaned.length < 8) return "First-time password must be at least 8 characters.";
+  if (!/[A-Z]/.test(cleaned) || !/[a-z]/.test(cleaned) || !/\d/.test(cleaned) || !/[!@#$%&*]/.test(cleaned)) {
+    return "Needs an uppercase letter, a lowercase letter, a number, and a special character.";
+  }
+  return null;
+}
 
 const SHARED_STYLES = `
   .it-shell {
@@ -164,6 +193,18 @@ const SHARED_STYLES = `
     padding: 0;
   }
   .it-add:hover { text-decoration: underline; }
+  .it-pw-btn {
+    flex-shrink: 0;
+    border: 1px solid #c3d4e8;
+    border-radius: 8px;
+    padding: 0 12px;
+    background: #fff;
+    color: #1e3a5f;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .it-pw-btn:hover { background: #f1f5fe; border-color: #2d6cdf; }
   .it-row {
     border: 1px solid #e2e8f0;
     border-radius: 12px;
@@ -240,6 +281,43 @@ const SHARED_STYLES = `
   .it-submit:disabled {
     opacity: 0.7;
     cursor: not-allowed;
+  }
+  .it-btn {
+    display: inline-block;
+    border: 1px solid #c3d4e8;
+    border-radius: 10px;
+    padding: 12px 18px;
+    background: #fff;
+    color: #1e3a5f;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .it-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+  .it-reset-result {
+    margin: 14px 0 0;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: #f1f5fe;
+    border: 1px solid #c3d4e8;
+    font-size: 13px;
+    color: #1e3a5f;
+    line-height: 1.6;
+  }
+  .it-reset-result code {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #0f172a;
+    color: #7dd3fc;
+    font-family: Consolas, Menlo, monospace;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
   }
   .it-center { text-align: center; }
   .it-icon {
@@ -374,8 +452,6 @@ export default function ItSetupPublicPage() {
 
   const [state, setState] = useState({ status: "loading", data: null, message: "" });
   const [companyEmail, setCompanyEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [assets, setAssets] = useState([emptyAsset()]);
   const [licenses, setLicenses] = useState([emptyLicense()]);
   const [itNotes, setItNotes] = useState("");
@@ -383,6 +459,46 @@ export default function ItSetupPublicPage() {
   const [formMessage, setFormMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [done, setDone] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [resetResult, setResetResult] = useState(null);
+  const [resetting, setResetting] = useState(false);
+  const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [showTempPassword, setShowTempPassword] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
+
+  useEffect(() => {
+    if (!editing) {
+      setTemporaryPassword(generateTempPassword());
+      setShowTempPassword(true);
+    }
+  }, [editing]);
+
+  async function copyTemporaryPassword() {
+    try {
+      await navigator.clipboard.writeText(temporaryPassword);
+      setCopiedPassword(true);
+      setTimeout(() => setCopiedPassword(false), 1600);
+    } catch {
+      setCopiedPassword(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    if (resetting) return;
+    if (!window.confirm("Reset this employee's password? They will be signed out everywhere and receive a temporary password by email (personal + company).")) {
+      return;
+    }
+    setResetResult(null);
+    setResetting(true);
+    try {
+      const response = await resetItProvisioningPasswordPublic(token);
+      setResetResult(response);
+    } catch (error) {
+      setResetResult({ error: getApiErrorMessage(error, "Could not reset the password.") });
+    } finally {
+      setResetting(false);
+    }
+  }
 
   useEffect(() => {
     if (!token) return;
@@ -429,14 +545,6 @@ export default function ItSetupPublicPage() {
       setFormMessage("Company email is required.");
       return;
     }
-    if (password.length < 4) {
-      setFormMessage("Company email password must be at least 4 characters.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setFormMessage("Password confirmation does not match.");
-      return;
-    }
 
     const cleanedAssets = assets
       .map((row) => ({
@@ -460,18 +568,28 @@ export default function ItSetupPublicPage() {
       return;
     }
 
+    const passwordError = tempPasswordError(temporaryPassword, editing);
+    if (passwordError) {
+      setFormMessage(passwordError);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const response = await submitItProvisioningPublic(token, {
+      const payload = {
         company_email: companyEmail.trim(),
-        company_email_password: password,
         assets: cleanedAssets,
         licenses: cleanedLicenses,
         it_notes: itNotes.trim() || undefined,
         submitted_by_name: submittedByName.trim() || undefined,
-      });
+        temporary_password: temporaryPassword.trim() || undefined,
+      };
+      const response = editing
+        ? await editItProvisioningPublic(token, payload)
+        : await submitItProvisioningPublic(token, payload);
       setDone({
         already: false,
+        edited: editing,
         company_email: response.company_email || companyEmail.trim(),
         assets_count: response.assets_count ?? cleanedAssets.length,
         licenses_count: response.licenses_count ?? cleanedLicenses.length,
@@ -480,11 +598,45 @@ export default function ItSetupPublicPage() {
         employee_name: response.employee_name || state.data?.employee?.full_name,
         submitted_by_name: response.submitted_by_name || submittedByName.trim() || undefined,
       });
+      setEditing(false);
     } catch (error) {
-      setFormMessage(getApiErrorMessage(error, "Could not submit IT provisioning."));
+      setFormMessage(
+        getApiErrorMessage(error, editing ? "Could not update provisioning." : "Could not submit IT provisioning.")
+      );
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  function startEditing() {
+    const summary = state.data?.submitted_summary || {};
+    setCompanyEmail(summary.company_email || "");
+    const savedAssets = Array.isArray(summary.assets) ? summary.assets : [];
+    setAssets(
+      savedAssets.length
+        ? savedAssets.map((a) => ({
+            name: a.name || "",
+            asset_type: a.asset_type || "laptop",
+            serial_number: a.serial_number || "",
+            notes: a.notes || "",
+          }))
+        : [emptyAsset()]
+    );
+    const savedLicenses = Array.isArray(summary.licenses) ? summary.licenses : [];
+    setLicenses(
+      savedLicenses.length
+        ? savedLicenses.map((l) => ({
+            name: l.name || "",
+            vendor: l.vendor || "",
+            notes: l.notes || "",
+          }))
+        : [emptyLicense()]
+    );
+    setItNotes(summary.it_notes || "");
+    setSubmittedByName(summary.submitted_by_name || "");
+    setFormMessage("");
+    setDone(null);
+    setEditing(true);
   }
 
   if (state.status === "loading") {
@@ -525,13 +677,17 @@ export default function ItSetupPublicPage() {
         <div className="it-center">
           <div className="it-icon ok" aria-hidden>✓</div>
           <p className="it-eyebrow">IT provisioning</p>
-          <h1 className="it-title">{done.already ? "Already submitted" : "Setup complete"}</h1>
+          <h1 className="it-title">
+            {done.edited ? "Provisioning updated" : done.already ? "Already submitted" : "Setup complete"}
+          </h1>
           <p className="it-lead">
-            {done.already
-              ? "This form was submitted earlier. Here’s the recorded setup."
-              : done.employee_name
-                ? `You’re done — provisioning for ${done.employee_name} is saved.`
-                : "You’re done — company email, assets, and licenses are saved."}
+            {done.edited
+              ? "Your changes are saved. The recruiter sees the latest details before activation."
+              : done.already
+                ? "This form was submitted earlier. Here’s the recorded setup."
+                : done.employee_name
+                  ? `You’re done — provisioning for ${done.employee_name} is saved.`
+                  : "You’re done — company email, assets, and licenses are saved."}
           </p>
         </div>
 
@@ -571,7 +727,66 @@ export default function ItSetupPublicPage() {
 
         <div className="it-next">
           <strong>What’s next for IT</strong>
-          Nothing else on this link. The recruiter can approve &amp; activate the employee when ready.
+          {done.already
+            ? "Need to correct the company email or assets? You can edit the submission while the recruiter hasn’t activated the employee yet."
+            : "Nothing else on this link. The recruiter can approve &amp; activate the employee when ready."}
+        </div>
+        {done.already && (
+          <button type="button" className="it-btn" onClick={startEditing}>
+            Edit submission
+          </button>
+        )}
+        <p className="it-foot">You can safely close this tab.</p>
+      </Shell>
+    );
+  }
+
+  // After activation the provisioning record is locked — only password reset remains.
+  if (state.data?.status === "applied" && !editing) {
+    const employee = state.data?.employee || {};
+    return (
+      <Shell narrow>
+        <Image className="it-logo" src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
+        <div className="it-center">
+          <div className="it-icon ok" aria-hidden>✓</div>
+          <p className="it-eyebrow">IT provisioning</p>
+          <h1 className="it-title">Employee already activated</h1>
+          <p className="it-lead">
+            {employee.full_name
+              ? `Provisioning for ${employee.full_name} was applied when the recruiter activated them.`
+              : "This provisioning was already applied."}
+          </p>
+        </div>
+
+        <div className="it-summary">
+          {state.data.company_email ? (
+            <>
+              <span className="it-email-label">Company email</span>
+              <p className="it-email-value">{state.data.company_email}</p>
+            </>
+          ) : null}
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <button type="button" className="it-btn" onClick={handleResetPassword} disabled={resetting}>
+            {resetting ? "Resetting…" : "Reset employee password"}
+          </button>
+          {resetResult?.error && <p className="it-alert" role="alert">{resetResult.error}</p>}
+          {resetResult?.temporary_password && (
+            <div className="it-reset-result">
+              Password reset for {resetResult.full_name || "this employee"} — they were signed out everywhere.
+              <br />
+              Temporary password:
+              <br />
+              <code>{resetResult.temporary_password}</code>
+              <br />
+              <span style={{ color: "#64748b", fontSize: 12 }}>
+                Also emailed to {resetResult.personal_email}
+                {resetResult.company_email ? ` and ${resetResult.company_email}` : ""}. They can sign in with
+                either email and should change it from the Security section of their profile.
+              </span>
+            </div>
+          )}
         </div>
         <p className="it-foot">You can safely close this tab.</p>
       </Shell>
@@ -585,9 +800,11 @@ export default function ItSetupPublicPage() {
       <Image className="it-logo" src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
       <div className="it-center">
         <p className="it-eyebrow">IT provisioning</p>
-        <h1 className="it-title">Assign email &amp; assets</h1>
+        <h1 className="it-title">{editing ? "Edit setup" : "Assign email &amp; assets"}</h1>
         <p className="it-lead">
-          Create the company mailbox and record hardware/licenses. Activation stays blocked until you submit.
+          {editing
+            ? "Correct the company email or hardware. Activation stays blocked until you save."
+            : "Create the company mailbox and record hardware/licenses. Activation stays blocked until you submit."}
         </p>
       </div>
 
@@ -617,7 +834,10 @@ export default function ItSetupPublicPage() {
           <div className="it-section-head">
             <div>
               <h2>1. Company mailbox</h2>
-              <p>Temporary password is encrypted; employee reveals it later with OTP.</p>
+              <p>
+                The employee signs in with their personal or company email — one account,
+                one password.
+              </p>
             </div>
           </div>
           <label className="it-field" style={{ marginBottom: 12 }}>
@@ -630,36 +850,44 @@ export default function ItSetupPublicPage() {
               required
             />
           </label>
-          <div className="it-pass-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <label className="it-field">
-              <span>Mailbox password</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Temporary password"
-                required
-                minLength={4}
-              />
-            </label>
-            <label className="it-field">
-              <span>Confirm password</span>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm password"
-                required
-                minLength={4}
-              />
-            </label>
-          </div>
         </div>
 
         <div className="it-section">
           <div className="it-section-head">
             <div>
-              <h2>2. Hardware &amp; devices</h2>
+              <h2>2. First-time password</h2>
+              <p>
+                The employee uses this ONCE to sign in, then the system asks them to create their
+                own password. Save or share it securely — it is also emailed at activation.
+              </p>
+            </div>
+            <button type="button" className="it-add" onClick={() => { setTemporaryPassword(generateTempPassword()); setCopiedPassword(false); }}>
+              ⟳ Regenerate
+            </button>
+          </div>
+          <label className="it-field" style={{ marginBottom: 12 }}>
+            <span>{editing ? "New first-time password (blank keeps the current one)" : "First-time password"}</span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type={showTempPassword ? "text" : "password"}
+                value={temporaryPassword}
+                onChange={(e) => { setTemporaryPassword(e.target.value); setCopiedPassword(false); }}
+                placeholder="At least 8 chars, with A–Z, a–z, 0–9 and a symbol"
+              />
+              <button type="button" className="it-pw-btn" onClick={() => setShowTempPassword((v) => !v)}>
+                {showTempPassword ? "Hide" : "Show"}
+              </button>
+              <button type="button" className="it-pw-btn" onClick={copyTemporaryPassword}>
+                {copiedPassword ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </label>
+        </div>
+
+        <div className="it-section">
+          <div className="it-section-head">
+            <div>
+              <h2>3. Hardware &amp; devices</h2>
               <p>Laptops, monitors, phones, badges…</p>
             </div>
             <button type="button" className="it-add" onClick={() => setAssets((c) => [...c, emptyAsset()])}>
@@ -716,7 +944,7 @@ export default function ItSetupPublicPage() {
         <div className="it-section">
           <div className="it-section-head">
             <div>
-              <h2>3. Software licenses</h2>
+              <h2>4. Software licenses</h2>
               <p>Optional if hardware covers everything needed.</p>
             </div>
             <button type="button" className="it-add" onClick={() => setLicenses((c) => [...c, emptyLicense()])}>
@@ -765,7 +993,7 @@ export default function ItSetupPublicPage() {
         <div className="it-section">
           <div className="it-section-head">
             <div>
-              <h2>4. Optional notes</h2>
+              <h2>5. Optional notes</h2>
               <p>Delivery timing, VPN, badge pickup, etc.</p>
             </div>
           </div>
@@ -791,7 +1019,7 @@ export default function ItSetupPublicPage() {
         {formMessage ? <p className="it-alert" role="alert">{formMessage}</p> : null}
 
         <button type="submit" className="it-submit" disabled={isSubmitting}>
-          {isSubmitting ? "Submitting…" : "Submit IT provisioning"}
+          {isSubmitting ? (editing ? "Saving…" : "Submitting…") : editing ? "Save changes" : "Submit IT provisioning"}
         </button>
         <p className="it-hint" style={{ marginTop: 12, textAlign: "center" }}>
           Need at least one asset or license before submit.

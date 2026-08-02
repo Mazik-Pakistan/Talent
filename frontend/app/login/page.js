@@ -11,20 +11,6 @@ import { getApiErrorMessage, login, persistLoginSession } from "@/services/authS
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic";
 
-const ROLES = [
-  {
-    id: "candidate",
-    label: "Candidate",
-    hint: "Offer & onboarding",
-  },
-  {
-    id: "employee",
-    label: "Employee",
-    hint: "Workplace portal",
-  },
-];
-
-// Content variants for auto-rotation - with larger text
 const ROTATING_CONTENT = [
   {
   heading: "One platform for your entire hiring workflow.",
@@ -41,6 +27,10 @@ const ROTATING_CONTENT = [
   {
     heading: "Data-driven decisions at every step.",
     text: "Real-time analytics help you refine your hiring strategy and reduce time-to-hire.",
+  },
+  {
+    heading: "Sign in with either email.",
+    text: "Use your personal or company email — one password covers both. Forgot it? Use the 6-digit code on the sign-in page.",
   },
 ];
 
@@ -75,7 +65,6 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [role, setRole] = useState("employee");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -152,7 +141,6 @@ function LoginForm() {
       const data = await login({
         email: email.trim(),
         password,
-        role,
         remember_me: rememberMe,
       });
       persistLoginSession(data.session, data.user, {
@@ -160,6 +148,11 @@ function LoginForm() {
         email: email.trim(),
       });
       setLoginFeedback("success");
+      if (data.user?.must_change_password) {
+        toast.info("First-time sign-in — set your own password to continue.");
+        router.push("/set-password");
+        return;
+      }
       toast.success("Signed in successfully. Redirecting…");
       router.push(data.redirect_to);
     } catch (error) {
@@ -172,7 +165,6 @@ function LoginForm() {
     }
   }
 
-  const selected = ROLES.find((item) => item.id === role);
   const mascotMood = loginFeedback === "success" ? "green" : loginFeedback === "error" ? "red" : password ? "yellow" : "neutral";
 
   return (
@@ -214,37 +206,10 @@ function LoginForm() {
         <section className={styles.panel} aria-labelledby="login-heading">
           <div className={styles.intro}>
             <h1 id="login-heading" className={styles.heading}>Sign in to Talent</h1>
-            <p className={styles.subtext}>Choose your role, then enter your credentials to open that dashboard.</p>
+            <p className={styles.subtext}>Use your personal or company email — we&apos;ll take you to your dashboard automatically.</p>
           </div>
 
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
-            <fieldset className={styles.rolePicker}>
-              <legend>Sign in as</legend>
-              <p className={styles.rolePickerHint}>Recruiters and other platform staff also sign in as Employee.</p>
-              <div className={styles.roleGrid} role="radiogroup" aria-label="Account role">
-                {ROLES.map((item) => {
-                  const isSelected = role === item.id;
-                  return (
-                    <label
-                      key={item.id}
-                      className={`${styles.roleOption} ${isSelected ? styles.roleOptionSelected : ""}`}
-                    >
-                      <input
-                        type="radio"
-                        name="role"
-                        value={item.id}
-                        checked={isSelected}
-                        onChange={() => setRole(item.id)}
-                      />
-                      {isSelected && <span className={styles.roleCheck}>✓</span>}
-                      <strong>{item.label}</strong>
-                      <span>{item.hint}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </fieldset>
-
             <label className={`${styles.field} ${styles.animField}`} style={{ animationDelay: "80ms" }}>
               <span>Email</span>
               <span className={styles.inputShell}>
@@ -310,7 +275,7 @@ function LoginForm() {
 
             <button className={styles.primaryButton} type="submit" disabled={isSubmitting} style={{ animationDelay: "200ms" }}>
               {isSubmitting && <span className={styles.spinner} />}
-              {isSubmitting ? "Signing in…" : `Sign in as ${selected?.label}`}
+              {isSubmitting ? "Signing in…" : "Sign in"}
             </button>
           </form>
 

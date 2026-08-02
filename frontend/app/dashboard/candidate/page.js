@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import SecuritySection from "@/components/SecuritySection";
 import SidebarBrand from "@/components/SidebarBrand";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import {
@@ -617,6 +618,23 @@ function CandidateDashboardContent() {
                     )}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className={styles.section} style={{ marginBottom: 0 }} id="security-section">
+              <div className={styles.sectionHead}>
+                <div className={styles.sectionHeadLeft}>
+                  <div className={`${styles.bar} ${styles.green}`} />
+                  <div>
+                    <div className={styles.sectionTitle}>Security</div>
+                    <div className={styles.sectionDesc}>
+                      Change your account password — no verification code needed when you know your current password.
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className={styles.sectionBody}>
+                <SecuritySection />
               </div>
             </div>
 
