@@ -1058,15 +1058,17 @@
   position: absolute;
   left: 0;
   right: 0;
+  top: 4%;
   height: 2px;
   background: linear-gradient(90deg, transparent, #38a2ff, transparent);
   box-shadow: 0 0 12px 2px rgba(56, 162, 255, 0.35);
-  animation: ai-scan-beam 1.9s var(--ai-ease-in-out) infinite;
+  transform: translateY(0);
+  animation: ai-scan-beam 1.9s var(--ai-ease-in-out) infinite both;
+  will-change: transform;
 }
 @keyframes ai-scan-beam {
-  0% { top: 4%; }
-  50% { top: 94%; }
-  100% { top: 4%; }
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(90%); }
 }
 .scanGrid {
   position: absolute;
@@ -1219,11 +1221,13 @@
   padding: 24px;
   background: rgba(12, 42, 65, 0.28);
   backdrop-filter: blur(4px);
+  animation: ai-fade-in .18s var(--ai-ease) both;
 }
 .ocrOverlayCard {
   width: min(920px, 100%);
   max-height: min(90vh, 760px);
   overflow: auto;
+  animation: ai-fade-up .18s var(--ai-ease) both;
 }
 
 .noteInfo { background: #eff5ff; color: #1d4ed8; border: 1px solid #c3e3ff; }
