@@ -144,8 +144,8 @@ function LoginForm() {
          remember_me: rememberMe,
        });
        
-       // Fetch capabilities from RBAC endpoint
-       let capabilities = {};
+       // Prefer effective caps from RBAC; fall back to login payload.
+       let capabilities = data.user?.capabilities || {};
        try {
          const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
          const rbacResponse = await fetch(`${apiBaseUrl}/api/rbac/me`, {
@@ -156,11 +156,13 @@ function LoginForm() {
          });
          if (rbacResponse.ok) {
            const rbacData = await rbacResponse.json();
-           capabilities = rbacData.capabilities || {};
+           if (rbacData.capabilities && Object.keys(rbacData.capabilities).length) {
+             capabilities = rbacData.capabilities;
+           }
          }
        } catch (err) {
          console.warn("Could not fetch capabilities:", err);
-         // Continue without capabilities
+         // Continue with login-payload capabilities
        }
        
        persistLoginSession(data.session, data.user, {

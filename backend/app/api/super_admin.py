@@ -21,9 +21,10 @@ from app.services.email_service import email_service
 from app.services.organization_service import (
     ORG_MODULE_KEYS,
     create_organization,
-    delete_organization,
     get_organization,
     list_organizations,
+    purge_organization,
+    resolve_org_modules,
     update_organization,
 )
 from app.services.people_history import (
@@ -53,6 +54,19 @@ DEFAULT_RECRUITER_CAPABILITIES = {
 }
 
 ALL_CAPABILITY_KEYS = list(DEFAULT_RECRUITER_CAPABILITIES.keys())
+
+
+async def _clamp_capabilities_to_org(
+    capabilities: dict[str, bool],
+    organization_id: str | None,
+) -> dict[str, bool]:
+    """Force any module the organization did not purchase to False."""
+    org_modules = await resolve_org_modules(organization_id)
+    clamped = {**DEFAULT_RECRUITER_CAPABILITIES, **(capabilities or {})}
+    for key in ALL_CAPABILITY_KEYS:
+        if org_modules.get(key, True) is False:
+            clamped[key] = False
+    return clamped
 
 
 def require_recruiter_capability(capability: str):
@@ -285,6 +299,7 @@ async def invite_recruiter(request: InviteRecruiterRequest, current_user: Requir
     capabilities = {**DEFAULT_RECRUITER_CAPABILITIES}
     if request.capabilities:
         capabilities.update(request.capabilities)
+    capabilities = await _clamp_capabilities_to_org(capabilities, organization_id)
 
     invitation = {
         "token": token,
@@ -434,6 +449,8 @@ async def update_recruiter_capabilities(
         base = base or inv.get("capabilities") or {}
     base = base or DEFAULT_RECRUITER_CAPABILITIES
     updated = {**base, **request.capabilities}
+    organization_id = (profile or inv or {}).get("organization_id")
+    updated = await _clamp_capabilities_to_org(updated, organization_id)
 
     email = (profile or inv).get("email", "").lower()
     if profile:
@@ -564,6 +581,7 @@ async def bulk_update_recruiter_capabilities(
     for inv in invitations:
         existing = inv.get("capabilities") or DEFAULT_RECRUITER_CAPABILITIES
         merged = {**existing, **request.capabilities}
+        merged = await _clamp_capabilities_to_org(merged, inv.get("organization_id"))
         await database.invitations.update_one(
             {"_id": inv["_id"]},
             {"$set": {"capabilities": merged, "updated_at": now}},
@@ -709,14 +727,42 @@ async def update_org(
 
 @router.delete("/organizations/{organization_id}")
 async def delete_org(organization_id: str, current_user: RequireSuperAdmin):
-    """Delete an organization. Only allowed if no recruiters are bound to it."""
-    bound = await database.recruiters.count_documents({"organization_id": organization_id})
-    if bound:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete: {bound} recruiter(s) are bound to this organization.",
-        )
-    deleted = await delete_organization(organization_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Organization not found.")
-    return {"message": "Organization deleted."}
+    """Permanently delete an organization and wipe all of its tenant data.
+
+    Removes recruiters, candidates, employees, invitations, login accounts for
+    those people, and related operational records (offers, IT, learning,
+    messages, documents, etc.). This cannot be undone.
+    """
+    try:
+        result = await purge_organization(organization_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Organization not found.") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    wiped = result["wiped"]
+    org_name = (result.get("organization") or {}).get("name") or organization_id
+    now = datetime.now(UTC)
+    await database.audit_logs.insert_one({
+        "user_id": current_user.id,
+        "email": current_user.email,
+        "role": "super_admin",
+        "module": "organizations",
+        "action": "organization_purged",
+        "outcome": "success",
+        "detail": (
+            f'Deleted "{org_name}" and wiped {wiped.get("recruiters", 0)} recruiter(s), '
+            f'{wiped.get("candidates", 0)} candidate(s), {wiped.get("employees", 0)} employee(s), '
+            f'{wiped.get("invitations", 0)} invitation(s).'
+        ),
+        "created_at": now,
+    })
+
+    return {
+        "message": (
+            f'Organization "{org_name}" deleted. All recruiters, candidates, employees, '
+            "invitations, and related data for this organization were permanently wiped."
+        ),
+        "wiped": wiped,
+        "deleted_collections": result.get("deleted") or {},
+    }

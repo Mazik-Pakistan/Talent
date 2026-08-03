@@ -633,28 +633,19 @@ class AuthService:
     # ------------------------------------------------------------------ #
 
     async def _recruiter_capabilities(self, user_id: str, email: str) -> dict:
-        """Delegate map for a recruiter account. Legacy recruiters created
-        before the capability system default to full access."""
+        """Effective module access for a recruiter: org modules ∩ personal capabilities.
+
+        Legacy recruiters with no personal capabilities inherit the organization's
+        purchased modules (full access when the org has not restricted anything).
+        """
+        from app.services.organization_service import DEFAULT_ORG_MODULES, effective_capabilities
+
         profile = await database.recruiters.find_one(
             {"$or": [{"user_id": user_id}, {"email": email.lower()}], "status": "active"}
         )
-        caps = (profile or {}).get("capabilities")
-        if caps:
-            return caps
-        return {
-            "overview": True,
-            "candidates": True,
-            "invite": True,
-            "employees": True,
-            "talent": True,
-            "learning": True,
-            "assistant": True,
-            "messages": True,
-            "announcements": True,
-            "it": True,
-            "reporting": True,
-            "profile": True,
-        }
+        caps = (profile or {}).get("capabilities") or dict(DEFAULT_ORG_MODULES)
+        organization_id = (profile or {}).get("organization_id")
+        return await effective_capabilities(caps, organization_id)
 
     async def _available_switch_roles(self, user_id: str, primary_role: str) -> list[str]:
         """Which of {employee, recruiter} this account has an active profile for.

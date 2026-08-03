@@ -100,6 +100,7 @@ export function hasCapability(capability) {
     return true;
   }
   
+  // Missing map = legacy full access; explicit false = denied.
   return authService.hasCapability(capability);
 }
 
