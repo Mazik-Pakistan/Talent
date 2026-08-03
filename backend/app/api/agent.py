@@ -9,11 +9,14 @@ already do by hand.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from app.core.database import database
 from app.core.rbac import CurrentUser
 from app.core.security import RequireUser
+from app.api.super_admin import require_recruiter_capability
 from app.schemas.agent import AgentChatRequest, AgentResetRequest
 from app.services import agent_tools
 from app.services.agent_service import _load_or_create_session, _now_iso, _save_messages, agent_service
@@ -32,6 +35,11 @@ def _assert_agent_role(user: CurrentUser) -> None:
 async def chat(request: AgentChatRequest, current_user: RequireUser):
     """Send a message to the role-appropriate agent (recruiter or onboarding)."""
     _assert_agent_role(current_user)
+    if current_user.role == "recruiter":
+        from app.api.super_admin import _recruiter_capabilities_for
+        caps = await _recruiter_capabilities_for(current_user.id, current_user.email)
+        if not caps.get("assistant", True):
+            raise HTTPException(status_code=403, detail="AI assistant is not available for your account.")
     if not request.message and not request.session_id:
         raise HTTPException(status_code=400, detail="A message is required to start a conversation.")
     context = request.context.model_dump(exclude_none=True) if hasattr(request.context, "model_dump") else request.context

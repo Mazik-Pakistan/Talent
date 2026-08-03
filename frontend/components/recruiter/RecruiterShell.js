@@ -18,7 +18,7 @@ import styles from "./recruiter-shell.module.css";
 
 const COLLAPSE_KEY = "recruiter_sidebar_collapsed";
 
-export default function RecruiterShell({ activeKey, title, subtitle, children }) {
+export default function RecruiterShell({ activeKey, capability, title, subtitle, children }) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -107,8 +107,91 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
     return user?.capabilities?.[item.capability] ?? true;
   });
 
+  const hasCapability = !capability || (user?.capabilities?.[capability] ?? true);
+
   if (!user) {
     return <RecruiterLoader />;
+  }
+
+  if (capability && !hasCapability) {
+    return (
+      <RequireAccess
+        anyOf={["recruitment.view", "recruitment.invite"]}
+        roles={["recruiter", "super_admin"]}
+        fallback={<RecruiterLoader />}
+      >
+        <div className={styles.root} data-app-shell>
+          <div className={styles.app}>
+            <aside className={`${styles.sidebar} ${sidebarCollapsed ? styles.sidebarCollapsed : ""}`}>
+              <SidebarBrand
+                collapsed={sidebarCollapsed}
+                className={styles.brand}
+                markClassName={styles.brandMark}
+                onClick={toggleSidebar}
+              />
+              <div className={styles.navSectionLabel}>Recruiting</div>
+              <ul className={styles.nav}>
+                {allowedNavItems.map((item) => {
+                  const isActive = activeKey === item.key;
+                  return (
+                    <li key={item.key}>
+                      <button
+                        type="button"
+                        className={`${styles.navItem} ${isActive ? styles.navItemActive : ""}`}
+                        onClick={() => router.push(item.href)}
+                        title={item.label}
+                      >
+                        <span className={styles.navIcon}>{item.icon}</span>
+                        <span className={styles.navLabel}>{item.label}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className={styles.sidebarFooter}>
+                <ProfileAvatar src={user.profile_picture} name={user.full_name} size="sm" fallback="RC" />
+                <div className={styles.sidebarFooterText}>
+                  <div className={styles.name}>{user.full_name}</div>
+                  <div className={styles.role}>{user.role?.replace("_", " ")}</div>
+                </div>
+                <button type="button" className={styles.logoutBtn} title="Log out" onClick={handleLogout}>
+                  <LogoutIcon />
+                </button>
+              </div>
+            </aside>
+            <main className={styles.main}>
+              <div className={styles.topbar}>
+                <div className={styles.topbarLeft}>
+                  <div className={styles.topbarTitle}>{title || "Recruiter"}</div>
+                </div>
+              </div>
+              <div className={styles.content}>
+                <div style={{ padding: "3rem", textAlign: "center" }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="48" height="48" style={{ color: "#dc2626" }}>
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="15" y1="9" x2="9" y2="15" />
+                      <line x1="9" y1="9" x2="15" y2="15" />
+                    </svg>
+                  </div>
+                  <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Access denied</h2>
+                  <p style={{ color: "var(--text-muted)", marginBottom: 20, maxWidth: 400, margin: "0 auto 20px" }}>
+                    This feature has been disabled for your account. Contact the Super Admin to request access.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/dashboard/recruiter/overview")}
+                    style={{ padding: "8px 24px", background: "#0D5C91", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    Back to overview
+                  </button>
+                </div>
+              </div>
+            </main>
+          </div>
+        </div>
+      </RequireAccess>
+    );
   }
 
   return (

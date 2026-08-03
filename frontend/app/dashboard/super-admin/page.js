@@ -12,6 +12,7 @@ import {
   getApiErrorMessage,
   inviteRecruiter,
   listRecruiters,
+  updateRecruiter,
   updateRecruiterCapabilities,
 } from "@/services/authService";
 import { can } from "@/services/rbac";
@@ -19,19 +20,29 @@ import { can } from "@/services/rbac";
 const initialForm = { full_name: "", email: "", phone: "", password: "", confirm_password: "" };
 
 const CAPABILITY_LABELS = {
-  recruitment: "Candidates & overview",
+  overview: "Overview dashboard",
+  candidates: "Candidates",
   invite: "Invite & offer",
   employees: "Employees",
-  documents: "Document review",
+  talent: "Talent analytics",
   learning: "Learning",
+  assistant: "AI assistant",
+  messages: "Messages",
   announcements: "Announcements",
   it: "IT & support",
-  messages: "Messages",
   reporting: "Activity & reporting",
   profile: "Profile",
 };
 
 const initialInviteForm = { full_name: "", email: "", job_title: "", department: "", office_location: "", is_remote: false };
+
+const STATUS_FILTERS = [
+  { key: "", label: "All" },
+  { key: "active", label: "Active" },
+  { key: "pending", label: "Pending" },
+  { key: "inactive", label: "Inactive" },
+  { key: "expired", label: "Expired" },
+];
 
 export default function SuperAdminDashboardPage() {
   const router = useRouter();
@@ -40,9 +51,16 @@ export default function SuperAdminDashboardPage() {
   const [form, setForm] = useState(initialForm);
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState("invite");
+
+  const [activeTab, setActiveTab] = useState("recruiters");
   const [recruiters, setRecruiters] = useState([]);
   const [recruitersLoading, setRecruitersLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+
   const [inviteForm, setInviteForm] = useState(initialInviteForm);
   const [inviteCaps, setInviteCaps] = useState(
     Object.keys(CAPABILITY_LABELS).reduce((acc, k) => ({ ...acc, [k]: true }), {})
@@ -73,16 +91,23 @@ export default function SuperAdminDashboardPage() {
     setRecruitersLoading(true);
     setRecruitersError("");
     try {
-      const data = await listRecruiters(accessToken);
+      const data = await listRecruiters(accessToken, { status: statusFilter || undefined });
       setRecruiters(data.recruiters || []);
     } catch (error) {
       setRecruitersError(getApiErrorMessage(error, "Could not load recruiters."));
     } finally {
       setRecruitersLoading(false);
     }
-  }, []);
+  }, [statusFilter]);
 
   useEffect(() => { if (user) loadRecruiters(); }, [user, loadRecruiters]);
+
+  const filteredRecruiters = searchQuery.trim().length >= 2
+    ? recruiters.filter((r) => {
+        const q = searchQuery.toLowerCase();
+        return r.email.toLowerCase().includes(q) || (r.full_name || "").toLowerCase().includes(q) || (r.department || "").toLowerCase().includes(q) || (r.job_title || "").toLowerCase().includes(q);
+      })
+    : recruiters;
 
   async function handleBootstrap(event) {
     event.preventDefault();
@@ -118,13 +143,38 @@ export default function SuperAdminDashboardPage() {
     }
   }
 
-  async function toggleCapability(invitationId, key, currentValue) {
+  async function toggleCapability(recruiterId, key, currentValue) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const result = await updateRecruiterCapabilities(invitationId, { capabilities: { [key]: !currentValue } }, accessToken);
-      setRecruiters((prev) => prev.map((r) => r.id === invitationId ? { ...r, capabilities: result.capabilities } : r));
+      const result = await updateRecruiterCapabilities(recruiterId, { capabilities: { [key]: !currentValue } }, accessToken);
+      setRecruiters((prev) => prev.map((r) => r.id === recruiterId ? { ...r, capabilities: result.capabilities } : r));
     } catch { loadRecruiters(); }
+  }
+
+  function startEdit(r) {
+    setEditingId(r.id);
+    setEditForm({ job_title: r.job_title || "", department: r.department || "", office_location: r.office_location || "", status: r.status || "active" });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditForm({});
+  }
+
+  async function saveEdit(recruiterId) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setEditSaving(true);
+    try {
+      await updateRecruiter(recruiterId, editForm, accessToken);
+      setEditingId(null);
+      loadRecruiters();
+    } catch (error) {
+      alert(getApiErrorMessage(error, "Failed to update recruiter."));
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   if (!user && !needsBootstrap) return <RecruiterLoader />;
@@ -158,7 +208,7 @@ export default function SuperAdminDashboardPage() {
                 ))}
                 {message && <p className={styles.formMessage}>{message}</p>}
                 <button type="submit" disabled={isSubmitting} className={styles.primaryButton}>
-                  {isSubmitting ? "Creating…" : "Create super admin"}
+                  {isSubmitting ? "Creating\u2026" : "Create super admin"}
                 </button>
               </form>
               <p className={styles.instruction} style={{ marginTop: 16 }}>
@@ -202,34 +252,21 @@ export default function SuperAdminDashboardPage() {
                 ].map(({ k, l, t }) => (
                   <label key={k} className={styles.field}>
                     <span>{l}{k !== "office_location" ? " *" : ""}</span>
-                    <input
-                      type={t}
-                      value={inviteForm[k]}
-                      onChange={(e) => setInviteForm({ ...inviteForm, [k]: e.target.value })}
-                      required={k !== "office_location"}
-                    />
+                    <input type={t} value={inviteForm[k]} onChange={(e) => setInviteForm({ ...inviteForm, [k]: e.target.value })} required={k !== "office_location"} />
                   </label>
                 ))}
               </div>
 
               <label className={local.checkboxRow} style={{ marginBottom: 16 }}>
-                <input
-                  type="checkbox"
-                  checked={inviteForm.is_remote}
-                  onChange={(e) => setInviteForm({ ...inviteForm, is_remote: e.target.checked })}
-                />
+                <input type="checkbox" checked={inviteForm.is_remote} onChange={(e) => setInviteForm({ ...inviteForm, is_remote: e.target.checked })} />
                 Remote employee
               </label>
 
-              <p className={local.capabilityLabel}>Capabilities</p>
+              <p className={local.capabilityLabel}>Default Capabilities</p>
               <div className={local.capabilityGrid}>
                 {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
                   <label key={key} className={local.checkboxRow}>
-                    <input
-                      type="checkbox"
-                      checked={inviteCaps[key]}
-                      onChange={(e) => setInviteCaps({ ...inviteCaps, [key]: e.target.checked })}
-                    />
+                    <input type="checkbox" checked={inviteCaps[key]} onChange={(e) => setInviteCaps({ ...inviteCaps, [key]: e.target.checked })} />
                     {label}
                   </label>
                 ))}
@@ -237,7 +274,7 @@ export default function SuperAdminDashboardPage() {
 
               {inviteMessage && <p className={styles.formMessage}>{inviteMessage}</p>}
               <button type="submit" disabled={inviteSubmitting} className={styles.primaryButton}>
-                {inviteSubmitting ? "Sending…" : "Send invitation"}
+                {inviteSubmitting ? "Sending\u2026" : "Send invitation"}
               </button>
             </form>
           </div>
@@ -250,48 +287,109 @@ export default function SuperAdminDashboardPage() {
             <div className={styles.sectionHeadLeft}>
               <div className={`${styles.bar} ${styles.orange}`} />
               <div>
-                <div className={styles.sectionTitle}>Invited Recruiters</div>
-                <div className={styles.sectionDesc}>Manage access and capabilities for every recruiter you've invited.</div>
+                <div className={styles.sectionTitle}>All Recruiters</div>
+                <div className={styles.sectionDesc}>Manage access, capabilities, and roles for every recruiter on the platform.</div>
               </div>
             </div>
           </div>
+
           <div className={styles.sectionBody}>
-            {recruitersError && <p className={local.emptySub} style={{ color: "#dc2626" }}>{recruitersError}</p>}
+            <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                type="text"
+                placeholder="Search by name, email, department\u2026"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ flex: "1 1 200px", padding: "8px 12px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 13 }}
+              />
+              <div style={{ display: "flex", gap: 4 }}>
+                {STATUS_FILTERS.map((sf) => (
+                  <button
+                    key={sf.key}
+                    type="button"
+                    onClick={() => setStatusFilter(sf.key)}
+                    style={{
+                      padding: "4px 12px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      borderRadius: 20,
+                      border: "1px solid var(--border)",
+                      background: statusFilter === sf.key ? "#0D5C91" : "transparent",
+                      color: statusFilter === sf.key ? "#fff" : "var(--text-muted)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {sf.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {recruitersLoading ? (
-              <p className={styles.emptySub}>Loading…</p>
-            ) : recruiters.length === 0 ? (
-              <p className={styles.emptySub}>No recruiters invited yet.</p>
+              <p className={styles.emptySub}>Loading\u2026</p>
+            ) : filteredRecruiters.length === 0 ? (
+              <p className={styles.emptySub}>{searchQuery || statusFilter ? "No recruiters match your filters." : "No recruiters on the platform yet."}</p>
             ) : (
               <ul className={styles.miniList}>
-                {recruiters.map((r) => (
+                {filteredRecruiters.map((r) => (
                   <li key={r.id} className={styles.miniListItem} style={{ flexDirection: "column", alignItems: "stretch" }}>
                     <div className={local.recruiterHead}>
-                      <div>
-                        <strong>{r.full_name}</strong>
-                        <span
-                          className={`${local.statusPill} ${
-                            r.is_active ? local.active : r.status === "pending" ? local.pending : local.other
-                          }`}
-                          style={{ marginLeft: 8 }}
-                        >
-                          {r.is_active ? "Active" : r.status}
-                        </span>
-                        <div className={local.recruiterMeta}>
-                          {r.email} · {r.department} · {r.job_title}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <strong>{r.full_name}</strong>
+                          <span className={`${local.statusPill} ${r.is_active ? local.active : r.status === "pending" ? local.pending : r.status === "inactive" ? local.inactive : local.other}`}>
+                            {r.status}
+                          </span>
+                          {r.has_employee_profile && (
+                            <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#ede9fe", color: "#5b21b6", fontWeight: 600 }}>DUAL ROLE</span>
+                          )}
+                          {r.employee_id && (
+                            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{r.employee_id}</span>
+                          )}
                         </div>
-                        <div className={local.recruiterMeta}>
-                          Created {r.created_at ? new Date(r.created_at).toLocaleDateString() : "Null"}
-                        </div>
+                        <div className={local.recruiterMeta}>{r.email}</div>
+                        {editingId === r.id ? (
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginTop: 10 }}>
+                            {[
+                              { k: "job_title", l: "Job Title" },
+                              { k: "department", l: "Department" },
+                              { k: "office_location", l: "Location" },
+                            ].map(({ k, l }) => (
+                              <label key={k} style={{ fontSize: 12 }}>
+                                <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>{l}</span>
+                                <input type="text" value={editForm[k]} onChange={(e) => setEditForm({ ...editForm, [k]: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }} />
+                              </label>
+                            ))}
+                            <label style={{ fontSize: 12 }}>
+                              <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>Status</span>
+                              <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                              </select>
+                            </label>
+                            <div style={{ display: "flex", gap: 6, alignSelf: "end" }}>
+                              <button type="button" disabled={editSaving} onClick={() => saveEdit(r.id)} className={styles.primaryButton} style={{ padding: "4px 14px", fontSize: 12 }}>
+                                {editSaving ? "\u2026" : "Save"}
+                              </button>
+                              <button type="button" onClick={cancelEdit} style={{ padding: "4px 14px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", cursor: "pointer" }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={local.recruiterMeta}>
+                            {r.job_title || "\u2014"} \u00b7 {r.department || "\u2014"} {r.office_location ? `\u00b7 ${r.office_location}` : ""} {r.created_at ? `\u00b7 Invited ${new Date(r.created_at).toLocaleDateString()}` : ""}
+                          </div>
+                        )}
                       </div>
+                      {editingId !== r.id && (
+                        <button type="button" onClick={() => startEdit(r)} style={{ padding: "4px 12px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
+                          Edit role
+                        </button>
+                      )}
                     </div>
                     <div className={local.capabilityChips}>
                       {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
                         <label key={key} className={local.capabilityChip}>
-                          <input
-                            type="checkbox"
-                            checked={r.capabilities?.[key] ?? true}
-                            onChange={() => toggleCapability(r.id, key, r.capabilities?.[key] ?? true)}
-                          />
+                          <input type="checkbox" checked={r.capabilities?.[key] ?? true} onChange={() => toggleCapability(r.id, key, r.capabilities?.[key] ?? true)} />
                           {label}
                         </label>
                       ))}

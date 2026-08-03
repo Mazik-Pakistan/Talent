@@ -1,9 +1,12 @@
 from datetime import date
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
+from app.core.rbac import CurrentUser
 from app.core.security import RequireAny, RequireEmployee, RequireRecruiter
+from app.api.super_admin import require_recruiter_capability
 from app.schemas.learning import (
     BookmarkRequest,
     CareerGoalRequest,
@@ -148,12 +151,20 @@ async def list_my_certificates(current_user: RequireEmployee):
 
 
 @router.get("/certificates/pending")
-async def list_pending_certificates(current_user: RequireRecruiter):
+async def list_pending_certificates(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     return await learning_service.list_pending_certificates(current_user)
 
 
 @router.put("/certificates/{certificate_id}/verify")
-async def verify_certificate(certificate_id: str, request: CertificateVerifyRequest, current_user: RequireRecruiter):
+async def verify_certificate(
+    certificate_id: str,
+    request: CertificateVerifyRequest,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     return await learning_service.verify_certificate(current_user, certificate_id, request)
 
 
@@ -257,14 +268,21 @@ async def recommendations(current_user: RequireEmployee, refresh: bool = False):
 # Recruiter Knowledge Base (roles + certifications)
 # ---------------------------------------------------------------------- #
 @router.get("/knowledge-base/roles")
-async def kb_list_roles(current_user: RequireRecruiter):
+async def kb_list_roles(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     from app.services.recruiter_kb_service import recruiter_kb_service
 
     return await recruiter_kb_service.list_roles(current_user)
 
 
 @router.post("/knowledge-base/roles", status_code=201)
-async def kb_create_role(request: dict, current_user: RequireRecruiter):
+async def kb_create_role(
+    request: dict,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     from app.schemas.recruiter_kb import KbRoleCreate
     from app.services.recruiter_kb_service import recruiter_kb_service
 
@@ -273,7 +291,12 @@ async def kb_create_role(request: dict, current_user: RequireRecruiter):
 
 
 @router.put("/knowledge-base/roles/{role_id}")
-async def kb_update_role(role_id: str, request: dict, current_user: RequireRecruiter):
+async def kb_update_role(
+    role_id: str,
+    request: dict,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     from app.schemas.recruiter_kb import KbRoleUpdate
     from app.services.recruiter_kb_service import recruiter_kb_service
 
@@ -284,21 +307,32 @@ async def kb_update_role(role_id: str, request: dict, current_user: RequireRecru
 
 
 @router.delete("/knowledge-base/roles/{role_id}")
-async def kb_delete_role(role_id: str, current_user: RequireRecruiter):
+async def kb_delete_role(
+    role_id: str,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     from app.services.recruiter_kb_service import recruiter_kb_service
 
     return await recruiter_kb_service.delete_role(current_user, role_id)
 
 
 @router.get("/knowledge-base/certifications")
-async def kb_list_certs(current_user: RequireRecruiter):
+async def kb_list_certs(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     from app.services.recruiter_kb_service import recruiter_kb_service
 
     return await recruiter_kb_service.list_certifications(current_user)
 
 
 @router.post("/knowledge-base/certifications", status_code=201)
-async def kb_create_cert(request: dict, current_user: RequireRecruiter):
+async def kb_create_cert(
+    request: dict,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     from app.schemas.recruiter_kb import KbCertificationCreate
     from app.services.recruiter_kb_service import recruiter_kb_service
 
@@ -307,7 +341,12 @@ async def kb_create_cert(request: dict, current_user: RequireRecruiter):
 
 
 @router.put("/knowledge-base/certifications/{cert_id}")
-async def kb_update_cert(cert_id: str, request: dict, current_user: RequireRecruiter):
+async def kb_update_cert(
+    cert_id: str,
+    request: dict,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     from app.schemas.recruiter_kb import KbCertificationUpdate
     from app.services.recruiter_kb_service import recruiter_kb_service
 
@@ -318,7 +357,11 @@ async def kb_update_cert(cert_id: str, request: dict, current_user: RequireRecru
 
 
 @router.delete("/knowledge-base/certifications/{cert_id}")
-async def kb_delete_cert(cert_id: str, current_user: RequireRecruiter):
+async def kb_delete_cert(
+    cert_id: str,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     from app.services.recruiter_kb_service import recruiter_kb_service
 
     return await recruiter_kb_service.delete_certification(current_user, cert_id)
@@ -328,12 +371,20 @@ async def kb_delete_cert(cert_id: str, current_user: RequireRecruiter):
 # Recruiter: assign, oversight, analytics (US-068, US-076)
 # ---------------------------------------------------------------------- #
 @router.post("/assignments", status_code=201)
-async def assign_courses(request: CourseAssignRequest, current_user: RequireRecruiter):
+async def assign_courses(
+    request: CourseAssignRequest,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     return await learning_service.assign_courses(current_user, request)
 
 
 @router.post("/assignments/remind")
-async def remind_course_assignments(payload: dict, current_user: RequireRecruiter):
+async def remind_course_assignments(
+    payload: dict,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+):
     """Nudge an employee about open course assignments (email + notification)."""
     from app.services.reminder_service import reminder_service
 
@@ -350,6 +401,7 @@ async def remind_course_assignments(payload: dict, current_user: RequireRecruite
 @router.get("/assignments")
 async def list_assignments(
     current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
     employee_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
     mandatory: bool | None = None,
@@ -366,6 +418,7 @@ async def list_assignments(
 async def employee_learning_profile(
     employee_id: str,
     current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
     refresh: bool = False,
 ):
     return await learning_service.get_employee_learning_profile(
@@ -374,7 +427,11 @@ async def employee_learning_profile(
 
 
 @router.get("/analytics")
-async def analytics(current_user: RequireRecruiter, department: str | None = None):
+async def analytics(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("learning"))],
+    department: str | None = None,
+):
     return await learning_service.get_analytics(current_user, department=department)
 
 

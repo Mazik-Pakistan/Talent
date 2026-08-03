@@ -60,8 +60,8 @@ export default function CandidateProfilePage({ params }) {
     setReminderOpen(true);
   }
 
-  if (loading) return <RecruiterShell activeKey="candidates" title="Candidate Profile" subtitle="Loading profile details..."><Loading /></RecruiterShell>;
-  if (error || !candidate) return <RecruiterShell activeKey="candidates" title="Candidate Profile" subtitle="Profile Error"><div className={styles.section}><div className={styles.sectionBody}><div className={styles.formMessage} role="alert">{error || "Candidate not found."}</div><button type="button" className={styles.secondaryButton} style={{ marginTop: 16 }} onClick={() => router.back()}>← Back to Candidates</button></div></div></RecruiterShell>;
+  if (loading) return <RecruiterShell activeKey="candidates" capability="candidates" title="Candidate Profile" subtitle="Loading profile details..."><Loading /></RecruiterShell>;
+  if (error || !candidate) return <RecruiterShell activeKey="candidates" capability="candidates" title="Candidate Profile" subtitle="Profile Error"><div className={styles.section}><div className={styles.sectionBody}><div className={styles.formMessage} role="alert">{error || "Candidate not found."}</div><button type="button" className={styles.secondaryButton} style={{ marginTop: 16 }} onClick={() => router.back()}>← Back to Candidates</button></div></div></RecruiterShell>;
 
   const onboarding = candidate.onboarding || {};
   const progress = candidate.progress || {};
@@ -81,7 +81,7 @@ export default function CandidateProfilePage({ params }) {
       ["historical", "declined", "offer_declined"].includes(candidate.status) ||
       ["offer_declined", "declined"].includes(candidate.conversion_status));
 
-  return <RecruiterShell activeKey="candidates" title="Candidate Profile" subtitle={`Detailed overview for ${candidate.full_name}`}>
+  return <RecruiterShell activeKey="candidates" capability="candidates" title="Candidate Profile" subtitle={`Detailed overview for ${candidate.full_name}`}>
     <div style={{ marginBottom: 20, display: "flex", gap: 8, flexWrap: "wrap" }}>
       <button type="button" className={styles.secondaryButton} onClick={() => router.back()}>← Back to Candidates</button>
       {isHistorical ? (

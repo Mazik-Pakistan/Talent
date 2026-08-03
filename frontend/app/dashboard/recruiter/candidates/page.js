@@ -563,6 +563,7 @@ export default function RecruiterCandidatesPage() {
   return (
     <RecruiterShell
       activeKey="candidates"
+      capability="candidates"
       title={pipelineView === "historical" ? "Historical candidates" : "Candidate pipeline"}
       subtitle={
         pipelineView === "historical"
