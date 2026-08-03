@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
-PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$")
+PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$")
 # Accept legacy international-style numbers OR Pakistani mobiles (03XXXXXXXXX / +92…).
 PHONE_PATTERN = re.compile(r"^03\d{9}$")
 PK_MOBILE_DIGITS = re.compile(r"^03\d{9}$")
@@ -135,7 +135,7 @@ class RegisterRequest(BaseModel):
     def validate_password(cls, value: str) -> str:
         if not PASSWORD_PATTERN.fullmatch(value):
             raise ValueError(
-                "Password must be at least 8 characters and include uppercase, lowercase, number, and special character."
+                "Password must be at least 8 characters, include uppercase, lowercase, number, and special character, and must not contain spaces."
             )
         return value
 
@@ -218,7 +218,7 @@ class ResetPasswordRequest(BaseModel):
     def validate_password(cls, value: str) -> str:
         if not PASSWORD_PATTERN.fullmatch(value):
             raise ValueError(
-                "Password must be at least 8 characters and include uppercase, lowercase, number, and special character."
+                "Password must be at least 8 characters, include uppercase, lowercase, number, and special character, and must not contain spaces."
             )
         return value
 
@@ -240,7 +240,7 @@ class ChangePasswordRequest(BaseModel):
     def validate_new_password(cls, value: str) -> str:
         if not PASSWORD_PATTERN.fullmatch(value):
             raise ValueError(
-                "Password must be at least 8 characters and include uppercase, lowercase, number, and special character."
+                "Password must be at least 8 characters, include uppercase, lowercase, number, and special character, and must not contain spaces."
             )
         return value
 
@@ -281,7 +281,7 @@ class BootstrapSuperAdminRequest(BaseModel):
     def validate_password(cls, value: str) -> str:
         if not PASSWORD_PATTERN.fullmatch(value):
             raise ValueError(
-                "Password must be at least 8 characters and include uppercase, lowercase, number, and special character."
+                "Password must be at least 8 characters, include uppercase, lowercase, number, and special character, and must not contain spaces."
             )
         return value
 

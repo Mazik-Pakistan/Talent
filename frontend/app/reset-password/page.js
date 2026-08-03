@@ -70,8 +70,8 @@ export default function ResetPasswordPage() {
       setError("Passwords do not match.");
       return;
     }
-    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/.test(password)) {
-      setError("Use 8+ characters with uppercase, lowercase, number, and special character.");
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$/.test(password)) {
+      setError("Use 8+ characters with uppercase, lowercase, number, special character, and no spaces.");
       return;
     }
 

@@ -15,7 +15,7 @@ const ROLE_HOME = {
   super_admin: "/dashboard/super-admin",
 };
 
-const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$/;
 
 export default function SetPasswordPage() {
   const router = useRouter();
@@ -53,7 +53,7 @@ export default function SetPasswordPage() {
       return "New password confirmation does not match.";
     }
     if (!PASSWORD_REGEX.test(newPassword)) {
-      return "Use 8+ characters with uppercase, lowercase, number, and special character.";
+      return "Use 8+ characters with uppercase, lowercase, number, special character, and no spaces.";
     }
     if (newPassword === currentPassword) {
       return "New password must be different from the current one.";
