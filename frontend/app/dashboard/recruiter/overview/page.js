@@ -184,7 +184,7 @@ export default function RecruiterOverviewPage() {
   }, [pendingApprovals.length, pendingCandidates.length, readyCandidates.length, router]);
 
   return (
-    <RecruiterShell activeKey="overview" title="Recruiter overview" subtitle="Real-time hiring pipeline and onboarding snapshots">
+    <RecruiterShell activeKey="overview" capability="overview" title="Recruiter overview" subtitle="Real-time hiring pipeline and onboarding snapshots">
       {error && <div className={styles.formMessage} role="alert">{error}</div>}
 
       <div className={styles.hero} style={{ marginBottom: 20 }}>

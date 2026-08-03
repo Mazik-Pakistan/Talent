@@ -102,6 +102,7 @@ export default function RecruiterEmployeesPage() {
     return (
       <RecruiterShell
         activeKey="employees"
+        capability="employees"
         title="Employee directory"
         subtitle="Loading employee data…"
       >
@@ -113,6 +114,7 @@ export default function RecruiterEmployeesPage() {
   return (
     <RecruiterShell
       activeKey="employees"
+      capability="employees"
       title={dirFilters.history_bucket === "historical" ? "Historical employees" : "Employee directory"}
       subtitle={
         dirFilters.history_bucket === "historical"

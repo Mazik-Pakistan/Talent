@@ -578,6 +578,10 @@ class AuthService:
 
         available_roles = await self._available_switch_roles(user_id, effective_role)
 
+        capabilities = None
+        if effective_role == "recruiter":
+            capabilities = await self._recruiter_capabilities(user_id, email)
+
         access_token = create_access_token({"user_id": user_id, "email": email, "role": effective_role})
         refresh_days = 30 if request.remember_me else 7
         refresh_token_str = create_refresh_token(
@@ -610,6 +614,7 @@ class AuthService:
                 "employee_id": profile.get("employee_id"),
                 "profile_picture": profile.get("profile_picture"),
                 "available_roles": available_roles,
+                "capabilities": capabilities,
                 "must_change_password": bool(user_doc.get("must_change_password")),
             },
             "session": {
@@ -625,6 +630,30 @@ class AuthService:
     # ------------------------------------------------------------------ #
     # ROLE SWITCH (dual employee + recruiter accounts)                    #
     # ------------------------------------------------------------------ #
+
+    async def _recruiter_capabilities(self, user_id: str, email: str) -> dict:
+        """Delegate map for a recruiter account. Legacy recruiters created
+        before the capability system default to full access."""
+        profile = await database.recruiters.find_one(
+            {"$or": [{"user_id": user_id}, {"email": email.lower()}], "status": "active"}
+        )
+        caps = (profile or {}).get("capabilities")
+        if caps:
+            return caps
+        return {
+            "overview": True,
+            "candidates": True,
+            "invite": True,
+            "employees": True,
+            "talent": True,
+            "learning": True,
+            "assistant": True,
+            "messages": True,
+            "announcements": True,
+            "it": True,
+            "reporting": True,
+            "profile": True,
+        }
 
     async def _available_switch_roles(self, user_id: str, primary_role: str) -> list[str]:
         """Which of {employee, recruiter} this account has an active profile for.
@@ -687,6 +716,10 @@ class AuthService:
 
         available_roles = await self._available_switch_roles(current_user.id, target_role)
 
+        capabilities = None
+        if target_role == "recruiter":
+            capabilities = await self._recruiter_capabilities(current_user.id, current_user.email)
+
         await database.audit_logs.insert_one(
             {
                 "user_id": current_user.id,
@@ -714,6 +747,7 @@ class AuthService:
                 "employee_id": profile.get("employee_id"),
                 "profile_picture": profile.get("profile_picture"),
                 "available_roles": available_roles,
+                "capabilities": capabilities,
             },
             "session": {
                 "access_token": access_token,

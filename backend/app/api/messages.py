@@ -1,8 +1,12 @@
 """Employee ↔ recruiter messaging API."""
 
-from fastapi import APIRouter, Body
+from typing import Annotated
 
+from fastapi import APIRouter, Body, Depends
+
+from app.core.rbac import CurrentUser
 from app.core.security import RequireAny, RequireEmployee, RequireRecruiter
+from app.api.super_admin import require_recruiter_capability
 from app.services.message_service import message_service
 
 router = APIRouter(prefix="/api/messages", tags=["Messages"])
@@ -33,7 +37,11 @@ async def employee_send_message(current_user: RequireEmployee, payload: dict = B
 
 
 @router.post("/start", status_code=201)
-async def recruiter_start_message(current_user: RequireRecruiter, payload: dict = Body(...)):
+async def recruiter_start_message(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("messages"))],
+    payload: dict = Body(...),
+):
     """Recruiter starts (or continues) a conversation with an employee."""
     body = payload if isinstance(payload, dict) else {}
     return await message_service.recruiter_start(
@@ -45,7 +53,12 @@ async def recruiter_start_message(current_user: RequireRecruiter, payload: dict 
 
 
 @router.post("/{thread_id}/reply", status_code=201)
-async def recruiter_reply(thread_id: str, current_user: RequireRecruiter, payload: dict = Body(...)):
+async def recruiter_reply(
+    thread_id: str,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("messages"))],
+    payload: dict = Body(...),
+):
     body = payload if isinstance(payload, dict) else {}
     return await message_service.recruiter_reply(current_user, thread_id, body=body.get("body") or "")
 

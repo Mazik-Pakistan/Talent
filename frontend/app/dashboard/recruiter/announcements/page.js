@@ -168,6 +168,7 @@ export default function RecruiterAnnouncementsPage() {
   return (
     <RecruiterShell
       activeKey="announcements"
+      capability="announcements"
       title="Announcements"
       subtitle="Publish, edit, and remove updates for candidates and employees"
     >

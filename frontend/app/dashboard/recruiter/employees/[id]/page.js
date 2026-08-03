@@ -1158,7 +1158,7 @@ export default function EmployeeProfilePage({ params }) {
 
   if (loading) {
     return (
-      <RecruiterShell activeKey="employees" title="Employee Profile" subtitle="Loading profile details...">
+      <RecruiterShell activeKey="employees" capability="employees" title="Employee Profile" subtitle="Loading profile details...">
         <div className={styles.section}>
           <div className={styles.sectionBody}>
             <p className={styles.emptySub}>Loading...</p>
@@ -1170,7 +1170,7 @@ export default function EmployeeProfilePage({ params }) {
 
   if (error || !employee) {
     return (
-      <RecruiterShell activeKey="employees" title="Employee Profile" subtitle="Profile Error">
+      <RecruiterShell activeKey="employees" capability="employees" title="Employee Profile" subtitle="Profile Error">
         <div className={styles.section}>
           <div className={styles.sectionBody}>
             <div className={styles.formMessage} role="alert">{error || "Employee not found."}</div>
@@ -1216,6 +1216,7 @@ export default function EmployeeProfilePage({ params }) {
   return (
     <RecruiterShell
       activeKey="employees"
+      capability="employees"
       title="Employee Profile"
       subtitle={`Detailed overview for ${employee.full_name}`}
     >

@@ -1,10 +1,12 @@
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 
+from app.core.rbac import CurrentUser
 from app.core.security import RequireOnboardingSelf as RequireCandidate
 from app.core.security import RequireEmployee, RequireRecruiter
+from app.api.super_admin import require_recruiter_capability
 from app.schemas.career import CareerEventCreateRequest, RoleAssignRequest
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
 from app.schemas.employee_exit import EmployeeExitRequest
@@ -43,6 +45,7 @@ IDENTITY_DOC_TYPES = {"cnic"}
 @router.post("/generate-id")
 async def generate_employee_id(
     current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("employees"))],
     request: GenerateEmployeeIdRequest = GenerateEmployeeIdRequest(),
 ):
     """US-024: Preview / allocate a unique Employee ID (EMP-000001)."""
@@ -50,13 +53,18 @@ async def generate_employee_id(
 
 
 @router.post("/create-from-candidate", status_code=201)
-async def create_from_candidate(request: CreateFromCandidateRequest, current_user: RequireRecruiter):
+async def create_from_candidate(
+    request: CreateFromCandidateRequest,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("employees"))],
+):
     return await service.create_from_candidate(current_user, request.candidate_id)
 
 
 @router.get("/historical-candidates")
 async def list_historical_candidates(
     current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("candidates"))],
     q: str | None = None,
     reason: str | None = None,
     page: int = Query(default=1, ge=1),
@@ -68,24 +76,35 @@ async def list_historical_candidates(
 
 
 @router.get("/person-history")
-async def lookup_person_history(current_user: RequireRecruiter, email: str = Query(..., min_length=3)):
+async def lookup_person_history(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("candidates"))],
+    email: str = Query(..., min_length=3),
+):
     """Return all historical candidate cycles + employee tenures for an email (invite AI suggestions)."""
     return await service.lookup_person_history(current_user, email)
 
 
 @router.get("/pending-review")
-async def list_pending_review(current_user: RequireRecruiter):
+async def list_pending_review(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("candidates"))],
+):
     return await service.list_pending_review(current_user)
 
 
 @router.get("/onboarding-in-progress")
-async def list_onboarding_in_progress(current_user: RequireRecruiter):
+async def list_onboarding_in_progress(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("candidates"))],
+):
     return await service.list_onboarding_in_progress(current_user)
 
 
 @router.get("/candidates")
 async def list_candidates(
     current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("candidates"))],
     q: str | None = None,
     status: str | None = None,
     profile_status: str | None = None,
@@ -102,13 +121,17 @@ async def list_candidates(
 
 
 @router.get("/ready-for-conversion")
-async def list_ready_for_conversion(current_user: RequireRecruiter):
+async def list_ready_for_conversion(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("employees"))],
+):
     return await service.list_ready_for_conversion(current_user)
 
 
 @router.get("/export.csv")
 async def export_employees_csv(
     current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("employees"))],
     q: str | None = None,
     employee_id: str | None = None,
     department: str | None = None,

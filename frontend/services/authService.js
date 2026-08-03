@@ -1202,6 +1202,7 @@ export async function remindCourseAssignments(payload, accessToken) {
 
 export async function listRecruiters(accessToken, params = {}) {
   const query = new URLSearchParams();
+  if (params.q) query.set("q", params.q);
   if (params.status) query.set("status", params.status);
   if (params.page) query.set("page", String(params.page));
   if (params.page_size) query.set("page_size", String(params.page_size));
@@ -1219,8 +1220,15 @@ export async function inviteRecruiter(payload, accessToken) {
   return data;
 }
 
-export async function updateRecruiterCapabilities(invitationId, payload, accessToken) {
-  const { data } = await apiClient.put(`/api/super-admin/recruiters/${invitationId}/capabilities`, payload, {
+export async function updateRecruiterCapabilities(recruiterId, payload, accessToken) {
+  const { data } = await apiClient.put(`/api/super-admin/recruiters/${recruiterId}/capabilities`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function updateRecruiter(recruiterId, payload, accessToken) {
+  const { data } = await apiClient.put(`/api/super-admin/recruiters/${recruiterId}`, payload, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return data;

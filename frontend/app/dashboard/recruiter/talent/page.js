@@ -45,7 +45,7 @@ export default function RecruiterTalentPage() {
   }, [tab]);
 
   return (
-    <RecruiterShell activeKey="talent" title="Talent Management" subtitle="Organization-wide talent metrics, search, and internal mobility">
+    <RecruiterShell activeKey="talent" capability="talent" title="Talent Management" subtitle="Organization-wide talent metrics, search, and internal mobility">
       <div className={styles.tabBar}>
         {TABS.map((t) => (
           <button

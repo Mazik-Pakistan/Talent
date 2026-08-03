@@ -47,6 +47,7 @@ export default function RecruiterAIAssistantPage() {
   return (
     <RecruiterShell
       activeKey="assistant"
+      capability="assistant"
       title="AI Assistant"
       subtitle="Hiring Agent · bulk invite, approvals, reminders, Day-1"
     >

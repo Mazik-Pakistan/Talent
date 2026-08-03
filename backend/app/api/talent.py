@@ -1,6 +1,10 @@
-from fastapi import APIRouter, Query
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, Query
+
+from app.core.rbac import CurrentUser
 from app.core.security import RequireAny, RequireEmployee, RequireRecruiter
+from app.api.super_admin import require_recruiter_capability
 from app.schemas.talent import (
     CompetencyEvaluationRequest,
     DevelopmentPlanUpdateRequest,
@@ -76,13 +80,20 @@ async def browse_opportunities(
 
 
 @router.post("/opportunities", status_code=201)
-async def post_opportunity(request: InternalOpportunityCreateRequest, current_user: RequireRecruiter):
+async def post_opportunity(
+    request: InternalOpportunityCreateRequest,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("talent"))],
+):
     return await talent_service.create_opportunity(current_user, request)
 
 
 @router.put("/opportunities/{opportunity_id}")
 async def edit_opportunity(
-    opportunity_id: str, request: InternalOpportunityUpdateRequest, current_user: RequireRecruiter
+    opportunity_id: str,
+    request: InternalOpportunityUpdateRequest,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("talent"))],
 ):
     return await talent_service.update_opportunity(current_user, opportunity_id, request)
 
@@ -93,7 +104,11 @@ async def apply_opportunity(opportunity_id: str, current_user: RequireEmployee):
 
 
 @router.get("/opportunities/{opportunity_id}/applicants")
-async def opportunity_applicants(opportunity_id: str, current_user: RequireRecruiter):
+async def opportunity_applicants(
+    opportunity_id: str,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("talent"))],
+):
     return await talent_service.list_opportunity_applicants(current_user, opportunity_id)
 
 
@@ -101,7 +116,12 @@ async def opportunity_applicants(opportunity_id: str, current_user: RequireRecru
 # US-099: Competency evaluation
 # ---------------------------------------------------------------------- #
 @router.post("/competency/{employee_id}", status_code=201)
-async def submit_competency(employee_id: str, request: CompetencyEvaluationRequest, current_user: RequireRecruiter):
+async def submit_competency(
+    employee_id: str,
+    request: CompetencyEvaluationRequest,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("talent"))],
+):
     return await talent_service.submit_competency_evaluation(current_user, employee_id, request)
 
 
@@ -114,7 +134,11 @@ async def competency_history(employee_id: str, current_user: RequireAny):
 # US-100: Talent search
 # ---------------------------------------------------------------------- #
 @router.post("/search")
-async def search_talent(request: TalentSearchRequest, current_user: RequireRecruiter):
+async def search_talent(
+    request: TalentSearchRequest,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("talent"))],
+):
     return await talent_service.search_talent(current_user, request)
 
 
@@ -122,7 +146,11 @@ async def search_talent(request: TalentSearchRequest, current_user: RequireRecru
 # US-102: Recruiter talent metrics dashboard
 # ---------------------------------------------------------------------- #
 @router.get("/metrics")
-async def talent_metrics(current_user: RequireRecruiter, department: str | None = None):
+async def talent_metrics(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("talent"))],
+    department: str | None = None,
+):
     return await talent_service.talent_metrics(current_user, department=department)
 
 
@@ -136,7 +164,10 @@ async def development_plan(employee_id: str, current_user: RequireAny):
 
 @router.put("/development-plan/{employee_id}")
 async def edit_development_plan(
-    employee_id: str, request: DevelopmentPlanUpdateRequest, current_user: RequireRecruiter
+    employee_id: str,
+    request: DevelopmentPlanUpdateRequest,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_recruiter_capability("talent"))],
 ):
     return await talent_service.update_development_plan(current_user, employee_id, request)
 
