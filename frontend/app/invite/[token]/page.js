@@ -147,7 +147,12 @@ export default function InviteRegisterPage() {
           <div className={styles.asideContent}>
             <div>
               <span className={styles.asideEyebrow}>✦ {isRecruiterInvite ? "Recruiter invitation" : "Candidate onboarding"}</span>
-              <h2 className={styles.asideHeading}>{isRecruiterInvite ? "Your recruiter account is ready. Let&apos;s get you set up." : "Your offer is ready. Let&apos;s get you <em>onboarded.</em>"}</h2>
+              <h2 className={styles.asideHeading}>
+                {isRecruiterInvite ? 
+                  "Your recruiter account is ready. Let's get you set up." : 
+                  <>Your offer is ready. Let's get you <em>onboarded.</em></>
+                }
+              </h2>
               <p className={styles.asideText}>{isRecruiterInvite ? "Register with this invitation, verify your email, then access your recruiter workspace." : "Register with this invitation, verify your email, then complete your employee onboarding profile."}</p>
             </div>
           </div>
