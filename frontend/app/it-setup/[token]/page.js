@@ -729,7 +729,7 @@ export default function ItSetupPublicPage() {
           <strong>What’s next for IT</strong>
           {done.already
             ? "Need to correct the company email or assets? You can edit the submission while the recruiter hasn’t activated the employee yet."
-            : "Nothing else on this link. The recruiter can approve &amp; activate the employee when ready."}
+            : "Nothing else on this link. The recruiter can approve and activate the employee when ready."}
         </div>
         {done.already && (
           <button type="button" className="it-btn" onClick={startEditing}>
@@ -887,7 +887,7 @@ export default function ItSetupPublicPage() {
         <div className="it-section">
           <div className="it-section-head">
             <div>
-              <h2>3. Hardware &amp; devices</h2>
+              <h2>3. Hardware devices</h2>
               <p>Laptops, monitors, phones, badges…</p>
             </div>
             <button type="button" className="it-add" onClick={() => setAssets((c) => [...c, emptyAsset()])}>
