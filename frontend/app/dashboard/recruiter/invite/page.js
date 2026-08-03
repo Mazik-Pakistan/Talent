@@ -26,7 +26,6 @@ const PRESET_BENEFITS = [
   "Hybrid / remote flexibility",
   "Company laptop",
   "Learning & training budget",
-  "Fuel / conveyance allowance",
   "Performance bonus eligibility",
 ];
 
