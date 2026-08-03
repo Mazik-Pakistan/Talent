@@ -12,9 +12,12 @@ from app.schemas.learning import (
     CertificateVerifyRequest,
     CourseAssignRequest,
     EnrollmentProgressRequest,
+    ManagedLearningCourseCreateRequest,
+    ManagedLearningCourseUpdateRequest,
     SkillUpsertRequest,
 )
 from app.services.learning_service import learning_service
+from app.services.managed_learning_service import managed_learning_service
 
 router = APIRouter(prefix="/api/learning", tags=["Learning"])
 
@@ -381,6 +384,79 @@ async def employee_learning_profile(
 @router.get("/analytics")
 async def analytics(current_user: RequireRecruiterWithLearning, department: str | None = None):
     return await learning_service.get_analytics(current_user, department=department)
+
+
+# ---------------------------------------------------------------------- #
+# Managed roadmap courses (LinkedIn Learning module)
+# ---------------------------------------------------------------------- #
+@router.get("/managed/courses")
+async def list_managed_courses(
+    current_user: RequireRecruiterWithLearning,
+    q: str | None = None,
+    provider: str | None = None,
+    designation: str | None = None,
+    learning_month: str | None = None,
+    category: str | None = None,
+    competency: str | None = None,
+    archived: bool | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+):
+    return await managed_learning_service.list_courses(
+        q=q,
+        provider=provider,
+        designation=designation,
+        learning_month=learning_month,
+        category=category,
+        competency=competency,
+        archived=archived,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/managed/facets")
+async def managed_facets(current_user: RequireRecruiterWithLearning):
+    return await managed_learning_service.list_facets()
+
+
+@router.post("/managed/courses", status_code=201)
+async def create_managed_course(request: ManagedLearningCourseCreateRequest, current_user: RequireRecruiterWithLearning):
+    return await managed_learning_service.create_course(current_user, request)
+
+
+@router.put("/managed/courses/{course_id}")
+async def update_managed_course(
+    course_id: str,
+    request: ManagedLearningCourseUpdateRequest,
+    current_user: RequireRecruiterWithLearning,
+):
+    return await managed_learning_service.update_course(current_user, course_id, request)
+
+
+@router.post("/managed/courses/{course_id}/archive")
+async def archive_managed_course(course_id: str, current_user: RequireRecruiterWithLearning):
+    return await managed_learning_service.archive_course(current_user, course_id, archived=True)
+
+
+@router.post("/managed/courses/{course_id}/restore")
+async def restore_managed_course(course_id: str, current_user: RequireRecruiterWithLearning):
+    return await managed_learning_service.archive_course(current_user, course_id, archived=False)
+
+
+@router.delete("/managed/courses/{course_id}")
+async def delete_managed_course(course_id: str, current_user: RequireRecruiterWithLearning):
+    return await managed_learning_service.delete_course(current_user, course_id)
+
+
+@router.post("/managed/import/preview")
+async def preview_managed_import(current_user: RequireRecruiterWithLearning, file: UploadFile = File(...)):
+    return await managed_learning_service.preview_import(current_user, file)
+
+
+@router.post("/managed/import/commit")
+async def commit_managed_import(current_user: RequireRecruiterWithLearning, file: UploadFile = File(...)):
+    return await managed_learning_service.import_file(current_user, file)
 
 
 @router.get("/org-taxonomy")

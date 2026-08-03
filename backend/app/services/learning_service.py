@@ -37,6 +37,7 @@ from app.services import (
     learning_ai_service,
     learning_cache_service,
     learning_path_service,
+    managed_learning_service,
     resume_analysis_service,
     role_matching_service,
     storage_service,
@@ -1379,6 +1380,15 @@ class LearningService:
     # ------------------------------------------------------------------ #
     async def get_recommendations(self, current_user: CurrentUser, *, refresh: bool = False) -> dict:
         employee = await self._get_employee(current_user)
+        managed_recommendations = await managed_learning_service.recommend_for_employee(employee, limit=8)
+        if managed_recommendations:
+            return {
+                "recommendations": managed_recommendations,
+                "generated_at": _now().isoformat(),
+                "stale": False,
+                "source": "managed_learning",
+            }
+
         cached = await database.learning_ai_recommendations.find_one({"user_id": current_user.id})
         if cached and not refresh:
             age = _now() - cached["generated_at"]
@@ -2289,8 +2299,19 @@ class LearningService:
             for dept, stats in sorted(dept_stats.items())
         ]
 
+        managed = await managed_learning_service.analytics()
+
         return {
-            "completion_rate": completion_rate,
+            "total_courses": managed.get("total_courses", 0),
+            "archived_courses": managed.get("archived_courses", 0),
+            "assigned_courses": managed.get("assigned_courses", total_assigned),
+            "completed_courses": managed.get("completed_courses", completed_assigned),
+            "pending_certificates": managed.get(
+                "pending_certificates", len([c for c in certificates if c.get("verification_status") == "pending"])
+            ),
+            "learning_hours": managed.get("learning_hours", total_learning_hours),
+            "completion_rate": managed.get("completion_rate", completion_rate),
+            "assignment_completion_rate": completion_rate,
             "certification_rate": certification_rate,
             "total_learning_hours": total_learning_hours,
             "total_assignments": total_assigned,
@@ -2299,10 +2320,13 @@ class LearningService:
                 round((mandatory_completed / mandatory_assigned) * 100, 1) if mandatory_assigned else 0.0
             ),
             "total_certificates": len(certificates),
-            "pending_certificates": len([c for c in certificates if c.get("verification_status") == "pending"]),
             "popular_courses": [{"title": t, "enrollments": n} for t, n in popular_courses],
             "department_comparison": department_comparison,
             "department_filter": department,
+            "most_popular_courses": managed.get("most_popular_courses", []),
+            "learning_trend": managed.get("learning_trend", []),
+            "department_progress": managed.get("department_progress", []),
+            "designation_progress": managed.get("designation_progress", []),
         }
 
 

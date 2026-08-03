@@ -297,7 +297,7 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
             <div className={dashStyles.sectionHeadLeft}>
               <span className={`${dashStyles.bar} ${dashStyles.orange}`} />
               <div>
-                <div className={dashStyles.sectionTitle}>Assigned by recruiter</div>
+                <div className={dashStyles.sectionTitle}>Assigned Courses</div>
                 <p className={dashStyles.sectionDesc}>Courses waiting for you to start</p>
               </div>
             </div>
@@ -336,6 +336,11 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
 // ------------------------------------------------------------------------ //
 const CATALOG_SOURCES = [
   {
+    key: "managed_learning",
+    label: "LinkedIn Learning",
+    hint: "Managed roadmap courses imported for your designation.",
+  },
+  {
     key: "microsoft_learn",
     label: "Microsoft Courses",
     hint: "Technical learning paths, modules, and certifications from Microsoft Learn.",
@@ -345,22 +350,21 @@ const CATALOG_SOURCES = [
     label: "Coursera Courses",
     hint: "Industry soft-skills courses from Coursera (English) â€” communication, leadership, and more.",
   },
-  {
-    key: "recruiter_kb",
-    label: "Recruiter Courses",
-    hint: "Courses and certifications added by your recruiter for your organization.",
-  },
 ];
 
 function CatalogTab({ onEnroll }) {
-  const [source, setSource] = useState("microsoft_learn");
+  const [source, setSource] = useState("managed_learning");
   const [q, setQ] = useState("");
-  const [facets, setFacets] = useState({ roles: [], levels: [], products: [] });
+  const [facets, setFacets] = useState({ roles: [], levels: [], products: [], providers: [], designations: [], months: [], categories: [], competencies: [] });
   const [softSkillCategories, setSoftSkillCategories] = useState([]);
   const [role, setRole] = useState("");
   const [level, setLevel] = useState("");
   const [type, setType] = useState("");
+  const [provider, setProvider] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [learningMonth, setLearningMonth] = useState("");
   const [category, setCategory] = useState("");
+  const [competency, setCompetency] = useState("");
   const [bookmarkedOnly, setBookmarkedOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [result, setResult] = useState({ courses: [], total: 0, pages: 1 });
@@ -374,7 +378,11 @@ function CatalogTab({ onEnroll }) {
     setRole("");
     setLevel("");
     setType("");
+    setProvider("");
+    setDesignation("");
+    setLearningMonth("");
     setCategory("");
+    setCompetency("");
     setQ("");
     setPage(1);
   }
@@ -398,7 +406,11 @@ function CatalogTab({ onEnroll }) {
       role: source === "microsoft_learn" ? role || undefined : undefined,
       level: source === "microsoft_learn" ? level || undefined : undefined,
       type: source === "microsoft_learn" ? type || undefined : undefined,
-      category: source === "coursera" ? category || undefined : undefined,
+      provider: source === "managed_learning" ? provider || undefined : undefined,
+      designation: source === "managed_learning" ? designation || undefined : undefined,
+      learning_month: source === "managed_learning" ? learningMonth || undefined : undefined,
+      category: source === "coursera" || source === "managed_learning" ? category || undefined : undefined,
+      competency: source === "managed_learning" ? competency || undefined : undefined,
       source,
       bookmarked_only: bookmarkedOnly || undefined,
       page,
@@ -410,7 +422,7 @@ function CatalogTab({ onEnroll }) {
       })
       .catch((err) => setError(getApiErrorMessage(err, "Could not load the course catalog.")))
       .finally(() => setLoading(false));
-  }, [q, role, level, type, category, source, bookmarkedOnly, page]);
+  }, [q, role, level, type, provider, designation, learningMonth, category, competency, source, bookmarkedOnly, page]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -493,8 +505,8 @@ function CatalogTab({ onEnroll }) {
             placeholder={
               isSoftSkills
                 ? "Search soft skills, e.g. negotiation, leadershipâ€¦"
-                : source === "recruiter_kb"
-                  ? "Search recruiter / company coursesâ€¦"
+                : source === "managed_learning"
+                  ? "Search roadmap courses by title, month, or competency…"
                   : "Search by title, skill, productâ€¦"
             }
             value={q}
@@ -570,15 +582,15 @@ function CatalogTab({ onEnroll }) {
                     className={`${styles.sourceBadge} ${
                       course.source === "coursera"
                         ? styles.sourceBadgeCoursera
-                        : course.source === "recruiter_kb"
+                        : course.source === "managed_learning"
                           ? styles.sourceBadgeRecruiter
                           : ""
                     }`}
                   >
                     {course.source === "coursera"
                       ? "Coursera"
-                      : course.source === "recruiter_kb"
-                        ? "Recruiter"
+                      : course.source === "managed_learning"
+                        ? "LinkedIn Learning"
                         : "Microsoft"}
                   </span>
                   <span className={`${styles.courseType} ${course.type === "certification" ? styles.certification : ""}`}>
@@ -731,7 +743,7 @@ function MyCoursesTab({ onChange }) {
               <div className={styles.courseListInfo}>
                 <div className={styles.courseListTitle}>{e.course_title}</div>
                 <div className={styles.courseListMeta}>
-                  {e.assigned || isAssignedOnly ? "Assigned by recruiter Â· " : ""}
+                  {e.assigned || isAssignedOnly ? "Assigned Courses · " : ""}
                   {e.due_date ? `Due ${String(e.due_date).slice(0, 10)} Â· ` : ""}
                   {isAssignedOnly
                     ? "Not started yet"

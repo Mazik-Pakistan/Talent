@@ -29,6 +29,16 @@ export async function browseCatalog(accessToken, params = {}) {
   return data;
 }
 
+export async function listManagedCourses(accessToken, params = {}) {
+  const { data } = await client.get("/api/learning/managed/courses", { ...auth(accessToken), params });
+  return data;
+}
+
+export async function getManagedFacets(accessToken) {
+  const { data } = await client.get("/api/learning/managed/facets", auth(accessToken));
+  return data;
+}
+
 export async function getCatalogFacets(accessToken, source = "microsoft_learn") {
   const { data } = await client.get("/api/learning/catalog/facets", { ...auth(accessToken), params: { source } });
   return data;
@@ -290,6 +300,55 @@ export async function getLearningAnalytics(accessToken, department, { force = fa
     },
     { force }
   );
+  return data;
+}
+
+export async function createManagedCourse(accessToken, payload) {
+  const { data } = await client.post("/api/learning/managed/courses", payload, auth(accessToken));
+  invalidateLearningCaches();
+  return data;
+}
+
+export async function updateManagedCourse(accessToken, courseId, payload) {
+  const { data } = await client.put(`/api/learning/managed/courses/${courseId}`, payload, auth(accessToken));
+  invalidateLearningCaches();
+  return data;
+}
+
+export async function archiveManagedCourse(accessToken, courseId) {
+  const { data } = await client.post(`/api/learning/managed/courses/${courseId}/archive`, {}, auth(accessToken));
+  invalidateLearningCaches();
+  return data;
+}
+
+export async function restoreManagedCourse(accessToken, courseId) {
+  const { data } = await client.post(`/api/learning/managed/courses/${courseId}/restore`, {}, auth(accessToken));
+  invalidateLearningCaches();
+  return data;
+}
+
+export async function deleteManagedCourse(accessToken, courseId) {
+  const { data } = await client.delete(`/api/learning/managed/courses/${courseId}`, auth(accessToken));
+  invalidateLearningCaches();
+  return data;
+}
+
+async function postManagedImport(url, file, accessToken) {
+  const formData = new FormData();
+  formData.append("file", file, file?.name || "learning-roadmap.xlsx");
+  const { data } = await client.post(url, formData, {
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function previewManagedImport(file, accessToken) {
+  return postManagedImport("/api/learning/managed/import/preview", file, accessToken);
+}
+
+export async function commitManagedImport(file, accessToken) {
+  const data = await postManagedImport("/api/learning/managed/import/commit", file, accessToken);
+  invalidateLearningCaches();
   return data;
 }
 

@@ -22,22 +22,32 @@ import {
 import { LEARNING_TAB_HELP } from "@/lib/ai/recruiterFieldHelp";
 import {
   assignCourses,
+  archiveManagedCourse,
+  commitManagedImport,
+  createManagedCourse,
   browseCatalog,
   createKbCertification,
   createKbRole,
   deleteKbCertification,
   deleteKbRole,
+  deleteManagedCourse,
   getCatalogFacets,
+  getManagedFacets,
   getLearningAnalytics,
+  listManagedCourses,
   listAssignments,
   listKbCertifications,
   listKbRoles,
   listPendingCertificates,
+  previewManagedImport,
+  restoreManagedCourse,
   verifyCertificate,
+  updateManagedCourse,
 } from "@/services/learningService";
 
 const TABS = [
   { key: "catalog", label: "Course Catalog" },
+  { key: "managed", label: "LinkedIn Learning" },
   { key: "knowledge", label: "Knowledge Base" },
   { key: "assign", label: "Assign Courses" },
   { key: "assignments", label: "Track Progress" },
@@ -46,6 +56,11 @@ const TABS = [
 ];
 
 const CATALOG_SOURCES = [
+  {
+    key: "managed_learning",
+    label: "LinkedIn Learning",
+    hint: "Managed roadmap courses imported from LinkedIn Learning and other configured providers.",
+  },
   {
     key: "microsoft_learn",
     label: "Microsoft Courses",
@@ -56,22 +71,17 @@ const CATALOG_SOURCES = [
     label: "Coursera Courses",
     hint: "Industry soft-skills courses from Coursera (English only) — communication, leadership, and more.",
   },
-  {
-    key: "recruiter_kb",
-    label: "Recruiter Courses",
-    hint: "Courses and certifications you added in the Knowledge Base for your organization.",
-  },
 ];
 
 function sourceLabel(source) {
+  if (source === "managed_learning") return "LinkedIn Learning";
   if (source === "coursera") return "Coursera";
-  if (source === "recruiter_kb") return "Recruiter";
   return "Microsoft";
 }
 
 function sourceBadgeClass(source) {
+  if (source === "managed_learning") return styles.sourceBadgeRecruiter;
   if (source === "coursera") return styles.sourceBadgeCoursera;
-  if (source === "recruiter_kb") return styles.sourceBadgeRecruiter;
   return "";
 }
 
@@ -129,6 +139,7 @@ function LearningPageContent() {
       </div>
 
       {tab === "catalog" && <CatalogTab onAssignCourse={handleAssignFromCatalog} />}
+      {tab === "managed" && <ManagedLearningTab />}
       {tab === "knowledge" && <KnowledgeBaseTab />}
       {tab === "assign" && (
         <AssignTab
@@ -155,12 +166,18 @@ export default function RecruiterLearningPage() {
 }
 
 function CatalogTab({ onAssignCourse }) {
-  const [source, setSource] = useState("microsoft_learn");
+  const [source, setSource] = useState("managed_learning");
   const [q, setQ] = useState("");
-  const [facets, setFacets] = useState({ roles: [], levels: [], products: [] });
+  const [facets, setFacets] = useState({ roles: [], levels: [], products: [], providers: [], designations: [], months: [], categories: [], competencies: [] });
   const [role, setRole] = useState("");
   const [level, setLevel] = useState("");
   const [type, setType] = useState("");
+  const [provider, setProvider] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [learningMonth, setLearningMonth] = useState("");
+  const [category, setCategory] = useState("");
+  const [competency, setCompetency] = useState("");
+  const [archivedOnly, setArchivedOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [result, setResult] = useState({ courses: [], total: 0, pages: 1 });
   const [loading, setLoading] = useState(true);
@@ -171,14 +188,21 @@ function CatalogTab({ onAssignCourse }) {
     setRole("");
     setLevel("");
     setType("");
+    setProvider("");
+    setDesignation("");
+    setLearningMonth("");
+    setCategory("");
+    setCompetency("");
+    setArchivedOnly(false);
     setQ("");
     setPage(1);
   }
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
-    if (!token || source === "recruiter_kb") return;
-    getCatalogFacets(token, source).then(setFacets).catch(() => {});
+    if (!token) return;
+    const loader = source === "managed_learning" ? getManagedFacets : getCatalogFacets;
+    loader(token, source).then(setFacets).catch(() => {});
   }, [source]);
 
   const load = useCallback(() => {
@@ -190,6 +214,12 @@ function CatalogTab({ onAssignCourse }) {
       role: source === "microsoft_learn" ? role || undefined : undefined,
       level: source === "microsoft_learn" ? level || undefined : undefined,
       type: source === "microsoft_learn" ? type || undefined : undefined,
+      provider: source === "managed_learning" ? provider || undefined : undefined,
+      designation: source === "managed_learning" ? designation || undefined : undefined,
+      learning_month: source === "managed_learning" ? learningMonth || undefined : undefined,
+      category: source === "managed_learning" ? category || undefined : source === "coursera" ? category || undefined : undefined,
+      competency: source === "managed_learning" ? competency || undefined : undefined,
+      archived: source === "managed_learning" ? (archivedOnly ? true : undefined) : undefined,
       source,
       page,
       page_size: 12,
@@ -200,7 +230,7 @@ function CatalogTab({ onAssignCourse }) {
         toast.error(getApiErrorMessage(err, "Could not load catalog."));
       })
       .finally(() => setLoading(false));
-  }, [q, role, level, type, page, source]);
+  }, [q, role, level, type, provider, designation, learningMonth, category, competency, archivedOnly, page, source]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -243,15 +273,43 @@ function CatalogTab({ onAssignCourse }) {
           <input
             className={styles.searchInput}
             placeholder={
-              source === "coursera"
+              source === "managed_learning"
+                ? "Search roadmap courses, designations, competency, or provider…"
+                : source === "coursera"
                 ? "Search soft skills, e.g. negotiation, leadership…"
-                : source === "recruiter_kb"
-                  ? "Search company / recruiter courses…"
-                  : "Search Microsoft courses by title or skill…"
+                : "Search Microsoft courses by title or skill…"
             }
             value={q}
             onChange={(e) => { setPage(1); setQ(e.target.value); }}
           />
+          {source === "managed_learning" && (
+            <>
+              <select className={styles.filterSelect} value={provider} onChange={(e) => { setPage(1); setProvider(e.target.value); }}>
+                <option value="">All providers</option>
+                {(facets.providers || []).map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <select className={styles.filterSelect} value={designation} onChange={(e) => { setPage(1); setDesignation(e.target.value); }}>
+                <option value="">All designations</option>
+                {(facets.designations || []).map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <select className={styles.filterSelect} value={learningMonth} onChange={(e) => { setPage(1); setLearningMonth(e.target.value); }}>
+                <option value="">All months</option>
+                {(facets.months || []).map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <select className={styles.filterSelect} value={category} onChange={(e) => { setPage(1); setCategory(e.target.value); }}>
+                <option value="">All categories</option>
+                {(facets.categories || []).map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <select className={styles.filterSelect} value={competency} onChange={(e) => { setPage(1); setCompetency(e.target.value); }}>
+                <option value="">All competencies</option>
+                {(facets.competencies || []).map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <label className={styles.inlineNote} style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: 0 }}>
+                <input type="checkbox" checked={archivedOnly} onChange={(e) => { setPage(1); setArchivedOnly(e.target.checked); }} />
+                Show archived
+              </label>
+            </>
+          )}
           {source === "microsoft_learn" && (
             <>
               <select className={styles.filterSelect} value={type} onChange={(e) => { setPage(1); setType(e.target.value); }}>
@@ -285,9 +343,15 @@ function CatalogTab({ onAssignCourse }) {
               </div>
               <div className={styles.courseTitle}>{c.title}</div>
               <div className={styles.courseMeta}>
-                {c.type || "course"} · {c.duration_minutes || "—"} min · {(c.levels || [])[0] || c.category || "—"}
+                {source === "managed_learning"
+                  ? `${c.provider || "LinkedIn Learning"} · ${c.duration_minutes || "—"} min`
+                  : `${c.type || "course"} · ${c.duration_minutes || "—"} min · ${(c.levels || [])[0] || c.category || "—"}`}
               </div>
-              <p className={styles.courseSummary}>{(c.summary || "").slice(0, 140)}</p>
+              <p className={styles.courseSummary}>
+                {source === "managed_learning"
+                  ? [c.designation, c.learning_month, c.category, c.competency].filter(Boolean).join(" · ") || (c.summary || "").slice(0, 140)
+                  : (c.summary || "").slice(0, 140)}
+              </p>
               <div className={styles.courseActions}>
                 {c.url && (
                   <a href={c.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
@@ -461,7 +525,7 @@ function KnowledgeBaseTab() {
             <span className={`${shellStyles.bar} ${shellStyles.green}`} />
             <div>
               <div className={shellStyles.sectionTitle}>Certifications &amp; courses</div>
-              <p className={shellStyles.sectionDesc}>Shown in employee catalog as Recruiter Courses</p>
+              <p className={shellStyles.sectionDesc}>Shown in employee catalog as LinkedIn Learning</p>
             </div>
           </div>
         </div>
@@ -737,8 +801,8 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               placeholder={
                 source === "coursera"
                   ? "Search soft skills, e.g. negotiation, leadership…"
-                  : source === "recruiter_kb"
-                    ? "Search recruiter / company courses…"
+                  : source === "managed_learning"
+                    ? "Search roadmap courses…"
                     : "Search Microsoft courses…"
               }
               value={q}
@@ -1280,5 +1344,380 @@ function AnalyticsTab() {
         </div>
       </div>
     </>
+  );
+}
+
+function ManagedLearningTab() {
+  const emptyForm = {
+    id: "",
+    provider: "LinkedIn Learning",
+    designation: "",
+    learning_month: "",
+    category: "",
+    competency: "",
+    title: "",
+    url: "",
+    duration_minutes: "",
+    description: "",
+    archived: false,
+  };
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [courses, setCourses] = useState([]);
+  const [hierarchy, setHierarchy] = useState([]);
+  const [facets, setFacets] = useState({ providers: [], designations: [], months: [], categories: [], competencies: [] });
+  const [q, setQ] = useState("");
+  const [provider, setProvider] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [learningMonth, setLearningMonth] = useState("");
+  const [category, setCategory] = useState("");
+  const [competency, setCompetency] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [preview, setPreview] = useState(null);
+  const [previewFile, setPreviewFile] = useState(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const load = useCallback(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    setLoading(true);
+    Promise.all([
+      listManagedCourses(token, {
+        q: q || undefined,
+        provider: provider || undefined,
+        designation: designation || undefined,
+        learning_month: learningMonth || undefined,
+        category: category || undefined,
+        competency: competency || undefined,
+        archived: showArchived ? true : undefined,
+        page: 1,
+        page_size: 200,
+      }),
+      getManagedFacets(token),
+    ])
+      .then(([courseData, facetData]) => {
+        setCourses(courseData.courses || []);
+        setHierarchy(courseData.hierarchy || []);
+        setFacets(facetData || { providers: [], designations: [], months: [], categories: [], competencies: [] });
+      })
+      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load LinkedIn Learning courses.")))
+      .finally(() => setLoading(false));
+  }, [q, provider, designation, learningMonth, category, competency, showArchived]);
+
+  useEffect(() => {
+    const timer = setTimeout(load, 250);
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  function resetForm() {
+    setForm(emptyForm);
+  }
+
+  function beginEdit(course) {
+    setForm({
+      id: course.uid?.split(":")[1] || "",
+      provider: course.provider || "LinkedIn Learning",
+      designation: course.designation || "",
+      learning_month: course.learning_month || "",
+      category: course.category || "",
+      competency: course.competency || "",
+      title: course.title || "",
+      url: course.url || "",
+      duration_minutes: course.duration_minutes || "",
+      description: course.summary || "",
+      archived: Boolean(course.archived),
+    });
+    toast.info(`Editing “${course.title}”.`);
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    setSaving(true);
+    const payload = {
+      provider: form.provider.trim(),
+      designation: form.designation.trim(),
+      learning_month: form.learning_month.trim(),
+      category: form.category.trim(),
+      competency: form.competency.trim(),
+      title: form.title.trim(),
+      url: form.url.trim() || undefined,
+      description: form.description.trim() || undefined,
+      duration_minutes: form.duration_minutes ? Number(form.duration_minutes) : null,
+      archived: Boolean(form.archived),
+    };
+    try {
+      if (form.id) {
+        await updateManagedCourse(token, form.id, payload);
+        toast.success("Course updated.");
+      } else {
+        await createManagedCourse(token, payload);
+        toast.success("Course added to LinkedIn Learning.");
+      }
+      resetForm();
+      load();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not save course."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleArchiveToggle(course) {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    try {
+      if (course.archived) {
+        await restoreManagedCourse(token, course.uid.split(":")[1]);
+        toast.success("Course restored.");
+      } else {
+        await archiveManagedCourse(token, course.uid.split(":")[1]);
+        toast.success("Course archived.");
+      }
+      load();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not update course status."));
+    }
+  }
+
+  async function handleDelete(course) {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    if (!window.confirm(`Delete “${course.title}”? This cannot be undone.`)) return;
+    try {
+      await deleteManagedCourse(token, course.uid.split(":")[1]);
+      toast.success("Course deleted.");
+      load();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not delete course."));
+    }
+  }
+
+  async function handlePreviewUpload(file) {
+    const token = localStorage.getItem("access_token");
+    if (!token || !file) return;
+    setPreviewBusy(true);
+    setPreview(null);
+    setPreviewFile(file);
+    try {
+      const data = await previewManagedImport(file, token);
+      setPreview(data);
+      toast.success(`Preview ready: ${data.total_rows || 0} rows parsed.`);
+    } catch (err) {
+      setPreview(null);
+      toast.error(getApiErrorMessage(err, "Could not preview roadmap import."));
+    } finally {
+      setPreviewBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleCommitImport() {
+    const token = localStorage.getItem("access_token");
+    if (!token || !previewFile) return;
+    setSaving(true);
+    try {
+      const data = await commitManagedImport(previewFile, token);
+      toast.success(data.message || "Roadmap imported.");
+      setPreview(null);
+      setPreviewFile(null);
+      load();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not import roadmap."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className={shellStyles.section}>
+      <div className={shellStyles.sectionHead}>
+        <div className={shellStyles.sectionHeadLeft}>
+          <span className={`${shellStyles.bar} ${shellStyles.green}`} />
+          <div>
+            <div className={shellStyles.sectionTitle}>LinkedIn Learning roadmap</div>
+            <p className={shellStyles.sectionDesc}>Import, edit, archive, and delete managed roadmap courses by designation and month.</p>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className={styles.modeBtn} onClick={() => load(true)}>Refresh</button>
+          <button type="button" className={styles.modeBtn} onClick={resetForm}>New course</button>
+        </div>
+      </div>
+
+      <div className={shellStyles.sectionBody}>
+        <div className={styles.filterBar} style={{ flexWrap: "wrap" }}>
+          <input className={styles.searchInput} placeholder="Search roadmap courses…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <select className={styles.filterSelect} value={provider} onChange={(e) => setProvider(e.target.value)}>
+            <option value="">All providers</option>
+            {(facets.providers || []).map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select className={styles.filterSelect} value={designation} onChange={(e) => setDesignation(e.target.value)}>
+            <option value="">All designations</option>
+            {(facets.designations || []).map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select className={styles.filterSelect} value={learningMonth} onChange={(e) => setLearningMonth(e.target.value)}>
+            <option value="">All months</option>
+            {(facets.months || []).map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select className={styles.filterSelect} value={category} onChange={(e) => setCategory(e.target.value)}>
+            <option value="">All categories</option>
+            {(facets.categories || []).map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select className={styles.filterSelect} value={competency} onChange={(e) => setCompetency(e.target.value)}>
+            <option value="">All competencies</option>
+            {(facets.competencies || []).map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <label className={styles.inlineNote} style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: 0 }}>
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+            Show archived
+          </label>
+        </div>
+
+        <div className={shellStyles.cols2}>
+          <div className={shellStyles.section} style={{ margin: 0 }}>
+            <div className={shellStyles.sectionHead}>
+              <div className={shellStyles.sectionHeadLeft}>
+                <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
+                <div>
+                  <div className={shellStyles.sectionTitle}>{form.id ? "Edit course" : "Add course"}</div>
+                  <p className={shellStyles.sectionDesc}>Manual course management stays configurable for LinkedIn Learning and other providers.</p>
+                </div>
+              </div>
+            </div>
+            <div className={shellStyles.sectionBody}>
+              <form className={styles.filterBar} onSubmit={handleSubmit} style={{ flexWrap: "wrap" }}>
+                <input className={styles.searchInput} placeholder="Provider" value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))} />
+                <input className={styles.searchInput} placeholder="Designation" value={form.designation} onChange={(e) => setForm((current) => ({ ...current, designation: e.target.value }))} />
+                <input className={styles.searchInput} placeholder="Learning month" value={form.learning_month} onChange={(e) => setForm((current) => ({ ...current, learning_month: e.target.value }))} />
+                <input className={styles.searchInput} placeholder="Category" value={form.category} onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))} />
+                <input className={styles.searchInput} placeholder="Competency" value={form.competency} onChange={(e) => setForm((current) => ({ ...current, competency: e.target.value }))} />
+                <input className={styles.searchInput} placeholder="Course title" value={form.title} onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))} required />
+                <input className={styles.searchInput} placeholder="Course URL" value={form.url} onChange={(e) => setForm((current) => ({ ...current, url: e.target.value }))} />
+                <input className={styles.searchInput} placeholder="Duration (minutes)" type="number" min="1" value={form.duration_minutes} onChange={(e) => setForm((current) => ({ ...current, duration_minutes: e.target.value }))} />
+                <textarea className={styles.searchInput} rows={3} placeholder="Description" value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} />
+                <label className={styles.inlineNote} style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: 0 }}>
+                  <input type="checkbox" checked={Boolean(form.archived)} onChange={(e) => setForm((current) => ({ ...current, archived: e.target.checked }))} />
+                  Archived
+                </label>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="submit" className={styles.smallBtn} disabled={saving}>{saving ? "Saving…" : form.id ? "Update course" : "Create course"}</button>
+                  <button type="button" className={styles.smallBtn} onClick={resetForm}>Clear</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div className={shellStyles.section} style={{ margin: 0 }}>
+            <div className={shellStyles.sectionHead}>
+              <div className={shellStyles.sectionHeadLeft}>
+                <span className={`${shellStyles.bar} ${shellStyles.orange}`} />
+                <div>
+                  <div className={shellStyles.sectionTitle}>Import roadmap</div>
+                  <p className={shellStyles.sectionDesc}>Upload .xlsx or .csv, preview the hierarchy, then confirm.</p>
+                </div>
+              </div>
+            </div>
+            <div className={shellStyles.sectionBody}>
+              <input ref={fileInputRef} type="file" accept=".xlsx,.csv" onChange={(e) => handlePreviewUpload(e.target.files?.[0])} />
+              {previewBusy && <p className={styles.inlineNote}>Parsing spreadsheet…</p>}
+              {preview ? (
+                <div style={{ marginTop: 12 }}>
+                  <div className={styles.analyticsGrid}>
+                    <div className={shellStyles.statCard}><div className={shellStyles.statValue}>{preview.total_rows}</div><div className={shellStyles.statLabel}>Rows</div></div>
+                    <div className={shellStyles.statCard}><div className={shellStyles.statValue}>{preview.new_courses}</div><div className={shellStyles.statLabel}>New</div></div>
+                    <div className={shellStyles.statCard}><div className={shellStyles.statValue}>{preview.updated_courses}</div><div className={shellStyles.statLabel}>Updated</div></div>
+                    <div className={shellStyles.statCard}><div className={shellStyles.statValue}>{preview.duplicate_courses}</div><div className={shellStyles.statLabel}>Duplicate</div></div>
+                    <div className={shellStyles.statCard}><div className={shellStyles.statValue}>{preview.invalid_rows}</div><div className={shellStyles.statLabel}>Invalid</div></div>
+                  </div>
+                  <div className={styles.courseActions} style={{ marginTop: 12 }}>
+                    <button type="button" className={styles.assignCourseBtn} disabled={saving} onClick={handleCommitImport}>
+                      {saving ? "Importing…" : "Confirm import"}
+                    </button>
+                    <button type="button" className={styles.smallBtn} onClick={() => { setPreview(null); setPreviewFile(null); }}>Clear preview</button>
+                  </div>
+                  <div className={styles.inlineNote} style={{ marginTop: 8 }}>
+                    {preview.filename || "Uploaded file"} · {preview.rows?.length || 0} preview row(s)
+                  </div>
+                </div>
+              ) : (
+                <p className={styles.inlineNote}>Choose a roadmap spreadsheet to preview parsed hierarchy before saving.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {hierarchy.length > 0 && (
+          <div className={shellStyles.section} style={{ marginTop: 16 }}>
+            <div className={shellStyles.sectionHead}>
+              <div className={shellStyles.sectionHeadLeft}>
+                <span className={`${shellStyles.bar} ${shellStyles.navy}`} />
+                <div>
+                  <div className={shellStyles.sectionTitle}>Roadmap hierarchy</div>
+                  <p className={shellStyles.sectionDesc}>Designation → Month → Category → Competency</p>
+                </div>
+              </div>
+            </div>
+            <div className={shellStyles.sectionBody}>
+              {hierarchy.map((designationNode) => (
+                <div key={designationNode.designation} style={{ marginBottom: 16, border: "1px solid var(--border)", borderRadius: 14, padding: 14 }}>
+                  <div style={{ fontWeight: 700, color: "var(--navy)" }}>{designationNode.designation}</div>
+                  <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+                    {(designationNode.months || []).map((monthNode) => (
+                      <div key={monthNode.learning_month} style={{ background: "#f8fafc", borderRadius: 12, padding: 12 }}>
+                        <div style={{ fontWeight: 650, marginBottom: 8 }}>{monthNode.learning_month}</div>
+                        {(monthNode.categories || []).map((categoryNode) => (
+                          <div key={categoryNode.category} style={{ marginBottom: 8 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{categoryNode.category}</div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                              {(categoryNode.competencies || []).map((competencyNode) => (
+                                <span key={competencyNode.competency} className={styles.statusChip}>{competencyNode.competency}</span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {loading && <RecruiterLoader inline />}
+        {!loading && courses.length === 0 && <p className={styles.inlineNote}>No managed roadmap courses found for the current filters.</p>}
+
+        <div className={styles.courseGrid}>
+          {courses.map((course) => (
+            <div key={course.uid} className={styles.courseCard}>
+              <div className={styles.courseCardHead}>
+                <span className={`${styles.sourceBadge} ${styles.sourceBadgeRecruiter}`}>{course.provider || "LinkedIn Learning"}</span>
+                {course.archived ? <span className={styles.statusChip}>Archived</span> : null}
+              </div>
+              <div className={styles.courseTitle}>{course.title}</div>
+              <div className={styles.courseMeta}>
+                {course.designation || "—"} · {course.learning_month || "—"} · {course.duration_minutes || "—"} min
+              </div>
+              <p className={styles.courseSummary}>{[course.category, course.competency, course.summary].filter(Boolean).join(" · ")}</p>
+              <div className={styles.courseActions}>
+                {course.url && (
+                  <a href={course.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Preview</a>
+                )}
+                <button type="button" className={styles.smallBtn} onClick={() => beginEdit(course)}>Edit</button>
+                <button type="button" className={styles.smallBtn} onClick={() => handleArchiveToggle(course)}>
+                  {course.archived ? "Restore" : "Archive"}
+                </button>
+                <button type="button" className={styles.smallBtn} onClick={() => handleDelete(course)}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

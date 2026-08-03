@@ -13,12 +13,15 @@ Current sources:
 from __future__ import annotations
 
 from app.services import coursera_service, ms_learn_service
+from app.services.managed_learning_service import MANAGED_SOURCE, managed_learning_service
 from app.services.recruiter_kb_service import recruiter_kb_service
 
-SOURCES: tuple[str, ...] = ("microsoft_learn", "coursera", "recruiter_kb")
+SOURCES: tuple[str, ...] = (MANAGED_SOURCE, "microsoft_learn", "coursera", "recruiter_kb")
 
 
 def source_of(uid: str) -> str:
+    if uid.startswith("learning_course:"):
+        return MANAGED_SOURCE
     if uid.startswith("coursera:"):
         return "coursera"
     if uid.startswith("recruiter_kb:"):
@@ -28,6 +31,8 @@ def source_of(uid: str) -> str:
 
 async def get_course_by_uid(uid: str) -> dict | None:
     src = source_of(uid)
+    if src == MANAGED_SOURCE:
+        return await managed_learning_service.get_course_by_uid(uid)
     if src == "coursera":
         return await coursera_service.get_course_by_uid(uid)
     if src == "recruiter_kb":
@@ -54,9 +59,26 @@ async def search_catalog(
     product: str | None = None,
     course_type: str | None = None,
     category: str | None = None,
+    provider: str | None = None,
+    designation: str | None = None,
+    learning_month: str | None = None,
+    competency: str | None = None,
+    archived: bool | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
+    if source in {MANAGED_SOURCE, "linkedin_learning"}:
+        return await managed_learning_service.list_courses(
+            q=q,
+            provider=provider,
+            designation=designation,
+            learning_month=learning_month,
+            category=category,
+            competency=competency,
+            archived=archived,
+            page=page,
+            page_size=page_size,
+        )
     if source == "coursera":
         return await coursera_service.search_catalog(q=q, category=category, page=page, page_size=page_size)
     if source == "recruiter_kb":
@@ -82,6 +104,8 @@ async def search_catalog(
 
 
 async def get_facets(source: str = "microsoft_learn") -> dict:
+    if source in {MANAGED_SOURCE, "linkedin_learning"}:
+        return await managed_learning_service.list_facets()
     if source == "coursera":
         return {"categories": coursera_service.get_categories()}
     return await ms_learn_service.get_facets()
@@ -100,6 +124,24 @@ async def find_courses_for_keywords(
     soft-skills course (Coursera) right alongside a Microsoft Learn technical
     course for the same employee — whichever is the better real match."""
     results: list[dict] = []
+    if MANAGED_SOURCE in sources:
+        managed = await managed_learning_service.list_courses(page=1, page_size=500)
+        courses = managed.get("courses") or []
+        lowered = [k.lower() for k in keywords if k]
+        for course in courses:
+            hay = " ".join(
+                [
+                    course.get("title") or "",
+                    course.get("designation") or "",
+                    course.get("learning_month") or "",
+                    course.get("category") or "",
+                    course.get("competency") or "",
+                    course.get("provider") or "",
+                    course.get("summary") or "",
+                ]
+            ).lower()
+            if any(k in hay for k in lowered):
+                results.append(course)
     if "microsoft_learn" in sources:
         results += await ms_learn_service.find_courses_for_keywords(
             keywords, per_keyword=per_keyword, limit=limit, use_ai=use_ai

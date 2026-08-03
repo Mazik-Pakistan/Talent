@@ -202,3 +202,116 @@ class EnrollmentProgressRequest(BaseModel):
 
     progress_percent: int = Field(ge=0, le=100)
     status: Literal["in_progress", "completed"] | None = None
+
+
+class ManagedLearningCourseBase(BaseModel):
+    """Managed roadmap course used for imported / manual learning content."""
+
+    title: str = Field(min_length=1, max_length=300)
+    url: str | None = Field(default=None, max_length=1000)
+    provider: str = Field(default="LinkedIn Learning", max_length=120)
+    designation: str = Field(default="", max_length=120)
+    learning_month: str = Field(default="", max_length=120)
+    category: str = Field(default="", max_length=120)
+    competency: str = Field(default="", max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    duration_minutes: int | None = Field(default=None, ge=1, le=20000)
+    archived: bool = False
+
+    @field_validator("title", "provider", "designation", "learning_month", "category", "competency")
+    @classmethod
+    def clean_text(cls, value: str) -> str:
+        return " ".join(value.split())
+
+    @field_validator("url")
+    @classmethod
+    def clean_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.schemas.auth import validate_url_format
+
+        validated = validate_url_format(value, "course URL")
+        return validated
+
+    @field_validator("description")
+    @classmethod
+    def clean_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+
+        return sanitize_html(value)
+
+
+class ManagedLearningCourseCreateRequest(ManagedLearningCourseBase):
+    """Create a single managed learning course manually."""
+
+
+class ManagedLearningCourseUpdateRequest(BaseModel):
+    """Update a managed learning course."""
+
+    title: str | None = Field(default=None, max_length=300)
+    url: str | None = Field(default=None, max_length=1000)
+    provider: str | None = Field(default=None, max_length=120)
+    designation: str | None = Field(default=None, max_length=120)
+    learning_month: str | None = Field(default=None, max_length=120)
+    category: str | None = Field(default=None, max_length=120)
+    competency: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    duration_minutes: int | None = Field(default=None, ge=1, le=20000)
+    archived: bool | None = None
+
+    @field_validator("title", "provider", "designation", "learning_month", "category", "competency")
+    @classmethod
+    def clean_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return " ".join(value.split())
+
+    @field_validator("url")
+    @classmethod
+    def clean_optional_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.schemas.auth import validate_url_format
+
+        return validate_url_format(value, "course URL")
+
+    @field_validator("description")
+    @classmethod
+    def clean_optional_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+
+        return sanitize_html(value)
+
+
+class ManagedLearningImportRow(BaseModel):
+    """Preview row for roadmap imports."""
+
+    row: int
+    designation: str | None = None
+    learning_month: str | None = None
+    category: str | None = None
+    competency: str | None = None
+    title: str | None = None
+    url: str | None = None
+    duration_minutes: int | None = None
+    provider: str | None = None
+    description: str | None = None
+    status: Literal["new", "updated", "duplicate", "invalid"] = "new"
+    issues: list[str] = Field(default_factory=list)
+    existing_id: str | None = None
+
+
+class ManagedLearningImportPreview(BaseModel):
+    """Import preview returned before saving managed learning data."""
+
+    filename: str | None = None
+    total_rows: int = 0
+    new_courses: int = 0
+    updated_courses: int = 0
+    duplicate_courses: int = 0
+    invalid_rows: int = 0
+    rows: list[ManagedLearningImportRow] = Field(default_factory=list)
