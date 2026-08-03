@@ -2207,6 +2207,126 @@ RECRUITER_TOOLS.extend(RECRUITER_PARITY_TOOLS)
 CANDIDATE_TOOLS: list[Tool] = [*SELF_SERVE_TOOLS, *CANDIDATE_PARITY_TOOLS]
 EMPLOYEE_TOOLS: list[Tool] = [*SELF_SERVE_TOOLS, *EMPLOYEE_PARITY_TOOLS]
 
+# Recruiter tool → module capability. The agent only exposes a tool when the
+# recruiter's effective capabilities (org modules ∩ personal toggles) allow it,
+# so AI access always mirrors the sidebar / API permissions. A tuple means the
+# tool is available when ANY of those capabilities is enabled. Tools not listed
+# stay available to every recruiter (e.g. session housekeeping).
+RECRUITER_TOOL_CAPABILITIES: dict[str, str | tuple[str, ...]] = {
+    # Invite & offer
+    "send_invitation": "invite",
+    "bulk_invite": "invite",
+    "create_offer": "invite",
+    "approve_offer": "invite",
+    "bulk_approve_offers": "invite",
+    "send_joining_letter": "invite",
+    # Candidates / pipeline / documents
+    "list_candidates": "candidates",
+    "list_pipeline": "candidates",
+    "get_candidate_status": "candidates",
+    "list_person_documents": "candidates",
+    "list_candidate_documents": "candidates",
+    "verify_document": "candidates",
+    "bulk_verify_documents": "candidates",
+    "get_document_link": "candidates",
+    "remind_candidate": "candidates",
+    "bulk_remind_candidates": "candidates",
+    "search_people": "candidates",
+    "lookup_person_history": "candidates",
+    # Employees
+    "list_employees": "employees",
+    "directory_employees": "employees",
+    "export_employees": "employees",
+    "get_employee_detail": "employees",
+    "remind_employee_profile": "employees",
+    "bulk_remind_profiles": "employees",
+    "mark_employee_exit": "employees",
+    "set_company_email": "employees",
+    "bulk_set_company_email": "employees",
+    "assign_asset": "employees",
+    "bulk_assign_assets": "employees",
+    "update_asset": "employees",
+    "remove_asset": "employees",
+    "schedule_orientation": "employees",
+    "bulk_schedule_orientation": "employees",
+    "list_career_events": "employees",
+    "add_career_event": "employees",
+    "update_employee_role": "employees",
+    "send_reminder": ("employees", "candidates"),
+    # Learning
+    "browse_learning_catalog": "learning",
+    "assign_courses": "learning",
+    "list_learning_assignments": "learning",
+    "list_pending_certificates": "learning",
+    "verify_certificate": "learning",
+    "learning_analytics": "learning",
+    "get_employee_learning_profile": "learning",
+    "kb_list_roles": "learning",
+    "kb_create_role": "learning",
+    "kb_delete_role": "learning",
+    "kb_list_certifications": "learning",
+    "kb_create_certification": "learning",
+    "kb_delete_certification": "learning",
+    # Talent
+    "talent_metrics": "talent",
+    "search_talent": "talent",
+    "list_opportunities": "talent",
+    "create_opportunity": "talent",
+    "update_opportunity": "talent",
+    "list_opportunity_applicants": "talent",
+    "submit_competency_evaluation": "talent",
+    "update_development_plan": "talent",
+    "get_talent_profile": "talent",
+    # IT & support
+    "send_it_provisioning": "it",
+    "remind_it_provisioning": "it",
+    "bulk_send_it_provisioning": "it",
+    "bulk_remind_it_provisioning": "it",
+    "list_it_kits": "it",
+    "create_it_kit": "it",
+    "update_it_kit": "it",
+    "delete_it_kit": "it",
+    "list_it_officers": "it",
+    "list_it_service_requests": "it",
+    "create_it_service_request": "it",
+    "send_it_service_request": "it",
+    "cancel_it_service_request": "it",
+    # Messages
+    "list_hr_threads": "messages",
+    "message_employee": "messages",
+    "reply_hr_thread": "messages",
+    # Announcements
+    "list_announcements": "announcements",
+    "create_announcement": "announcements",
+    "update_announcement": "announcements",
+    "delete_announcement": "announcements",
+    # Overview / reporting / profile
+    "get_dashboard_summary": "overview",
+    "get_activity": "reporting",
+    "get_recruiter_profile": "profile",
+    "update_recruiter_profile": "profile",
+}
+
+
+def _tool_required_capabilities(name: str) -> tuple[str, ...] | None:
+    """Capability keys gating a recruiter tool (None = always allowed)."""
+    value = RECRUITER_TOOL_CAPABILITIES.get(name)
+    if not value:
+        return None
+    return (value,) if isinstance(value, str) else tuple(value)
+
+
+def _tool_allowed_for(user: CurrentUser, tool: Tool) -> bool:
+    """A recruiter may call the tool only when at least one of its required
+    capabilities is enabled. Super admins and non-recruiter roles are never
+    restricted here — their access is governed by role permissions."""
+    if user.role != "recruiter":
+        return True
+    required = _tool_required_capabilities(tool.name)
+    if not required:
+        return True
+    return any(user.has_capability(cap) for cap in required)
+
 
 def tools_for_role(role: str) -> list[Tool]:
     if role in ("recruiter", "super_admin"):
@@ -2216,6 +2336,12 @@ def tools_for_role(role: str) -> list[Tool]:
     if role == "employee":
         return EMPLOYEE_TOOLS
     return []
+
+
+def tools_for_user(user: CurrentUser) -> list[Tool]:
+    """Tools exposed to a specific user, filtered by recruiter capabilities so
+    the AI never sees (or suggests) tools for modules the recruiter lacks."""
+    return [tool for tool in tools_for_role(user.role) if _tool_allowed_for(user, tool)]
 
 
 def find_tool(role: str, name: str) -> Tool | None:
@@ -2229,6 +2355,16 @@ async def run_tool(user: CurrentUser, name: str, args: dict) -> ToolResult:
     tool = find_tool(user.role, name)
     if not tool:
         return ToolResult(ok=False, error=f"Unknown tool '{name}' for role {user.role}.")
+    if not _tool_allowed_for(user, tool):
+        # Defense in depth: even if the model hallucinates a disabled tool,
+        # never execute it — explain the module access instead.
+        return ToolResult(
+            ok=False,
+            error=(
+                "This module is not available for your account, so I can't help with "
+                "that action. Contact the Super Admin to request access."
+            ),
+        )
     try:
         return await tool.handler(user, args or {})
     except Exception as exc:  # noqa: BLE001

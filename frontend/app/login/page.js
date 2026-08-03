@@ -304,7 +304,6 @@ function LoginForm() {
 
           <div className={styles.footer}>
             <p><Link href="/forgot-password">Forgot password?</Link></p>
-            <p>Recruiter account? <Link href="/register">Create one</Link></p>
           </div>
         </section>
       </div>

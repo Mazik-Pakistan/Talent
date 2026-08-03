@@ -27,8 +27,15 @@ candidate_service = CandidateService()
 
 @router.post("/register", status_code=201)
 async def register(request: RegisterRequest):
-    """Step 1: Register recruiter — stores pending user and sends OTP email."""
-    return await service.register(request)
+    """Public recruiter signup is disabled — accounts are created only through
+    the recruiter invitation flow (POST /api/auth/recruiter/register) or the
+    candidate invitation flow (POST /api/auth/candidate/register)."""
+    from fastapi import HTTPException
+
+    raise HTTPException(
+        status_code=403,
+        detail="Registration is by invitation only. Use the invite link from your email to create your account.",
+    )
 
 
 @router.post("/candidate/register", status_code=201)

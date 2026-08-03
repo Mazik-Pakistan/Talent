@@ -13,6 +13,7 @@ import {
   getDashboardSummary,
   getPendingReview,
   getReadyForConversion,
+  hasCapability,
 } from "@/services/authService";
 import {
   clearRecruiterContext,
@@ -67,7 +68,7 @@ const DASHBOARD_REFRESH_MS = 60000;
 
 export default function RecruiterOverviewPage() {
   return (
-    <ProtectedRecruiterRoute requiredCapability="recruitment">
+    <ProtectedRecruiterRoute requiredCapability="overview">
       <RecruiterOverviewPageContent />
     </ProtectedRecruiterRoute>
   );
@@ -136,19 +137,23 @@ function RecruiterOverviewPageContent() {
   }, [loadDashboard]);
 
   const quickActions = useMemo(
-    () => [
-      { title: "Invite candidate", hint: "Send onboarding invitations", action: () => router.push("/dashboard/recruiter/invite") },
-      { title: "Review approvals", hint: `${pendingApprovals.length} awaiting review`, action: () => router.push("/dashboard/recruiter/candidates") },
-      { title: "Send offers", hint: `${pendingCandidates.length} pending offer action`, action: () => router.push("/dashboard/recruiter/candidates") },
-      { title: "Activate employees", hint: `${readyCandidates.length} offer signed`, action: () => router.push("/dashboard/recruiter/candidates") },
-      { title: "Employee directory", hint: "Browse active employees", action: () => router.push("/dashboard/recruiter/employees") },
-      { title: "Announcements", hint: "Share updates with candidates", action: () => router.push("/dashboard/recruiter/announcements") },
-    ],
+    () => {
+      const actions = [
+        { title: "Invite candidate", hint: "Send onboarding invitations", action: () => router.push("/dashboard/recruiter/invite"), capability: "invite" },
+        { title: "Review approvals", hint: `${pendingApprovals.length} awaiting review`, action: () => router.push("/dashboard/recruiter/candidates"), capability: "candidates" },
+        { title: "Send offers", hint: `${pendingCandidates.length} pending offer action`, action: () => router.push("/dashboard/recruiter/candidates"), capability: "candidates" },
+        { title: "Activate employees", hint: `${readyCandidates.length} offer signed`, action: () => router.push("/dashboard/recruiter/candidates"), capability: "candidates" },
+        { title: "Employee directory", hint: "Browse active employees", action: () => router.push("/dashboard/recruiter/employees"), capability: "employees" },
+        { title: "Announcements", hint: "Share updates with candidates", action: () => router.push("/dashboard/recruiter/announcements"), capability: "announcements" },
+      ];
+      return actions.filter((action) => hasCapability(action.capability));
+    },
     [pendingApprovals.length, pendingCandidates.length, readyCandidates.length, router]
   );
 
   const aiRecommendation = useMemo(() => {
-    if (pendingApprovals.length > 0) {
+    const canCandidates = hasCapability("candidates");
+    if (pendingApprovals.length > 0 && canCandidates) {
       return {
         title: "Today's recommendation",
         body: (
@@ -160,7 +165,7 @@ function RecruiterOverviewPageContent() {
         cta: "Open approvals →",
       };
     }
-    if (pendingCandidates.length > 0) {
+    if (pendingCandidates.length > 0 && canCandidates) {
       return {
         title: "Today's recommendation",
         body: (
@@ -172,7 +177,7 @@ function RecruiterOverviewPageContent() {
         cta: "Review offers →",
       };
     }
-    if (readyCandidates.length > 0) {
+    if (readyCandidates.length > 0 && canCandidates) {
       return {
         title: "Today's recommendation",
         body: (
@@ -184,11 +189,19 @@ function RecruiterOverviewPageContent() {
         cta: "Activate →",
       };
     }
+    if (hasCapability("invite")) {
+      return {
+        title: "Pipeline looks clear",
+        body: <>Invite a new candidate when you&apos;re ready — AI can help with bulk invites from the Assistant.</>,
+        action: () => router.push("/dashboard/recruiter/invite"),
+        cta: "Invite candidate →",
+      };
+    }
     return {
       title: "Pipeline looks clear",
-      body: <>Invite a new candidate when you&apos;re ready — AI can help with bulk invites from the Assistant.</>,
-      action: () => router.push("/dashboard/recruiter/invite"),
-      cta: "Invite candidate →",
+      body: <>Your hiring pipeline is up to date. Open the assistant for guided workflows.</>,
+      action: () => router.push("/dashboard/recruiter/ai-assistant"),
+      cta: "Open assistant →",
     };
   }, [pendingApprovals.length, pendingCandidates.length, readyCandidates.length, router]);
 

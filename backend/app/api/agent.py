@@ -28,12 +28,18 @@ def _assert_agent_role(user: CurrentUser) -> None:
         raise HTTPException(status_code=403, detail="The AI agent is not available for this account type.")
 
 
+def _assert_agent_access(user: CurrentUser) -> None:
+    """Recruiters need the AI assistant capability — mirrors the UI guard so
+    the agent can never be reached around disabled modules."""
+    if user.role == "recruiter" and not user.has_capability("assistant"):
+        raise HTTPException(status_code=403, detail="AI assistant is not available for your account.")
+
+
 @router.post("/chat")
 async def chat(request: AgentChatRequest, current_user: RequireUser):
     """Send a message to the role-appropriate agent (recruiter or onboarding)."""
     _assert_agent_role(current_user)
-    if current_user.role == "recruiter" and not current_user.has_capability("assistant"):
-        raise HTTPException(status_code=403, detail="AI assistant is not available for your account.")
+    _assert_agent_access(current_user)
     if not request.message and not request.session_id:
         raise HTTPException(status_code=400, detail="A message is required to start a conversation.")
     context = request.context.model_dump(exclude_none=True) if hasattr(request.context, "model_dump") else request.context
@@ -43,18 +49,21 @@ async def chat(request: AgentChatRequest, current_user: RequireUser):
 @router.get("/sessions")
 async def list_sessions(current_user: RequireUser):
     _assert_agent_role(current_user)
+    _assert_agent_access(current_user)
     return await agent_service.list_sessions(current_user)
 
 
 @router.get("/history")
 async def get_history(session_id: str, current_user: RequireUser):
     _assert_agent_role(current_user)
+    _assert_agent_access(current_user)
     return await agent_service.get_history(current_user, session_id)
 
 
 @router.post("/reset")
 async def reset_session(request: AgentResetRequest, current_user: RequireUser):
     _assert_agent_role(current_user)
+    _assert_agent_access(current_user)
     if request.session_id:
         await database.agent_conversations.delete_one({"session_id": request.session_id, "user_id": current_user.id})
     return {"message": "Conversation cleared."}
@@ -73,6 +82,8 @@ async def bulk_invite_from_spreadsheet(
     """
     if current_user.role not in ("recruiter", "super_admin"):
         raise HTTPException(status_code=403, detail="Only recruiters can bulk-invite candidates.")
+    if current_user.role == "recruiter" and not current_user.has_capability("invite"):
+        raise HTTPException(status_code=403, detail="You do not have access to invitations and offers.")
 
     from app.services.bulk_invite_service import bulk_invite_service
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import SuperAdminShell from "@/components/super-admin/SuperAdminShell";
+import OrganizationDeleteModal from "@/components/OrganizationDeleteModal";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import local from "./super-admin.module.css";
 import {
@@ -107,6 +108,9 @@ export default function SuperAdminDashboardPage() {
   const [orgModules, setOrgModules] = useState(() => allCapabilityFlags({}, true));
   const [orgSaving, setOrgSaving] = useState(false);
   const [orgMessage, setOrgMessage] = useState("");
+  const [orgDeleteTarget, setOrgDeleteTarget] = useState(null);
+  const [orgDeleting, setOrgDeleting] = useState(false);
+  const [orgDeleteError, setOrgDeleteError] = useState("");
   const [editOrgId, setEditOrgId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyEditForm);
@@ -194,39 +198,31 @@ export default function SuperAdminDashboardPage() {
     }
   }
 
-  async function handleOrgDelete(org) {
+  async   function handleOrgDelete(org) {
+    setOrgDeleteTarget(org);
+    setOrgDeleteError("");
+  }
+
+  async function confirmOrgDelete() {
     const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) return;
-    const recruiterCount = recruiters.filter((r) => r.organization_id === org.id).length;
-    const confirmed = window.confirm(
-      `PERMANENTLY DELETE "${org.name}"?\n\n` +
-        "This will WIPE ALL data for this organization:\n" +
-        "- All recruiters and their login accounts\n" +
-        "- All candidates and employees\n" +
-        "- All invitations, offers, documents, IT, learning, and messages\n\n" +
-        (recruiterCount ? `Currently listed here: ${recruiterCount} recruiter(s).\n\n` : "") +
-        "This cannot be undone."
-    );
-    if (!confirmed) return;
-    const typed = window.prompt(
-      `Type the organization name exactly to confirm wipe:\n${org.name}`
-    );
-    if (typed !== org.name) {
-      if (typed !== null) alert("Delete cancelled ? name did not match.");
-      return;
-    }
+    if (!accessToken || !orgDeleteTarget || orgDeleting) return;
+    setOrgDeleting(true);
+    setOrgDeleteError("");
     try {
-      const result = await deleteOrganization(org.id, accessToken);
+      const result = await deleteOrganization(orgDeleteTarget.id, accessToken);
       const wiped = result?.wiped || {};
-      alert(
+      setOrgMessage(
         result?.message ||
           `Organization deleted. Wiped ${wiped.recruiters || 0} recruiter(s), ` +
             `${wiped.candidates || 0} candidate(s), ${wiped.employees || 0} employee(s).`
       );
+      setOrgDeleteTarget(null);
       loadOrganizations();
       loadRecruiters();
     } catch (err) {
-      alert(getApiErrorMessage(err, "Could not delete organization."));
+      setOrgDeleteError(getApiErrorMessage(err, "Could not delete organization."));
+    } finally {
+      setOrgDeleting(false);
     }
   }
 
@@ -831,6 +827,20 @@ export default function SuperAdminDashboardPage() {
           </div>
         </div>
       )}
+
+      <OrganizationDeleteModal
+        open={Boolean(orgDeleteTarget)}
+        onClose={() => {
+          if (!orgDeleting) setOrgDeleteTarget(null);
+        }}
+        org={orgDeleteTarget}
+        recruiterCount={
+          orgDeleteTarget ? recruiters.filter((r) => r.organization_id === orgDeleteTarget.id).length : 0
+        }
+        busy={orgDeleting}
+        error={orgDeleteError}
+        onConfirm={confirmOrgDelete}
+      />
     </SuperAdminShell>
   );
 }

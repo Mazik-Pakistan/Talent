@@ -481,8 +481,8 @@ def _compact_params(parameters: dict) -> str:
     return "{" + ", ".join(bits) + "}"
 
 
-def _tool_spec_text(role: str) -> str:
-    tools = agent_tools.tools_for_role(role)
+def _tool_spec_text(user: CurrentUser) -> str:
+    tools = agent_tools.tools_for_user(user)
     lines = []
     for tool in tools:
         desc = (tool.description or "").strip()
@@ -494,6 +494,26 @@ def _tool_spec_text(role: str) -> str:
         params = _compact_params(tool.parameters or {})
         lines.append(f"- {tool.name}{params}: {desc}")
     return "\n".join(lines)
+
+
+def _restricted_modules_text(user: CurrentUser) -> str:
+    """List modules disabled for this recruiter so the model never recommends
+    or claims access to them, even if a tool name leaks into the conversation."""
+    if user.role != "recruiter":
+        return ""
+    from app.services.organization_service import ORG_MODULE_LABELS
+
+    caps = getattr(user, "capabilities", None) or {}
+    disabled = [label for key, label in ORG_MODULE_LABELS.items() if caps.get(key) is False]
+    if not disabled:
+        return ""
+    return (
+        "\nModule access (important): this recruiter's account does NOT have access to: "
+        + ", ".join(disabled)
+        + ". Never call tools for those modules, never suggest them, and if asked, "
+        "explain they are disabled for this account and the recruiter should contact "
+        "the Super Admin to request access."
+    )
 
 
 def _history_text(messages: list[dict]) -> str:
@@ -570,10 +590,12 @@ def _build_prompt(
 ) -> str:
     scratch_text = _scratchpad_text(scratchpad)
     context_text = _context_text(context)
+    restricted_text = _restricted_modules_text(user)
 
     return f"""{system_prompt}
 {SHARED_AGENT_RULES}
 Caller: {user.full_name} ({user.email}), role={user.role}.
+{restricted_text}
 
 Current page context:
 {context_text}
@@ -611,14 +633,20 @@ def _action(kind: str, label: str, *, route: str | None = None, prompt: str | No
 def _default_actions_for_role(user: CurrentUser) -> list[dict]:
     if user.role in ("recruiter", "super_admin"):
         actions = []
-        if user.has_capability("recruitment"):
+        if user.has_capability("candidates"):
             actions.append(_action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates"))
         if user.has_capability("employees"):
             actions.append(_action("navigate", "Open Employees", route="/dashboard/recruiter/employees"))
         if user.has_capability("learning"):
             actions.append(_action("navigate", "Open Learning", route="/dashboard/recruiter/learning"))
+        if user.has_capability("talent"):
+            actions.append(_action("navigate", "Open Talent", route="/dashboard/recruiter/talent"))
         if user.has_capability("messages"):
             actions.append(_action("navigate", "Open Messages", route="/dashboard/recruiter/messages"))
+        if user.has_capability("announcements"):
+            actions.append(_action("navigate", "Open Announcements", route="/dashboard/recruiter/announcements"))
+        if user.has_capability("it"):
+            actions.append(_action("navigate", "Open IT & support", route="/dashboard/recruiter/it"))
         return actions if actions else [
             _action("navigate", "Open Dashboard", route="/dashboard/recruiter/overview")
         ]
@@ -645,16 +673,27 @@ def _actions_from_topic(user: CurrentUser, topic: str) -> list[dict] | None:
     """One primary navigate CTA matching the topic — never a full menu of identical pills."""
     t = topic or ""
     if user.role in ("recruiter", "super_admin"):
-        if any(k in t for k in ("candidate", "pipeline", "invite", "offer", "provision")):
-            return [_action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates")]
-        if any(k in t for k in ("employee", "day-1", "day1", "joining", "asset")):
-            return [_action("navigate", "Open Employees", route="/dashboard/recruiter/employees")]
+        if any(k in t for k in ("candidate", "pipeline", "invite", "offer")):
+            if user.has_capability("candidates"):
+                return [_action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates")]
+        if any(k in t for k in ("provision", "it ", "it support", "asset", "kit", "officer")):
+            if user.has_capability("it"):
+                return [_action("navigate", "Open IT & support", route="/dashboard/recruiter/it")]
+        if any(k in t for k in ("employee", "day-1", "day1", "joining", "profile")):
+            if user.has_capability("employees"):
+                return [_action("navigate", "Open Employees", route="/dashboard/recruiter/employees")]
         if any(k in t for k in ("learning", "course", "certificate")):
-            return [_action("navigate", "Open Learning", route="/dashboard/recruiter/learning")]
+            if user.has_capability("learning"):
+                return [_action("navigate", "Open Learning", route="/dashboard/recruiter/learning")]
         if any(k in t for k in ("talent", "opportunity", "competenc")):
-            return [_action("navigate", "Open Talent", route="/dashboard/recruiter/talent")]
-        if any(k in t for k in ("message", "inbox", "announcement")):
-            return [_action("navigate", "Open Messages", route="/dashboard/recruiter/messages")]
+            if user.has_capability("talent"):
+                return [_action("navigate", "Open Talent", route="/dashboard/recruiter/talent")]
+        if any(k in t for k in ("announcement",)):
+            if user.has_capability("announcements"):
+                return [_action("navigate", "Open Announcements", route="/dashboard/recruiter/announcements")]
+        if any(k in t for k in ("message", "inbox", "hr")):
+            if user.has_capability("messages"):
+                return [_action("navigate", "Open Messages", route="/dashboard/recruiter/messages")]
         return None
 
     if user.role == "employee":
@@ -742,27 +781,29 @@ def _detail_actions(
         if tool == "get_employee_detail" or data.get("employee_id"):
             employee_id = data.get("employee_id") or selected_id
             if employee_id and user.role in ("recruiter", "super_admin"):
-                return [
-                    _action(
-                        "navigate",
-                        f"Open {data.get('full_name') or 'employee'}",
-                        route=f"/dashboard/recruiter/employees/{employee_id}",
-                    )
-                ]
+                if user.has_capability("employees"):
+                    return [
+                        _action(
+                            "navigate",
+                            f"Open {data.get('full_name') or 'employee'}",
+                            route=f"/dashboard/recruiter/employees/{employee_id}",
+                        )
+                    ]
             if user.role == "employee":
                 return [_action("navigate", "Open Profile", route="/dashboard/employee/profile")]
 
         if tool == "get_candidate_status" or data.get("candidate_id"):
             candidate_id = data.get("candidate_id") or selected_id
             if candidate_id and user.role in ("recruiter", "super_admin"):
-                label = data.get("full_name") or "candidate"
-                return [
-                    _action(
-                        "navigate",
-                        f"Open {label}",
-                        route=f"/dashboard/recruiter/candidates/{candidate_id}",
-                    )
-                ]
+                if user.has_capability("candidates"):
+                    label = data.get("full_name") or "candidate"
+                    return [
+                        _action(
+                            "navigate",
+                            f"Open {label}",
+                            route=f"/dashboard/recruiter/candidates/{candidate_id}",
+                        )
+                    ]
             if user.role == "candidate":
                 return [_action("navigate", "Open onboarding", route="/onboarding")]
 
@@ -772,28 +813,30 @@ def _detail_actions(
             candidate_id = owner.get("candidate_id") or data.get("candidate_id")
             label = data.get("full_name") or owner.get("full_name") or "profile"
             if employee_id and user.role in ("recruiter", "super_admin"):
-                return [
-                    _action(
-                        "navigate",
-                        f"Open {label}",
-                        route=f"/dashboard/recruiter/employees/{employee_id}",
-                    )
-                ]
+                if user.has_capability("employees"):
+                    return [
+                        _action(
+                            "navigate",
+                            f"Open {label}",
+                            route=f"/dashboard/recruiter/employees/{employee_id}",
+                        )
+                    ]
             if candidate_id and user.role in ("recruiter", "super_admin"):
-                return [
-                    _action(
-                        "navigate",
-                        f"Open {label}",
-                        route=f"/dashboard/recruiter/candidates/{candidate_id}",
-                    )
-                ]
+                if user.has_capability("candidates"):
+                    return [
+                        _action(
+                            "navigate",
+                            f"Open {label}",
+                            route=f"/dashboard/recruiter/candidates/{candidate_id}",
+                        )
+                    ]
             if user.role in ("candidate", "employee"):
                 return [_action("navigate", "Open documents", route="/documents")]
 
         if tool in ("my_learning_dashboard", "browse_learning_catalog", "start_course"):
             if user.role == "employee":
                 return [_action("navigate", "Open Learning", route="/dashboard/employee/learning")]
-            if user.role in ("recruiter", "super_admin"):
+            if user.role in ("recruiter", "super_admin") and user.has_capability("learning"):
                 return [_action("navigate", "Open Learning", route="/dashboard/recruiter/learning")]
 
     topic = _topic_text(user_message, reply_message)
@@ -806,7 +849,7 @@ def _detail_actions(
 
     # No generic default pill row — empty is better than the same four buttons every turn.
     if selected_id and selected_kind and user.role in ("recruiter", "super_admin"):
-        if selected_kind in ("employee", "employees"):
+        if selected_kind in ("employee", "employees") and user.has_capability("employees"):
             return [
                 _action(
                     "navigate",
@@ -814,7 +857,7 @@ def _detail_actions(
                     route=f"/dashboard/recruiter/employees/{selected_id}",
                 )
             ]
-        if selected_kind in ("candidate", "candidates"):
+        if selected_kind in ("candidate", "candidates") and user.has_capability("candidates"):
             return [
                 _action(
                     "navigate",
@@ -1164,7 +1207,7 @@ class AgentService:
 
     async def _run_llm_loop(self, user: CurrentUser, convo: dict, message: str, context: dict | None = None) -> dict:
         system_prompt = _system_prompt_for_role(user.role)
-        tool_spec = _tool_spec_text(user.role)
+        tool_spec = _tool_spec_text(user)
         history_text = _history_text(convo.get("messages") or [])
         scratchpad: list[dict] = []
 

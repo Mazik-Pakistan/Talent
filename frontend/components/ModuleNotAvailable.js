@@ -4,10 +4,20 @@ import { useRouter } from "next/navigation";
 import styles from "@/app/styles/module-not-available.module.css";
 
 const CAPABILITY_DETAILS = {
+  overview: {
+    title: "Recruiter Overview",
+    description: "You don't have access to the recruiter overview dashboard.",
+    message: "Your administrator hasn't enabled the overview dashboard for your account. Contact them to request access.",
+  },
   recruitment: {
     title: "Recruitment Module",
     description: "You don't have access to the Recruitment module.",
     message: "Your administrator hasn't enabled recruitment features for your account. Contact them to request access.",
+  },
+  candidates: {
+    title: "Candidate Pipeline",
+    description: "You don't have access to candidate and document review features.",
+    message: "Your administrator hasn't enabled candidate management for your account. Contact them to request access.",
   },
   invite: {
     title: "Invitations & Offers",
@@ -23,6 +33,21 @@ const CAPABILITY_DETAILS = {
     title: "Learning Module",
     description: "You don't have access to the Learning module.",
     message: "Your administrator hasn't enabled learning features for your account. Contact them to request access.",
+  },
+  talent: {
+    title: "Talent Management",
+    description: "You don't have access to the Talent Management module.",
+    message: "Your administrator hasn't enabled talent features for your account. Contact them to request access.",
+  },
+  assistant: {
+    title: "AI Assistant",
+    description: "You don't have access to the AI Assistant.",
+    message: "Your administrator hasn't enabled the AI assistant for your account. Contact them to request access.",
+  },
+  profile: {
+    title: "Recruiter Profile",
+    description: "You don't have access to the recruiter profile.",
+    message: "Your administrator hasn't enabled profile access for your account. Contact them to request access.",
   },
   documents: {
     title: "Document Management",

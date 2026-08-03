@@ -17,13 +17,11 @@ export default function VerifyEmailPage() {
   const [resendMessage, setResendMessage] = useState("");
   const [resending, setResending] = useState(false);
   const [redirectTo, setRedirectTo] = useState(null);
-  const [pendingRole, setPendingRole] = useState(null);
   const inputRefs = useRef([]);
 
   useEffect(() => {
     const pending = sessionStorage.getItem("pendingEmail");
     if (pending) setEmail(pending);
-    setPendingRole(sessionStorage.getItem("pendingRole"));
   }, []);
 
   useEffect(() => {
@@ -80,10 +78,11 @@ export default function VerifyEmailPage() {
 
       if (response.role === "candidate" && response.session) {
         persistLoginSession(response.session, response.user || null);
-        sessionStorage.setItem("pendingRole", "candidate");
         setRedirectTo(response.redirect_to || "/onboarding");
+      } else if (response.role === "recruiter" && response.session) {
+        persistLoginSession(response.session, response.user || null);
+        setRedirectTo(response.redirect_to || "/dashboard/recruiter");
       } else {
-        sessionStorage.removeItem("pendingRole");
         setRedirectTo(response.redirect_to || "/login");
       }
     } catch (error) {
@@ -110,7 +109,9 @@ export default function VerifyEmailPage() {
     }
   }, [email]);
 
-  const returnHref = pendingRole === "candidate" ? "/login" : "/register";
+  // Accounts are created through invitations only — there is no public
+  // registration anymore, so the fallback for every pending role is sign in.
+  const returnHref = "/login";
   const isSuccess = state.status === "success";
 
   return (
@@ -236,9 +237,7 @@ export default function VerifyEmailPage() {
                 </p>
               ) : (
                 <p>
-                  <Link href={returnHref}>
-                    {pendingRole === "candidate" ? "Go to sign in" : "Return to registration"}
-                  </Link>
+                  <Link href={returnHref}>Go to sign in</Link>
                 </p>
               )}
             </div>

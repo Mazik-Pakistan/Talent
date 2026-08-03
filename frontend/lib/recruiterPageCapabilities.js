@@ -4,18 +4,18 @@
  */
 
 export const RECRUITER_PAGE_CAPABILITIES = {
-  overview: "recruitment",
-  candidates: "recruitment",
+  overview: "overview",
+  candidates: "candidates",
   invite: "invite",
   employees: "employees",
   learning: "learning",
-  talent: "employees",
+  talent: "talent",
   messages: "messages",
-  announcements: "recruitment",
+  announcements: "announcements",
   "it-provisioning": "it",
   "it-kits": "it",
   activity: "reporting",
-  "ai-assistant": "recruitment",
+  "ai-assistant": "assistant",
   profile: "profile",
 };
 

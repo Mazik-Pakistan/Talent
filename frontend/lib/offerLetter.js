@@ -90,7 +90,7 @@ export function buildOfferLetterHtml(offer, options = {}) {
 </head>
 <body>
   <div class="letterhead">
-    <div><strong style="font-size: 24px; color: #0a2540;">TalentAi</strong></div>
+    <div><strong style="font-size: 24px; color: #0a2540;">Mazik Global</strong></div>
     <div class="company-info">
       <strong>${companyName}</strong><br>
       ${companyAddress}

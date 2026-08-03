@@ -112,7 +112,7 @@ async def remove_recruiter_photo(current_user: RequireRecruiter):
 @router.post("/api/dashboard/recruiter-mascot/brief")
 async def recruiter_mascot_brief(request: RecruiterMascotBriefRequest, current_user: RequireRecruiter):
     """Optional OpenRouter one-liner for the recruiter mascot — rule-based fallback when unavailable."""
-    result = await generate_mascot_brief(request.model_dump())
+    result = await generate_mascot_brief(request.model_dump(), current_user.capabilities)
     if not result:
         return {"message": None, "source": "fallback"}
     return result

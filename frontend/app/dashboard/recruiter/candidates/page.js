@@ -35,7 +35,7 @@ import {
 
 export default function RecruiterCandidatesPage() {
   return (
-    <ProtectedRecruiterRoute requiredCapability="recruitment">
+    <ProtectedRecruiterRoute requiredCapability="candidates">
       <RecruiterCandidatesPageContent />
     </ProtectedRecruiterRoute>
   );

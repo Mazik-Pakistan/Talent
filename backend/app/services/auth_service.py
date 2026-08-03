@@ -220,7 +220,7 @@ class AuthService:
 
         extra = pending.get("extra_data") or {}
 
-        # Recruiter invitation: create dual employee+recruiter profile, issue employee session
+        # Recruiter invitation: create dual employee+recruiter profile, issue recruiter session
         if role == "recruiter" and extra.get("invitation_kind") == "recruiter":
             return await self._activate_invited_recruiter(pending, extra, email, now)
 
@@ -484,9 +484,10 @@ class AuthService:
 
     # Order used when the client does not specify a role on login: the first
     # active profile this account holds wins, so a candidate lands on the
-    # candidate board, an employee on the employee board, and a recruiter-only
-    # account on the recruiter dashboard.
-    ROLE_DETECT_ORDER = ("candidate", "employee", "recruiter")
+    # candidate board, a recruiter (invited via Super Admin, with an employee
+    # profile too) lands on the recruiter dashboard, and an employee-only
+    # account lands on the employee dashboard.
+    ROLE_DETECT_ORDER = ("candidate", "recruiter", "employee")
 
     async def login(self, request: LoginRequest) -> dict:
         """
@@ -525,11 +526,11 @@ class AuthService:
 
         # Resolve the role profile. The public login screen no longer asks
         # for a role — it is auto-detected from the active profiles this
-        # account holds. A recruiter-only account (no employee profile) lands
-        # on the recruiter dashboard, and a dual-role account (employee AND
-        # recruiter) lands on the employee dashboard first and can switch to
-        # Recruiter from inside the app. An explicit role (legacy clients,
-        # super admin portal) keeps the previous scoped behavior.
+        # account holds. Recruiters (including dual-role accounts that also
+        # carry an employee profile) land on the recruiter dashboard; an
+        # employee-only account lands on the employee dashboard and can
+        # switch to Recruiter only if a recruiter profile exists. An explicit
+        # role (legacy clients, super admin portal) keeps the scoped behavior.
         if request.role is None:
             effective_role = await self._auto_detect_role(user_id)
             if effective_role is None:
@@ -1246,10 +1247,12 @@ class AuthService:
     async def _auto_detect_role(self, user_id: str) -> str | None:
         """Return the first active role profile this account holds.
 
-        Priority: candidate → employee → recruiter → super_admin. A converted
+        Priority: candidate → recruiter → employee → super_admin. A converted
         candidate has a non-active ("converted") candidate profile, so they
         fall through to their active employee profile and land on the
-        employee dashboard.
+        employee dashboard. Invited recruiters (who also carry an employee
+        profile) resolve to the recruiter role so they always land on the
+        recruiter dashboard after login.
         """
         for role_name in self.ROLE_DETECT_ORDER:
             profile = await self._resolve_role_profile(user_id, role_name)
@@ -1282,14 +1285,14 @@ class AuthService:
         )
 
     async def _activate_invited_recruiter(self, pending: dict, extra: dict, email: str, now) -> dict:
-        """Activate an invited recruiter — creates employee + recruiter profiles, issues employee session."""
+        """Activate an invited recruiter — creates employee + recruiter profiles, issues recruiter session."""
         from bson import ObjectId
 
-        # Create user credentials with "employee" as default role
+        # Create user credentials with "recruiter" as the default role
         user_doc = {
             "email": email,
             "password_hash": pending["password_hash"],
-            "role": "employee",
+            "role": "recruiter",
             "status": "active",
             "created_at": now,
             "updated_at": now,
@@ -1373,23 +1376,24 @@ class AuthService:
         # Audit log
         await self._create_audit_log(user_id, email, "recruiter_email_verified", "success")
 
-        # Issue JWT with role "employee" (default dashboard)
-        available_roles = await self._available_switch_roles(user_id, "employee")
-        access_token = create_access_token({"user_id": user_id, "email": email, "role": "employee"})
-        refresh_token_str = create_refresh_token({"user_id": user_id, "email": email, "role": "employee"})
+        # Issue JWT with role "recruiter" so the invited recruiter lands on the
+        # recruiter dashboard; the employee profile stays switchable from inside.
+        available_roles = await self._available_switch_roles(user_id, "recruiter")
+        access_token = create_access_token({"user_id": user_id, "email": email, "role": "recruiter"})
+        refresh_token_str = create_refresh_token({"user_id": user_id, "email": email, "role": "recruiter"})
         await self._store_refresh_token(user_id, refresh_token_str)
 
         return {
-            "message": "Your email has been verified. Welcome to TalentAI!",
+            "message": "Your email has been verified. Welcome to Mazik Global!",
             "already_verified": False,
-            "role": "employee",
-            "redirect_to": "/dashboard/employee",
+            "role": "recruiter",
+            "redirect_to": "/dashboard/recruiter",
             "user": {
                 "id": user_id,
                 "full_name": pending["full_name"],
                 "email": email,
                 "phone": pending.get("phone"),
-                "role": "employee",
+                "role": "recruiter",
                 "job_title": extra.get("job_title"),
                 "department": extra.get("department"),
                 "employee_id": employee_id,

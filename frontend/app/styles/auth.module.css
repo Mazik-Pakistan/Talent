@@ -249,17 +249,59 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 .strengthMedium { color: #ca8a04; }
 .strengthStrong { color: #16a34a; }
 
-.checkboxField { 
-  display: flex; 
-  align-items: center; 
-  gap: 8px; 
-  color: var(--text-muted); 
+.checkboxField {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 20px;
+  color: var(--text-muted);
   font-size: 13px;
+  cursor: pointer;
 }
-.checkboxField input { appearance: none; display: grid; place-content: center; width: 14px; height: 14px; margin: 0; border: 1px solid var(--border); border-radius: 3px; background: var(--card); cursor: pointer; transition: .2s ease; }
-.checkboxField input::before { content: "✓"; color: var(--card); font-size: 10px; font-weight: 800; transform: scale(0); transition: transform .15s ease; }
-.checkboxField input:checked { border-color: var(--blue-strong); background: var(--blue-strong); }
-.checkboxField input:checked::before { transform: scale(1); }
+.checkboxField input {
+  appearance: none;
+  display: grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1.5px solid var(--navy);
+  border-radius: 4px;
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.checkboxField input::before {
+  content: "✓";
+  color: var(--card);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  transform: scale(0);
+  transition: transform .15s ease;
+}
+.checkboxField input:hover:not(:disabled) {
+  border-color: var(--navy);
+  background: color-mix(in srgb, var(--navy) 6%, var(--card));
+}
+.checkboxField input:checked {
+  border-color: var(--navy);
+  background: var(--navy);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--navy) 12%, transparent);
+}
+.checkboxField input:checked::before {
+  transform: scale(1);
+}
+.checkboxField input:focus-visible {
+  outline: none;
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--navy) 18%, transparent);
+}
+.checkboxField input:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
 .checkboxField a, .footer a { color: var(--blue-strong); font-weight: 700; text-decoration: none; }
 .checkboxField a:hover, .footer a:hover { text-decoration: underline; }
 

@@ -79,8 +79,13 @@ class EmailService:
     # ------------------------------------------------------------------ #
     # Premium branded shell - Modern Clean Design
     # ------------------------------------------------------------------ #
-    def _branded_shell(self, eyebrow: str, title: str, body_html: str) -> str:
+    def _branded_shell(self, eyebrow: str, title: str, body_html: str, brand_name: str | None = None) -> str:
         logo_src = self.LOGO_SRC
+        # Brand overrides apply to the offer letter and recruiter invitation
+        # flows only. Every other email keeps the shared wordmark untouched.
+        doc_title = _escape_text(brand_name or "TalentAI")
+        brand_alt = brand_name or "Mazik Global TalentAI"
+        footer_brand = brand_name or "Mazik Global TalentAI"
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -88,7 +93,7 @@ class EmailService:
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <meta name="color-scheme" content="light only"/>
   <meta name="supported-color-schemes" content="light only"/>
-  <title>TalentAI</title>
+  <title>{doc_title}</title>
   <style>
     :root {{
       color-scheme: light only;
@@ -133,7 +138,7 @@ class EmailService:
             <table cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
                 <td align="center">
-                  <img class="logo-img" src="{logo_src}" alt="Mazik Global TalentAI"
+                  <img class="logo-img" src="{logo_src}" alt="{brand_alt}"
                        draggable="false" oncontextmenu="return false;"
                        width="180" style="width:180px;max-width:180px;height:auto;
                               display:block;border:0;outline:none;margin:0 auto;"/>
@@ -164,7 +169,7 @@ class EmailService:
               <tr>
                 <td align="center">
                   <p style="margin:0 0 4px;color:#1a1a2e;font-size:14px;font-weight:600;letter-spacing:0.2px;">
-                    Mazik Global TalentAI
+                    {footer_brand}
                   </p>
                   <p style="margin:0 0 12px;color:#8a9bb0;font-size:12px;font-weight:500;">
                     Data-Driven Decisions.
@@ -327,13 +332,13 @@ class EmailService:
         invite_link: str,
         expires_at: str,
     ) -> None:
-        subject = "Your Invitation to Join TalentAI"
+        subject = "Your Invitation to Join Mazik Global"
         safe_link = _escape_text(invite_link, quote=True)
         salary_amount = float(monthly_salary)
         salary_value = str(int(salary_amount)) if salary_amount.is_integer() else str(salary_amount)
         body = f"""
 <p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
-  You have been invited to join <strong>TalentAI</strong> as a candidate for the position of
+  You have been invited to join <strong>Mazik Global</strong> as a candidate for the position of
   <strong>{_escape_text(job_title)}</strong> in the <strong>{_escape_text(department)}</strong> department.
 </p>
 <p style="margin:0 0 12px;color:#1a1a2e;font-size:15px;line-height:1.7;">
@@ -375,7 +380,7 @@ class EmailService:
 """
         self._send(
             to_email, subject,
-            self._branded_shell("Candidate Invitation", f"Hello, {_escape_text(full_name)} 👋", body)
+            self._branded_shell("Candidate Invitation", f"Hello, {_escape_text(full_name)} 👋", body, brand_name="Mazik Global")
         )
 
     # ------------------------------------------------------------------ #
@@ -390,11 +395,11 @@ class EmailService:
         invite_link: str,
         expires_at: str,
     ) -> None:
-        subject = "You're Invited to Join as a Recruiter – TalentAI"
+        subject = "You're Invited to Join as a Recruiter – Mazik Global"
         safe_link = _escape_text(invite_link, quote=True)
         body = f"""
 <p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
-  You have been invited to join <strong>TalentAI</strong> as a recruiter for the
+  You have been invited to join <strong>Mazik Global</strong> as a recruiter for the
   <strong>{_escape_text(department)}</strong> department, handling the
   <strong>{_escape_text(job_title)}</strong> role.
 </p>
@@ -434,7 +439,7 @@ class EmailService:
 """
         self._send(
             to_email, subject,
-            self._branded_shell("Recruiter Invitation", f"Hello, {_escape_text(full_name)} 👋", body)
+            self._branded_shell("Recruiter Invitation", f"Hello, {_escape_text(full_name)} 👋", body, brand_name="Mazik Global")
         )
 
     # ------------------------------------------------------------------ #
@@ -498,7 +503,7 @@ class EmailService:
         department: str,
         start_date: str,
     ) -> None:
-        subject = f"Your Offer Letter for {job_title} — TalentAI"
+        subject = f"Your Offer Letter for {job_title} — Mazik Global"
         body = f"""
 <p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   We&rsquo;re delighted to offer you the position below. Sign in to review
@@ -525,7 +530,7 @@ class EmailService:
 """
         self._send(
             to_email, subject,
-            self._branded_shell("Offer Letter", f"You&rsquo;ve been offered a role, {_escape_text(full_name)}!", body)
+            self._branded_shell("Offer Letter", f"You&rsquo;ve been offered a role, {_escape_text(full_name)}!", body, brand_name="Mazik Global")
         )
 
     def send_offer_validity_extended(
@@ -555,7 +560,7 @@ class EmailService:
   {_escape_text(note.strip())}
 </p>
 """
-        subject = f"Your offer letter was extended — {job_title or 'TalentAI'}"
+        subject = f"Your offer letter was extended — {job_title or 'Mazik Global'}"
         body = f"""
 <p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   {_escape_text(recruiter_name or 'Your recruiter')} extended the validity of your offer for
@@ -586,6 +591,7 @@ class EmailService:
                 "Offer extended",
                 f"Good news, {_escape_text(full_name)} — your offer window was extended",
                 body,
+                brand_name="Mazik Global",
             ),
         )
 
@@ -621,7 +627,7 @@ class EmailService:
             if safe_note
             else ""
         )
-        subject = f"Offer clarification from {candidate_name or 'candidate'} — TalentAI"
+        subject = f"Offer clarification from {candidate_name or 'candidate'} — Mazik Global"
         body = f"""
 <p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   Hi {safe_recruiter}, <strong>{safe_candidate}</strong> requested clarification on the offer
@@ -635,7 +641,12 @@ class EmailService:
         self._send(
             to_email,
             subject,
-            self._branded_shell("IT Provisioning", "IT setup requested for a batch", body),
+            self._branded_shell(
+                "Offer Clarification",
+                f"{safe_candidate} asked about their offer",
+                body,
+                brand_name="Mazik Global",
+            ),
         )
 
     def send_it_service_request(
@@ -774,7 +785,7 @@ class EmailService:
             if safe_note
             else ""
         )
-        subject = f"{headline} — {job_title or 'Offer letter'} | TalentAI"
+        subject = f"{headline} — {job_title or 'Offer letter'} | Mazik Global"
         body = f"""
 <p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   Hi {safe_name}, {lead}
@@ -787,7 +798,7 @@ class EmailService:
         self._send(
             to_email,
             subject,
-            self._branded_shell("Offer Clarification", headline, body),
+            self._branded_shell("Offer Clarification", headline, body, brand_name="Mazik Global"),
         )
 
     # Backward-compatible aliases used by older offer flows.

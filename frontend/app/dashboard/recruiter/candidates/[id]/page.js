@@ -18,7 +18,7 @@ import { formatBloodGroupDisplay } from "@/lib/bloodGroup";
 
 export default function CandidateProfilePage({ params }) {
   return (
-    <ProtectedRecruiterRoute requiredCapability="recruitment">
+    <ProtectedRecruiterRoute requiredCapability="candidates">
       <CandidateProfilePageContent params={params} />
     </ProtectedRecruiterRoute>
   );

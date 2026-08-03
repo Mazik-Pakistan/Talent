@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Depends
 
 from app.core.rbac import CurrentUser
-from app.core.security import RequireAny, RequireEmployee, RequireRecruiter, require_capabilities
+from app.core.security import RequireAny, RequireEmployee, require_capabilities
 from app.schemas.talent import (
     CompetencyEvaluationRequest,
     DevelopmentPlanUpdateRequest,
@@ -61,6 +61,7 @@ async def my_achievements(current_user: RequireEmployee):
 @router.get("/opportunities")
 async def browse_opportunities(
     current_user: RequireAny,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("talent"))],
     q: str | None = None,
     type: str | None = Query(default=None, alias="type"),
     department: str | None = None,
@@ -126,5 +127,9 @@ async def edit_development_plan(
 # US-104: Aggregated 360 profile
 # ---------------------------------------------------------------------- #
 @router.get("/profile/{employee_id}")
-async def talent_profile(employee_id: str, current_user: RequireAny):
+async def talent_profile(
+    employee_id: str,
+    current_user: RequireAny,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("talent"))],
+):
     return await talent_service.get_talent_profile(current_user, employee_id)

@@ -33,7 +33,7 @@ const TABS = [
 
 export default function RecruiterTalentPage() {
   return (
-    <ProtectedRecruiterRoute requiredCapability="employees">
+    <ProtectedRecruiterRoute requiredCapability="talent">
       <RecruiterTalentPageContent />
     </ProtectedRecruiterRoute>
   );

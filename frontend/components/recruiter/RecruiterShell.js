@@ -142,6 +142,16 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
       return capabilities[capability] !== false;
     })();
 
+  // Global search is backed by /api/search which is gated on the candidates
+  // capability — hide the box entirely when that module is disabled.
+  const canSearch =
+    user?.role !== "recruiter" ||
+    (() => {
+      const capabilities = resolveRecruiterCapabilities(user);
+      if (!Object.keys(capabilities).length) return true;
+      return capabilities.candidates !== false;
+    })();
+
   if (!user) {
     return <RecruiterLoader />;
   }
@@ -292,6 +302,7 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
               </div>
 
               <div className={styles.topbarActions}>
+                {canSearch && (
                 <div className={styles.searchWrap}>
                   <div className={styles.searchBox}>
                     <SearchIcon />
@@ -339,6 +350,7 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
                     </div>
                   )}
                 </div>
+                )}
 
                 <RoleSwitchButton user={user} />
 

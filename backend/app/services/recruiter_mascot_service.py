@@ -19,9 +19,12 @@ async def generate_mascot_brief(payload: dict, recruiter_capabilities: dict | No
     # Check if recruiter has any capabilities enabled
     if recruiter_capabilities is None:
         recruiter_capabilities = {}
-    
-    # Only generate brief if recruiter has access to relevant modules
-    has_recruitment = recruiter_capabilities.get("recruitment", False) or recruiter_capabilities.get("invite", False)
+
+    # Only generate brief if recruiter has access to pipeline modules — a
+    # recruiter with no overview/candidates/invite access gets no suggestions.
+    has_recruitment = any(
+        recruiter_capabilities.get(key, False) for key in ("overview", "candidates", "invite")
+    )
     if not has_recruitment:
         return None  # No recruitment capability = no mascot suggestions
 
@@ -38,10 +41,10 @@ async def generate_mascot_brief(payload: dict, recruiter_capabilities: dict | No
         return None
 
     names_block = ", ".join(recent_names) if recent_names else "none listed"
-    
+
     # Adjust prompt based on available capabilities
     capability_note = ""
-    if not recruiter_capabilities.get("documents", False):
+    if not recruiter_capabilities.get("candidates", False):
         capability_note = "\nNote: This recruiter does not have document review capability enabled."
     if not recruiter_capabilities.get("it", False):
         capability_note += "\nNote: This recruiter does not have IT provisioning capability enabled."

@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from app.core.rbac import CurrentUser
-from app.core.security import require_roles
+from app.core.security import require_capabilities, require_roles
 from app.schemas.it_service_request import (
     ItServiceRequestCancelRequest,
     ItServiceRequestCreate,
@@ -15,34 +15,34 @@ from app.services.it_service_request_service import it_service_request_service
 
 router = APIRouter(prefix="/api/it-service-requests", tags=["IT Service Requests"])
 
-RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))]
+RequireRecruiterWithIT = Annotated[CurrentUser, Depends(require_capabilities("it"))]
 RequireEmployee = Annotated[CurrentUser, Depends(require_roles("employee", "super_admin"))]
 
 
 @router.get("/officers/overview")
-async def it_officers_overview(current_user: RequireRecruiter):
+async def it_officers_overview(current_user: RequireRecruiterWithIT):
     """Every IT officer this recruiter has worked with + the people they provisioned."""
     return await it_service_request_service.officers_overview(current_user)
 
 
 @router.get("")
-async def list_it_service_requests(current_user: RequireRecruiter, status: str | None = None):
+async def list_it_service_requests(current_user: RequireRecruiterWithIT, status: str | None = None):
     return await it_service_request_service.list_recruiter(current_user, status)
 
 
 @router.post("")
-async def create_it_service_request(request: ItServiceRequestCreate, current_user: RequireRecruiter):
+async def create_it_service_request(request: ItServiceRequestCreate, current_user: RequireRecruiterWithIT):
     return await it_service_request_service.create_for_employee(current_user, request)
 
 
 @router.post("/send")
-async def send_it_service_request(request: ItServiceRequestSendRequest, current_user: RequireRecruiter):
+async def send_it_service_request(request: ItServiceRequestSendRequest, current_user: RequireRecruiterWithIT):
     return await it_service_request_service.send_to_it(current_user, request)
 
 
 @router.post("/{request_id}/cancel")
 async def cancel_it_service_request(
-    request_id: str, request: ItServiceRequestCancelRequest, current_user: RequireRecruiter
+    request_id: str, request: ItServiceRequestCancelRequest, current_user: RequireRecruiterWithIT
 ):
     return await it_service_request_service.cancel(current_user, request_id, request.reason)
 

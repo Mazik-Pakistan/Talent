@@ -34,6 +34,7 @@ RequireRecruiterWithLearning = Annotated[CurrentUser, Depends(require_capabiliti
 @router.get("/catalog")
 async def browse_catalog(
     current_user: RequireAny,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("learning"))],
     q: str | None = None,
     role: str | None = None,
     level: str | None = None,
@@ -61,19 +62,30 @@ async def browse_catalog(
 
 
 @router.get("/catalog/facets")
-async def catalog_facets(current_user: RequireAny, source: str = Query(default="microsoft_learn")):
+async def catalog_facets(
+    current_user: RequireAny,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("learning"))],
+    source: str = Query(default="microsoft_learn"),
+):
     return await learning_service.get_facets(source)
 
 
 @router.get("/catalog/soft-skills/categories")
-async def soft_skill_categories(current_user: RequireAny):
+async def soft_skill_categories(
+    current_user: RequireAny,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("learning"))],
+):
     """Industry soft-skill categories, sourced live from Coursera — used to
     power the 'Soft Skills' tab's category filter."""
     return await learning_service.get_soft_skill_categories()
 
 
 @router.get("/catalog/{uid}")
-async def course_detail(uid: str, current_user: RequireAny):
+async def course_detail(
+    uid: str,
+    current_user: RequireAny,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("learning"))],
+):
     return await learning_service.get_course_detail(current_user, uid)
 
 
@@ -191,7 +203,10 @@ async def update_certificate(
 # Skill matrix (US-092, US-093, US-094)
 # ---------------------------------------------------------------------- #
 @router.get("/skills/categories")
-async def skill_categories(current_user: RequireAny):
+async def skill_categories(
+    current_user: RequireAny,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("learning"))],
+):
     return await learning_service.get_skill_categories()
 
 
