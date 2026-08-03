@@ -181,47 +181,73 @@ async def list_recruiters(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ):
-    """List all recruiter invitations (pending, used, expired) and active recruiter profiles."""
+    """List every recruiter document in Mongo (any status), enriched with
+    invitation info (if any) and the employees each recruiter manages."""
     skip = (page - 1) * page_size
 
-    # Get invitations
-    query = {"kind": "recruiter"}
+    r_query = {}
     if status_filter:
-        query["status"] = status_filter
-    invitations = await database.invitations.find(query).sort("created_at", -1).skip(skip).limit(page_size).to_list(page_size)
-    total = await database.invitations.count_documents(query)
+        r_query["status"] = status_filter
+    all_recruiters = await database.recruiters.find(r_query).sort("created_at", -1).to_list(5000)
+    total = len(all_recruiters)
+    page_recruiters = all_recruiters[skip: skip + page_size]
 
-    # Get active recruiter profiles
-    active_recruiters = await database.recruiters.find({"status": "active"}).to_list(200)
-    active_map = {r.get("email", "").lower(): r for r in active_recruiters}
+    emails = [r.get("email", "").lower() for r in page_recruiters]
+    user_ids = [r.get("user_id") for r in page_recruiters if r.get("user_id")]
 
-    # Get employees who are also recruiters (dual role)
-    employee_emails = set()
-    for r in active_recruiters:
-        emp = await database.employees.find_one({"user_id": r.get("user_id"), "status": "active"}, {"email": 1})
-        if emp:
-            employee_emails.add(emp.get("email", "").lower())
+    # Latest invitation per email (for token/expiry/office_location display only).
+    invitations = await database.invitations.find(
+        {"kind": "recruiter", "email": {"$in": emails}}
+    ).sort("created_at", -1).to_list(len(emails) or 1)
+    invitations_by_email: dict[str, dict] = {}
+    for inv in invitations:
+        invitations_by_email.setdefault(inv.get("email", "").lower(), inv)  # keep newest only
+
+    # Bulk-fetch (single query each, no N+1): recruiters' own employee profiles
+    # (dual role) + employees each recruiter manages/onboarded.
+    self_profiles = await database.employees.find(
+        {"user_id": {"$in": user_ids}, "status": "active"}, {"user_id": 1, "email": 1}
+    ).to_list(len(user_ids) or 1)
+    employee_emails = {e.get("email", "").lower() for e in self_profiles}
+
+    managed_employees = await database.employees.find(
+        {"recruiter_id": {"$in": user_ids}, "status": "active"},
+        {"recruiter_id": 1, "full_name": 1, "email": 1, "job_title": 1, "department": 1},
+    ).to_list(2000)
+    employees_by_recruiter: dict[str, list[dict]] = {}
+    for emp in managed_employees:
+        employees_by_recruiter.setdefault(emp.get("recruiter_id"), []).append({
+            "id": str(emp.get("_id")),
+            "full_name": emp.get("full_name"),
+            "email": emp.get("email"),
+            "job_title": emp.get("job_title"),
+            "department": emp.get("department"),
+        })
 
     results = []
-    for inv in invitations:
-        inv_email = inv.get("email", "").lower()
-        active = active_map.get(inv_email)
+    for r in page_recruiters:
+        email = r.get("email", "").lower()
+        inv = invitations_by_email.get(email)
+        managed = employees_by_recruiter.get(r.get("user_id"), [])
+        created_at = r.get("created_at") or (inv or {}).get("created_at")
         results.append({
-            "id": str(inv.get("_id")),
-            "token": inv.get("token"),
-            "email": inv_email,
-            "full_name": inv.get("full_name"),
-            "job_title": inv.get("job_title"),
-            "department": inv.get("department"),
-            "office_location": inv.get("office_location"),
-            "status": inv.get("status"),
-            "created_at": inv["created_at"].isoformat() if inv.get("created_at") else None,
-            "expires_at": inv["expires_at"].isoformat() if inv.get("expires_at") else None,
-            "used_at": inv.get("used_at").isoformat() if inv.get("used_at") else None,
-            "capabilities": inv.get("capabilities") or DEFAULT_RECRUITER_CAPABILITIES,
-            "is_active": bool(active),
-            "has_employee_profile": inv_email in employee_emails,
-            "recruiter_id": active.get("_id") if active else None,
+            "id": str(r.get("_id")),
+            "token": (inv or {}).get("token"),
+            "email": email,
+            "full_name": r.get("full_name") or (inv or {}).get("full_name"),
+            "job_title": r.get("job_title") or (inv or {}).get("job_title"),
+            "department": r.get("department") or (inv or {}).get("department"),
+            "office_location": r.get("office_location") or (inv or {}).get("office_location"),
+            "status": r.get("status"),
+            "created_at": created_at.isoformat() if created_at else None,
+            "expires_at": inv["expires_at"].isoformat() if inv and inv.get("expires_at") else None,
+            "used_at": inv.get("used_at").isoformat() if inv and inv.get("used_at") else None,
+            "capabilities": r.get("capabilities") or (inv or {}).get("capabilities") or DEFAULT_RECRUITER_CAPABILITIES,
+            "is_active": r.get("status") == "active",
+            "has_employee_profile": email in employee_emails,
+            "recruiter_id": str(r.get("_id")),
+            "employees": managed,
+            "employee_count": len(managed),
         })
 
     return {"recruiters": results, "total": total, "page": page, "page_size": page_size}
@@ -240,8 +266,23 @@ async def update_recruiter_capabilities(
         raise HTTPException(status_code=400, detail="Invalid invitation ID.")
 
     inv = await database.invitations.find_one({"_id": ObjectId(invitation_id)})
-    if not inv or inv.get("kind") != "recruiter":
-        raise HTTPException(status_code=404, detail="Recruiter invitation not found.")
+    if inv and inv.get("kind") != "recruiter":
+        inv = None
+
+    if not inv:
+        # Legacy/directly-created recruiter with no invitation row — update
+        # the recruiter profile directly instead.
+        recruiter_profile = await database.recruiters.find_one({"_id": ObjectId(invitation_id)})
+        if not recruiter_profile:
+            raise HTTPException(status_code=404, detail="Recruiter not found.")
+        now = datetime.now(UTC)
+        existing = recruiter_profile.get("capabilities") or DEFAULT_RECRUITER_CAPABILITIES
+        updated = {**existing, **request.capabilities}
+        await database.recruiters.update_one(
+            {"_id": recruiter_profile["_id"]},
+            {"$set": {"capabilities": updated, "updated_at": now}},
+        )
+        return {"message": "Capabilities updated.", "capabilities": updated}
 
     now = datetime.now(UTC)
     # Merge: keep existing capabilities, update only provided keys
