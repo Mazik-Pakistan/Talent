@@ -4,10 +4,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 import { forgotPassword, getApiErrorMessage } from "@/services/authService";
 import styles from "@/app/styles/auth.module.css";
-import MascotStatic from "@/components/MascotStatic";
+import MascotStatic from "@/components/MascotStatic"; 
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -32,7 +34,13 @@ export default function ForgotPasswordPage() {
       sessionStorage.setItem("resetEmail", email.trim());
       setTimeout(() => router.push("/reset-password"), 2000);
     } catch (err) {
-      setError(getApiErrorMessage(err, "Something went wrong. Please try again."));
+      if (err?.response?.status === 404) {
+        // No account exists for this email — notify the user and stay on
+        // this screen instead of proceeding to the reset-code page.
+        toast.error("No account exists with this email address.");
+      } else {
+        setError(getApiErrorMessage(err, "Something went wrong. Please try again."));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -40,6 +48,8 @@ export default function ForgotPasswordPage() {
 
   return (
     <main className={styles.shell}>
+      <ToastContainer position="top-right" autoClose={4000} theme="colored" newestOnTop />
+
       <div className={styles.card}>
         <aside className={styles.aside} aria-label="Password recovery introduction">
           <div className={styles.asideBrandRow}>
