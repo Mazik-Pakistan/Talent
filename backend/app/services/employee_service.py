@@ -1412,6 +1412,12 @@ class EmployeeService:
             {"_id": employee["_id"]},
             {"$set": {**photo_fields, "updated_at": datetime.now(UTC)}},
         )
+        # A dual-role account must show the same photo in both dashboards.
+        from app.services.profile_sync_service import mirror_profile_fields
+
+        await mirror_profile_fields(
+            current_user.id, "employee", ("profile_picture", "profile_picture_meta")
+        )
         return await self.get_my_profile(current_user)
 
     async def remove_my_photo(self, current_user: CurrentUser) -> dict:
@@ -1433,6 +1439,12 @@ class EmployeeService:
         await database.employees.update_one(
             {"_id": employee["_id"]},
             {"$set": {**photo_fields, "updated_at": datetime.now(UTC)}},
+        )
+        # A dual-role account must show the same photo in both dashboards.
+        from app.services.profile_sync_service import mirror_profile_fields
+
+        await mirror_profile_fields(
+            current_user.id, "employee", ("profile_picture", "profile_picture_meta")
         )
         return await self.get_my_profile(current_user)
 
@@ -1889,6 +1901,12 @@ class EmployeeService:
             raise HTTPException(status_code=400, detail="Unknown profile step.")
 
         await database.employees.update_one({"_id": employee["_id"]}, {"$set": updates})
+        # A dual-role account (employee + recruiter) must show the same
+        # personal details in both dashboards.
+        if request.step == "personal":
+            from app.services.profile_sync_service import mirror_profile_fields
+
+            await mirror_profile_fields(current_user.id, "employee", ("full_name",))
         refreshed = await database.employees.find_one({"_id": employee["_id"]})
         response_onboarding = dict(refreshed.get("onboarding") or {})
         # On-site employees may view recruiter-entered banking read-only; remote see their own.

@@ -10,6 +10,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "overview",
     label: "Overview",
     href: "/dashboard/recruiter/overview",
+    capability: "recruitment",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="3" y="3" width="7" height="9" rx="1.5" />
@@ -23,6 +24,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "candidates",
     label: "Candidates",
     href: "/dashboard/recruiter/candidates",
+    capability: "recruitment",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -36,6 +38,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "invite",
     label: "Invite & offer",
     href: "/dashboard/recruiter/invite",
+    capability: "invite",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -49,6 +52,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "employees",
     label: "Employees",
     href: "/dashboard/recruiter/employees",
+    capability: "employees",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="2" y="7" width="20" height="14" rx="2" />
@@ -60,6 +64,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "learning",
     label: "Learning",
     href: "/dashboard/recruiter/learning",
+    capability: "learning",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
@@ -71,6 +76,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "talent",
     label: "Talent",
     href: "/dashboard/recruiter/talent",
+    capability: "employees",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M12 2l2.9 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l7.1-1z" />
@@ -81,6 +87,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "messages",
     label: "Messages",
     href: "/dashboard/recruiter/messages",
+    capability: "messages",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -91,6 +98,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "announcements",
     label: "Announcements",
     href: "/dashboard/recruiter/announcements",
+    capability: "announcements",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -102,6 +110,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "it-provisioning",
     label: "IT & support",
     href: "/dashboard/recruiter/it",
+    capability: "it",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="2" y="7" width="20" height="14" rx="2" />
@@ -114,6 +123,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "activity",
     label: "Activity",
     href: "/dashboard/recruiter/activity",
+    capability: "reporting",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -124,6 +134,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "assistant",
     label: "AI Assistant",
     href: "/dashboard/recruiter/ai-assistant",
+    capability: "recruitment",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" />
@@ -136,6 +147,7 @@ export const RECRUITER_NAV_ITEMS = [
     key: "profile",
     label: "Profile",
     href: "/dashboard/recruiter/profile",
+    capability: "profile",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="12" cy="8" r="4" />

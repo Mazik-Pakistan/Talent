@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { candidateRegister, getApiErrorMessage, getInvitation } from "@/services/authService";
+import { candidateRegister, getApiErrorMessage, getInvitation, recruiterRegister } from "@/services/authService";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import {
   formatPkMobileInput,
@@ -49,6 +49,7 @@ export default function InviteRegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formMessage, setFormMessage] = useState("");
+  const [isRecruiterInvite, setIsRecruiterInvite] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -56,6 +57,7 @@ export default function InviteRegisterPage() {
       try {
         const data = await getInvitation(token);
         setInviteState({ status: "ready", invitation: data.invitation, message: "" });
+        setIsRecruiterInvite(data.invitation.kind === "recruiter");
         setForm((current) => ({
           ...current,
           full_name: data.invitation.full_name || "",
@@ -92,7 +94,7 @@ export default function InviteRegisterPage() {
 
     setIsSubmitting(true);
     try {
-      const response = await candidateRegister({
+      const response = await (isRecruiterInvite ? recruiterRegister : candidateRegister)({
         invitation_token: token,
         full_name: form.full_name.trim(),
         email: form.email.trim(),
@@ -102,7 +104,7 @@ export default function InviteRegisterPage() {
         terms_accepted: form.terms_accepted,
       });
       sessionStorage.setItem("pendingEmail", form.email.trim());
-      sessionStorage.setItem("pendingRole", "candidate");
+      sessionStorage.setItem("pendingRole", isRecruiterInvite ? "recruiter" : "candidate");
       setFormMessage(response.message);
       router.push("/verify-email");
     } catch (error) {
@@ -138,27 +140,27 @@ export default function InviteRegisterPage() {
   return (
     <main className={styles.shell}>
       <div className={styles.card}>
-        <aside className={styles.aside} aria-label="Candidate onboarding introduction">
+        <aside className={styles.aside} aria-label={isRecruiterInvite ? "Recruiter invitation introduction" : "Candidate onboarding introduction"}>
           <div className={styles.asideBrandRow}>
             <Image src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} className={styles.asideLogo} priority />
           </div>
           <div className={styles.asideContent}>
             <div>
-              <span className={styles.asideEyebrow}>✦ Candidate onboarding</span>
-              <h2 className={styles.asideHeading}>Your offer is ready. Let&apos;s get you <em>onboarded.</em></h2>
-              <p className={styles.asideText}>Register with this invitation, verify your email, then complete your employee onboarding profile.</p>
+              <span className={styles.asideEyebrow}>✦ {isRecruiterInvite ? "Recruiter invitation" : "Candidate onboarding"}</span>
+              <h2 className={styles.asideHeading}>{isRecruiterInvite ? "Your recruiter account is ready. Let&apos;s get you set up." : "Your offer is ready. Let&apos;s get you <em>onboarded.</em>"}</h2>
+              <p className={styles.asideText}>{isRecruiterInvite ? "Register with this invitation, verify your email, then access your recruiter workspace." : "Register with this invitation, verify your email, then complete your employee onboarding profile."}</p>
             </div>
           </div>
         </aside>
 
         <section className={styles.panel} aria-labelledby="candidate-register-heading">
           <div className={styles.intro}>
-            <span className={styles.eyebrow}>Candidate onboarding</span>
+            <span className={styles.eyebrow}>{isRecruiterInvite ? "Recruiter Invitation" : "Candidate onboarding"}</span>
             <h1 id="candidate-register-heading" className={styles.heading}>Create your account</h1>
             <p className={styles.subtext}>
               You&apos;ve been invited for <strong>{invitation.job_title}</strong> in{" "}
               <strong>{invitation.department}</strong>. Create your account, then enter the
-              6-digit code we email you to verify and start onboarding.
+              6-digit code we email you to verify and {isRecruiterInvite ? "start your recruiter workspace." : "start onboarding."}
             </p>
           </div>
 

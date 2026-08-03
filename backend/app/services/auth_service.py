@@ -95,6 +95,93 @@ class AuthService:
         }
 
     # ------------------------------------------------------------------ #
+    # RECRUITER INVITE ACCEPT — Step 1                                    #
+    # ------------------------------------------------------------------ #
+
+    async def recruiter_register(self, request) -> dict:
+        """Recruiter invite accept → pending_users + SMTP OTP."""
+        from app.services.invitation_service import InvitationService
+
+        invitation_service = InvitationService()
+        invitation = await invitation_service._get_valid_invitation(request.invitation_token)
+
+        if invitation.get("kind") != "recruiter":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This invitation is not for a recruiter account.",
+            )
+
+        email = request.email.lower().strip()
+        if email != invitation["email"].lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Use the email address that received this invitation.",
+            )
+
+        # Check no existing active accounts
+        from app.services.people_history import (
+            find_active_candidate,
+            find_active_employee,
+            find_active_user,
+            prepare_email_for_reinvite,
+        )
+
+        await prepare_email_for_reinvite(email)
+
+        if await find_active_user(email):
+            raise HTTPException(status_code=409, detail="An account already exists for this email address.")
+        if await find_active_candidate(email):
+            raise HTTPException(status_code=409, detail="An account already exists for this email address.")
+        if await find_active_employee(email):
+            raise HTTPException(status_code=409, detail="An active employee already exists for this email address.")
+        if await database.recruiters.find_one({"email": email}):
+            raise HTTPException(status_code=409, detail="An account already exists for this email address.")
+
+        otp = _generate_otp()
+        now = datetime.now(UTC)
+        otp_expires_at = now + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
+        pending_expires_at = now + timedelta(minutes=30)
+
+        await database.pending_users.replace_one(
+            {"email": email},
+            {
+                "email": email,
+                "full_name": request.full_name,
+                "phone": request.phone,
+                "password_hash": hash_password(request.password),
+                "role": "recruiter",
+                "otp": otp,
+                "otp_expires_at": otp_expires_at,
+                "expires_at": pending_expires_at,
+                "created_at": now,
+                "extra_data": {
+                    "invitation_token": invitation["token"],
+                    "invitation_kind": "recruiter",
+                    "job_title": invitation["job_title"],
+                    "department": invitation["department"],
+                    "office_location": invitation.get("office_location"),
+                    "is_remote": invitation.get("is_remote"),
+                    "capabilities": invitation.get("capabilities") or {},
+                },
+            },
+            upsert=True,
+        )
+
+        try:
+            email_service.send_signup_otp(email, request.full_name, otp)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="We could not send the verification email. Please try again.",
+            ) from exc
+
+        return {
+            "message": "Registration successful. A 6-digit verification code has been sent to your email.",
+            "role": "recruiter",
+            "redirect_to": "/verify-email",
+        }
+
+    # ------------------------------------------------------------------ #
     # OTP VERIFICATION — Signup                                            #
     # ------------------------------------------------------------------ #
 
@@ -129,6 +216,12 @@ class AuthService:
 
         now = datetime.now(UTC)
         role = pending["role"]
+
+        extra = pending.get("extra_data") or {}
+
+        # Recruiter invitation: create dual employee+recruiter profile, issue employee session
+        if role == "recruiter" and extra.get("invitation_kind") == "recruiter":
+            return await self._activate_invited_recruiter(pending, extra, email, now)
 
         # Create user credentials record
         user_doc = {
@@ -392,7 +485,7 @@ class AuthService:
     # active profile this account holds wins, so a candidate lands on the
     # candidate board, an employee on the employee board, and a recruiter-only
     # account on the recruiter dashboard.
-    ROLE_DETECT_ORDER = ("candidate", "employee", "recruiter", "super_admin")
+    ROLE_DETECT_ORDER = ("candidate", "employee", "recruiter")
 
     async def login(self, request: LoginRequest) -> dict:
         """
@@ -1161,3 +1254,124 @@ class AuthService:
                 "created_at": datetime.now(UTC),
             }
         )
+
+    async def _activate_invited_recruiter(self, pending: dict, extra: dict, email: str, now) -> dict:
+        """Activate an invited recruiter — creates employee + recruiter profiles, issues employee session."""
+        from bson import ObjectId
+
+        # Create user credentials with "employee" as default role
+        user_doc = {
+            "email": email,
+            "password_hash": pending["password_hash"],
+            "role": "employee",
+            "status": "active",
+            "created_at": now,
+            "updated_at": now,
+        }
+        try:
+            result = await database.users.insert_one(user_doc)
+            user_id = str(result.inserted_id)
+        except Exception as exc:
+            if "duplicate key" in str(exc).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="An account already exists for this email address.",
+                ) from exc
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Account could not be created. Please contact support.",
+            ) from exc
+
+        # Generate employee ID
+        from app.services.employee_service import EmployeeService
+        emp_service = EmployeeService()
+        emp_id_result = await emp_service.generate_employee_id(allocate=True)
+        employee_id = emp_id_result["employee_id"]
+
+        # Create employee profile
+        employee_doc = {
+            "user_id": user_id,
+            "employee_id": employee_id,
+            "full_name": pending["full_name"],
+            "email": email,
+            "phone": pending.get("phone"),
+            "role": "employee",
+            "status": "active",
+            "job_title": extra.get("job_title"),
+            "department": extra.get("department"),
+            "office_location": extra.get("office_location"),
+            "is_remote": bool(extra.get("is_remote")),
+            "start_date": extra.get("start_date"),
+            "history_bucket": "active",
+            "cycle_group_key": email,
+            "onboarding": {},
+            "profile_status": "complete",
+            "profile_completed_at": now,
+            "created_at": now,
+            "updated_at": now,
+        }
+        await database.employees.insert_one(employee_doc)
+
+        # Create recruiter profile
+        capabilities = extra.get("capabilities") or {}
+        recruiter_doc = {
+            "user_id": user_id,
+            "full_name": pending["full_name"],
+            "email": email,
+            "phone": pending.get("phone"),
+            "role": "recruiter",
+            "status": "active",
+            "job_title": extra.get("job_title"),
+            "department": extra.get("department"),
+            "office_location": extra.get("office_location"),
+            "capabilities": capabilities,
+            "email_verified_at": now,
+            "created_at": now,
+            "updated_at": now,
+        }
+        await database.recruiters.insert_one(recruiter_doc)
+
+        # Mark invitation used
+        invite_token = extra.get("invitation_token")
+        if invite_token:
+            await database.invitations.update_one(
+                {"token": invite_token},
+                {"$set": {"status": "used", "used_at": now, "updated_at": now}},
+            )
+
+        # Remove pending record
+        await database.pending_users.delete_one({"email": email})
+
+        # Audit log
+        await self._create_audit_log(user_id, email, "recruiter_email_verified", "success")
+
+        # Issue JWT with role "employee" (default dashboard)
+        available_roles = await self._available_switch_roles(user_id, "employee")
+        access_token = create_access_token({"user_id": user_id, "email": email, "role": "employee"})
+        refresh_token_str = create_refresh_token({"user_id": user_id, "email": email, "role": "employee"})
+        await self._store_refresh_token(user_id, refresh_token_str)
+
+        return {
+            "message": "Your email has been verified. Welcome to TalentAI!",
+            "already_verified": False,
+            "role": "employee",
+            "redirect_to": "/dashboard/employee",
+            "user": {
+                "id": user_id,
+                "full_name": pending["full_name"],
+                "email": email,
+                "phone": pending.get("phone"),
+                "role": "employee",
+                "job_title": extra.get("job_title"),
+                "department": extra.get("department"),
+                "employee_id": employee_id,
+                "available_roles": available_roles,
+                "capabilities": capabilities,
+            },
+            "session": {
+                "access_token": access_token,
+                "refresh_token": refresh_token_str,
+                "expires_in": settings.JWT_EXPIRE_MINUTES * 60,
+                "token_type": "bearer",
+            },
+        }

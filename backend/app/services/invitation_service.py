@@ -201,6 +201,8 @@ class InvitationService:
                 else invitation["expires_at"],
                 "status": invitation["status"],
                 "has_offer": bool(offer or invitation.get("has_offer")),
+                "kind": invitation.get("kind", "candidate"),
+                "capabilities": invitation.get("capabilities"),
             },
             "offer": offer_service._public(offer) if offer else None,
         }

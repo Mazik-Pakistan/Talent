@@ -379,6 +379,65 @@ class EmailService:
         )
 
     # ------------------------------------------------------------------ #
+    # send_recruiter_invitation_email
+    # ------------------------------------------------------------------ #
+    def send_recruiter_invitation_email(
+        self,
+        to_email: str,
+        full_name: str,
+        job_title: str,
+        department: str,
+        invite_link: str,
+        expires_at: str,
+    ) -> None:
+        subject = "You're Invited to Join as a Recruiter – TalentAI"
+        safe_link = _escape_text(invite_link, quote=True)
+        body = f"""
+<p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  You have been invited to join <strong>TalentAI</strong> as a recruiter for the
+  <strong>{_escape_text(department)}</strong> department, handling the
+  <strong>{_escape_text(job_title)}</strong> role.
+</p>
+<p style="margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;">
+  Click the button below to complete your registration. You'll receive both Employee and Recruiter
+  access — you can switch between dashboards anytime. This invitation expires on
+  <strong>{_escape_text(expires_at)}</strong>.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
+  <tr>
+    <td align="center">
+      <a href="{safe_link}" class="cta-btn"
+         style="display:inline-block;background:#0D5C91;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                font-weight:600;font-size:15px;letter-spacing:0.2px;
+                box-shadow:0 4px 16px rgba(13,92,145,.2);
+                transition:all 0.2s ease;">
+        Accept Invitation
+      </a>
+    </td>
+  </tr>
+</table>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;">
+  <tr>
+    <td style="padding:20px;">
+      <p style="margin:0 0 4px;color:#6b7a8f;font-size:11px;font-weight:600;
+                text-transform:uppercase;letter-spacing:0.8px;">
+        Or copy this link into your browser
+      </p>
+      <p style="margin:0;font-family:monospace;font-size:12px;color:#1a1a2e;
+                word-break:break-all;line-height:1.5;">
+        {_escape_text(invite_link)}
+      </p>
+    </td>
+  </tr>
+</table>
+"""
+        self._send(
+            to_email, subject,
+            self._branded_shell("Recruiter Invitation", f"Hello, {_escape_text(full_name)} 👋", body)
+        )
+
+    # ------------------------------------------------------------------ #
     # send_employee_welcome
     # ------------------------------------------------------------------ #
     def send_employee_welcome(

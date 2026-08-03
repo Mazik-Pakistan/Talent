@@ -54,7 +54,7 @@ function DocumentsPageContent() {
   const isCandidate = user?.role === "candidate";
   const styles = isEmployee ? employeeStyles : candidateStyles;
   const profileComplete = profileMeta?.profile_status === "complete";
-  const navItems = isEmployee ? getEmployeeNavItems({ profileComplete }) : CANDIDATE_NAV_ITEMS;
+  const navItems = isEmployee ? getEmployeeNavItems({ profileComplete, user: profileMeta }) : CANDIDATE_NAV_ITEMS;
   const modules = moduleAccess(user?.role);
 
   useEffect(() => {
