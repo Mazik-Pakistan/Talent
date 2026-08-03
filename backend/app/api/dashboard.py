@@ -1,6 +1,9 @@
-from fastapi import APIRouter, File, Query, UploadFile
+from typing import Annotated
 
-from app.core.security import RequireOnboardingSelf, RequireRecruiter, RequireUser
+from fastapi import APIRouter, Depends, File, Query, UploadFile
+
+from app.core.rbac import CurrentUser
+from app.core.security import RequireOnboardingSelf, RequireRecruiter, RequireUser, require_capabilities
 from app.schemas.dashboard import (
     CreateAnnouncementRequest,
     MarkNotificationsReadRequest,
@@ -18,13 +21,17 @@ candidate_service = CandidateService()
 
 
 @router.get("/api/dashboard/summary")
-async def get_dashboard_summary(current_user: RequireRecruiter):
+async def get_dashboard_summary(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("overview"))],
+):
     return await service.get_summary(current_user)
 
 
 @router.get("/api/dashboard/activity")
 async def get_dashboard_activity(
     current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("reporting"))],
     limit: int = Query(default=20, ge=1, le=100),
 ):
     return await service.get_activity(current_user, limit)
@@ -46,7 +53,7 @@ async def mark_notifications_read(request: MarkNotificationsReadRequest, current
 
 
 @router.get("/api/search")
-async def global_search(current_user: RequireRecruiter, q: str = Query(min_length=1, max_length=120)):
+async def global_search(current_user: RequireRecruiter, _capability: Annotated[CurrentUser, Depends(require_capabilities("candidates"))], q: str = Query(min_length=1, max_length=120)):
     return await service.search(current_user, q)
 
 
@@ -60,7 +67,7 @@ async def list_announcements(
 
 
 @router.post("/api/announcements", status_code=201)
-async def create_announcement(request: CreateAnnouncementRequest, current_user: RequireRecruiter):
+async def create_announcement(request: CreateAnnouncementRequest, current_user: RequireRecruiter, _capability: Annotated[CurrentUser, Depends(require_capabilities("announcements"))]):
     return await service.create_announcement(current_user, request)
 
 
@@ -69,12 +76,13 @@ async def update_announcement(
     announcement_id: str,
     request: UpdateAnnouncementRequest,
     current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("announcements"))],
 ):
     return await service.update_announcement(current_user, announcement_id, request)
 
 
 @router.delete("/api/announcements/{announcement_id}")
-async def delete_announcement(announcement_id: str, current_user: RequireRecruiter):
+async def delete_announcement(announcement_id: str, current_user: RequireRecruiter, _capability: Annotated[CurrentUser, Depends(require_capabilities("announcements"))]):
     return await service.delete_announcement(current_user, announcement_id)
 
 

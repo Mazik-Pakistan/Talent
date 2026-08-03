@@ -428,7 +428,7 @@ function RecruiterItHubPageContent() {
   }
 
   return (
-    <RecruiterShell>
+    <RecruiterShell capability="it">
       <div className={styles.content}>
         <div className={styles.section}>
           <div className={styles.sectionHead}>

@@ -27,7 +27,6 @@ const PRESET_BENEFITS = [
   "Hybrid / remote flexibility",
   "Company laptop",
   "Learning & training budget",
-  "Fuel / conveyance allowance",
   "Performance bonus eligibility",
 ];
 
@@ -439,6 +438,7 @@ function RecruiterInvitePageInner() {
   return (
     <RecruiterShell
       activeKey="invite"
+      capability="invite"
       title="Invite & offer"
       subtitle="Send an invitation with a full offer letter — candidate signs first, then uploads documents"
     >

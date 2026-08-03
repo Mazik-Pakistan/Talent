@@ -24,6 +24,7 @@ service = EmployeeService()
 candidate_service = CandidateService()
 
 RequireRecruiterWithEmployees = Annotated[CurrentUser, Depends(require_capabilities("employees"))]
+RequireRecruiterWithCandidates = Annotated[CurrentUser, Depends(require_capabilities("candidates"))]
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx"}
@@ -59,7 +60,7 @@ async def create_from_candidate(request: CreateFromCandidateRequest, current_use
 
 @router.get("/historical-candidates")
 async def list_historical_candidates(
-    current_user: RequireRecruiterWithEmployees,
+    current_user: RequireRecruiterWithCandidates,
     q: str | None = None,
     reason: str | None = None,
     page: int = Query(default=1, ge=1),
@@ -71,24 +72,24 @@ async def list_historical_candidates(
 
 
 @router.get("/person-history")
-async def lookup_person_history(current_user: RequireRecruiterWithEmployees, email: str = Query(..., min_length=3)):
+async def lookup_person_history(current_user: RequireRecruiterWithCandidates, email: str = Query(..., min_length=3)):
     """Return all historical candidate cycles + employee tenures for an email (invite AI suggestions)."""
     return await service.lookup_person_history(current_user, email)
 
 
 @router.get("/pending-review")
-async def list_pending_review(current_user: RequireRecruiterWithEmployees):
+async def list_pending_review(current_user: RequireRecruiterWithCandidates):
     return await service.list_pending_review(current_user)
 
 
 @router.get("/onboarding-in-progress")
-async def list_onboarding_in_progress(current_user: RequireRecruiterWithEmployees):
+async def list_onboarding_in_progress(current_user: RequireRecruiterWithCandidates):
     return await service.list_onboarding_in_progress(current_user)
 
 
 @router.get("/candidates")
 async def list_candidates(
-    current_user: RequireRecruiterWithEmployees,
+    current_user: RequireRecruiterWithCandidates,
     q: str | None = None,
     status: str | None = None,
     profile_status: str | None = None,
@@ -231,13 +232,13 @@ async def save_profile_completion(payload: dict, current_user: RequireEmployee):
 
 
 @router.get("/candidates/{candidate_id}")
-async def get_candidate_detail(candidate_id: str, current_user: RequireRecruiterWithEmployees):
+async def get_candidate_detail(candidate_id: str, current_user: RequireRecruiterWithCandidates):
     return await service.get_candidate_detail(current_user, candidate_id)
 
 
 @router.post("/candidates/{candidate_id}/remind")
 async def remind_candidate(
-    candidate_id: str, current_user: RequireRecruiterWithEmployees, payload: dict | None = Body(default=None)
+    candidate_id: str, current_user: RequireRecruiterWithCandidates, payload: dict | None = Body(default=None)
 ):
     """Send onboarding / reupload / general reminder (email + notification)."""
     from app.services.reminder_service import reminder_service

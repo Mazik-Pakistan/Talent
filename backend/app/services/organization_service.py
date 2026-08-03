@@ -22,14 +22,16 @@ from app.core.rbac import CurrentUser
 
 # All module capability keys an organization can be granted.
 ORG_MODULE_KEYS = [
-    "recruitment",
+    "overview",
+    "candidates",
     "invite",
     "employees",
-    "documents",
+    "talent",
     "learning",
+    "assistant",
+    "messages",
     "announcements",
     "it",
-    "messages",
     "reporting",
     "profile",
 ]
@@ -37,14 +39,16 @@ ORG_MODULE_KEYS = [
 DEFAULT_ORG_MODULES: dict[str, bool] = {key: True for key in ORG_MODULE_KEYS}
 
 ORG_MODULE_LABELS = {
-    "recruitment": "Candidates & overview",
+    "overview": "Overview dashboard",
+    "candidates": "Candidates",
     "invite": "Invite & offer",
     "employees": "Employees",
-    "documents": "Document review",
+    "talent": "Talent analytics",
     "learning": "Learning",
+    "assistant": "AI assistant",
+    "messages": "Messages",
     "announcements": "Announcements",
     "it": "IT & support",
-    "messages": "Messages",
     "reporting": "Activity & reporting",
     "profile": "Profile",
 }

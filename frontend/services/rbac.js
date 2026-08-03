@@ -135,16 +135,23 @@ export function getAccessibleModules() {
   if (user?.role === "recruiter") {
     const capabilities = getStoredCapabilities();
     return {
-      recruitment: baseModules.recruitment && (capabilities.recruitment || capabilities.invite),
-      onboarding: baseModules.onboarding && (capabilities.employees || capabilities.recruitment),
-      learning: baseModules.learning && capabilities.learning,
-      ai: baseModules.ai && capabilities.recruitment,
-      reporting: baseModules.reporting && capabilities.reporting,
-      messages: baseModules.profile && capabilities.messages,
-      documents: baseModules.profile && capabilities.documents,
-      it: baseModules.profile && capabilities.it,
-      employees: baseModules.profile && capabilities.employees,
-      profile: baseModules.profile,
+      overview: capabilities.overview !== false,
+      candidates: capabilities.candidates !== false,
+      invite: capabilities.invite !== false,
+      employees: capabilities.employees !== false,
+      talent: capabilities.talent !== false,
+      learning: baseModules.learning && capabilities.learning !== false,
+      assistant: capabilities.assistant !== false,
+      messages: capabilities.messages !== false,
+      announcements: capabilities.announcements !== false,
+      it: capabilities.it !== false,
+      reporting: baseModules.reporting && capabilities.reporting !== false,
+      profile: baseModules.profile && capabilities.profile !== false,
+      // legacy aliases
+      recruitment: capabilities.candidates !== false || capabilities.overview !== false,
+      documents: capabilities.candidates !== false,
+      onboarding: baseModules.onboarding && capabilities.employees !== false,
+      ai: baseModules.ai && capabilities.assistant !== false,
     };
   }
   

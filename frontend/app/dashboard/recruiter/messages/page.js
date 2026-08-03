@@ -205,6 +205,7 @@ function RecruiterMessagesInner() {
   return (
     <RecruiterShell
       activeKey="messages"
+      capability="messages"
       title="Messages"
       subtitle="Employee conversations — replies also go by email and notification."
     >

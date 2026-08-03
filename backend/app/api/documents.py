@@ -10,7 +10,7 @@ from app.services.document_service import document_service
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
 RequireSelf = Annotated[CurrentUser, Depends(require_roles("candidate", "employee", "super_admin"))]
-RequireRecruiterWithDocuments = Annotated[CurrentUser, Depends(require_capabilities("documents"))]
+RequireRecruiterWithDocuments = Annotated[CurrentUser, Depends(require_capabilities("candidates"))]
 
 
 @router.post("/upload")

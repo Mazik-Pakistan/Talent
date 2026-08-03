@@ -1,21 +1,18 @@
 "use client";
 
 /**
- * Recruiter sidebar items. Previously inlined inside RecruiterShell.js;
- * extracted so it follows the same pattern as utils/employeeNav.js and
- * utils/candidateNav.js.
- * 
- * Now filters items based on recruiter capabilities.
+ * Recruiter sidebar items. Each maps to exactly one independent capability
+ * key so toggling one never affects unrelated nav sections.
  */
 
-import { getAccessibleModules } from "../../services/rbac";
+import { hasCapability } from "../../services/rbac";
 
 const ALL_NAV_ITEMS = [
   {
     key: "overview",
     label: "Overview",
     href: "/dashboard/recruiter/overview",
-    capability: "recruitment",
+    capability: "overview",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="3" y="3" width="7" height="9" rx="1.5" />
@@ -29,7 +26,7 @@ const ALL_NAV_ITEMS = [
     key: "candidates",
     label: "Candidates",
     href: "/dashboard/recruiter/candidates",
-    capability: "recruitment",
+    capability: "candidates",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -66,6 +63,17 @@ const ALL_NAV_ITEMS = [
     ),
   },
   {
+    key: "talent",
+    label: "Talent",
+    href: "/dashboard/recruiter/talent",
+    capability: "talent",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 2l2.9 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l7.1-1z" />
+      </svg>
+    ),
+  },
+  {
     key: "learning",
     label: "Learning",
     href: "/dashboard/recruiter/learning",
@@ -74,17 +82,6 @@ const ALL_NAV_ITEMS = [
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
         <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-      </svg>
-    ),
-  },
-  {
-    key: "talent",
-    label: "Talent",
-    href: "/dashboard/recruiter/talent",
-    capability: "employees",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2l2.9 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l7.1-1z" />
       </svg>
     ),
   },
@@ -139,7 +136,7 @@ const ALL_NAV_ITEMS = [
     key: "assistant",
     label: "AI Assistant",
     href: "/dashboard/recruiter/ai-assistant",
-    capability: "recruitment",
+    capability: "assistant",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" />
@@ -164,32 +161,11 @@ const ALL_NAV_ITEMS = [
 
 /**
  * Get filtered nav items based on recruiter capabilities.
- * Filters out items where the recruiter doesn't have the required capability.
  */
 export function getFilteredNavItems() {
-  const accessibleModules = getAccessibleModules();
-  
   return ALL_NAV_ITEMS.filter((item) => {
-    const capability = item.capability;
-    
-    // Map capability names to module access keys
-    const moduleKey = {
-      recruitment: "recruitment",
-      invite: "recruitment",
-      employees: "employees",
-      learning: "learning",
-      messages: "messages",
-      announcements: "recruitment", // announcements are part of recruitment module
-      it: "it",
-      reporting: "reporting",
-      profile: "profile",
-    }[capability];
-    
-    // If no module key, always show (shouldn't happen)
-    if (!moduleKey) return true;
-    
-    // Check if module is accessible
-    return accessibleModules[moduleKey];
+    if (!item.capability) return true;
+    return hasCapability(item.capability);
   });
 }
 

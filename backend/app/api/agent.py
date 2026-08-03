@@ -32,6 +32,8 @@ def _assert_agent_role(user: CurrentUser) -> None:
 async def chat(request: AgentChatRequest, current_user: RequireUser):
     """Send a message to the role-appropriate agent (recruiter or onboarding)."""
     _assert_agent_role(current_user)
+    if current_user.role == "recruiter" and not current_user.has_capability("assistant"):
+        raise HTTPException(status_code=403, detail="AI assistant is not available for your account.")
     if not request.message and not request.session_id:
         raise HTTPException(status_code=400, detail="A message is required to start a conversation.")
     context = request.context.model_dump(exclude_none=True) if hasattr(request.context, "model_dump") else request.context

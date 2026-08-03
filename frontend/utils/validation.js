@@ -12,7 +12,7 @@ export const URL_REGEX = /^https?:\/\/[^\s/$.?#].[^\s]*$/i;
 export const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
 
 // Password validation pattern (matches backend)
-export const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
+export const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$/;
 
 /**
  * Validate Pakistani CNIC/NIC format (XXXXX-XXXXXXX-X).

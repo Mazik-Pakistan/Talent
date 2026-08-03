@@ -15,7 +15,7 @@ from app.services.talent_service import talent_service
 
 router = APIRouter(prefix="/api/talent", tags=["Talent Management"])
 
-RequireRecruiterWithEmployees = Annotated[CurrentUser, Depends(require_capabilities("employees"))]
+RequireRecruiterWithTalent = Annotated[CurrentUser, Depends(require_capabilities("talent"))]
 
 
 # ---------------------------------------------------------------------- #
@@ -81,19 +81,19 @@ async def browse_opportunities(
 
 
 @router.post("/opportunities", status_code=201)
-async def post_opportunity(request: InternalOpportunityCreateRequest, current_user: RequireRecruiterWithEmployees):
+async def post_opportunity(request: InternalOpportunityCreateRequest, current_user: RequireRecruiterWithTalent):
     return await talent_service.create_opportunity(current_user, request)
 
 
 @router.put("/opportunities/{opportunity_id}")
 async def edit_opportunity(
-    opportunity_id: str, request: InternalOpportunityUpdateRequest, current_user: RequireRecruiterWithEmployees
+    opportunity_id: str, request: InternalOpportunityUpdateRequest, current_user: RequireRecruiterWithTalent
 ):
     return await talent_service.update_opportunity(current_user, opportunity_id, request)
 
 
 @router.get("/opportunities/{opportunity_id}/applicants")
-async def opportunity_applicants(opportunity_id: str, current_user: RequireRecruiterWithEmployees):
+async def opportunity_applicants(opportunity_id: str, current_user: RequireRecruiterWithTalent):
     return await talent_service.list_opportunity_applicants(current_user, opportunity_id)
 
 
@@ -101,23 +101,23 @@ async def opportunity_applicants(opportunity_id: str, current_user: RequireRecru
 # US-099: Competency evaluation
 # ---------------------------------------------------------------------- #
 @router.post("/competency/{employee_id}", status_code=201)
-async def submit_competency(employee_id: str, request: CompetencyEvaluationRequest, current_user: RequireRecruiterWithEmployees):
+async def submit_competency(employee_id: str, request: CompetencyEvaluationRequest, current_user: RequireRecruiterWithTalent):
     return await talent_service.submit_competency_evaluation(current_user, employee_id, request)
 
 
 @router.post("/search")
-async def search_talent(request: TalentSearchRequest, current_user: RequireRecruiterWithEmployees):
+async def search_talent(request: TalentSearchRequest, current_user: RequireRecruiterWithTalent):
     return await talent_service.search_talent(current_user, request)
 
 
 @router.get("/metrics")
-async def talent_metrics(current_user: RequireRecruiterWithEmployees, department: str | None = None):
+async def talent_metrics(current_user: RequireRecruiterWithTalent, department: str | None = None):
     return await talent_service.talent_metrics(current_user, department=department)
 
 
 @router.put("/development-plan/{employee_id}")
 async def edit_development_plan(
-    employee_id: str, request: DevelopmentPlanUpdateRequest, current_user: RequireRecruiterWithEmployees
+    employee_id: str, request: DevelopmentPlanUpdateRequest, current_user: RequireRecruiterWithTalent
 ):
     return await talent_service.update_development_plan(current_user, employee_id, request)
 

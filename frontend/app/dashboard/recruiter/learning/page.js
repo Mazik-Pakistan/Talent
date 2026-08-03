@@ -111,6 +111,7 @@ function LearningPageContent() {
   return (
     <RecruiterShell
       activeKey="learning"
+      capability="learning"
       title="Learning Management"
       subtitle="Browse courses, assign learning, verify certificates, and track completion"
     >

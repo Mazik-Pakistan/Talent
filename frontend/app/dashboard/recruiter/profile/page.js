@@ -158,7 +158,7 @@ function RecruiterProfilePageContent() {
   }
 
   return (
-    <RecruiterShell activeKey="profile" title="My profile" subtitle="Your recruiter account details">
+    <RecruiterShell activeKey="profile" capability="profile" title="My profile" subtitle="Your recruiter account details">
       {loading ? (
         <p className={styles.emptySub}>Loading profile…</p>
       ) : (

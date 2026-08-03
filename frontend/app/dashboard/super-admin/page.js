@@ -18,6 +18,7 @@ import {
   listOrganizations,
   listRecruiters,
   updateOrganization,
+  updateRecruiter,
   updateRecruiterCapabilities,
 } from "@/services/authService";
 import { can } from "@/services/rbac";
@@ -25,14 +26,16 @@ import { can } from "@/services/rbac";
 const initialForm = { full_name: "", email: "", phone: "", password: "", confirm_password: "" };
 
 const CAPABILITY_LABELS = {
-  recruitment: "Candidates & overview",
+  overview: "Overview dashboard",
+  candidates: "Candidates",
   invite: "Invite & offer",
   employees: "Employees",
-  documents: "Document review",
+  talent: "Talent analytics",
   learning: "Learning",
+  assistant: "AI assistant",
+  messages: "Messages",
   announcements: "Announcements",
   it: "IT & support",
-  messages: "Messages",
   reporting: "Activity & reporting",
   profile: "Profile",
 };
@@ -80,6 +83,9 @@ export default function SuperAdminDashboardPage() {
   const [orgSaving, setOrgSaving] = useState(false);
   const [orgMessage, setOrgMessage] = useState("");
   const [editOrgId, setEditOrgId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -278,6 +284,36 @@ export default function SuperAdminDashboardPage() {
     }
   }
 
+  function startEdit(r) {
+    setEditingId(r.id);
+    setEditForm({
+      job_title: r.job_title || "",
+      department: r.department || "",
+      office_location: r.office_location || "",
+      status: r.is_active ? "active" : r.status === "inactive" ? "inactive" : "active",
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditForm({});
+  }
+
+  async function saveEdit(recruiterId) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setEditSaving(true);
+    try {
+      await updateRecruiter(recruiterId, editForm, accessToken);
+      setEditingId(null);
+      loadRecruiters();
+    } catch (error) {
+      alert(getApiErrorMessage(error, "Failed to update recruiter."));
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   if (!user && !needsBootstrap) return <RecruiterLoader />;
 
   if (needsBootstrap && !user) {
@@ -309,7 +345,7 @@ export default function SuperAdminDashboardPage() {
                 ))}
                 {message && <p className={styles.formMessage}>{message}</p>}
                 <button type="submit" disabled={isSubmitting} className={styles.primaryButton}>
-                  {isSubmitting ? "Creating…" : "Create super admin"}
+                  {isSubmitting ? "Creating?" : "Create super admin"}
                 </button>
               </form>
               <p className={styles.instruction} style={{ marginTop: 16 }}>
@@ -419,7 +455,7 @@ export default function SuperAdminDashboardPage() {
 
               {inviteMessage && <p className={styles.formMessage}>{inviteMessage}</p>}
               <button type="submit" disabled={inviteSubmitting} className={styles.primaryButton}>
-                {inviteSubmitting ? "Sending…" : "Send invitation"}
+                {inviteSubmitting ? "Sending?" : "Send invitation"}
               </button>
             </form>
           </div>
@@ -439,7 +475,7 @@ export default function SuperAdminDashboardPage() {
           </div>
           <div className={styles.sectionBody}>
             {recruitersLoading ? (
-              <p className={styles.emptySub}>Loading…</p>
+              <p className={styles.emptySub}>Loading?</p>
             ) : recruiters.length === 0 ? (
               <p className={styles.emptySub}>No recruiters invited yet.</p>
             ) : (
@@ -469,7 +505,7 @@ export default function SuperAdminDashboardPage() {
                     value={bulkTemplate}
                     onChange={(e) => setBulkTemplate(e.target.value)}
                   >
-                    <option value="">Apply template…</option>
+                    <option value="">Apply template?</option>
                     {Object.keys(TEMPLATE_LABELS).map((templateKey) => (
                       <option key={templateKey} value={templateKey}>
                         {TEMPLATE_LABELS[templateKey]}
@@ -482,7 +518,7 @@ export default function SuperAdminDashboardPage() {
                     disabled={bulkBusy || !bulkSelected.length || !bulkTemplate}
                     onClick={handleBulkApply}
                   >
-                    {bulkBusy ? "Applying…" : `Apply to ${bulkSelected.length}`}
+                    {bulkBusy ? "Applying?" : `Apply to ${bulkSelected.length}`}
                   </button>
                   {bulkMessage && <span className={styles.formMessage}>{bulkMessage}</span>}
                 </div>
@@ -498,26 +534,65 @@ export default function SuperAdminDashboardPage() {
                           title={`Select ${r.full_name} for bulk update`}
                         />
                         <div className={local.recruiterHead} style={{ flex: 1 }}>
-                          <div>
-                            <strong>{r.full_name}</strong>
-                            <span
-                              className={`${local.statusPill} ${
-                                r.is_active ? local.active : r.status === "pending" ? local.pending : local.other
-                              }`}
-                              style={{ marginLeft: 8 }}
-                            >
-                              {r.is_active ? "Active" : r.status}
-                            </span>
-                            <div className={local.recruiterMeta}>
-                              {r.email} · {r.department} · {r.job_title}
-                              {r.organization_id && (
-                                <> · Org: {organizations.find((o) => o.id === r.organization_id)?.name || "—"}</>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <strong>{r.full_name}</strong>
+                              <span
+                                className={`${local.statusPill} ${
+                                  r.is_active ? local.active : r.status === "pending" ? local.pending : local.other
+                                }`}
+                              >
+                                {r.is_active ? "Active" : r.status}
+                              </span>
+                              {r.has_employee_profile && (
+                                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#ede9fe", color: "#5b21b6", fontWeight: 600 }}>DUAL ROLE</span>
                               )}
                             </div>
                             <div className={local.recruiterMeta}>
-                              Created {r.created_at ? new Date(r.created_at).toLocaleDateString() : "Null"}
+                              {r.email}
+                              {r.organization_id && (
+                                <>{" � "}Org: {organizations.find((o) => o.id === r.organization_id)?.name || "?"}</>
+                              )}
                             </div>
+                            {editingId === r.id ? (
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginTop: 10 }}>
+                                {[
+                                  { k: "job_title", l: "Job Title" },
+                                  { k: "department", l: "Department" },
+                                  { k: "office_location", l: "Location" },
+                                ].map(({ k, l }) => (
+                                  <label key={k} style={{ fontSize: 12 }}>
+                                    <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>{l}</span>
+                                    <input type="text" value={editForm[k] || ""} onChange={(e) => setEditForm({ ...editForm, [k]: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }} />
+                                  </label>
+                                ))}
+                                <label style={{ fontSize: 12 }}>
+                                  <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>Status</span>
+                                  <select value={editForm.status || "active"} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}>
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                  </select>
+                                </label>
+                                <div style={{ display: "flex", gap: 6, alignSelf: "end" }}>
+                                  <button type="button" disabled={editSaving} onClick={() => saveEdit(r.id)} className={styles.primaryButton} style={{ padding: "4px 14px", fontSize: 12 }}>
+                                    {editSaving ? "?" : "Save"}
+                                  </button>
+                                  <button type="button" onClick={cancelEdit} style={{ padding: "4px 14px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", cursor: "pointer" }}>Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className={local.recruiterMeta}>
+                                {r.job_title || "?"}{" � "}{r.department || "?"}
+                                {r.office_location ? ` � ${r.office_location}` : ""}
+                                {r.created_at ? ` � Created ${new Date(r.created_at).toLocaleDateString()}` : ""}
+                              </div>
+                            )}
                           </div>
+                          {editingId !== r.id && (
+                            <button type="button" onClick={() => startEdit(r)} style={{ padding: "4px 12px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
+                              Edit role
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div className={local.capabilityChips}>
@@ -549,7 +624,7 @@ export default function SuperAdminDashboardPage() {
               <div>
                 <div className={styles.sectionTitle}>Organizations</div>
                 <div className={styles.sectionDesc}>
-                  Companies using the product. Grant each organization its own module set — recruiters can only use
+                  Companies using the product. Grant each organization its own module set ? recruiters can only use
                   modules their organization has purchased.
                 </div>
               </div>
@@ -612,7 +687,7 @@ export default function SuperAdminDashboardPage() {
                 {orgMessage && <p className={styles.formMessage}>{orgMessage}</p>}
                 <div className={styles.actions} style={{ marginTop: 12 }}>
                   <button type="submit" className={styles.primaryButton} disabled={orgSaving}>
-                    {orgSaving ? "Saving…" : editOrgId ? "Save modules" : "Create organization"}
+                    {orgSaving ? "Saving?" : editOrgId ? "Save modules" : "Create organization"}
                   </button>
                   <button type="button" className={styles.secondaryButton} onClick={() => setOrgFormOpen(false)}>
                     Cancel
@@ -622,7 +697,7 @@ export default function SuperAdminDashboardPage() {
             )}
 
             {orgsLoading ? (
-              <p className={styles.emptySub}>Loading…</p>
+              <p className={styles.emptySub}>Loading?</p>
             ) : organizations.length === 0 ? (
               <p className={styles.emptySub}>No organizations yet. Create one to start selling the product.</p>
             ) : (
@@ -636,9 +711,9 @@ export default function SuperAdminDashboardPage() {
                           {org.status}
                         </span>
                         <div className={local.recruiterMeta}>
-                          {org.contact_email || "No contact email"} · Created{" "}
-                          {org.created_at ? new Date(org.created_at).toLocaleDateString() : "—"}
-                          {" · "}
+                          {org.contact_email || "No contact email"} ? Created{" "}
+                          {org.created_at ? new Date(org.created_at).toLocaleDateString() : "?"}
+                          {" ? "}
                           {recruiters.filter((r) => r.organization_id === org.id).length} recruiter(s)
                         </div>
                         {org.description && <div className={local.recruiterMeta}>{org.description}</div>}

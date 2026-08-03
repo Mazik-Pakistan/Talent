@@ -77,8 +77,8 @@ function validateForm(form) {
 
   if (!form.password) {
     errors.password = "Password is required.";
-  } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/.test(form.password)) {
-    errors.password = "Use 8+ characters with uppercase, lowercase, number, and special character.";
+  } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$/.test(form.password)) {
+    errors.password = "Use 8+ characters with uppercase, lowercase, number, special character, and no spaces.";
   }
 
   if (!form.confirm_password) {

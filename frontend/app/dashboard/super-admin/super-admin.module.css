@@ -44,6 +44,7 @@
 }
 .statusPill.active { background: var(--green-light); color: var(--green); }
 .statusPill.pending { background: var(--orange-light); color: var(--orange); }
+.statusPill.inactive { background: #f3f4f6; color: #6b7280; }
 .statusPill.other { background: var(--red-light); color: var(--red); }
 
 .capabilityChips {

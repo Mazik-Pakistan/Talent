@@ -201,6 +201,8 @@ class ItProvisioningSubmitRequest(BaseModel):
             return None
         if len(cleaned) < 4:
             raise ValueError("Company email password must be at least 4 characters.")
+        if any(c.isspace() for c in cleaned):
+            raise ValueError("Company email password must not contain spaces.")
         return cleaned
 
     @field_validator("temporary_password")
@@ -213,6 +215,8 @@ class ItProvisioningSubmitRequest(BaseModel):
             return None
         if len(cleaned) < 8:
             raise ValueError("First-time password must be at least 8 characters.")
+        if any(c.isspace() for c in cleaned):
+            raise ValueError("First-time password must not contain spaces.")
         if not (
             any(c.isupper() for c in cleaned)
             and any(c.islower() for c in cleaned)
@@ -359,6 +363,8 @@ class ItBatchSubmitEntry(BaseModel):
             return None
         if len(cleaned) < 4:
             raise ValueError("Company email password must be at least 4 characters.")
+        if any(c.isspace() for c in cleaned):
+            raise ValueError("Company email password must not contain spaces.")
         return cleaned
 
     @field_validator("temporary_password")
@@ -371,6 +377,8 @@ class ItBatchSubmitEntry(BaseModel):
             return None
         if len(cleaned) < 8:
             raise ValueError("First-time password must be at least 8 characters.")
+        if any(c.isspace() for c in cleaned):
+            raise ValueError("First-time password must not contain spaces.")
         if not (
             any(c.isupper() for c in cleaned)
             and any(c.islower() for c in cleaned)

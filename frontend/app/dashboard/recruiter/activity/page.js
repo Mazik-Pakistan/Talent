@@ -54,7 +54,7 @@ function RecruiterActivityPageContent() {
   }, [live, loadActivity]);
 
   return (
-    <RecruiterShell activeKey="activity" title="Activity feed" subtitle="Live timeline of recruiting and onboarding events">
+    <RecruiterShell activeKey="activity" capability="reporting" title="Activity feed" subtitle="Live timeline of recruiting and onboarding events">
       {error && (
         <div className={styles.formMessage} role="alert">
           {error}
