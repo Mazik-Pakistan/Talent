@@ -345,7 +345,7 @@ export default function SuperAdminDashboardPage() {
                 ))}
                 {message && <p className={styles.formMessage}>{message}</p>}
                 <button type="submit" disabled={isSubmitting} className={styles.primaryButton}>
-                  {isSubmitting ? "Creating?" : "Create super admin"}
+                  {isSubmitting ? "Creating..." : "Create super admin"}
                 </button>
               </form>
               <p className={styles.instruction} style={{ marginTop: 16 }}>
@@ -455,7 +455,7 @@ export default function SuperAdminDashboardPage() {
 
               {inviteMessage && <p className={styles.formMessage}>{inviteMessage}</p>}
               <button type="submit" disabled={inviteSubmitting} className={styles.primaryButton}>
-                {inviteSubmitting ? "Sending?" : "Send invitation"}
+                {inviteSubmitting ? "Sending..." : "Send invitation"}
               </button>
             </form>
           </div>
@@ -475,7 +475,7 @@ export default function SuperAdminDashboardPage() {
           </div>
           <div className={styles.sectionBody}>
             {recruitersLoading ? (
-              <p className={styles.emptySub}>Loading?</p>
+              <p className={styles.emptySub}>Loading...</p>
             ) : recruiters.length === 0 ? (
               <p className={styles.emptySub}>No recruiters invited yet.</p>
             ) : (
@@ -505,7 +505,7 @@ export default function SuperAdminDashboardPage() {
                     value={bulkTemplate}
                     onChange={(e) => setBulkTemplate(e.target.value)}
                   >
-                    <option value="">Apply template?</option>
+                    <option value="">Apply template...</option>
                     {Object.keys(TEMPLATE_LABELS).map((templateKey) => (
                       <option key={templateKey} value={templateKey}>
                         {TEMPLATE_LABELS[templateKey]}
@@ -518,7 +518,7 @@ export default function SuperAdminDashboardPage() {
                     disabled={bulkBusy || !bulkSelected.length || !bulkTemplate}
                     onClick={handleBulkApply}
                   >
-                    {bulkBusy ? "Applying?" : `Apply to ${bulkSelected.length}`}
+                    {bulkBusy ? "Applying..." : `Apply to ${bulkSelected.length}`}
                   </button>
                   {bulkMessage && <span className={styles.formMessage}>{bulkMessage}</span>}
                 </div>
@@ -551,7 +551,7 @@ export default function SuperAdminDashboardPage() {
                             <div className={local.recruiterMeta}>
                               {r.email}
                               {r.organization_id && (
-                                <>{" · "}Org: {organizations.find((o) => o.id === r.organization_id)?.name || "?"}</>
+                                <>{" - Org: "} {organizations.find((o) => o.id === r.organization_id)?.name || "-"}</>
                               )}
                             </div>
                             {editingId === r.id ? (
@@ -575,16 +575,16 @@ export default function SuperAdminDashboardPage() {
                                 </label>
                                 <div style={{ display: "flex", gap: 6, alignSelf: "end" }}>
                                   <button type="button" disabled={editSaving} onClick={() => saveEdit(r.id)} className={styles.primaryButton} style={{ padding: "4px 14px", fontSize: 12 }}>
-                                    {editSaving ? "?" : "Save"}
+                                    {editSaving ? "..." : "Save"}
                                   </button>
                                   <button type="button" onClick={cancelEdit} style={{ padding: "4px 14px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", cursor: "pointer" }}>Cancel</button>
                                 </div>
                               </div>
                             ) : (
                               <div className={local.recruiterMeta}>
-                                {r.job_title || "?"}{" · "}{r.department || "?"}
-                                {r.office_location ? ` · ${r.office_location}` : ""}
-                                {r.created_at ? ` · Created ${new Date(r.created_at).toLocaleDateString()}` : ""}
+                                {r.job_title || "-"} - {r.department || "-"}
+                                {r.office_location ? ` - ${r.office_location}` : ""}
+                                {r.created_at ? ` - Created ${new Date(r.created_at).toLocaleDateString()}` : ""}
                               </div>
                             )}
                           </div>
@@ -687,7 +687,7 @@ export default function SuperAdminDashboardPage() {
                 {orgMessage && <p className={styles.formMessage}>{orgMessage}</p>}
                 <div className={styles.actions} style={{ marginTop: 12 }}>
                   <button type="submit" className={styles.primaryButton} disabled={orgSaving}>
-                    {orgSaving ? "Saving?" : editOrgId ? "Save modules" : "Create organization"}
+                    {orgSaving ? "Saving..." : editOrgId ? "Save modules" : "Create organization"}
                   </button>
                   <button type="button" className={styles.secondaryButton} onClick={() => setOrgFormOpen(false)}>
                     Cancel
@@ -697,7 +697,7 @@ export default function SuperAdminDashboardPage() {
             )}
 
             {orgsLoading ? (
-              <p className={styles.emptySub}>Loading?</p>
+              <p className={styles.emptySub}>Loading...</p>
             ) : organizations.length === 0 ? (
               <p className={styles.emptySub}>No organizations yet. Create one to start selling the product.</p>
             ) : (
@@ -712,7 +712,7 @@ export default function SuperAdminDashboardPage() {
                         </span>
                         <div className={local.recruiterMeta}>
                           {org.contact_email || "No contact email"} ? Created{" "}
-                          {org.created_at ? new Date(org.created_at).toLocaleDateString() : "?"}
+                          {org.created_at ? new Date(org.created_at).toLocaleDateString() : "-"}
                           {" ? "}
                           {recruiters.filter((r) => r.organization_id === org.id).length} recruiter(s)
                         </div>
