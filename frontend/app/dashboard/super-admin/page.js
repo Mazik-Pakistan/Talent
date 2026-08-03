@@ -83,14 +83,19 @@ export default function SuperAdminDashboardPage() {
     setNeedsBootstrap(true);
   }, [router]);
 
+  const [recruitersError, setRecruitersError] = useState("");
+
   const loadRecruiters = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setRecruitersLoading(true);
+    setRecruitersError("");
     try {
       const data = await listRecruiters(accessToken, { status: statusFilter || undefined });
       setRecruiters(data.recruiters || []);
-    } catch { /* non-critical */ } finally {
+    } catch (error) {
+      setRecruitersError(getApiErrorMessage(error, "Could not load recruiters."));
+    } finally {
       setRecruitersLoading(false);
     }
   }, [statusFilter]);
@@ -389,6 +394,16 @@ export default function SuperAdminDashboardPage() {
                         </label>
                       ))}
                     </div>
+                    {r.employee_count > 0 && (
+                      <div className={local.recruiterMeta} style={{ marginTop: 8 }}>
+                        <strong>Employees ({r.employee_count}):</strong>
+                        <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                          {r.employees.map((e) => (
+                            <li key={e.id}>{e.full_name} — {e.email}{e.job_title ? ` · ${e.job_title}` : ""}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
