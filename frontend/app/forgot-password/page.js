@@ -9,7 +9,7 @@ import "react-toastify/dist/ReactToastify.css";
 
 import { forgotPassword, getApiErrorMessage } from "@/services/authService";
 import styles from "@/app/styles/auth.module.css";
-import MascotStatic from "@/components/MascotStatic";
+import MascotStatic from "@/components/MascotStatic"; 
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
