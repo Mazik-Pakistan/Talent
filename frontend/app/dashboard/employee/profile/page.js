@@ -244,7 +244,7 @@ function EmployeeProfileContent() {
   const modules = useMemo(() => moduleAccess(user?.role), [user?.role]);
   const profileComplete = employee?.profile_status === "complete";
   const profileIncomplete = !profileComplete;
-  const navItems = useMemo(() => getEmployeeNavItems({ profileComplete }), [profileComplete]);
+  const navItems = useMemo(() => getEmployeeNavItems({ profileComplete, user: employee }), [profileComplete, employee]);
   const percentage = progress?.percentage ?? (profileIncomplete ? 0 : 100);
 
   const personal = onboarding?.personal || {};

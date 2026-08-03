@@ -300,7 +300,10 @@ function EmployeeDashboardContent() {
   const profileIncomplete = employee?.profile_status === "incomplete";
   const profileComplete = employee?.profile_status === "complete";
   const percentage = loading ? 0 : progress?.percentage ?? (profileIncomplete ? 0 : 100);
-  const navItems = useMemo(() => getEmployeeNavItems({ profileComplete }), [profileComplete]);
+  const navItems = useMemo(
+    () => getEmployeeNavItems({ profileComplete, user: employee }),
+    [profileComplete, employee]
+  );
   const documentsSummary = onboarding?.government_docs?.documents?.length ?? null;
   const assignedAssets = employee?.assets || [];
   const orientation = employee?.orientation;
@@ -647,7 +650,8 @@ function EmployeeDashboardContent() {
               </div>
             </div>
 
-            {/* Onboarding Journey – moved above stats for better visual flow */}
+            {/* Onboarding Journey – hidden for recruiter-employees */}
+            {!employee?.can_switch_to_recruiter && (
             <div className={`${styles.section} ${styles.journeySection}`}>
               <div className={styles.sectionHead}>
                 <div className={styles.sectionHeadLeft}>
@@ -684,6 +688,7 @@ function EmployeeDashboardContent() {
                 </div>
               </div>
             </div>
+            )}
 
             {/* Stats – only visible while onboarding is incomplete */}
             {!profileComplete && (
@@ -1092,8 +1097,8 @@ function EmployeeDashboardContent() {
                 </div>
               </div>
 
-              {/* Onboarding record – hidden once profile is complete */}
-              {!profileComplete && (
+              {/* Onboarding record – hidden once profile is complete or for recruiter-employees */}
+              {!employee?.can_switch_to_recruiter && !profileComplete && (
                 <div className={styles.section} style={{ marginBottom: 0 }} id="onboarding-section">
                   <div className={styles.sectionHead}>
                     <div className={styles.sectionHeadLeft}>

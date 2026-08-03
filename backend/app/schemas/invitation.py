@@ -144,6 +144,51 @@ class CandidateRegisterRequest(BaseModel):
         return self
 
 
+class RecruiterRegisterRequest(BaseModel):
+    invitation_token: str = Field(min_length=16)
+    full_name: str = Field(min_length=2, max_length=100)
+    email: EmailStr
+    phone: str
+    password: str
+    confirm_password: str
+    terms_accepted: bool
+
+    @field_validator("full_name")
+    @classmethod
+    def normalize_full_name(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if len(normalized) < 2:
+            raise ValueError("Full name must contain at least two characters.")
+        return normalized
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        return value.lower()
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        return normalize_pk_mobile(value)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        if not PASSWORD_PATTERN.fullmatch(value):
+            raise ValueError(
+                "Password must be at least 8 characters and include uppercase, lowercase, number, and special character."
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_registration(self):
+        if self.password != self.confirm_password:
+            raise ValueError("Password confirmation does not match.")
+        if not self.terms_accepted:
+            raise ValueError("You must accept the Terms & Conditions.")
+        return self
+
+
 def _optional_phone(value: str | None) -> str | None:
     return normalize_optional_pk_mobile(value)
 
