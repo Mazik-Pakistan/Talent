@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import RequireAccess from "@/components/RequireAccess";
@@ -14,7 +15,10 @@ import { useUserSession } from "@/hooks/useUserSession";
 import { useNotificationsCenter } from "@/hooks/useNotificationsCenter";
 import { useGlobalSearch } from "@/hooks/useGlobalSearch";
 import { RECRUITER_NAV_ITEMS } from "@/components/recruiter/recruiterNav";
-import { getStoredCapabilities } from "@/services/authService";
+import {
+  refreshRecruiterCapabilities,
+  resolveRecruiterCapabilities,
+} from "@/services/authService";
 import styles from "./recruiter-shell.module.css";
 
 const COLLAPSE_KEY = "recruiter_sidebar_collapsed";
@@ -26,6 +30,21 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
   const user = useUserSession({ pathname, watchEvents: ["talent-user-updated", "storage"] });
   const [sidebarCollapsed, toggleSidebar] = useSidebarCollapse(COLLAPSE_KEY);
   const handleLogout = useLogout();
+
+  // Keep local capabilities in sync with Super Admin / org module changes.
+  useEffect(() => {
+    if (user?.role !== "recruiter") return undefined;
+    let cancelled = false;
+    (async () => {
+      await refreshRecruiterCapabilities();
+      if (!cancelled) {
+        // refreshRecruiterCapabilities already broadcasts talent-user-updated
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.role, user?.id]);
 
   const {
     notifOpen,
@@ -107,14 +126,21 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
     if (!item.capability) return true;
     // Super admin and non-recruiter roles always see the full navigation.
     if (user?.role !== "recruiter") return true;
-    // Recruiters: filter by stored capabilities. Legacy sessions with no
-    // stored capabilities keep seeing everything (backward compatible).
-    const capabilities = getStoredCapabilities();
+    const capabilities = resolveRecruiterCapabilities(user);
+    // Legacy sessions with no capability map keep full nav.
     if (!Object.keys(capabilities).length) return true;
-    return capabilities[item.capability] === true;
+    // Explicit false (personal or org) hides the item; missing key stays visible.
+    return capabilities[item.capability] !== false;
   });
 
-  const hasCapability = !capability || (user?.capabilities?.[capability] ?? true);
+  const hasCapability =
+    !capability ||
+    user?.role !== "recruiter" ||
+    (() => {
+      const capabilities = resolveRecruiterCapabilities(user);
+      if (!Object.keys(capabilities).length) return true;
+      return capabilities[capability] !== false;
+    })();
 
   if (!user) {
     return <RecruiterLoader />;

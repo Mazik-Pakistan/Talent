@@ -12,17 +12,40 @@ supabase: Client | None = None
 if settings.SUPABASE_URL and settings.SUPABASE_KEY:
     supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
-# Index already exists under another name / with conflicting options — do not abort startup.
-_INDEX_CONFLICT_CODES = {85, 86}
+# Index already exists / option conflict / aborted by concurrent drop — do not abort startup.
+# 85/86: IndexOptionsConflict / IndexKeySpecsConflict
+# 68: IndexAlreadyExists
+# 276: IndexBuildAborted (e.g. dropIndexes raced an in-progress create on Atlas)
+_INDEX_IGNORE_CODES = {68, 85, 86, 276}
 
 
 async def _ensure_index(collection, keys, **kwargs) -> None:
     try:
         await collection.create_index(keys, **kwargs)
     except OperationFailure as exc:
-        if exc.code in _INDEX_CONFLICT_CODES:
+        if exc.code in _INDEX_IGNORE_CODES:
+            return
+        # Atlas sometimes wraps abort reasons without a stable top-level code.
+        errmsg = (exc.details or {}).get("errmsg") or str(exc)
+        if "IndexBuildAborted" in errmsg or "dropIndexes" in errmsg:
             return
         raise
+
+
+async def _index_names(collection) -> set[str]:
+    try:
+        info = await collection.index_information()
+        return set(info.keys())
+    except Exception:
+        return set()
+
+
+async def _drop_index_quiet(collection, name: str) -> None:
+    """Best-effort drop; never fails startup (Atlas races are common)."""
+    try:
+        await collection.drop_index(name)
+    except Exception:
+        return
 
 
 async def create_database_indexes() -> None:
@@ -37,10 +60,10 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.invitations, "expires_at")
 
     # Allow multiple historical cycles for the same email; only one active candidate.
-    try:
-        await database.candidates.drop_index("email_1")
-    except Exception:
-        pass
+    # Drop legacy unique email_1 only while migrating to the partial unique index.
+    candidate_indexes = await _index_names(database.candidates)
+    if "email_active_unique" not in candidate_indexes and "email_1" in candidate_indexes:
+        await _drop_index_quiet(database.candidates, "email_1")
     await _ensure_index(
         database.candidates,
         "email",
@@ -58,14 +81,11 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.candidates, "recruiter_id")
 
     # Allow multiple exited tenures for the same email; only one active employee.
-    try:
-        await database.employees.drop_index("email_1")
-    except Exception:
-        pass
-    try:
-        await database.employees.drop_index("user_id_1")
-    except Exception:
-        pass
+    employee_indexes = await _index_names(database.employees)
+    if "email_active_unique" not in employee_indexes and "email_1" in employee_indexes:
+        await _drop_index_quiet(database.employees, "email_1")
+    if "user_id_active_unique" not in employee_indexes and "user_id_1" in employee_indexes:
+        await _drop_index_quiet(database.employees, "user_id_1")
     await _ensure_index(
         database.employees,
         "email",

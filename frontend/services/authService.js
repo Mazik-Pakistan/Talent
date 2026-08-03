@@ -130,9 +130,18 @@ export function persistTokens(session) {
 /** Persist login session + remember-me preference + recruiter capabilities. */
 export function persistLoginSession(session, user, { rememberMe = false, email = "", capabilities = {} } = {}) {
   persistTokens(session);
-  if (user) localStorage.setItem("user", JSON.stringify(user));
-  if (capabilities && Object.keys(capabilities).length > 0) {
-    localStorage.setItem("capabilities", JSON.stringify(capabilities));
+  const resolvedCaps =
+    capabilities && Object.keys(capabilities).length > 0
+      ? capabilities
+      : user?.capabilities && Object.keys(user.capabilities).length > 0
+        ? user.capabilities
+        : null;
+  if (user) {
+    const nextUser = resolvedCaps ? { ...user, capabilities: resolvedCaps } : user;
+    localStorage.setItem("user", JSON.stringify(nextUser));
+  }
+  if (resolvedCaps) {
+    localStorage.setItem("capabilities", JSON.stringify(resolvedCaps));
   }
   localStorage.setItem("session_last_active", String(Date.now()));
 
@@ -146,22 +155,97 @@ export function persistLoginSession(session, user, { rememberMe = false, email =
   }
 }
 
+/** Write capability map to both localStorage keys used by the UI. */
+export function persistCapabilities(capabilities, { broadcast = true } = {}) {
+  if (!capabilities || typeof capabilities !== "object") return;
+  localStorage.setItem("capabilities", JSON.stringify(capabilities));
+  try {
+    const raw = localStorage.getItem("user");
+    if (raw) {
+      const user = JSON.parse(raw);
+      localStorage.setItem("user", JSON.stringify({ ...user, capabilities }));
+    }
+  } catch {
+    // ignore corrupt user blob
+  }
+  if (broadcast && typeof window !== "undefined") {
+    window.dispatchEvent(new Event("talent-user-updated"));
+  }
+}
+
 /** Get stored recruiter capabilities (empty object if not a recruiter or no capabilities set). */
 export function getStoredCapabilities() {
   const stored = localStorage.getItem("capabilities");
-  return stored ? JSON.parse(stored) : {};
+  if (stored) {
+    try {
+      return JSON.parse(stored) || {};
+    } catch {
+      return {};
+    }
+  }
+  try {
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    return user?.capabilities && typeof user.capabilities === "object" ? user.capabilities : {};
+  } catch {
+    return {};
+  }
 }
 
-/** Check if recruiter has a specific capability enabled. */
+/**
+ * Resolve the capability map for nav/route guards.
+ * Prefers the dedicated capabilities key, then user.capabilities.
+ */
+export function resolveRecruiterCapabilities(user = null) {
+  const fromStore = (() => {
+    const stored = localStorage.getItem("capabilities");
+    if (!stored) return {};
+    try {
+      return JSON.parse(stored) || {};
+    } catch {
+      return {};
+    }
+  })();
+  if (Object.keys(fromStore).length) return fromStore;
+  const fromUser = user?.capabilities;
+  if (fromUser && typeof fromUser === "object" && Object.keys(fromUser).length) {
+    return fromUser;
+  }
+  return getStoredCapabilities();
+}
+
+/** Check if recruiter has a specific capability enabled. Missing key = allowed (legacy). */
 export function hasCapability(capability) {
+  if (!capability) return true;
   const capabilities = getStoredCapabilities();
-  return Boolean(capabilities[capability]);
+  if (!Object.keys(capabilities).length) return true;
+  return capabilities[capability] !== false;
 }
 
 /** Check if recruiter has any of the specified capabilities. */
 export function hasAnyCapability(capabilities = []) {
-  const stored = getStoredCapabilities();
-  return capabilities.some(cap => Boolean(stored[cap]));
+  return capabilities.some((cap) => hasCapability(cap));
+}
+
+/**
+ * Re-fetch effective capabilities from /api/rbac/me and persist them.
+ * Call on recruiter shell mount so Super Admin toggles apply without re-login.
+ */
+export async function refreshRecruiterCapabilities() {
+  const token = localStorage.getItem("access_token");
+  if (!token) return null;
+  try {
+    const { data } = await apiClient.get("/api/rbac/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const capabilities = data?.capabilities;
+    if (capabilities && typeof capabilities === "object" && Object.keys(capabilities).length) {
+      persistCapabilities(capabilities);
+      return capabilities;
+    }
+  } catch {
+    // Keep existing local capabilities if refresh fails.
+  }
+  return null;
 }
 
 export function isRememberMeEnabled() {

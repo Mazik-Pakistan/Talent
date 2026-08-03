@@ -50,6 +50,35 @@ const TEMPLATE_LABELS = {
 
 const initialInviteForm = { full_name: "", email: "", job_title: "", department: "", office_location: "", is_remote: false, organization_id: "" };
 
+function allCapabilityFlags(source = {}, fallback = true) {
+  return Object.keys(CAPABILITY_LABELS).reduce((acc, key) => {
+    acc[key] = source[key] ?? fallback;
+    return acc;
+  }, {});
+}
+
+/** Modules purchased by an organization (all-true when org unknown). */
+function orgPurchasedModules(organizations, organizationId) {
+  if (!organizationId) return allCapabilityFlags({}, true);
+  const org = organizations.find((o) => o.id === organizationId);
+  if (!org) return allCapabilityFlags({}, true);
+  return allCapabilityFlags(org.modules || {}, true);
+}
+
+/** Keep only modules the org purchased; force others off. */
+function clampCapsToOrg(caps, orgModules) {
+  return Object.keys(CAPABILITY_LABELS).reduce((acc, key) => {
+    if (orgModules[key] === false) {
+      acc[key] = false;
+    } else {
+      acc[key] = caps[key] ?? true;
+    }
+    return acc;
+  }, {});
+}
+
+const emptyEditForm = { job_title: "", department: "", office_location: "", status: "active" };
+
 export default function SuperAdminDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -61,9 +90,7 @@ export default function SuperAdminDashboardPage() {
   const [recruiters, setRecruiters] = useState([]);
   const [recruitersLoading, setRecruitersLoading] = useState(false);
   const [inviteForm, setInviteForm] = useState(initialInviteForm);
-  const [inviteCaps, setInviteCaps] = useState(
-    Object.keys(CAPABILITY_LABELS).reduce((acc, k) => ({ ...acc, [k]: true }), {})
-  );
+  const [inviteCaps, setInviteCaps] = useState(() => allCapabilityFlags({}, true));
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [inviteMessage, setInviteMessage] = useState("");
   const [templates, setTemplates] = useState({});
@@ -77,14 +104,12 @@ export default function SuperAdminDashboardPage() {
   const [orgsLoading, setOrgsLoading] = useState(false);
   const [orgFormOpen, setOrgFormOpen] = useState(false);
   const [orgForm, setOrgForm] = useState({ name: "", contact_email: "", description: "" });
-  const [orgModules, setOrgModules] = useState(
-    Object.keys(CAPABILITY_LABELS).reduce((acc, k) => ({ ...acc, [k]: true }), {})
-  );
+  const [orgModules, setOrgModules] = useState(() => allCapabilityFlags({}, true));
   const [orgSaving, setOrgSaving] = useState(false);
   const [orgMessage, setOrgMessage] = useState("");
   const [editOrgId, setEditOrgId] = useState(null);
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({});
+  const [editForm, setEditForm] = useState(emptyEditForm);
   const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
@@ -118,10 +143,18 @@ export default function SuperAdminDashboardPage() {
     }
   }, [organizations, inviteForm.organization_id]);
 
+  // When the selected organization changes, drop modules that org did not purchase.
+  useEffect(() => {
+    if (!inviteForm.organization_id || !organizations.length) return;
+    const orgModules = orgPurchasedModules(organizations, inviteForm.organization_id);
+    setInviteCaps((current) => clampCapsToOrg(current, orgModules));
+    setActiveTemplate("");
+  }, [inviteForm.organization_id, organizations]);
+
   function openCreateOrg() {
     setEditOrgId(null);
     setOrgForm({ name: "", contact_email: "", description: "" });
-    setOrgModules(Object.keys(CAPABILITY_LABELS).reduce((acc, k) => ({ ...acc, [k]: true }), {}));
+    setOrgModules(allCapabilityFlags({}, true));
     setOrgFormOpen(true);
     setOrgMessage("");
   }
@@ -133,7 +166,7 @@ export default function SuperAdminDashboardPage() {
       contact_email: org.contact_email || "",
       description: org.description || "",
     });
-    setOrgModules({ ...org.modules });
+    setOrgModules(allCapabilityFlags(org.modules || {}, true));
     setOrgFormOpen(true);
     setOrgMessage("");
   }
@@ -164,10 +197,34 @@ export default function SuperAdminDashboardPage() {
   async function handleOrgDelete(org) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
-    if (!window.confirm(`Delete organization "${org.name}"? This cannot be undone.`)) return;
+    const recruiterCount = recruiters.filter((r) => r.organization_id === org.id).length;
+    const confirmed = window.confirm(
+      `PERMANENTLY DELETE "${org.name}"?\n\n` +
+        "This will WIPE ALL data for this organization:\n" +
+        "- All recruiters and their login accounts\n" +
+        "- All candidates and employees\n" +
+        "- All invitations, offers, documents, IT, learning, and messages\n\n" +
+        (recruiterCount ? `Currently listed here: ${recruiterCount} recruiter(s).\n\n` : "") +
+        "This cannot be undone."
+    );
+    if (!confirmed) return;
+    const typed = window.prompt(
+      `Type the organization name exactly to confirm wipe:\n${org.name}`
+    );
+    if (typed !== org.name) {
+      if (typed !== null) alert("Delete cancelled ? name did not match.");
+      return;
+    }
     try {
-      await deleteOrganization(org.id, accessToken);
+      const result = await deleteOrganization(org.id, accessToken);
+      const wiped = result?.wiped || {};
+      alert(
+        result?.message ||
+          `Organization deleted. Wiped ${wiped.recruiters || 0} recruiter(s), ` +
+            `${wiped.candidates || 0} candidate(s), ${wiped.employees || 0} employee(s).`
+      );
       loadOrganizations();
+      loadRecruiters();
     } catch (err) {
       alert(getApiErrorMessage(err, "Could not delete organization."));
     }
@@ -176,7 +233,8 @@ export default function SuperAdminDashboardPage() {
   function applyTemplate(templateKey) {
     const template = templates[templateKey];
     if (!template) return;
-    setInviteCaps({ ...template });
+    const orgModules = orgPurchasedModules(organizations, inviteForm.organization_id);
+    setInviteCaps(clampCapsToOrg(allCapabilityFlags(template, false), orgModules));
     setActiveTemplate(templateKey);
   }
 
@@ -232,7 +290,18 @@ export default function SuperAdminDashboardPage() {
     setInviteSubmitting(true);
     try {
       const accessToken = localStorage.getItem("access_token");
-      await inviteRecruiter({ ...inviteForm, full_name: inviteForm.full_name.trim(), email: inviteForm.email.trim(), job_title: inviteForm.job_title.trim(), department: inviteForm.department.trim(), office_location: inviteForm.office_location.trim() || undefined, organization_id: inviteForm.organization_id || undefined, capabilities: inviteCaps }, accessToken);
+      const orgModules = orgPurchasedModules(organizations, inviteForm.organization_id);
+      const capabilities = clampCapsToOrg(inviteCaps, orgModules);
+      await inviteRecruiter({
+        ...inviteForm,
+        full_name: inviteForm.full_name.trim(),
+        email: inviteForm.email.trim(),
+        job_title: inviteForm.job_title.trim(),
+        department: inviteForm.department.trim(),
+        office_location: inviteForm.office_location.trim() || undefined,
+        organization_id: inviteForm.organization_id || undefined,
+        capabilities,
+      }, accessToken);
       setInviteMessage("Invitation sent successfully!");
       setInviteForm(initialInviteForm);
       loadRecruiters();
@@ -296,7 +365,7 @@ export default function SuperAdminDashboardPage() {
 
   function cancelEdit() {
     setEditingId(null);
-    setEditForm({});
+    setEditForm(emptyEditForm);
   }
 
   async function saveEdit(recruiterId) {
@@ -337,7 +406,7 @@ export default function SuperAdminDashboardPage() {
                     <span>{field.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} *</span>
                     <input
                       type={field.includes("password") ? "password" : field === "email" ? "email" : "text"}
-                      value={form[field]}
+                      value={form[field] ?? ""}
                       onChange={(e) => setForm({ ...form, [field]: e.target.value })}
                       required
                     />
@@ -391,7 +460,7 @@ export default function SuperAdminDashboardPage() {
                     <span>{l}{k !== "office_location" ? " *" : ""}</span>
                     <input
                       type={t}
-                      value={inviteForm[k]}
+                      value={inviteForm[k] ?? ""}
                       onChange={(e) => setInviteForm({ ...inviteForm, [k]: e.target.value })}
                       required={k !== "office_location"}
                     />
@@ -400,8 +469,14 @@ export default function SuperAdminDashboardPage() {
                 <label className={styles.field}>
                   <span>Organization</span>
                   <select
-                    value={inviteForm.organization_id}
-                    onChange={(e) => setInviteForm({ ...inviteForm, organization_id: e.target.value })}
+                    value={inviteForm.organization_id ?? ""}
+                    onChange={(e) => {
+                      const organization_id = e.target.value;
+                      setInviteForm({ ...inviteForm, organization_id });
+                      const orgModules = orgPurchasedModules(organizations, organization_id);
+                      setInviteCaps((current) => clampCapsToOrg(current, orgModules));
+                      setActiveTemplate("");
+                    }}
                   >
                     <option value="">Auto (default organization)</option>
                     {organizations.map((org) => (
@@ -416,7 +491,7 @@ export default function SuperAdminDashboardPage() {
               <label className={local.checkboxRow} style={{ marginBottom: 16 }}>
                 <input
                   type="checkbox"
-                  checked={inviteForm.is_remote}
+                  checked={Boolean(inviteForm.is_remote)}
                   onChange={(e) => setInviteForm({ ...inviteForm, is_remote: e.target.checked })}
                 />
                 Remote employee
@@ -424,8 +499,8 @@ export default function SuperAdminDashboardPage() {
 
               <p className={local.capabilityLabel}>Recruiter modules</p>
               <p className={local.recruiterMeta} style={{ marginBottom: 8 }}>
-                Pick a template or toggle which modules this recruiter can use. Final access is limited to what their
-                organization has purchased.
+                Only modules purchased by the selected organization are shown. Turn off any of those you do not want
+                this recruiter to use.
               </p>
               <div className={local.templateBar}>
                 {Object.keys(TEMPLATE_LABELS).map((templateKey) => (
@@ -441,17 +516,24 @@ export default function SuperAdminDashboardPage() {
                 ))}
               </div>
               <div className={local.capabilityGrid}>
-                {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
+                {Object.entries(CAPABILITY_LABELS)
+                  .filter(([key]) => orgPurchasedModules(organizations, inviteForm.organization_id)[key] !== false)
+                  .map(([key, label]) => (
                   <label key={key} className={local.checkboxRow}>
                     <input
                       type="checkbox"
-                      checked={inviteCaps[key]}
+                      checked={Boolean(inviteCaps[key])}
                       onChange={(e) => { setInviteCaps({ ...inviteCaps, [key]: e.target.checked }); setActiveTemplate(""); }}
                     />
                     {label}
                   </label>
                 ))}
               </div>
+              {Object.values(orgPurchasedModules(organizations, inviteForm.organization_id)).some((v) => v === false) && (
+                <p className={local.recruiterMeta} style={{ marginTop: 8 }}>
+                  Hidden modules are not purchased by this organization. Enable them under Organizations first if needed.
+                </p>
+              )}
 
               {inviteMessage && <p className={styles.formMessage}>{inviteMessage}</p>}
               <button type="submit" disabled={inviteSubmitting} className={styles.primaryButton}>
@@ -563,12 +645,12 @@ export default function SuperAdminDashboardPage() {
                                 ].map(({ k, l }) => (
                                   <label key={k} style={{ fontSize: 12 }}>
                                     <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>{l}</span>
-                                    <input type="text" value={editForm[k] || ""} onChange={(e) => setEditForm({ ...editForm, [k]: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }} />
+                                    <input type="text" value={editForm[k] ?? ""} onChange={(e) => setEditForm({ ...editForm, [k]: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }} />
                                   </label>
                                 ))}
                                 <label style={{ fontSize: 12 }}>
                                   <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>Status</span>
-                                  <select value={editForm.status || "active"} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}>
+                                  <select value={editForm.status ?? "active"} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}>
                                     <option value="active">Active</option>
                                     <option value="inactive">Inactive</option>
                                   </select>
@@ -596,16 +678,20 @@ export default function SuperAdminDashboardPage() {
                         </div>
                       </div>
                       <div className={local.capabilityChips}>
-                        {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
+                        {Object.entries(CAPABILITY_LABELS).map(([key, label]) => {
+                          const orgAllows = orgPurchasedModules(organizations, r.organization_id)[key] !== false;
+                          if (!orgAllows) return null;
+                          return (
                           <label key={key} className={local.capabilityChip}>
                             <input
                               type="checkbox"
-                              checked={r.capabilities?.[key] ?? true}
+                              checked={Boolean(r.capabilities?.[key] ?? true)}
                               onChange={() => toggleCapability(r.id, key, r.capabilities?.[key] ?? true)}
                             />
                             {label}
                           </label>
-                        ))}
+                          );
+                        })}
                       </div>
                     </li>
                   ))}
@@ -642,7 +728,7 @@ export default function SuperAdminDashboardPage() {
                   <label className={styles.field}>
                     <span>Organization name *</span>
                     <input
-                      value={orgForm.name}
+                      value={orgForm.name ?? ""}
                       onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
                       placeholder="Acme Corp"
                       required={!editOrgId}
@@ -653,7 +739,7 @@ export default function SuperAdminDashboardPage() {
                     <span>Contact email</span>
                     <input
                       type="email"
-                      value={orgForm.contact_email}
+                      value={orgForm.contact_email ?? ""}
                       onChange={(e) => setOrgForm({ ...orgForm, contact_email: e.target.value })}
                       disabled={Boolean(editOrgId)}
                     />
@@ -661,7 +747,7 @@ export default function SuperAdminDashboardPage() {
                   <label className={styles.field}>
                     <span>Description</span>
                     <input
-                      value={orgForm.description}
+                      value={orgForm.description ?? ""}
                       onChange={(e) => setOrgForm({ ...orgForm, description: e.target.value })}
                       disabled={Boolean(editOrgId)}
                     />
@@ -677,7 +763,7 @@ export default function SuperAdminDashboardPage() {
                     <label key={key} className={local.checkboxRow}>
                       <input
                         type="checkbox"
-                        checked={orgModules[key]}
+                        checked={Boolean(orgModules[key])}
                         onChange={(e) => setOrgModules({ ...orgModules, [key]: e.target.checked })}
                       />
                       {label}

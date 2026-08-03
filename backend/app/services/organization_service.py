@@ -146,6 +146,158 @@ async def delete_organization(organization_id: str) -> bool:
     return result.deleted_count > 0
 
 
+def _ids(docs: list[dict], *keys: str) -> list[str]:
+    out: list[str] = []
+    for doc in docs:
+        for key in keys:
+            value = doc.get(key)
+            if value:
+                out.append(str(value))
+    return list(dict.fromkeys(out))
+
+
+async def purge_organization(organization_id: str) -> dict:
+    """Permanently wipe an organization and all tenant data tied to it.
+
+    Deletes recruiters, candidates, employees, invitations, auth users for those
+    people, and related operational data (offers, IT, learning, messages, etc.).
+    """
+    if not ObjectId.is_valid(organization_id):
+        raise ValueError("Invalid organization id.")
+
+    org = await get_organization(organization_id)
+    if not org:
+        raise LookupError("Organization not found.")
+
+    org_filter = {"organization_id": organization_id}
+
+    recruiters = await database.recruiters.find(org_filter).to_list(length=None)
+    recruiter_user_ids = _ids(recruiters, "user_id", "supabase_user_id")
+
+    # Include legacy rows missing organization_id but owned by this org's recruiters.
+    people_query: dict = {"$or": [org_filter]}
+    if recruiter_user_ids:
+        people_query["$or"].append({"recruiter_id": {"$in": recruiter_user_ids}})
+
+    candidates = await database.candidates.find(people_query).to_list(length=None)
+    employees = await database.employees.find(people_query).to_list(length=None)
+    invitations = await database.invitations.find(people_query).to_list(length=None)
+
+    candidate_user_ids = _ids(candidates, "user_id", "supabase_user_id")
+    employee_user_ids = _ids(employees, "user_id", "supabase_user_id")
+    employee_record_ids = _ids(employees, "employee_id") + [str(d["_id"]) for d in employees]
+    candidate_record_ids = [str(d["_id"]) for d in candidates] + _ids(candidates, "candidate_id")
+
+    all_user_ids = list(dict.fromkeys(recruiter_user_ids + candidate_user_ids + employee_user_ids))
+    all_emails = _ids(recruiters, "email") + _ids(candidates, "email") + _ids(employees, "email") + _ids(
+        invitations, "email"
+    )
+    all_emails = list(dict.fromkeys(e.lower() for e in all_emails if e))
+
+    summary: dict[str, int] = {}
+
+    async def _delete_many(collection_name: str, query: dict) -> None:
+        if not query:
+            return
+        collection = getattr(database, collection_name, None)
+        if collection is None:
+            return
+        result = await collection.delete_many(query)
+        if result.deleted_count:
+            summary[collection_name] = summary.get(collection_name, 0) + result.deleted_count
+
+    # People / tenancy core (org-scoped + recruiter-owned legacy)
+    await _delete_many("invitations", people_query)
+    await _delete_many("candidates", people_query)
+    await _delete_many("employees", people_query)
+    await _delete_many("recruiters", org_filter)
+
+    # Auth / session
+    if all_user_ids:
+        valid_oids = [ObjectId(i) for i in all_user_ids if ObjectId.is_valid(i)]
+        if valid_oids:
+            result = await database.users.delete_many({"_id": {"$in": valid_oids}})
+            if result.deleted_count:
+                summary["users"] = summary.get("users", 0) + result.deleted_count
+        await _delete_many("refresh_tokens", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("agent_conversations", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("notifications", {"recipient_id": {"$in": all_user_ids}})
+        await _delete_many("company_email_password_otps", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("learning_enrollments", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("learning_bookmarks", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("learning_certificates", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("learning_career_goals", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("learning_ai_recommendations", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("learning_skill_assessments", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("learning_skill_gaps", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("learning_role_matches", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("learning_recruiter_profile_cache", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("employee_skills", {"user_id": {"$in": all_user_ids}})
+        await _delete_many("documents", {"owner_id": {"$in": all_user_ids}})
+        await _delete_many("ai_coach_messages", {"user_id": {"$in": all_user_ids}})
+
+    if all_emails:
+        await _delete_many("pending_users", {"email": {"$in": all_emails}})
+        await _delete_many("login_attempts", {"email": {"$in": all_emails}})
+        result = await database.users.delete_many({"email": {"$in": all_emails}})
+        if result.deleted_count:
+            summary["users"] = summary.get("users", 0) + result.deleted_count
+
+    # Recruiter-owned operational data
+    if recruiter_user_ids:
+        await _delete_many("announcements", {"created_by": {"$in": recruiter_user_ids}})
+        await _delete_many("offer_letters", {"recruiter_id": {"$in": recruiter_user_ids}})
+        await _delete_many("it_provisioning_batches", {"recruiter_id": {"$in": recruiter_user_ids}})
+        await _delete_many("it_provisioning_requests", {"recruiter_id": {"$in": recruiter_user_ids}})
+        await _delete_many("it_service_requests", {"recruiter_id": {"$in": recruiter_user_ids}})
+        await _delete_many("it_kits", {"created_by": {"$in": recruiter_user_ids}})
+        await _delete_many("hr_threads", {"recruiter_id": {"$in": recruiter_user_ids}})
+        await _delete_many("learning_assignments", {"assigned_by_id": {"$in": recruiter_user_ids}})
+        await _delete_many("learning_certificates", {"recruiter_id": {"$in": recruiter_user_ids}})
+        await _delete_many("recruiter_kb_roles", {"recruiter_id": {"$in": recruiter_user_ids}})
+        await _delete_many("recruiter_kb_certifications", {"recruiter_id": {"$in": recruiter_user_ids}})
+        await _delete_many("recruiter_kb_meta", {"recruiter_id": {"$in": recruiter_user_ids}})
+        await _delete_many("internal_opportunities", {"created_by": {"$in": recruiter_user_ids}})
+        await _delete_many("audit_logs", {"recruiter_id": {"$in": recruiter_user_ids}})
+
+    if candidate_record_ids:
+        await _delete_many("offer_letters", {"candidate_id": {"$in": candidate_record_ids}})
+        await _delete_many("it_provisioning_requests", {"candidate_id": {"$in": candidate_record_ids}})
+        await _delete_many("documents", {"owner_id": {"$in": candidate_record_ids}})
+
+    if employee_record_ids:
+        await _delete_many("employee_career_events", {"employee_id": {"$in": employee_record_ids}})
+        await _delete_many("learning_assignments", {"employee_id": {"$in": employee_record_ids}})
+        await _delete_many("learning_enrollments", {"employee_id": {"$in": employee_record_ids}})
+        await _delete_many("employee_skills", {"employee_id": {"$in": employee_record_ids}})
+        await _delete_many("talent_competency_evaluations", {"employee_id": {"$in": employee_record_ids}})
+        await _delete_many("talent_development_plans", {"employee_id": {"$in": employee_record_ids}})
+        await _delete_many("internal_opportunity_applications", {"employee_id": {"$in": employee_record_ids}})
+        await _delete_many("it_service_requests", {"employee_id": {"$in": employee_record_ids}})
+        await _delete_many("hr_threads", {"employee_id": {"$in": employee_record_ids}})
+        await _delete_many("documents", {"owner_id": {"$in": employee_record_ids}})
+
+    if employee_user_ids:
+        await _delete_many("hr_threads", {"employee_user_id": {"$in": employee_user_ids}})
+
+    deleted = await delete_organization(organization_id)
+    if not deleted:
+        raise LookupError("Organization not found.")
+    summary["organizations"] = 1
+
+    return {
+        "organization": org,
+        "deleted": summary,
+        "wiped": {
+            "recruiters": len(recruiters),
+            "candidates": len(candidates),
+            "employees": len(employees),
+            "invitations": len(invitations),
+            "users": len(all_user_ids),
+        },
+    }
+
+
 async def resolve_org_modules(organization_id: str | None) -> dict[str, bool]:
     """Return the granted module set for an organization (all-true default)."""
     if not organization_id:
