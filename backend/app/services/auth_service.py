@@ -747,51 +747,62 @@ class AuthService:
                     )
                     break
 
-        # Always return a generic message — don't leak whether the email exists
-        if user_exists:
-            now = datetime.now(UTC)
-
-            # Simple resend cooldown: repeated requests inside the window skip
-            # generating a new code so IT/attackers can't spam the inbox.
-            existing = await database.otp_verifications.find_one(
-                {"email": account_email, "purpose": "reset_password"},
-                {"last_requested_at": 1},
-            )
-            if existing and existing.get("last_requested_at"):
-                last = existing["last_requested_at"]
-                if getattr(last, "tzinfo", None) is None:
-                    last = last.replace(tzinfo=UTC)
-                if now - last < timedelta(seconds=settings.OTP_RESEND_COOLDOWN_SECONDS):
-                    return {
-                        "message": "If an account with that email exists, a password reset code has been sent. Check your inbox and spam folder."
-                    }
-
-            otp = _generate_otp()
-            otp_expires_at = now + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
-
-            await database.otp_verifications.replace_one(
-                {"email": account_email, "purpose": "reset_password"},
-                {
-                    "email": account_email,
-                    "purpose": "reset_password",
-                    "otp": otp,
-                    "used": False,
-                    "attempts": 0,
-                    "expires_at": otp_expires_at,
-                    "last_requested_at": now,
-                    "created_at": now,
-                },
-                upsert=True,
+        # NOTE: Previously this endpoint always returned a generic message
+        # regardless of whether the account existed, to avoid leaking
+        # account existence (a common security best-practice). Per product
+        # requirement, we now explicitly tell the user when no account
+        # exists for the submitted email, so the frontend can show a
+        # "no account found" notification instead of proceeding to the
+        # reset-code screen.
+        if not user_exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No account exists with this email address.",
             )
 
-            try:
-                for to_email in await self._notification_emails(account_email):
-                    email_service.send_forgot_password_otp(to_email, otp)
-            except Exception:
-                pass  # Best-effort; don't reveal failures
+        now = datetime.now(UTC)
+
+        # Simple resend cooldown: repeated requests inside the window skip
+        # generating a new code so IT/attackers can't spam the inbox.
+        existing = await database.otp_verifications.find_one(
+            {"email": account_email, "purpose": "reset_password"},
+            {"last_requested_at": 1},
+        )
+        if existing and existing.get("last_requested_at"):
+            last = existing["last_requested_at"]
+            if getattr(last, "tzinfo", None) is None:
+                last = last.replace(tzinfo=UTC)
+            if now - last < timedelta(seconds=settings.OTP_RESEND_COOLDOWN_SECONDS):
+                return {
+                    "message": "A password reset code has been sent. Check your inbox and spam folder."
+                }
+
+        otp = _generate_otp()
+        otp_expires_at = now + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
+
+        await database.otp_verifications.replace_one(
+            {"email": account_email, "purpose": "reset_password"},
+            {
+                "email": account_email,
+                "purpose": "reset_password",
+                "otp": otp,
+                "used": False,
+                "attempts": 0,
+                "expires_at": otp_expires_at,
+                "last_requested_at": now,
+                "created_at": now,
+            },
+            upsert=True,
+        )
+
+        try:
+            for to_email in await self._notification_emails(account_email):
+                email_service.send_forgot_password_otp(to_email, otp)
+        except Exception:
+            pass  # Best-effort; don't reveal failures
 
         return {
-            "message": "If an account with that email exists, a password reset code has been sent. Check your inbox and spam folder."
+            "message": "A password reset code has been sent. Check your inbox and spam folder."
         }
 
     # ------------------------------------------------------------------ #
