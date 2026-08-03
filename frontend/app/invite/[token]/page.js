@@ -30,8 +30,8 @@ function validateForm(form) {
   if (form.full_name.trim().length < 2) errors.full_name = "Enter your full name.";
   if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) errors.email = "Enter a valid email address.";
   if (!isValidPkMobile(form.phone)) errors.phone = `Enter a valid Pakistani mobile number (${PK_MOBILE_HINT}).`;
-  if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/.test(form.password)) {
-    errors.password = "Use 8+ characters with uppercase, lowercase, number, and special character.";
+  if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$/.test(form.password)) {
+    errors.password = "Use 8+ characters with uppercase, lowercase, number, special character, and no spaces.";
   }
   if (form.password !== form.confirm_password) errors.confirm_password = "Passwords do not match.";
   if (!form.terms_accepted) errors.terms_accepted = "You must accept the Terms & Conditions.";

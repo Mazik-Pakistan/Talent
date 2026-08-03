@@ -131,7 +131,7 @@ class CandidateRegisterRequest(BaseModel):
     def validate_password(cls, value: str) -> str:
         if not PASSWORD_PATTERN.fullmatch(value):
             raise ValueError(
-                "Password must be at least 8 characters and include uppercase, lowercase, number, and special character."
+                "Password must be at least 8 characters, include uppercase, lowercase, number, and special character, and must not contain spaces."
             )
         return value
 
@@ -176,7 +176,7 @@ class RecruiterRegisterRequest(BaseModel):
     def validate_password(cls, value: str) -> str:
         if not PASSWORD_PATTERN.fullmatch(value):
             raise ValueError(
-                "Password must be at least 8 characters and include uppercase, lowercase, number, and special character."
+                "Password must be at least 8 characters, include uppercase, lowercase, number, and special character, and must not contain spaces."
             )
         return value
 
