@@ -880,6 +880,16 @@ class DashboardService:
         )
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Recruiter profile not found.")
+
+        # A dual-role account (recruiter + employee) must show the same
+        # personal details in both dashboards.
+        from app.services.profile_sync_service import mirror_profile_fields
+
+        await mirror_profile_fields(
+            current_user.id,
+            current_user.role,
+            ("full_name", "phone", "department", "job_title", "office_location"),
+        )
         return await self.get_recruiter_profile(current_user)
 
     async def upload_recruiter_photo(self, current_user: CurrentUser, file) -> dict:
@@ -899,6 +909,11 @@ class DashboardService:
             {"_id": doc["_id"]},
             {"$set": {**photo_fields, "updated_at": datetime.now(UTC)}},
         )
+        from app.services.profile_sync_service import mirror_profile_fields
+
+        await mirror_profile_fields(
+            current_user.id, current_user.role, ("profile_picture", "profile_picture_meta")
+        )
         return await self.get_recruiter_profile(current_user)
 
     async def remove_recruiter_photo(self, current_user: CurrentUser) -> dict:
@@ -913,6 +928,11 @@ class DashboardService:
         await collection.update_one(
             {"_id": doc["_id"]},
             {"$set": {**photo_fields, "updated_at": datetime.now(UTC)}},
+        )
+        from app.services.profile_sync_service import mirror_profile_fields
+
+        await mirror_profile_fields(
+            current_user.id, current_user.role, ("profile_picture", "profile_picture_meta")
         )
         return await self.get_recruiter_profile(current_user)
 
