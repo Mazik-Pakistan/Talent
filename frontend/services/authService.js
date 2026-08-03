@@ -1197,3 +1197,36 @@ export async function remindCourseAssignments(payload, accessToken) {
   });
   return data;
 }
+
+// ─── Super Admin: Recruiter Management ─────────────────────────────────────
+
+export async function listRecruiters(accessToken, params = {}) {
+  const query = new URLSearchParams();
+  if (params.status) query.set("status", params.status);
+  if (params.page) query.set("page", String(params.page));
+  if (params.page_size) query.set("page_size", String(params.page_size));
+  const qs = query.toString();
+  const { data } = await apiClient.get(`/api/super-admin/recruiters${qs ? `?${qs}` : ""}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function inviteRecruiter(payload, accessToken) {
+  const { data } = await apiClient.post("/api/super-admin/recruiters/invite", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function updateRecruiterCapabilities(invitationId, payload, accessToken) {
+  const { data } = await apiClient.put(`/api/super-admin/recruiters/${invitationId}/capabilities`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function recruiterRegister(payload) {
+  const { data } = await apiClient.post("/api/auth/recruiter/register", payload);
+  return data;
+}

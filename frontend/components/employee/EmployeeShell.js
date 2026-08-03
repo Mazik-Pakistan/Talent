@@ -117,7 +117,7 @@ function EmployeeShellInner({ activeKey, title, subtitle, actions, onEmployee, c
 
   const modules = moduleAccess(user?.role);
   const profileComplete = employee?.profile_status === "complete";
-  const navItems = getEmployeeNavItems({ profileComplete });
+  const navItems = getEmployeeNavItems({ profileComplete, user: employee });
   const displayName = employee?.full_name || user.full_name;
   const photoUrl = employee?.profile_picture || user?.profile_picture || null;
   // A migration can add the recruiter profile after this browser session was

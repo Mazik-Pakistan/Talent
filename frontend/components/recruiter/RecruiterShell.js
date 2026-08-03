@@ -102,6 +102,11 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
     router.push("/dashboard/recruiter/candidates");
   }
 
+  const allowedNavItems = RECRUITER_NAV_ITEMS.filter((item) => {
+    if (!item.capability) return true;
+    return user?.capabilities?.[item.capability] ?? true;
+  });
+
   if (!user) {
     return <RecruiterLoader />;
   }
@@ -124,7 +129,7 @@ export default function RecruiterShell({ activeKey, title, subtitle, children })
 
             <div className={styles.navSectionLabel}>Recruiting</div>
             <ul className={styles.nav}>
-              {RECRUITER_NAV_ITEMS.map((item) => {
+              {allowedNavItems.map((item) => {
                 const isActive = activeKey
                   ? activeKey === item.key
                   : pathname === item.href || pathname.startsWith(`${item.href}/`);

@@ -14,7 +14,7 @@ from app.schemas.auth import (
     VerifyEmailRequest,
     VerifyOTPRequest,
 )
-from app.schemas.invitation import CandidateRegisterRequest
+from app.schemas.invitation import CandidateRegisterRequest, RecruiterRegisterRequest
 from app.services.auth_service import AuthService
 from app.services.candidate_service import CandidateService
 
@@ -35,6 +35,12 @@ async def register(request: RegisterRequest):
 async def candidate_register(request: CandidateRegisterRequest):
     """US-010: Candidate registers via recruiter invitation link — sends OTP email."""
     return await candidate_service.register(request)
+
+
+@router.post("/recruiter/register", status_code=201)
+async def recruiter_register(request: RecruiterRegisterRequest):
+    """Recruiter registers via super admin invitation link — sends OTP email."""
+    return await service.recruiter_register(request)
 
 
 @router.post("/switch-role")

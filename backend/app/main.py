@@ -16,6 +16,7 @@ from app.api.messages import router as messages_router
 from app.api.offers import router as offers_router
 from app.api.onboarding import router as onboarding_router
 from app.api.rbac import router as rbac_router
+from app.api.super_admin import router as super_admin_router
 from app.api.talent import router as talent_router
 from app.api.universities import router as universities_router
 from app.core.config import settings
@@ -65,6 +66,7 @@ app.include_router(it_service_requests_router)
 app.include_router(onboarding_router)
 app.include_router(universities_router)
 app.include_router(rbac_router)
+app.include_router(super_admin_router)
 app.include_router(dashboard_router)
 app.include_router(employees_router)
 app.include_router(offers_router)
