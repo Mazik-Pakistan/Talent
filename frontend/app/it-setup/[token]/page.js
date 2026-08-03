@@ -94,7 +94,7 @@ const SHARED_STYLES = `
   .it-title {
     margin: 0;
     color: #0f1f33;
-    font-size: clamp(1.7rem, 3.4vw, 2.2rem);
+    font-size: clamp(1.rem, 3.4vw, 2.2rem);
     line-height: 1.15;
     letter-spacing: -0.03em;
     font-family: "Sora", system-ui, sans-serif;
@@ -729,7 +729,7 @@ export default function ItSetupPublicPage() {
           <strong>What’s next for IT</strong>
           {done.already
             ? "Need to correct the company email or assets? You can edit the submission while the recruiter hasn’t activated the employee yet."
-            : "Nothing else on this link. The recruiter can approve &amp; activate the employee when ready."}
+            : "Nothing else on this link. The recruiter can approve and activate the employee when ready."}
         </div>
         {done.already && (
           <button type="button" className="it-btn" onClick={startEditing}>
@@ -800,7 +800,7 @@ export default function ItSetupPublicPage() {
       <Image className="it-logo" src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
       <div className="it-center">
         <p className="it-eyebrow">IT provisioning</p>
-        <h1 className="it-title">{editing ? "Edit setup" : "Assign email &amp; assets"}</h1>
+        <h1 className="it-title">{editing ? "Edit setup" : "Assign email to candidate "}{employee.full_name}</h1>
         <p className="it-lead">
           {editing
             ? "Correct the company email or hardware. Activation stays blocked until you save."
@@ -887,7 +887,7 @@ export default function ItSetupPublicPage() {
         <div className="it-section">
           <div className="it-section-head">
             <div>
-              <h2>3. Hardware &amp; devices</h2>
+              <h2>3. Hardware devices</h2>
               <p>Laptops, monitors, phones, badges…</p>
             </div>
             <button type="button" className="it-add" onClick={() => setAssets((c) => [...c, emptyAsset()])}>
