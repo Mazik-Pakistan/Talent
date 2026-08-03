@@ -188,6 +188,7 @@ class CandidateService:
                     "office_location": invitation.get("office_location"),
                     "is_remote": is_remote,
                     "start_date": invitation.get("start_date"),
+                    "organization_id": invitation.get("organization_id"),
                     "recruiter_id": invitation["recruiter_id"],
                     "recruiter_email": invitation.get("recruiter_email"),
                     "onboarding": dict(EMPTY_ONBOARDING),

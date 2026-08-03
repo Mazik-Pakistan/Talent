@@ -71,3 +71,111 @@
   margin: 8vh auto;
   padding: 0 16px;
 }
+
+/* ── Capability templates ─────────────────────────────── */
+.templateBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.templateBtn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.templateBtn:hover {
+  border-color: var(--navy);
+  color: var(--navy);
+  background: var(--navy-light, #eef2ff);
+}
+
+.templateBtnActive {
+  border-color: var(--navy);
+  background: var(--navy);
+  color: #fff;
+}
+
+.templateBtnActive:hover {
+  color: #fff;
+}
+
+/* ── Bulk actions bar ─────────────────────────────────── */
+.bulkBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: var(--surface-alt, #f8fafc);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.bulkBarLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.bulkSelect {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  background: #fff;
+  color: var(--text);
+  min-width: 180px;
+}
+
+.bulkApplyBtn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--navy);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.bulkApplyBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.recruiterRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.recruiterCheckbox {
+  margin-top: 6px;
+  accent-color: var(--navy);
+}
+
+.selectAllRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+.selectAllRow input {
+  accent-color: var(--navy);
+}

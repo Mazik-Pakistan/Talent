@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState, useRef, useCallback } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
   RECRUITER_DEPARTMENTS,
@@ -182,9 +183,11 @@ const IconTerms = () => (
 
 export default function RecruiterInvitePage() {
   return (
-    <Suspense fallback={<InviteLoader />}>
-      <RecruiterInvitePageInner />
-    </Suspense>
+    <ProtectedRecruiterRoute requiredCapability="invite">
+      <Suspense fallback={<InviteLoader />}>
+        <RecruiterInvitePageInner />
+      </Suspense>
+    </ProtectedRecruiterRoute>
   );
 }
 

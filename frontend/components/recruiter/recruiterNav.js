@@ -4,7 +4,10 @@
  * Recruiter sidebar items. Each maps to exactly one independent capability
  * key so toggling one never affects unrelated nav sections.
  */
-export const RECRUITER_NAV_ITEMS = [
+
+import { hasCapability } from "../../services/rbac";
+
+const ALL_NAV_ITEMS = [
   {
     key: "overview",
     label: "Overview",
@@ -155,3 +158,15 @@ export const RECRUITER_NAV_ITEMS = [
     ),
   },
 ];
+
+/**
+ * Get filtered nav items based on recruiter capabilities.
+ */
+export function getFilteredNavItems() {
+  return ALL_NAV_ITEMS.filter((item) => {
+    if (!item.capability) return true;
+    return hasCapability(item.capability);
+  });
+}
+
+export const RECRUITER_NAV_ITEMS = ALL_NAV_ITEMS;

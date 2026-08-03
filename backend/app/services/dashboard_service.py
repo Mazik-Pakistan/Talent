@@ -14,6 +14,7 @@ from app.schemas.dashboard import (
     UpdateRecruiterProfileRequest,
 )
 from app.services.email_service import email_service
+from app.services.organization_service import recruiter_scope
 
 UPCOMING_JOINING_WINDOW_DAYS = 30
 RECENT_ACTIVITY_LIMIT_DEFAULT = 20
@@ -268,11 +269,24 @@ class DashboardService:
 
         if current_user.role != "super_admin":
             candidate_emails = await self._scoped_candidate_emails(current_user)
-            query["$or"] = [
-                {"user_id": current_user.id},
-                {"recruiter_id": current_user.id},
-                {"email": {"$in": candidate_emails}},
-            ]
+            if current_user.organization_id:
+                # Org-bound recruiter: activity for the whole company's recruiters.
+                org_recruiters = await database.recruiters.find(
+                    {"organization_id": current_user.organization_id, "status": "active"},
+                    {"user_id": 1},
+                ).to_list(500)
+                org_ids = [r.get("user_id") for r in org_recruiters if r.get("user_id")] or [current_user.id]
+                query["$or"] = [
+                    {"user_id": {"$in": org_ids}},
+                    {"recruiter_id": {"$in": org_ids}},
+                    {"email": {"$in": candidate_emails}},
+                ]
+            else:
+                query["$or"] = [
+                    {"user_id": current_user.id},
+                    {"recruiter_id": current_user.id},
+                    {"email": {"$in": candidate_emails}},
+                ]
 
         cursor = database.audit_logs.find(query).sort("created_at", -1).limit(limit)
         entries = await cursor.to_list(length=limit)
@@ -940,9 +954,7 @@ class DashboardService:
     # Scoping helpers
     # ------------------------------------------------------------------
     def _scope_filter(self, current_user: CurrentUser) -> dict:
-        if current_user.role == "super_admin":
-            return {}
-        return {"recruiter_id": current_user.id}
+        return recruiter_scope(current_user)
 
     async def _scoped_candidate_emails(self, current_user: CurrentUser) -> list[str]:
         scope = self._scope_filter(current_user)

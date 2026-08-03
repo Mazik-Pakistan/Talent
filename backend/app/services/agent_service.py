@@ -610,11 +610,17 @@ def _action(kind: str, label: str, *, route: str | None = None, prompt: str | No
 
 def _default_actions_for_role(user: CurrentUser) -> list[dict]:
     if user.role in ("recruiter", "super_admin"):
-        return [
-            _action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates"),
-            _action("navigate", "Open Employees", route="/dashboard/recruiter/employees"),
-            _action("navigate", "Open Learning", route="/dashboard/recruiter/learning"),
-            _action("navigate", "Open Messages", route="/dashboard/recruiter/messages"),
+        actions = []
+        if user.has_capability("recruitment"):
+            actions.append(_action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates"))
+        if user.has_capability("employees"):
+            actions.append(_action("navigate", "Open Employees", route="/dashboard/recruiter/employees"))
+        if user.has_capability("learning"):
+            actions.append(_action("navigate", "Open Learning", route="/dashboard/recruiter/learning"))
+        if user.has_capability("messages"):
+            actions.append(_action("navigate", "Open Messages", route="/dashboard/recruiter/messages"))
+        return actions if actions else [
+            _action("navigate", "Open Dashboard", route="/dashboard/recruiter/overview")
         ]
     if user.role == "employee":
         return [

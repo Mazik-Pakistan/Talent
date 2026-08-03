@@ -3,10 +3,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { getRecruiterActivity, getApiErrorMessage } from "@/services/authService";
 
 export default function RecruiterActivityPage() {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="reporting">
+      <RecruiterActivityPageContent />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function RecruiterActivityPageContent() {
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

@@ -5,8 +5,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.core.rbac import CurrentUser
-from app.core.security import require_permissions
-from app.api.super_admin import require_recruiter_capability
+from app.core.security import require_permissions, require_capabilities
 from app.schemas.invitation import CreateInvitationRequest
 from app.services.bulk_invite_service import bulk_invite_service
 from app.services.invitation_service import InvitationService
@@ -15,8 +14,8 @@ from app.services.spreadsheet_roster import build_xlsx_template_bytes
 router = APIRouter(prefix="/api/invitations", tags=["Invitations"])
 service = InvitationService()
 
-RequireInvite = Annotated[CurrentUser, Depends(require_permissions("recruitment.invite"))]
-RequireInviteCapability = Annotated[CurrentUser, Depends(require_recruiter_capability("invite"))]
+# Use capability check for recruiters, permission check for super admin
+RequireInvite = Annotated[CurrentUser, Depends(require_capabilities("invite"))]
 
 
 class BulkInviteSendRequest(BaseModel):
@@ -27,7 +26,6 @@ class BulkInviteSendRequest(BaseModel):
 async def create_invitation(
     request: CreateInvitationRequest,
     current_user: RequireInvite,
-    _capability: RequireInviteCapability,
 ):
     """US-010 + US-012: only roles with recruitment.invite may create invitations."""
     return await service.create_invitation(request, current_user)
@@ -58,7 +56,6 @@ async def preview_bulk_invitations(
 async def send_bulk_invitations(
     request: BulkInviteSendRequest,
     current_user: RequireInvite,
-    _capability: RequireInviteCapability,
 ):
     """Send offer invitations for reviewed roster rows (same flow as single invite)."""
     return await bulk_invite_service.send_rows(current_user, request.candidates)

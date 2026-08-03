@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import ProfilePhotoEditor from "@/components/ProfilePhotoEditor";
 import SecuritySection from "@/components/SecuritySection";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -21,6 +22,14 @@ import {
 } from "@/lib/ai/recruiterContext";
 
 export default function RecruiterProfilePage() {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="profile">
+      <RecruiterProfilePageContent />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function RecruiterProfilePageContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);

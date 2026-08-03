@@ -24,6 +24,7 @@ from app.core.database import create_database_indexes, mongo_client
 from app.core.rbac_seed import seed_rbac_collections
 from app.services.employee_id_migration import migrate_employee_ids_to_emp_format
 from app.services.org_taxonomy_service import seed_org_taxonomy
+from app.services.organization_service import create_default_organization_if_needed
 from app.services import coursera_service
 from app.services.university_seed_service import seed_universities
 
@@ -35,6 +36,8 @@ async def lifespan(_: FastAPI):
     await seed_rbac_collections()
     await seed_org_taxonomy()
     await seed_universities()
+    # Multi-tenancy: ensure at least one organization exists for recruiter binds.
+    await create_default_organization_if_needed()
 
     # Hydrate the Coursera catalog cache from its last Mongo snapshot so the
     # process never starts "cold" — the first employee to open the Coursera

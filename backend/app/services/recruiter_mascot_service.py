@@ -11,9 +11,19 @@ import json
 from app.services.llm_service import call_llm_json, llm_configured
 
 
-async def generate_mascot_brief(payload: dict) -> dict | None:
+async def generate_mascot_brief(payload: dict, recruiter_capabilities: dict | None = None) -> dict | None:
+    """Generate mascot brief, respecting recruiter's module capabilities."""
     if not llm_configured():
         return None
+
+    # Check if recruiter has any capabilities enabled
+    if recruiter_capabilities is None:
+        recruiter_capabilities = {}
+    
+    # Only generate brief if recruiter has access to relevant modules
+    has_recruitment = recruiter_capabilities.get("recruitment", False) or recruiter_capabilities.get("invite", False)
+    if not has_recruitment:
+        return None  # No recruitment capability = no mascot suggestions
 
     page = payload.get("page") or "overview"
     pending = int(payload.get("pending_approvals") or 0)
@@ -28,6 +38,14 @@ async def generate_mascot_brief(payload: dict) -> dict | None:
         return None
 
     names_block = ", ".join(recent_names) if recent_names else "none listed"
+    
+    # Adjust prompt based on available capabilities
+    capability_note = ""
+    if not recruiter_capabilities.get("documents", False):
+        capability_note = "\nNote: This recruiter does not have document review capability enabled."
+    if not recruiter_capabilities.get("it", False):
+        capability_note += "\nNote: This recruiter does not have IT provisioning capability enabled."
+    
     prompt = f"""You write ONE short recruiter assistant message for a floating mascot speech bubble.
 Rules:
 - Max 120 characters.
@@ -35,6 +53,8 @@ Rules:
 - Encouraging, professional tone.
 - No markdown, no quotes, no emojis.
 - Do not invent people or numbers.
+- Focus only on actions the recruiter CAN take (recruitment, invitations, onboarding).
+- Never suggest disabled modules or features.
 
 Recruiter page: {page}
 First name (optional greeting): {first_name or "unknown"}
@@ -43,7 +63,7 @@ Ready to activate (signed offers): {ready}
 Pending offer reviews: {offers}
 Candidates mid-onboarding: {onboarding}
 Active employees: {active}
-Recent approval names: {names_block}
+Recent approval names: {names_block}{capability_note}
 
 Return JSON only: {{"message": "<your one sentence>"}}"""
 

@@ -105,6 +105,7 @@ export function clearLocalSession() {
   localStorage.removeItem("access_token");
   localStorage.removeItem("refresh_token");
   localStorage.removeItem("user");
+  localStorage.removeItem("capabilities");
   localStorage.removeItem("session_last_active");
   localStorage.removeItem("token_expires_at");
   localStorage.removeItem("remember_me");
@@ -126,10 +127,13 @@ export function persistTokens(session) {
   }
 }
 
-/** Persist login session + remember-me preference. */
-export function persistLoginSession(session, user, { rememberMe = false, email = "" } = {}) {
+/** Persist login session + remember-me preference + recruiter capabilities. */
+export function persistLoginSession(session, user, { rememberMe = false, email = "", capabilities = {} } = {}) {
   persistTokens(session);
   if (user) localStorage.setItem("user", JSON.stringify(user));
+  if (capabilities && Object.keys(capabilities).length > 0) {
+    localStorage.setItem("capabilities", JSON.stringify(capabilities));
+  }
   localStorage.setItem("session_last_active", String(Date.now()));
 
   const remembered = Boolean(rememberMe || session?.remember_me);
@@ -140,6 +144,24 @@ export function persistLoginSession(session, user, { rememberMe = false, email =
     localStorage.removeItem("remember_me");
     localStorage.removeItem("remembered_email");
   }
+}
+
+/** Get stored recruiter capabilities (empty object if not a recruiter or no capabilities set). */
+export function getStoredCapabilities() {
+  const stored = localStorage.getItem("capabilities");
+  return stored ? JSON.parse(stored) : {};
+}
+
+/** Check if recruiter has a specific capability enabled. */
+export function hasCapability(capability) {
+  const capabilities = getStoredCapabilities();
+  return Boolean(capabilities[capability]);
+}
+
+/** Check if recruiter has any of the specified capabilities. */
+export function hasAnyCapability(capabilities = []) {
+  const stored = getStoredCapabilities();
+  return capabilities.some(cap => Boolean(stored[cap]));
 }
 
 export function isRememberMeEnabled() {
@@ -1229,6 +1251,55 @@ export async function updateRecruiterCapabilities(recruiterId, payload, accessTo
 
 export async function updateRecruiter(recruiterId, payload, accessToken) {
   const { data } = await apiClient.put(`/api/super-admin/recruiters/${recruiterId}`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function bulkUpdateRecruiterCapabilities(payload, accessToken) {
+  const { data } = await apiClient.post("/api/super-admin/recruiters/bulk-capabilities", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getCapabilityTemplates(accessToken) {
+  const { data } = await apiClient.get("/api/super-admin/capability-templates", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+// ─── Super Admin: Organizations (multi-tenancy) ───────────────────────────
+
+export async function listOrganizations(accessToken, params = {}) {
+  const query = new URLSearchParams();
+  if (params.status) query.set("status", params.status);
+  if (params.page) query.set("page", String(params.page));
+  if (params.page_size) query.set("page_size", String(params.page_size));
+  const qs = query.toString();
+  const { data } = await apiClient.get(`/api/super-admin/organizations${qs ? `?${qs}` : ""}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function createOrganization(payload, accessToken) {
+  const { data } = await apiClient.post("/api/super-admin/organizations", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function updateOrganization(organizationId, payload, accessToken) {
+  const { data } = await apiClient.put(`/api/super-admin/organizations/${organizationId}`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function deleteOrganization(organizationId, accessToken) {
+  const { data } = await apiClient.delete(`/api/super-admin/organizations/${organizationId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return data;

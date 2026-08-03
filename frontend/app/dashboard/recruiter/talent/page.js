@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./talent.module.css";
 import { RECRUITER_DEPARTMENTS } from "@/components/recruiter/recruiterOptions";
@@ -31,6 +32,14 @@ const TABS = [
 ];
 
 export default function RecruiterTalentPage() {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="employees">
+      <RecruiterTalentPageContent />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function RecruiterTalentPageContent() {
   const [tab, setTab] = useState("metrics");
 
   useEffect(() => {

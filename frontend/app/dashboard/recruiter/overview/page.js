@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
   getAnnouncements,
@@ -65,6 +66,14 @@ const ICONS = {
 const DASHBOARD_REFRESH_MS = 60000;
 
 export default function RecruiterOverviewPage() {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="recruitment">
+      <RecruiterOverviewPageContent />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function RecruiterOverviewPageContent() {
   const router = useRouter();
   const [summary, setSummary] = useState(null);
   const [activities, setActivities] = useState([]);

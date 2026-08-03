@@ -14,6 +14,7 @@ import { useUserSession } from "@/hooks/useUserSession";
 import { useNotificationsCenter } from "@/hooks/useNotificationsCenter";
 import { useGlobalSearch } from "@/hooks/useGlobalSearch";
 import { RECRUITER_NAV_ITEMS } from "@/components/recruiter/recruiterNav";
+import { getStoredCapabilities } from "@/services/authService";
 import styles from "./recruiter-shell.module.css";
 
 const COLLAPSE_KEY = "recruiter_sidebar_collapsed";
@@ -104,7 +105,13 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
 
   const allowedNavItems = RECRUITER_NAV_ITEMS.filter((item) => {
     if (!item.capability) return true;
-    return user?.capabilities?.[item.capability] ?? true;
+    // Super admin and non-recruiter roles always see the full navigation.
+    if (user?.role !== "recruiter") return true;
+    // Recruiters: filter by stored capabilities. Legacy sessions with no
+    // stored capabilities keep seeing everything (backward compatible).
+    const capabilities = getStoredCapabilities();
+    if (!Object.keys(capabilities).length) return true;
+    return capabilities[item.capability] === true;
   });
 
   const hasCapability = !capability || (user?.capabilities?.[capability] ?? true);

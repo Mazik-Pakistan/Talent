@@ -9,9 +9,15 @@ import styles from "@/components/recruiter/recruiter-shell.module.css";
 import local from "./super-admin.module.css";
 import {
   bootstrapSuperAdmin,
+  bulkUpdateRecruiterCapabilities,
+  createOrganization,
+  deleteOrganization,
   getApiErrorMessage,
+  getCapabilityTemplates,
   inviteRecruiter,
+  listOrganizations,
   listRecruiters,
+  updateOrganization,
   updateRecruiter,
   updateRecruiterCapabilities,
 } from "@/services/authService";
@@ -34,15 +40,15 @@ const CAPABILITY_LABELS = {
   profile: "Profile",
 };
 
-const initialInviteForm = { full_name: "", email: "", job_title: "", department: "", office_location: "", is_remote: false };
+const TEMPLATE_LABELS = {
+  standard_recruiter: "Standard Recruiter",
+  hiring_only: "Hiring Only",
+  people_ops: "People Ops",
+  it_admin: "IT Admin",
+  viewer: "Viewer",
+};
 
-const STATUS_FILTERS = [
-  { key: "", label: "All" },
-  { key: "active", label: "Active" },
-  { key: "pending", label: "Pending" },
-  { key: "inactive", label: "Inactive" },
-  { key: "expired", label: "Expired" },
-];
+const initialInviteForm = { full_name: "", email: "", job_title: "", department: "", office_location: "", is_remote: false, organization_id: "" };
 
 export default function SuperAdminDashboardPage() {
   const router = useRouter();
@@ -51,22 +57,128 @@ export default function SuperAdminDashboardPage() {
   const [form, setForm] = useState(initialForm);
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [activeTab, setActiveTab] = useState("recruiters");
+  const [activeTab, setActiveTab] = useState("invite");
   const [recruiters, setRecruiters] = useState([]);
   const [recruitersLoading, setRecruitersLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({});
-  const [editSaving, setEditSaving] = useState(false);
-
   const [inviteForm, setInviteForm] = useState(initialInviteForm);
   const [inviteCaps, setInviteCaps] = useState(
     Object.keys(CAPABILITY_LABELS).reduce((acc, k) => ({ ...acc, [k]: true }), {})
   );
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [inviteMessage, setInviteMessage] = useState("");
+  const [templates, setTemplates] = useState({});
+  const [activeTemplate, setActiveTemplate] = useState("standard_recruiter");
+  const [bulkSelected, setBulkSelected] = useState([]);
+  const [bulkTemplate, setBulkTemplate] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState("");
+  const [orgFilter, setOrgFilter] = useState("");
+  const [organizations, setOrganizations] = useState([]);
+  const [orgsLoading, setOrgsLoading] = useState(false);
+  const [orgFormOpen, setOrgFormOpen] = useState(false);
+  const [orgForm, setOrgForm] = useState({ name: "", contact_email: "", description: "" });
+  const [orgModules, setOrgModules] = useState(
+    Object.keys(CAPABILITY_LABELS).reduce((acc, k) => ({ ...acc, [k]: true }), {})
+  );
+  const [orgSaving, setOrgSaving] = useState(false);
+  const [orgMessage, setOrgMessage] = useState("");
+  const [editOrgId, setEditOrgId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (token) {
+      getCapabilityTemplates(token).then((data) => {
+        setTemplates(data.templates || {});
+      }).catch(() => {});
+    }
+  }, []);
+
+  const loadOrganizations = useCallback(async () => {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setOrgsLoading(true);
+    try {
+      const data = await listOrganizations(accessToken);
+      setOrganizations(data.organizations || []);
+    } catch { /* non-critical */ } finally {
+      setOrgsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { if (user) loadOrganizations(); }, [user, loadOrganizations]);
+
+  // Auto-select the first organization in the invite form once they load,
+  // so invites visibly bind to a real company instead of an invisible default.
+  useEffect(() => {
+    if (organizations.length > 0 && !inviteForm.organization_id) {
+      setInviteForm((current) => ({ ...current, organization_id: organizations[0].id }));
+    }
+  }, [organizations, inviteForm.organization_id]);
+
+  function openCreateOrg() {
+    setEditOrgId(null);
+    setOrgForm({ name: "", contact_email: "", description: "" });
+    setOrgModules(Object.keys(CAPABILITY_LABELS).reduce((acc, k) => ({ ...acc, [k]: true }), {}));
+    setOrgFormOpen(true);
+    setOrgMessage("");
+  }
+
+  function openEditOrg(org) {
+    setEditOrgId(org.id);
+    setOrgForm({
+      name: org.name || "",
+      contact_email: org.contact_email || "",
+      description: org.description || "",
+    });
+    setOrgModules({ ...org.modules });
+    setOrgFormOpen(true);
+    setOrgMessage("");
+  }
+
+  async function handleOrgSubmit(event) {
+    event.preventDefault();
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setOrgSaving(true);
+    setOrgMessage("");
+    try {
+      if (editOrgId) {
+        await updateOrganization(editOrgId, { modules: orgModules }, accessToken);
+        setOrgMessage("Organization modules updated.");
+      } else {
+        await createOrganization({ ...orgForm, modules: orgModules }, accessToken);
+        setOrgMessage("Organization created.");
+      }
+      setOrgFormOpen(false);
+      loadOrganizations();
+    } catch (err) {
+      setOrgMessage(getApiErrorMessage(err, "Could not save organization."));
+    } finally {
+      setOrgSaving(false);
+    }
+  }
+
+  async function handleOrgDelete(org) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    if (!window.confirm(`Delete organization "${org.name}"? This cannot be undone.`)) return;
+    try {
+      await deleteOrganization(org.id, accessToken);
+      loadOrganizations();
+    } catch (err) {
+      alert(getApiErrorMessage(err, "Could not delete organization."));
+    }
+  }
+
+  function applyTemplate(templateKey) {
+    const template = templates[templateKey];
+    if (!template) return;
+    setInviteCaps({ ...template });
+    setActiveTemplate(templateKey);
+  }
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -83,31 +195,19 @@ export default function SuperAdminDashboardPage() {
     setNeedsBootstrap(true);
   }, [router]);
 
-  const [recruitersError, setRecruitersError] = useState("");
-
   const loadRecruiters = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setRecruitersLoading(true);
-    setRecruitersError("");
     try {
-      const data = await listRecruiters(accessToken, { status: statusFilter || undefined });
+      const data = await listRecruiters(accessToken);
       setRecruiters(data.recruiters || []);
-    } catch (error) {
-      setRecruitersError(getApiErrorMessage(error, "Could not load recruiters."));
-    } finally {
+    } catch { /* non-critical */ } finally {
       setRecruitersLoading(false);
     }
-  }, [statusFilter]);
+  }, []);
 
   useEffect(() => { if (user) loadRecruiters(); }, [user, loadRecruiters]);
-
-  const filteredRecruiters = searchQuery.trim().length >= 2
-    ? recruiters.filter((r) => {
-        const q = searchQuery.toLowerCase();
-        return r.email.toLowerCase().includes(q) || (r.full_name || "").toLowerCase().includes(q) || (r.department || "").toLowerCase().includes(q) || (r.job_title || "").toLowerCase().includes(q);
-      })
-    : recruiters;
 
   async function handleBootstrap(event) {
     event.preventDefault();
@@ -132,7 +232,7 @@ export default function SuperAdminDashboardPage() {
     setInviteSubmitting(true);
     try {
       const accessToken = localStorage.getItem("access_token");
-      await inviteRecruiter({ ...inviteForm, full_name: inviteForm.full_name.trim(), email: inviteForm.email.trim(), job_title: inviteForm.job_title.trim(), department: inviteForm.department.trim(), office_location: inviteForm.office_location.trim() || undefined, capabilities: inviteCaps }, accessToken);
+      await inviteRecruiter({ ...inviteForm, full_name: inviteForm.full_name.trim(), email: inviteForm.email.trim(), job_title: inviteForm.job_title.trim(), department: inviteForm.department.trim(), office_location: inviteForm.office_location.trim() || undefined, organization_id: inviteForm.organization_id || undefined, capabilities: inviteCaps }, accessToken);
       setInviteMessage("Invitation sent successfully!");
       setInviteForm(initialInviteForm);
       loadRecruiters();
@@ -143,18 +243,55 @@ export default function SuperAdminDashboardPage() {
     }
   }
 
-  async function toggleCapability(recruiterId, key, currentValue) {
+  async function toggleCapability(invitationId, key, currentValue) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const result = await updateRecruiterCapabilities(recruiterId, { capabilities: { [key]: !currentValue } }, accessToken);
-      setRecruiters((prev) => prev.map((r) => r.id === recruiterId ? { ...r, capabilities: result.capabilities } : r));
+      const result = await updateRecruiterCapabilities(invitationId, { capabilities: { [key]: !currentValue } }, accessToken);
+      setRecruiters((prev) => prev.map((r) => r.id === invitationId ? { ...r, capabilities: result.capabilities } : r));
     } catch { loadRecruiters(); }
+  }
+
+  function toggleBulkSelect(id) {
+    setBulkSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  function toggleBulkSelectAll() {
+    const filtered = recruiters.filter((r) => !orgFilter || r.organization_id === orgFilter);
+    setBulkSelected((prev) => (prev.length === filtered.length ? [] : filtered.map((r) => r.id)));
+  }
+
+  async function handleBulkApply() {
+    if (!bulkSelected.length || !bulkTemplate || !templates[bulkTemplate]) return;
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    setBulkBusy(true);
+    setBulkMessage("");
+    try {
+      const result = await bulkUpdateRecruiterCapabilities(
+        { invitation_ids: bulkSelected, capabilities: templates[bulkTemplate] },
+        accessToken
+      );
+      setBulkMessage(result.message || "Capabilities updated.");
+      setBulkSelected([]);
+      loadRecruiters();
+    } catch (err) {
+      setBulkMessage(getApiErrorMessage(err, "Bulk update failed."));
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   function startEdit(r) {
     setEditingId(r.id);
-    setEditForm({ job_title: r.job_title || "", department: r.department || "", office_location: r.office_location || "", status: r.status || "active" });
+    setEditForm({
+      job_title: r.job_title || "",
+      department: r.department || "",
+      office_location: r.office_location || "",
+      status: r.is_active ? "active" : r.status === "inactive" ? "inactive" : "active",
+    });
   }
 
   function cancelEdit() {
@@ -208,7 +345,7 @@ export default function SuperAdminDashboardPage() {
                 ))}
                 {message && <p className={styles.formMessage}>{message}</p>}
                 <button type="submit" disabled={isSubmitting} className={styles.primaryButton}>
-                  {isSubmitting ? "Creating\u2026" : "Create super admin"}
+                  {isSubmitting ? "Creating?" : "Create super admin"}
                 </button>
               </form>
               <p className={styles.instruction} style={{ marginTop: 16 }}>
@@ -252,21 +389,65 @@ export default function SuperAdminDashboardPage() {
                 ].map(({ k, l, t }) => (
                   <label key={k} className={styles.field}>
                     <span>{l}{k !== "office_location" ? " *" : ""}</span>
-                    <input type={t} value={inviteForm[k]} onChange={(e) => setInviteForm({ ...inviteForm, [k]: e.target.value })} required={k !== "office_location"} />
+                    <input
+                      type={t}
+                      value={inviteForm[k]}
+                      onChange={(e) => setInviteForm({ ...inviteForm, [k]: e.target.value })}
+                      required={k !== "office_location"}
+                    />
                   </label>
                 ))}
+                <label className={styles.field}>
+                  <span>Organization</span>
+                  <select
+                    value={inviteForm.organization_id}
+                    onChange={(e) => setInviteForm({ ...inviteForm, organization_id: e.target.value })}
+                  >
+                    <option value="">Auto (default organization)</option>
+                    {organizations.map((org) => (
+                      <option key={org.id} value={org.id}>
+                        {org.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
 
               <label className={local.checkboxRow} style={{ marginBottom: 16 }}>
-                <input type="checkbox" checked={inviteForm.is_remote} onChange={(e) => setInviteForm({ ...inviteForm, is_remote: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={inviteForm.is_remote}
+                  onChange={(e) => setInviteForm({ ...inviteForm, is_remote: e.target.checked })}
+                />
                 Remote employee
               </label>
 
-              <p className={local.capabilityLabel}>Default Capabilities</p>
+              <p className={local.capabilityLabel}>Recruiter modules</p>
+              <p className={local.recruiterMeta} style={{ marginBottom: 8 }}>
+                Pick a template or toggle which modules this recruiter can use. Final access is limited to what their
+                organization has purchased.
+              </p>
+              <div className={local.templateBar}>
+                {Object.keys(TEMPLATE_LABELS).map((templateKey) => (
+                  <button
+                    key={templateKey}
+                    type="button"
+                    className={`${local.templateBtn} ${activeTemplate === templateKey ? local.templateBtnActive : ""}`}
+                    onClick={() => applyTemplate(templateKey)}
+                    title={templates[templateKey] ? Object.entries(templates[templateKey]).filter(([, v]) => v).map(([k]) => CAPABILITY_LABELS[k] || k).join(", ") : ""}
+                  >
+                    {TEMPLATE_LABELS[templateKey]}
+                  </button>
+                ))}
+              </div>
               <div className={local.capabilityGrid}>
                 {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
                   <label key={key} className={local.checkboxRow}>
-                    <input type="checkbox" checked={inviteCaps[key]} onChange={(e) => setInviteCaps({ ...inviteCaps, [key]: e.target.checked })} />
+                    <input
+                      type="checkbox"
+                      checked={inviteCaps[key]}
+                      onChange={(e) => { setInviteCaps({ ...inviteCaps, [key]: e.target.checked }); setActiveTemplate(""); }}
+                    />
                     {label}
                   </label>
                 ))}
@@ -274,7 +455,7 @@ export default function SuperAdminDashboardPage() {
 
               {inviteMessage && <p className={styles.formMessage}>{inviteMessage}</p>}
               <button type="submit" disabled={inviteSubmitting} className={styles.primaryButton}>
-                {inviteSubmitting ? "Sending\u2026" : "Send invitation"}
+                {inviteSubmitting ? "Sending?" : "Send invitation"}
               </button>
             </form>
           </div>
@@ -287,123 +468,276 @@ export default function SuperAdminDashboardPage() {
             <div className={styles.sectionHeadLeft}>
               <div className={`${styles.bar} ${styles.orange}`} />
               <div>
-                <div className={styles.sectionTitle}>All Recruiters</div>
-                <div className={styles.sectionDesc}>Manage access, capabilities, and roles for every recruiter on the platform.</div>
+                <div className={styles.sectionTitle}>Invited Recruiters</div>
+                <div className={styles.sectionDesc}>Manage access and capabilities for every recruiter you've invited.</div>
               </div>
             </div>
           </div>
-
           <div className={styles.sectionBody}>
-            <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
-              <input
-                type="text"
-                placeholder="Search by name, email, department\u2026"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ flex: "1 1 200px", padding: "8px 12px", border: "1px solid var(--border)", borderRadius: 6, fontSize: 13 }}
-              />
-              <div style={{ display: "flex", gap: 4 }}>
-                {STATUS_FILTERS.map((sf) => (
-                  <button
-                    key={sf.key}
-                    type="button"
-                    onClick={() => setStatusFilter(sf.key)}
-                    style={{
-                      padding: "4px 12px",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      borderRadius: 20,
-                      border: "1px solid var(--border)",
-                      background: statusFilter === sf.key ? "#0D5C91" : "transparent",
-                      color: statusFilter === sf.key ? "#fff" : "var(--text-muted)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {sf.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {recruitersLoading ? (
-              <p className={styles.emptySub}>Loading\u2026</p>
-            ) : filteredRecruiters.length === 0 ? (
-              <p className={styles.emptySub}>{searchQuery || statusFilter ? "No recruiters match your filters." : "No recruiters on the platform yet."}</p>
+              <p className={styles.emptySub}>Loading?</p>
+            ) : recruiters.length === 0 ? (
+              <p className={styles.emptySub}>No recruiters invited yet.</p>
             ) : (
-              <ul className={styles.miniList}>
-                {filteredRecruiters.map((r) => (
-                  <li key={r.id} className={styles.miniListItem} style={{ flexDirection: "column", alignItems: "stretch" }}>
-                    <div className={local.recruiterHead}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <strong>{r.full_name}</strong>
-                          <span className={`${local.statusPill} ${r.is_active ? local.active : r.status === "pending" ? local.pending : r.status === "inactive" ? local.inactive : local.other}`}>
-                            {r.status}
-                          </span>
-                          {r.has_employee_profile && (
-                            <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#ede9fe", color: "#5b21b6", fontWeight: 600 }}>DUAL ROLE</span>
-                          )}
-                          {r.employee_id && (
-                            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{r.employee_id}</span>
+              <>
+                <div className={local.bulkBar}>
+                  <span className={local.bulkBarLabel}>Bulk update</span>
+                  <label className={local.selectAllRow} style={{ marginBottom: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={bulkSelected.length === recruiters.length}
+                      onChange={toggleBulkSelectAll}
+                    />
+                    Select all ({recruiters.filter((r) => !orgFilter || r.organization_id === orgFilter).length})
+                  </label>
+                  <select
+                    className={local.bulkSelect}
+                    value={orgFilter}
+                    onChange={(e) => { setOrgFilter(e.target.value); setBulkSelected([]); }}
+                  >
+                    <option value="">All organizations</option>
+                    {organizations.map((org) => (
+                      <option key={org.id} value={org.id}>{org.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    className={local.bulkSelect}
+                    value={bulkTemplate}
+                    onChange={(e) => setBulkTemplate(e.target.value)}
+                  >
+                    <option value="">Apply template?</option>
+                    {Object.keys(TEMPLATE_LABELS).map((templateKey) => (
+                      <option key={templateKey} value={templateKey}>
+                        {TEMPLATE_LABELS[templateKey]}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className={local.bulkApplyBtn}
+                    disabled={bulkBusy || !bulkSelected.length || !bulkTemplate}
+                    onClick={handleBulkApply}
+                  >
+                    {bulkBusy ? "Applying?" : `Apply to ${bulkSelected.length}`}
+                  </button>
+                  {bulkMessage && <span className={styles.formMessage}>{bulkMessage}</span>}
+                </div>
+                <ul className={styles.miniList}>
+                  {recruiters.filter((r) => !orgFilter || r.organization_id === orgFilter).map((r) => (
+                    <li key={r.id} className={styles.miniListItem} style={{ flexDirection: "column", alignItems: "stretch" }}>
+                      <div className={local.recruiterRow}>
+                        <input
+                          type="checkbox"
+                          className={local.recruiterCheckbox}
+                          checked={bulkSelected.includes(r.id)}
+                          onChange={() => toggleBulkSelect(r.id)}
+                          title={`Select ${r.full_name} for bulk update`}
+                        />
+                        <div className={local.recruiterHead} style={{ flex: 1 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <strong>{r.full_name}</strong>
+                              <span
+                                className={`${local.statusPill} ${
+                                  r.is_active ? local.active : r.status === "pending" ? local.pending : local.other
+                                }`}
+                              >
+                                {r.is_active ? "Active" : r.status}
+                              </span>
+                              {r.has_employee_profile && (
+                                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#ede9fe", color: "#5b21b6", fontWeight: 600 }}>DUAL ROLE</span>
+                              )}
+                            </div>
+                            <div className={local.recruiterMeta}>
+                              {r.email}
+                              {r.organization_id && (
+                                <>{" · "}Org: {organizations.find((o) => o.id === r.organization_id)?.name || "?"}</>
+                              )}
+                            </div>
+                            {editingId === r.id ? (
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginTop: 10 }}>
+                                {[
+                                  { k: "job_title", l: "Job Title" },
+                                  { k: "department", l: "Department" },
+                                  { k: "office_location", l: "Location" },
+                                ].map(({ k, l }) => (
+                                  <label key={k} style={{ fontSize: 12 }}>
+                                    <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>{l}</span>
+                                    <input type="text" value={editForm[k] || ""} onChange={(e) => setEditForm({ ...editForm, [k]: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }} />
+                                  </label>
+                                ))}
+                                <label style={{ fontSize: 12 }}>
+                                  <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>Status</span>
+                                  <select value={editForm.status || "active"} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}>
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                  </select>
+                                </label>
+                                <div style={{ display: "flex", gap: 6, alignSelf: "end" }}>
+                                  <button type="button" disabled={editSaving} onClick={() => saveEdit(r.id)} className={styles.primaryButton} style={{ padding: "4px 14px", fontSize: 12 }}>
+                                    {editSaving ? "?" : "Save"}
+                                  </button>
+                                  <button type="button" onClick={cancelEdit} style={{ padding: "4px 14px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", cursor: "pointer" }}>Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className={local.recruiterMeta}>
+                                {r.job_title || "?"}{" · "}{r.department || "?"}
+                                {r.office_location ? ` · ${r.office_location}` : ""}
+                                {r.created_at ? ` · Created ${new Date(r.created_at).toLocaleDateString()}` : ""}
+                              </div>
+                            )}
+                          </div>
+                          {editingId !== r.id && (
+                            <button type="button" onClick={() => startEdit(r)} style={{ padding: "4px 12px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
+                              Edit role
+                            </button>
                           )}
                         </div>
-                        <div className={local.recruiterMeta}>{r.email}</div>
-                        {editingId === r.id ? (
-                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginTop: 10 }}>
-                            {[
-                              { k: "job_title", l: "Job Title" },
-                              { k: "department", l: "Department" },
-                              { k: "office_location", l: "Location" },
-                            ].map(({ k, l }) => (
-                              <label key={k} style={{ fontSize: 12 }}>
-                                <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>{l}</span>
-                                <input type="text" value={editForm[k]} onChange={(e) => setEditForm({ ...editForm, [k]: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }} />
-                              </label>
-                            ))}
-                            <label style={{ fontSize: 12 }}>
-                              <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>Status</span>
-                              <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}>
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                              </select>
-                            </label>
-                            <div style={{ display: "flex", gap: 6, alignSelf: "end" }}>
-                              <button type="button" disabled={editSaving} onClick={() => saveEdit(r.id)} className={styles.primaryButton} style={{ padding: "4px 14px", fontSize: 12 }}>
-                                {editSaving ? "\u2026" : "Save"}
-                              </button>
-                              <button type="button" onClick={cancelEdit} style={{ padding: "4px 14px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", cursor: "pointer" }}>Cancel</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className={local.recruiterMeta}>
-                            {r.job_title || "\u2014"} \u00b7 {r.department || "\u2014"} {r.office_location ? `\u00b7 ${r.office_location}` : ""} {r.created_at ? `\u00b7 Invited ${new Date(r.created_at).toLocaleDateString()}` : ""}
-                          </div>
-                        )}
                       </div>
-                      {editingId !== r.id && (
-                        <button type="button" onClick={() => startEdit(r)} style={{ padding: "4px 12px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
-                          Edit role
+                      <div className={local.capabilityChips}>
+                        {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
+                          <label key={key} className={local.capabilityChip}>
+                            <input
+                              type="checkbox"
+                              checked={r.capabilities?.[key] ?? true}
+                              onChange={() => toggleCapability(r.id, key, r.capabilities?.[key] ?? true)}
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "organizations" && (
+        <div className={styles.section}>
+          <div className={styles.sectionHead}>
+            <div className={styles.sectionHeadLeft}>
+              <div className={`${styles.bar} ${styles.cyan}`} />
+              <div>
+                <div className={styles.sectionTitle}>Organizations</div>
+                <div className={styles.sectionDesc}>
+                  Companies using the product. Grant each organization its own module set ? recruiters can only use
+                  modules their organization has purchased.
+                </div>
+              </div>
+            </div>
+            <div className={styles.actions}>
+              <button type="button" className={styles.primaryButton} onClick={openCreateOrg}>
+                + New organization
+              </button>
+            </div>
+          </div>
+          <div className={styles.sectionBody}>
+            {orgFormOpen && (
+              <form onSubmit={handleOrgSubmit} style={{ marginBottom: 20, padding: 16, border: "1px solid var(--border)", borderRadius: 8 }}>
+                <div className={styles.formGrid}>
+                  <label className={styles.field}>
+                    <span>Organization name *</span>
+                    <input
+                      value={orgForm.name}
+                      onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
+                      placeholder="Acme Corp"
+                      required={!editOrgId}
+                      disabled={Boolean(editOrgId)}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>Contact email</span>
+                    <input
+                      type="email"
+                      value={orgForm.contact_email}
+                      onChange={(e) => setOrgForm({ ...orgForm, contact_email: e.target.value })}
+                      disabled={Boolean(editOrgId)}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>Description</span>
+                    <input
+                      value={orgForm.description}
+                      onChange={(e) => setOrgForm({ ...orgForm, description: e.target.value })}
+                      disabled={Boolean(editOrgId)}
+                    />
+                  </label>
+                </div>
+                <p className={local.capabilityLabel}>Modules purchased by this organization</p>
+                <p className={local.recruiterMeta} style={{ marginBottom: 8 }}>
+                  These are the modules this company has bought. Recruiters in this org can never access a module that
+                  is unchecked here, regardless of their own settings.
+                </p>
+                <div className={local.capabilityGrid}>
+                  {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
+                    <label key={key} className={local.checkboxRow}>
+                      <input
+                        type="checkbox"
+                        checked={orgModules[key]}
+                        onChange={(e) => setOrgModules({ ...orgModules, [key]: e.target.checked })}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                {orgMessage && <p className={styles.formMessage}>{orgMessage}</p>}
+                <div className={styles.actions} style={{ marginTop: 12 }}>
+                  <button type="submit" className={styles.primaryButton} disabled={orgSaving}>
+                    {orgSaving ? "Saving?" : editOrgId ? "Save modules" : "Create organization"}
+                  </button>
+                  <button type="button" className={styles.secondaryButton} onClick={() => setOrgFormOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {orgsLoading ? (
+              <p className={styles.emptySub}>Loading?</p>
+            ) : organizations.length === 0 ? (
+              <p className={styles.emptySub}>No organizations yet. Create one to start selling the product.</p>
+            ) : (
+              <ul className={styles.miniList}>
+                {organizations.map((org) => (
+                  <li key={org.id} className={styles.miniListItem} style={{ flexDirection: "column", alignItems: "stretch" }}>
+                    <div className={local.recruiterHead}>
+                      <div>
+                        <strong>{org.name}</strong>
+                        <span className={`${local.statusPill} ${org.status === "active" ? local.active : local.other}`} style={{ marginLeft: 8 }}>
+                          {org.status}
+                        </span>
+                        <div className={local.recruiterMeta}>
+                          {org.contact_email || "No contact email"} ? Created{" "}
+                          {org.created_at ? new Date(org.created_at).toLocaleDateString() : "?"}
+                          {" ? "}
+                          {recruiters.filter((r) => r.organization_id === org.id).length} recruiter(s)
+                        </div>
+                        {org.description && <div className={local.recruiterMeta}>{org.description}</div>}
+                      </div>
+                      <div className={styles.actions} style={{ gap: 8 }}>
+                        <button type="button" className={styles.secondaryButton} onClick={() => openEditOrg(org)}>
+                          Edit modules
                         </button>
-                      )}
+                        <button type="button" className={styles.secondaryButton} onClick={() => handleOrgDelete(org)}>
+                          Delete
+                        </button>
+                      </div>
                     </div>
                     <div className={local.capabilityChips}>
                       {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
-                        <label key={key} className={local.capabilityChip}>
-                          <input type="checkbox" checked={r.capabilities?.[key] ?? true} onChange={() => toggleCapability(r.id, key, r.capabilities?.[key] ?? true)} />
+                        <span
+                          key={key}
+                          className={local.capabilityChip}
+                          style={org.modules?.[key] ? { borderColor: "var(--green)", color: "var(--green)" } : { opacity: 0.4 }}
+                        >
                           {label}
-                        </label>
+                        </span>
                       ))}
                     </div>
-                    {r.employee_count > 0 && (
-                      <div className={local.recruiterMeta} style={{ marginTop: 8 }}>
-                        <strong>Employees ({r.employee_count}):</strong>
-                        <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-                          {r.employees.map((e) => (
-                            <li key={e.id}>{e.full_name} â€” {e.email}{e.job_title ? ` Â· ${e.job_title}` : ""}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
                   </li>
                 ))}
               </ul>

@@ -4,6 +4,7 @@ import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
 import OfferSummaryCard from "@/components/offers/OfferSummaryCard";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -16,6 +17,14 @@ import {
 import { formatBloodGroupDisplay } from "@/lib/bloodGroup";
 
 export default function CandidateProfilePage({ params }) {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="recruitment">
+      <CandidateProfilePageContent params={params} />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function CandidateProfilePageContent({ params }) {
   const router = useRouter();
   const { id } = use(params);
   const [candidate, setCandidate] = useState(null);

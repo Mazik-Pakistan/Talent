@@ -1,5 +1,7 @@
 /** US-012: Client-side role permissions (mirrors backend RBAC). */
 
+import * as authService from "./authService";
+
 export const ROLE_PERMISSIONS = {
   super_admin: [
     "recruitment.view",
@@ -67,4 +69,92 @@ export function moduleAccess(role) {
     profile: can(role, "profile.view"),
     admin: can(role, "admin.access"),
   };
+}
+
+/** ─── RECRUITER CAPABILITIES (Module Access Control) ─── */
+
+/**
+ * Get stored recruiter capabilities.
+ * @returns {Object} Object with capability flags (e.g., { recruitment: true, learning: false })
+ */
+export function getStoredCapabilities() {
+  return authService.getStoredCapabilities();
+}
+
+/**
+ * Check if recruiter has a specific capability enabled.
+ * Super admins always have all capabilities.
+ * @param {string} capability - Capability name (e.g., 'learning', 'documents', 'it')
+ * @returns {boolean}
+ */
+export function hasCapability(capability) {
+  const user = getStoredUser();
+  
+  // Super admins always have all capabilities
+  if (user?.role === "super_admin") {
+    return true;
+  }
+  
+  // Non-recruiters don't have module capability restrictions
+  if (user?.role !== "recruiter") {
+    return true;
+  }
+  
+  return authService.hasCapability(capability);
+}
+
+/**
+ * Check if recruiter has any of the specified capabilities.
+ * @param {string[]} capabilities - Array of capability names
+ * @returns {boolean}
+ */
+export function hasAnyCapability(capabilities = []) {
+  const user = getStoredUser();
+  
+  if (user?.role === "super_admin") {
+    return true;
+  }
+  
+  if (user?.role !== "recruiter") {
+    return true;
+  }
+  
+  return authService.hasAnyCapability(capabilities);
+}
+
+/**
+ * Get which modules are actually accessible for the recruiter.
+ * Combines role-based permissions with recruiter capabilities.
+ * @returns {Object} Object with module availability flags
+ */
+export function getAccessibleModules() {
+  const user = getStoredUser();
+  const baseModules = moduleAccess(user?.role);
+  
+  // For recruiters, also check capabilities
+  if (user?.role === "recruiter") {
+    const capabilities = getStoredCapabilities();
+    return {
+      overview: capabilities.overview !== false,
+      candidates: capabilities.candidates !== false,
+      invite: capabilities.invite !== false,
+      employees: capabilities.employees !== false,
+      talent: capabilities.talent !== false,
+      learning: baseModules.learning && capabilities.learning !== false,
+      assistant: capabilities.assistant !== false,
+      messages: capabilities.messages !== false,
+      announcements: capabilities.announcements !== false,
+      it: capabilities.it !== false,
+      reporting: baseModules.reporting && capabilities.reporting !== false,
+      profile: baseModules.profile && capabilities.profile !== false,
+      // legacy aliases
+      recruitment: capabilities.candidates !== false || capabilities.overview !== false,
+      documents: capabilities.candidates !== false,
+      onboarding: baseModules.onboarding && capabilities.employees !== false,
+      ai: baseModules.ai && capabilities.assistant !== false,
+    };
+  }
+  
+  // Super admin and other roles have full access
+  return baseModules;
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import {
@@ -19,6 +20,14 @@ import {
 } from "@/lib/ai/recruiterContext";
 
 export default function RecruiterEmployeesPage() {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="employees">
+      <RecruiterEmployeesPageContent />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function RecruiterEmployeesPageContent() {
   const router = useRouter();
   const [employees, setEmployees] = useState([]);
   const [employeeTotal, setEmployeeTotal] = useState(0);
