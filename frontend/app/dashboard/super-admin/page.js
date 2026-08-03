@@ -3,15 +3,15 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
-import { ModuleNav } from "@/components/RequireAccess";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
+import SuperAdminShell from "@/components/super-admin/SuperAdminShell";
+import styles from "@/components/recruiter/recruiter-shell.module.css";
+import local from "./super-admin.module.css";
 import {
   bootstrapSuperAdmin,
-  clearLocalSession,
   getApiErrorMessage,
   inviteRecruiter,
   listRecruiters,
-  logout,
   updateRecruiterCapabilities,
 } from "@/services/authService";
 import { can } from "@/services/rbac";
@@ -79,13 +79,6 @@ export default function SuperAdminDashboardPage() {
 
   useEffect(() => { if (user) loadRecruiters(); }, [user, loadRecruiters]);
 
-  async function handleLogout() {
-    const accessToken = localStorage.getItem("access_token");
-    await logout(accessToken);
-    clearLocalSession();
-    router.replace("/login");
-  }
-
   async function handleBootstrap(event) {
     event.preventDefault();
     setMessage("");
@@ -133,107 +126,177 @@ export default function SuperAdminDashboardPage() {
 
   if (needsBootstrap && !user) {
     return (
-      <main style={{ maxWidth: 640, margin: "2rem auto", padding: "0 1rem" }}>
-        <section style={{ background: "#fff", borderRadius: 12, padding: "2rem", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
-          <p style={{ color: "#0D5C91", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}>First-time setup</p>
-          <h1 style={{ fontSize: 24, marginTop: 8 }}>Create Super Admin</h1>
-          <p style={{ color: "#6b7a8f", marginTop: 8 }}>No super admin exists yet. Create the first one, verify email, then sign in.</p>
-          <form onSubmit={handleBootstrap} style={{ marginTop: "1.5rem" }}>
-            {["full_name", "email", "phone", "password", "confirm_password"].map((field) => (
-              <label key={field} style={{ display: "block", marginBottom: 12 }}>
-                <span style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{field.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} *</span>
-                <input type={field.includes("password") ? "password" : field === "email" ? "email" : "text"} value={form[field]} onChange={(e) => setForm({ ...form, [field]: e.target.value })} required style={{ width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }} />
-              </label>
-            ))}
-            {message && <p style={{ color: message.includes("success") ? "#16a34a" : "#b42318", fontSize: 14 }}>{message}</p>}
-            <button type="submit" disabled={isSubmitting} style={{ background: "#0D5C91", color: "#fff", border: "none", borderRadius: 8, padding: "10px 24px", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: isSubmitting ? 0.6 : 1 }}>{isSubmitting ? "Creating\u2026" : "Create super admin"}</button>
-          </form>
-          <p style={{ marginTop: "1rem", fontSize: 14, color: "#6b7a8f" }}>Already have an account? <a href="/login" style={{ color: "#0D5C91" }}>Sign in</a></p>
-        </section>
-      </main>
+      <div className={styles.root} data-app-shell>
+        <div className={local.bootstrapWrap}>
+          <div className={styles.section}>
+            <div className={styles.sectionHead}>
+              <div className={styles.sectionHeadLeft}>
+                <div className={`${styles.bar} ${styles.navy}`} />
+                <div>
+                  <div className={styles.sectionTitle}>Create Super Admin</div>
+                  <div className={styles.sectionDesc}>No super admin exists yet. Create the first one, verify email, then sign in.</div>
+                </div>
+              </div>
+            </div>
+            <div className={styles.sectionBody}>
+              <form onSubmit={handleBootstrap}>
+                {["full_name", "email", "phone", "password", "confirm_password"].map((field) => (
+                  <label key={field} className={styles.field} style={{ marginBottom: 12 }}>
+                    <span>{field.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} *</span>
+                    <input
+                      type={field.includes("password") ? "password" : field === "email" ? "email" : "text"}
+                      value={form[field]}
+                      onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+                      required
+                    />
+                  </label>
+                ))}
+                {message && <p className={styles.formMessage}>{message}</p>}
+                <button type="submit" disabled={isSubmitting} className={styles.primaryButton}>
+                  {isSubmitting ? "Creating…" : "Create super admin"}
+                </button>
+              </form>
+              <p className={styles.instruction} style={{ marginTop: 16 }}>
+                Already have an account? <a href="/login" className={styles.linkButton}>Sign in</a>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <main style={{ maxWidth: 1100, margin: "0 auto", padding: "1.5rem 1rem" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.5rem" }}>
-        <div>
-          <p style={{ color: "#0D5C91", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}>Super Admin dashboard</p>
-          <h1 style={{ fontSize: 24, marginTop: 4 }}>Welcome, {user.full_name}</h1>
-          <p style={{ color: "#6b7a8f", fontSize: 14 }}>{user.email} &middot; Role: {user.role}</p>
-          <ModuleNav role={user.role} />
-        </div>
-        <button type="button" onClick={handleLogout} style={{ background: "#0D5C91", color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Log out</button>
-      </header>
-
-      <div style={{ display: "flex", gap: 4, marginBottom: "1.5rem", borderBottom: "2px solid #e5e7eb" }}>
-        {[["invite", "Invite Recruiter"], ["recruiters", "Recruiters"]].map(([key, label]) => (
-          <button key={key} type="button" onClick={() => setActiveTab(key)} style={{ padding: "8px 20px", border: "none", background: activeTab === key ? "#0D5C91" : "transparent", color: activeTab === key ? "#fff" : "#6b7a8f", borderRadius: "6px 6px 0 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>{label}</button>
-        ))}
-      </div>
-
+    <SuperAdminShell
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+      title="Super Admin"
+      subtitle={`Welcome, ${user.full_name}`}
+      user={user}
+    >
       {activeTab === "invite" && (
-        <section style={{ background: "#fff", borderRadius: 12, padding: "1.5rem", boxShadow: "0 1px 3px rgba(0,0,0,0.08)", maxWidth: 700 }}>
-          <h2 style={{ fontSize: 18, marginBottom: "0.5rem" }}>Invite a Recruiter</h2>
-          <p style={{ color: "#6b7a8f", fontSize: 14, marginBottom: "1rem" }}>The invited recruiter will receive both Employee and Recruiter access.</p>
-          <form onSubmit={handleInvite}>
-            {[{ k: "full_name", l: "Full Name", t: "text" }, { k: "email", l: "Email", t: "email" }, { k: "job_title", l: "Job Title", t: "text" }, { k: "department", l: "Department", t: "text" }, { k: "office_location", l: "Office Location", t: "text" }].map(({ k, l, t }) => (
-              <label key={k} style={{ display: "block", marginBottom: 12 }}>
-                <span style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{l}{k !== "office_location" ? " *" : ""}</span>
-                <input type={t} value={inviteForm[k]} onChange={(e) => setInviteForm({ ...inviteForm, [k]: e.target.value })} required={k !== "office_location"} style={{ width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }} />
-              </label>
-            ))}
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, cursor: "pointer", fontSize: 14 }}>
-              <input type="checkbox" checked={inviteForm.is_remote} onChange={(e) => setInviteForm({ ...inviteForm, is_remote: e.target.checked })} /> Remote employee
-            </label>
-
-            <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Capabilities</p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8, marginBottom: 16 }}>
-              {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
-                <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
-                  <input type="checkbox" checked={inviteCaps[key]} onChange={(e) => setInviteCaps({ ...inviteCaps, [key]: e.target.checked })} />
-                  {label}
-                </label>
-              ))}
+        <div className={styles.section}>
+          <div className={styles.sectionHead}>
+            <div className={styles.sectionHeadLeft}>
+              <div className={`${styles.bar} ${styles.cyan}`} />
+              <div>
+                <div className={styles.sectionTitle}>Invite a Recruiter</div>
+                <div className={styles.sectionDesc}>The invited recruiter will receive both Employee and Recruiter access.</div>
+              </div>
             </div>
+          </div>
+          <div className={styles.sectionBody}>
+            <form onSubmit={handleInvite}>
+              <div className={styles.formGrid}>
+                {[
+                  { k: "full_name", l: "Full Name", t: "text" },
+                  { k: "email", l: "Email", t: "email" },
+                  { k: "job_title", l: "Job Title", t: "text" },
+                  { k: "department", l: "Department", t: "text" },
+                  { k: "office_location", l: "Office Location", t: "text" },
+                ].map(({ k, l, t }) => (
+                  <label key={k} className={styles.field}>
+                    <span>{l}{k !== "office_location" ? " *" : ""}</span>
+                    <input
+                      type={t}
+                      value={inviteForm[k]}
+                      onChange={(e) => setInviteForm({ ...inviteForm, [k]: e.target.value })}
+                      required={k !== "office_location"}
+                    />
+                  </label>
+                ))}
+              </div>
 
-            {inviteMessage && <p style={{ color: inviteMessage.includes("success") ? "#16a34a" : "#b42318", fontSize: 14, marginBottom: 12 }}>{inviteMessage}</p>}
-            <button type="submit" disabled={inviteSubmitting} style={{ background: "#0D5C91", color: "#fff", border: "none", borderRadius: 8, padding: "10px 24px", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: inviteSubmitting ? 0.6 : 1 }}>{inviteSubmitting ? "Sending\u2026" : "Send invitation"}</button>
-          </form>
-        </section>
+              <label className={local.checkboxRow} style={{ marginBottom: 16 }}>
+                <input
+                  type="checkbox"
+                  checked={inviteForm.is_remote}
+                  onChange={(e) => setInviteForm({ ...inviteForm, is_remote: e.target.checked })}
+                />
+                Remote employee
+              </label>
+
+              <p className={local.capabilityLabel}>Capabilities</p>
+              <div className={local.capabilityGrid}>
+                {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
+                  <label key={key} className={local.checkboxRow}>
+                    <input
+                      type="checkbox"
+                      checked={inviteCaps[key]}
+                      onChange={(e) => setInviteCaps({ ...inviteCaps, [key]: e.target.checked })}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              {inviteMessage && <p className={styles.formMessage}>{inviteMessage}</p>}
+              <button type="submit" disabled={inviteSubmitting} className={styles.primaryButton}>
+                {inviteSubmitting ? "Sending…" : "Send invitation"}
+              </button>
+            </form>
+          </div>
+        </div>
       )}
 
       {activeTab === "recruiters" && (
-        <section style={{ background: "#fff", borderRadius: 12, padding: "1.5rem", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
-          <h2 style={{ fontSize: 18, marginBottom: "1rem" }}>Invited Recruiters</h2>
-          {recruitersLoading ? <p style={{ color: "#6b7a8f" }}>Loading\u2026</p> : recruiters.length === 0 ? (
-            <p style={{ color: "#6b7a8f" }}>No recruiters invited yet.</p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              {recruiters.map((r) => (
-                <div key={r.id} style={{ borderBottom: "1px solid #f0f0f0", padding: "16px 0" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                    <div>
-                      <strong style={{ fontSize: 15 }}>{r.full_name}</strong>
-                      <span style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, background: r.is_active ? "#dcfce7" : r.status === "pending" ? "#fef9c3" : "#fee2e2", color: r.is_active ? "#166534" : r.status === "pending" ? "#854d0e" : "#991b1b" }}>{r.is_active ? "Active" : r.status}</span>
-                    </div>
-                    <span style={{ fontSize: 12, color: "#9ca3af" }}>{r.department} &middot; {r.job_title}</span>
-                  </div>
-                  <div style={{ fontSize: 13, color: "#6b7a8f", marginBottom: 8 }}>{r.email} &middot; Created {r.created_at ? new Date(r.created_at).toLocaleDateString() : "\u2014"}</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
-                      <label key={key} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, cursor: "pointer", padding: "2px 8px", borderRadius: 4, border: "1px solid #e5e7eb" }}>
-                        <input type="checkbox" checked={r.capabilities?.[key] ?? true} onChange={() => toggleCapability(r.id, key, r.capabilities?.[key] ?? true)} style={{ width: 12, height: 12 }} />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
+        <div className={styles.section}>
+          <div className={styles.sectionHead}>
+            <div className={styles.sectionHeadLeft}>
+              <div className={`${styles.bar} ${styles.orange}`} />
+              <div>
+                <div className={styles.sectionTitle}>Invited Recruiters</div>
+                <div className={styles.sectionDesc}>Manage access and capabilities for every recruiter you've invited.</div>
+              </div>
             </div>
-          )}
-        </section>
+          </div>
+          <div className={styles.sectionBody}>
+            {recruitersLoading ? (
+              <p className={styles.emptySub}>Loading…</p>
+            ) : recruiters.length === 0 ? (
+              <p className={styles.emptySub}>No recruiters invited yet.</p>
+            ) : (
+              <ul className={styles.miniList}>
+                {recruiters.map((r) => (
+                  <li key={r.id} className={styles.miniListItem} style={{ flexDirection: "column", alignItems: "stretch" }}>
+                    <div className={local.recruiterHead}>
+                      <div>
+                        <strong>{r.full_name}</strong>
+                        <span
+                          className={`${local.statusPill} ${
+                            r.is_active ? local.active : r.status === "pending" ? local.pending : local.other
+                          }`}
+                          style={{ marginLeft: 8 }}
+                        >
+                          {r.is_active ? "Active" : r.status}
+                        </span>
+                        <div className={local.recruiterMeta}>
+                          {r.email} · {r.department} · {r.job_title}
+                        </div>
+                        <div className={local.recruiterMeta}>
+                          Created {r.created_at ? new Date(r.created_at).toLocaleDateString() : "Null"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className={local.capabilityChips}>
+                      {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
+                        <label key={key} className={local.capabilityChip}>
+                          <input
+                            type="checkbox"
+                            checked={r.capabilities?.[key] ?? true}
+                            onChange={() => toggleCapability(r.id, key, r.capabilities?.[key] ?? true)}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
       )}
-    </main>
+    </SuperAdminShell>
   );
 }
