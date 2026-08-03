@@ -94,7 +94,7 @@ const SHARED_STYLES = `
   .it-title {
     margin: 0;
     color: #0f1f33;
-    font-size: clamp(1.7rem, 3.4vw, 2.2rem);
+    font-size: clamp(1.rem, 3.4vw, 2.2rem);
     line-height: 1.15;
     letter-spacing: -0.03em;
     font-family: "Sora", system-ui, sans-serif;
@@ -800,7 +800,7 @@ export default function ItSetupPublicPage() {
       <Image className="it-logo" src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
       <div className="it-center">
         <p className="it-eyebrow">IT provisioning</p>
-        <h1 className="it-title">{editing ? "Edit setup" : "Assign email &amp; assets"}</h1>
+        <h1 className="it-title">{editing ? "Edit setup" : "Assign email to candidate "}{employee.full_name}</h1>
         <p className="it-lead">
           {editing
             ? "Correct the company email or hardware. Activation stays blocked until you save."
