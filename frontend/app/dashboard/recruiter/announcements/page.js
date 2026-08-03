@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
@@ -31,6 +32,14 @@ const EMPTY_FORM = {
 };
 
 export default function RecruiterAnnouncementsPage() {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="announcements">
+      <RecruiterAnnouncementsPageContent />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function RecruiterAnnouncementsPageContent() {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { useSearchParams } from "next/navigation";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 
 export const dynamic = "force-dynamic";
 
@@ -144,9 +145,11 @@ function LearningPageContent() {
 
 export default function RecruiterLearningPage() {
   return (
-    <Suspense fallback={<RecruiterLoader />}>
-      <LearningPageContent />
-    </Suspense>
+    <ProtectedRecruiterRoute requiredCapability="learning">
+      <Suspense fallback={<RecruiterLoader />}>
+        <LearningPageContent />
+      </Suspense>
+    </ProtectedRecruiterRoute>
   );
 }
 

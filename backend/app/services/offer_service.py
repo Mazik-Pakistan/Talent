@@ -25,6 +25,7 @@ from app.schemas.offer import (
 )
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
+from app.services.organization_service import recruiter_scope
 
 
 ACTIVE_OFFER_STATUSES = ("sent", "viewed", "signed")
@@ -240,16 +241,18 @@ class OfferService:
 
     async def list_pending_negotiations(self, current_user: CurrentUser) -> dict:
         query: dict = {"negotiation.status": "pending", "status": {"$in": ["sent", "viewed", "expired"]}}
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
+        scope = recruiter_scope(current_user)
+        if scope:
+            query.update(scope)
         docs = await database.offer_letters.find(query).sort("negotiation.requested_at", -1).to_list(length=50)
         return {"offers": [self._public(o) for o in docs], "count": len(docs)}
 
     async def list_awaiting_offer_response(self, current_user: CurrentUser) -> dict:
         """Registered candidates with an unsigned active offer."""
         query: dict = {"status": {"$in": ["sent", "viewed", "expired"]}, "candidate_id": {"$ne": None}}
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
+        scope = recruiter_scope(current_user)
+        if scope:
+            query.update(scope)
         docs = await database.offer_letters.find(query).sort("sent_at", -1).to_list(length=100)
         out = []
         for offer in docs:
@@ -989,6 +992,7 @@ class OfferService:
             "candidate_name": candidate_name,
             "candidate_email": candidate_email.lower().strip(),
             "invitation_token": invitation_token,
+            "organization_id": getattr(recruiter, "organization_id", None),
             "recruiter_id": recruiter.id,
             "recruiter_name": recruiter.full_name,
             "recruiter_email": recruiter.email,

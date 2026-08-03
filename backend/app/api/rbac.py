@@ -10,8 +10,14 @@ router = APIRouter(prefix="/api/rbac", tags=["RBAC"])
 
 @router.get("/me")
 async def get_my_access(current_user: Annotated[CurrentUser, Depends(get_current_user)]):
-    """Return the authenticated user's role and permissions (US-012)."""
+    """Return the authenticated user's role, permissions, and capabilities (US-012)."""
     permissions = sorted(ROLE_PERMISSIONS.get(current_user.role, frozenset()))
+    
+    # Include recruiter capabilities if applicable
+    capabilities = {}
+    if current_user.role == "recruiter" and current_user.capabilities:
+        capabilities = current_user.capabilities
+    
     return {
         "user": {
             "id": current_user.id,
@@ -22,6 +28,7 @@ async def get_my_access(current_user: Annotated[CurrentUser, Depends(get_current
             "department": current_user.department,
         },
         "permissions": permissions,
+        "capabilities": capabilities,
         "home": ROLE_HOME.get(current_user.role, "/login"),
         "modules": {
             "recruitment": current_user.has_any(["recruitment.view", "recruitment.invite"]),

@@ -1,10 +1,11 @@
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Annotated
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Response, UploadFile, status, Depends
 
+from app.core.rbac import CurrentUser
 from app.core.security import RequireOnboardingSelf as RequireCandidate
-from app.core.security import RequireEmployee, RequireRecruiter
+from app.core.security import RequireEmployee, RequireRecruiter, require_capabilities
 from app.schemas.career import CareerEventCreateRequest, RoleAssignRequest
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
 from app.schemas.employee_exit import EmployeeExitRequest
@@ -21,6 +22,8 @@ from app.services.employee_service import EmployeeService
 router = APIRouter(prefix="/api/employees", tags=["Employees"])
 service = EmployeeService()
 candidate_service = CandidateService()
+
+RequireRecruiterWithEmployees = Annotated[CurrentUser, Depends(require_capabilities("employees"))]
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx"}
@@ -42,7 +45,7 @@ IDENTITY_DOC_TYPES = {"cnic"}
 
 @router.post("/generate-id")
 async def generate_employee_id(
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
     request: GenerateEmployeeIdRequest = GenerateEmployeeIdRequest(),
 ):
     """US-024: Preview / allocate a unique Employee ID (EMP-000001)."""
@@ -50,13 +53,13 @@ async def generate_employee_id(
 
 
 @router.post("/create-from-candidate", status_code=201)
-async def create_from_candidate(request: CreateFromCandidateRequest, current_user: RequireRecruiter):
+async def create_from_candidate(request: CreateFromCandidateRequest, current_user: RequireRecruiterWithEmployees):
     return await service.create_from_candidate(current_user, request.candidate_id)
 
 
 @router.get("/historical-candidates")
 async def list_historical_candidates(
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
     q: str | None = None,
     reason: str | None = None,
     page: int = Query(default=1, ge=1),
@@ -68,24 +71,24 @@ async def list_historical_candidates(
 
 
 @router.get("/person-history")
-async def lookup_person_history(current_user: RequireRecruiter, email: str = Query(..., min_length=3)):
+async def lookup_person_history(current_user: RequireRecruiterWithEmployees, email: str = Query(..., min_length=3)):
     """Return all historical candidate cycles + employee tenures for an email (invite AI suggestions)."""
     return await service.lookup_person_history(current_user, email)
 
 
 @router.get("/pending-review")
-async def list_pending_review(current_user: RequireRecruiter):
+async def list_pending_review(current_user: RequireRecruiterWithEmployees):
     return await service.list_pending_review(current_user)
 
 
 @router.get("/onboarding-in-progress")
-async def list_onboarding_in_progress(current_user: RequireRecruiter):
+async def list_onboarding_in_progress(current_user: RequireRecruiterWithEmployees):
     return await service.list_onboarding_in_progress(current_user)
 
 
 @router.get("/candidates")
 async def list_candidates(
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
     q: str | None = None,
     status: str | None = None,
     profile_status: str | None = None,
@@ -102,13 +105,13 @@ async def list_candidates(
 
 
 @router.get("/ready-for-conversion")
-async def list_ready_for_conversion(current_user: RequireRecruiter):
+async def list_ready_for_conversion(current_user: RequireRecruiterWithEmployees):
     return await service.list_ready_for_conversion(current_user)
 
 
 @router.get("/export.csv")
 async def export_employees_csv(
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
     q: str | None = None,
     employee_id: str | None = None,
     department: str | None = None,
@@ -143,7 +146,7 @@ async def export_employees_csv(
 
 @router.get("")
 async def list_employees(
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
     q: str | None = None,
     employee_id: str | None = None,
     department: str | None = None,
@@ -228,13 +231,13 @@ async def save_profile_completion(payload: dict, current_user: RequireEmployee):
 
 
 @router.get("/candidates/{candidate_id}")
-async def get_candidate_detail(candidate_id: str, current_user: RequireRecruiter):
+async def get_candidate_detail(candidate_id: str, current_user: RequireRecruiterWithEmployees):
     return await service.get_candidate_detail(current_user, candidate_id)
 
 
 @router.post("/candidates/{candidate_id}/remind")
 async def remind_candidate(
-    candidate_id: str, current_user: RequireRecruiter, payload: dict | None = Body(default=None)
+    candidate_id: str, current_user: RequireRecruiterWithEmployees, payload: dict | None = Body(default=None)
 ):
     """Send onboarding / reupload / general reminder (email + notification)."""
     from app.services.reminder_service import reminder_service
@@ -251,7 +254,7 @@ async def remind_candidate(
 
 
 @router.get("/detail/{employee_id}")
-async def get_employee_detail(employee_id: str, current_user: RequireRecruiter):
+async def get_employee_detail(employee_id: str, current_user: RequireRecruiterWithEmployees):
     """US-035: open full employee profile from the directory.
 
     Dedicated path (not /{employee_id}) so IDs like EMP-000123 never collide
@@ -264,7 +267,7 @@ async def get_employee_detail(employee_id: str, current_user: RequireRecruiter):
 async def set_company_email(
     employee_id: str,
     request: CompanyEmailRequest,
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
 ):
     """Record the employee's official company email for organizational communications."""
     return await service.set_company_email(current_user, employee_id, str(request.company_email))
@@ -274,7 +277,7 @@ async def set_company_email(
 async def assign_asset(
     employee_id: str,
     request: AssetAssignRequest,
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
 ):
     """Assign a company asset to the employee from Day 1."""
     return await service.assign_asset(current_user, employee_id, request)
@@ -285,13 +288,13 @@ async def update_asset(
     employee_id: str,
     asset_id: str,
     request: AssetUpdateRequest,
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
 ):
     return await service.update_asset(current_user, employee_id, asset_id, request)
 
 
 @router.delete("/detail/{employee_id}/assets/{asset_id}")
-async def remove_asset(employee_id: str, asset_id: str, current_user: RequireRecruiter):
+async def remove_asset(employee_id: str, asset_id: str, current_user: RequireRecruiterWithEmployees):
     return await service.remove_asset(current_user, employee_id, asset_id)
 
 
@@ -299,7 +302,7 @@ async def remove_asset(employee_id: str, asset_id: str, current_user: RequireRec
 async def schedule_orientation(
     employee_id: str,
     request: OrientationScheduleRequest,
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
 ):
     """Schedule or update the employee's orientation session."""
     return await service.schedule_orientation(current_user, employee_id, request)
@@ -309,7 +312,7 @@ async def schedule_orientation(
 async def update_employee_banking(
     employee_id: str,
     payload: dict,
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
 ):
     """Add or update payroll banking for on-site employees (recruiter-managed)."""
     from app.schemas.invitation import OnboardingEmploymentInfo
@@ -321,7 +324,7 @@ async def update_employee_banking(
 @router.post("/detail/{employee_id}/remind-profile")
 async def remind_profile_completion(
     employee_id: str,
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
     payload: dict | None = Body(default=None),
 ):
     """Send an in-app + email reminder to finish Complete Profile."""
@@ -334,7 +337,7 @@ async def remind_profile_completion(
 @router.post("/detail/{employee_id}/remind")
 async def remind_employee(
     employee_id: str,
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
     payload: dict | None = Body(default=None),
 ):
     """Unified employee reminder: profile | reupload | course | general."""
@@ -355,14 +358,14 @@ async def remind_employee(
 async def mark_employee_exit(
     employee_id: str,
     request: EmployeeExitRequest,
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
 ):
     """Mark employee as resigned, terminated, or exited (moves to historical)."""
     return await service.mark_employee_exit(current_user, employee_id, request)
 
 
 @router.get("/{employee_id}/career")
-async def list_career(employee_id: str, current_user: RequireRecruiter):
+async def list_career(employee_id: str, current_user: RequireRecruiterWithEmployees):
     employee = await service.get_employee_profile(current_user, employee_id)
     return {"events": employee["employee"].get("career") or []}
 
@@ -371,7 +374,7 @@ async def list_career(employee_id: str, current_user: RequireRecruiter):
 async def add_career(
     employee_id: str,
     request: CareerEventCreateRequest,
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
 ):
     return await service.add_career_event(current_user, employee_id, request)
 
@@ -380,14 +383,14 @@ async def add_career(
 async def assign_employee_role(
     employee_id: str,
     request: RoleAssignRequest,
-    current_user: RequireRecruiter,
+    current_user: RequireRecruiterWithEmployees,
 ):
     """Assign or change designation + department (from org taxonomy lists)."""
     return await service.assign_role(current_user, employee_id, request)
 
 
 @router.get("/{employee_id}")
-async def get_employee_detail_legacy(employee_id: str, current_user: RequireRecruiter):
+async def get_employee_detail_legacy(employee_id: str, current_user: RequireRecruiterWithEmployees):
     """Backward-compatible alias for /detail/{employee_id}."""
     return await service.get_employee_profile(current_user, employee_id, reveal_banking=False)
 

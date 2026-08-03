@@ -4,8 +4,13 @@
  * Recruiter sidebar items. Previously inlined inside RecruiterShell.js;
  * extracted so it follows the same pattern as utils/employeeNav.js and
  * utils/candidateNav.js.
+ * 
+ * Now filters items based on recruiter capabilities.
  */
-export const RECRUITER_NAV_ITEMS = [
+
+import { getAccessibleModules } from "../../services/rbac";
+
+const ALL_NAV_ITEMS = [
   {
     key: "overview",
     label: "Overview",
@@ -156,3 +161,36 @@ export const RECRUITER_NAV_ITEMS = [
     ),
   },
 ];
+
+/**
+ * Get filtered nav items based on recruiter capabilities.
+ * Filters out items where the recruiter doesn't have the required capability.
+ */
+export function getFilteredNavItems() {
+  const accessibleModules = getAccessibleModules();
+  
+  return ALL_NAV_ITEMS.filter((item) => {
+    const capability = item.capability;
+    
+    // Map capability names to module access keys
+    const moduleKey = {
+      recruitment: "recruitment",
+      invite: "recruitment",
+      employees: "employees",
+      learning: "learning",
+      messages: "messages",
+      announcements: "recruitment", // announcements are part of recruitment module
+      it: "it",
+      reporting: "reporting",
+      profile: "profile",
+    }[capability];
+    
+    // If no module key, always show (shouldn't happen)
+    if (!moduleKey) return true;
+    
+    // Check if module is accessible
+    return accessibleModules[moduleKey];
+  });
+}
+
+export const RECRUITER_NAV_ITEMS = ALL_NAV_ITEMS;

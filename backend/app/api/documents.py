@@ -3,13 +3,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from app.core.rbac import CurrentUser
-from app.core.security import RequireRecruiter, RequireUser, require_roles
+from app.core.security import RequireRecruiter, RequireUser, require_roles, require_capabilities
 from app.schemas.document import DOCUMENT_CATEGORIES, PROFILE_DOCUMENT_TYPES, DocumentVerifyRequest
 from app.services.document_service import document_service
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
 RequireSelf = Annotated[CurrentUser, Depends(require_roles("candidate", "employee", "super_admin"))]
+RequireRecruiterWithDocuments = Annotated[CurrentUser, Depends(require_capabilities("documents"))]
 
 
 @router.post("/upload")
@@ -55,13 +56,13 @@ async def list_my_documents(current_user: RequireSelf):
 
 
 @router.get("/owner/{owner_id}")
-async def list_owner_documents(owner_id: str, current_user: RequireRecruiter):
+async def list_owner_documents(owner_id: str, current_user: RequireRecruiterWithDocuments):
     """US-042: recruiter review view — includes OCR result + mismatches vs profile."""
     return await document_service.list_for_owner(current_user, owner_id)
 
 
 @router.put("/{document_id}/verify")
-async def verify_document(document_id: str, payload: DocumentVerifyRequest, current_user: RequireRecruiter):
+async def verify_document(document_id: str, payload: DocumentVerifyRequest, current_user: RequireRecruiterWithDocuments):
     """US-042/US-043: approve, reject (with reason), or request re-upload."""
     return await document_service.verify(current_user, document_id, payload)
 

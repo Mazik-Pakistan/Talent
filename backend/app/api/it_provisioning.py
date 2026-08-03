@@ -1,6 +1,9 @@
-from fastapi import APIRouter
+from typing import Annotated
 
-from app.core.security import RequireEmployee, RequireRecruiter
+from fastapi import APIRouter, Depends
+
+from app.core.rbac import CurrentUser
+from app.core.security import RequireEmployee, RequireRecruiter, require_capabilities
 from app.schemas.it_provisioning import (
     BulkRemindItProvisioningRequest,
     BulkSendItProvisioningRequest,
@@ -17,48 +20,50 @@ from app.services.it_kit_service import it_kit_service
 
 router = APIRouter(prefix="/api/it-provisioning", tags=["IT Provisioning"])
 
+RequireRecruiterWithIT = Annotated[CurrentUser, Depends(require_capabilities("it"))]
+
 
 @router.get("/kits")
-async def list_it_kits(current_user: RequireRecruiter):
+async def list_it_kits(current_user: RequireRecruiterWithIT):
     """Reusable standard IT setups (assets + licenses) for provisioning."""
     return await it_kit_service.list_kits(current_user)
 
 
 @router.post("/kits")
-async def create_it_kit(request: ItKitCreateRequest, current_user: RequireRecruiter):
+async def create_it_kit(request: ItKitCreateRequest, current_user: RequireRecruiterWithIT):
     return await it_kit_service.create_kit(current_user, request)
 
 
 @router.patch("/kits/{kit_id}")
-async def update_it_kit(kit_id: str, request: ItKitUpdateRequest, current_user: RequireRecruiter):
+async def update_it_kit(kit_id: str, request: ItKitUpdateRequest, current_user: RequireRecruiterWithIT):
     return await it_kit_service.update_kit(current_user, kit_id, request)
 
 
 @router.delete("/kits/{kit_id}")
-async def delete_it_kit(kit_id: str, current_user: RequireRecruiter):
+async def delete_it_kit(kit_id: str, current_user: RequireRecruiterWithIT):
     return await it_kit_service.delete_kit(current_user, kit_id)
 
 
 @router.post("/send")
-async def send_it_provisioning(request: SendItProvisioningRequest, current_user: RequireRecruiter):
+async def send_it_provisioning(request: SendItProvisioningRequest, current_user: RequireRecruiterWithIT):
     """Recruiter emails IT a public form link to assign company email + assets before activation."""
     return await it_provisioning_service.send_request(current_user, request)
 
 
 @router.post("/remind")
-async def remind_it_provisioning(request: RemindItProvisioningRequest, current_user: RequireRecruiter):
+async def remind_it_provisioning(request: RemindItProvisioningRequest, current_user: RequireRecruiterWithIT):
     """Follow-up email to IT while provisioning is still pending."""
     return await it_provisioning_service.remind(current_user, request)
 
 
 @router.post("/bulk-send")
-async def bulk_send_it_provisioning(request: BulkSendItProvisioningRequest, current_user: RequireRecruiter):
+async def bulk_send_it_provisioning(request: BulkSendItProvisioningRequest, current_user: RequireRecruiterWithIT):
     """Send IT provisioning emails for many signed offers at once."""
     return await it_provisioning_service.bulk_send(current_user, request)
 
 
 @router.post("/bulk-remind")
-async def bulk_remind_it_provisioning(request: BulkRemindItProvisioningRequest, current_user: RequireRecruiter):
+async def bulk_remind_it_provisioning(request: BulkRemindItProvisioningRequest, current_user: RequireRecruiterWithIT):
     """Follow up IT for many pending provisioning requests at once."""
     return await it_provisioning_service.bulk_remind(current_user, request)
 

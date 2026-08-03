@@ -5,7 +5,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.core.rbac import CurrentUser
-from app.core.security import require_permissions
+from app.core.security import require_permissions, require_capabilities
 from app.schemas.invitation import CreateInvitationRequest
 from app.services.bulk_invite_service import bulk_invite_service
 from app.services.invitation_service import InvitationService
@@ -14,7 +14,8 @@ from app.services.spreadsheet_roster import build_xlsx_template_bytes
 router = APIRouter(prefix="/api/invitations", tags=["Invitations"])
 service = InvitationService()
 
-RequireInvite = Annotated[CurrentUser, Depends(require_permissions("recruitment.invite"))]
+# Use capability check for recruiters, permission check for super admin
+RequireInvite = Annotated[CurrentUser, Depends(require_capabilities("invite"))]
 
 
 class BulkInviteSendRequest(BaseModel):

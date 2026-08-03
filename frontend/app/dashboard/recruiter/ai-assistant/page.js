@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import AgentChatCore, { readAuth } from "@/components/ai/AgentChatCore";
 import AssistantPageShell from "@/components/ai/AssistantPageShell";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 
 const QUICK_ACTIONS = [
   {
@@ -35,6 +36,14 @@ const QUICK_ACTIONS = [
 ];
 
 export default function RecruiterAIAssistantPage() {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="recruitment">
+      <RecruiterAIAssistantPageContent />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function RecruiterAIAssistantPageContent() {
   const agentRef = useRef(null);
   const [auth, setAuth] = useState(null);
 

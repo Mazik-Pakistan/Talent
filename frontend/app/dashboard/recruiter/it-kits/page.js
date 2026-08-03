@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { readAuth } from "@/components/ai/AgentChatCore";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -29,6 +30,14 @@ const emptyAsset = () => ({ name: "", asset_type: "laptop", serial_number: "", n
 const emptyLicense = () => ({ name: "", vendor: "", notes: "" });
 
 export default function RecruiterItKitsPage() {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="it">
+      <RecruiterItKitsPageContent />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function RecruiterItKitsPageContent() {
   const [auth] = useState(() => readAuth());
   const [kits, setKits] = useState([]);
   const [loading, setLoading] = useState(true);

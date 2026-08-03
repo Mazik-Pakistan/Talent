@@ -4,6 +4,7 @@ from secrets import token_urlsafe
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pymongo.errors import DuplicateKeyError
 
 from app.core.config import settings
 from app.core.database import database
@@ -15,6 +16,14 @@ from app.core.security import (
 )
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
+from app.services.organization_service import (
+    ORG_MODULE_KEYS,
+    create_organization,
+    delete_organization,
+    get_organization,
+    list_organizations,
+    update_organization,
+)
 from app.services.people_history import (
     find_active_user,
     find_active_candidate,
@@ -50,6 +59,7 @@ class InviteRecruiterRequest(BaseModel):
     office_location: str | None = Field(default=None, max_length=120)
     is_remote: bool = False
     capabilities: dict[str, bool] | None = None  # overrides defaults
+    organization_id: str | None = None  # bind recruiter to an organization (multi-tenant)
     expires_in_days: int = Field(default=365, ge=1, le=365)
 
     @field_validator("email")
@@ -74,6 +84,113 @@ class UpdateCapabilitiesRequest(BaseModel):
         return self
 
 
+class BulkUpdateCapabilitiesRequest(BaseModel):
+    invitation_ids: list[str] = Field(min_length=1, max_length=200)
+    capabilities: dict[str, bool]
+
+    @model_validator(mode="after")
+    def validate_keys(self):
+        unknown = set(self.capabilities.keys()) - set(ALL_CAPABILITY_KEYS)
+        if unknown:
+            raise ValueError(f"Unknown capabilities: {', '.join(sorted(unknown))}")
+        if not self.invitation_ids:
+            raise ValueError("At least one invitation ID is required.")
+        return self
+
+
+class CreateOrganizationRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    modules: dict[str, bool] | None = None
+    contact_email: EmailStr | None = None
+    description: str | None = Field(default=None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        return " ".join(value.split())
+
+
+class UpdateOrganizationRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    modules: dict[str, bool] | None = None
+    contact_email: EmailStr | None = None
+    description: str | None = Field(default=None, max_length=500)
+    status: str | None = Field(default=None, pattern="^(active|inactive)$")
+
+    @model_validator(mode="after")
+    def validate_modules(self):
+        if self.modules is not None:
+            unknown = set(self.modules.keys()) - set(ORG_MODULE_KEYS)
+            if unknown:
+                raise ValueError(f"Unknown organization modules: {', '.join(sorted(unknown))}")
+        return self
+
+
+# Reusable capability templates for common recruiter roles.
+CAPABILITY_TEMPLATES: dict[str, dict[str, bool]] = {
+    "standard_recruiter": {
+        "recruitment": True,
+        "invite": True,
+        "employees": True,
+        "documents": True,
+        "learning": True,
+        "announcements": True,
+        "it": True,
+        "messages": True,
+        "reporting": True,
+        "profile": True,
+    },
+    "hiring_only": {
+        "recruitment": True,
+        "invite": True,
+        "documents": True,
+        "profile": True,
+        "employees": False,
+        "learning": False,
+        "announcements": False,
+        "it": False,
+        "messages": False,
+        "reporting": False,
+    },
+    "people_ops": {
+        "recruitment": False,
+        "invite": False,
+        "employees": True,
+        "documents": True,
+        "learning": True,
+        "announcements": True,
+        "it": False,
+        "messages": True,
+        "reporting": True,
+        "profile": True,
+    },
+    "it_admin": {
+        "recruitment": False,
+        "invite": False,
+        "employees": True,
+        "documents": False,
+        "learning": False,
+        "announcements": True,
+        "it": True,
+        "messages": True,
+        "reporting": True,
+        "profile": True,
+    },
+    "viewer": {
+        "recruitment": True,
+        "invite": False,
+        "employees": True,
+        "documents": False,
+        "learning": False,
+        "announcements": False,
+        "it": False,
+        "messages": False,
+        "reporting": True,
+        "profile": True,
+    },
+}
+
+
 @router.post("/recruiters/invite", status_code=201)
 async def invite_recruiter(request: InviteRecruiterRequest, current_user: RequireSuperAdmin):
     """Invite a recruiter — creates invitation + sends email with invite link."""
@@ -96,6 +213,23 @@ async def invite_recruiter(request: InviteRecruiterRequest, current_user: Requir
     token = token_urlsafe(32)
     expires_at = now + timedelta(days=request.expires_in_days)
 
+    # Resolve organization binding (multi-tenancy). Explicit org must exist;
+    # otherwise fall back to the default organization.
+    organization_id = request.organization_id
+    if organization_id:
+        org = await get_organization(organization_id)
+        if not org:
+            raise HTTPException(status_code=400, detail="Organization not found.")
+        organization_id = org["id"]
+    else:
+        first_org = await list_organizations(page=1, page_size=1)
+        organizations = first_org.get("organizations") or []
+        if not organizations:
+            await create_organization(name="Default Organization")
+            first_org = await list_organizations(page=1, page_size=1)
+            organizations = first_org.get("organizations") or []
+        organization_id = organizations[0]["id"] if organizations else None
+
     capabilities = {**DEFAULT_RECRUITER_CAPABILITIES}
     if request.capabilities:
         capabilities.update(request.capabilities)
@@ -108,6 +242,7 @@ async def invite_recruiter(request: InviteRecruiterRequest, current_user: Requir
         "department": request.department,
         "office_location": request.office_location,
         "is_remote": request.is_remote,
+        "organization_id": organization_id,
         "recruiter_id": current_user.id,
         "recruiter_email": current_user.email,
         "created_by_role": "super_admin",
@@ -219,6 +354,7 @@ async def list_recruiters(
             "expires_at": inv["expires_at"].isoformat() if inv.get("expires_at") else None,
             "used_at": inv.get("used_at").isoformat() if inv.get("used_at") else None,
             "capabilities": inv.get("capabilities") or DEFAULT_RECRUITER_CAPABILITIES,
+            "organization_id": inv.get("organization_id"),
             "is_active": bool(active),
             "has_employee_profile": inv_email in employee_emails,
             "recruiter_id": active.get("_id") if active else None,
@@ -273,3 +409,179 @@ async def update_recruiter_capabilities(
     })
 
     return {"message": "Capabilities updated.", "capabilities": updated}
+
+
+@router.post("/recruiters/bulk-capabilities")
+async def bulk_update_recruiter_capabilities(
+    request: BulkUpdateCapabilitiesRequest,
+    current_user: RequireSuperAdmin,
+):
+    """Apply a capability set to many recruiter invitations (and their active profiles) at once."""
+    from bson import ObjectId
+
+    now = datetime.now(UTC)
+    valid_ids = [i for i in request.invitation_ids if ObjectId.is_valid(i)]
+    if not valid_ids:
+        raise HTTPException(status_code=400, detail="No valid invitation IDs provided.")
+
+    object_ids = [ObjectId(i) for i in valid_ids]
+    invitations = await database.invitations.find(
+        {"_id": {"$in": object_ids}, "kind": "recruiter"}
+    ).to_list(len(valid_ids))
+
+    updated_count = 0
+    for inv in invitations:
+        existing = inv.get("capabilities") or DEFAULT_RECRUITER_CAPABILITIES
+        merged = {**existing, **request.capabilities}
+        await database.invitations.update_one(
+            {"_id": inv["_id"]},
+            {"$set": {"capabilities": merged, "updated_at": now}},
+        )
+        # Sync active recruiter profiles too
+        email = inv.get("email", "").lower()
+        recruiter_profile = await database.recruiters.find_one({"email": email, "status": "active"})
+        if recruiter_profile:
+            await database.recruiters.update_one(
+                {"_id": recruiter_profile["_id"]},
+                {"$set": {"capabilities": merged, "updated_at": now}},
+            )
+        updated_count += 1
+
+    await database.audit_logs.insert_one({
+        "user_id": current_user.id,
+        "email": current_user.email,
+        "role": "super_admin",
+        "module": "rbac",
+        "action": "recruiter_capabilities_bulk_updated",
+        "outcome": "success",
+        "detail": f"{updated_count} recruiter(s) updated",
+        "created_at": now,
+    })
+
+    return {
+        "message": f"Capabilities updated for {updated_count} recruiter(s).",
+        "updated_count": updated_count,
+    }
+
+
+@router.get("/capability-templates")
+async def get_capability_templates(current_user: RequireSuperAdmin):
+    """List predefined capability templates for quick recruiter role assignment."""
+    return {
+        "templates": CAPABILITY_TEMPLATES,
+        "capabilities": ALL_CAPABILITY_KEYS,
+        "labels": {
+            "recruitment": "Candidates & overview",
+            "invite": "Invite & offer",
+            "employees": "Employees",
+            "documents": "Document review",
+            "learning": "Learning",
+            "announcements": "Announcements",
+            "it": "IT & support",
+            "messages": "Messages",
+            "reporting": "Activity & reporting",
+            "profile": "Profile",
+        },
+    }
+
+
+# ── Organization management (multi-tenancy) ────────────────────────────────
+
+@router.get("/organizations")
+async def list_orgs(
+    current_user: RequireSuperAdmin,
+    status: str | None = Query(default=None, pattern="^(active|inactive)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+):
+    """List all organizations (companies) the product has been sold to."""
+    result = await list_organizations(status=status, page=page, page_size=page_size)
+    result["modules"] = ORG_MODULE_KEYS
+    result["labels"] = {
+        "recruitment": "Candidates & overview",
+        "invite": "Invite & offer",
+        "employees": "Employees",
+        "documents": "Document review",
+        "learning": "Learning",
+        "announcements": "Announcements",
+        "it": "IT & support",
+        "messages": "Messages",
+        "reporting": "Activity & reporting",
+        "profile": "Profile",
+    }
+    return result
+
+
+@router.post("/organizations", status_code=201)
+async def create_org(request: CreateOrganizationRequest, current_user: RequireSuperAdmin):
+    """Create a new organization and grant it a module set."""
+    try:
+        org = await create_organization(
+            name=request.name,
+            modules=request.modules,
+            contact_email=str(request.contact_email) if request.contact_email else None,
+            description=request.description,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=409,
+            detail=f"An organization named '{request.name}' already exists.",
+        )
+    return {"message": "Organization created.", "organization": org}
+
+
+@router.get("/organizations/{organization_id}")
+async def get_org(organization_id: str, current_user: RequireSuperAdmin):
+    org = await get_organization(organization_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found.")
+    return {"organization": org}
+
+
+@router.put("/organizations/{organization_id}")
+async def update_org(
+    organization_id: str,
+    request: UpdateOrganizationRequest,
+    current_user: RequireSuperAdmin,
+):
+    """Update organization details and/or its granted module set."""
+    updates = {}
+    if request.name:
+        updates["name"] = request.name
+    if request.modules is not None:
+        updates["modules"] = request.modules
+    if request.contact_email is not None:
+        updates["contact_email"] = str(request.contact_email)
+    if request.description is not None:
+        updates["description"] = request.description
+    if request.status:
+        updates["status"] = request.status
+    try:
+        org = await update_organization(organization_id, **updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=409,
+            detail=f"An organization named '{request.name}' already exists.",
+        )
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found.")
+    return {"message": "Organization updated.", "organization": org}
+
+
+@router.delete("/organizations/{organization_id}")
+async def delete_org(organization_id: str, current_user: RequireSuperAdmin):
+    """Delete an organization. Only allowed if no recruiters are bound to it."""
+    bound = await database.recruiters.count_documents({"organization_id": organization_id})
+    if bound:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete: {bound} recruiter(s) are bound to this organization.",
+        )
+    deleted = await delete_organization(organization_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Organization not found.")
+    return {"message": "Organization deleted."}

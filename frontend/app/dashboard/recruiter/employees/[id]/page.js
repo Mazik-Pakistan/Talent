@@ -4,6 +4,7 @@ import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
   getEmployeeDetail,
@@ -1110,6 +1111,14 @@ function ExitEmployeeSection({ employee, employeeId, onEmployeeUpdate }) {
 // ---------------------------------------------------------------------------
 
 export default function EmployeeProfilePage({ params }) {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="employees">
+      <EmployeeProfilePageContent params={params} />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function EmployeeProfilePageContent({ params }) {
   const router = useRouter();
 
   const unwrappedParams = use(params);

@@ -83,6 +83,25 @@ async def get_current_user(authorization: str | None = Header(default=None)) -> 
     # Return the user_id or supabase_user_id as ID
     resolved_id = profile.get("user_id") or profile.get("supabase_user_id") or user_id
 
+    # Load capabilities + organization binding for recruiters.
+    # Effective capability = organization's granted modules ∩ recruiter's own capabilities.
+    capabilities = None
+    organization_id = None
+    organization_name = None
+    if active_role == "recruiter":
+        capabilities = profile.get("capabilities") or {}
+        organization_id = profile.get("organization_id")
+        try:
+            from app.services.organization_service import effective_capabilities, get_organization
+
+            capabilities = await effective_capabilities(capabilities, organization_id)
+            if organization_id:
+                org = await get_organization(organization_id)
+                organization_name = org.get("name") if org else None
+        except Exception:
+            # Never fail authentication because org resolution hiccuped.
+            pass
+
     return CurrentUser(
         id=resolved_id,
         email=profile["email"],
@@ -92,6 +111,9 @@ async def get_current_user(authorization: str | None = Header(default=None)) -> 
         phone=profile.get("phone"),
         job_title=profile.get("job_title"),
         department=profile.get("department"),
+        capabilities=capabilities,
+        organization_id=organization_id,
+        organization_name=organization_name,
     )
 
 
@@ -178,6 +200,40 @@ def require_roles(*roles: str) -> Callable:
             detail = "You do not have permission to access this resource."
             await _audit_denied(user, f"roles:{','.join(roles)}", detail)
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+        return user
+
+    return dependency
+
+
+def require_capabilities(*capabilities: str) -> Callable:
+    """FastAPI dependency factory — recruiters without required capabilities receive HTTP 403.
+    
+    For super admin, candidates, employees: always allowed.
+    For recruiters: checks if ALL required capabilities are enabled.
+    """
+
+    async def dependency(user: Annotated[CurrentUser, Depends(get_current_user)]) -> CurrentUser:
+        # Only enforce capabilities for recruiters
+        if user.role == "recruiter":
+            missing = [c for c in capabilities if not user.has_capability(c)]
+            if missing:
+                detail = f"You do not have access to this feature. Required: {', '.join(missing)}"
+                await _audit_denied(user, f"capabilities:{','.join(missing)}", detail)
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+        return user
+
+    return dependency
+
+
+def require_any_capability(*capabilities: str) -> Callable:
+    """FastAPI dependency factory — recruiters must have AT LEAST ONE of the required capabilities."""
+
+    async def dependency(user: Annotated[CurrentUser, Depends(get_current_user)]) -> CurrentUser:
+        if user.role == "recruiter":
+            if not user.has_any_capability(capabilities):
+                detail = f"You do not have access to this feature. Required at least one of: {', '.join(capabilities)}"
+                await _audit_denied(user, f"capabilities:{','.join(capabilities)}", detail)
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
         return user
 
     return dependency

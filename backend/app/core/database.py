@@ -105,6 +105,15 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.super_admins, "email", unique=True)
     await _ensure_index(database.super_admins, "supabase_user_id", unique=True, sparse=True)
 
+    # Organizations (multi-tenancy)
+    await _ensure_index(database.organizations, "name", unique=True)
+    await _ensure_index(database.organizations, "slug", unique=True)
+    await _ensure_index(database.organizations, [("status", 1), ("created_at", -1)])
+    await _ensure_index(database.recruiters, "organization_id")
+    await _ensure_index(database.candidates, "organization_id")
+    await _ensure_index(database.employees, "organization_id")
+    await _ensure_index(database.invitations, "organization_id")
+
     await _ensure_index(database.login_attempts, "email", unique=True)
 
     await _ensure_index(database.notifications, [("recipient_id", 1), ("created_at", -1)])

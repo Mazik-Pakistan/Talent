@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
@@ -241,6 +242,14 @@ function fmt(iso) {
 }
 
 export default function RecruiterItHubPage() {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="it">
+      <RecruiterItHubPageContent />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function RecruiterItHubPageContent() {
   const [tab, setTab] = useState("officers");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

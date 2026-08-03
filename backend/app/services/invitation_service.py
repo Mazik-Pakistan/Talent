@@ -83,6 +83,7 @@ class InvitationService:
             "office_location": request.offer.office_location or request.office_location,
             "is_remote": bool(request.is_remote or (request.offer and request.offer.is_remote)),
             "start_date": start_date,
+            "organization_id": getattr(actor, "organization_id", None),
             "recruiter_id": actor.id,
             "recruiter_email": actor.email,
             "created_by_role": actor.role,

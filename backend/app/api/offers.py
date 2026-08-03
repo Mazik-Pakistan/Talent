@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, UploadFile
 
 from app.core.rbac import CurrentUser
-from app.core.security import RequireRecruiter, require_roles
+from app.core.security import RequireRecruiter, require_roles, require_capabilities
 from app.schemas.offer import (
     NegotiationRespondRequest,
     OfferApproveRequest,
@@ -23,10 +23,11 @@ router = APIRouter(prefix="/api/offers", tags=["Offers"])
 # differs from the "onboarding.self"-permission-based RequireCandidate used
 # in employees.py, so it stays local rather than being centralized.
 RequireCandidate = Annotated[CurrentUser, Depends(require_roles("candidate", "super_admin"))]
+RequireRecruiterWithInvite = Annotated[CurrentUser, Depends(require_capabilities("invite"))]
 
 
 @router.post("", status_code=201)
-async def create_offer(payload: OfferCreateRequest, current_user: RequireRecruiter):
+async def create_offer(payload: OfferCreateRequest, current_user: RequireRecruiterWithInvite):
     """Resend / legacy: send offer to an existing candidate account."""
     return await offer_service.create_and_send(current_user, payload)
 
@@ -38,17 +39,17 @@ async def get_my_offer(current_user: RequireCandidate):
 
 
 @router.get("/negotiations/pending")
-async def list_pending_negotiations(current_user: RequireRecruiter):
+async def list_pending_negotiations(current_user: RequireRecruiterWithInvite):
     return await offer_service.list_pending_negotiations(current_user)
 
 
 @router.get("/awaiting-response")
-async def list_awaiting_offer_response(current_user: RequireRecruiter):
+async def list_awaiting_offer_response(current_user: RequireRecruiterWithInvite):
     return await offer_service.list_awaiting_offer_response(current_user)
 
 
 @router.get("/candidate/{candidate_id}")
-async def list_offers_for_candidate(candidate_id: str, current_user: RequireRecruiter):
+async def list_offers_for_candidate(candidate_id: str, current_user: RequireRecruiterWithInvite):
     return await offer_service.list_for_candidate(current_user, candidate_id)
 
 
@@ -93,43 +94,42 @@ async def negotiate_offer(offer_id: str, payload: OfferNegotiateRequest, current
 
 @router.post("/{offer_id}/negotiation/accept")
 async def accept_negotiation(
-    offer_id: str, payload: NegotiationRespondRequest, current_user: RequireRecruiter
+    offer_id: str, payload: NegotiationRespondRequest, current_user: RequireRecruiterWithInvite
 ):
     return await offer_service.accept_negotiation(current_user, offer_id, payload)
 
 
 @router.post("/{offer_id}/negotiation/reject")
 async def reject_negotiation(
-    offer_id: str, payload: NegotiationRespondRequest, current_user: RequireRecruiter
+    offer_id: str, payload: NegotiationRespondRequest, current_user: RequireRecruiterWithInvite
 ):
     return await offer_service.reject_negotiation(current_user, offer_id, payload)
 
 
 @router.post("/{offer_id}/negotiation/counter")
 async def counter_negotiation(
-    offer_id: str, payload: NegotiationRespondRequest, current_user: RequireRecruiter
+    offer_id: str, payload: NegotiationRespondRequest, current_user: RequireRecruiterWithInvite
 ):
     return await offer_service.counter_negotiation(current_user, offer_id, payload)
 
 
 @router.post("/{offer_id}/edit-and-resend")
 async def edit_and_resend_offer(
-    offer_id: str, payload: OfferEditResendRequest, current_user: RequireRecruiter
+    offer_id: str, payload: OfferEditResendRequest, current_user: RequireRecruiterWithInvite
 ):
     """Edit offer letter terms after clarification and resend as a new version."""
     return await offer_service.edit_and_resend(current_user, offer_id, payload)
 
 
 @router.post("/{offer_id}/approve")
-async def approve_offer(offer_id: str, payload: OfferApproveRequest, current_user: RequireRecruiter):
+async def approve_offer(offer_id: str, payload: OfferApproveRequest, current_user: RequireRecruiterWithInvite):
     """Activate employee after signed offer + docs + IT provisioning."""
-    return await offer_service.approve(current_user, offer_id, payload)
     return await offer_service.approve(current_user, offer_id, payload)
 
 
 @router.post("/{offer_id}/extend-validity")
 async def extend_offer_validity(
-    offer_id: str, payload: OfferExtendValidityRequest, current_user: RequireRecruiter
+    offer_id: str, payload: OfferExtendValidityRequest, current_user: RequireRecruiterWithInvite
 ):
     """Extend an expired unsigned offer for a specific candidate."""
     return await offer_service.extend_validity(current_user, offer_id, payload)

@@ -82,6 +82,9 @@ class CurrentUser:
     phone: str | None = None
     job_title: str | None = None
     department: str | None = None
+    capabilities: dict[str, bool] | None = None  # For recruiters: module access control
+    organization_id: str | None = None  # Multi-tenancy: recruiter's company
+    organization_name: str | None = None
 
     @property
     def permissions(self) -> frozenset[str]:
@@ -97,3 +100,20 @@ class CurrentUser:
     def has_all(self, permissions: Iterable[str]) -> bool:
         needed = set(permissions)
         return needed.issubset(self.permissions)
+
+    def has_capability(self, capability: str) -> bool:
+        """Check if recruiter has this capability enabled (only for recruiters)."""
+        if self.role != "recruiter":
+            return True  # Super admin, candidates, employees always have access
+        if not self.capabilities:
+            return True  # No capabilities stored = not restricted (backward compatible)
+        return self.capabilities.get(capability, True)
+
+    def has_any_capability(self, capabilities: Iterable[str]) -> bool:
+        """Check if recruiter has any of these capabilities."""
+        if self.role != "recruiter":
+            return True
+        if not self.capabilities:
+            return True
+        needed = set(capabilities)
+        return any(self.capabilities.get(cap, False) for cap in needed)

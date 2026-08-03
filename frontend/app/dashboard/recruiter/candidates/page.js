@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
   acceptOfferNegotiation,
@@ -33,6 +34,14 @@ import {
 } from "@/lib/ai/recruiterContext";
 
 export default function RecruiterCandidatesPage() {
+  return (
+    <ProtectedRecruiterRoute requiredCapability="recruitment">
+      <RecruiterCandidatesPageContent />
+    </ProtectedRecruiterRoute>
+  );
+}
+
+function RecruiterCandidatesPageContent() {
   const router = useRouter();
   const [newCandidates, setNewCandidates] = useState([]);
   const [awaitingOffers, setAwaitingOffers] = useState([]);

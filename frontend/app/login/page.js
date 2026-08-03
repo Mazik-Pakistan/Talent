@@ -123,47 +123,68 @@ function LoginForm() {
     }
   }
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-    setTouched({ email: true, password: true });
+   async function handleSubmit(event) {
+     event.preventDefault();
+     setTouched({ email: true, password: true });
 
-    const validationErrors = validateForm({ email, password });
-    setErrors(validationErrors);
-    if (Object.keys(validationErrors).length) {
-      setLoginFeedback("error");
-      toast.error("Please fix the errors below and try again.");
-      return;
-    }
+     const validationErrors = validateForm({ email, password });
+     setErrors(validationErrors);
+     if (Object.keys(validationErrors).length) {
+       setLoginFeedback("error");
+       toast.error("Please fix the errors below and try again.");
+       return;
+     }
 
-    setLoginFeedback("checking");
-    setIsSubmitting(true);
-    try {
-      const data = await login({
-        email: email.trim(),
-        password,
-        remember_me: rememberMe,
-      });
-      persistLoginSession(data.session, data.user, {
-        rememberMe,
-        email: email.trim(),
-      });
-      setLoginFeedback("success");
-      if (data.user?.must_change_password) {
-        toast.info("First-time sign-in — set your own password to continue.");
-        router.push("/set-password");
-        return;
-      }
-      toast.success("Signed in successfully. Redirecting…");
-      router.push(data.redirect_to);
-    } catch (error) {
-      const message = getApiErrorMessage(error, "Login failed. Please check your credentials.");
-      setErrors((current) => ({ ...current, password: message }));
-      setLoginFeedback("error");
-      toast.error(message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
+     setLoginFeedback("checking");
+     setIsSubmitting(true);
+     try {
+       const data = await login({
+         email: email.trim(),
+         password,
+         remember_me: rememberMe,
+       });
+       
+       // Fetch capabilities from RBAC endpoint
+       let capabilities = {};
+       try {
+         const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+         const rbacResponse = await fetch(`${apiBaseUrl}/api/rbac/me`, {
+           headers: {
+             Authorization: `Bearer ${data.session.access_token}`,
+             "ngrok-skip-browser-warning": "true",
+           },
+         });
+         if (rbacResponse.ok) {
+           const rbacData = await rbacResponse.json();
+           capabilities = rbacData.capabilities || {};
+         }
+       } catch (err) {
+         console.warn("Could not fetch capabilities:", err);
+         // Continue without capabilities
+       }
+       
+       persistLoginSession(data.session, data.user, {
+         rememberMe,
+         email: email.trim(),
+         capabilities,
+       });
+       setLoginFeedback("success");
+       if (data.user?.must_change_password) {
+         toast.info("First-time sign-in — set your own password to continue.");
+         router.push("/set-password");
+         return;
+       }
+       toast.success("Signed in successfully. Redirecting…");
+       router.push(data.redirect_to);
+     } catch (error) {
+       const message = getApiErrorMessage(error, "Login failed. Please check your credentials.");
+       setErrors((current) => ({ ...current, password: message }));
+       setLoginFeedback("error");
+       toast.error(message);
+     } finally {
+       setIsSubmitting(false);
+     }
+   }
 
   const mascotMood = loginFeedback === "success" ? "green" : loginFeedback === "error" ? "red" : password ? "yellow" : "neutral";
 

@@ -17,12 +17,14 @@ from app.schemas.auth import names_match
 from app.services.candidate_service import CandidateService, onboarding_missing_keys
 from app.services.dashboard_service import DashboardService, create_notification
 from app.services.email_service import email_service
+from app.services.organization_service import recruiter_scope
 from app.services.people_history import (
     ACTIVE_EMPLOYEE_STATUSES,
     HISTORICAL_EMPLOYEE_STATUSES,
     archive_user_login,
     cycle_group_key,
     lookup_history_by_email,
+
     mark_employee_historical_fields,
 )
 
@@ -115,8 +117,9 @@ class EmployeeService:
             "status": {"$ne": "converted"},
             "conversion_status": {"$in": ["intake_submitted", "offer_signed"]},
         }
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
+        scope = recruiter_scope(current_user)
+        if scope:
+            query.update(scope)
 
         docs = await database.candidates.find(query).sort("onboarding.submitted_at", -1).to_list(length=100)
         pending = []
@@ -170,8 +173,9 @@ class EmployeeService:
             "onboarding.status": {"$in": ["in_progress", "not_started", None]},
             "conversion_status": {"$in": ["offer_signed", "offer_sent"]},
         }
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
+        scope = recruiter_scope(current_user)
+        if scope:
+            query.update(scope)
 
         docs = await database.candidates.find(query).sort("created_at", -1).to_list(length=100)
         in_progress = []
@@ -235,8 +239,9 @@ class EmployeeService:
             "conversion_status": {"$ne": "converted"},
             "onboarding.status": {"$ne": "submitted"},
         }
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
+        scope = recruiter_scope(current_user)
+        if scope:
+            query.update(scope)
         if q and q.strip():
             term = q.strip()
             query["$or"] = [
@@ -361,8 +366,9 @@ class EmployeeService:
         from app.services.it_provisioning_service import it_provisioning_service
 
         query: dict = {"status": {"$in": ["signed", "expired"]}}
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
+        scope = recruiter_scope(current_user)
+        if scope:
+            query.update(scope)
 
         offers = await database.offer_letters.find(query).sort("signed_at", -1).to_list(length=100)
         ready = []
@@ -544,6 +550,7 @@ class EmployeeService:
             "currency": offer.get("currency"),
             "recruiter_id": candidate.get("recruiter_id"),
             "recruiter_email": candidate.get("recruiter_email"),
+            "organization_id": candidate.get("organization_id"),
             "candidate_id": user_id or str(candidate["_id"]),
             "invitation_token": candidate.get("invitation_token"),
             "offer_id": str(offer["_id"]),
@@ -744,8 +751,9 @@ class EmployeeService:
         history_bucket: str | None = None,
     ) -> dict:
         query: dict = {}
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
+        scope = recruiter_scope(current_user)
+        if scope:
+            query.update(scope)
         bucket = (history_bucket or "").strip().lower()
         if bucket == "historical":
             query["$or"] = [
@@ -1259,8 +1267,9 @@ class EmployeeService:
                 {"history_bucket": {"$ne": "converted"}},
             ]
         }
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
+        scope = recruiter_scope(current_user)
+        if scope:
+            query.update(scope)
         if reason:
             query["historical_reason"] = reason.strip().lower()
         if q and q.strip():

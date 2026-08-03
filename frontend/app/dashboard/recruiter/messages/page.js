@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
+import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import { getApiErrorMessage } from "@/services/authService";
 import {
   closeHrThread,
@@ -27,9 +28,11 @@ function formatWhen(value) {
 
 export default function RecruiterMessagesPage() {
   return (
-    <Suspense fallback={<p style={{ textAlign: "center", marginTop: "2rem" }}>Loading inbox…</p>}>
-      <RecruiterMessagesInner />
-    </Suspense>
+    <ProtectedRecruiterRoute requiredCapability="messages">
+      <Suspense fallback={<p style={{ textAlign: "center", marginTop: "2rem" }}>Loading inbox…</p>}>
+        <RecruiterMessagesInner />
+      </Suspense>
+    </ProtectedRecruiterRoute>
   );
 }
 
