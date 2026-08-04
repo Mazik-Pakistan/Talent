@@ -529,13 +529,13 @@ function CatalogTab({ onEnroll }) {
               </select>
               <select className={styles.filterSelect} value={level} onChange={(e) => { setPage(1); setLevel(e.target.value); }}>
                 <option value="">All levels</option>
-                {facets.levels.map((lv) => (
+                {(facets.levels || []).map((lv) => (
                   <option key={lv} value={lv}>{lv[0].toUpperCase() + lv.slice(1)}</option>
                 ))}
               </select>
               <select className={styles.filterSelect} value={role} onChange={(e) => { setPage(1); setRole(e.target.value); }}>
                 <option value="">All roles</option>
-                {facets.roles.map((r) => (
+                {(facets.roles || []).map((r) => (
                   <option key={r} value={r}>{r.replace(/-/g, " ")}</option>
                 ))}
               </select>
