@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -7,6 +7,7 @@ import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import SuperAdminShell from "@/components/super-admin/SuperAdminShell";
 import InviteRecruiter from "@/components/super-admin/InviteRecruiter";
 import OrganizationsPanel from "@/components/super-admin/OrganizationsPanel";
+import RecruitersPanel from "@/components/super-admin/RecruitersPanel";
 import OrganizationDeleteModal from "@/components/OrganizationDeleteModal";
 import RecruiterDetailsModal from "@/components/super-admin/RecruiterDetailsModal";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -175,8 +176,6 @@ export default function SuperAdminDashboardPage() {
   const [showRecruiterDetails, setShowRecruiterDetails] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [recruitersPerPage] = useState(20);
   const [deletingRecruiterId, setDeletingRecruiterId] = useState(null);
   const [expandedOrgs, setExpandedOrgs] = useState({});
   const [editOrgModules, setEditOrgModules] = useState({});
@@ -527,64 +526,6 @@ export default function SuperAdminDashboardPage() {
     });
   }
 
-  // Helper function to determine consistent recruiter status
-  function getRecruiterStatus(recruiter) {
-    // Debug log for taha to see actual structure
-    if (recruiter.email === "hutezule@idf.ovh") {
-      console.log("Debug taha:", {
-        email: recruiter.email,
-        is_active: recruiter.is_active,
-        status: recruiter.status,
-        recruiter_id: recruiter.recruiter_id,
-        has_recruiter_profile: !!recruiter.recruiter_id,
-        full_data: recruiter
-      });
-    }
-
-    // 1. Has active recruiter profile = "Active"
-    if (recruiter.recruiter_id && recruiter.is_active) {
-      return "Active";
-    }
-    
-    // 2. Has recruiter profile but inactive (deactivated by admin) = "Inactive"  
-    if (recruiter.recruiter_id && !recruiter.is_active) {
-      return "Inactive";
-    }
-    
-    // 3. Invitation pending (never started registration) = "Pending"
-    if (recruiter.status === "pending") {
-      return "Pending";
-    }
-    
-    // 4. Invitation used but no recruiter profile (incomplete registration) = "Pending"
-    if (recruiter.status === "used" && !recruiter.recruiter_id) {
-      return "Pending";
-    }
-    
-    // 5. Any other case = "Pending" (safest default)
-    return "Pending";
-  }
-  const filteredRecruiters = recruiters.filter(recruiter => {
-    const matchesSearch = !searchTerm || 
-      recruiter.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      recruiter.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      recruiter.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      recruiter.department?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesOrg = !orgFilter || recruiter.organization_id === orgFilter;
-    
-    const matchesStatus = !statusFilter || 
-      (statusFilter === "active" && recruiter.is_active) ||
-      (statusFilter === "pending" && recruiter.status === "pending") ||
-      (statusFilter === "inactive" && !recruiter.is_active && recruiter.status !== "pending");
-    
-    return matchesSearch && matchesOrg && matchesStatus;
-  });
-
-  const totalPages = Math.ceil(filteredRecruiters.length / recruitersPerPage);
-  const startIndex = (currentPage - 1) * recruitersPerPage;
-  const paginatedRecruiters = filteredRecruiters.slice(startIndex, startIndex + recruitersPerPage);
-
   if (!user && !needsBootstrap) return <RecruiterLoader />;
 
   if (needsBootstrap && !user) {
@@ -662,7 +603,7 @@ export default function SuperAdminDashboardPage() {
                   style={{ marginTop: 8 }}
                   onClick={() => setActiveTab("invite")}
                 >
-                  {recruiters.length > 0 ? "Invite another →" : "Invite recruiter →"}
+                  {recruiters.length > 0 ? "Invite another â†’" : "Invite recruiter â†’"}
                 </button>
               </div>
             </div>
@@ -701,7 +642,7 @@ export default function SuperAdminDashboardPage() {
               className={styles.quickAction}
               onClick={() => setActiveTab("invite")}
             >
-              <span className={styles.qaIcon}>↗</span>
+              <span className={styles.qaIcon}>â†—</span>
               <strong>Invite Recruiter</strong>
               <span className={styles.qaHint}>Send onboarding invitations</span>
             </button>
@@ -710,7 +651,7 @@ export default function SuperAdminDashboardPage() {
               className={styles.quickAction}
               onClick={() => setActiveTab("recruiters")}
             >
-              <span className={styles.qaIcon}>↗</span>
+              <span className={styles.qaIcon}>â†—</span>
               <strong>Manage Recruiters</strong>
               <span className={styles.qaHint}>View and edit recruiter access</span>
             </button>
@@ -719,7 +660,7 @@ export default function SuperAdminDashboardPage() {
               className={styles.quickAction}
               onClick={() => setActiveTab("organizations")}
             >
-              <span className={styles.qaIcon}>↗</span>
+              <span className={styles.qaIcon}>â†—</span>
               <strong>Organizations</strong>
               <span className={styles.qaHint}>Configure company modules</span>
             </button>
@@ -743,203 +684,37 @@ export default function SuperAdminDashboardPage() {
           applyTemplate={applyTemplate}
         />
       )}
-
       {activeTab === "recruiters" && (
-        <div className={styles.section}>
-          <div className={styles.sectionHead}>
-            <div className={styles.sectionHeadLeft}>
-              <div className={`${styles.bar} ${styles.orange}`} />
-              <div>
-                <div className={styles.sectionTitle}>Invited Recruiters</div>
-                <div className={styles.sectionDesc}>Manage access and capabilities for every recruiter you&apos;ve invited.</div>
-              </div>
-            </div>
-          </div>
-          <div className={styles.sectionBody}>
-            {recruitersLoading ? (
-              <p className={styles.emptySub}>Loading...</p>
-            ) : recruiters.length === 0 ? (
-              <p className={styles.emptySub}>No recruiters invited yet.</p>
-            ) : (
-              <>
-                <div className={local.bulkBar}>
-                  <span className={local.bulkBarLabel}>Bulk update</span>
-                  <label className={local.selectAllRow} style={{ marginBottom: 0 }}>
-                    <input
-                      type="checkbox"
-                      checked={bulkSelected.length === paginatedRecruiters.length}
-                      onChange={() => {
-                        const filtered = paginatedRecruiters.filter((r) => !orgFilter || r.organization_id === orgFilter);
-                        setBulkSelected((prev) => (prev.length === filtered.length ? [] : filtered.map((r) => r.id)));
-                      }}
-                    />
-                    Select all ({filteredRecruiters.length})
-                  </label>
-                  <select
-                    className={local.bulkSelect}
-                    value={orgFilter}
-                    onChange={(e) => { setOrgFilter(e.target.value); setBulkSelected([]); setCurrentPage(1); }}
-                  >
-                    <option value="">All organizations</option>
-                    {organizations.map((org) => (
-                      <option key={org.id} value={org.id}>{org.name}</option>
-                    ))}
-                  </select>
-                  <select
-                    className={local.bulkSelect}
-                    value={bulkTemplate}
-                    onChange={(e) => setBulkTemplate(e.target.value)}
-                  >
-                    <option value="">Apply template...</option>
-                    {Object.keys(TEMPLATE_LABELS).map((templateKey) => (
-                      <option key={templateKey} value={templateKey}>
-                        {TEMPLATE_LABELS[templateKey]}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className={styles.primaryButton}
-                    disabled={bulkBusy || !bulkSelected.length || !bulkTemplate}
-                    onClick={handleBulkApply}
-                  >
-                    {bulkBusy ? "Applying..." : `Apply to ${bulkSelected.length}`}
-                  </button>
-                  {bulkMessage && <span className={styles.formMessage}>{bulkMessage}</span>}
-                </div>
-
-                <div className={local.searchFilterBar}>
-                  <input
-                    type="search"
-                    className={local.searchInput}
-                    placeholder="Search by name, email, job title, or department..."
-                    value={searchTerm}
-                    onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                  />
-                  <select
-                    className={local.bulkSelect}
-                    value={statusFilter}
-                    onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-                  >
-                    <option value="">All statuses</option>
-                    <option value="active">Active</option>
-                    <option value="pending">Pending</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </div>
-
-                <div className={local.recruiterCountBar}>
-                  Showing {paginatedRecruiters.length > 0 ? startIndex + 1 : 0}-{startIndex + paginatedRecruiters.length} of {filteredRecruiters.length} recruiters
-                </div>
-
-                <ul className={local.recruiterList}>
-                  {paginatedRecruiters.map((r) => (
-                    <li key={r.id} className={local.recruiterCard}>
-                      <div className={local.recruiterCardHead}>
-                        <input
-                          type="checkbox"
-                          className={local.recruiterCheckbox}
-                          checked={bulkSelected.includes(r.id)}
-                          onChange={() => toggleBulkSelect(r.id)}
-                          title={`Select ${r.full_name} for bulk update`}
-                        />
-                        <div className={local.recruiterAvatar}>
-                          {(r.full_name || "?").charAt(0).toUpperCase()}
-                        </div>
-                        <div className={local.recruiterCardInfo}>
-                          <div className={local.recruiterCardName}>
-                            <strong>{r.full_name || "Unknown"}</strong>
-                            <span
-                              className={`${local.statusPill} ${
-                                getRecruiterStatus(r) === "Active" ? local.active : 
-                                getRecruiterStatus(r) === "Pending" ? local.pending : local.other
-                              }`}
-                            >
-                              {getRecruiterStatus(r)}
-                            </span>
-                            {r.has_employee_profile && (
-                              <span className={local.dualRolePill}>DUAL ROLE</span>
-                            )}
-                          </div>
-                          <div className={local.recruiterCardEmail}>{r.email}</div>
-                          <div className={local.recruiterCardMeta}>
-                            {r.organization_id && (
-                              <>Org: {organizations.find((o) => o.id === r.organization_id)?.name || "-"}
-                              {r.job_title || r.department ? " • " : ""}</>
-                            )}
-                            {r.job_title || "-"} - {r.department || "-"}
-                            {r.office_location ? ` - ${r.office_location}` : ""}
-                            {r.created_at ? ` - Created ${new Date(r.created_at).toLocaleDateString()}` : ""}
-                          </div>
-                        </div>
-                        <div className={local.recruiterCardActions}>
-                          <button
-                            type="button"
-                            className={styles.secondaryButton}
-                            onClick={() => openRecruiterDetails(r.id)}
-                          >
-                            View Details
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.dangerButton}
-                            disabled={deletingRecruiterId === r.id}
-                            onClick={() => quickDeleteRecruiter(r.id, r.full_name || r.email)}
-                          >
-                            {deletingRecruiterId === r.id ? "Deleting..." : "Delete"}
-                          </button>
-                        </div>
-                      </div>
-                      <div className={local.capabilityChips}>
-                        {Object.entries(CAPABILITY_LABELS).map(([key, label]) => {
-                          const orgAllows = orgPurchasedModules(organizations, r.organization_id)[key] !== false;
-                          if (!orgAllows) return null;
-                          return (
-                          <label key={key} className={local.capabilityChip}>
-                            <span className={local.chipLabel}>{label}</span>
-                            <span className={local.miniToggle}>
-                              <input
-                                type="checkbox"
-                                checked={Boolean(r.capabilities?.[key] ?? true)}
-                                onChange={() => toggleCapability(r.id, key, r.capabilities?.[key] ?? true)}
-                              />
-                              <span className={local.miniSlider}></span>
-                            </span>
-                          </label>
-                          );
-                        })}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-
-                {totalPages > 1 && (
-                  <div className={local.paginationBar}>
-                    <button
-                      type="button"
-                      className={styles.secondaryButton}
-                      disabled={currentPage === 1}
-                      onClick={() => setCurrentPage(currentPage - 1)}
-                    >
-                      Previous
-                    </button>
-                    <span className={local.pageInfo}>
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      className={styles.secondaryButton}
-                      disabled={currentPage === totalPages}
-                      onClick={() => setCurrentPage(currentPage + 1)}
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+        <RecruitersPanel
+          recruiters={recruiters}
+          recruitersLoading={recruitersLoading}
+          organizations={organizations}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          orgFilter={orgFilter}
+          setOrgFilter={setOrgFilter}
+          bulkSelected={bulkSelected}
+          toggleBulkSelect={toggleBulkSelect}
+          toggleBulkSelectAll={toggleBulkSelectAll}
+          bulkTemplate={bulkTemplate}
+          setBulkTemplate={setBulkTemplate}
+          handleBulkApply={handleBulkApply}
+          bulkBusy={bulkBusy}
+          bulkMessage={bulkMessage}
+          templates={templates}
+          startEdit={startEdit}
+          editingId={editingId}
+          editForm={editForm}
+          setEditForm={setEditForm}
+          saveEdit={saveEdit}
+          cancelEdit={cancelEdit}
+          editSaving={editSaving}
+          toggleCapability={toggleCapability}
+          quickDeleteRecruiter={quickDeleteRecruiter}
+          onTabChange={setActiveTab}
+        />
       )}
 
       {activeTab === "organizations" && (
