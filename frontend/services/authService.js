@@ -1340,6 +1340,20 @@ export async function updateRecruiter(recruiterId, payload, accessToken) {
   return data;
 }
 
+export async function deleteRecruiter(recruiterId, accessToken) {
+  const { data } = await apiClient.delete(`/api/super-admin/recruiters/${recruiterId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getRecruiterDetails(recruiterId, accessToken) {
+  const { data } = await apiClient.get(`/api/super-admin/recruiters/${recruiterId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
 export async function bulkUpdateRecruiterCapabilities(payload, accessToken) {
   const { data } = await apiClient.post("/api/super-admin/recruiters/bulk-capabilities", payload, {
     headers: { Authorization: `Bearer ${accessToken}` },

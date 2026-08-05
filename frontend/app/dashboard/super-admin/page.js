@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import SuperAdminShell from "@/components/super-admin/SuperAdminShell";
 import OrganizationDeleteModal from "@/components/OrganizationDeleteModal";
+import RecruiterDetailsModal from "@/components/super-admin/RecruiterDetailsModal";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import local from "./super-admin.module.css";
 import {
@@ -13,6 +14,7 @@ import {
   bulkUpdateRecruiterCapabilities,
   createOrganization,
   deleteOrganization,
+  deleteRecruiter,
   getApiErrorMessage,
   getCapabilityTemplates,
   inviteRecruiter,
@@ -115,6 +117,17 @@ export default function SuperAdminDashboardPage() {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyEditForm);
   const [editSaving, setEditSaving] = useState(false);
+  
+  // New state for improved UI
+  const [selectedRecruiterId, setSelectedRecruiterId] = useState(null);
+  const [showRecruiterDetails, setShowRecruiterDetails] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [recruitersPerPage] = useState(20);
+  const [deletingRecruiterId, setDeletingRecruiterId] = useState(null);
+  const [expandedOrgs, setExpandedOrgs] = useState({});
+  const [editOrgModules, setEditOrgModules] = useState({});
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -379,6 +392,147 @@ export default function SuperAdminDashboardPage() {
     }
   }
 
+  // New handler functions for improved UI
+  function openRecruiterDetails(recruiterId) {
+    setSelectedRecruiterId(recruiterId);
+    setShowRecruiterDetails(true);
+  }
+
+  function closeRecruiterDetails() {
+    setShowRecruiterDetails(false);
+    setSelectedRecruiterId(null);
+  }
+
+  async function handleRecruiterDeleted() {
+    await loadRecruiters();
+    closeRecruiterDetails();
+  }
+
+  async function handleRecruiterUpdated() {
+    await loadRecruiters();
+  }
+
+  async function quickDeleteRecruiter(recruiterId, recruiterName) {
+    if (!confirm(`Are you sure you want to delete ${recruiterName}? This action cannot be undone.`)) {
+      return;
+    }
+    
+    setDeletingRecruiterId(recruiterId);
+    try {
+      const accessToken = localStorage.getItem("access_token");
+      await deleteRecruiter(recruiterId, accessToken);
+      await loadRecruiters();
+    } catch (error) {
+      alert(getApiErrorMessage(error, "Failed to delete recruiter."));
+    } finally {
+      setDeletingRecruiterId(null);
+    }
+  }
+
+  // Organization card expansion functions
+  function toggleOrgExpansion(orgId) {
+    setExpandedOrgs(prev => ({
+      ...prev,
+      [orgId]: !prev[orgId]
+    }));
+  }
+
+  function toggleOrgModule(orgId, moduleKey, currentValue) {
+    setEditOrgModules(prev => ({
+      ...prev,
+      [orgId]: {
+        ...prev[orgId],
+        [moduleKey]: !currentValue
+      }
+    }));
+  }
+
+  async function saveOrgModules(orgId) {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return;
+    
+    try {
+      const modules = editOrgModules[orgId];
+      if (modules) {
+        await updateOrganization(orgId, { modules }, accessToken);
+        loadOrganizations();
+        setEditOrgModules(prev => {
+          const updated = { ...prev };
+          delete updated[orgId];
+          return updated;
+        });
+      }
+    } catch (error) {
+      alert(getApiErrorMessage(error, "Failed to update organization modules."));
+    }
+  }
+
+  function cancelOrgEdit(orgId) {
+    setEditOrgModules(prev => {
+      const updated = { ...prev };
+      delete updated[orgId];
+      return updated;
+    });
+  }
+
+  // Helper function to determine consistent recruiter status
+  function getRecruiterStatus(recruiter) {
+    // Debug log for taha to see actual structure
+    if (recruiter.email === "hutezule@idf.ovh") {
+      console.log("Debug taha:", {
+        email: recruiter.email,
+        is_active: recruiter.is_active,
+        status: recruiter.status,
+        recruiter_id: recruiter.recruiter_id,
+        has_recruiter_profile: !!recruiter.recruiter_id,
+        full_data: recruiter
+      });
+    }
+
+    // 1. Has active recruiter profile = "Active"
+    if (recruiter.recruiter_id && recruiter.is_active) {
+      return "Active";
+    }
+    
+    // 2. Has recruiter profile but inactive (deactivated by admin) = "Inactive"  
+    if (recruiter.recruiter_id && !recruiter.is_active) {
+      return "Inactive";
+    }
+    
+    // 3. Invitation pending (never started registration) = "Pending"
+    if (recruiter.status === "pending") {
+      return "Pending";
+    }
+    
+    // 4. Invitation used but no recruiter profile (incomplete registration) = "Pending"
+    if (recruiter.status === "used" && !recruiter.recruiter_id) {
+      return "Pending";
+    }
+    
+    // 5. Any other case = "Pending" (safest default)
+    return "Pending";
+  }
+  const filteredRecruiters = recruiters.filter(recruiter => {
+    const matchesSearch = !searchTerm || 
+      recruiter.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      recruiter.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      recruiter.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      recruiter.department?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesOrg = !orgFilter || recruiter.organization_id === orgFilter;
+    
+    const matchesStatus = !statusFilter || 
+      (statusFilter === "active" && recruiter.is_active) ||
+      (statusFilter === "pending" && recruiter.status === "pending") ||
+      (statusFilter === "inactive" && !recruiter.is_active && recruiter.status !== "pending");
+    
+    return matchesSearch && matchesOrg && matchesStatus;
+  });
+
+  const totalPages = Math.ceil(filteredRecruiters.length / recruitersPerPage);
+  const startIndex = (currentPage - 1) * recruitersPerPage;
+  const paginatedRecruiters = filteredRecruiters.slice(startIndex, startIndex + recruitersPerPage);
+
   if (!user && !needsBootstrap) return <RecruiterLoader />;
 
   if (needsBootstrap && !user) {
@@ -547,7 +701,7 @@ export default function SuperAdminDashboardPage() {
               <div className={`${styles.bar} ${styles.orange}`} />
               <div>
                 <div className={styles.sectionTitle}>Invited Recruiters</div>
-                <div className={styles.sectionDesc}>Manage access and capabilities for every recruiter you've invited.</div>
+                <div className={styles.sectionDesc}>Manage access and capabilities for every recruiter you&apos;ve invited.</div>
               </div>
             </div>
           </div>
@@ -563,15 +717,18 @@ export default function SuperAdminDashboardPage() {
                   <label className={local.selectAllRow} style={{ marginBottom: 0 }}>
                     <input
                       type="checkbox"
-                      checked={bulkSelected.length === recruiters.length}
-                      onChange={toggleBulkSelectAll}
+                      checked={bulkSelected.length === paginatedRecruiters.length}
+                      onChange={() => {
+                        const filtered = paginatedRecruiters.filter((r) => !orgFilter || r.organization_id === orgFilter);
+                        setBulkSelected((prev) => (prev.length === filtered.length ? [] : filtered.map((r) => r.id)));
+                      }}
                     />
-                    Select all ({recruiters.filter((r) => !orgFilter || r.organization_id === orgFilter).length})
+                    Select all ({filteredRecruiters.length})
                   </label>
                   <select
                     className={local.bulkSelect}
                     value={orgFilter}
-                    onChange={(e) => { setOrgFilter(e.target.value); setBulkSelected([]); }}
+                    onChange={(e) => { setOrgFilter(e.target.value); setBulkSelected([]); setCurrentPage(1); }}
                   >
                     <option value="">All organizations</option>
                     {organizations.map((org) => (
@@ -592,7 +749,7 @@ export default function SuperAdminDashboardPage() {
                   </select>
                   <button
                     type="button"
-                    className={local.bulkApplyBtn}
+                    className={styles.primaryButton}
                     disabled={bulkBusy || !bulkSelected.length || !bulkTemplate}
                     onClick={handleBulkApply}
                   >
@@ -600,10 +757,35 @@ export default function SuperAdminDashboardPage() {
                   </button>
                   {bulkMessage && <span className={styles.formMessage}>{bulkMessage}</span>}
                 </div>
-                <ul className={styles.miniList}>
-                  {recruiters.filter((r) => !orgFilter || r.organization_id === orgFilter).map((r) => (
-                    <li key={r.id} className={styles.miniListItem} style={{ flexDirection: "column", alignItems: "stretch" }}>
-                      <div className={local.recruiterRow}>
+
+                <div className={local.searchFilterBar}>
+                  <input
+                    type="search"
+                    className={local.searchInput}
+                    placeholder="Search by name, email, job title, or department..."
+                    value={searchTerm}
+                    onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                  />
+                  <select
+                    className={local.bulkSelect}
+                    value={statusFilter}
+                    onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                  >
+                    <option value="">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="pending">Pending</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+
+                <div className={local.recruiterCountBar}>
+                  Showing {paginatedRecruiters.length > 0 ? startIndex + 1 : 0}-{startIndex + paginatedRecruiters.length} of {filteredRecruiters.length} recruiters
+                </div>
+
+                <ul className={local.recruiterList}>
+                  {paginatedRecruiters.map((r) => (
+                    <li key={r.id} className={local.recruiterCard}>
+                      <div className={local.recruiterCardHead}>
                         <input
                           type="checkbox"
                           className={local.recruiterCheckbox}
@@ -611,66 +793,51 @@ export default function SuperAdminDashboardPage() {
                           onChange={() => toggleBulkSelect(r.id)}
                           title={`Select ${r.full_name} for bulk update`}
                         />
-                        <div className={local.recruiterHead} style={{ flex: 1 }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                              <strong>{r.full_name}</strong>
-                              <span
-                                className={`${local.statusPill} ${
-                                  r.is_active ? local.active : r.status === "pending" ? local.pending : local.other
-                                }`}
-                              >
-                                {r.is_active ? "Active" : r.status}
-                              </span>
-                              {r.has_employee_profile && (
-                                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#ede9fe", color: "#5b21b6", fontWeight: 600 }}>DUAL ROLE</span>
-                              )}
-                            </div>
-                            <div className={local.recruiterMeta}>
-                              {r.email}
-                              {r.organization_id && (
-                                <>{" - Org: "} {organizations.find((o) => o.id === r.organization_id)?.name || "-"}</>
-                              )}
-                            </div>
-                            {editingId === r.id ? (
-                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginTop: 10 }}>
-                                {[
-                                  { k: "job_title", l: "Job Title" },
-                                  { k: "department", l: "Department" },
-                                  { k: "office_location", l: "Location" },
-                                ].map(({ k, l }) => (
-                                  <label key={k} style={{ fontSize: 12 }}>
-                                    <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>{l}</span>
-                                    <input type="text" value={editForm[k] ?? ""} onChange={(e) => setEditForm({ ...editForm, [k]: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }} />
-                                  </label>
-                                ))}
-                                <label style={{ fontSize: 12 }}>
-                                  <span style={{ display: "block", color: "var(--text-muted)", marginBottom: 2 }}>Status</span>
-                                  <select value={editForm.status ?? "active"} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} style={{ width: "100%", padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}>
-                                    <option value="active">Active</option>
-                                    <option value="inactive">Inactive</option>
-                                  </select>
-                                </label>
-                                <div style={{ display: "flex", gap: 6, alignSelf: "end" }}>
-                                  <button type="button" disabled={editSaving} onClick={() => saveEdit(r.id)} className={styles.primaryButton} style={{ padding: "4px 14px", fontSize: 12 }}>
-                                    {editSaving ? "..." : "Save"}
-                                  </button>
-                                  <button type="button" onClick={cancelEdit} style={{ padding: "4px 14px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", cursor: "pointer" }}>Cancel</button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className={local.recruiterMeta}>
-                                {r.job_title || "-"} - {r.department || "-"}
-                                {r.office_location ? ` - ${r.office_location}` : ""}
-                                {r.created_at ? ` - Created ${new Date(r.created_at).toLocaleDateString()}` : ""}
-                              </div>
+                        <div className={local.recruiterAvatar}>
+                          {(r.full_name || "?").charAt(0).toUpperCase()}
+                        </div>
+                        <div className={local.recruiterCardInfo}>
+                          <div className={local.recruiterCardName}>
+                            <strong>{r.full_name || "Unknown"}</strong>
+                            <span
+                              className={`${local.statusPill} ${
+                                getRecruiterStatus(r) === "Active" ? local.active : 
+                                getRecruiterStatus(r) === "Pending" ? local.pending : local.other
+                              }`}
+                            >
+                              {getRecruiterStatus(r)}
+                            </span>
+                            {r.has_employee_profile && (
+                              <span className={local.dualRolePill}>DUAL ROLE</span>
                             )}
                           </div>
-                          {editingId !== r.id && (
-                            <button type="button" onClick={() => startEdit(r)} style={{ padding: "4px 12px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
-                              Edit role
-                            </button>
-                          )}
+                          <div className={local.recruiterCardEmail}>{r.email}</div>
+                          <div className={local.recruiterCardMeta}>
+                            {r.organization_id && (
+                              <>Org: {organizations.find((o) => o.id === r.organization_id)?.name || "-"}
+                              {r.job_title || r.department ? " • " : ""}</>
+                            )}
+                            {r.job_title || "-"} - {r.department || "-"}
+                            {r.office_location ? ` - ${r.office_location}` : ""}
+                            {r.created_at ? ` - Created ${new Date(r.created_at).toLocaleDateString()}` : ""}
+                          </div>
+                        </div>
+                        <div className={local.recruiterCardActions}>
+                          <button
+                            type="button"
+                            className={styles.secondaryButton}
+                            onClick={() => openRecruiterDetails(r.id)}
+                          >
+                            View Details
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.dangerButton}
+                            disabled={deletingRecruiterId === r.id}
+                            onClick={() => quickDeleteRecruiter(r.id, r.full_name || r.email)}
+                          >
+                            {deletingRecruiterId === r.id ? "Deleting..." : "Delete"}
+                          </button>
                         </div>
                       </div>
                       <div className={local.capabilityChips}>
@@ -679,12 +846,15 @@ export default function SuperAdminDashboardPage() {
                           if (!orgAllows) return null;
                           return (
                           <label key={key} className={local.capabilityChip}>
-                            <input
-                              type="checkbox"
-                              checked={Boolean(r.capabilities?.[key] ?? true)}
-                              onChange={() => toggleCapability(r.id, key, r.capabilities?.[key] ?? true)}
-                            />
-                            {label}
+                            <span className={local.chipLabel}>{label}</span>
+                            <span className={local.miniToggle}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(r.capabilities?.[key] ?? true)}
+                                onChange={() => toggleCapability(r.id, key, r.capabilities?.[key] ?? true)}
+                              />
+                              <span className={local.miniSlider}></span>
+                            </span>
                           </label>
                           );
                         })}
@@ -692,6 +862,30 @@ export default function SuperAdminDashboardPage() {
                     </li>
                   ))}
                 </ul>
+
+                {totalPages > 1 && (
+                  <div className={local.paginationBar}>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage(currentPage - 1)}
+                    >
+                      Previous
+                    </button>
+                    <span className={local.pageInfo}>
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      disabled={currentPage === totalPages}
+                      onClick={() => setCurrentPage(currentPage + 1)}
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -706,123 +900,242 @@ export default function SuperAdminDashboardPage() {
               <div>
                 <div className={styles.sectionTitle}>Organizations</div>
                 <div className={styles.sectionDesc}>
-                  Companies using the product. Grant each organization its own module set ? recruiters can only use
+                  Companies using the product. Grant each organization its own module set — recruiters can only use
                   modules their organization has purchased.
                 </div>
               </div>
             </div>
             <div className={styles.actions}>
               <button type="button" className={styles.primaryButton} onClick={openCreateOrg}>
-                + New organization
+                + New Organization
               </button>
             </div>
           </div>
           <div className={styles.sectionBody}>
             {orgFormOpen && (
-              <form onSubmit={handleOrgSubmit} style={{ marginBottom: 20, padding: 16, border: "1px solid var(--border)", borderRadius: 8 }}>
-                <div className={styles.formGrid}>
-                  <label className={styles.field}>
-                    <span>Organization name *</span>
-                    <input
-                      value={orgForm.name ?? ""}
-                      onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
-                      placeholder="Acme Corp"
-                      required={!editOrgId}
-                      disabled={Boolean(editOrgId)}
-                    />
-                  </label>
-                  <label className={styles.field}>
-                    <span>Contact email</span>
-                    <input
-                      type="email"
-                      value={orgForm.contact_email ?? ""}
-                      onChange={(e) => setOrgForm({ ...orgForm, contact_email: e.target.value })}
-                      disabled={Boolean(editOrgId)}
-                    />
-                  </label>
-                  <label className={styles.field}>
-                    <span>Description</span>
-                    <input
+              <div className={local.modernCard}>
+                <div className={local.cardHeader}>
+                  <h3>{editOrgId ? "Edit Organization" : "Create New Organization"}</h3>
+                  <button 
+                    type="button" 
+                    className={local.closeButton}
+                    onClick={() => setOrgFormOpen(false)}
+                  >
+                    ×
+                  </button>
+                </div>
+                <form onSubmit={handleOrgSubmit} className={local.modernForm}>
+                  <div className={local.formRow}>
+                    <div className={local.inputGroup}>
+                      <label>Organization Name *</label>
+                      <input
+                        type="text"
+                        value={orgForm.name ?? ""}
+                        onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
+                        placeholder="e.g., Acme Corporation"
+                        required={!editOrgId}
+                        disabled={Boolean(editOrgId)}
+                        className={local.modernInput}
+                      />
+                    </div>
+                    <div className={local.inputGroup}>
+                      <label>Contact Email</label>
+                      <input
+                        type="email"
+                        value={orgForm.contact_email ?? ""}
+                        onChange={(e) => setOrgForm({ ...orgForm, contact_email: e.target.value })}
+                        placeholder="admin@acmecorp.com"
+                        disabled={Boolean(editOrgId)}
+                        className={local.modernInput}
+                      />
+                    </div>
+                  </div>
+                  <div className={local.inputGroup}>
+                    <label>Description</label>
+                    <textarea
                       value={orgForm.description ?? ""}
                       onChange={(e) => setOrgForm({ ...orgForm, description: e.target.value })}
+                      placeholder="Brief description of the organization..."
                       disabled={Boolean(editOrgId)}
+                      className={local.modernTextarea}
+                      rows={3}
                     />
-                  </label>
-                </div>
-                <p className={local.capabilityLabel}>Modules purchased by this organization</p>
-                <p className={local.recruiterMeta} style={{ marginBottom: 8 }}>
-                  These are the modules this company has bought. Recruiters in this org can never access a module that
-                  is unchecked here, regardless of their own settings.
-                </p>
-                <div className={local.capabilityGrid}>
-                  {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
-                    <label key={key} className={local.checkboxRow}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(orgModules[key])}
-                        onChange={(e) => setOrgModules({ ...orgModules, [key]: e.target.checked })}
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-                {orgMessage && <p className={styles.formMessage}>{orgMessage}</p>}
-                <div className={styles.actions} style={{ marginTop: 12 }}>
-                  <button type="submit" className={styles.primaryButton} disabled={orgSaving}>
-                    {orgSaving ? "Saving..." : editOrgId ? "Save modules" : "Create organization"}
-                  </button>
-                  <button type="button" className={styles.secondaryButton} onClick={() => setOrgFormOpen(false)}>
-                    Cancel
-                  </button>
-                </div>
-              </form>
+                  </div>
+                  
+                  <div className={local.moduleSection}>
+                    <h4>Module Permissions</h4>
+                    <p className={local.moduleDescription}>
+                      Select which modules this organization has purchased. Recruiters can only access enabled modules.
+                    </p>
+                    <div className={local.moduleGrid}>
+                      {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
+                        <div key={key} className={local.toggleItem}>
+                          <div className={local.toggleInfo}>
+                            <span className={local.toggleLabel}>{label}</span>
+                          </div>
+                          <label className={local.toggleSwitch}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(orgModules[key])}
+                              onChange={(e) => setOrgModules({ ...orgModules, [key]: e.target.checked })}
+                            />
+                            <span className={local.slider}></span>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {orgMessage && <div className={local.alertMessage}>{orgMessage}</div>}
+                  
+                  <div className={styles.actions}>
+                    <button 
+                      type="submit" 
+                      className={styles.primaryButton} 
+                      disabled={orgSaving}
+                    >
+                      {orgSaving ? "Saving..." : (editOrgId ? "Update Organization" : "Create Organization")}
+                    </button>
+                    <button 
+                      type="button" 
+                      className={styles.secondaryButton} 
+                      onClick={() => setOrgFormOpen(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
             )}
 
             {orgsLoading ? (
-              <p className={styles.emptySub}>Loading...</p>
+              <div className={local.loadingState}>
+                <div className={local.spinner}></div>
+                <p>Loading organizations...</p>
+              </div>
             ) : organizations.length === 0 ? (
-              <p className={styles.emptySub}>No organizations yet. Create one to start selling the product.</p>
+              <div className={local.emptyState}>
+                <h3>No Organizations Yet</h3>
+                <p>Create your first organization to start managing modules and recruiters.</p>
+                <button type="button" className={styles.primaryButton} onClick={openCreateOrg}>
+                  + Create Organization
+                </button>
+              </div>
             ) : (
-              <ul className={styles.miniList}>
+              <div className={local.organizationsGrid}>
                 {organizations.map((org) => (
-                  <li key={org.id} className={styles.miniListItem} style={{ flexDirection: "column", alignItems: "stretch" }}>
-                    <div className={local.recruiterHead}>
-                      <div>
-                        <strong>{org.name}</strong>
-                        <span className={`${local.statusPill} ${org.status === "active" ? local.active : local.other}`} style={{ marginLeft: 8 }}>
+                  <div key={org.id} className={local.orgCard}>
+                    <div className={local.orgCardHeader} onClick={() => toggleOrgExpansion(org.id)}>
+                      <div className={local.orgInfo}>
+                      <div className={local.orgName}>
+                        <h3>{org.name}</h3>
+                        <span className={`${local.statusBadge} ${org.status === "active" ? local.statusActive : local.statusInactive}`}>
                           {org.status}
                         </span>
-                        <div className={local.recruiterMeta}>
-                          {org.contact_email || "No contact email"} ? Created{" "}
-                          {org.created_at ? new Date(org.created_at).toLocaleDateString() : "-"}
-                          {" ? "}
-                          {recruiters.filter((r) => r.organization_id === org.id).length} recruiter(s)
-                        </div>
-                        {org.description && <div className={local.recruiterMeta}>{org.description}</div>}
                       </div>
-                      <div className={styles.actions} style={{ gap: 8 }}>
-                        <button type="button" className={styles.secondaryButton} onClick={() => openEditOrg(org)}>
-                          Edit modules
-                        </button>
-                        <button type="button" className={styles.secondaryButton} onClick={() => handleOrgDelete(org)}>
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                    <div className={local.capabilityChips}>
-                      {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
-                        <span
-                          key={key}
-                          className={local.capabilityChip}
-                          style={org.modules?.[key] ? { borderColor: "var(--green)", color: "var(--green)" } : { opacity: 0.4 }}
-                        >
-                          {label}
+                      <div className={local.orgMeta}>
+                        <span className={local.metaItem}>
+                          {org.contact_email || "No contact email"}
                         </span>
-                      ))}
+                        <span className={local.metaItem}>
+                          Created {org.created_at ? new Date(org.created_at).toLocaleDateString() : "Unknown"}
+                        </span>
+                        <span className={local.metaItem}>
+                          {recruiters.filter((r) => r.organization_id === org.id).length} recruiter(s)
+                        </span>
+                      </div>
+                        {org.description && (
+                          <p className={local.orgDescription}>{org.description}</p>
+                        )}
+                      </div>
+                      <div className={local.expandButton}>
+                        <span className={`${local.chevron} ${expandedOrgs[org.id] ? local.expanded : ''}`}>
+                          ▼
+                        </span>
+                      </div>
                     </div>
-                  </li>
+
+                    {expandedOrgs[org.id] && (
+                      <div className={local.orgCardContent}>
+                        <div className={local.moduleHeader}>
+                          <h4>Module Permissions</h4>
+                          <div className={local.moduleActions}>
+                            {editOrgModules[org.id] ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className={styles.primaryButton}
+                                  onClick={() => saveOrgModules(org.id)}
+                                >
+                                  Save Changes
+                                </button>
+                                <button
+                                  type="button"
+                                  className={styles.secondaryButton}
+                                  onClick={() => cancelOrgEdit(org.id)}
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  className={styles.secondaryButton}
+                                  onClick={() => setEditOrgModules(prev => ({ ...prev, [org.id]: { ...org.modules } }))}
+                                >
+                                  Edit Modules
+                                </button>
+                                <button
+                                  type="button"
+                                  className={styles.dangerButton}
+                                  onClick={() => handleOrgDelete(org)}
+                                >
+                                  Delete
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className={local.moduleGrid}>
+                          {Object.entries(CAPABILITY_LABELS).map(([key, label]) => {
+                            const isEditing = editOrgModules[org.id];
+                            const currentValue = isEditing 
+                              ? editOrgModules[org.id][key] 
+                              : org.modules?.[key];
+                            
+                            return (
+                              <div key={key} className={local.moduleItem}>
+                                <div className={local.moduleInfo}>
+                                  <span className={local.moduleLabel}>{label}</span>
+                                  <span className={`${local.moduleStatus} ${currentValue ? local.enabled : local.disabled}`}>
+                                    {currentValue ? 'Enabled' : 'Disabled'}
+                                  </span>
+                                </div>
+                                {isEditing ? (
+                                  <label className={local.toggleSwitch}>
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(currentValue)}
+                                      onChange={() => toggleOrgModule(org.id, key, currentValue)}
+                                    />
+                                    <span className={local.slider}></span>
+                                  </label>
+                                ) : (
+                                  <div className={`${local.staticIndicator} ${currentValue ? local.enabled : local.disabled}`}>
+                                    {currentValue ? '✓' : '✗'}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
           </div>
         </div>
@@ -840,6 +1153,15 @@ export default function SuperAdminDashboardPage() {
         busy={orgDeleting}
         error={orgDeleteError}
         onConfirm={confirmOrgDelete}
+      />
+
+      <RecruiterDetailsModal
+        recruiterId={selectedRecruiterId}
+        isOpen={showRecruiterDetails}
+        onClose={closeRecruiterDetails}
+        onDeleted={handleRecruiterDeleted}
+        onUpdated={handleRecruiterUpdated}
+        organizations={organizations}
       />
     </SuperAdminShell>
   );
