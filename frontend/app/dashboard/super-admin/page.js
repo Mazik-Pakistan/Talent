@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import SuperAdminShell from "@/components/super-admin/SuperAdminShell";
+import InviteRecruiter from "@/components/super-admin/InviteRecruiter";
 import OrganizationDeleteModal from "@/components/OrganizationDeleteModal";
 import RecruiterDetailsModal from "@/components/super-admin/RecruiterDetailsModal";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -726,112 +727,20 @@ export default function SuperAdminDashboardPage() {
       )}
 
       {activeTab === "invite" && (
-        <div className={styles.section}>
-          <div className={styles.sectionHead}>
-            <div className={styles.sectionHeadLeft}>
-              <div className={`${styles.bar} ${styles.cyan}`} />
-              <div>
-                <div className={styles.sectionTitle}>Invite a Recruiter</div>
-                <div className={styles.sectionDesc}>The invited recruiter will receive both Employee and Recruiter access.</div>
-              </div>
-            </div>
-          </div>
-          <div className={styles.sectionBody}>
-            <form onSubmit={handleInvite}>
-              <div className={styles.formGrid}>
-                {[
-                  { k: "full_name", l: "Full Name", t: "text" },
-                  { k: "email", l: "Email", t: "email" },
-                  { k: "job_title", l: "Job Title", t: "text" },
-                  { k: "department", l: "Department", t: "text" },
-                  { k: "office_location", l: "Office Location", t: "text" },
-                ].map(({ k, l, t }) => (
-                  <label key={k} className={styles.field}>
-                    <span>{l}{k !== "office_location" ? " *" : ""}</span>
-                    <input
-                      type={t}
-                      value={inviteForm[k] ?? ""}
-                      onChange={(e) => setInviteForm({ ...inviteForm, [k]: e.target.value })}
-                      required={k !== "office_location"}
-                    />
-                  </label>
-                ))}
-                <label className={styles.field}>
-                  <span>Organization</span>
-                  <select
-                    value={inviteForm.organization_id ?? ""}
-                    onChange={(e) => {
-                      const organization_id = e.target.value;
-                      setInviteForm({ ...inviteForm, organization_id });
-                      const orgModules = orgPurchasedModules(organizations, organization_id);
-                      setInviteCaps((current) => clampCapsToOrg(current, orgModules));
-                      setActiveTemplate("");
-                    }}
-                  >
-                    <option value="">Auto (default organization)</option>
-                    {organizations.map((org) => (
-                      <option key={org.id} value={org.id}>
-                        {org.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <label className={local.checkboxRow} style={{ marginBottom: 16 }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(inviteForm.is_remote)}
-                  onChange={(e) => setInviteForm({ ...inviteForm, is_remote: e.target.checked })}
-                />
-                Remote employee
-              </label>
-
-              <p className={local.capabilityLabel}>Recruiter modules</p>
-              <p className={local.recruiterMeta} style={{ marginBottom: 8 }}>
-                Only modules purchased by the selected organization are shown. Turn off any of those you do not want
-                this recruiter to use.
-              </p>
-              <div className={local.templateBar}>
-                {Object.keys(TEMPLATE_LABELS).map((templateKey) => (
-                  <button
-                    key={templateKey}
-                    type="button"
-                    className={`${local.templateBtn} ${activeTemplate === templateKey ? local.templateBtnActive : ""}`}
-                    onClick={() => applyTemplate(templateKey)}
-                    title={templates[templateKey] ? Object.entries(templates[templateKey]).filter(([, v]) => v).map(([k]) => CAPABILITY_LABELS[k] || k).join(", ") : ""}
-                  >
-                    {TEMPLATE_LABELS[templateKey]}
-                  </button>
-                ))}
-              </div>
-              <div className={local.capabilityGrid}>
-                {Object.entries(CAPABILITY_LABELS)
-                  .filter(([key]) => orgPurchasedModules(organizations, inviteForm.organization_id)[key] !== false)
-                  .map(([key, label]) => (
-                  <label key={key} className={local.checkboxRow}>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(inviteCaps[key])}
-                      onChange={(e) => { setInviteCaps({ ...inviteCaps, [key]: e.target.checked }); setActiveTemplate(""); }}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-              {Object.values(orgPurchasedModules(organizations, inviteForm.organization_id)).some((v) => v === false) && (
-                <p className={local.recruiterMeta} style={{ marginTop: 8 }}>
-                  Hidden modules are not purchased by this organization. Enable them under Organizations first if needed.
-                </p>
-              )}
-
-              {inviteMessage && <p className={styles.formMessage}>{inviteMessage}</p>}
-              <button type="submit" disabled={inviteSubmitting} className={styles.primaryButton}>
-                {inviteSubmitting ? "Sending..." : "Send invitation"}
-              </button>
-            </form>
-          </div>
-        </div>
+        <InviteRecruiter
+          inviteForm={inviteForm}
+          setInviteForm={setInviteForm}
+          inviteCaps={inviteCaps}
+          setInviteCaps={setInviteCaps}
+          inviteSubmitting={inviteSubmitting}
+          inviteMessage={inviteMessage}
+          handleInvite={handleInvite}
+          organizations={organizations}
+          templates={templates}
+          activeTemplate={activeTemplate}
+          setActiveTemplate={setActiveTemplate}
+          applyTemplate={applyTemplate}
+        />
       )}
 
       {activeTab === "recruiters" && (
