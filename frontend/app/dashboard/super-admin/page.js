@@ -26,6 +26,56 @@ import {
 } from "@/services/authService";
 import { can } from "@/services/rbac";
 
+const SparkleIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1-5.1-1.9 5.1-1.9L12 2.5z" />
+    <path d="M19 15l.9 2.3L22 18l-2.1.7L19 21l-.9-2.3L16 18l2.1-.7L19 15z" />
+  </svg>
+);
+
+const ICONS = {
+  recruiters: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  ),
+  active: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M9 12l2 2 4-4" />
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  ),
+  pending: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+    </svg>
+  ),
+  organizations: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="7" height="9" rx="1.5" />
+      <rect x="14" y="3" width="7" height="5" rx="1.5" />
+      <rect x="14" y="12" width="7" height="9" rx="1.5" />
+      <rect x="3" y="16" width="7" height="5" rx="1.5" />
+    </svg>
+  ),
+};
+
+function StatCard({ icon, tone, value, label }) {
+  return (
+    <div className={styles.statCard}>
+      <div className={`${styles.statIcon} ${styles[tone]}`}>{icon}</div>
+      <div className={styles.statText}>
+        <div className={styles.statValue}>{value}</div>
+        <div className={styles.statLabel}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
 const initialForm = { full_name: "", email: "", phone: "", password: "", confirm_password: "" };
 
 const CAPABILITY_LABELS = {
@@ -89,7 +139,7 @@ export default function SuperAdminDashboardPage() {
   const [form, setForm] = useState(initialForm);
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState("invite");
+  const [activeTab, setActiveTab] = useState("overview");
   const [recruiters, setRecruiters] = useState([]);
   const [recruitersLoading, setRecruitersLoading] = useState(false);
   const [inviteForm, setInviteForm] = useState(initialInviteForm);
@@ -585,6 +635,96 @@ export default function SuperAdminDashboardPage() {
       subtitle={`Welcome, ${user.full_name}`}
       user={user}
     >
+      {activeTab === "overview" && (
+        <>
+          <div className={styles.hero} style={{ marginBottom: 20 }}>
+            <div className={styles.heroEyebrow}>Platform Administration</div>
+            <h1>Welcome to the Super Admin Dashboard</h1>
+            <div className={styles.heroMeta}>
+              Manage recruiters, organizations, and platform-wide settings from here.
+            </div>
+            <div className={styles.heroRecommend}>
+              <SparkleIcon />
+              <div>
+                <div style={{ fontWeight: 700, color: "var(--navy)", marginBottom: 2 }}>
+                  {recruiters.length > 0 ? "Platform Overview" : "Get Started"}
+                </div>
+                <div>
+                  {recruiters.length > 0
+                    ? `${recruiters.length} recruiter${recruiters.length === 1 ? "" : "s"} managing hiring pipelines across ${organizations.length} organization${organizations.length === 1 ? "" : "s"}.`
+                    : "Invite your first recruiter to start managing hiring pipelines."}
+                </div>
+                <button
+                  type="button"
+                  className={styles.linkButton}
+                  style={{ marginTop: 8 }}
+                  onClick={() => setActiveTab("invite")}
+                >
+                  {recruiters.length > 0 ? "Invite another →" : "Invite recruiter →"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.stats}>
+            <StatCard
+              tone="navy"
+              value={recruiters.length}
+              label="Total Recruiters"
+              icon={ICONS.recruiters}
+            />
+            <StatCard
+              tone="green"
+              value={recruiters.filter((r) => r.is_active).length}
+              label="Active Recruiters"
+              icon={ICONS.active}
+            />
+            <StatCard
+              tone="orange"
+              value={recruiters.filter((r) => r.status === "pending").length}
+              label="Pending Invitations"
+              icon={ICONS.pending}
+            />
+            <StatCard
+              tone="cyan"
+              value={organizations.length}
+              label="Organizations"
+              icon={ICONS.organizations}
+            />
+          </div>
+
+          <div className={styles.quickGrid}>
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => setActiveTab("invite")}
+            >
+              <span className={styles.qaIcon}>↗</span>
+              <strong>Invite Recruiter</strong>
+              <span className={styles.qaHint}>Send onboarding invitations</span>
+            </button>
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => setActiveTab("recruiters")}
+            >
+              <span className={styles.qaIcon}>↗</span>
+              <strong>Manage Recruiters</strong>
+              <span className={styles.qaHint}>View and edit recruiter access</span>
+            </button>
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => setActiveTab("organizations")}
+            >
+              <span className={styles.qaIcon}>↗</span>
+              <strong>Organizations</strong>
+              <span className={styles.qaHint}>Configure company modules</span>
+            </button>
+          </div>
+        </>
+      )}
+
       {activeTab === "invite" && (
         <div className={styles.section}>
           <div className={styles.sectionHead}>
