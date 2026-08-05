@@ -386,32 +386,68 @@ async def list_recruiters(
     """List all recruiter invitations (pending, used, expired) and active recruiter profiles."""
     skip = (page - 1) * page_size
 
-    # Get invitations
-    query = {"kind": "recruiter"}
+    # Get all recruiters first (not just invitations)
+    recruiter_query = {}
+    if status_filter and status_filter != "pending":
+        recruiter_query["status"] = status_filter
+    
+    all_recruiters = await database.recruiters.find(recruiter_query).sort("created_at", -1).to_list(1000)
+    
+    # Get all invitations
+    inv_query = {"kind": "recruiter"}
     if status_filter:
-        query["status"] = status_filter
-    invitations = await database.invitations.find(query).sort("created_at", -1).skip(skip).limit(page_size).to_list(page_size)
-    total = await database.invitations.count_documents(query)
-
-    # Get active recruiter profiles
-    active_recruiters = await database.recruiters.find({"status": "active"}).to_list(200)
-    active_map = {r.get("email", "").lower(): r for r in active_recruiters}
-
+        inv_query["status"] = status_filter
+    invitations = await database.invitations.find(inv_query).to_list(1000)
+    
+    # Create maps for easy lookup
+    invitation_map = {inv.get("email", "").lower(): inv for inv in invitations}
+    
     # Get employees who are also recruiters (dual role)
     employee_emails = set()
-    for r in active_recruiters:
+    for r in all_recruiters:
         emp = await database.employees.find_one({"user_id": r.get("user_id"), "status": "active"}, {"email": 1})
         if emp:
             employee_emails.add(emp.get("email", "").lower())
 
-    results = []
+    # Combine all recruiters (both with and without invitations)
+    all_entries = {}
+    
+    # Add all recruiters from recruiters collection
+    for recruiter in all_recruiters:
+        email = recruiter.get("email", "").lower()
+        if not email:
+            continue
+            
+        inv = invitation_map.get(email)
+        all_entries[email] = {
+            "id": str(recruiter.get("_id")),
+            "token": inv.get("token") if inv else None,
+            "email": email,
+            "full_name": recruiter.get("full_name") or (inv.get("full_name") if inv else ""),
+            "job_title": recruiter.get("job_title") or (inv.get("job_title") if inv else ""),
+            "department": recruiter.get("department") or (inv.get("department") if inv else ""),
+            "office_location": recruiter.get("office_location") or (inv.get("office_location") if inv else ""),
+            "status": recruiter.get("status"),
+            "created_at": recruiter["created_at"].isoformat() if recruiter.get("created_at") else None,
+            "expires_at": inv["expires_at"].isoformat() if inv and inv.get("expires_at") else None,
+            "used_at": inv.get("used_at").isoformat() if inv and inv.get("used_at") else None,
+            "capabilities": recruiter.get("capabilities") or (inv.get("capabilities") if inv else DEFAULT_RECRUITER_CAPABILITIES),
+            "organization_id": recruiter.get("organization_id") or (inv.get("organization_id") if inv else None),
+            "is_active": recruiter.get("status") == "active",
+            "has_employee_profile": email in employee_emails,
+            "recruiter_id": str(recruiter.get("_id")),
+        }
+    
+    # Add pending invitations that don't have recruiter profiles yet
     for inv in invitations:
-        inv_email = inv.get("email", "").lower()
-        active = active_map.get(inv_email)
-        results.append({
+        email = inv.get("email", "").lower()
+        if not email or email in all_entries:
+            continue
+            
+        all_entries[email] = {
             "id": str(inv.get("_id")),
             "token": inv.get("token"),
-            "email": inv_email,
+            "email": email,
             "full_name": inv.get("full_name"),
             "job_title": inv.get("job_title"),
             "department": inv.get("department"),
@@ -422,10 +458,18 @@ async def list_recruiters(
             "used_at": inv.get("used_at").isoformat() if inv.get("used_at") else None,
             "capabilities": inv.get("capabilities") or DEFAULT_RECRUITER_CAPABILITIES,
             "organization_id": inv.get("organization_id"),
-            "is_active": bool(active),
-            "has_employee_profile": inv_email in employee_emails,
-            "recruiter_id": str(active.get("_id")) if active else None,
-        })
+            "is_active": False,
+            "has_employee_profile": email in employee_emails,
+            "recruiter_id": None,
+        }
+    
+    # Convert to list and sort by created_at (most recent first)
+    results = list(all_entries.values())
+    results.sort(key=lambda x: x.get("created_at") or "1900-01-01T00:00:00", reverse=True)
+    
+    # Apply pagination
+    total = len(results)
+    results = results[skip:skip + page_size]
 
     return {"recruiters": results, "total": total, "page": page, "page_size": page_size}
 
@@ -765,4 +809,143 @@ async def delete_org(organization_id: str, current_user: RequireSuperAdmin):
         ),
         "wiped": wiped,
         "deleted_collections": result.get("deleted") or {},
+    }
+
+
+@router.delete("/recruiters/{recruiter_id}")
+async def delete_recruiter(recruiter_id: str, current_user: RequireSuperAdmin):
+    """Permanently delete a recruiter and all associated data."""
+    profile, inv = await _find_recruiter_entity(recruiter_id)
+    if profile is None and inv is None:
+        raise HTTPException(status_code=404, detail="Recruiter not found.")
+
+    now = datetime.now(UTC)
+    email = (profile or inv).get("email", "").lower()
+
+    # Recruiter-owned records are linked by the recruiter's USER id, not the
+    # profile _id (see purge_organization for the same convention).
+    user_id = profile.get("user_id") if profile else None
+
+    deleted_items = []
+
+    # Delete recruiter profile
+    if profile:
+        await database.recruiters.delete_one({"_id": profile["_id"]})
+        deleted_items.append("recruiter_profile")
+
+    # Delete invitation
+    if inv:
+        await database.invitations.delete_one({"_id": inv["_id"]})
+        deleted_items.append("invitation")
+
+    # Delete user account if it exists (guard against non-ObjectId values)
+    if user_id and ObjectId.is_valid(user_id):
+        user_result = await database.users.delete_one({"_id": ObjectId(user_id)})
+        if user_result.deleted_count > 0:
+            deleted_items.append("user_account")
+
+        # Clean up user-related data
+        await database.refresh_tokens.delete_many({"user_id": user_id})
+        await database.notifications.delete_many({"recipient_id": user_id})
+        await database.agent_conversations.delete_many({"user_id": user_id})
+        deleted_items.append("user_data")
+
+    # Clean up recruiter-owned data (linked by user_id)
+    if user_id:
+        # Detach people the recruiter was managing
+        await database.candidates.update_many(
+            {"recruiter_id": user_id}, {"$unset": {"recruiter_id": ""}}
+        )
+        await database.employees.update_many(
+            {"recruiter_id": user_id}, {"$unset": {"recruiter_id": ""}}
+        )
+        # Remove recruiter-created content
+        await database.announcements.delete_many({"created_by": user_id})
+        await database.offer_letters.delete_many({"recruiter_id": user_id})
+        await database.audit_logs.delete_many({"recruiter_id": user_id})
+        await database.it_provisioning_batches.delete_many({"recruiter_id": user_id})
+        await database.it_provisioning_requests.delete_many({"recruiter_id": user_id})
+        await database.it_service_requests.delete_many({"recruiter_id": user_id})
+        await database.hr_threads.delete_many({"recruiter_id": user_id})
+        await database.recruiter_kb_roles.delete_many({"recruiter_id": user_id})
+        await database.recruiter_kb_certifications.delete_many({"recruiter_id": user_id})
+        await database.recruiter_kb_meta.delete_many({"recruiter_id": user_id})
+
+        deleted_items.append("recruiter_data")
+
+    # Audit log
+    await database.audit_logs.insert_one({
+        "user_id": current_user.id,
+        "email": current_user.email,
+        "role": "super_admin",
+        "module": "rbac",
+        "action": "recruiter_deleted",
+        "outcome": "success",
+        "detail": f"Deleted recruiter {email} and associated data: {', '.join(deleted_items)}",
+        "created_at": now,
+    })
+
+    return {
+        "message": f"Recruiter {email} has been permanently deleted.",
+        "deleted_items": deleted_items,
+    }
+
+
+def _serialize_doc(doc: dict | None) -> dict | None:
+    """Convert ObjectIds/datetimes in a Mongo doc to JSON-safe values."""
+    if not doc:
+        return doc
+    out = {}
+    for key, value in doc.items():
+        if isinstance(value, ObjectId):
+            out[key] = str(value)
+        elif isinstance(value, datetime):
+            out[key] = value.isoformat()
+        else:
+            out[key] = value
+    out["id"] = str(doc["_id"])
+    out.pop("_id", None)
+    return out
+
+
+@router.get("/recruiters/{recruiter_id}")
+async def get_recruiter_details(recruiter_id: str, current_user: RequireSuperAdmin):
+    """Get detailed information about a specific recruiter."""
+    profile, inv = await _find_recruiter_entity(recruiter_id)
+    if profile is None and inv is None:
+        raise HTTPException(status_code=404, detail="Recruiter not found.")
+
+    user_id = profile.get("user_id") if profile else None
+
+    # Get employee profile if exists (dual role)
+    employee = None
+    if user_id:
+        employee = await database.employees.find_one({"user_id": user_id})
+
+    # Get user account info
+    user = None
+    if user_id and ObjectId.is_valid(user_id):
+        user = await database.users.find_one({"_id": ObjectId(user_id)})
+
+    # Get statistics (recruiter-owned records are keyed by user_id)
+    stats = {"candidates_managed": 0, "employees_managed": 0, "offers_created": 0, "invitations_sent": 0}
+    if user_id:
+        stats = {
+            "candidates_managed": await database.candidates.count_documents({"recruiter_id": user_id}),
+            "employees_managed": await database.employees.count_documents({"recruiter_id": user_id}),
+            "offers_created": await database.offer_letters.count_documents({"recruiter_id": user_id}),
+            "invitations_sent": await database.invitations.count_documents(
+                {"recruiter_id": user_id, "kind": "recruiter"}
+            ),
+        }
+
+    return {
+        "recruiter": {
+            "id": recruiter_id,
+            "profile": _serialize_doc(profile),
+            "invitation": _serialize_doc(inv),
+            "employee_profile": _serialize_doc(employee),
+            "user_account": _serialize_doc(user),
+            "statistics": stats,
+        }
     }
