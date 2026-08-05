@@ -265,3 +265,16 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.universities, "name")
     await _ensure_index(database.universities, "country")
     await _ensure_index(database.universities, "city")
+
+    # Support tickets
+    await _ensure_index(database.tickets, [("created_by", 1), ("created_at", -1)])
+    await _ensure_index(database.tickets, [("assignee_id", 1), ("status", 1)])
+    await _ensure_index(database.tickets, [("ticket_id", 1)], unique=True)
+    await _ensure_index(database.tickets, [("status", 1)])
+    await _ensure_index(database.tickets, [("category", 1)])
+    await _ensure_index(database.tickets, [("priority", 1)])
+    await _ensure_index(database.tickets, [("organization_id", 1)])
+    await _ensure_index(database.tickets, [("subject", 1)])
+    await _ensure_index(database.ticket_replies, [("ticket_id", 1), ("created_at", 1)])
+    await _ensure_index(database.ticket_activity, [("ticket_id", 1), ("created_at", -1)])
+    await _ensure_index(database.ticket_audit_logs, [("ticket_id", 1), ("created_at", -1)])

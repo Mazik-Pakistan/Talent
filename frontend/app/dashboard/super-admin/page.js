@@ -8,6 +8,7 @@ import SuperAdminShell from "@/components/super-admin/SuperAdminShell";
 import InviteRecruiter from "@/components/super-admin/InviteRecruiter";
 import OrganizationsPanel from "@/components/super-admin/OrganizationsPanel";
 import RecruitersPanel from "@/components/super-admin/RecruitersPanel";
+import SupportTicketsPanel from "@/components/super-admin/SupportTicketsPanel";
 import OrganizationDeleteModal from "@/components/OrganizationDeleteModal";
 import RecruiterDetailsModal from "@/components/super-admin/RecruiterDetailsModal";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -94,6 +95,7 @@ const CAPABILITY_LABELS = {
   it: "IT & support",
   reporting: "Activity & reporting",
   profile: "Profile",
+  support: "Support tickets",
 };
 
 const TEMPLATE_LABELS = {
@@ -732,6 +734,10 @@ export default function SuperAdminDashboardPage() {
           expandedOrgs={expandedOrgs}
           toggleOrgExpansion={toggleOrgExpansion}
         />
+      )}
+
+      {activeTab === "support" && (
+        <SupportTicketsPanel />
       )}
 
       <OrganizationDeleteModal

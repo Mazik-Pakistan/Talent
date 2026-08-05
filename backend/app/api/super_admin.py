@@ -51,6 +51,7 @@ DEFAULT_RECRUITER_CAPABILITIES = {
     "it": True,
     "reporting": True,
     "profile": True,
+    "support": True,
 }
 
 ALL_CAPABILITY_KEYS = list(DEFAULT_RECRUITER_CAPABILITIES.keys())
