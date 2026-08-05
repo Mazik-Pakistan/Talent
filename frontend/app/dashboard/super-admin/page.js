@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import SuperAdminShell from "@/components/super-admin/SuperAdminShell";
 import InviteRecruiter from "@/components/super-admin/InviteRecruiter";
+import OrganizationsPanel from "@/components/super-admin/OrganizationsPanel";
 import OrganizationDeleteModal from "@/components/OrganizationDeleteModal";
 import RecruiterDetailsModal from "@/components/super-admin/RecruiterDetailsModal";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -942,252 +943,20 @@ export default function SuperAdminDashboardPage() {
       )}
 
       {activeTab === "organizations" && (
-        <div className={styles.section}>
-          <div className={styles.sectionHead}>
-            <div className={styles.sectionHeadLeft}>
-              <div className={`${styles.bar} ${styles.cyan}`} />
-              <div>
-                <div className={styles.sectionTitle}>Organizations</div>
-                <div className={styles.sectionDesc}>
-                  Companies using the product. Grant each organization its own module set — recruiters can only use
-                  modules their organization has purchased.
-                </div>
-              </div>
-            </div>
-            <div className={styles.actions}>
-              <button type="button" className={styles.primaryButton} onClick={openCreateOrg}>
-                + New Organization
-              </button>
-            </div>
-          </div>
-          <div className={styles.sectionBody}>
-            {orgFormOpen && (
-              <div className={local.modernCard}>
-                <div className={local.cardHeader}>
-                  <h3>{editOrgId ? "Edit Organization" : "Create New Organization"}</h3>
-                  <button 
-                    type="button" 
-                    className={local.closeButton}
-                    onClick={() => setOrgFormOpen(false)}
-                  >
-                    ×
-                  </button>
-                </div>
-                <form onSubmit={handleOrgSubmit} className={local.modernForm}>
-                  <div className={local.formRow}>
-                    <div className={local.inputGroup}>
-                      <label>Organization Name *</label>
-                      <input
-                        type="text"
-                        value={orgForm.name ?? ""}
-                        onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
-                        placeholder="e.g., Acme Corporation"
-                        required={!editOrgId}
-                        disabled={Boolean(editOrgId)}
-                        className={local.modernInput}
-                      />
-                    </div>
-                    <div className={local.inputGroup}>
-                      <label>Contact Email</label>
-                      <input
-                        type="email"
-                        value={orgForm.contact_email ?? ""}
-                        onChange={(e) => setOrgForm({ ...orgForm, contact_email: e.target.value })}
-                        placeholder="admin@acmecorp.com"
-                        disabled={Boolean(editOrgId)}
-                        className={local.modernInput}
-                      />
-                    </div>
-                  </div>
-                  <div className={local.inputGroup}>
-                    <label>Description</label>
-                    <textarea
-                      value={orgForm.description ?? ""}
-                      onChange={(e) => setOrgForm({ ...orgForm, description: e.target.value })}
-                      placeholder="Brief description of the organization..."
-                      disabled={Boolean(editOrgId)}
-                      className={local.modernTextarea}
-                      rows={3}
-                    />
-                  </div>
-                  
-                  <div className={local.moduleSection}>
-                    <h4>Module Permissions</h4>
-                    <p className={local.moduleDescription}>
-                      Select which modules this organization has purchased. Recruiters can only access enabled modules.
-                    </p>
-                    <div className={local.moduleGrid}>
-                      {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
-                        <div key={key} className={local.toggleItem}>
-                          <div className={local.toggleInfo}>
-                            <span className={local.toggleLabel}>{label}</span>
-                          </div>
-                          <label className={local.toggleSwitch}>
-                            <input
-                              type="checkbox"
-                              checked={Boolean(orgModules[key])}
-                              onChange={(e) => setOrgModules({ ...orgModules, [key]: e.target.checked })}
-                            />
-                            <span className={local.slider}></span>
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  {orgMessage && <div className={local.alertMessage}>{orgMessage}</div>}
-                  
-                  <div className={styles.actions}>
-                    <button 
-                      type="submit" 
-                      className={styles.primaryButton} 
-                      disabled={orgSaving}
-                    >
-                      {orgSaving ? "Saving..." : (editOrgId ? "Update Organization" : "Create Organization")}
-                    </button>
-                    <button 
-                      type="button" 
-                      className={styles.secondaryButton} 
-                      onClick={() => setOrgFormOpen(false)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              </div>
-            )}
-
-            {orgsLoading ? (
-              <div className={local.loadingState}>
-                <div className={local.spinner}></div>
-                <p>Loading organizations...</p>
-              </div>
-            ) : organizations.length === 0 ? (
-              <div className={local.emptyState}>
-                <h3>No Organizations Yet</h3>
-                <p>Create your first organization to start managing modules and recruiters.</p>
-                <button type="button" className={styles.primaryButton} onClick={openCreateOrg}>
-                  + Create Organization
-                </button>
-              </div>
-            ) : (
-              <div className={local.organizationsGrid}>
-                {organizations.map((org) => (
-                  <div key={org.id} className={local.orgCard}>
-                    <div className={local.orgCardHeader} onClick={() => toggleOrgExpansion(org.id)}>
-                      <div className={local.orgInfo}>
-                      <div className={local.orgName}>
-                        <h3>{org.name}</h3>
-                        <span className={`${local.statusBadge} ${org.status === "active" ? local.statusActive : local.statusInactive}`}>
-                          {org.status}
-                        </span>
-                      </div>
-                      <div className={local.orgMeta}>
-                        <span className={local.metaItem}>
-                          {org.contact_email || "No contact email"}
-                        </span>
-                        <span className={local.metaItem}>
-                          Created {org.created_at ? new Date(org.created_at).toLocaleDateString() : "Unknown"}
-                        </span>
-                        <span className={local.metaItem}>
-                          {recruiters.filter((r) => r.organization_id === org.id).length} recruiter(s)
-                        </span>
-                      </div>
-                        {org.description && (
-                          <p className={local.orgDescription}>{org.description}</p>
-                        )}
-                      </div>
-                      <div className={local.expandButton}>
-                        <span className={`${local.chevron} ${expandedOrgs[org.id] ? local.expanded : ''}`}>
-                          ▼
-                        </span>
-                      </div>
-                    </div>
-
-                    {expandedOrgs[org.id] && (
-                      <div className={local.orgCardContent}>
-                        <div className={local.moduleHeader}>
-                          <h4>Module Permissions</h4>
-                          <div className={local.moduleActions}>
-                            {editOrgModules[org.id] ? (
-                              <>
-                                <button
-                                  type="button"
-                                  className={styles.primaryButton}
-                                  onClick={() => saveOrgModules(org.id)}
-                                >
-                                  Save Changes
-                                </button>
-                                <button
-                                  type="button"
-                                  className={styles.secondaryButton}
-                                  onClick={() => cancelOrgEdit(org.id)}
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  className={styles.secondaryButton}
-                                  onClick={() => setEditOrgModules(prev => ({ ...prev, [org.id]: { ...org.modules } }))}
-                                >
-                                  Edit Modules
-                                </button>
-                                <button
-                                  type="button"
-                                  className={styles.dangerButton}
-                                  onClick={() => handleOrgDelete(org)}
-                                >
-                                  Delete
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className={local.moduleGrid}>
-                          {Object.entries(CAPABILITY_LABELS).map(([key, label]) => {
-                            const isEditing = editOrgModules[org.id];
-                            const currentValue = isEditing 
-                              ? editOrgModules[org.id][key] 
-                              : org.modules?.[key];
-                            
-                            return (
-                              <div key={key} className={local.moduleItem}>
-                                <div className={local.moduleInfo}>
-                                  <span className={local.moduleLabel}>{label}</span>
-                                  <span className={`${local.moduleStatus} ${currentValue ? local.enabled : local.disabled}`}>
-                                    {currentValue ? 'Enabled' : 'Disabled'}
-                                  </span>
-                                </div>
-                                {isEditing ? (
-                                  <label className={local.toggleSwitch}>
-                                    <input
-                                      type="checkbox"
-                                      checked={Boolean(currentValue)}
-                                      onChange={() => toggleOrgModule(org.id, key, currentValue)}
-                                    />
-                                    <span className={local.slider}></span>
-                                  </label>
-                                ) : (
-                                  <div className={`${local.staticIndicator} ${currentValue ? local.enabled : local.disabled}`}>
-                                    {currentValue ? '✓' : '✗'}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        <OrganizationsPanel
+          organizations={organizations}
+          recruiters={recruiters}
+          orgsLoading={orgsLoading}
+          openCreateOrg={openCreateOrg}
+          handleOrgDelete={handleOrgDelete}
+          setEditOrgModules={setEditOrgModules}
+          editOrgModules={editOrgModules}
+          toggleOrgModule={toggleOrgModule}
+          saveOrgModules={saveOrgModules}
+          cancelOrgEdit={cancelOrgEdit}
+          expandedOrgs={expandedOrgs}
+          toggleOrgExpansion={toggleOrgExpansion}
+        />
       )}
 
       <OrganizationDeleteModal
