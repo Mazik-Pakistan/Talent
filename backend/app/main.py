@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.admin_tickets import router as admin_tickets_router
 from app.api.agent import router as agent_router
 from app.api.auth import router as auth_router
 from app.api.dashboard import router as dashboard_router
@@ -18,6 +19,7 @@ from app.api.onboarding import router as onboarding_router
 from app.api.rbac import router as rbac_router
 from app.api.super_admin import router as super_admin_router
 from app.api.talent import router as talent_router
+from app.api.tickets import router as tickets_router
 from app.api.universities import router as universities_router
 from app.core.config import settings
 from app.core.database import create_database_indexes, mongo_client
@@ -78,3 +80,5 @@ app.include_router(learning_router)
 app.include_router(talent_router)
 app.include_router(messages_router)
 app.include_router(agent_router)
+app.include_router(tickets_router)
+app.include_router(admin_tickets_router)

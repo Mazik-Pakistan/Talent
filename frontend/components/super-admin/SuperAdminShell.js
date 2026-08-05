@@ -14,6 +14,7 @@ import {
   logout,
   markNotificationsRead,
 } from "@/services/authService";
+import { can } from "@/services/rbac";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 
 const COLLAPSE_KEY = "super_admin_sidebar_collapsed";
@@ -21,14 +22,14 @@ const POLL_MS = 20000;
 
 const NAV_ITEMS = [
   {
-    key: "invite",
-    label: "Invite Recruiter",
+    key: "overview",
+    label: "Overview",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="8.5" cy="7" r="4" />
-        <line x1="20" y1="8" x2="20" y2="14" />
-        <line x1="23" y1="11" x2="17" y2="11" />
+        <rect x="3" y="3" width="7" height="9" rx="1.5" />
+        <rect x="14" y="3" width="7" height="5" rx="1.5" />
+        <rect x="14" y="12" width="7" height="9" rx="1.5" />
+        <rect x="3" y="16" width="7" height="5" rx="1.5" />
       </svg>
     ),
   },
@@ -56,9 +57,32 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+  {
+    key: "invite",
+    label: "Invite Recruiter",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="8.5" cy="7" r="4" />
+        <line x1="20" y1="8" x2="20" y2="14" />
+        <line x1="23" y1="11" x2="17" y2="11" />
+      </svg>
+    ),
+  },
+  {
+    key: "support",
+    label: "Support",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+    ),
+  },
 ];
 
-export default function SuperAdminShell({ activeTab, onTabChange, title, subtitle, user, children }) {
+export default function SuperAdminShell({ activeTab, onTabChange, title, subtitle, user, capability, children }) {
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);

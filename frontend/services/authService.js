@@ -1407,3 +1407,173 @@ export async function recruiterRegister(payload) {
   const { data } = await apiClient.post("/api/auth/recruiter/register", payload);
   return data;
 }
+
+// ─── Support Tickets ────────────────────────────────────────────────────────
+
+export async function createTicket(payload, accessToken) {
+  const { data } = await apiClient.post("/api/tickets", payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function listMyTickets(accessToken, params = {}) {
+  const query = new URLSearchParams();
+  if (params.status) query.set("status", params.status);
+  if (params.priority) query.set("priority", params.priority);
+  if (params.category) query.set("category", params.category);
+  if (params.search) query.set("search", params.search);
+  if (params.page) query.set("page", String(params.page));
+  if (params.page_size) query.set("page_size", String(params.page_size));
+  const qs = query.toString();
+  const { data } = await apiClient.get(`/api/tickets${qs ? `?${qs}` : ""}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getMyTicketStats(accessToken) {
+  const { data } = await apiClient.get("/api/tickets/stats/my", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function getTicket(ticketId, accessToken) {
+  const { data } = await apiClient.get(`/api/tickets/${encodeURIComponent(ticketId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function replyToTicket(ticketId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/tickets/${encodeURIComponent(ticketId)}/reply`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function closeTicket(ticketId, accessToken) {
+  const { data } = await apiClient.post(`/api/tickets/${encodeURIComponent(ticketId)}/close`, {}, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function uploadTicketAttachment(ticketId, formData, accessToken) {
+  const { data } = await apiClient.post(`/api/tickets/${encodeURIComponent(ticketId)}/upload`, formData, {
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+// Admin ticket APIs
+
+export async function adminListTickets(accessToken, params = {}) {
+  const query = new URLSearchParams();
+  if (params.status) query.set("status", params.status);
+  if (params.priority) query.set("priority", params.priority);
+  if (params.category) query.set("category", params.category);
+  if (params.assigned_to) query.set("assigned_to", params.assigned_to);
+  if (params.organization_id) query.set("organization_id", params.organization_id);
+  if (params.search) query.set("search", params.search);
+  if (params.sort) query.set("sort", params.sort);
+  if (params.page) query.set("page", String(params.page));
+  if (params.page_size) query.set("page_size", String(params.page_size));
+  const qs = query.toString();
+  const { data } = await apiClient.get(`/api/admin/tickets${qs ? `?${qs}` : ""}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminGetTicketStats(accessToken) {
+  const { data } = await apiClient.get("/api/admin/tickets/stats", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminGetTicket(ticketId, accessToken) {
+  const { data } = await apiClient.get(`/api/admin/tickets/${encodeURIComponent(ticketId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminAssignTicket(ticketId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/admin/tickets/${encodeURIComponent(ticketId)}/assign`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminUpdateTicketStatus(ticketId, payload, accessToken) {
+  const { data } = await apiClient.patch(`/api/admin/tickets/${encodeURIComponent(ticketId)}/status`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminUpdateTicketPriority(ticketId, payload, accessToken) {
+  const { data } = await apiClient.patch(`/api/admin/tickets/${encodeURIComponent(ticketId)}/priority`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminReplyToTicket(ticketId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/admin/tickets/${encodeURIComponent(ticketId)}/reply`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminCloseTicket(ticketId, accessToken) {
+  const { data } = await apiClient.post(`/api/admin/tickets/${encodeURIComponent(ticketId)}/close`, {}, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminResolveTicket(ticketId, accessToken) {
+  const { data } = await apiClient.post(`/api/admin/tickets/${encodeURIComponent(ticketId)}/resolve`, {}, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminReopenTicket(ticketId, accessToken) {
+  const { data } = await apiClient.post(`/api/admin/tickets/${encodeURIComponent(ticketId)}/reopen`, {}, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminDeleteTicket(ticketId, accessToken) {
+  const { data } = await apiClient.post(`/api/admin/tickets/${encodeURIComponent(ticketId)}/delete`, {}, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminMergeTickets(ticketId, payload, accessToken) {
+  const { data } = await apiClient.post(`/api/admin/tickets/${encodeURIComponent(ticketId)}/merge`, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminGetTicketActivity(ticketId, accessToken) {
+  const { data } = await apiClient.get(`/api/admin/tickets/${encodeURIComponent(ticketId)}/activity`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
+
+export async function adminGetTicketAudit(ticketId, accessToken) {
+  const { data } = await apiClient.get(`/api/admin/tickets/${encodeURIComponent(ticketId)}/audit`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data;
+}
