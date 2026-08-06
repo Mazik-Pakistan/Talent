@@ -7,7 +7,7 @@ import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import { getApiErrorMessage, listEmployees } from "@/services/authService";
 import { listCareerLevels, listCareerTracks } from "@/services/careerService";
-import { getOrgTaxonomy } from "@/services/learningService";
+import { getOrgTaxonomy, addDepartment, updateDepartment, deleteDepartment } from "@/services/learningService";
 import { publishRecruiterContext, clearRecruiterContext } from "@/lib/ai/recruiterContext";
 import {
   ArrowUpRight,
@@ -23,10 +23,12 @@ import {
   Eye,
   GraduationCap,
   Layers,
+  Pencil,
   Plus,
   Search,
   ShieldCheck,
   Target,
+  Trash2,
   TrendingUp,
   Users,
   Zap,
@@ -85,6 +87,14 @@ function DepartmentsContent() {
   const [search, setSearch] = useState("");
   const [empSearch, setEmpSearch] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addName, setAddName] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const isNarrowRef = useRef(typeof window !== "undefined" ? window.matchMedia("(max-width: 1100px)").matches : false);
 
   useEffect(() => {
@@ -97,12 +107,6 @@ function DepartmentsContent() {
     setSidebarCollapsed(mq.matches);
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
-  }, []);
-
-  const selectDepartment = useCallback((name) => {
-    setSelectedDept(name);
-    setEmpSearch("");
-    if (isNarrowRef.current) setSidebarCollapsed(true);
   }, []);
 
   useEffect(() => {
@@ -192,6 +196,71 @@ function DepartmentsContent() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const selectDepartment = useCallback((name) => {
+    setSelectedDept(name);
+    setEmpSearch("");
+    if (isNarrowRef.current) setSidebarCollapsed(true);
+  }, []);
+
+  const handleAddDepartment = useCallback(async () => {
+    const name = addName.trim();
+    if (!name) return;
+    const token = localStorage.getItem("access_token");
+    setAdding(true);
+    try {
+      await addDepartment(token, name);
+      toast.success(`Department "${name}" created.`);
+      setAddName("");
+      setShowAddForm(false);
+      await loadData();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not create department."));
+    } finally {
+      setAdding(false);
+    }
+  }, [addName, loadData]);
+
+  const handleEditDepartment = useCallback(async () => {
+    if (!editTarget || !editName.trim()) return;
+    const token = localStorage.getItem("access_token");
+    setEditing(true);
+    try {
+      const result = await updateDepartment(token, editTarget, editName.trim());
+      if (result.unchanged) {
+        toast.info("No changes made.");
+      } else {
+        toast.success(`Department renamed to "${editName.trim()}".`);
+        if (selectedDept === editTarget) setSelectedDept(editName.trim());
+      }
+      setEditTarget(null);
+      setEditName("");
+      await loadData();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not rename department."));
+    } finally {
+      setEditing(false);
+    }
+  }, [editTarget, editName, selectedDept, loadData]);
+
+  const handleDeleteDepartment = useCallback(async () => {
+    if (!deleteTarget) return;
+    const token = localStorage.getItem("access_token");
+    setDeleting(true);
+    try {
+      await deleteDepartment(token, deleteTarget);
+      toast.success(`Department "${deleteTarget}" deleted.`);
+      if (selectedDept === deleteTarget) {
+        setSelectedDept(null);
+      }
+      setDeleteTarget(null);
+      await loadData();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not delete department."));
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, selectedDept, loadData]);
+
   const filteredDepts = useMemo(() => {
     if (!search.trim()) return departments;
     const q = search.toLowerCase();
@@ -225,6 +294,7 @@ function DepartmentsContent() {
   const healthColor = healthScore >= 75 ? "var(--green)" : healthScore >= 40 ? "var(--orange)" : "var(--red)";
 
   return (
+    <>
     <RecruiterShell
       activeKey="departments"
       capability="learning"
@@ -250,6 +320,16 @@ function DepartmentsContent() {
                 <span className={s.sidebarTitle}>Departments</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span className={s.sidebarCount}>{filteredDepts.length}</span>
+                  {!sidebarCollapsed && (
+                    <button
+                      type="button"
+                      className={s.sidebarToggle}
+                      aria-label="Add department"
+                      onClick={() => { setShowAddForm(true); setAddName(""); }}
+                    >
+                      <Plus aria-hidden="true" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className={s.sidebarToggle}
@@ -275,6 +355,27 @@ function DepartmentsContent() {
                 />
               </div>
             </div>
+            {showAddForm && !sidebarCollapsed && (
+              <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border-soft)" }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    className={s.searchInput}
+                    aria-label="New department name"
+                    placeholder="Department name…"
+                    value={addName}
+                    onChange={(e) => setAddName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAddDepartment(); if (e.key === "Escape") setShowAddForm(false); }}
+                    autoFocus
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                  <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={adding || !addName.trim()} onClick={handleAddDepartment} style={{ flex: 1 }}>
+                    {adding ? "Adding…" : "Add"}
+                  </button>
+                  <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => setShowAddForm(false)}>Cancel</button>
+                </div>
+              </div>
+            )}
             <div className={s.deptList} role="listbox" aria-label="Department list">
               {filteredDepts.map((d) => (
                 <button
@@ -346,12 +447,34 @@ function DepartmentsContent() {
                       <p className={s.heroSubtitle}>
                         {selectedInfo.employees.length} active employee{selectedInfo.employees.length !== 1 ? "s" : ""} · {selectedInfo.levels.length} career level{selectedInfo.levels.length !== 1 ? "s" : ""} · {selectedInfo.tracks.length} career track{selectedInfo.tracks.length !== 1 ? "s" : ""}
                       </p>
+                      {editTarget === selectedDept && (
+                        <div style={{ display: "flex", gap: 8, marginTop: 10, maxWidth: 400 }}>
+                          <input
+                            className={s.searchInput}
+                            aria-label="Rename department"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleEditDepartment(); if (e.key === "Escape") { setEditTarget(null); setEditName(""); } }}
+                            autoFocus
+                          />
+                          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={editing || !editName.trim()} onClick={handleEditDepartment}>
+                            {editing ? "Saving…" : "Save"}
+                          </button>
+                          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => { setEditTarget(null); setEditName(""); }}>Cancel</button>
+                        </div>
+                      )}
                       <div className={s.heroActions}>
                         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => router.push(`/dashboard/recruiter/learning?tab=career-framework&department=${encodeURIComponent(selectedDept)}`)}>
                           <Briefcase aria-hidden="true" /> Manage career framework
                         </button>
                         <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => router.push(`/dashboard/recruiter/learning?tab=analytics`)}>
                           <Eye aria-hidden="true" /> Learning analytics
+                        </button>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => { setEditTarget(selectedDept); setEditName(selectedDept); }}>
+                          <Pencil aria-hidden="true" /> Rename
+                        </button>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ color: "var(--red)" }} onClick={() => setDeleteTarget(selectedDept)}>
+                          <Trash2 aria-hidden="true" /> Delete
                         </button>
                       </div>
                     </div>
@@ -717,5 +840,54 @@ function DepartmentsContent() {
         </div>
       )}
     </RecruiterShell>
+
+    {/* Delete confirmation modal */}
+    {deleteTarget && (
+      <div style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(12, 42, 65, 0.4)",
+        backdropFilter: "blur(4px)",
+      }} onClick={(e) => { if (e.target === e.currentTarget) setDeleteTarget(null); }}>
+        <div style={{
+          background: "#fff",
+          borderRadius: 16,
+          border: "1px solid var(--border)",
+          boxShadow: "0 24px 60px -24px rgba(21, 61, 94, 0.35)",
+          padding: 28,
+          maxWidth: 420,
+          width: "100%",
+          margin: 16,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: "var(--red-light)", color: "var(--red)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Trash2 aria-hidden="true" size={18} />
+            </div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui, sans-serif" }}>Delete department</div>
+            </div>
+          </div>
+          <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.55, margin: 0, marginBottom: 6 }}>
+            Are you sure you want to delete <strong style={{ color: "var(--navy)" }}>{deleteTarget}</strong>?
+          </p>
+          <p style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5, margin: 0, marginBottom: 20 }}>
+            This removes the department from the taxonomy. Employees assigned to this department will not be affected — they keep their department field unchanged. This action cannot be undone.
+          </p>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => setDeleteTarget(null)} disabled={deleting}>
+              Cancel
+            </button>
+            <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={handleDeleteDepartment} disabled={deleting} style={{ background: "var(--red)", boxShadow: "0 6px 14px -6px rgba(229, 72, 77, 0.6)" }}>
+              {deleting ? "Deleting…" : "Delete department"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

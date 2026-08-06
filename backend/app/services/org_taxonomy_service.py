@@ -118,3 +118,68 @@ async def get_org_taxonomy() -> dict:
         "departments": _merge(departments, live_depts),
         "designations": _merge(designations, live_titles),
     }
+
+
+# ─── Department CRUD ────────────────────────────────────────────────────────
+
+
+async def add_department(name: str) -> dict:
+    """Add a new department to the org taxonomy. Raises ValueError on duplicates."""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Department name is required.")
+    await seed_org_taxonomy()
+    doc = await database.org_taxonomy.find_one({"_id": "global"}) or {}
+    departments = list(doc.get("departments") or [])
+    if any(d.lower() == name.lower() for d in departments):
+        raise ValueError(f'Department "{name}" already exists.')
+    departments.append(name)
+    departments.sort(key=str.lower)
+    await database.org_taxonomy.update_one(
+        {"_id": "global"},
+        {"$set": {"departments": departments, "updated_at": datetime.now(UTC)}},
+    )
+    return {"department": name, "departments": departments}
+
+
+async def update_department(old_name: str, new_name: str) -> dict:
+    """Rename an existing department. Raises ValueError on invalid input or duplicates."""
+    old_name = (old_name or "").strip()
+    new_name = (new_name or "").strip()
+    if not old_name or not new_name:
+        raise ValueError("Both old and new department names are required.")
+    if old_name.lower() == new_name.lower():
+        return {"department": new_name, "unchanged": True}
+    await seed_org_taxonomy()
+    doc = await database.org_taxonomy.find_one({"_id": "global"}) or {}
+    departments = list(doc.get("departments") or [])
+    if not any(d.lower() == old_name.lower() for d in departments):
+        raise ValueError(f'Department "{old_name}" not found.')
+    if any(d.lower() == new_name.lower() for d in departments):
+        raise ValueError(f'Department "{new_name}" already exists.')
+    departments = [new_name if d.lower() == old_name.lower() else d for d in departments]
+    departments.sort(key=str.lower)
+    await database.org_taxonomy.update_one(
+        {"_id": "global"},
+        {"$set": {"departments": departments, "updated_at": datetime.now(UTC)}},
+    )
+    return {"department": new_name, "departments": departments}
+
+
+async def delete_department(name: str) -> dict:
+    """Remove a department from the org taxonomy. Raises ValueError if not found."""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Department name is required.")
+    await seed_org_taxonomy()
+    doc = await database.org_taxonomy.find_one({"_id": "global"}) or {}
+    departments = list(doc.get("departments") or [])
+    before = len(departments)
+    departments = [d for d in departments if d.lower() != name.lower()]
+    if len(departments) == before:
+        raise ValueError(f'Department "{name}" not found.')
+    await database.org_taxonomy.update_one(
+        {"_id": "global"},
+        {"$set": {"departments": departments, "updated_at": datetime.now(UTC)}},
+    )
+    return {"deleted": name, "departments": departments}
