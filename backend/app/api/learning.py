@@ -480,3 +480,45 @@ async def org_taxonomy(current_user: RequireAny):
     from app.services.org_taxonomy_service import get_org_taxonomy
 
     return await get_org_taxonomy()
+
+
+@router.post("/org-taxonomy/departments", status_code=201)
+async def create_department(request: dict, current_user: RequireRecruiterWithLearning):
+    """Add a new department to the org taxonomy."""
+    from app.services.org_taxonomy_service import add_department
+
+    name = (request.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Department name is required.")
+    try:
+        return await add_department(name)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.put("/org-taxonomy/departments")
+async def rename_department(request: dict, current_user: RequireRecruiterWithLearning):
+    """Rename an existing department."""
+    from app.services.org_taxonomy_service import update_department
+
+    old_name = (request.get("old_name") or "").strip()
+    new_name = (request.get("new_name") or "").strip()
+    if not old_name or not new_name:
+        raise HTTPException(status_code=422, detail="Both old_name and new_name are required.")
+    try:
+        return await update_department(old_name, new_name)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.delete("/org-taxonomy/departments/{name}")
+async def remove_department(name: str, current_user: RequireRecruiterWithLearning):
+    """Remove a department from the org taxonomy."""
+    from app.services.org_taxonomy_service import delete_department
+
+    if not name.strip():
+        raise HTTPException(status_code=422, detail="Department name is required.")
+    try:
+        return await delete_department(name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

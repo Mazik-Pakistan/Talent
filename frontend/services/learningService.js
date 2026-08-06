@@ -363,3 +363,32 @@ export async function getOrgTaxonomy(accessToken, { force = false } = {}) {
   );
   return data;
 }
+
+export async function addDepartment(accessToken, name) {
+  const { data } = await client.post(
+    "/api/learning/org-taxonomy/departments",
+    { name },
+    auth(accessToken),
+  );
+  invalidateLearningCaches();
+  return data;
+}
+
+export async function updateDepartment(accessToken, oldName, newName) {
+  const { data } = await client.put(
+    "/api/learning/org-taxonomy/departments",
+    { old_name: oldName, new_name: newName },
+    auth(accessToken),
+  );
+  invalidateLearningCaches();
+  return data;
+}
+
+export async function deleteDepartment(accessToken, name) {
+  const { data } = await client.delete(
+    `/api/learning/org-taxonomy/departments/${encodeURIComponent(name)}`,
+    auth(accessToken),
+  );
+  invalidateLearningCaches();
+  return data;
+}

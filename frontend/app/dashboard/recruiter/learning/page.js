@@ -5,6 +5,48 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { useSearchParams } from "next/navigation";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
+import OrgFrameworkTab from "./OrgFrameworkTab";
+import {
+  Archive,
+  ArrowRight,
+  Award,
+  BadgeCheck,
+  BarChart3,
+  Bell,
+  BookOpen,
+  Briefcase,
+  Building2,
+  Calendar,
+  Check,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  CircleAlert,
+  CircleCheck,
+  Clock,
+  Compass,
+  Download,
+  Eye,
+  FileText,
+  FolderTree,
+  Globe,
+  GraduationCap,
+  Library,
+  ListChecks,
+  Milestone,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Tag,
+  Target,
+  Trash2,
+  TrendingUp,
+  Upload,
+  UserCheck,
+  Users,
+  X,
+} from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +75,7 @@ import {
   deleteManagedCourse,
   getCatalogFacets,
   getManagedFacets,
+  getOrgTaxonomy,
   getLearningAnalytics,
   listManagedCourses,
   listAssignments,
@@ -60,15 +103,16 @@ import {
 } from "@/services/careerService";
 
 const TABS = [
-  { key: "catalog", label: "Course Catalog" },
-  { key: "managed", label: "LinkedIn Learning" },
-  { key: "knowledge", label: "Knowledge Base" },
-  { key: "assign", label: "Assign Courses" },
-  { key: "assignments", label: "Track Progress" },
-  { key: "certificates", label: "Verify Certificates" },
-  { key: "analytics", label: "Learning Analytics" },
-  { key: "career-framework", label: "Career Framework" },
-  { key: "promotion-readiness", label: "Promotion Readiness" },
+  { key: "catalog", label: "Course Catalog", icon: Compass },
+  { key: "managed", label: "LinkedIn Learning", icon: BookOpen },
+  { key: "knowledge", label: "Knowledge Base", icon: Library },
+  { key: "assign", label: "Assign Courses", icon: UserCheck },
+  { key: "assignments", label: "Track Progress", icon: ListChecks },
+  { key: "certificates", label: "Verify Certificates", icon: BadgeCheck },
+  { key: "analytics", label: "Learning Analytics", icon: BarChart3 },
+  { key: "career-framework", label: "Career Framework", icon: Briefcase },
+  { key: "org-framework", label: "Organization Framework", icon: FolderTree },
+  { key: "promotion-readiness", label: "Promotion Readiness", icon: TrendingUp },
 ];
 
 const CATALOG_SOURCES = [
@@ -103,13 +147,19 @@ function sourceBadgeClass(source) {
 
 function LearningPageContent() {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState(() => (searchParams.get("tab") === "certificates" ? "certificates" : "catalog"));
+  const [tab, setTab] = useState(() => {
+    const t = searchParams.get("tab");
+    if (["certificates", "career-framework", "org-framework", "analytics", "managed", "knowledge", "assign", "assignments", "promotion-readiness", "catalog"].includes(t)) return t;
+    return "catalog";
+  });
   const [pendingAssign, setPendingAssign] = useState(null);
   const selectedCertificateId = searchParams.get("certificateId");
+  const initialDepartment = searchParams.get("department") || "";
 
   useEffect(() => {
-    if (searchParams.get("tab") === "certificates") {
-      setTab("certificates");
+    const t = searchParams.get("tab");
+    if (t && ["certificates", "career-framework", "org-framework", "analytics", "managed", "knowledge", "assign", "assignments", "promotion-readiness", "catalog"].includes(t)) {
+      setTab(t);
     }
   }, [searchParams]);
 
@@ -141,17 +191,25 @@ function LearningPageContent() {
       title="Learning Management"
       subtitle="Browse courses, assign learning, verify certificates, and track completion"
     >
-      <div className={styles.tabBar}>
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            className={`${styles.tabBtn} ${tab === t.key ? styles.tabActive : ""}`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className={styles.tabBar} role="tablist" aria-label="Learning management sections">
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.key}
+              className={`${styles.tabBtn} ${tab === t.key ? styles.tabActive : ""}`}
+              onClick={() => setTab(t.key)}
+            >
+              <span className={styles.tabIcon}>
+                <Icon aria-hidden="true" />
+              </span>
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {tab === "catalog" && <CatalogTab onAssignCourse={handleAssignFromCatalog} />}
@@ -167,7 +225,8 @@ function LearningPageContent() {
       {tab === "assignments" && <AssignmentsTab />}
       {tab === "certificates" && <CertificatesTab selectedCertificateId={selectedCertificateId} />}
       {tab === "analytics" && <AnalyticsTab />}
-      {tab === "career-framework" && <CareerFrameworkTab />}
+      {tab === "career-framework" && <CareerFrameworkTab initialDepartment={initialDepartment} />}
+      {tab === "org-framework" && <OrgFrameworkTab />}
       {tab === "promotion-readiness" && <PromotionReadinessTab />}
     </RecruiterShell>
   );
@@ -265,10 +324,14 @@ function CatalogTab({ onAssignCourse }) {
           <div>
             <div className={shellStyles.sectionTitle}>Course catalog</div>
             <p className={shellStyles.sectionDesc}>
-              {result.total} courses found · browse, then click Assign to send it to employees
+              Browse courses from your learning providers, then assign them to employees
             </p>
           </div>
         </div>
+        <span className={styles.resultPill}>
+          <BookOpen aria-hidden="true" />
+          {result.total} courses
+        </span>
       </div>
       <div className={shellStyles.sectionBody}>
         <div className={styles.sourceToggle} role="tablist" aria-label="Course source">
@@ -281,6 +344,7 @@ function CatalogTab({ onAssignCourse }) {
               className={`${styles.sourceBtn} ${source === s.key ? styles.sourceBtnActive : ""}`}
               onClick={() => switchSource(s.key)}
             >
+              <span className={styles.sourceDot} aria-hidden="true" />
               {s.label}
             </button>
           ))}
@@ -288,18 +352,22 @@ function CatalogTab({ onAssignCourse }) {
         <p className={styles.sourceHint}>{activeSource.hint}</p>
 
         <div className={styles.filterBar}>
-          <input
-            className={styles.searchInput}
-            placeholder={
-              source === "managed_learning"
-                ? "Search roadmap courses, designations, competency, or provider…"
-                : source === "coursera"
-                ? "Search soft skills, e.g. negotiation, leadership…"
-                : "Search Microsoft courses by title or skill…"
-            }
-            value={q}
-            onChange={(e) => { setPage(1); setQ(e.target.value); }}
-          />
+          <div className={styles.searchField}>
+            <Search className={styles.searchFieldIcon} aria-hidden="true" />
+            <input
+              className={styles.searchFieldInput}
+              aria-label="Search courses"
+              placeholder={
+                source === "managed_learning"
+                  ? "Search roadmap courses, designations, competency, or provider…"
+                  : source === "coursera"
+                  ? "Search soft skills, e.g. negotiation, leadership…"
+                  : "Search Microsoft courses by title or skill…"
+              }
+              value={q}
+              onChange={(e) => { setPage(1); setQ(e.target.value); }}
+            />
+          </div>
           {source === "managed_learning" && (
             <>
               <select className={styles.filterSelect} value={provider} onChange={(e) => { setPage(1); setProvider(e.target.value); }}>
@@ -322,8 +390,9 @@ function CatalogTab({ onAssignCourse }) {
                 <option value="">All competencies</option>
                 {(facets.competencies || []).map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
-              <label className={styles.inlineNote} style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: 0 }}>
+              <label className={styles.checkPill}>
                 <input type="checkbox" checked={archivedOnly} onChange={(e) => { setPage(1); setArchivedOnly(e.target.checked); }} />
+                <Archive aria-hidden="true" />
                 Show archived
               </label>
             </>
@@ -349,7 +418,15 @@ function CatalogTab({ onAssignCourse }) {
         </div>
         {loading && <RecruiterLoader inline />}
         {!loading && !(result.courses || []).length && (
-          <p className={styles.inlineNote}>No courses found for this source. Try another pill or clear your search.</p>
+          <div className={styles.emptyState}>
+            <div className={styles.emptyStateIcon}>
+              <Search aria-hidden="true" />
+            </div>
+            <div className={styles.emptyStateTitle}>No courses found</div>
+            <p className={styles.emptyStateHint}>
+              Try a different source, clear your filters, or search with different keywords.
+            </p>
+          </div>
         )}
         <div className={styles.courseGrid}>
           {(result.courses || []).map((c) => (
@@ -361,9 +438,28 @@ function CatalogTab({ onAssignCourse }) {
               </div>
               <div className={styles.courseTitle}>{c.title}</div>
               <div className={styles.courseMeta}>
-                {source === "managed_learning"
-                  ? `${c.provider || "LinkedIn Learning"} · ${c.duration_minutes || "—"} min`
-                  : `${c.type || "course"} · ${c.duration_minutes || "—"} min · ${(c.levels || [])[0] || c.category || "—"}`}
+                {source === "managed_learning" ? (
+                  <>
+                    <span className={styles.metaChip}>
+                      <Building2 aria-hidden="true" />{c.provider || "LinkedIn Learning"}
+                    </span>
+                    <span className={styles.metaChip}>
+                      <Clock aria-hidden="true" />{c.duration_minutes || "—"} min
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className={styles.metaChip}>{c.type || "course"}</span>
+                    <span className={styles.metaChip}>
+                      <Clock aria-hidden="true" />{c.duration_minutes || "—"} min
+                    </span>
+                    {(c.levels || [])[0] || c.category ? (
+                      <span className={styles.metaChip}>
+                        <Tag aria-hidden="true" />{(c.levels || [])[0] || c.category}
+                      </span>
+                    ) : null}
+                  </>
+                )}
               </div>
               <p className={styles.courseSummary}>
                 {source === "managed_learning"
@@ -373,7 +469,7 @@ function CatalogTab({ onAssignCourse }) {
               <div className={styles.courseActions}>
                 {c.url && (
                   <a href={c.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
-                    Preview
+                    <Eye aria-hidden="true" /> Preview
                   </a>
                 )}
                 <button
@@ -381,7 +477,7 @@ function CatalogTab({ onAssignCourse }) {
                   className={styles.assignCourseBtn}
                   onClick={() => onAssignCourse?.(c, source)}
                 >
-                  Assign to employees
+                  <UserCheck aria-hidden="true" /> Assign to employees
                 </button>
               </div>
             </div>
@@ -389,9 +485,13 @@ function CatalogTab({ onAssignCourse }) {
         </div>
         {result.pages > 1 && (
           <div className={styles.pagination}>
-            <button type="button" className={styles.pageBtn} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
-            <span>Page {result.page} of {result.pages}</span>
-            <button type="button" className={styles.pageBtn} disabled={page >= result.pages} onClick={() => setPage((p) => p + 1)}>Next</button>
+            <button type="button" className={styles.pageBtn} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+              <ChevronsLeft aria-hidden="true" /> Previous
+            </button>
+            <span className={styles.paginationCount}>Page {result.page} of {result.pages}</span>
+            <button type="button" className={styles.pageBtn} disabled={page >= result.pages} onClick={() => setPage((p) => p + 1)}>
+              Next <ChevronsRight aria-hidden="true" />
+            </button>
           </div>
         )}
       </div>
@@ -499,38 +599,67 @@ function KnowledgeBaseTab() {
           </div>
         </div>
         <div className={shellStyles.sectionBody}>
-          <form data-partner-coach className={styles.filterBar} onSubmit={handleCreateRole} style={{ flexWrap: "wrap" }}>
-            <input className={styles.searchInput} placeholder="Role title (e.g. Architect)" value={roleForm.title} onChange={(e) => setRoleForm((f) => ({ ...f, title: e.target.value }))} required />
-            <input className={styles.searchInput} placeholder="Required skills (comma-separated)" value={roleForm.required_skills} onChange={(e) => setRoleForm((f) => ({ ...f, required_skills: e.target.value }))} />
-            <input className={styles.searchInput} placeholder="Required certs (comma-separated)" value={roleForm.required_certifications} onChange={(e) => setRoleForm((f) => ({ ...f, required_certifications: e.target.value }))} />
-            <input className={styles.searchInput} placeholder="Description" value={roleForm.description} onChange={(e) => setRoleForm((f) => ({ ...f, description: e.target.value }))} />
-            <button type="submit" className={styles.smallBtn} disabled={saving}>Add role</button>
+          <form data-partner-coach className={styles.kbForm} onSubmit={handleCreateRole}>
+            <label className={styles.fieldLabel}>
+              Role title
+              <input placeholder="e.g. Architect" value={roleForm.title} onChange={(e) => setRoleForm((f) => ({ ...f, title: e.target.value }))} required />
+            </label>
+            <label className={styles.fieldLabel}>
+              Required skills
+              <input placeholder="Comma-separated, e.g. Python, Azure" value={roleForm.required_skills} onChange={(e) => setRoleForm((f) => ({ ...f, required_skills: e.target.value }))} />
+            </label>
+            <label className={styles.fieldLabel}>
+              Required certifications
+              <input placeholder="Comma-separated, e.g. AZ-305" value={roleForm.required_certifications} onChange={(e) => setRoleForm((f) => ({ ...f, required_certifications: e.target.value }))} />
+            </label>
+            <label className={styles.fieldLabel}>
+              Description
+              <input placeholder="What does this role require?" value={roleForm.description} onChange={(e) => setRoleForm((f) => ({ ...f, description: e.target.value }))} />
+            </label>
+            <div className={styles.formActions}>
+              <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
+                <Plus aria-hidden="true" /> {saving ? "Adding…" : "Add role"}
+              </button>
+            </div>
           </form>
           {loading && <RecruiterLoader inline />}
+          {!loading && roles.length === 0 && (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyStateIcon}><Library aria-hidden="true" /></div>
+              <div className={styles.emptyStateTitle}>No roles defined yet</div>
+              <p className={styles.emptyStateHint}>Add your first organization role to power employee career matching.</p>
+            </div>
+          )}
           <div className={styles.courseGrid}>
             {roles.map((r) => (
               <div key={r.id} className={styles.courseCard}>
+                <div className={styles.courseCardHead}>
+                  <span className={`${styles.sourceBadge} ${styles.sourceBadgeRecruiter}`}>Role</span>
+                </div>
                 <div className={styles.courseTitle}>{r.title}</div>
-                <div className={styles.courseMeta}>{(r.required_skills || []).length} skills · {(r.required_certifications || []).length} certs</div>
+                <div className={styles.courseMeta}>
+                  <span className={styles.metaChip}><Milestone aria-hidden="true" />{(r.required_skills || []).length} skills</span>
+                  <span className={styles.metaChip}><BadgeCheck aria-hidden="true" />{(r.required_certifications || []).length} certs</span>
+                </div>
                 <p className={styles.courseSummary}>{(r.description || "").slice(0, 160)}</p>
-                <div className={styles.courseMeta}>Skills: {(r.required_skills || []).join(", ") || "—"}</div>
-                <div className={styles.courseMeta}>Certs: {(r.required_certifications || []).join(", ") || "—"}</div>
-                <button
-                  type="button"
-                  className={styles.smallBtn}
-                  onClick={async () => {
-                    const token = localStorage.getItem("access_token");
-                    try {
-                      await deleteKbRole(token, r.id);
-                      toast.success("Role removed.");
-                      load();
-                    } catch (err) {
-                      toast.error(getApiErrorMessage(err, "Could not delete role."));
-                    }
-                  }}
-                >
-                  Delete
-                </button>
+                <div className={styles.courseActions}>
+                  <button
+                    type="button"
+                    className={styles.smallBtn}
+                    onClick={async () => {
+                      const token = localStorage.getItem("access_token");
+                      try {
+                        await deleteKbRole(token, r.id);
+                        toast.success("Role removed.");
+                        load();
+                      } catch (err) {
+                        toast.error(getApiErrorMessage(err, "Could not delete role."));
+                      }
+                    }}
+                  >
+                    <Trash2 aria-hidden="true" /> Delete
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -548,44 +677,95 @@ function KnowledgeBaseTab() {
           </div>
         </div>
         <div className={shellStyles.sectionBody}>
-          <form data-partner-coach className={styles.filterBar} onSubmit={handleCreateCert} style={{ flexWrap: "wrap" }}>
-            <input className={styles.searchInput} placeholder="Title (e.g. AZ-305)" value={certForm.title} onChange={(e) => setCertForm((f) => ({ ...f, title: e.target.value }))} required />
-            <input className={styles.searchInput} placeholder="Provider" value={certForm.provider} onChange={(e) => setCertForm((f) => ({ ...f, provider: e.target.value }))} />
-            <input className={styles.searchInput} placeholder="Official URL" value={certForm.official_url} onChange={(e) => setCertForm((f) => ({ ...f, official_url: e.target.value }))} />
-            <input className={styles.searchInput} placeholder="Skills covered (comma-separated)" value={certForm.skills_covered} onChange={(e) => setCertForm((f) => ({ ...f, skills_covered: e.target.value }))} />
-            <input className={styles.searchInput} placeholder="Estimated hours" type="number" min="0" value={certForm.estimated_hours} onChange={(e) => setCertForm((f) => ({ ...f, estimated_hours: e.target.value }))} />
-            <select className={styles.filterSelect} value={certForm.difficulty} onChange={(e) => setCertForm((f) => ({ ...f, difficulty: e.target.value }))}>
-              {["Beginner", "Intermediate", "Advanced", "Expert"].map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <select className={styles.filterSelect} value={certForm.priority} onChange={(e) => setCertForm((f) => ({ ...f, priority: e.target.value }))}>
-              {["critical", "immediate", "medium", "low"].map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-            <input className={styles.searchInput} placeholder="Description" value={certForm.description} onChange={(e) => setCertForm((f) => ({ ...f, description: e.target.value }))} />
-            <button type="submit" className={styles.smallBtn} disabled={saving}>Add certification</button>
+          <form data-partner-coach className={styles.kbForm} onSubmit={handleCreateCert}>
+            <label className={styles.fieldLabel}>
+              Title
+              <input placeholder="e.g. AZ-305" value={certForm.title} onChange={(e) => setCertForm((f) => ({ ...f, title: e.target.value }))} required />
+            </label>
+            <label className={styles.fieldLabel}>
+              Provider
+              <input placeholder="e.g. Microsoft" value={certForm.provider} onChange={(e) => setCertForm((f) => ({ ...f, provider: e.target.value }))} />
+            </label>
+            <label className={styles.fieldLabel}>
+              Official URL
+              <input placeholder="https://learn.microsoft.com/…" value={certForm.official_url} onChange={(e) => setCertForm((f) => ({ ...f, official_url: e.target.value }))} />
+            </label>
+            <label className={styles.fieldLabel}>
+              Skills covered
+              <input placeholder="Comma-separated, e.g. Kubernetes, Networking" value={certForm.skills_covered} onChange={(e) => setCertForm((f) => ({ ...f, skills_covered: e.target.value }))} />
+            </label>
+            <label className={styles.fieldLabel}>
+              Estimated hours
+              <input type="number" min="0" placeholder="e.g. 12" value={certForm.estimated_hours} onChange={(e) => setCertForm((f) => ({ ...f, estimated_hours: e.target.value }))} />
+            </label>
+            <div className={styles.splitRow}>
+              <label className={styles.fieldLabel}>
+                Difficulty
+                <select value={certForm.difficulty} onChange={(e) => setCertForm((f) => ({ ...f, difficulty: e.target.value }))}>
+                  {["Beginner", "Intermediate", "Advanced", "Expert"].map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </label>
+              <label className={styles.fieldLabel}>
+                Priority
+                <select value={certForm.priority} onChange={(e) => setCertForm((f) => ({ ...f, priority: e.target.value }))}>
+                  {["critical", "immediate", "medium", "low"].map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </label>
+            </div>
+            <label className={`${styles.fieldLabel} ${styles.wide}`}>
+              Description
+              <input placeholder="What does this certification cover?" value={certForm.description} onChange={(e) => setCertForm((f) => ({ ...f, description: e.target.value }))} />
+            </label>
+            <div className={styles.formActions}>
+              <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
+                <Plus aria-hidden="true" /> {saving ? "Adding…" : "Add certification"}
+              </button>
+            </div>
           </form>
+          {!loading && certs.length === 0 && (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyStateIcon}><BadgeCheck aria-hidden="true" /></div>
+              <div className={styles.emptyStateTitle}>No certifications yet</div>
+              <p className={styles.emptyStateHint}>Add certifications above and they will appear in the employee course catalog.</p>
+            </div>
+          )}
           <div className={styles.courseGrid}>
             {certs.map((c) => (
               <div key={c.id} className={styles.courseCard}>
+                <div className={styles.courseCardHead}>
+                  <span className={`${styles.sourceBadge} ${styles.sourceBadgeCoursera}`}>Certification</span>
+                </div>
                 <div className={styles.courseTitle}>{c.title}</div>
-                <div className={styles.courseMeta}>{c.provider || "—"} · {c.difficulty} · {c.estimated_hours || "—"}h · {c.priority}</div>
+                <div className={styles.courseMeta}>
+                  {c.provider ? <span className={styles.metaChip}><Building2 aria-hidden="true" />{c.provider}</span> : null}
+                  <span className={styles.metaChip}>{c.difficulty}</span>
+                  {c.estimated_hours ? <span className={styles.metaChip}><Clock aria-hidden="true" />{c.estimated_hours}h</span> : null}
+                  <span className={styles.metaChip}>{c.priority}</span>
+                </div>
                 <p className={styles.courseSummary}>{(c.description || "").slice(0, 140)}</p>
-                {c.official_url && <a href={c.official_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Official link</a>}
-                <button
-                  type="button"
-                  className={styles.smallBtn}
-                  onClick={async () => {
-                    const token = localStorage.getItem("access_token");
-                    try {
-                      await deleteKbCertification(token, c.id);
-                      toast.success("Certification removed.");
-                      load();
-                    } catch (err) {
-                      toast.error(getApiErrorMessage(err, "Could not delete certification."));
-                    }
-                  }}
-                >
-                  Delete
-                </button>
+                <div className={styles.courseActions}>
+                  {c.official_url && (
+                    <a href={c.official_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
+                      <Globe aria-hidden="true" /> Official link
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    className={styles.smallBtn}
+                    onClick={async () => {
+                      const token = localStorage.getItem("access_token");
+                      try {
+                        await deleteKbCertification(token, c.id);
+                        toast.success("Certification removed.");
+                        load();
+                      } catch (err) {
+                        toast.error(getApiErrorMessage(err, "Could not delete certification."));
+                      }
+                    }}
+                  >
+                    <Trash2 aria-hidden="true" /> Delete
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -736,7 +916,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       <div className={shellStyles.sectionBody}>
         <div className={styles.assignSteps}>
           <div className={`${styles.assignStep} ${selectedCourse ? styles.assignStepDone : styles.assignStepActive}`}>
-            <span className={styles.assignStepNum}>{selectedCourse ? "✓" : "1"}</span>
+            <span className={styles.assignStepNum}>{selectedCourse ? <Check aria-hidden="true" size={14} /> : "1"}</span>
             <span>Course</span>
           </div>
           <div className={styles.assignStepLine} />
@@ -759,14 +939,14 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               </span>
               <h3 className={styles.assignCourseHeroTitle}>{selectedCourse.title}</h3>
               <div className={styles.assignCourseHeroMeta}>
-                <span>{selectedCourse.type || "course"}</span>
-                <span>·</span>
-                <span>{selectedCourse.duration_minutes || "—"} min</span>
+                <span className={styles.metaChip}>{selectedCourse.type || "course"}</span>
+                <span className={styles.metaChip}>
+                  <Clock aria-hidden="true" />{selectedCourse.duration_minutes || "—"} min
+                </span>
                 {(selectedCourse.levels || [])[0] || selectedCourse.category ? (
-                  <>
-                    <span>·</span>
-                    <span>{(selectedCourse.levels || [])[0] || selectedCourse.category}</span>
-                  </>
+                  <span className={styles.metaChip}>
+                    <Tag aria-hidden="true" />{(selectedCourse.levels || [])[0] || selectedCourse.category}
+                  </span>
                 ) : null}
               </div>
               {selectedCourse.summary && (
@@ -779,11 +959,11 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
             <div className={styles.assignCourseHeroActions}>
               {selectedCourse.url && (
                 <a href={selectedCourse.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
-                  Preview
+                  <Eye aria-hidden="true" /> Preview
                 </a>
               )}
               <button type="button" className={styles.smallBtn} onClick={clearSelectedCourse}>
-                Change course
+                <Pencil aria-hidden="true" /> Change course
               </button>
             </div>
           </div>
@@ -807,6 +987,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   className={`${styles.sourceBtn} ${source === s.key ? styles.sourceBtnActive : ""}`}
                   onClick={() => { setSource(s.key); setQ(""); setCourses([]); }}
                 >
+                  <span className={styles.sourceDot} aria-hidden="true" />
                   {s.label}
                 </button>
               ))}
@@ -814,18 +995,22 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
             <p className={styles.sourceHint}>
               {(CATALOG_SOURCES.find((s) => s.key === source) || CATALOG_SOURCES[0]).hint}
             </p>
-            <input
-              className={styles.searchInput}
-              placeholder={
-                source === "coursera"
-                  ? "Search soft skills, e.g. negotiation, leadership…"
-                  : source === "managed_learning"
-                    ? "Search roadmap courses…"
-                    : "Search Microsoft courses…"
-              }
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
+            <div className={styles.searchField}>
+              <Search className={styles.searchFieldIcon} aria-hidden="true" />
+              <input
+                className={styles.searchFieldInput}
+                aria-label="Search courses"
+                placeholder={
+                  source === "coursera"
+                    ? "Search soft skills, e.g. negotiation, leadership…"
+                    : source === "managed_learning"
+                      ? "Search roadmap courses…"
+                      : "Search Microsoft courses…"
+                }
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
             <div className={styles.pickerList}>
               {courses.map((c) => (
                 <button
@@ -837,10 +1022,15 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   <div>
                     <div className={styles.pickerRowTitle}>{c.title}</div>
                     <div className={styles.pickerRowMeta}>
-                      {sourceLabel(c.source || source)} · {c.type} · {c.duration_minutes || "—"} min · {(c.levels || [])[0] || c.category || "—"}
+                      <span className={styles.metaChip}>{sourceLabel(c.source || source)}</span>
+                      <span className={styles.metaChip}>{c.type}</span>
+                      <span className={styles.metaChip}><Clock aria-hidden="true" />{c.duration_minutes || "—"} min</span>
+                      {(c.levels || [])[0] || c.category ? <span className={styles.metaChip}>{(c.levels || [])[0] || c.category}</span> : null}
                     </div>
                   </div>
-                  <span className={styles.pickerSelectHint}>Select</span>
+                  <span className={styles.pickerSelectHint}>
+                    Select <ArrowRight aria-hidden="true" />
+                  </span>
                 </button>
               ))}
               {q.trim() && courses.length === 0 && (
@@ -865,7 +1055,9 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                 <p className={styles.assignPanelDesc}>Employees, department, joining role, or skills.</p>
               </div>
               {assignMode === "employees" && selectedIds.length > 0 && (
-                <span className={styles.assignCountPill}>{selectedIds.length} selected</span>
+                <span className={styles.assignCountPill}>
+                  <Users aria-hidden="true" />{selectedIds.length} selected
+                </span>
               )}
             </div>
 
@@ -904,12 +1096,16 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
 
                 {assignMode === "employees" && (
                   <>
-                    <input
-                      className={styles.searchInput}
-                      placeholder="Filter employees by name…"
-                      value={empQuery}
-                      onChange={(e) => setEmpQuery(e.target.value)}
-                    />
+                    <div className={styles.searchField} style={{ marginBottom: 12 }}>
+                      <Search className={styles.searchFieldIcon} aria-hidden="true" />
+                      <input
+                        className={styles.searchFieldInput}
+                        aria-label="Filter employees by name"
+                        placeholder="Filter employees by name…"
+                        value={empQuery}
+                        onChange={(e) => setEmpQuery(e.target.value)}
+                      />
+                    </div>
                     <div className={styles.employeeList}>
                       {employees.map((emp) => {
                         const checked = selectedIds.includes(emp.employee_id);
@@ -942,7 +1138,9 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
 
                 {assignMode === "department" && (
                   <div className={styles.audienceSummary}>
-                    <div className={styles.audienceSummaryLabel}>Bulk assign by department</div>
+                    <div className={styles.audienceSummaryLabel}>
+                      <Building2 aria-hidden="true" /> Bulk assign by department
+                    </div>
                     <p>
                       All active employees in <strong>{filterDept || "a selected department"}</strong>
                       {filterTitle ? <> with designation <strong>{filterTitle}</strong></> : null}
@@ -952,7 +1150,9 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                 )}
                 {assignMode === "designation" && (
                   <div className={styles.audienceSummary}>
-                    <div className={styles.audienceSummaryLabel}>Bulk assign by joining role</div>
+                    <div className={styles.audienceSummaryLabel}>
+                      <Briefcase aria-hidden="true" /> Bulk assign by joining role
+                    </div>
                     <p>
                       All active employees with designation <strong>{filterTitle || "a selected role"}</strong>
                       {filterDept ? <> in <strong>{filterDept}</strong></> : null}
@@ -965,13 +1165,12 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                     <label className={styles.fieldLabel}>
                       Required skills
                       <span>Employees need at least one of these</span>
+                      <input
+                        value={requiredSkills}
+                        onChange={(e) => setRequiredSkills(e.target.value)}
+                        placeholder="e.g. Python, Azure, Communication"
+                      />
                     </label>
-                    <input
-                      className={styles.searchInput}
-                      value={requiredSkills}
-                      onChange={(e) => setRequiredSkills(e.target.value)}
-                      placeholder="e.g. Python, Azure, Communication"
-                    />
                     <p className={styles.inlineNote}>Department and designation filters above still apply.</p>
                   </div>
                 )}
@@ -995,6 +1194,9 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   <label className={styles.fieldLabel}>
                     Due date
                     <span>Auto-set if left blank</span>
+                    <span className={styles.metaChip} style={{ marginBottom: 6 }}>
+                      <Calendar aria-hidden="true" />
+                    </span>
                     <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
                   </label>
                   <label className={styles.fieldLabel}>
@@ -1018,7 +1220,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   disabled={submitting}
                   onClick={handleAssign}
                 >
-                  {assignLabel}
+                  <ArrowRight aria-hidden="true" /> {assignLabel}
                 </button>
               </>
             )}
@@ -1080,37 +1282,52 @@ function AssignmentsTab() {
           <div>
             <div className={shellStyles.sectionTitle}>Assigned courses</div>
             <p className={shellStyles.sectionDesc}>
-              Track completion — reminders go by email and notification (assignment notes are included when present)
+              Track completion — reminders go by email and notification
             </p>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-            <input type="checkbox" checked={mandatoryOnly} onChange={(e) => setMandatoryOnly(e.target.checked)} />
-            Mandatory only
-          </label>
-          <select className={styles.filterSelect} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="">All statuses</option>
-            <option value="assigned">Assigned</option>
-            <option value="in_progress">In progress</option>
-            <option value="completed">Completed</option>
-          </select>
-          <button type="button" className={styles.modeBtn} onClick={() => load(true)}>Refresh</button>
+        <div className={styles.toolbar}>
+          <div className={styles.toolbarLeft}>
+            <label className={styles.checkPill}>
+              <input type="checkbox" checked={mandatoryOnly} onChange={(e) => setMandatoryOnly(e.target.checked)} />
+              <Milestone aria-hidden="true" />
+              Mandatory only
+            </label>
+            <select className={styles.filterSelect} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">All statuses</option>
+              <option value="assigned">Assigned</option>
+              <option value="in_progress">In progress</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+          <div className={styles.toolbarRight}>
+            <button type="button" className={styles.modeBtn} onClick={() => load(true)}>
+              <RefreshCw aria-hidden="true" /> Refresh
+            </button>
+          </div>
         </div>
       </div>
       <div className={shellStyles.sectionBody}>
         {loading && <RecruiterLoader inline />}
-        {!loading && assignments.length === 0 && <p className={shellStyles.emptySub}>No assignments yet — assign a course from the Assign tab.</p>}
+        {!loading && assignments.length === 0 && (
+          <div className={styles.emptyState}>
+            <div className={styles.emptyStateIcon}><ListChecks aria-hidden="true" /></div>
+            <div className={styles.emptyStateTitle}>No assignments yet</div>
+            <p className={styles.emptyStateHint}>Assign a course from the Assign Courses tab to start tracking completion.</p>
+          </div>
+        )}
         {assignments.map((a) => (
           <div key={a.id} className={styles.listRow}>
             <div className={styles.listInfo}>
               <div className={styles.listTitle}>
                 {a.course_title}
-                {a.mandatory ? " · Mandatory" : ""}
+                {a.mandatory ? <span className={`${styles.statusChip} ${styles.mandatory}`}>Mandatory</span> : null}
               </div>
               <div className={styles.listMeta}>
-                {a.employee_name} ({a.employee_id}) · {a.job_title || "—"} · {a.department || "—"}
-                {a.due_date ? ` · Due ${a.due_date}` : ""}
+                <span className={styles.metaChip}><Users aria-hidden="true" />{a.employee_name}</span>
+                <span className={styles.metaChip}>{a.job_title || "—"}</span>
+                <span className={styles.metaChip}><Building2 aria-hidden="true" />{a.department || "—"}</span>
+                {a.due_date ? <span className={styles.metaChip}><Calendar aria-hidden="true" />Due {a.due_date}</span> : null}
               </div>
             </div>
             <span className={`${styles.statusChip} ${styles[a.status] || ""}`}>{a.status.replace("_", " ")}</span>
@@ -1121,7 +1338,11 @@ function AssignmentsTab() {
                 disabled={remindingId === a.id}
                 onClick={() => handleRemind(a)}
               >
-                {remindingId === a.id ? "Sending…" : "Remind"}
+                {remindingId === a.id ? (
+                  <><RefreshCw aria-hidden="true" className="animate-spin" /> Sending…</>
+                ) : (
+                  <><Bell aria-hidden="true" /> Remind</>
+                )}
               </button>
             ) : null}
           </div>
@@ -1195,31 +1416,49 @@ function CertificatesTab({ selectedCertificateId = null }) {
       </div>
       <div className={shellStyles.sectionBody}>
         {loading && <RecruiterLoader inline />}
-        {!loading && certificates.length === 0 && <p className={shellStyles.emptySub}>Nothing pending review.</p>}
+        {!loading && certificates.length === 0 && (
+          <div className={styles.emptyState}>
+            <div className={styles.emptyStateIcon}><BadgeCheck aria-hidden="true" /></div>
+            <div className={styles.emptyStateTitle}>Nothing pending review</div>
+            <p className={styles.emptyStateHint}>Employee-uploaded certificates will appear here for verification.</p>
+          </div>
+        )}
         {certificates.map((c) => (
           <div key={c.id} id={`certificate-${c.id}`} className={styles.listRow}>
             <div className={styles.listInfo}>
               <div className={styles.listTitle}>{c.course_title}</div>
               <div className={styles.listMeta}>
-                {c.employee_name} ({c.employee_id})
-                {c.completion_date ? ` · Completed ${c.completion_date}` : ""}
-                {c.learning_hours ? ` · ${c.learning_hours} hrs` : ""}
+                <span className={styles.metaChip}><Users aria-hidden="true" />{c.employee_name} ({c.employee_id})</span>
+                {c.completion_date ? <span className={styles.metaChip}><Calendar aria-hidden="true" />Completed {c.completion_date}</span> : null}
+                {c.learning_hours ? <span className={styles.metaChip}><Clock aria-hidden="true" />{c.learning_hours} hrs</span> : null}
               </div>
             </div>
-            <a href={c.file_url || c.certificate_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View file</a>
+            <a href={c.file_url || c.certificate_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
+              <Eye aria-hidden="true" /> View file
+            </a>
             {c.source_url && c.source_url !== c.file_url ? (
-              <a href={c.source_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Public URL</a>
+              <a href={c.source_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
+                <Globe aria-hidden="true" /> Public URL
+              </a>
             ) : null}
             {rejecting === c.id ? (
               <div className={styles.rejectRow}>
                 <input className={styles.rejectInput} placeholder="Reason (optional)" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
-                <button type="button" className={styles.rejectBtn} onClick={() => handleReject(c.id)}>Confirm reject</button>
-                <button type="button" className={styles.smallBtn} onClick={() => setRejecting(null)}>Cancel</button>
+                <button type="button" className={styles.rejectBtn} onClick={() => handleReject(c.id)}>
+                  <Check aria-hidden="true" /> Confirm reject
+                </button>
+                <button type="button" className={styles.smallBtn} onClick={() => setRejecting(null)}>
+                  <X aria-hidden="true" /> Cancel
+                </button>
               </div>
             ) : (
-              <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" className={styles.approveBtn} onClick={() => handleApprove(c.id)}>Verify</button>
-                <button type="button" className={styles.rejectBtn} onClick={() => setRejecting(c.id)}>Reject</button>
+              <div className={styles.rowActions} style={{ display: "flex", gap: 8 }}>
+                <button type="button" className={styles.approveBtn} onClick={() => handleApprove(c.id)}>
+                  <CircleCheck aria-hidden="true" /> Verify
+                </button>
+                <button type="button" className={styles.rejectBtn} onClick={() => setRejecting(c.id)}>
+                  <CircleAlert aria-hidden="true" /> Reject
+                </button>
               </div>
             )}
           </div>
@@ -1276,41 +1515,58 @@ function AnalyticsTab() {
     toast.success("Analytics exported.");
   }
 
-  if (loading) return <p className={styles.inlineNote}>Loading analytics…</p>;
+  if (loading) return (
+    <div className={shellStyles.section}>
+      <div className={shellStyles.sectionBody}><RecruiterLoader inline /></div>
+    </div>
+  );
   if (!data) return null;
 
   const stats = [
-    { label: "Completion Rate", value: `${data.completion_rate}%`, color: "cyan" },
-    { label: "Certification Rate", value: `${data.certification_rate}%`, color: "green" },
-    { label: "Learning Hours", value: data.total_learning_hours, color: "orange" },
-    { label: "Mandatory completion", value: `${data.mandatory_completion_rate ?? 0}%`, color: "navy" },
+    { label: "Completion Rate", value: `${data.completion_rate}%`, color: "cyan", icon: CircleCheck },
+    { label: "Certification Rate", value: `${data.certification_rate}%`, color: "green", icon: Award },
+    { label: "Learning Hours", value: data.total_learning_hours, color: "orange", icon: Clock },
+    { label: "Mandatory completion", value: `${data.mandatory_completion_rate ?? 0}%`, color: "navy", icon: Target },
   ];
 
   const maxPopular = Math.max(1, ...(data.popular_courses || []).map((c) => c.enrollments));
 
   return (
     <>
-      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
-        <select className={styles.filterSelect} value={department} onChange={(e) => setDepartment(e.target.value)}>
-          <option value="">All departments</option>
-          {RECRUITER_DEPARTMENTS.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
-        <button type="button" className={styles.modeBtn} onClick={() => load(true)}>Refresh</button>
-        <button type="button" className={styles.modeBtn} onClick={handleExport}>Export CSV</button>
+      <div className={styles.toolbar}>
+        <div className={styles.toolbarLeft}>
+          <select className={styles.filterSelect} value={department} onChange={(e) => setDepartment(e.target.value)}>
+            <option value="">All departments</option>
+            {RECRUITER_DEPARTMENTS.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+        <div className={styles.toolbarRight}>
+          <button type="button" className={styles.modeBtn} onClick={() => load(true)}>
+            <RefreshCw aria-hidden="true" /> Refresh
+          </button>
+          <button type="button" className={styles.modeBtn} onClick={handleExport}>
+            <Download aria-hidden="true" /> Export CSV
+          </button>
+        </div>
       </div>
 
       <div className={styles.analyticsGrid}>
-        {stats.map((s) => (
-          <div key={s.label} className={shellStyles.statCard}>
-            <div className={shellStyles.statTop}>
-              <span className={`${shellStyles.statIcon} ${shellStyles[s.color]}`}>●</span>
+        {stats.map((s) => {
+          const Icon = s.icon;
+          return (
+            <div key={s.label} className={shellStyles.statCard}>
+              <div className={shellStyles.statTop}>
+                <span className={`${shellStyles.statIcon} ${shellStyles[s.color]}`}>
+                  <Icon aria-hidden="true" />
+                </span>
+              </div>
+              <div className={shellStyles.statValue}>{s.value}</div>
+              <div className={shellStyles.statLabel}>{s.label}</div>
             </div>
-            <div className={shellStyles.statValue}>{s.value}</div>
-            <div className={shellStyles.statLabel}>{s.label}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className={shellStyles.section}>
@@ -1324,6 +1580,13 @@ function AnalyticsTab() {
           </div>
         </div>
         <div className={shellStyles.sectionBody}>
+          {(data.popular_courses || []).length === 0 && (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyStateIcon}><BarChart3 aria-hidden="true" /></div>
+              <div className={styles.emptyStateTitle}>Not enough data yet</div>
+              <p className={styles.emptyStateHint}>Enrollment stats will appear here as employees take courses.</p>
+            </div>
+          )}
           {(data.popular_courses || []).map((c) => (
             <div key={c.title} className={styles.barRow}>
               <div className={styles.barLabel}>{c.title}</div>
@@ -1351,13 +1614,25 @@ function AnalyticsTab() {
             <div key={d.department} className={styles.listRow}>
               <div className={styles.listInfo}>
                 <div className={styles.listTitle}>{d.department}</div>
-                <div className={styles.listMeta}>{d.completed}/{d.assigned} completed</div>
+                <div className={styles.listMeta}>
+                  <span className={styles.metaChip}><Users aria-hidden="true" />{d.completed}/{d.assigned} completed</span>
+                </div>
+                <div className={styles.barTrack} style={{ marginTop: 8, maxWidth: 320 }}>
+                  <div
+                    className={styles.barFill}
+                    style={{ width: `${d.assigned ? (d.completed / d.assigned) * 100 : 0}%` }}
+                  />
+                </div>
               </div>
-              <span className={styles.statusChip}>{d.completion_rate}%</span>
+              <span className={`${styles.statusChip} ${styles.completed}`}>{d.completion_rate}%</span>
             </div>
           ))}
           {!(data.department_comparison || []).length && (
-            <p className={styles.inlineNote}>No department data yet — assign courses to start tracking.</p>
+            <div className={styles.emptyState}>
+              <div className={styles.emptyStateIcon}><Building2 aria-hidden="true" /></div>
+              <div className={styles.emptyStateTitle}>No department data yet</div>
+              <p className={styles.emptyStateHint}>Assign courses to departments to start tracking performance.</p>
+            </div>
           )}
         </div>
       </div>
@@ -1561,15 +1836,30 @@ function ManagedLearningTab() {
             <p className={shellStyles.sectionDesc}>Import, edit, archive, and delete managed roadmap courses by designation and month.</p>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" className={styles.modeBtn} onClick={() => load(true)}>Refresh</button>
-          <button type="button" className={styles.modeBtn} onClick={resetForm}>New course</button>
+        <div className={styles.toolbar} style={{ marginBottom: 0 }}>
+          <div className={styles.toolbarRight}>
+            <button type="button" className={styles.modeBtn} onClick={() => load(true)}>
+              <RefreshCw aria-hidden="true" /> Refresh
+            </button>
+            <button type="button" className={styles.modeBtn} onClick={resetForm}>
+              <Plus aria-hidden="true" /> New course
+            </button>
+          </div>
         </div>
       </div>
 
       <div className={shellStyles.sectionBody}>
-        <div className={styles.filterBar} style={{ flexWrap: "wrap" }}>
-          <input className={styles.searchInput} placeholder="Search roadmap courses…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className={styles.filterBar}>
+          <div className={styles.searchField}>
+            <Search className={styles.searchFieldIcon} aria-hidden="true" />
+            <input
+              className={styles.searchFieldInput}
+              aria-label="Search roadmap courses"
+              placeholder="Search roadmap courses…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
           <select className={styles.filterSelect} value={provider} onChange={(e) => setProvider(e.target.value)}>
             <option value="">All providers</option>
             {(facets.providers || []).map((item) => <option key={item} value={item}>{item}</option>)}
@@ -1590,8 +1880,9 @@ function ManagedLearningTab() {
             <option value="">All competencies</option>
             {(facets.competencies || []).map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
-          <label className={styles.inlineNote} style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: 0 }}>
+          <label className={styles.checkPill}>
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+            <Archive aria-hidden="true" />
             Show archived
           </label>
         </div>
@@ -1603,28 +1894,60 @@ function ManagedLearningTab() {
                 <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
                 <div>
                   <div className={shellStyles.sectionTitle}>{form.id ? "Edit course" : "Add course"}</div>
-                  <p className={shellStyles.sectionDesc}>Manual course management stays configurable for LinkedIn Learning and other providers.</p>
+                  <p className={shellStyles.sectionDesc}>Manual course management for LinkedIn Learning and other providers.</p>
                 </div>
               </div>
             </div>
             <div className={shellStyles.sectionBody}>
-              <form className={styles.filterBar} onSubmit={handleSubmit} style={{ flexWrap: "wrap" }}>
-                <input className={styles.searchInput} placeholder="Provider" value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))} />
-                <input className={styles.searchInput} placeholder="Designation" value={form.designation} onChange={(e) => setForm((current) => ({ ...current, designation: e.target.value }))} />
-                <input className={styles.searchInput} placeholder="Learning month" value={form.learning_month} onChange={(e) => setForm((current) => ({ ...current, learning_month: e.target.value }))} />
-                <input className={styles.searchInput} placeholder="Category" value={form.category} onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))} />
-                <input className={styles.searchInput} placeholder="Competency" value={form.competency} onChange={(e) => setForm((current) => ({ ...current, competency: e.target.value }))} />
-                <input className={styles.searchInput} placeholder="Course title" value={form.title} onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))} required />
-                <input className={styles.searchInput} placeholder="Course URL" value={form.url} onChange={(e) => setForm((current) => ({ ...current, url: e.target.value }))} />
-                <input className={styles.searchInput} placeholder="Duration (minutes)" type="number" min="1" value={form.duration_minutes} onChange={(e) => setForm((current) => ({ ...current, duration_minutes: e.target.value }))} />
-                <textarea className={styles.searchInput} rows={3} placeholder="Description" value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} />
-                <label className={styles.inlineNote} style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: 0 }}>
+              <form className={styles.managedForm} onSubmit={handleSubmit}>
+                <label className={styles.fieldLabel}>
+                  Provider
+                  <input placeholder="e.g. LinkedIn Learning" value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))} />
+                </label>
+                <label className={styles.fieldLabel}>
+                  Designation
+                  <input placeholder="e.g. Software Engineer" value={form.designation} onChange={(e) => setForm((current) => ({ ...current, designation: e.target.value }))} />
+                </label>
+                <label className={styles.fieldLabel}>
+                  Learning month
+                  <input placeholder="e.g. 2025-03" value={form.learning_month} onChange={(e) => setForm((current) => ({ ...current, learning_month: e.target.value }))} />
+                </label>
+                <label className={styles.fieldLabel}>
+                  Category
+                  <input placeholder="e.g. Cloud" value={form.category} onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))} />
+                </label>
+                <label className={styles.fieldLabel}>
+                  Competency
+                  <input placeholder="e.g. Azure" value={form.competency} onChange={(e) => setForm((current) => ({ ...current, competency: e.target.value }))} />
+                </label>
+                <label className={styles.fieldLabel}>
+                  Duration (minutes)
+                  <input type="number" min="1" placeholder="e.g. 45" value={form.duration_minutes} onChange={(e) => setForm((current) => ({ ...current, duration_minutes: e.target.value }))} />
+                </label>
+                <label className={`${styles.fieldLabel} ${styles.wide}`}>
+                  Course title
+                  <input placeholder="e.g. Azure Fundamentals" value={form.title} onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))} required />
+                </label>
+                <label className={`${styles.fieldLabel} ${styles.wide}`}>
+                  Course URL
+                  <input placeholder="https://www.linkedin.com/learning/…" value={form.url} onChange={(e) => setForm((current) => ({ ...current, url: e.target.value }))} />
+                </label>
+                <label className={`${styles.fieldLabel} ${styles.wide}`}>
+                  Description
+                  <textarea rows={3} placeholder="Short summary shown in the catalog" value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} />
+                </label>
+                <label className={styles.checkPill} style={{ justifySelf: "start" }}>
                   <input type="checkbox" checked={Boolean(form.archived)} onChange={(e) => setForm((current) => ({ ...current, archived: e.target.checked }))} />
+                  <Archive aria-hidden="true" />
                   Archived
                 </label>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button type="submit" className={styles.smallBtn} disabled={saving}>{saving ? "Saving…" : form.id ? "Update course" : "Create course"}</button>
-                  <button type="button" className={styles.smallBtn} onClick={resetForm}>Clear</button>
+                <div className={styles.formActions}>
+                  <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
+                    <Check aria-hidden="true" /> {saving ? "Saving…" : form.id ? "Update course" : "Create course"}
+                  </button>
+                  <button type="button" className={styles.smallBtn} onClick={resetForm}>
+                    <X aria-hidden="true" /> Clear
+                  </button>
                 </div>
               </form>
             </div>
@@ -1641,30 +1964,43 @@ function ManagedLearningTab() {
               </div>
             </div>
             <div className={shellStyles.sectionBody}>
-              <input ref={fileInputRef} type="file" accept=".xlsx,.csv" onChange={(e) => handlePreviewUpload(e.target.files?.[0])} />
-              {previewBusy && <p className={styles.inlineNote}>Parsing spreadsheet…</p>}
+              {!preview && (
+                <label className={styles.fileDrop}>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,.csv"
+                    className={styles.fileDropInput}
+                    onChange={(e) => handlePreviewUpload(e.target.files?.[0])}
+                  />
+                  <Upload className={styles.fileDropIcon} aria-hidden="true" />
+                  <strong>Choose a spreadsheet</strong>
+                  <span>.xlsx or .csv — parsed and previewed before saving</span>
+                </label>
+              )}
+              {previewBusy && <p className={styles.inlineNote} style={{ marginTop: 12 }}>Parsing spreadsheet…</p>}
               {preview ? (
                 <div style={{ marginTop: 12 }}>
-                  <div className={styles.analyticsGrid}>
-                    <div className={shellStyles.statCard}><div className={shellStyles.statValue}>{preview.total_rows}</div><div className={shellStyles.statLabel}>Rows</div></div>
-                    <div className={shellStyles.statCard}><div className={shellStyles.statValue}>{preview.new_courses}</div><div className={shellStyles.statLabel}>New</div></div>
-                    <div className={shellStyles.statCard}><div className={shellStyles.statValue}>{preview.updated_courses}</div><div className={shellStyles.statLabel}>Updated</div></div>
-                    <div className={shellStyles.statCard}><div className={shellStyles.statValue}>{preview.duplicate_courses}</div><div className={shellStyles.statLabel}>Duplicate</div></div>
-                    <div className={shellStyles.statCard}><div className={shellStyles.statValue}>{preview.invalid_rows}</div><div className={shellStyles.statLabel}>Invalid</div></div>
+                  <div className={styles.importStats}>
+                    <div className={styles.importStat}><div className={styles.importStatValue}>{preview.total_rows}</div><div className={styles.importStatLabel}>Rows</div></div>
+                    <div className={styles.importStat}><div className={styles.importStatValue}>{preview.new_courses}</div><div className={styles.importStatLabel}>New</div></div>
+                    <div className={styles.importStat}><div className={styles.importStatValue}>{preview.updated_courses}</div><div className={styles.importStatLabel}>Updated</div></div>
+                    <div className={styles.importStat}><div className={styles.importStatValue}>{preview.duplicate_courses}</div><div className={styles.importStatLabel}>Duplicate</div></div>
+                    <div className={styles.importStat}><div className={styles.importStatValue}>{preview.invalid_rows}</div><div className={styles.importStatLabel}>Invalid</div></div>
                   </div>
-                  <div className={styles.courseActions} style={{ marginTop: 12 }}>
+                  <div className={styles.formActions}>
                     <button type="button" className={styles.assignCourseBtn} disabled={saving} onClick={handleCommitImport}>
-                      {saving ? "Importing…" : "Confirm import"}
+                      <Check aria-hidden="true" /> {saving ? "Importing…" : "Confirm import"}
                     </button>
-                    <button type="button" className={styles.smallBtn} onClick={() => { setPreview(null); setPreviewFile(null); }}>Clear preview</button>
+                    <button type="button" className={styles.smallBtn} onClick={() => { setPreview(null); setPreviewFile(null); }}>
+                      <X aria-hidden="true" /> Clear preview
+                    </button>
                   </div>
-                  <div className={styles.inlineNote} style={{ marginTop: 8 }}>
+                  <p className={styles.inlineNote} style={{ marginTop: 10, marginBottom: 0 }}>
                     {preview.filename || "Uploaded file"} · {preview.rows?.length || 0} preview row(s)
-                  </div>
+                  </p>
                 </div>
-              ) : (
-                <p className={styles.inlineNote}>Choose a roadmap spreadsheet to preview parsed hierarchy before saving.</p>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
@@ -1682,22 +2018,30 @@ function ManagedLearningTab() {
             </div>
             <div className={shellStyles.sectionBody}>
               {hierarchy.map((designationNode) => (
-                <div key={designationNode.designation} style={{ marginBottom: 16, border: "1px solid var(--border)", borderRadius: 14, padding: 14 }}>
-                  <div style={{ fontWeight: 700, color: "var(--navy)" }}>{designationNode.designation}</div>
-                  <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+                <div key={designationNode.designation} className={styles.hierarchyDept}>
+                  <div className={styles.hierarchyDeptTitle}>
+                    <FolderTree aria-hidden="true" />
+                    {designationNode.designation}
+                  </div>
+                  <div className={styles.hierarchyMonths}>
                     {(designationNode.months || []).map((monthNode) => (
-                      <div key={monthNode.learning_month} style={{ background: "#f8fafc", borderRadius: 12, padding: 12 }}>
-                        <div style={{ fontWeight: 650, marginBottom: 8 }}>{monthNode.learning_month}</div>
-                        {(monthNode.categories || []).map((categoryNode) => (
-                          <div key={categoryNode.category} style={{ marginBottom: 8 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600 }}>{categoryNode.category}</div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
-                              {(categoryNode.competencies || []).map((competencyNode) => (
-                                <span key={competencyNode.competency} className={styles.statusChip}>{competencyNode.competency}</span>
-                              ))}
+                      <div key={monthNode.learning_month} className={styles.hierarchyMonth}>
+                        <div className={styles.hierarchyMonthTitle}>
+                          <Calendar aria-hidden="true" />
+                          {monthNode.learning_month}
+                        </div>
+                        <div className={styles.hierarchyCats}>
+                          {(monthNode.categories || []).map((categoryNode) => (
+                            <div key={categoryNode.category}>
+                              <div className={styles.hierarchyCatTitle}>{categoryNode.category}</div>
+                              <div className={styles.hierarchyChips}>
+                                {(categoryNode.competencies || []).map((competencyNode) => (
+                                  <span key={competencyNode.competency} className={styles.hierarchyChip}>{competencyNode.competency}</span>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1708,7 +2052,13 @@ function ManagedLearningTab() {
         )}
 
         {loading && <RecruiterLoader inline />}
-        {!loading && courses.length === 0 && <p className={styles.inlineNote}>No managed roadmap courses found for the current filters.</p>}
+        {!loading && courses.length === 0 && (
+          <div className={styles.emptyState}>
+            <div className={styles.emptyStateIcon}><BookOpen aria-hidden="true" /></div>
+            <div className={styles.emptyStateTitle}>No managed courses</div>
+            <p className={styles.emptyStateHint}>Clear your filters or add a new course to build your LinkedIn Learning roadmap.</p>
+          </div>
+        )}
 
         <div className={styles.courseGrid}>
           {courses.map((course) => (
@@ -1719,18 +2069,26 @@ function ManagedLearningTab() {
               </div>
               <div className={styles.courseTitle}>{course.title}</div>
               <div className={styles.courseMeta}>
-                {course.designation || "—"} · {course.learning_month || "—"} · {course.duration_minutes || "—"} min
+                {course.designation ? <span className={styles.metaChip}><Briefcase aria-hidden="true" />{course.designation}</span> : null}
+                {course.learning_month ? <span className={styles.metaChip}><Calendar aria-hidden="true" />{course.learning_month}</span> : null}
+                <span className={styles.metaChip}><Clock aria-hidden="true" />{course.duration_minutes || "—"} min</span>
               </div>
               <p className={styles.courseSummary}>{[course.category, course.competency, course.summary].filter(Boolean).join(" · ")}</p>
               <div className={styles.courseActions}>
                 {course.url && (
-                  <a href={course.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Preview</a>
+                  <a href={course.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
+                    <Eye aria-hidden="true" /> Preview
+                  </a>
                 )}
-                <button type="button" className={styles.smallBtn} onClick={() => beginEdit(course)}>Edit</button>
-                <button type="button" className={styles.smallBtn} onClick={() => handleArchiveToggle(course)}>
-                  {course.archived ? "Restore" : "Archive"}
+                <button type="button" className={styles.smallBtn} onClick={() => beginEdit(course)}>
+                  <Pencil aria-hidden="true" /> Edit
                 </button>
-                <button type="button" className={styles.smallBtn} onClick={() => handleDelete(course)}>Delete</button>
+                <button type="button" className={styles.smallBtn} onClick={() => handleArchiveToggle(course)}>
+                  {course.archived ? <><RefreshCw aria-hidden="true" /> Restore</> : <><Archive aria-hidden="true" /> Archive</>}
+                </button>
+                <button type="button" className={styles.smallBtn} onClick={() => handleDelete(course)}>
+                  <Trash2 aria-hidden="true" /> Delete
+                </button>
               </div>
             </div>
           ))}
@@ -1744,13 +2102,13 @@ function ManagedLearningTab() {
 // Career Framework Tab                                                          //
 // ═══════════════════════════════════════════════════════════════════════════════ //
 
-const CF_DEPARTMENTS = ["MBS", "Innovations", "QA", "AI", "HR", "Finance", "IT", "Infra", "Odyssey"];
-
-function CareerFrameworkTab() {
+function CareerFrameworkTab({ initialDepartment = null }) {
   const [tracks, setTracks] = useState([]);
   const [levels, setLevels] = useState([]);
+  const [allDepartments, setAllDepartments] = useState([]);
+  const [selectedDept, setSelectedDept] = useState(initialDepartment || "");
+  const [deptSearch, setDeptSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [deptFilter, setDeptFilter] = useState("");
   const [showAddTrack, setShowAddTrack] = useState(false);
   const [showAddLevel, setShowAddLevel] = useState(null);
   const [editingLevel, setEditingLevel] = useState(null);
@@ -1759,23 +2117,35 @@ function CareerFrameworkTab() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef(null);
 
+  useEffect(() => {
+    if (initialDepartment) setSelectedDept(initialDepartment);
+  }, [initialDepartment]);
+
   const load = useCallback(async () => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
     try {
-      const [trackData, levelData] = await Promise.all([
-        listCareerTracks(token, deptFilter || undefined),
-        listCareerLevels(token, deptFilter || undefined),
+      const [trackData, levelData, taxonomy] = await Promise.all([
+        listCareerTracks(token),
+        listCareerLevels(token),
+        getOrgTaxonomy(token),
       ]);
       setTracks(trackData.tracks || []);
       setLevels(levelData.levels || []);
+      const taxDepts = taxonomy.departments || [];
+      const cfDepts = [...new Set([
+        ...taxDepts,
+        ...(trackData.tracks || []).map((t) => t.department),
+        ...(levelData.levels || []).map((l) => l.department),
+      ].filter(Boolean))].sort();
+      setAllDepartments(cfDepts);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not load career framework."));
     } finally {
       setLoading(false);
     }
-  }, [deptFilter]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1831,9 +2201,7 @@ function CareerFrameworkTab() {
     try {
       const result = await importCareerFramework(token, importFile);
       toast.success(`Imported ${result.imported} levels. Skipped: ${result.skipped}`);
-      if (result.errors?.length) {
-        toast.warn(`${result.errors.length} rows had errors.`);
-      }
+      if (result.errors?.length) toast.warn(`${result.errors.length} rows had errors.`);
       setImportFile(null);
       load();
     } catch (err) {
@@ -1843,27 +2211,32 @@ function CareerFrameworkTab() {
     }
   }
 
-  // Group levels by department, merge with tracks that have no levels
   const levelsByDept = {};
   for (const level of levels) {
     const dept = level.department;
     if (!levelsByDept[dept]) levelsByDept[dept] = [];
     levelsByDept[dept].push(level);
   }
-  // Add tracks that don't have any levels yet
   for (const track of tracks) {
     const dept = track.department;
-    if (!levelsByDept[dept]) {
-      levelsByDept[dept] = [];
-    }
+    if (!levelsByDept[dept]) levelsByDept[dept] = [];
   }
   for (const dept of Object.keys(levelsByDept)) {
     levelsByDept[dept].sort((a, b) => a.level_number - b.level_number);
   }
 
+  const filteredDepts = allDepartments.filter(
+    (d) => !deptSearch.trim() || d.toLowerCase().includes(deptSearch.toLowerCase())
+  );
+
+  const visibleDepts = selectedDept
+    ? Object.entries(levelsByDept).filter(([dept]) => dept === selectedDept)
+    : Object.entries(levelsByDept);
+
+  const totalLevels = Object.values(levelsByDept).reduce((s, a) => s + a.length, 0);
+
   return (
     <>
-      {/* Header with actions */}
       <div className={shellStyles.section}>
         <div className={shellStyles.sectionHead}>
           <div className={shellStyles.sectionHeadLeft}>
@@ -1871,38 +2244,42 @@ function CareerFrameworkTab() {
             <div>
               <div className={shellStyles.sectionTitle}>Career Framework</div>
               <p className={shellStyles.sectionDesc}>
-                Define career progression tracks by department. Each level specifies required skills, certifications, and learning paths.
+                Define career progression tracks by department — each level specifies required skills, certifications, and learning paths.
               </p>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <select className={styles.filterSelect} value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
-              <option value="">All departments</option>
-              {CF_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <button type="button" className={styles.modeBtn} onClick={() => setShowAddTrack(true)}>+ Add Track</button>
-            <button type="button" className={styles.modeBtn} onClick={() => fileInputRef.current?.click()}>Import CSV</button>
-            <button type="button" className={styles.modeBtn} onClick={handleExport}>Export CSV</button>
-            <button type="button" className={styles.modeBtn} onClick={() => window.open("/api/career-framework/template", "_blank")}>Download Template</button>
+            <button type="button" className={styles.modeBtn} onClick={() => setShowAddTrack(true)}>
+              <Plus aria-hidden="true" /> Add Track
+            </button>
+            <button type="button" className={styles.modeBtn} onClick={() => fileInputRef.current?.click()}>
+              <Upload aria-hidden="true" /> Import CSV
+            </button>
+            <button type="button" className={styles.modeBtn} onClick={handleExport}>
+              <Download aria-hidden="true" /> Export CSV
+            </button>
+            <button type="button" className={styles.modeBtn} onClick={() => window.open("/api/career-framework/template", "_blank")}>
+              <FileText aria-hidden="true" /> Template
+            </button>
             <input ref={fileInputRef} type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
           </div>
         </div>
       </div>
 
-      {/* Import preview */}
       {importFile && (
         <div className={shellStyles.section}>
           <div className={shellStyles.sectionBody} style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <span>File: {importFile.name}</span>
-            <button type="button" className={styles.modeBtn} onClick={handleImport} disabled={importing}>
-              {importing ? "Importing…" : "Confirm Import"}
+            <span className={styles.metaChip}><FileText aria-hidden="true" />{importFile.name}</span>
+            <button type="button" className={styles.assignCourseBtn} onClick={handleImport} disabled={importing}>
+              <Check aria-hidden="true" /> {importing ? "Importing…" : "Confirm Import"}
             </button>
-            <button type="button" className={styles.modeBtn} onClick={() => setImportFile(null)}>Cancel</button>
+            <button type="button" className={styles.smallBtn} onClick={() => setImportFile(null)}>
+              <X aria-hidden="true" /> Cancel
+            </button>
           </div>
         </div>
       )}
 
-      {/* Add Track Form */}
       {showAddTrack && (
         <div className={shellStyles.section}>
           <div className={shellStyles.sectionHead}>
@@ -1914,146 +2291,229 @@ function CareerFrameworkTab() {
             </div>
           </div>
           <div className={shellStyles.sectionBody}>
-            <form onSubmit={handleCreateTrack} style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+            <form onSubmit={handleCreateTrack} className={styles.managedForm}>
               <label className={styles.fieldLabel}>
                 Department
                 <select value={newTrack.department} onChange={(e) => setNewTrack((f) => ({ ...f, department: e.target.value }))} required>
                   <option value="">Select department</option>
-                  {CF_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  {allDepartments.map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
               </label>
               <label className={styles.fieldLabel}>
                 Track Name
-                <input value={newTrack.track_name} onChange={(e) => setNewTrack((f) => ({ ...f, track_name: e.target.value }))} placeholder="e.g., Software Engineering" required />
+                <input value={newTrack.track_name} onChange={(e) => setNewTrack((f) => ({ ...f, track_name: e.target.value }))} placeholder="e.g. Software Engineering" required />
               </label>
-              <label className={styles.fieldLabel}>
+              <label className={`${styles.fieldLabel} ${styles.wide}`}>
                 Description
                 <input value={newTrack.description} onChange={(e) => setNewTrack((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description" />
               </label>
-              <button type="submit" className={styles.modeBtn}>Create Track</button>
-              <button type="button" className={styles.modeBtn} onClick={() => setShowAddTrack(false)}>Cancel</button>
+              <div className={styles.formActions}>
+                <button type="submit" className={styles.assignCourseBtn}>
+                  <Check aria-hidden="true" /> Create Track
+                </button>
+                <button type="button" className={styles.smallBtn} onClick={() => setShowAddTrack(false)}>
+                  <X aria-hidden="true" /> Cancel
+                </button>
+              </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Career Ladder Views by Department */}
-      {loading && <RecruiterLoader inline />}
-      {!loading && Object.keys(levelsByDept).length === 0 && tracks.length === 0 && (
+      {loading ? (
+        <RecruiterLoader inline />
+      ) : allDepartments.length === 0 ? (
         <div className={shellStyles.section}>
           <div className={shellStyles.sectionBody}>
-            <p className={styles.inlineNote}>No career framework defined yet. Use "Import CSV" to set up your career progression framework, or add tracks manually.</p>
+            <div className={styles.emptyState}>
+              <div className={styles.emptyStateIcon}><Briefcase aria-hidden="true" /></div>
+              <div className={styles.emptyStateTitle}>No career framework yet</div>
+              <p className={styles.emptyStateHint}>Use "Import CSV" to set up your career progression framework, or add tracks manually.</p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.deptLayout}>
+          <div className={styles.deptSidebar}>
+            <div className={styles.deptSidebarHead}>
+              <div className={styles.deptSidebarTitle}>Departments</div>
+              <div className={styles.deptSidebarHint}>
+                {filteredDepts.length} department{filteredDepts.length !== 1 ? "s" : ""} · {totalLevels} total levels
+              </div>
+            </div>
+            <div className={styles.deptSearch}>
+              <div style={{ position: "relative" }}>
+                <Search className={styles.deptSearchIcon} aria-hidden="true" />
+                <input
+                  className={styles.deptSearchInput}
+                  aria-label="Search departments"
+                  placeholder="Search departments…"
+                  value={deptSearch}
+                  onChange={(e) => setDeptSearch(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className={styles.deptItemList}>
+              <button
+                type="button"
+                className={`${styles.deptItem} ${!selectedDept ? styles.deptItemActive : ""}`}
+                onClick={() => setSelectedDept("")}
+              >
+                <div className={styles.deptItemIcon} style={{ background: "var(--green-light)", color: "var(--green)" }}>
+                  <ListChecks aria-hidden="true" />
+                </div>
+                <div className={styles.deptItemBody}>
+                  <div className={styles.deptItemName}>All departments</div>
+                  <div className={styles.deptItemMeta}>
+                    {totalLevels} levels · {Object.keys(levelsByDept).length} depts
+                  </div>
+                </div>
+              </button>
+              {filteredDepts.map((d) => {
+                const lvlCount = (levelsByDept[d] || []).length;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`${styles.deptItem} ${selectedDept === d ? styles.deptItemActive : ""}`}
+                    onClick={() => setSelectedDept(d)}
+                  >
+                    <div className={styles.deptItemIcon}>
+                      {d.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className={styles.deptItemBody}>
+                      <div className={styles.deptItemName}>{d}</div>
+                      <div className={styles.deptItemMeta}>
+                        <GraduationCap aria-hidden="true" /> {lvlCount} level{lvlCount !== 1 ? "s" : ""}
+                      </div>
+                    </div>
+                    <span className={styles.deptItemBadge}>{lvlCount}</span>
+                  </button>
+                );
+              })}
+              {filteredDepts.length === 0 && (
+                <div style={{ padding: "20px 14px", textAlign: "center", fontSize: 12, color: "var(--text-muted)" }}>
+                  No departments match
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ padding: 0, overflowY: "auto" }}>
+            {visibleDepts.length === 0 && (
+              <div style={{ padding: 40 }}>
+                <div className={styles.emptyState}>
+                  <div className={styles.emptyStateIcon}><Milestone aria-hidden="true" /></div>
+                  <div className={styles.emptyStateTitle}>
+                    {selectedDept ? `No levels in ${selectedDept}` : "No career levels defined"}
+                  </div>
+                  <p className={styles.emptyStateHint}>
+                    {selectedDept
+                      ? "Add the first career level to start building this department's progression."
+                      : "Import a CSV or add tracks manually to define career progressions."}
+                  </p>
+                </div>
+              </div>
+            )}
+            {visibleDepts.map(([dept, deptLevels]) => (
+              <div key={dept} style={{ padding: "24px 28px", borderBottom: "1px solid var(--border-soft)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui, sans-serif" }}>
+                      {dept}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                      {deptLevels.length} career level{deptLevels.length !== 1 ? "s" : ""} · ranked by progression order
+                    </div>
+                  </div>
+                  <button type="button" className={styles.modeBtn} onClick={() => setShowAddLevel({ department: dept })}>
+                    <Plus aria-hidden="true" /> Add Level
+                  </button>
+                </div>
+                {deptLevels.length > 0 && (
+                  <div className={styles.cfLadder}>
+                    {deptLevels.map((level, idx) => (
+                      <div key={level.id} className={styles.cfLevelWrap}>
+                        {idx > 0 && (
+                          <div className={styles.cfArrow}>
+                            <ChevronRight aria-hidden="true" />
+                          </div>
+                        )}
+                        <div className={styles.cfLevelCard}>
+                          <div className={styles.cfLevelHead}>
+                            <span className={styles.cfLevelBadge}>
+                              <Milestone aria-hidden="true" />Level {level.level_number}
+                            </span>
+                            <div className={styles.cfLevelActions}>
+                              <button type="button" className={styles.cfLevelActionBtn} onClick={() => setEditingLevel(level)}>
+                                <Pencil aria-hidden="true" /> Edit
+                              </button>
+                              <button type="button" className={`${styles.cfLevelActionBtn} ${styles.danger}`} onClick={() => handleDeleteLevel(level.id)}>
+                                <Trash2 aria-hidden="true" /> Delete
+                              </button>
+                            </div>
+                          </div>
+                          <div className={styles.cfLevelTitle}>{level.role_title}</div>
+                          {level.min_experience_years > 0 && (
+                            <div className={styles.cfLevelFact}>
+                              <Clock aria-hidden="true" />Min {level.min_experience_years} years experience
+                            </div>
+                          )}
+                          {level.min_time_in_current_role_months > 0 && (
+                            <div className={styles.cfLevelFact}>
+                              <Calendar aria-hidden="true" />Min {level.min_time_in_current_role_months} months in role
+                            </div>
+                          )}
+                          {level.required_skills?.length > 0 && (
+                            <>
+                              <div className={styles.cfSectionLabel}>Skills</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {level.required_skills.map((s, i) => (
+                                  <span key={i} className={styles.cfSkillChip}>{s.skill} ({s.proficiency})</span>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                          {level.required_certifications?.length > 0 && (
+                            <>
+                              <div className={styles.cfSectionLabel}>Certifications</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {level.required_certifications.map((c, i) => (
+                                  <span key={i} className={styles.cfCertChip}>{c.certification}</span>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                          {level.learning_path?.length > 0 && (
+                            <>
+                              <div className={styles.cfSectionLabel}>Learning Path ({level.learning_path.length} courses)</div>
+                              {level.learning_path.slice(0, 3).map((c, i) => (
+                                <div key={i} className={styles.cfCourseRow}>
+                                  <span className={styles.cfCourseNum}>{c.order}.</span>
+                                  {c.course_title}
+                                </div>
+                              ))}
+                              {level.learning_path.length > 3 && (
+                                <div className={styles.cfMore}>+{level.learning_path.length - 3} more</div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {Object.entries(levelsByDept).map(([dept, deptLevels]) => (
-        <div key={dept} className={shellStyles.section}>
-          <div className={shellStyles.sectionHead}>
-            <div className={shellStyles.sectionHeadLeft}>
-              <span className={`${shellStyles.bar} ${shellStyles.green}`} />
-              <div>
-                <div className={shellStyles.sectionTitle}>{dept} — Career Progression</div>
-                <p className={shellStyles.sectionDesc}>{deptLevels.length} level{deptLevels.length !== 1 ? "s" : ""}</p>
-              </div>
-            </div>
-          </div>
-          <div className={shellStyles.sectionBody}>
-            <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16 }}>
-              {deptLevels.length === 0 && (
-                <p className={styles.inlineNote} style={{ marginBottom: 0 }}>No levels defined yet. Add the first career level below.</p>
-              )}
-              {deptLevels.map((level, idx) => (
-                <div key={level.id} style={{ minWidth: 280, flex: "0 0 auto" }}>
-                  {idx > 0 && <div style={{ position: "relative", top: 18, right: 8, color: "#999", fontWeight: 700 }}>→</div>}
-                  <div style={{
-                    border: "1px solid #E3E9F0",
-                    borderRadius: 8,
-                    padding: 16,
-                    background: "#fff",
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#00A9CE", textTransform: "uppercase" }}>Level {level.level_number}</div>
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <button type="button" onClick={() => setEditingLevel(level)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#666" }}>Edit</button>
-                        <button type="button" onClick={() => handleDeleteLevel(level.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#e74c3c" }}>Delete</button>
-                      </div>
-                    </div>
-                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{level.role_title}</div>
-                    {level.min_experience_years > 0 && (
-                      <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>Min {level.min_experience_years} years experience</div>
-                    )}
-                    {level.min_time_in_current_role_months > 0 && (
-                      <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>Min {level.min_time_in_current_role_months} months in role</div>
-                    )}
-                    {level.required_skills?.length > 0 && (
-                      <div style={{ marginTop: 8 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#999", marginBottom: 4 }}>Skills</div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                          {level.required_skills.map((s, i) => (
-                            <span key={i} style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "#f0f4f8", color: "#333" }}>
-                              {s.skill} ({s.proficiency})
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {level.required_certifications?.length > 0 && (
-                      <div style={{ marginTop: 8 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#999", marginBottom: 4 }}>Certifications</div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                          {level.required_certifications.map((c, i) => (
-                            <span key={i} style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "#FFF3CD", color: "#856404" }}>
-                              {c.certification}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {level.learning_path?.length > 0 && (
-                      <div style={{ marginTop: 8 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#999", marginBottom: 4 }}>Learning Path ({level.learning_path.length} courses)</div>
-                        {level.learning_path.slice(0, 3).map((c, i) => (
-                          <div key={i} style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>
-                            {c.order}. {c.course_title}
-                          </div>
-                        ))}
-                        {level.learning_path.length > 3 && (
-                          <div style={{ fontSize: 11, color: "#999" }}>+{level.learning_path.length - 3} more</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              <div style={{ minWidth: 200, flex: "0 0 auto", display: "flex", alignItems: "center" }}>
-                <button
-                  type="button"
-                  onClick={() => setShowAddLevel({ department: dept })}
-                  style={{
-                    border: "2px dashed #ccc",
-                    borderRadius: 8,
-                    padding: "24px 16px",
-                    background: "transparent",
-                    cursor: "pointer",
-                    color: "#999",
-                    textAlign: "center",
-                    width: "100%",
-                  }}
-                >
-                  + Add Level
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ))}
-
-      {/* Add/Edit Level Form */}
       {(showAddLevel || editingLevel) && (
         <CFAddEditLevelForm
           initialData={showAddLevel ? { department: showAddLevel.department } : editingLevel}
           isEdit={Boolean(editingLevel)}
+          allDepartments={allDepartments}
           onClose={() => { setShowAddLevel(null); setEditingLevel(null); }}
           onSaved={() => { setShowAddLevel(null); setEditingLevel(null); load(); }}
         />
@@ -2062,7 +2522,7 @@ function CareerFrameworkTab() {
   );
 }
 
-function CFAddEditLevelForm({ initialData, isEdit, onClose, onSaved }) {
+function CFAddEditLevelForm({ initialData, isEdit, allDepartments = [], onClose, onSaved }) {
   const [form, setForm] = useState({
     department: initialData?.department || "",
     track_name: initialData?.track_name || "",
@@ -2165,34 +2625,34 @@ function CFAddEditLevelForm({ initialData, isEdit, onClose, onSaved }) {
       </div>
       <div className={shellStyles.sectionBody}>
         <form onSubmit={handleSave}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
+          <div className={styles.formGrid3}>
             <label className={styles.fieldLabel}>
               Department
               <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} required disabled={isEdit}>
                 <option value="">Select</option>
-                {CF_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                {allDepartments.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </label>
             <label className={styles.fieldLabel}>
               Track Name
-              <input value={form.track_name} onChange={(e) => setForm((f) => ({ ...f, track_name: e.target.value }))} placeholder="e.g., Software Engineering" required disabled={isEdit} />
+              <input value={form.track_name} onChange={(e) => setForm((f) => ({ ...f, track_name: e.target.value }))} placeholder="e.g. Software Engineering" required disabled={isEdit} />
             </label>
             <label className={styles.fieldLabel}>
               Level Number
               <input type="number" min="1" max="20" value={form.level_number} onChange={(e) => setForm((f) => ({ ...f, level_number: parseInt(e.target.value) || 1 }))} required disabled={isEdit} />
             </label>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+          <div className={styles.formGrid2}>
             <label className={styles.fieldLabel}>
               Role Title
-              <input value={form.role_title} onChange={(e) => setForm((f) => ({ ...f, role_title: e.target.value }))} placeholder="e.g., Senior Consultant" required />
+              <input value={form.role_title} onChange={(e) => setForm((f) => ({ ...f, role_title: e.target.value }))} placeholder="e.g. Senior Consultant" required />
             </label>
             <label className={styles.fieldLabel}>
               Description
               <input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description" />
             </label>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
+          <div className={styles.formGrid3}>
             <label className={styles.fieldLabel}>
               Min Experience (Years)
               <input type="number" min="0" max="50" step="0.5" value={form.min_experience_years} onChange={(e) => setForm((f) => ({ ...f, min_experience_years: parseFloat(e.target.value) || 0 }))} />
@@ -2201,65 +2661,81 @@ function CFAddEditLevelForm({ initialData, isEdit, onClose, onSaved }) {
               Min Time in Role (Months)
               <input type="number" min="0" max="120" value={form.min_time_in_current_role_months} onChange={(e) => setForm((f) => ({ ...f, min_time_in_current_role_months: parseInt(e.target.value) || 0 }))} />
             </label>
-            <label className={styles.fieldLabel} style={{ display: "flex", alignItems: "end", gap: 8 }}>
+            <label className={styles.cfCheckRow}>
               <input type="checkbox" checked={form.manager_approval_required} onChange={(e) => setForm((f) => ({ ...f, manager_approval_required: e.target.checked }))} />
               Manager approval required
             </label>
           </div>
 
           {/* Skills */}
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 18 }}>
             <div className={styles.fieldLabel}>Required Skills</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <input value={newSkill.skill} onChange={(e) => setNewSkill((f) => ({ ...f, skill: e.target.value }))} placeholder="Skill name" style={{ flex: 2 }} />
-              <select value={newSkill.proficiency} onChange={(e) => setNewSkill((f) => ({ ...f, proficiency: e.target.value }))} style={{ flex: 1 }}>
+            <div className={styles.tagInputRow}>
+              <input value={newSkill.skill} onChange={(e) => setNewSkill((f) => ({ ...f, skill: e.target.value }))} placeholder="Skill name" />
+              <select value={newSkill.proficiency} onChange={(e) => setNewSkill((f) => ({ ...f, proficiency: e.target.value }))}>
                 {["Beginner", "Intermediate", "Advanced", "Expert"].map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
-              <button type="button" onClick={addSkill} className={styles.modeBtn}>Add</button>
+              <button type="button" onClick={addSkill} className={styles.modeBtn}><Plus aria-hidden="true" /> Add</button>
             </div>
-            {form.required_skills.map((s, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
-                <span style={{ fontSize: 13 }}>{s.skill}</span>
-                <span style={{ fontSize: 11, color: "#666" }}>({s.proficiency})</span>
-                <button type="button" onClick={() => removeSkill(i)} style={{ background: "none", border: "none", color: "#e74c3c", cursor: "pointer", fontSize: 12 }}>Remove</button>
+            {form.required_skills.length > 0 && (
+              <div className={styles.chipList}>
+                {form.required_skills.map((s, i) => (
+                  <div key={i} className={styles.chipListRow}>
+                    <span>{s.skill}</span>
+                    <span style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 600 }}>({s.proficiency})</span>
+                    <button type="button" className={styles.removeBtn} onClick={() => removeSkill(i)}>Remove</button>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
 
           {/* Certifications */}
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 18 }}>
             <div className={styles.fieldLabel}>Required Certifications</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <input value={newCert} onChange={(e) => setNewCert(e.target.value)} placeholder="Certification name" style={{ flex: 1 }} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCert())} />
-              <button type="button" onClick={addCert} className={styles.modeBtn}>Add</button>
+            <div className={styles.tagInputRow}>
+              <input value={newCert} onChange={(e) => setNewCert(e.target.value)} placeholder="Certification name" onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCert())} />
+              <button type="button" onClick={addCert} className={styles.modeBtn}><Plus aria-hidden="true" /> Add</button>
             </div>
-            {form.required_certifications.map((c, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
-                <span style={{ fontSize: 13 }}>{c.certification}</span>
-                <button type="button" onClick={() => removeCert(i)} style={{ background: "none", border: "none", color: "#e74c3c", cursor: "pointer", fontSize: 12 }}>Remove</button>
+            {form.required_certifications.length > 0 && (
+              <div className={styles.chipList}>
+                {form.required_certifications.map((c, i) => (
+                  <div key={i} className={styles.chipListRow}>
+                    <span>{c.certification}</span>
+                    <button type="button" className={styles.removeBtn} onClick={() => removeCert(i)}>Remove</button>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
 
           {/* Learning Path */}
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 18 }}>
             <div className={styles.fieldLabel}>Learning Path (Courses)</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <input value={newCourse} onChange={(e) => setNewCourse(e.target.value)} placeholder="Course title" style={{ flex: 1 }} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCourse())} />
-              <button type="button" onClick={addCourse} className={styles.modeBtn}>Add</button>
+            <div className={styles.tagInputRow}>
+              <input value={newCourse} onChange={(e) => setNewCourse(e.target.value)} placeholder="Course title" onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCourse())} />
+              <button type="button" onClick={addCourse} className={styles.modeBtn}><Plus aria-hidden="true" /> Add</button>
             </div>
-            {form.learning_path.map((c, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
-                <span style={{ fontSize: 11, color: "#999", minWidth: 20 }}>{c.order}.</span>
-                <span style={{ fontSize: 13 }}>{c.course_title}</span>
-                <button type="button" onClick={() => removeCourse(i)} style={{ background: "none", border: "none", color: "#e74c3c", cursor: "pointer", fontSize: 12 }}>Remove</button>
+            {form.learning_path.length > 0 && (
+              <div className={styles.chipList}>
+                {form.learning_path.map((c, i) => (
+                  <div key={i} className={styles.chipListRow}>
+                    <span className={styles.courseOrderNum}>{c.order}.</span>
+                    <span>{c.course_title}</span>
+                    <button type="button" className={styles.removeBtn} onClick={() => removeCourse(i)}>Remove</button>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
-            <button type="submit" className={styles.modeBtn} disabled={saving}>{saving ? "Saving…" : isEdit ? "Update Level" : "Create Level"}</button>
-            <button type="button" className={styles.modeBtn} onClick={onClose}>Cancel</button>
+          <div className={styles.formActions}>
+            <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
+              <Check aria-hidden="true" /> {saving ? "Saving…" : isEdit ? "Update Level" : "Create Level"}
+            </button>
+            <button type="button" className={styles.smallBtn} onClick={onClose}>
+              <X aria-hidden="true" /> Cancel
+            </button>
           </div>
         </form>
       </div>
@@ -2348,7 +2824,7 @@ function PromotionReadinessTab() {
             </div>
           </div>
           <button type="button" className={styles.modeBtn} onClick={() => setShowAssign(!showAssign)}>
-            {showAssign ? "Close" : "+ Assign Career Path"}
+            {showAssign ? <><X aria-hidden="true" /> Close</> : <><Plus aria-hidden="true" /> Assign Career Path</>}
           </button>
         </div>
       </div>
@@ -2365,8 +2841,8 @@ function PromotionReadinessTab() {
             </div>
           </div>
           <div className={shellStyles.sectionBody}>
-            <form onSubmit={handleAssign} style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
-              <label className={styles.fieldLabel} style={{ flex: 2 }}>
+            <form className={styles.managedForm} onSubmit={handleAssign}>
+              <label className={styles.fieldLabel}>
                 Employee
                 <input
                   placeholder="Search by name or ID…"
@@ -2374,7 +2850,7 @@ function PromotionReadinessTab() {
                   onChange={(e) => setEmpQuery(e.target.value)}
                 />
                 {employees.length > 0 && (
-                  <select value={assignForm.employee_id} onChange={(e) => setAssignForm((f) => ({ ...f, employee_id: e.target.value }))} style={{ marginTop: 4 }}>
+                  <select value={assignForm.employee_id} onChange={(e) => setAssignForm((f) => ({ ...f, employee_id: e.target.value }))}>
                     <option value="">Select employee</option>
                     {employees.map((emp) => (
                       <option key={emp.employee_id} value={emp.employee_id}>{emp.full_name} ({emp.employee_id}) — {emp.job_title || "—"}</option>
@@ -2382,7 +2858,7 @@ function PromotionReadinessTab() {
                   </select>
                 )}
               </label>
-              <label className={styles.fieldLabel} style={{ flex: 2 }}>
+              <label className={styles.fieldLabel}>
                 Target Level
                 <select value={assignForm.target_level_id} onChange={(e) => setAssignForm((f) => ({ ...f, target_level_id: e.target.value }))} required>
                   <option value="">Select target level</option>
@@ -2391,12 +2867,18 @@ function PromotionReadinessTab() {
                   ))}
                 </select>
               </label>
-              <label className={styles.fieldLabel}>
+              <label className={`${styles.fieldLabel} ${styles.wide}`} style={{ maxWidth: 260 }}>
                 Target Date
                 <input type="date" value={assignForm.target_date} onChange={(e) => setAssignForm((f) => ({ ...f, target_date: e.target.value }))} />
               </label>
-              <button type="submit" className={styles.modeBtn} disabled={assigning}>{assigning ? "Assigning…" : "Assign"}</button>
-              <button type="button" className={styles.modeBtn} onClick={() => setShowAssign(false)}>Cancel</button>
+              <div className={styles.formActions}>
+                <button type="submit" className={styles.assignCourseBtn} disabled={assigning}>
+                  <Check aria-hidden="true" /> {assigning ? "Assigning…" : "Assign"}
+                </button>
+                <button type="button" className={styles.smallBtn} onClick={() => setShowAssign(false)}>
+                  <X aria-hidden="true" /> Cancel
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -2467,7 +2949,11 @@ function PromotionReadinessTab() {
       {!loading && report?.total_count === 0 && (
         <div className={shellStyles.section}>
           <div className={shellStyles.sectionBody}>
-            <p className={styles.inlineNote}>No employees have been assigned career paths yet. Use "+ Assign Career Path" to get started.</p>
+            <div className={styles.emptyState}>
+              <div className={styles.emptyStateIcon}><TrendingUp aria-hidden="true" /></div>
+              <div className={styles.emptyStateTitle}>No career paths assigned yet</div>
+              <p className={styles.emptyStateHint}>Use "+ Assign Career Path" to start tracking employee readiness for promotion.</p>
+            </div>
           </div>
         </div>
       )}
@@ -2476,24 +2962,49 @@ function PromotionReadinessTab() {
 }
 
 function CFAssignmentRow({ item }) {
-  const scoreColor = item.readiness_score >= 80 ? "#27ae60" : item.readiness_score >= 50 ? "#f39c12" : "#e74c3c";
+  const scoreColor =
+    item.readiness_score >= 80
+      ? "var(--green)"
+      : item.readiness_score >= 50
+      ? "var(--orange)"
+      : "var(--red)";
+  const circumference = 2 * Math.PI * 15.9155;
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid #f0f4f8", flexWrap: "wrap", gap: 8 }}>
-      <div>
-        <div style={{ fontWeight: 600 }}>{item.employee_name}</div>
-        <div style={{ fontSize: 13, color: "#666" }}>
-          {item.current_role} → {item.target_role} · {item.department}
+    <div className={styles.prRow}>
+      <div className={styles.prRowMain}>
+        <div className={styles.prRowName}>{item.employee_name}</div>
+        <div className={styles.prRowMeta}>
+          <span>{item.current_role}</span>
+          <span className={styles.prArrow}><ChevronRight aria-hidden="true" /></span>
+          <span>{item.target_role}</span>
+          <span className={styles.metaChip}><Building2 aria-hidden="true" />{item.department}</span>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-        {item.target_date && <span style={{ fontSize: 12, color: "#999" }}>Target: {item.target_date}</span>}
-        <div style={{ fontSize: 20, fontWeight: 800, color: scoreColor }}>{item.readiness_score}%</div>
-        <div style={{ height: 48, width: 48, position: "relative" }}>
+      <div className={styles.prRowSide}>
+        {item.target_date && (
+          <span className={styles.prTargetDate}>
+            <Calendar aria-hidden="true" /> Target: {item.target_date}
+          </span>
+        )}
+        <div className={styles.prRingWrap}>
           <svg viewBox="0 0 36 36" style={{ transform: "rotate(-90deg)" }}>
-            <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#E3E9F0" strokeWidth="3" />
-            <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke={scoreColor} strokeWidth="3" strokeDasharray={`${item.readiness_score}, 100`} />
+            <circle className={styles.prRingTrack} cx="18" cy="18" r="15.9155" />
+            <circle
+              className={styles.prRingFill}
+              cx="18"
+              cy="18"
+              r="15.9155"
+              stroke={scoreColor}
+              strokeDasharray={`${item.readiness_score * circumference / 100} ${circumference}`}
+            />
           </svg>
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: scoreColor }}>{item.readiness_score}%</div>
+          <div className={styles.prRingLabel} style={{ color: scoreColor }}>
+            {item.readiness_score}%
+          </div>
+        </div>
+        <div className={styles.prScore} style={{ color: scoreColor }}>
+          <div className={styles.prScoreValue}>{item.readiness_score}%</div>
+          <div className={styles.prScoreLabel}>Readiness</div>
         </div>
       </div>
     </div>
