@@ -268,78 +268,6 @@
   transform: translateY(-1px);
 }
 
-.kpiBlue {
-  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
-}
-
-.kpiGreen {
-  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
-}
-
-.kpiOrange {
-  background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);
-}
-
-.kpiPurple {
-  background: linear-gradient(135deg, #f5f3ff 0%, #ffffff 100%);
-}
-
-.kpiIcon {
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.kpiIcon svg {
-  width: 22px;
-  height: 22px;
-}
-
-.kpiBlue .kpiIcon {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-.kpiGreen .kpiIcon {
-  background: #dcfce7;
-  color: #16a34a;
-}
-
-.kpiOrange .kpiIcon {
-  background: #ffedd5;
-  color: #ea580c;
-}
-
-.kpiPurple .kpiIcon {
-  background: #ede9fe;
-  color: #7c3aed;
-}
-
-.kpiText {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.kpiValue {
-  font-size: 28px;
-  font-weight: 700;
-  color: #111827;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-}
-
-.kpiLabel {
-  font-size: 13px;
-  color: #64748b;
-  margin-top: 2px;
-  white-space: nowrap;
-}
-
 /* ── Checkbox ──────────────────────────────────────────── */
 .checkbox {
   position: relative;
@@ -1302,10 +1230,6 @@
 
   .kpiCard {
     min-width: 200px;
-  }
-
-  .kpiValue {
-    font-size: 24px;
   }
 
   .toolbarLeft {

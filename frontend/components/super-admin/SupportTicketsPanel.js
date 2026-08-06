@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import s from "./SupportTicketsPanel.module.css";
+import StatsCard from "@/components/super-admin/StatsCard";
 import { downloadCsv } from "@/utils/downloadCsv";
 import {
   adminListTickets,
@@ -437,8 +438,6 @@ export default function SupportTicketsPanel({ onNavigateToRecruiters = () => {} 
     ],
     [stats]
   );
-
-  const toneClass = { blue: s.kpiBlue, orange: s.kpiOrange, cyan: s.kpiCyan, green: s.kpiGreen, grey: s.kpiGrey, red: s.kpiRed };
 
   const assigneeOptions = useMemo(() => {
     const map = new Map();
@@ -1134,13 +1133,13 @@ export default function SupportTicketsPanel({ onNavigateToRecruiters = () => {} 
         <>
           <div className={s.kpiRow}>
             {kpis.map((kpi) => (
-              <div key={kpi.key} className={`${s.kpiCard} ${toneClass[kpi.tone]}`}>
-                <div className={s.kpiIcon}>{kpi.icon}</div>
-                <div className={s.kpiText}>
-                  <div className={s.kpiValue}>{kpi.value}</div>
-                  <div className={s.kpiLabel}>{kpi.label}</div>
-                </div>
-              </div>
+              <StatsCard
+                key={kpi.key}
+                tone={kpi.tone}
+                value={kpi.value}
+                label={kpi.label}
+                icon={kpi.icon}
+              />
             ))}
           </div>
 

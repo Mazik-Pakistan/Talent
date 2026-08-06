@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import SuperAdminShell from "@/components/super-admin/SuperAdminShell";
 import ProtectedSuperAdminRoute from "@/components/ProtectedSuperAdminRoute";
+import StatsCard from "@/components/super-admin/StatsCard";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
   getAnnouncements,
@@ -212,10 +213,10 @@ function SuperAdminOverviewPageContent() {
       </div>
 
       <div className={styles.stats}>
-        <StatCard tone="navy" value={loading ? "—" : stats.total} label="Total Recruiters" icon={ICONS.recruiters} />
-        <StatCard tone="green" value={loading ? "—" : stats.active} label="Active Recruiters" icon={ICONS.active} />
-        <StatCard tone="orange" value={loading ? "—" : stats.pending} label="Pending Invitations" icon={ICONS.pending} />
-        <StatCard tone="cyan" value={loading ? "—" : stats.orgs} label="Organizations" icon={ICONS.organizations} />
+        <StatsCard tone="navy" value={loading ? "—" : stats.total} label="Total Recruiters" icon={ICONS.recruiters} />
+        <StatsCard tone="green" value={loading ? "—" : stats.active} label="Active Recruiters" icon={ICONS.active} />
+        <StatsCard tone="orange" value={loading ? "—" : stats.pending} label="Pending Invitations" icon={ICONS.pending} />
+        <StatsCard tone="cyan" value={loading ? "—" : stats.orgs} label="Organizations" icon={ICONS.organizations} />
       </div>
 
       <div className={styles.quickGrid}>
@@ -261,18 +262,6 @@ function SuperAdminOverviewPageContent() {
         </div>
       </div>
     </SuperAdminShell>
-  );
-}
-
-function StatCard({ icon, tone, value, label }) {
-  return (
-    <div className={styles.statCard}>
-      <div className={`${styles.statIcon} ${styles[tone]}`}>{icon}</div>
-      <div className={styles.statText}>
-        <div className={styles.statValue}>{value}</div>
-        <div className={styles.statLabel}>{label}</div>
-      </div>
-    </div>
   );
 }
 

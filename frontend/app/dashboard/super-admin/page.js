@@ -9,6 +9,7 @@ import InviteRecruiter from "@/components/super-admin/InviteRecruiter";
 import OrganizationsPanel from "@/components/super-admin/OrganizationsPanel";
 import RecruitersPanel from "@/components/super-admin/RecruitersPanel";
 import SupportTicketsPanel from "@/components/super-admin/SupportTicketsPanel";
+import StatsCard from "@/components/super-admin/StatsCard";
 import OrganizationDeleteModal from "@/components/OrganizationDeleteModal";
 import RecruiterDetailsModal from "@/components/super-admin/RecruiterDetailsModal";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -68,18 +69,6 @@ const ICONS = {
     </svg>
   ),
 };
-
-function StatCard({ icon, tone, value, label }) {
-  return (
-    <div className={styles.statCard}>
-      <div className={`${styles.statIcon} ${styles[tone]}`}>{icon}</div>
-      <div className={styles.statText}>
-        <div className={styles.statValue}>{value}</div>
-        <div className={styles.statLabel}>{label}</div>
-      </div>
-    </div>
-  );
-}
 
 const initialForm = { full_name: "", email: "", phone: "", password: "", confirm_password: "" };
 
@@ -635,25 +624,25 @@ export default function SuperAdminDashboardPage() {
           </div>
 
           <div className={styles.stats}>
-            <StatCard
+            <StatsCard
               tone="navy"
               value={recruiters.length}
               label="Total Recruiters"
               icon={ICONS.recruiters}
             />
-            <StatCard
+            <StatsCard
               tone="green"
               value={recruiters.filter((r) => r.is_active).length}
               label="Active Recruiters"
               icon={ICONS.active}
             />
-            <StatCard
+            <StatsCard
               tone="orange"
               value={recruiters.filter((r) => r.status === "pending").length}
               label="Pending Invitations"
               icon={ICONS.pending}
             />
-            <StatCard
+            <StatsCard
               tone="cyan"
               value={organizations.length}
               label="Organizations"

@@ -225,6 +225,32 @@
 .statIcon.orange { background: var(--orange); color: #fff; box-shadow: 0 10px 20px -10px rgba(245, 165, 36, .55); }
 .statIcon.green  { background: var(--green);  color: #fff; box-shadow: 0 10px 20px -10px rgba(31, 174, 122, .5); }
 .statIcon.navy   { background: var(--navy-2); color: #fff; box-shadow: 0 10px 20px -10px rgba(21, 61, 94, .45); }
+.statIcon.blue   { background: var(--blue);   color: #fff; box-shadow: 0 10px 20px -10px rgba(56, 162, 255, .6); }
+.statIcon.purple { background: var(--purple); color: #fff; box-shadow: 0 10px 20px -10px rgba(124, 111, 224, .5); }
+.statIcon.red    { background: var(--red);    color: #fff; box-shadow: 0 10px 20px -10px rgba(229, 72, 77, .5); }
+.statIcon.grey   { background: #64748b;       color: #fff; box-shadow: 0 10px 20px -10px rgba(100, 116, 139, .5); }
+/* Spacious variant — larger card dimensions used by the Organizations panel.
+   Higher specificity so it overrides the default statCard sizing while keeping
+   tone colors, icon, value and label unchanged. */
+.statCard.statCardSpacious {
+  min-width: 230px;
+  flex: 1;
+  padding: 20px 22px;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.statCard.statCardSpacious:hover {
+  border-color: #e5e7eb;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.07);
+  transform: translateY(-1px);
+}
+.statCard.statCardSpacious .statIcon { border-radius: 12px; }
+.statCard.statCardSpacious .statValue { font-size: 28px; line-height: 1.1; letter-spacing: -0.02em; }
+.statCard.statCardSpacious .statLabel { font-size: 13px; }
+@media (max-width: 768px) {
+  .statCard.statCardSpacious { min-width: 200px; }
+}
 .statText {
   composes: statText from "../shared/shell/shell-base.module.css";
 }

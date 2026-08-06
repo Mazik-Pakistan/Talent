@@ -2,6 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 import s from "./OrganizationsPanel.module.css";
+import StatsCard from "@/components/super-admin/StatsCard";
 
 const MODULE_LABELS = {
   overview: "Overview dashboard",
@@ -233,8 +234,6 @@ export default function OrganizationsPanel(props) {
     { key: "recruiters", label: "Recruiters", value: recruiterTotal, tone: "orange", icon: ICONS.users },
     { key: "modules", label: "Modules Enabled", value: modulesEnabledTotal, tone: "purple", icon: ICONS.sliders },
   ];
-
-  const toneClass = { blue: s.kpiBlue, green: s.kpiGreen, orange: s.kpiOrange, purple: s.kpiPurple };
 
   function renderCheckbox(checked, onChange, label = "Select") {
     return (
@@ -675,13 +674,14 @@ export default function OrganizationsPanel(props) {
         <>
           <div className={s.kpiRow}>
             {kpis.map((kpi) => (
-              <div key={kpi.key} className={`${s.kpiCard} ${toneClass[kpi.tone]}`}>
-                <div className={s.kpiIcon}>{kpi.icon}</div>
-                <div className={s.kpiText}>
-                  <div className={s.kpiValue}>{kpi.value}</div>
-                  <div className={s.kpiLabel}>{kpi.label}</div>
-                </div>
-              </div>
+              <StatsCard
+                key={kpi.key}
+                variant="spacious"
+                tone={kpi.tone}
+                value={kpi.value}
+                label={kpi.label}
+                icon={kpi.icon}
+              />
             ))}
           </div>
 

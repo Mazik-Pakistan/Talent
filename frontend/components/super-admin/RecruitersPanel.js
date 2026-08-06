@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import s from "./RecruitersPanel.module.css";
+import StatsCard from "@/components/super-admin/StatsCard";
 
 const CAPABILITY_LABELS = {
   overview: "Overview dashboard",
@@ -194,14 +195,6 @@ export default function RecruitersPanel({
       headerCheckRef.current.indeterminate = someSelected;
     }
   }, [someSelected]);
-
-  const toneClass = {
-    blue: s.kpiBlue,
-    green: s.kpiGreen,
-    orange: s.kpiOrange,
-    purple: s.kpiPurple,
-    red: s.kpiRed,
-  };
 
   const kpis = [
     { key: "total", label: "Total Recruiters", value: recruiters.length, tone: "blue", icon: ICONS.users },
@@ -648,13 +641,13 @@ export default function RecruitersPanel({
         <>
           <div className={s.kpiRow}>
             {kpis.map((kpi) => (
-              <div key={kpi.key} className={`${s.kpiCard} ${toneClass[kpi.tone]}`}>
-                <div className={s.kpiIcon}>{kpi.icon}</div>
-                <div>
-                  <div className={s.kpiValue}>{kpi.value}</div>
-                  <div className={s.kpiLabel}>{kpi.label}</div>
-                </div>
-              </div>
+              <StatsCard
+                key={kpi.key}
+                tone={kpi.tone}
+                value={kpi.value}
+                label={kpi.label}
+                icon={kpi.icon}
+              />
             ))}
           </div>
 
