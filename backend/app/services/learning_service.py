@@ -37,11 +37,11 @@ from app.services import (
     learning_ai_service,
     learning_cache_service,
     learning_path_service,
-    managed_learning_service,
     resume_analysis_service,
     role_matching_service,
     storage_service,
 )
+from app.services.managed_learning_service import managed_learning_service
 from app.services.dashboard_service import create_notification
 from app.services.recruiter_kb_service import recruiter_kb_service
 

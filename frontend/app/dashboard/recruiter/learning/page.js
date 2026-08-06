@@ -44,6 +44,20 @@ import {
   verifyCertificate,
   updateManagedCourse,
 } from "@/services/learningService";
+import {
+  listCareerTracks,
+  createCareerTrack,
+  listCareerLevels,
+  createCareerLevel,
+  updateCareerLevel,
+  deleteCareerLevel,
+  getPromotionReadiness,
+  getCareerProgressReport,
+  listCareerAssignments,
+  assignEmployeeCareer,
+  exportCareerFramework,
+  importCareerFramework,
+} from "@/services/careerService";
 
 const TABS = [
   { key: "catalog", label: "Course Catalog" },
@@ -53,6 +67,8 @@ const TABS = [
   { key: "assignments", label: "Track Progress" },
   { key: "certificates", label: "Verify Certificates" },
   { key: "analytics", label: "Learning Analytics" },
+  { key: "career-framework", label: "Career Framework" },
+  { key: "promotion-readiness", label: "Promotion Readiness" },
 ];
 
 const CATALOG_SOURCES = [
@@ -151,6 +167,8 @@ function LearningPageContent() {
       {tab === "assignments" && <AssignmentsTab />}
       {tab === "certificates" && <CertificatesTab selectedCertificateId={selectedCertificateId} />}
       {tab === "analytics" && <AnalyticsTab />}
+      {tab === "career-framework" && <CareerFrameworkTab />}
+      {tab === "promotion-readiness" && <PromotionReadinessTab />}
     </RecruiterShell>
   );
 }
@@ -1716,6 +1734,766 @@ function ManagedLearningTab() {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════ //
+// Career Framework Tab                                                          //
+// ═══════════════════════════════════════════════════════════════════════════════ //
+
+const CF_DEPARTMENTS = ["MBS", "Innovations", "QA", "AI", "HR", "Finance", "IT", "Infra", "Odyssey"];
+
+function CareerFrameworkTab() {
+  const [tracks, setTracks] = useState([]);
+  const [levels, setLevels] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [deptFilter, setDeptFilter] = useState("");
+  const [showAddTrack, setShowAddTrack] = useState(false);
+  const [showAddLevel, setShowAddLevel] = useState(null);
+  const [editingLevel, setEditingLevel] = useState(null);
+  const [newTrack, setNewTrack] = useState({ department: "", track_name: "", description: "" });
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const load = useCallback(async () => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    setLoading(true);
+    try {
+      const [trackData, levelData] = await Promise.all([
+        listCareerTracks(token, deptFilter || undefined),
+        listCareerLevels(token, deptFilter || undefined),
+      ]);
+      setTracks(trackData.tracks || []);
+      setLevels(levelData.levels || []);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not load career framework."));
+    } finally {
+      setLoading(false);
+    }
+  }, [deptFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleCreateTrack(e) {
+    e.preventDefault();
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    try {
+      await createCareerTrack(token, newTrack);
+      toast.success("Career track created.");
+      setNewTrack({ department: "", track_name: "", description: "" });
+      setShowAddTrack(false);
+      load();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not create track."));
+    }
+  }
+
+  async function handleDeleteLevel(levelId) {
+    if (!window.confirm("Delete this career level? This cannot be undone.")) return;
+    const token = localStorage.getItem("access_token");
+    try {
+      await deleteCareerLevel(token, levelId);
+      toast.success("Career level deleted.");
+      load();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not delete level."));
+    }
+  }
+
+  async function handleExport() {
+    const token = localStorage.getItem("access_token");
+    try {
+      const blob = await exportCareerFramework(token);
+      const url = window.URL.createObjectURL(new Blob([blob]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "career_framework.csv";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success("Framework exported.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not export framework."));
+    }
+  }
+
+  async function handleImport() {
+    if (!importFile) return;
+    const token = localStorage.getItem("access_token");
+    setImporting(true);
+    try {
+      const result = await importCareerFramework(token, importFile);
+      toast.success(`Imported ${result.imported} levels. Skipped: ${result.skipped}`);
+      if (result.errors?.length) {
+        toast.warn(`${result.errors.length} rows had errors.`);
+      }
+      setImportFile(null);
+      load();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not import framework."));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // Group levels by department, merge with tracks that have no levels
+  const levelsByDept = {};
+  for (const level of levels) {
+    const dept = level.department;
+    if (!levelsByDept[dept]) levelsByDept[dept] = [];
+    levelsByDept[dept].push(level);
+  }
+  // Add tracks that don't have any levels yet
+  for (const track of tracks) {
+    const dept = track.department;
+    if (!levelsByDept[dept]) {
+      levelsByDept[dept] = [];
+    }
+  }
+  for (const dept of Object.keys(levelsByDept)) {
+    levelsByDept[dept].sort((a, b) => a.level_number - b.level_number);
+  }
+
+  return (
+    <>
+      {/* Header with actions */}
+      <div className={shellStyles.section}>
+        <div className={shellStyles.sectionHead}>
+          <div className={shellStyles.sectionHeadLeft}>
+            <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
+            <div>
+              <div className={shellStyles.sectionTitle}>Career Framework</div>
+              <p className={shellStyles.sectionDesc}>
+                Define career progression tracks by department. Each level specifies required skills, certifications, and learning paths.
+              </p>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <select className={styles.filterSelect} value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+              <option value="">All departments</option>
+              {CF_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <button type="button" className={styles.modeBtn} onClick={() => setShowAddTrack(true)}>+ Add Track</button>
+            <button type="button" className={styles.modeBtn} onClick={() => fileInputRef.current?.click()}>Import CSV</button>
+            <button type="button" className={styles.modeBtn} onClick={handleExport}>Export CSV</button>
+            <button type="button" className={styles.modeBtn} onClick={() => window.open("/api/career-framework/template", "_blank")}>Download Template</button>
+            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Import preview */}
+      {importFile && (
+        <div className={shellStyles.section}>
+          <div className={shellStyles.sectionBody} style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <span>File: {importFile.name}</span>
+            <button type="button" className={styles.modeBtn} onClick={handleImport} disabled={importing}>
+              {importing ? "Importing…" : "Confirm Import"}
+            </button>
+            <button type="button" className={styles.modeBtn} onClick={() => setImportFile(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Track Form */}
+      {showAddTrack && (
+        <div className={shellStyles.section}>
+          <div className={shellStyles.sectionHead}>
+            <div className={shellStyles.sectionHeadLeft}>
+              <span className={`${shellStyles.bar} ${shellStyles.navy}`} />
+              <div>
+                <div className={shellStyles.sectionTitle}>Create Career Track</div>
+              </div>
+            </div>
+          </div>
+          <div className={shellStyles.sectionBody}>
+            <form onSubmit={handleCreateTrack} style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+              <label className={styles.fieldLabel}>
+                Department
+                <select value={newTrack.department} onChange={(e) => setNewTrack((f) => ({ ...f, department: e.target.value }))} required>
+                  <option value="">Select department</option>
+                  {CF_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </label>
+              <label className={styles.fieldLabel}>
+                Track Name
+                <input value={newTrack.track_name} onChange={(e) => setNewTrack((f) => ({ ...f, track_name: e.target.value }))} placeholder="e.g., Software Engineering" required />
+              </label>
+              <label className={styles.fieldLabel}>
+                Description
+                <input value={newTrack.description} onChange={(e) => setNewTrack((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description" />
+              </label>
+              <button type="submit" className={styles.modeBtn}>Create Track</button>
+              <button type="button" className={styles.modeBtn} onClick={() => setShowAddTrack(false)}>Cancel</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Career Ladder Views by Department */}
+      {loading && <RecruiterLoader inline />}
+      {!loading && Object.keys(levelsByDept).length === 0 && tracks.length === 0 && (
+        <div className={shellStyles.section}>
+          <div className={shellStyles.sectionBody}>
+            <p className={styles.inlineNote}>No career framework defined yet. Use "Import CSV" to set up your career progression framework, or add tracks manually.</p>
+          </div>
+        </div>
+      )}
+
+      {Object.entries(levelsByDept).map(([dept, deptLevels]) => (
+        <div key={dept} className={shellStyles.section}>
+          <div className={shellStyles.sectionHead}>
+            <div className={shellStyles.sectionHeadLeft}>
+              <span className={`${shellStyles.bar} ${shellStyles.green}`} />
+              <div>
+                <div className={shellStyles.sectionTitle}>{dept} — Career Progression</div>
+                <p className={shellStyles.sectionDesc}>{deptLevels.length} level{deptLevels.length !== 1 ? "s" : ""}</p>
+              </div>
+            </div>
+          </div>
+          <div className={shellStyles.sectionBody}>
+            <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16 }}>
+              {deptLevels.length === 0 && (
+                <p className={styles.inlineNote} style={{ marginBottom: 0 }}>No levels defined yet. Add the first career level below.</p>
+              )}
+              {deptLevels.map((level, idx) => (
+                <div key={level.id} style={{ minWidth: 280, flex: "0 0 auto" }}>
+                  {idx > 0 && <div style={{ position: "relative", top: 18, right: 8, color: "#999", fontWeight: 700 }}>→</div>}
+                  <div style={{
+                    border: "1px solid #E3E9F0",
+                    borderRadius: 8,
+                    padding: 16,
+                    background: "#fff",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 8 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "#00A9CE", textTransform: "uppercase" }}>Level {level.level_number}</div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button type="button" onClick={() => setEditingLevel(level)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#666" }}>Edit</button>
+                        <button type="button" onClick={() => handleDeleteLevel(level.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#e74c3c" }}>Delete</button>
+                      </div>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{level.role_title}</div>
+                    {level.min_experience_years > 0 && (
+                      <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>Min {level.min_experience_years} years experience</div>
+                    )}
+                    {level.min_time_in_current_role_months > 0 && (
+                      <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>Min {level.min_time_in_current_role_months} months in role</div>
+                    )}
+                    {level.required_skills?.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "#999", marginBottom: 4 }}>Skills</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {level.required_skills.map((s, i) => (
+                            <span key={i} style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "#f0f4f8", color: "#333" }}>
+                              {s.skill} ({s.proficiency})
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {level.required_certifications?.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "#999", marginBottom: 4 }}>Certifications</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {level.required_certifications.map((c, i) => (
+                            <span key={i} style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "#FFF3CD", color: "#856404" }}>
+                              {c.certification}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {level.learning_path?.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "#999", marginBottom: 4 }}>Learning Path ({level.learning_path.length} courses)</div>
+                        {level.learning_path.slice(0, 3).map((c, i) => (
+                          <div key={i} style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>
+                            {c.order}. {c.course_title}
+                          </div>
+                        ))}
+                        {level.learning_path.length > 3 && (
+                          <div style={{ fontSize: 11, color: "#999" }}>+{level.learning_path.length - 3} more</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <div style={{ minWidth: 200, flex: "0 0 auto", display: "flex", alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddLevel({ department: dept })}
+                  style={{
+                    border: "2px dashed #ccc",
+                    borderRadius: 8,
+                    padding: "24px 16px",
+                    background: "transparent",
+                    cursor: "pointer",
+                    color: "#999",
+                    textAlign: "center",
+                    width: "100%",
+                  }}
+                >
+                  + Add Level
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Add/Edit Level Form */}
+      {(showAddLevel || editingLevel) && (
+        <CFAddEditLevelForm
+          initialData={showAddLevel ? { department: showAddLevel.department } : editingLevel}
+          isEdit={Boolean(editingLevel)}
+          onClose={() => { setShowAddLevel(null); setEditingLevel(null); }}
+          onSaved={() => { setShowAddLevel(null); setEditingLevel(null); load(); }}
+        />
+      )}
+    </>
+  );
+}
+
+function CFAddEditLevelForm({ initialData, isEdit, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    department: initialData?.department || "",
+    track_name: initialData?.track_name || "",
+    level_number: initialData?.level_number || 1,
+    role_title: initialData?.role_title || "",
+    description: initialData?.description || "",
+    min_experience_years: initialData?.min_experience_years || 0,
+    min_time_in_current_role_months: initialData?.min_time_in_current_role_months || 0,
+    manager_approval_required: initialData?.manager_approval_required || false,
+    required_skills: initialData?.required_skills || [],
+    required_certifications: initialData?.required_certifications || [],
+    learning_path: initialData?.learning_path || [],
+  });
+  const [saving, setSaving] = useState(false);
+
+  const [newSkill, setNewSkill] = useState({ skill: "", proficiency: "Intermediate" });
+  const [newCert, setNewCert] = useState("");
+  const [newCourse, setNewCourse] = useState("");
+
+  function addSkill() {
+    if (!newSkill.skill.trim()) return;
+    setForm((f) => ({ ...f, required_skills: [...f.required_skills, { ...newSkill, weight: 10 }] }));
+    setNewSkill({ skill: "", proficiency: "Intermediate" });
+  }
+
+  function removeSkill(idx) {
+    setForm((f) => ({ ...f, required_skills: f.required_skills.filter((_, i) => i !== idx) }));
+  }
+
+  function addCert() {
+    if (!newCert.trim()) return;
+    setForm((f) => ({ ...f, required_certifications: [...f.required_certifications, { certification: newCert.trim(), mandatory: true }] }));
+    setNewCert("");
+  }
+
+  function removeCert(idx) {
+    setForm((f) => ({ ...f, required_certifications: f.required_certifications.filter((_, i) => i !== idx) }));
+  }
+
+  function addCourse() {
+    if (!newCourse.trim()) return;
+    setForm((f) => ({
+      ...f,
+      learning_path: [...f.learning_path, {
+        course_uid: `pending:${newCourse.trim().toLowerCase().replace(/\s+/g, "-")}`,
+        course_title: newCourse.trim(),
+        source: "microsoft_learn",
+        mandatory: true,
+        order: f.learning_path.length + 1,
+      }],
+    }));
+    setNewCourse("");
+  }
+
+  function removeCourse(idx) {
+    setForm((f) => ({
+      ...f,
+      learning_path: f.learning_path.filter((_, i) => i !== idx).map((c, i) => ({ ...c, order: i + 1 })),
+    }));
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    const token = localStorage.getItem("access_token");
+    setSaving(true);
+    try {
+      if (isEdit) {
+        await updateCareerLevel(token, initialData.id, {
+          role_title: form.role_title,
+          required_skills: form.required_skills,
+          required_certifications: form.required_certifications,
+          learning_path: form.learning_path,
+          min_experience_years: form.min_experience_years,
+          min_time_in_current_role_months: form.min_time_in_current_role_months,
+          manager_approval_required: form.manager_approval_required,
+          description: form.description,
+        });
+        toast.success("Career level updated.");
+      } else {
+        await createCareerLevel(token, form);
+        toast.success("Career level created.");
+      }
+      onSaved();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not save career level."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className={shellStyles.section}>
+      <div className={shellStyles.sectionHead}>
+        <div className={shellStyles.sectionHeadLeft}>
+          <span className={`${shellStyles.bar} ${shellStyles.navy}`} />
+          <div>
+            <div className={shellStyles.sectionTitle}>{isEdit ? "Edit" : "Add"} Career Level</div>
+          </div>
+        </div>
+      </div>
+      <div className={shellStyles.sectionBody}>
+        <form onSubmit={handleSave}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
+            <label className={styles.fieldLabel}>
+              Department
+              <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} required disabled={isEdit}>
+                <option value="">Select</option>
+                {CF_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </label>
+            <label className={styles.fieldLabel}>
+              Track Name
+              <input value={form.track_name} onChange={(e) => setForm((f) => ({ ...f, track_name: e.target.value }))} placeholder="e.g., Software Engineering" required disabled={isEdit} />
+            </label>
+            <label className={styles.fieldLabel}>
+              Level Number
+              <input type="number" min="1" max="20" value={form.level_number} onChange={(e) => setForm((f) => ({ ...f, level_number: parseInt(e.target.value) || 1 }))} required disabled={isEdit} />
+            </label>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+            <label className={styles.fieldLabel}>
+              Role Title
+              <input value={form.role_title} onChange={(e) => setForm((f) => ({ ...f, role_title: e.target.value }))} placeholder="e.g., Senior Consultant" required />
+            </label>
+            <label className={styles.fieldLabel}>
+              Description
+              <input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description" />
+            </label>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
+            <label className={styles.fieldLabel}>
+              Min Experience (Years)
+              <input type="number" min="0" max="50" step="0.5" value={form.min_experience_years} onChange={(e) => setForm((f) => ({ ...f, min_experience_years: parseFloat(e.target.value) || 0 }))} />
+            </label>
+            <label className={styles.fieldLabel}>
+              Min Time in Role (Months)
+              <input type="number" min="0" max="120" value={form.min_time_in_current_role_months} onChange={(e) => setForm((f) => ({ ...f, min_time_in_current_role_months: parseInt(e.target.value) || 0 }))} />
+            </label>
+            <label className={styles.fieldLabel} style={{ display: "flex", alignItems: "end", gap: 8 }}>
+              <input type="checkbox" checked={form.manager_approval_required} onChange={(e) => setForm((f) => ({ ...f, manager_approval_required: e.target.checked }))} />
+              Manager approval required
+            </label>
+          </div>
+
+          {/* Skills */}
+          <div style={{ marginBottom: 16 }}>
+            <div className={styles.fieldLabel}>Required Skills</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <input value={newSkill.skill} onChange={(e) => setNewSkill((f) => ({ ...f, skill: e.target.value }))} placeholder="Skill name" style={{ flex: 2 }} />
+              <select value={newSkill.proficiency} onChange={(e) => setNewSkill((f) => ({ ...f, proficiency: e.target.value }))} style={{ flex: 1 }}>
+                {["Beginner", "Intermediate", "Advanced", "Expert"].map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <button type="button" onClick={addSkill} className={styles.modeBtn}>Add</button>
+            </div>
+            {form.required_skills.map((s, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+                <span style={{ fontSize: 13 }}>{s.skill}</span>
+                <span style={{ fontSize: 11, color: "#666" }}>({s.proficiency})</span>
+                <button type="button" onClick={() => removeSkill(i)} style={{ background: "none", border: "none", color: "#e74c3c", cursor: "pointer", fontSize: 12 }}>Remove</button>
+              </div>
+            ))}
+          </div>
+
+          {/* Certifications */}
+          <div style={{ marginBottom: 16 }}>
+            <div className={styles.fieldLabel}>Required Certifications</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <input value={newCert} onChange={(e) => setNewCert(e.target.value)} placeholder="Certification name" style={{ flex: 1 }} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCert())} />
+              <button type="button" onClick={addCert} className={styles.modeBtn}>Add</button>
+            </div>
+            {form.required_certifications.map((c, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+                <span style={{ fontSize: 13 }}>{c.certification}</span>
+                <button type="button" onClick={() => removeCert(i)} style={{ background: "none", border: "none", color: "#e74c3c", cursor: "pointer", fontSize: 12 }}>Remove</button>
+              </div>
+            ))}
+          </div>
+
+          {/* Learning Path */}
+          <div style={{ marginBottom: 16 }}>
+            <div className={styles.fieldLabel}>Learning Path (Courses)</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <input value={newCourse} onChange={(e) => setNewCourse(e.target.value)} placeholder="Course title" style={{ flex: 1 }} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCourse())} />
+              <button type="button" onClick={addCourse} className={styles.modeBtn}>Add</button>
+            </div>
+            {form.learning_path.map((c, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+                <span style={{ fontSize: 11, color: "#999", minWidth: 20 }}>{c.order}.</span>
+                <span style={{ fontSize: 13 }}>{c.course_title}</span>
+                <button type="button" onClick={() => removeCourse(i)} style={{ background: "none", border: "none", color: "#e74c3c", cursor: "pointer", fontSize: 12 }}>Remove</button>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="submit" className={styles.modeBtn} disabled={saving}>{saving ? "Saving…" : isEdit ? "Update Level" : "Create Level"}</button>
+            <button type="button" className={styles.modeBtn} onClick={onClose}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════ //
+// Promotion Readiness Tab                                                       //
+// ═══════════════════════════════════════════════════════════════════════════════ //
+
+function PromotionReadinessTab() {
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [employees, setEmployees] = useState([]);
+  const [levels, setLevels] = useState([]);
+  const [showAssign, setShowAssign] = useState(false);
+  const [assignForm, setAssignForm] = useState({ employee_id: "", target_level_id: "", target_date: "" });
+  const [assigning, setAssigning] = useState(false);
+  const [empQuery, setEmpQuery] = useState("");
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    Promise.all([
+      getPromotionReadiness(token),
+      listCareerLevels(token),
+    ])
+      .then(([reportData, levelData]) => {
+        setReport(reportData);
+        setLevels(levelData.levels || []);
+      })
+      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load data.")))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token || !showAssign) return;
+    const timer = setTimeout(() => {
+      listEmployees(token, { q: empQuery || undefined, status: "active", page: 1, page_size: 20 })
+        .then((d) => setEmployees(d.employees || []))
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [empQuery, showAssign]);
+
+  async function handleAssign(e) {
+    e.preventDefault();
+    if (!assignForm.employee_id || !assignForm.target_level_id) {
+      toast.error("Select an employee and target level.");
+      return;
+    }
+    const token = localStorage.getItem("access_token");
+    setAssigning(true);
+    try {
+      await assignEmployeeCareer(token, assignForm.employee_id, {
+        target_level_id: assignForm.target_level_id,
+        target_date: assignForm.target_date || undefined,
+      });
+      toast.success("Career path assigned.");
+      setShowAssign(false);
+      setAssignForm({ employee_id: "", target_level_id: "", target_date: "" });
+      // Reload report
+      const reportData = await getPromotionReadiness(token);
+      setReport(reportData);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not assign career path."));
+    } finally {
+      setAssigning(false);
+    }
+  }
+
+  return (
+    <>
+      {/* Assign Career Path Button */}
+      <div className={shellStyles.section}>
+        <div className={shellStyles.sectionHead}>
+          <div className={shellStyles.sectionHeadLeft}>
+            <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
+            <div>
+              <div className={shellStyles.sectionTitle}>Promotion Readiness</div>
+              <p className={shellStyles.sectionDesc}>
+                Track employee readiness for promotion. Assign career paths to help employees progress.
+              </p>
+            </div>
+          </div>
+          <button type="button" className={styles.modeBtn} onClick={() => setShowAssign(!showAssign)}>
+            {showAssign ? "Close" : "+ Assign Career Path"}
+          </button>
+        </div>
+      </div>
+
+      {/* Assign Form */}
+      {showAssign && (
+        <div className={shellStyles.section}>
+          <div className={shellStyles.sectionHead}>
+            <div className={shellStyles.sectionHeadLeft}>
+              <span className={`${shellStyles.bar} ${shellStyles.green}`} />
+              <div>
+                <div className={shellStyles.sectionTitle}>Assign Career Path</div>
+              </div>
+            </div>
+          </div>
+          <div className={shellStyles.sectionBody}>
+            <form onSubmit={handleAssign} style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+              <label className={styles.fieldLabel} style={{ flex: 2 }}>
+                Employee
+                <input
+                  placeholder="Search by name or ID…"
+                  value={empQuery}
+                  onChange={(e) => setEmpQuery(e.target.value)}
+                />
+                {employees.length > 0 && (
+                  <select value={assignForm.employee_id} onChange={(e) => setAssignForm((f) => ({ ...f, employee_id: e.target.value }))} style={{ marginTop: 4 }}>
+                    <option value="">Select employee</option>
+                    {employees.map((emp) => (
+                      <option key={emp.employee_id} value={emp.employee_id}>{emp.full_name} ({emp.employee_id}) — {emp.job_title || "—"}</option>
+                    ))}
+                  </select>
+                )}
+              </label>
+              <label className={styles.fieldLabel} style={{ flex: 2 }}>
+                Target Level
+                <select value={assignForm.target_level_id} onChange={(e) => setAssignForm((f) => ({ ...f, target_level_id: e.target.value }))} required>
+                  <option value="">Select target level</option>
+                  {levels.map((l) => (
+                    <option key={l.id} value={l.id}>Level {l.level_number}: {l.role_title} ({l.department})</option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.fieldLabel}>
+                Target Date
+                <input type="date" value={assignForm.target_date} onChange={(e) => setAssignForm((f) => ({ ...f, target_date: e.target.value }))} />
+              </label>
+              <button type="submit" className={styles.modeBtn} disabled={assigning}>{assigning ? "Assigning…" : "Assign"}</button>
+              <button type="button" className={styles.modeBtn} onClick={() => setShowAssign(false)}>Cancel</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {loading && <RecruiterLoader inline />}
+
+      {/* Ready for Promotion */}
+      {!loading && report?.ready?.length > 0 && (
+        <div className={shellStyles.section}>
+          <div className={shellStyles.sectionHead}>
+            <div className={shellStyles.sectionHeadLeft}>
+              <span className={`${shellStyles.bar} ${shellStyles.green}`} />
+              <div>
+                <div className={shellStyles.sectionTitle}>Ready for Promotion ({report.ready.length})</div>
+                <p className={shellStyles.sectionDesc}>80%+ readiness score</p>
+              </div>
+            </div>
+          </div>
+          <div className={shellStyles.sectionBody}>
+            {report.ready.map((item) => (
+              <CFAssignmentRow key={item.employee_id} item={item} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Almost Ready */}
+      {!loading && report?.almost_ready?.length > 0 && (
+        <div className={shellStyles.section}>
+          <div className={shellStyles.sectionHead}>
+            <div className={shellStyles.sectionHeadLeft}>
+              <span className={`${shellStyles.bar} ${shellStyles.orange}`} />
+              <div>
+                <div className={shellStyles.sectionTitle}>Almost Ready ({report.almost_ready.length})</div>
+                <p className={shellStyles.sectionDesc}>50–79% readiness</p>
+              </div>
+            </div>
+          </div>
+          <div className={shellStyles.sectionBody}>
+            {report.almost_ready.map((item) => (
+              <CFAssignmentRow key={item.employee_id} item={item} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Behind Schedule */}
+      {!loading && report?.behind?.length > 0 && (
+        <div className={shellStyles.section}>
+          <div className={shellStyles.sectionHead}>
+            <div className={shellStyles.sectionHeadLeft}>
+              <span className={`${shellStyles.bar} ${shellStyles.orange}`} />
+              <div>
+                <div className={shellStyles.sectionTitle}>Behind Schedule ({report.behind.length})</div>
+                <p className={shellStyles.sectionDesc}>Below 50% readiness</p>
+              </div>
+            </div>
+          </div>
+          <div className={shellStyles.sectionBody}>
+            {report.behind.map((item) => (
+              <CFAssignmentRow key={item.employee_id} item={item} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!loading && report?.total_count === 0 && (
+        <div className={shellStyles.section}>
+          <div className={shellStyles.sectionBody}>
+            <p className={styles.inlineNote}>No employees have been assigned career paths yet. Use "+ Assign Career Path" to get started.</p>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function CFAssignmentRow({ item }) {
+  const scoreColor = item.readiness_score >= 80 ? "#27ae60" : item.readiness_score >= 50 ? "#f39c12" : "#e74c3c";
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid #f0f4f8", flexWrap: "wrap", gap: 8 }}>
+      <div>
+        <div style={{ fontWeight: 600 }}>{item.employee_name}</div>
+        <div style={{ fontSize: 13, color: "#666" }}>
+          {item.current_role} → {item.target_role} · {item.department}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+        {item.target_date && <span style={{ fontSize: 12, color: "#999" }}>Target: {item.target_date}</span>}
+        <div style={{ fontSize: 20, fontWeight: 800, color: scoreColor }}>{item.readiness_score}%</div>
+        <div style={{ height: 48, width: 48, position: "relative" }}>
+          <svg viewBox="0 0 36 36" style={{ transform: "rotate(-90deg)" }}>
+            <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#E3E9F0" strokeWidth="3" />
+            <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke={scoreColor} strokeWidth="3" strokeDasharray={`${item.readiness_score}, 100`} />
+          </svg>
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: scoreColor }}>{item.readiness_score}%</div>
         </div>
       </div>
     </div>
