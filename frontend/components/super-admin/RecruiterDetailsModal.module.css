@@ -87,6 +87,11 @@
   color: #991b1b;
 }
 
+.statusBadge.pending {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
 .dualRole {
   padding: 4px 8px;
   border-radius: 4px;
@@ -267,6 +272,10 @@
 
 .statusText.inactive {
   color: #dc2626;
+}
+
+.statusText.pending {
+  color: #d97706;
 }
 
 .monospace {

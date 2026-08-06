@@ -118,6 +118,10 @@ export const RECRUITER_FIELD_HELP = {
   it_request_title: "Short summary of what’s needed — IT and the employee see this title.",
   it_manager_email: "IT officer email. Leave blank to save a draft; fill it to email them the fulfill link.",
   it_request_description: "Extra context for HR/IT — symptoms, urgency, or serial numbers.",
+  subject: "Short ticket title that tells support what broke or what you need.",
+  category: "Choose the closest issue type so the ticket reaches the right queue.",
+  priority: "Set urgency based on impact and how soon you need help.",
+  affected_module: "Which recruiter area, employee area, or system part is affected.",
 
   // IT kits
   kit_name: "Name of this standard setup (e.g. Engineer Standard).",
@@ -184,6 +188,7 @@ export const RECRUITER_PAGE_HELP = {
   profile: "Keep your recruiter profile current for teammates.",
   "it-kits": "Reusable asset + license setups IT applies when provisioning new hires.",
   it: "Track IT officers, new-hire provisioning, and post-activation support tickets.",
+  support: "Create support tickets, filter existing ones, and reply until the issue is resolved.",
 };
 
 /** Match `/it` without also matching `/invite` (substring) or treating kits as hub. */
@@ -257,6 +262,11 @@ export const RECRUITER_PAGE_SUMMARIES = {
     title: "IT provisioning & support",
     what: "See IT officers, new-hire setups, and support tickets — send drafts to IT or cancel open ones.",
     why: "Keeps hardware, access, and post-hire IT help moving without email chaos.",
+  },
+  support: {
+    title: "Support Center",
+    what: "Create support tickets, track their status, and reply inside the ticket thread.",
+    why: "Keeps issues moving without leaving the recruiter portal.",
   },
   "it-kits": {
     title: "IT kits",
@@ -410,6 +420,26 @@ export function recruiterPageSummaryFor(pathname, context = null) {
         why: RECRUITER_PAGE_SUMMARIES.talent.why,
       };
     }
+  }
+
+  if (pathname.includes("/support")) {
+    if (context?.section === "create_ticket") {
+      return {
+        key: "support-create",
+        title: "Create support ticket",
+        what: "Fill the ticket subject, category, priority, affected module, and description.",
+        why: RECRUITER_PAGE_SUMMARIES.support.why,
+      };
+    }
+    if (context?.section === "ticket_details") {
+      return {
+        key: "support-details",
+        title: "Ticket details",
+        what: context?.hint || "Review the conversation, then reply or close the ticket.",
+        why: RECRUITER_PAGE_SUMMARIES.support.why,
+      };
+    }
+    return { key: "support", ...RECRUITER_PAGE_SUMMARIES.support };
   }
 
   const ordered = Object.entries(RECRUITER_PAGE_SUMMARIES).sort((a, b) => b[0].length - a[0].length);

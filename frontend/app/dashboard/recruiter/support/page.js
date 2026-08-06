@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -14,6 +15,7 @@ import {
   listMyTickets,
   replyToTicket,
 } from "@/services/authService";
+import { clearRecruiterContext, publishRecruiterContext } from "@/lib/ai/recruiterContext";
 
 const CATEGORIES = { bug_report: "Bug Report", feature_request: "Feature Request", performance: "Performance", ui_issue: "UI Issue", login_issue: "Login Issue", permission_issue: "Permission Issue", ai_assistant: "AI Assistant", recruitment: "Recruitment", employee_module: "Employee Module", learning: "Learning", analytics: "Analytics", billing: "Billing", security: "Security", integration: "Integration", api: "API", other: "Other" };
 const PRIORITIES = { low: "Low", medium: "Medium", high: "High", critical: "Critical" };
@@ -152,7 +154,7 @@ function RecruiterSupportPageContent() {
     if (!accessToken) return;
     setCreating(true);
     try {
-      const ticket = await createTicket(
+      const ticketPromise = createTicket(
         {
           subject: form.subject.trim(),
           category: form.category,
@@ -162,12 +164,22 @@ function RecruiterSupportPageContent() {
         },
         accessToken
       );
+      const ticket = await toast.promise(ticketPromise, {
+        pending: "Creating support ticket...",
+        success: "Support ticket sent.",
+        error: {
+          render({ data }) {
+            return getApiErrorMessage(data, "Could not create the support ticket.");
+          },
+        },
+      });
       setForm(EMPTY_FORM);
       setCreateMode(false);
       if (page !== 1) setPage(1);
       await loadTickets();
       openTicket(ticket);
     } catch (err) {
+      if (String(err?.message || "").includes("toast")) return;
       setError(getApiErrorMessage(err, "Could not create the support ticket."));
     } finally {
       setCreating(false);
@@ -213,6 +225,51 @@ function RecruiterSupportPageContent() {
 
   const hasFilters = Boolean(search.trim() || statusFilter || priorityFilter);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  useEffect(() => {
+    const body = document.body;
+    const shouldElevateMascot = createMode || Boolean(selectedTicket);
+    if (shouldElevateMascot) {
+      body.classList.add("support-mascot-high");
+    } else {
+      body.classList.remove("support-mascot-high");
+    }
+    return () => {
+      body.classList.remove("support-mascot-high");
+    };
+  }, [createMode, selectedTicket]);
+
+  useEffect(() => {
+    if (createMode) {
+      publishRecruiterContext({
+        section: "create_ticket",
+        label: "Create support ticket",
+        hint: "Fill the ticket subject first, then pick category, priority, affected module, and describe the issue clearly.",
+        fields: ["subject", "category", "priority", "affected_module", "description"],
+      });
+      return () => clearRecruiterContext();
+    }
+
+    if (selectedTicket) {
+      publishRecruiterContext({
+        section: "ticket_details",
+        label: selectedTicket.subject || selectedTicket.ticket_id || "Ticket details",
+        hint: detailTab === "conversation"
+          ? "Read the thread, reply with the next update, or close the ticket when it is done."
+          : "Review the ticket details and status before replying or closing.",
+        fields: [],
+      });
+      return () => clearRecruiterContext();
+    }
+
+    publishRecruiterContext({
+      section: "support_center",
+      label: "Support Center",
+      hint: "Use Create Ticket to file an issue, or open any ticket below to reply and track progress.",
+      fields: [],
+    });
+    return () => clearRecruiterContext();
+  }, [createMode, selectedTicket, detailTab]);
 
   function buildMessages() {
     if (!ticketDetail) return [];
@@ -261,9 +318,16 @@ function RecruiterSupportPageContent() {
             <h1>Support Center</h1>
             <div className={styles.heroMeta}>Submit a support request or track your existing tickets</div>
           </div>
-          <button type="button" className={styles.primaryButton} onClick={() => { setError(""); setCreateMode(true); }}>
-            + Create Ticket
-          </button>
+          {!createMode && !selectedTicket && (
+            <button
+              type="button"
+              className={styles.primaryButton}
+              onClick={() => { setError(""); setCreateMode(true); }}
+              style={{ position: "relative", zIndex: 2 }}
+            >
+              + Create Ticket
+            </button>
+          )}
         </div>
 
         <div className={styles.stats}>
@@ -390,7 +454,12 @@ function RecruiterSupportPageContent() {
                       : "Submit a support request and the support team will pick it up here."}
                   </div>
                   {!hasFilters && (
-                    <button type="button" className={support.btnPrimary} onClick={() => { setError(""); setCreateMode(true); }}>
+                    <button
+                      type="button"
+                      className={support.btnPrimary}
+                      onClick={() => { setError(""); setCreateMode(true); }}
+                      style={{ position: "relative", zIndex: 2 }}
+                    >
                       Create Ticket
                     </button>
                   )}
@@ -421,7 +490,11 @@ function RecruiterSupportPageContent() {
               ×
             </button>
           </div>
-          <form onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          <form
+            onSubmit={handleCreate}
+            data-mascot-command={!createMode ? "" : undefined}
+            style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
+          >
             <div className={support.panelBody}>
               <div className={support.formField}>
                 <label className={support.formLabel} htmlFor="ticket-subject">Subject</label>

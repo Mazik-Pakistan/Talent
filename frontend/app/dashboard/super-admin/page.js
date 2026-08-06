@@ -13,6 +13,7 @@ import OrganizationDeleteModal from "@/components/OrganizationDeleteModal";
 import RecruiterDetailsModal from "@/components/super-admin/RecruiterDetailsModal";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import local from "./super-admin.module.css";
+import { toast } from "react-toastify";
 import {
   bootstrapSuperAdmin,
   bulkUpdateRecruiterCapabilities,
@@ -98,6 +99,8 @@ const CAPABILITY_LABELS = {
   support: "Support tickets",
 };
 
+const ORG_MODULE_KEYS = Object.keys(CAPABILITY_LABELS).filter((key) => key !== "support");
+
 const TEMPLATE_LABELS = {
   standard_recruiter: "Standard Recruiter",
   hiring_only: "Hiring Only",
@@ -110,6 +113,13 @@ const initialInviteForm = { full_name: "", email: "", job_title: "", department:
 
 function allCapabilityFlags(source = {}, fallback = true) {
   return Object.keys(CAPABILITY_LABELS).reduce((acc, key) => {
+    acc[key] = source[key] ?? fallback;
+    return acc;
+  }, {});
+}
+
+function orgModuleFlags(source = {}, fallback = true) {
+  return ORG_MODULE_KEYS.reduce((acc, key) => {
     acc[key] = source[key] ?? fallback;
     return acc;
   }, {});
@@ -150,24 +160,20 @@ export default function SuperAdminDashboardPage() {
   const [inviteForm, setInviteForm] = useState(initialInviteForm);
   const [inviteCaps, setInviteCaps] = useState(() => allCapabilityFlags({}, true));
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
-  const [inviteMessage, setInviteMessage] = useState("");
   const [templates, setTemplates] = useState({});
   const [activeTemplate, setActiveTemplate] = useState("standard_recruiter");
   const [bulkSelected, setBulkSelected] = useState([]);
   const [bulkTemplate, setBulkTemplate] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [bulkMessage, setBulkMessage] = useState("");
   const [orgFilter, setOrgFilter] = useState("");
   const [organizations, setOrganizations] = useState([]);
   const [orgsLoading, setOrgsLoading] = useState(false);
   const [orgFormOpen, setOrgFormOpen] = useState(false);
   const [orgForm, setOrgForm] = useState({ name: "", contact_email: "", description: "" });
-  const [orgModules, setOrgModules] = useState(() => allCapabilityFlags({}, true));
+  const [orgModules, setOrgModules] = useState(() => orgModuleFlags({}, true));
   const [orgSaving, setOrgSaving] = useState(false);
-  const [orgMessage, setOrgMessage] = useState("");
   const [orgDeleteTarget, setOrgDeleteTarget] = useState(null);
   const [orgDeleting, setOrgDeleting] = useState(false);
-  const [orgDeleteError, setOrgDeleteError] = useState("");
   const [editOrgId, setEditOrgId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyEditForm);
@@ -224,9 +230,8 @@ export default function SuperAdminDashboardPage() {
   function openCreateOrg() {
     setEditOrgId(null);
     setOrgForm({ name: "", contact_email: "", description: "" });
-    setOrgModules(allCapabilityFlags({}, true));
+    setOrgModules(orgModuleFlags({}, true));
     setOrgFormOpen(true);
-    setOrgMessage("");
   }
 
   function openEditOrg(org) {
@@ -236,9 +241,14 @@ export default function SuperAdminDashboardPage() {
       contact_email: org.contact_email || "",
       description: org.description || "",
     });
-    setOrgModules(allCapabilityFlags(org.modules || {}, true));
+    setOrgModules(orgModuleFlags(org.modules || {}, true));
     setOrgFormOpen(true);
-    setOrgMessage("");
+  }
+
+  function closeOrgForm() {
+    if (orgSaving) return;
+    setOrgFormOpen(false);
+    setEditOrgId(null);
   }
 
   async function handleOrgSubmit(event) {
@@ -246,19 +256,25 @@ export default function SuperAdminDashboardPage() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setOrgSaving(true);
-    setOrgMessage("");
     try {
+      const payload = {
+        name: orgForm.name.trim(),
+        contact_email: orgForm.contact_email.trim() || undefined,
+        description: orgForm.description.trim() || undefined,
+        modules: orgModuleFlags(orgModules, true),
+      };
       if (editOrgId) {
-        await updateOrganization(editOrgId, { modules: orgModules }, accessToken);
-        setOrgMessage("Organization modules updated.");
+        await updateOrganization(editOrgId, payload, accessToken);
+        toast.success("Organization modules updated.");
       } else {
-        await createOrganization({ ...orgForm, modules: orgModules }, accessToken);
-        setOrgMessage("Organization created.");
+        await createOrganization(payload, accessToken);
+        toast.success("Organization created.");
       }
       setOrgFormOpen(false);
+      setEditOrgId(null);
       loadOrganizations();
     } catch (err) {
-      setOrgMessage(getApiErrorMessage(err, "Could not save organization."));
+      toast.error(getApiErrorMessage(err, "Could not save organization."));
     } finally {
       setOrgSaving(false);
     }
@@ -273,11 +289,10 @@ export default function SuperAdminDashboardPage() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken || !orgDeleteTarget || orgDeleting) return;
     setOrgDeleting(true);
-    setOrgDeleteError("");
     try {
       const result = await deleteOrganization(orgDeleteTarget.id, accessToken);
       const wiped = result?.wiped || {};
-      setOrgMessage(
+      toast.success(
         result?.message ||
           `Organization deleted. Wiped ${wiped.recruiters || 0} recruiter(s), ` +
             `${wiped.candidates || 0} candidate(s), ${wiped.employees || 0} employee(s).`
@@ -286,7 +301,7 @@ export default function SuperAdminDashboardPage() {
       loadOrganizations();
       loadRecruiters();
     } catch (err) {
-      setOrgDeleteError(getApiErrorMessage(err, "Could not delete organization."));
+      toast.error(getApiErrorMessage(err, "Could not delete organization."));
     } finally {
       setOrgDeleting(false);
     }
@@ -348,13 +363,12 @@ export default function SuperAdminDashboardPage() {
 
   async function handleInvite(event) {
     event.preventDefault();
-    setInviteMessage("");
     setInviteSubmitting(true);
     try {
       const accessToken = localStorage.getItem("access_token");
       const orgModules = orgPurchasedModules(organizations, inviteForm.organization_id);
       const capabilities = clampCapsToOrg(inviteCaps, orgModules);
-      await inviteRecruiter({
+      const invitePayload = {
         ...inviteForm,
         full_name: inviteForm.full_name.trim(),
         email: inviteForm.email.trim(),
@@ -363,12 +377,13 @@ export default function SuperAdminDashboardPage() {
         office_location: inviteForm.office_location.trim() || undefined,
         organization_id: inviteForm.organization_id || undefined,
         capabilities,
-      }, accessToken);
-      setInviteMessage("Invitation sent successfully!");
+      };
+      await inviteRecruiter(invitePayload, accessToken);
+      toast.success("Invitation sent successfully!");
       setInviteForm(initialInviteForm);
       loadRecruiters();
     } catch (error) {
-      setInviteMessage(getApiErrorMessage(error, "Failed to send invitation."));
+      toast.error(getApiErrorMessage(error, "Failed to send invitation."));
     } finally {
       setInviteSubmitting(false);
     }
@@ -380,7 +395,10 @@ export default function SuperAdminDashboardPage() {
     try {
       const result = await updateRecruiterCapabilities(invitationId, { capabilities: { [key]: !currentValue } }, accessToken);
       setRecruiters((prev) => prev.map((r) => r.id === invitationId ? { ...r, capabilities: result.capabilities } : r));
-    } catch { loadRecruiters(); }
+    } catch {
+      toast.error("Could not update capability.");
+      loadRecruiters();
+    }
   }
 
   function toggleBulkSelect(id) {
@@ -399,17 +417,16 @@ export default function SuperAdminDashboardPage() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setBulkBusy(true);
-    setBulkMessage("");
     try {
       const result = await bulkUpdateRecruiterCapabilities(
         { invitation_ids: bulkSelected, capabilities: templates[bulkTemplate] },
         accessToken
       );
-      setBulkMessage(result.message || "Capabilities updated.");
+      toast.success(result.message || "Capabilities updated.");
       setBulkSelected([]);
       loadRecruiters();
     } catch (err) {
-      setBulkMessage(getApiErrorMessage(err, "Bulk update failed."));
+      toast.error(getApiErrorMessage(err, "Bulk update failed."));
     } finally {
       setBulkBusy(false);
     }
@@ -421,7 +438,7 @@ export default function SuperAdminDashboardPage() {
       job_title: r.job_title || "",
       department: r.department || "",
       office_location: r.office_location || "",
-      status: r.is_active ? "active" : r.status === "inactive" ? "inactive" : "active",
+      status: r.recruiter_id ? (r.is_active ? "active" : "inactive") : "pending",
     });
   }
 
@@ -435,11 +452,15 @@ export default function SuperAdminDashboardPage() {
     if (!accessToken) return;
     setEditSaving(true);
     try {
-      await updateRecruiter(recruiterId, editForm, accessToken);
+      const recruiter = recruiters.find((r) => r.id === recruiterId);
+      const payload = { ...editForm };
+      if (!recruiter?.recruiter_id) delete payload.status;
+      await updateRecruiter(recruiterId, payload, accessToken);
+      toast.success("Recruiter updated.");
       setEditingId(null);
       loadRecruiters();
     } catch (error) {
-      alert(getApiErrorMessage(error, "Failed to update recruiter."));
+      toast.error(getApiErrorMessage(error, "Failed to update recruiter."));
     } finally {
       setEditSaving(false);
     }
@@ -474,9 +495,10 @@ export default function SuperAdminDashboardPage() {
     try {
       const accessToken = localStorage.getItem("access_token");
       await deleteRecruiter(recruiterId, accessToken);
+      toast.success("Recruiter deleted.");
       await loadRecruiters();
     } catch (error) {
-      alert(getApiErrorMessage(error, "Failed to delete recruiter."));
+      toast.error(getApiErrorMessage(error, "Failed to delete recruiter."));
     } finally {
       setDeletingRecruiterId(null);
     }
@@ -508,6 +530,7 @@ export default function SuperAdminDashboardPage() {
       const modules = editOrgModules[orgId];
       if (modules) {
         await updateOrganization(orgId, { modules }, accessToken);
+        toast.success("Organization modules updated.");
         loadOrganizations();
         setEditOrgModules(prev => {
           const updated = { ...prev };
@@ -516,7 +539,7 @@ export default function SuperAdminDashboardPage() {
         });
       }
     } catch (error) {
-      alert(getApiErrorMessage(error, "Failed to update organization modules."));
+      toast.error(getApiErrorMessage(error, "Failed to update organization modules."));
     }
   }
 
@@ -677,7 +700,6 @@ export default function SuperAdminDashboardPage() {
           inviteCaps={inviteCaps}
           setInviteCaps={setInviteCaps}
           inviteSubmitting={inviteSubmitting}
-          inviteMessage={inviteMessage}
           handleInvite={handleInvite}
           organizations={organizations}
           templates={templates}
@@ -704,7 +726,6 @@ export default function SuperAdminDashboardPage() {
           setBulkTemplate={setBulkTemplate}
           handleBulkApply={handleBulkApply}
           bulkBusy={bulkBusy}
-          bulkMessage={bulkMessage}
           templates={templates}
           startEdit={startEdit}
           editingId={editingId}
@@ -740,6 +761,95 @@ export default function SuperAdminDashboardPage() {
         <SupportTicketsPanel />
       )}
 
+      {orgFormOpen && (
+        <div className={local.orgModalBackdrop} role="presentation" onMouseDown={closeOrgForm}>
+          <div
+            className={local.orgModal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="org-form-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className={local.orgModalHeader}>
+              <div>
+                <div className={local.orgModalEyebrow}>Organizations</div>
+                <h2 id="org-form-title" className={local.orgModalTitle}>
+                  {editOrgId ? "Edit Organization" : "New Organization"}
+                </h2>
+                <p className={local.orgModalDesc}>
+                  {editOrgId
+                    ? "Update the organization profile and module access."
+                    : "Create a new organization and choose which modules it has access to."}
+                </p>
+              </div>
+              <button type="button" className={local.orgModalClose} onClick={closeOrgForm} aria-label="Close">
+                ×
+              </button>
+            </div>
+
+            <form className={local.orgModalBody} onSubmit={handleOrgSubmit}>
+              <label className={local.orgField}>
+                <span>Name</span>
+                <input
+                  type="text"
+                  value={orgForm.name}
+                  onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
+                  placeholder="Acme Corporation"
+                  required
+                  disabled={orgSaving}
+                />
+              </label>
+              <label className={local.orgField}>
+                <span>Contact Email</span>
+                <input
+                  type="email"
+                  value={orgForm.contact_email}
+                  onChange={(e) => setOrgForm({ ...orgForm, contact_email: e.target.value })}
+                  placeholder="hr@company.com"
+                  disabled={orgSaving}
+                />
+              </label>
+              <label className={local.orgField}>
+                <span>Description</span>
+                <textarea
+                  value={orgForm.description}
+                  onChange={(e) => setOrgForm({ ...orgForm, description: e.target.value })}
+                  placeholder="Short description of the organization"
+                  rows={4}
+                  disabled={orgSaving}
+                />
+              </label>
+
+              <div className={local.orgModuleSection}>
+                <div className={local.orgModuleHeading}>Module Access</div>
+                <div className={local.orgModuleGrid}>
+                  {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
+                    <label key={key} className={local.orgModuleToggle}>
+                      <span>{label}</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(orgModules[key])}
+                        onChange={() => setOrgModules((current) => ({ ...current, [key]: !current[key] }))}
+                        disabled={orgSaving}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className={local.orgModalActions}>
+                <button type="button" className={local.orgSecondaryButton} onClick={closeOrgForm} disabled={orgSaving}>
+                  Cancel
+                </button>
+                <button type="submit" className={local.orgPrimaryButton} disabled={orgSaving}>
+                  {orgSaving ? "Saving..." : editOrgId ? "Save Organization" : "Create Organization"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <OrganizationDeleteModal
         open={Boolean(orgDeleteTarget)}
         onClose={() => {
@@ -750,7 +860,6 @@ export default function SuperAdminDashboardPage() {
           orgDeleteTarget ? recruiters.filter((r) => r.organization_id === orgDeleteTarget.id).length : 0
         }
         busy={orgDeleting}
-        error={orgDeleteError}
         onConfirm={confirmOrgDelete}
       />
 
