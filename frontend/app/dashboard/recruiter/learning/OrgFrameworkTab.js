@@ -84,7 +84,49 @@ export default function OrgFrameworkTab() {
   const [promotionRules, setPromotionRules] = useState([]);
   const [versions, setVersions] = useState([]);
 
+  const [importReport, setImportReport] = useState(null);
+  const [applying, setApplying] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef(null);
+
   const token = () => localStorage.getItem("access_token");
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportReport(null);
+    try {
+      const report = await validateOrgFrameworkImport(token(), file);
+      setImportReport(report);
+      if (report.valid) {
+        toast.success(`Validated: ${Object.values(report.counts).reduce((a, b) => a + b, 0)} items.`);
+      } else {
+        toast.error(`Validation failed with ${report.errors.length} issue(s).`);
+      }
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Import failed."));
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleApply = async () => {
+    if (!importReport?.data) return;
+    setApplying(true);
+    try {
+      await applyOrgFrameworkImport(token(), importReport.data);
+      toast.success("Framework imported.");
+      setImportReport(null);
+      await loadAll();
+      setSection("overview");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Apply failed."));
+    } finally {
+      setApplying(false);
+    }
+  };
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -152,10 +194,18 @@ export default function OrgFrameworkTab() {
 
       {/* Main content */}
       <div className={s.content} style={{ padding: 28, overflowY: "auto" }}>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleFile} />
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading framework…</div>
         ) : !hasData ? (
-          <EmptyState onLoad={loadAll} />
+          <EmptyState
+            onLoad={loadAll}
+            onStart={() => setSection("departments")}
+            onImport={() => fileRef.current?.click()}
+            importReport={importReport}
+            applying={applying}
+            onApply={(val) => { if (val === null) setImportReport(null); else handleApply(); }}
+          />
         ) : section === "overview" ? (
           <OverviewSection summary={summary} departments={departments} roles={roles} courses={courses} versions={versions} loadAll={loadAll} />
         ) : section === "departments" ? (
@@ -182,7 +232,28 @@ export default function OrgFrameworkTab() {
    Empty State (no framework yet)
 // ═══════════════════════════════════════════════════════════════════════════════ */
 
-function EmptyState({ onLoad }) {
+function EmptyState({ onLoad, onStart, onImport, importReport, applying, onApply }) {
+  const token = () => localStorage.getItem("access_token");
+  const [exporting, setExporting] = useState(false);
+
+  const handleDownloadTemplate = async () => {
+    setExporting(true);
+    try {
+      const blob = await exportOrgFramework(token());
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "organization_framework_template.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Template downloaded.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Download failed."));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "60px 24px", textAlign: "center" }}>
       <div style={{ width: 64, height: 64, borderRadius: 18, background: "var(--blue-light)", color: "var(--blue-strong)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
@@ -190,13 +261,52 @@ function EmptyState({ onLoad }) {
       </div>
       <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: "0 0 8px" }}>Organization Framework Not Configured</h3>
       <p style={{ fontSize: 13.5, color: "var(--text-muted)", maxWidth: 460, lineHeight: 1.55, margin: "0 0 24px" }}>
-        Set up your organization's career structure by adding departments, roles, skills, certifications, and learning roadmaps. Everything you configure here automatically applies to all employees.
+        Set up your organization's career structure by importing an Excel template or building it manually. Everything you configure here automatically applies to all employees.
       </p>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onLoad}>
-          <RefreshCw aria-hidden="true" /> Refresh
+        <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={handleDownloadTemplate} disabled={exporting}>
+          <Download aria-hidden="true" /> {exporting ? "Preparing…" : "Download Excel Template"}
+        </button>
+        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onImport}>
+          <Upload aria-hidden="true" /> Import Organization Framework
+        </button>
+        <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={onStart}>
+          Start From Scratch
         </button>
       </div>
+
+      {importReport && (
+        <div style={{ marginTop: 24, maxWidth: 640, width: "100%", border: `1px solid ${importReport.valid ? "var(--green)" : "var(--red)"}`, borderRadius: 14, padding: 16, background: importReport.valid ? "#f4fcf7" : "#fdf6f6", textAlign: "left" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: 14, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui" }}>
+              {importReport.valid ? "Validation passed" : "Validation Report"}
+            </div>
+            <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => onApply(null)}>Dismiss</button>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            {Object.entries(importReport.counts).map(([k, v]) => (
+              <span key={k} style={{ fontSize: 11.5, fontWeight: 700, color: "var(--navy-2)", background: "#fff", border: "1px solid var(--border)", borderRadius: 999, padding: "3px 10px" }}>
+                {k.replace(/_/g, " ")}: {v}
+              </span>
+            ))}
+          </div>
+          {importReport.errors.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              {importReport.errors.map((e, i) => <div key={i} style={{ fontSize: 12.5, color: "var(--red)", marginBottom: 3 }}>• {e}</div>)}
+            </div>
+          )}
+          {importReport.warnings.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              {importReport.warnings.map((w, i) => <div key={i} style={{ fontSize: 12, color: "#a57500", marginBottom: 2 }}>• {w}</div>)}
+            </div>
+          )}
+          {importReport.valid && (
+            <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onApply} disabled={applying}>
+              <Check aria-hidden="true" /> {applying ? "Applying…" : "Apply Changes"}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
