@@ -134,7 +134,7 @@ export default function SuperAdminShell({ activeTab, onTabChange, title, subtitl
     const accessToken = localStorage.getItem("access_token");
     await logout(accessToken);
     clearLocalSession();
-    router.replace("/login");
+    router.replace("/portal-root-x9f3");
   }
 
   async function handleMarkAllRead() {

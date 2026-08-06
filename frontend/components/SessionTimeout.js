@@ -10,6 +10,7 @@ import {
   logout,
   refreshSession,
 } from "@/services/authService";
+import { getStoredUser } from "@/services/rbac";
 
 /** Default: 15 minutes idle timeout. Override with NEXT_PUBLIC_SESSION_TIMEOUT_MS. */
 const SESSION_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_SESSION_TIMEOUT_MS || 900000);
@@ -101,12 +102,18 @@ export default function SessionTimeout() {
 
       const accessToken = localStorage.getItem("access_token");
       logout(accessToken); // best-effort server-side session revocation (fire and forget)
+
+      // Resolve the role's login destination before clearing the session: a
+      // Super Admin returns to the dedicated portal login, everyone else to /login.
+      const storedUser = getStoredUser();
+      const loginRoute = storedUser?.role === "super_admin" ? "/portal-root-x9f3" : "/login";
+
       clearLocalSession();
 
-      if (pathname !== "/login") {
+      if (pathname !== loginRoute) {
         const reasonParam =
           reason === "token" ? "session_expired" : reason === "idle" ? "session_timeout" : "";
-        router.replace(reasonParam ? `/login?reason=${reasonParam}` : "/login");
+        router.replace(reasonParam ? `${loginRoute}?reason=${reasonParam}` : loginRoute);
       }
     },
     [clearAllTimers, isAuthenticated, pathname, router]
