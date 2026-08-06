@@ -421,7 +421,7 @@ export default function SuperAdminDashboardPage() {
       job_title: r.job_title || "",
       department: r.department || "",
       office_location: r.office_location || "",
-      status: r.is_active ? "active" : r.status === "inactive" ? "inactive" : "active",
+      status: r.recruiter_id ? (r.is_active ? "active" : "inactive") : "pending",
     });
   }
 
@@ -435,7 +435,10 @@ export default function SuperAdminDashboardPage() {
     if (!accessToken) return;
     setEditSaving(true);
     try {
-      await updateRecruiter(recruiterId, editForm, accessToken);
+      const recruiter = recruiters.find((r) => r.id === recruiterId);
+      const payload = { ...editForm };
+      if (!recruiter?.recruiter_id) delete payload.status;
+      await updateRecruiter(recruiterId, payload, accessToken);
       setEditingId(null);
       loadRecruiters();
     } catch (error) {

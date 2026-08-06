@@ -57,6 +57,18 @@ DEFAULT_RECRUITER_CAPABILITIES = {
 ALL_CAPABILITY_KEYS = list(DEFAULT_RECRUITER_CAPABILITIES.keys())
 
 
+def _normalize_recruiter_status(profile: dict | None, invitation: dict | None) -> str:
+    """Show invitation-only recruiters as pending until they have a profile."""
+    if profile:
+        status = (profile.get("status") or "active").strip().lower()
+        if status in {"active", "inactive"}:
+            return status
+        return "active"
+    if invitation:
+        return "pending"
+    return "pending"
+
+
 async def _clamp_capabilities_to_org(
     capabilities: dict[str, bool],
     organization_id: str | None,
@@ -394,10 +406,9 @@ async def list_recruiters(
     
     all_recruiters = await database.recruiters.find(recruiter_query).sort("created_at", -1).to_list(1000)
     
-    # Get all invitations
+    # Get all invitations. We normalize invitation-only recruiters to "pending"
+    # in the response so expired-but-unregistered invites still appear as pending.
     inv_query = {"kind": "recruiter"}
-    if status_filter:
-        inv_query["status"] = status_filter
     invitations = await database.invitations.find(inv_query).to_list(1000)
     
     # Create maps for easy lookup
@@ -420,6 +431,7 @@ async def list_recruiters(
             continue
             
         inv = invitation_map.get(email)
+        normalized_status = _normalize_recruiter_status(recruiter, inv)
         all_entries[email] = {
             "id": str(recruiter.get("_id")),
             "token": inv.get("token") if inv else None,
@@ -428,13 +440,13 @@ async def list_recruiters(
             "job_title": recruiter.get("job_title") or (inv.get("job_title") if inv else ""),
             "department": recruiter.get("department") or (inv.get("department") if inv else ""),
             "office_location": recruiter.get("office_location") or (inv.get("office_location") if inv else ""),
-            "status": recruiter.get("status"),
+            "status": normalized_status,
             "created_at": recruiter["created_at"].isoformat() if recruiter.get("created_at") else None,
             "expires_at": inv["expires_at"].isoformat() if inv and inv.get("expires_at") else None,
             "used_at": inv.get("used_at").isoformat() if inv and inv.get("used_at") else None,
             "capabilities": recruiter.get("capabilities") or (inv.get("capabilities") if inv else DEFAULT_RECRUITER_CAPABILITIES),
             "organization_id": recruiter.get("organization_id") or (inv.get("organization_id") if inv else None),
-            "is_active": recruiter.get("status") == "active",
+            "is_active": normalized_status == "active",
             "has_employee_profile": email in employee_emails,
             "recruiter_id": str(recruiter.get("_id")),
         }
@@ -444,6 +456,7 @@ async def list_recruiters(
         email = inv.get("email", "").lower()
         if not email or email in all_entries:
             continue
+        normalized_status = _normalize_recruiter_status(None, inv)
             
         all_entries[email] = {
             "id": str(inv.get("_id")),
@@ -453,7 +466,7 @@ async def list_recruiters(
             "job_title": inv.get("job_title"),
             "department": inv.get("department"),
             "office_location": inv.get("office_location"),
-            "status": inv.get("status"),
+            "status": normalized_status,
             "created_at": inv["created_at"].isoformat() if inv.get("created_at") else None,
             "expires_at": inv["expires_at"].isoformat() if inv.get("expires_at") else None,
             "used_at": inv.get("used_at").isoformat() if inv.get("used_at") else None,
@@ -464,8 +477,12 @@ async def list_recruiters(
             "recruiter_id": None,
         }
     
-    # Convert to list and sort by created_at (most recent first)
-    results = list(all_entries.values())
+    # Convert to list, apply the requested status filter against the normalized
+    # status, and sort by created_at (most recent first).
+    results = [
+        entry for entry in all_entries.values()
+        if not status_filter or entry.get("status") == status_filter
+    ]
     results.sort(key=lambda x: x.get("created_at") or "1900-01-01T00:00:00", reverse=True)
     
     # Apply pagination

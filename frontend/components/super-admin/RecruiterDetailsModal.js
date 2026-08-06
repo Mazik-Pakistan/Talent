@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getRecruiterDetails, deleteRecruiter, updateRecruiterCapabilities, updateRecruiter, getApiErrorMessage } from "@/services/authService";
 import styles from "./RecruiterDetailsModal.module.css";
 import shell from "@/components/recruiter/recruiter-shell.module.css";
@@ -36,44 +36,48 @@ export default function RecruiterDetailsModal({
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  useEffect(() => {
-    if (isOpen && recruiterId) {
-      const loadRecruiterDetails = async () => {
-        setLoading(true);
-        setError("");
-        try {
-          const accessToken = localStorage.getItem("access_token");
-          const data = await getRecruiterDetails(recruiterId, accessToken);
-          setDetails(data.recruiter);
-          
-          // Initialize edit form
-          const profile = data.recruiter.profile || {};
-          const invitation = data.recruiter.invitation || {};
-          setEditForm({
-            full_name: profile.full_name || invitation.full_name || "",
-            job_title: profile.job_title || invitation.job_title || "",
-            department: profile.department || invitation.department || "",
-            office_location: profile.office_location || invitation.office_location || "",
-            status: profile.status || "active",
-          });
-        } catch (err) {
-          setError(getApiErrorMessage(err, "Failed to load recruiter details"));
-        } finally {
-          setLoading(false);
-        }
-      };
-      loadRecruiterDetails();
+  const loadRecruiterDetails = useCallback(async () => {
+    if (!isOpen || !recruiterId) return;
+    setLoading(true);
+    setError("");
+    try {
+      const accessToken = localStorage.getItem("access_token");
+      const data = await getRecruiterDetails(recruiterId, accessToken);
+      setDetails(data.recruiter);
+
+      // Keep invitation-only recruiters pending until they register.
+      const profile = data.recruiter.profile || {};
+      const invitation = data.recruiter.invitation || {};
+      setEditForm({
+        full_name: profile.full_name || invitation.full_name || "",
+        job_title: profile.job_title || invitation.job_title || "",
+        department: profile.department || invitation.department || "",
+        office_location: profile.office_location || invitation.office_location || "",
+        status: profile.user_id ? (profile.status || "active") : "pending",
+      });
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Failed to load recruiter details"));
+    } finally {
+      setLoading(false);
     }
   }, [isOpen, recruiterId]);
+
+  useEffect(() => {
+    loadRecruiterDetails();
+  }, [loadRecruiterDetails]);
 
   const handleSave = async () => {
     setSaving(true);
     setError("");
     try {
       const accessToken = localStorage.getItem("access_token");
-      await updateRecruiter(recruiterId, editForm, accessToken);
+      const payload = { ...editForm };
+      if (!details?.profile?.user_id) {
+        delete payload.status;
+      }
+      await updateRecruiter(recruiterId, payload, accessToken);
       setIsEditing(false);
-      loadRecruiterDetails();
+      await loadRecruiterDetails();
       onUpdated && onUpdated();
     } catch (err) {
       setError(getApiErrorMessage(err, "Failed to update recruiter"));
@@ -88,7 +92,7 @@ export default function RecruiterDetailsModal({
       await updateRecruiterCapabilities(recruiterId, { 
         capabilities: { [key]: !currentValue } 
       }, accessToken);
-      loadRecruiterDetails();
+      await loadRecruiterDetails();
       onUpdated && onUpdated();
     } catch (err) {
       setError(getApiErrorMessage(err, "Failed to update capability"));
@@ -116,29 +120,9 @@ export default function RecruiterDetailsModal({
     if (!details) return "Unknown";
     
     const profile = details.profile;
-    const invitation = details.invitation;
-    
-    // If there's an active recruiter profile, use its status
-    if (profile && profile.status === "active") {
-      return "Active";
+    if (profile) {
+      return profile.status === "inactive" ? "Inactive" : "Active";
     }
-    
-    // If only invitation exists and it's pending
-    if (invitation && invitation.status === "pending") {
-      return "Pending";
-    }
-    
-    // If invitation is used but no active profile, registration incomplete
-    if (invitation && invitation.status === "used" && (!profile || profile.status !== "active")) {
-      return "Pending";
-    }
-    
-    // If profile exists but inactive
-    if (profile && profile.status === "inactive") {
-      return "Inactive";
-    }
-    
-    // Default case
     return "Pending";
   };
 
@@ -161,7 +145,11 @@ export default function RecruiterDetailsModal({
                   {details.profile?.full_name || details.invitation?.full_name || "Unknown"}
                 </span>
                 <span className={`${styles.statusBadge} ${
-                  getRecruiterStatus(details) === "Active" ? styles.active : styles.inactive
+                  getRecruiterStatus(details) === "Active"
+                    ? styles.active
+                    : getRecruiterStatus(details) === "Pending"
+                      ? styles.pending
+                      : styles.inactive
                 }`}>
                   {getRecruiterStatus(details)}
                 </span>
@@ -260,13 +248,19 @@ export default function RecruiterDetailsModal({
                         </label>
                         <label className={styles.field}>
                           <span>Status</span>
-                          <select
-                            value={editForm.status}
-                            onChange={(e) => setEditForm({...editForm, status: e.target.value})}
-                          >
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                          </select>
+                          {details.profile ? (
+                            <select
+                              value={editForm.status}
+                              onChange={(e) => setEditForm({...editForm, status: e.target.value})}
+                            >
+                              <option value="active">Active</option>
+                              <option value="inactive">Inactive</option>
+                            </select>
+                          ) : (
+                            <select value="pending" disabled>
+                              <option value="pending">Pending</option>
+                            </select>
+                          )}
                         </label>
                       </div>
                       <div className={styles.formActions}>
@@ -320,7 +314,11 @@ export default function RecruiterDetailsModal({
                         <div className={styles.infoItem}>
                           <label>Account Status:</label>
                           <span className={`${styles.statusText} ${
-                            getRecruiterStatus(details) === "Active" ? styles.active : styles.inactive
+                            getRecruiterStatus(details) === "Active"
+                              ? styles.active
+                              : getRecruiterStatus(details) === "Pending"
+                                ? styles.pending
+                                : styles.inactive
                           }`}>
                             {getRecruiterStatus(details)}
                           </span>

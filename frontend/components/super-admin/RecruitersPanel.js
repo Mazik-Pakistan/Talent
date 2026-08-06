@@ -375,16 +375,26 @@ export default function RecruitersPanel({
             </label>
             <label className={s.editField}>
               <span className={s.editLabel}>Status</span>
-              <select
-                className={s.editInput}
-                value={editForm?.status || ""}
-                onChange={(e) => setEditForm({ ...(editForm || {}), status: e.target.value })}
-                aria-label="Recruiter status"
-              >
-                <option value="active">Active</option>
-                <option value="pending">Pending</option>
-                <option value="inactive">Inactive</option>
-              </select>
+              {recruiter.recruiter_id ? (
+                <select
+                  className={s.editInput}
+                  value={editForm?.status || "active"}
+                  onChange={(e) => setEditForm({ ...(editForm || {}), status: e.target.value })}
+                  aria-label="Recruiter status"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              ) : (
+                <select
+                  className={s.editInput}
+                  value="pending"
+                  disabled
+                  aria-label="Recruiter status"
+                >
+                  <option value="pending">Pending</option>
+                </select>
+              )}
             </label>
           </div>
         )}
