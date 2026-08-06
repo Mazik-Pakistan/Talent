@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { useSearchParams } from "next/navigation";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
+import OrgFrameworkTab from "./OrgFrameworkTab";
 import {
   Archive,
   ArrowRight,
@@ -110,6 +111,7 @@ const TABS = [
   { key: "certificates", label: "Verify Certificates", icon: BadgeCheck },
   { key: "analytics", label: "Learning Analytics", icon: BarChart3 },
   { key: "career-framework", label: "Career Framework", icon: Briefcase },
+  { key: "org-framework", label: "Organization Framework", icon: FolderTree },
   { key: "promotion-readiness", label: "Promotion Readiness", icon: TrendingUp },
 ];
 
@@ -147,7 +149,7 @@ function LearningPageContent() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState(() => {
     const t = searchParams.get("tab");
-    if (["certificates", "career-framework", "analytics", "managed", "knowledge", "assign", "assignments", "promotion-readiness", "catalog"].includes(t)) return t;
+    if (["certificates", "career-framework", "org-framework", "analytics", "managed", "knowledge", "assign", "assignments", "promotion-readiness", "catalog"].includes(t)) return t;
     return "catalog";
   });
   const [pendingAssign, setPendingAssign] = useState(null);
@@ -156,7 +158,7 @@ function LearningPageContent() {
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t && ["certificates", "career-framework", "analytics", "managed", "knowledge", "assign", "assignments", "promotion-readiness", "catalog"].includes(t)) {
+    if (t && ["certificates", "career-framework", "org-framework", "analytics", "managed", "knowledge", "assign", "assignments", "promotion-readiness", "catalog"].includes(t)) {
       setTab(t);
     }
   }, [searchParams]);
@@ -224,6 +226,7 @@ function LearningPageContent() {
       {tab === "certificates" && <CertificatesTab selectedCertificateId={selectedCertificateId} />}
       {tab === "analytics" && <AnalyticsTab />}
       {tab === "career-framework" && <CareerFrameworkTab initialDepartment={initialDepartment} />}
+      {tab === "org-framework" && <OrgFrameworkTab />}
       {tab === "promotion-readiness" && <PromotionReadinessTab />}
     </RecruiterShell>
   );

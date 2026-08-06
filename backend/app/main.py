@@ -15,6 +15,7 @@ from app.api.it_provisioning import router as it_provisioning_router
 from app.api.it_service_requests import router as it_service_requests_router
 from app.api.learning import router as learning_router
 from app.api.messages import router as messages_router
+from app.api.organization_framework import router as org_framework_router
 from app.api.offers import router as offers_router
 from app.api.onboarding import router as onboarding_router
 from app.api.rbac import router as rbac_router
@@ -81,6 +82,7 @@ app.include_router(learning_router)
 app.include_router(talent_router)
 app.include_router(messages_router)
 app.include_router(career_framework_router)
+app.include_router(org_framework_router)
 app.include_router(agent_router)
 app.include_router(tickets_router)
 app.include_router(admin_tickets_router)
