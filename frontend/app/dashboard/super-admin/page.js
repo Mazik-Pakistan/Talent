@@ -98,6 +98,8 @@ const CAPABILITY_LABELS = {
   support: "Support tickets",
 };
 
+const ORG_MODULE_KEYS = Object.keys(CAPABILITY_LABELS).filter((key) => key !== "support");
+
 const TEMPLATE_LABELS = {
   standard_recruiter: "Standard Recruiter",
   hiring_only: "Hiring Only",
@@ -110,6 +112,13 @@ const initialInviteForm = { full_name: "", email: "", job_title: "", department:
 
 function allCapabilityFlags(source = {}, fallback = true) {
   return Object.keys(CAPABILITY_LABELS).reduce((acc, key) => {
+    acc[key] = source[key] ?? fallback;
+    return acc;
+  }, {});
+}
+
+function orgModuleFlags(source = {}, fallback = true) {
+  return ORG_MODULE_KEYS.reduce((acc, key) => {
     acc[key] = source[key] ?? fallback;
     return acc;
   }, {});
@@ -162,7 +171,7 @@ export default function SuperAdminDashboardPage() {
   const [orgsLoading, setOrgsLoading] = useState(false);
   const [orgFormOpen, setOrgFormOpen] = useState(false);
   const [orgForm, setOrgForm] = useState({ name: "", contact_email: "", description: "" });
-  const [orgModules, setOrgModules] = useState(() => allCapabilityFlags({}, true));
+  const [orgModules, setOrgModules] = useState(() => orgModuleFlags({}, true));
   const [orgSaving, setOrgSaving] = useState(false);
   const [orgMessage, setOrgMessage] = useState("");
   const [orgDeleteTarget, setOrgDeleteTarget] = useState(null);
@@ -224,7 +233,7 @@ export default function SuperAdminDashboardPage() {
   function openCreateOrg() {
     setEditOrgId(null);
     setOrgForm({ name: "", contact_email: "", description: "" });
-    setOrgModules(allCapabilityFlags({}, true));
+    setOrgModules(orgModuleFlags({}, true));
     setOrgFormOpen(true);
     setOrgMessage("");
   }
@@ -236,8 +245,15 @@ export default function SuperAdminDashboardPage() {
       contact_email: org.contact_email || "",
       description: org.description || "",
     });
-    setOrgModules(allCapabilityFlags(org.modules || {}, true));
+    setOrgModules(orgModuleFlags(org.modules || {}, true));
     setOrgFormOpen(true);
+    setOrgMessage("");
+  }
+
+  function closeOrgForm() {
+    if (orgSaving) return;
+    setOrgFormOpen(false);
+    setEditOrgId(null);
     setOrgMessage("");
   }
 
@@ -248,14 +264,21 @@ export default function SuperAdminDashboardPage() {
     setOrgSaving(true);
     setOrgMessage("");
     try {
+      const payload = {
+        name: orgForm.name.trim(),
+        contact_email: orgForm.contact_email.trim() || undefined,
+        description: orgForm.description.trim() || undefined,
+        modules: orgModuleFlags(orgModules, true),
+      };
       if (editOrgId) {
-        await updateOrganization(editOrgId, { modules: orgModules }, accessToken);
+        await updateOrganization(editOrgId, payload, accessToken);
         setOrgMessage("Organization modules updated.");
       } else {
-        await createOrganization({ ...orgForm, modules: orgModules }, accessToken);
+        await createOrganization(payload, accessToken);
         setOrgMessage("Organization created.");
       }
       setOrgFormOpen(false);
+      setEditOrgId(null);
       loadOrganizations();
     } catch (err) {
       setOrgMessage(getApiErrorMessage(err, "Could not save organization."));
@@ -741,6 +764,97 @@ export default function SuperAdminDashboardPage() {
 
       {activeTab === "support" && (
         <SupportTicketsPanel />
+      )}
+
+      {orgFormOpen && (
+        <div className={local.orgModalBackdrop} role="presentation" onMouseDown={closeOrgForm}>
+          <div
+            className={local.orgModal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="org-form-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className={local.orgModalHeader}>
+              <div>
+                <div className={local.orgModalEyebrow}>Organizations</div>
+                <h2 id="org-form-title" className={local.orgModalTitle}>
+                  {editOrgId ? "Edit Organization" : "New Organization"}
+                </h2>
+                <p className={local.orgModalDesc}>
+                  {editOrgId
+                    ? "Update the organization profile and module access."
+                    : "Create a new organization and choose which modules it has access to."}
+                </p>
+              </div>
+              <button type="button" className={local.orgModalClose} onClick={closeOrgForm} aria-label="Close">
+                ×
+              </button>
+            </div>
+
+            <form className={local.orgModalBody} onSubmit={handleOrgSubmit}>
+              <label className={local.orgField}>
+                <span>Name</span>
+                <input
+                  type="text"
+                  value={orgForm.name}
+                  onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
+                  placeholder="Acme Corporation"
+                  required
+                  disabled={orgSaving}
+                />
+              </label>
+              <label className={local.orgField}>
+                <span>Contact Email</span>
+                <input
+                  type="email"
+                  value={orgForm.contact_email}
+                  onChange={(e) => setOrgForm({ ...orgForm, contact_email: e.target.value })}
+                  placeholder="hr@company.com"
+                  disabled={orgSaving}
+                />
+              </label>
+              <label className={local.orgField}>
+                <span>Description</span>
+                <textarea
+                  value={orgForm.description}
+                  onChange={(e) => setOrgForm({ ...orgForm, description: e.target.value })}
+                  placeholder="Short description of the organization"
+                  rows={4}
+                  disabled={orgSaving}
+                />
+              </label>
+
+              <div className={local.orgModuleSection}>
+                <div className={local.orgModuleHeading}>Module Access</div>
+                <div className={local.orgModuleGrid}>
+                  {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
+                    <label key={key} className={local.orgModuleToggle}>
+                      <span>{label}</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(orgModules[key])}
+                        onChange={() => setOrgModules((current) => ({ ...current, [key]: !current[key] }))}
+                        disabled={orgSaving}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {orgMessage && <div className={local.orgFormMessage}>{orgMessage}</div>}
+
+              <div className={local.orgModalActions}>
+                <button type="button" className={local.orgSecondaryButton} onClick={closeOrgForm} disabled={orgSaving}>
+                  Cancel
+                </button>
+                <button type="submit" className={local.orgPrimaryButton} disabled={orgSaving}>
+                  {orgSaving ? "Saving..." : editOrgId ? "Save Organization" : "Create Organization"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       <OrganizationDeleteModal

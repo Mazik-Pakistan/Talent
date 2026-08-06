@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { toast } from "react-toastify";
 
 import s from "./InviteRecruiter.module.css";
 
@@ -181,6 +182,7 @@ export default function InviteRecruiter({
   applyTemplate,
 }) {
   const [moduleSearch, setModuleSearch] = useState("");
+  const [lastToastMessage, setLastToastMessage] = useState("");
 
   const selectedOrg = useMemo(
     () => organizations.find((o) => o.id === inviteForm.organization_id) || null,
@@ -213,6 +215,21 @@ export default function InviteRecruiter({
       ),
     })).filter((cat) => cat.keys.length > 0);
   }, [moduleSearch]);
+
+  useEffect(() => {
+    if (!inviteMessage) {
+      setLastToastMessage("");
+      return;
+    }
+    if (inviteMessage === lastToastMessage) return;
+    const normalized = inviteMessage.toLowerCase();
+    if (normalized.includes("success")) {
+      toast.success(inviteMessage);
+    } else {
+      toast.error(inviteMessage);
+    }
+    setLastToastMessage(inviteMessage);
+  }, [inviteMessage, lastToastMessage]);
 
   const handleOrgChange = useCallback(
     (e) => {
