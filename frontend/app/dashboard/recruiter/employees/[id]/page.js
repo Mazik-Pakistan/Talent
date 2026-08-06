@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
@@ -1221,7 +1221,7 @@ function EmployeeProfilePageContent({ params }) {
     { key: "day1", label: "Day-1" },
   ];
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <RecruiterShell
       activeKey="employees"
@@ -1235,7 +1235,7 @@ function EmployeeProfilePageContent({ params }) {
         </button>
       </div>
 
-      {/* â”€â”€ Profile hero â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Profile hero ─────────────────────────────────────────────── */}
       <div className={styles.section} style={{ marginBottom: 16 }}>
         <div className={styles.profileHero}>
           <div className={styles.profileAvatar}>{initials}</div>

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -55,7 +55,7 @@ function EmployeeMessagesInner() {
       section: composing ? "compose" : selectedId ? "thread" : "inbox",
       label: composing ? "New message" : thread?.subject || "Message HR",
       hint: composing
-        ? "Write a clear subject and message â€” your recruiter gets this in-app and by email."
+        ? "Write a clear subject and message — your recruiter gets this in-app and by email."
         : selectedId
           ? "Reply here to continue the thread, or Close when the topic is done."
           : "Pick a conversation or start a new one with HR.",
@@ -152,7 +152,7 @@ function EmployeeMessagesInner() {
     <EmployeeShell
       activeKey="messages"
       title="Message HR"
-      subtitle="Start or continue a conversation with your recruiter â€” they also get an email copy."
+      subtitle="Start or continue a conversation with your recruiter — they also get an email copy."
       permissions={["profile.view"]}
     >
       <div className={styles.layout}>
@@ -192,8 +192,8 @@ function EmployeeMessagesInner() {
               >
                 <div className={styles.threadSubject}>{t.subject || "HR conversation"}</div>
                 <div className={styles.threadMeta}>
-                  {t.recruiter_name || "HR"} Â· {formatWhen(t.updated_at)}
-                  {" Â· "}
+                  {t.recruiter_name || "HR"} · {formatWhen(t.updated_at)}
+                  {" · "}
                   <span className={`${styles.statusChip} ${t.status === "closed" ? styles.statusClosed : ""}`}>
                     {t.status}
                   </span>
@@ -218,7 +218,7 @@ function EmployeeMessagesInner() {
                 className={styles.textarea}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                placeholder="Write your messageâ€¦"
+                placeholder="Write your message…"
                 required
               />
               {error ? <p className={styles.error}>{error}</p> : null}
@@ -227,7 +227,7 @@ function EmployeeMessagesInner() {
                   Cancel
                 </button>
                 <button type="submit" className={styles.primaryBtn} disabled={sending || !body.trim()}>
-                  {sending ? "Sendingâ€¦" : "Send"}
+                  {sending ? "Sending…" : "Send"}
                 </button>
               </div>
             </form>
@@ -241,7 +241,7 @@ function EmployeeMessagesInner() {
                 <div>
                   <div className={styles.panelTitle}>{thread.subject || "HR conversation"}</div>
                   <p className={styles.panelHint}>
-                    with {thread.recruiter_name || "HR"} Â· {thread.status}
+                    with {thread.recruiter_name || "HR"} · {thread.status}
                   </p>
                 </div>
                 {thread.status !== "closed" ? (
@@ -256,7 +256,7 @@ function EmployeeMessagesInner() {
                   return (
                     <div key={m.id} className={`${styles.bubble} ${mine ? styles.bubbleMine : styles.bubbleTheirs}`}>
                       <div className={styles.bubbleMeta}>
-                        {m.sender_name || m.sender_role} Â· {formatWhen(m.created_at)}
+                        {m.sender_name || m.sender_role} · {formatWhen(m.created_at)}
                       </div>
                       <div className={styles.bubbleBody}>{m.body}</div>
                     </div>
@@ -269,13 +269,13 @@ function EmployeeMessagesInner() {
                     className={styles.textarea}
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
-                    placeholder="Write a replyâ€¦"
+                    placeholder="Write a reply…"
                     required
                   />
                   {error ? <p className={styles.error}>{error}</p> : null}
                   <div className={styles.composeRow}>
                     <button type="submit" className={styles.primaryBtn} disabled={sending || !body.trim()}>
-                      {sending ? "Sendingâ€¦" : "Reply"}
+                      {sending ? "Sending…" : "Reply"}
                     </button>
                   </div>
                 </form>

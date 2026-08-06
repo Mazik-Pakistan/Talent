@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
@@ -52,11 +52,11 @@ export default function EmployeeTalentPage() {
           return {
             message: `There ${opportunityCount === 1 ? "is" : "are"} ${opportunityCount} open internal ${
               opportunityCount === 1 ? "opportunity" : "opportunities"
-            }. I can switch you to that tab so you can review and apply â€” I won't leave My Talent.`,
+            }. I can switch you to that tab so you can review and apply — I won't leave My Talent.`,
             items: [`${opportunityCount} open role${opportunityCount === 1 ? "" : "s"}`],
             applyLabel: "Show opportunities",
-            busyMessage: "Opening Internal Opportunitiesâ€¦",
-            doneMessage: "âœ“ Opportunities are open â€” review a role and apply if it fits.",
+            busyMessage: "Opening Internal Opportunities…",
+            doneMessage: "✓ Opportunities are open — review a role and apply if it fits.",
             meta: { tab: "opportunities" },
           };
         }
@@ -64,8 +64,8 @@ export default function EmployeeTalentPage() {
           return {
             message: "Your journey timeline is here. I can open Achievements next to review badges and milestones you've earned.",
             applyLabel: "Open Achievements",
-            busyMessage: "Opening Achievementsâ€¦",
-            doneMessage: "âœ“ Achievements are open.",
+            busyMessage: "Opening Achievements…",
+            doneMessage: "✓ Achievements are open.",
             meta: { tab: "achievements" },
           };
         }
@@ -73,8 +73,8 @@ export default function EmployeeTalentPage() {
           return {
             message: "Nice progress. I can open Internal Opportunities so you can see roles that match your growth.",
             applyLabel: "Show opportunities",
-            busyMessage: "Opening Internal Opportunitiesâ€¦",
-            doneMessage: "âœ“ Opportunities are open.",
+            busyMessage: "Opening Internal Opportunities…",
+            doneMessage: "✓ Opportunities are open.",
             meta: { tab: "opportunities" },
           };
         }
@@ -157,7 +157,7 @@ function JourneyTab() {
           <div>
             <div className={dashStyles.sectionTitle}>Your journey</div>
             <p className={dashStyles.sectionDesc}>
-              Joining, promotions, certifications, completed courses, and skill growth â€” sorted chronologically.
+              Joining, promotions, certifications, completed courses, and skill growth — sorted chronologically.
             </p>
           </div>
         </div>
@@ -234,7 +234,7 @@ function AchievementsTab() {
           <div>
             <div className={dashStyles.sectionTitle}>Achievements</div>
             <p className={dashStyles.sectionDesc}>
-              {data ? `${data.total_certifications} certifications Â· ${data.total_completed_courses} courses completed` : "Your certifications, completed courses, and milestones."}
+              {data ? `${data.total_certifications} certifications · ${data.total_completed_courses} courses completed` : "Your certifications, completed courses, and milestones."}
             </p>
           </div>
         </div>
@@ -261,7 +261,7 @@ function AchievementsTab() {
                 <div>
                   <div className={styles.achievementTitle}>{a.title}</div>
                   <div className={styles.achievementMeta}>
-                    {a.issuer ? `${a.issuer} Â· ` : ""}
+                    {a.issuer ? `${a.issuer} · ` : ""}
                     {a.date ? new Date(a.date).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : ""}
                   </div>
                 </div>
@@ -304,7 +304,7 @@ function OpportunitiesTab() {
     setApplyingId(opp.id);
     try {
       const res = await applyToOpportunity(token, opp.id);
-      toast.success(res.eligible ? "Applied! You meet the eligibility criteria." : "Applied â€” note: this role's core requirements don't fully match your current profile yet.");
+      toast.success(res.eligible ? "Applied! You meet the eligibility criteria." : "Applied — note: this role's core requirements don't fully match your current profile yet.");
       load();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not apply to this opportunity."));
@@ -329,7 +329,7 @@ function OpportunitiesTab() {
           <input
             className={styles.smallBtn}
             style={{ minWidth: 220, cursor: "text", textAlign: "left", fontWeight: 500 }}
-            placeholder="Search opportunitiesâ€¦"
+            placeholder="Search opportunities…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -365,8 +365,8 @@ function OpportunitiesTab() {
               <div className={styles.oppTitle}>{opp.title}</div>
               <div className={styles.oppMeta}>
                 {opp.department}
-                {opp.location ? ` Â· ${opp.location}` : ""}
-                {opp.commitment ? ` Â· ${opp.commitment}` : ""}
+                {opp.location ? ` · ${opp.location}` : ""}
+                {opp.commitment ? ` · ${opp.commitment}` : ""}
               </div>
               <p className={styles.oppDesc}>{opp.description}</p>
               {opp.required_skills?.length > 0 && (
@@ -378,7 +378,7 @@ function OpportunitiesTab() {
               )}
               <div className={styles.oppFooter}>
                 {opp.already_applied ? (
-                  <span className={styles.oppApplied}>âœ“ Applied</span>
+                  <span className={styles.oppApplied}>✓ Applied</span>
                 ) : (
                   <button
                     type="button"
@@ -386,7 +386,7 @@ function OpportunitiesTab() {
                     disabled={applyingId === opp.id}
                     onClick={() => handleApply(opp)}
                   >
-                    {applyingId === opp.id ? "Applyingâ€¦" : "Apply"}
+                    {applyingId === opp.id ? "Applying…" : "Apply"}
                   </button>
                 )}
               </div>

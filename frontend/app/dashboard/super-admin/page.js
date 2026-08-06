@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -605,7 +605,7 @@ export default function SuperAdminDashboardPage() {
                   style={{ marginTop: 8 }}
                   onClick={() => setActiveTab("invite")}
                 >
-                  {recruiters.length > 0 ? "Invite another â†’" : "Invite recruiter â†’"}
+                  {recruiters.length > 0 ? "Invite another →" : "Invite recruiter →"}
                 </button>
               </div>
             </div>
@@ -644,7 +644,7 @@ export default function SuperAdminDashboardPage() {
               className={styles.quickAction}
               onClick={() => setActiveTab("invite")}
             >
-              <span className={styles.qaIcon}>â†—</span>
+              <span className={styles.qaIcon}>↗</span>
               <strong>Invite Recruiter</strong>
               <span className={styles.qaHint}>Send onboarding invitations</span>
             </button>
@@ -653,7 +653,7 @@ export default function SuperAdminDashboardPage() {
               className={styles.quickAction}
               onClick={() => setActiveTab("recruiters")}
             >
-              <span className={styles.qaIcon}>â†—</span>
+              <span className={styles.qaIcon}>↗</span>
               <strong>Manage Recruiters</strong>
               <span className={styles.qaHint}>View and edit recruiter access</span>
             </button>
@@ -662,7 +662,7 @@ export default function SuperAdminDashboardPage() {
               className={styles.quickAction}
               onClick={() => setActiveTab("organizations")}
             >
-              <span className={styles.qaIcon}>â†—</span>
+              <span className={styles.qaIcon}>↗</span>
               <strong>Organizations</strong>
               <span className={styles.qaHint}>Configure company modules</span>
             </button>

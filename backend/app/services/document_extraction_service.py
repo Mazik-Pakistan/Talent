@@ -175,7 +175,7 @@ class DocumentExtractionService:
 
     @staticmethod
     def _fix_mojibake(text: str) -> str:
-        """Repair UTF-8 bytes that got misread as cp1252 (e.g. â€" -> —)."""
+        """Repair UTF-8 bytes that got misread as cp1252 (e.g. a mangled em dash is restored to —)."""
         if not text:
             return text
         try:

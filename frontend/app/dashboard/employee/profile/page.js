@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
@@ -168,7 +168,7 @@ function EmployeeProfileContent() {
     });
   }, [editingSection]);
 
-  // Page-scoped Copilot assist â€” guidance only (no auto-fill). Mascot highlights fields.
+  // Page-scoped Copilot assist — guidance only (no auto-fill). Mascot highlights fields.
   useEffect(() => {
     return registerPageAssist(null);
   }, []);
@@ -257,7 +257,7 @@ function EmployeeProfileContent() {
   const documents = onboarding?.documents || {};
   const nda = onboarding?.nda || {};
 
-  // â”€â”€ Section completeness (drives status badges, nav dots, and the ring) â”€â”€
+  // ── Section completeness (drives status badges, nav dots, and the ring) ──
   const sectionComplete = useMemo(() => ({
     employment: !!employee?.employee_id,
     personal: !!(personal.first_name || personal.national_id),
@@ -595,7 +595,7 @@ function EmployeeProfileContent() {
                     type="button"
                     className={`${dashStyles.navItem} ${isActive ? dashStyles.active : ""} ${disabled ? dashStyles.disabled : ""}`}
                     onClick={() => item.href && router.push(item.href)}
-                    title={disabled ? `${item.label} â€” coming in Phase 3` : item.label}
+                    title={disabled ? `${item.label} — coming in Phase 3` : item.label}
                     disabled={disabled}
                   >
                     {item.icon}
@@ -628,7 +628,7 @@ function EmployeeProfileContent() {
             <div className={dashStyles.topbarLeft}>
               <div className={dashStyles.topbarTitle}>My Profile</div>
               <div className={dashStyles.topbarSub}>
-                {employee?.employee_id || "Null"} Â· {employee?.department || "Null"}
+                {employee?.employee_id || "Null"} · {employee?.department || "Null"}
               </div>
             </div>
             <div className={dashStyles.topbarActions}>
@@ -692,7 +692,7 @@ function EmployeeProfileContent() {
                     <h1>{displayName}</h1>
                     <p>
                       {user.email}
-                      {employee?.company_email ? ` Â· ${employee.company_email}` : ""}
+                      {employee?.company_email ? ` · ${employee.company_email}` : ""}
                     </p>
                     <div className={styles.chips}>
                       {employee?.employee_id && <span className={styles.chip}>{employee.employee_id}</span>}
@@ -736,7 +736,7 @@ function EmployeeProfileContent() {
                     {employee?.orientation?.date && (
                       <Row
                         label="Orientation"
-                        value={`${formatDate(employee.orientation.date)}${employee.orientation.time ? ` Â· ${employee.orientation.time}` : ""}`}
+                        value={`${formatDate(employee.orientation.date)}${employee.orientation.time ? ` · ${employee.orientation.time}` : ""}`}
                         wide
                       />
                     )}
@@ -747,7 +747,7 @@ function EmployeeProfileContent() {
                           .map((a) => {
                             const bits = [a.name];
                             if (a.serial_number) bits.push(`SN ${a.serial_number}`);
-                            return bits.join(" Â· ");
+                            return bits.join(" · ");
                           })
                           .filter(Boolean)
                           .join(", ")}
@@ -821,7 +821,7 @@ function EmployeeProfileContent() {
                       </div>
                       <div className={styles.editActions}>
                         <button type="button" className={styles.secondaryBtn} onClick={cancelEdit} disabled={saving}>Cancel</button>
-                        <button type="button" className={styles.primaryBtn} onClick={savePersonal} disabled={saving}>{saving ? "Savingâ€¦" : "Save personal information"}</button>
+                        <button type="button" className={styles.primaryBtn} onClick={savePersonal} disabled={saving}>{saving ? "Saving…" : "Save personal information"}</button>
                       </div>
                     </div>
                   }
@@ -831,7 +831,7 @@ function EmployeeProfileContent() {
                       <div>
                         <strong>Blood group needs verification</strong>
                         <p>
-                          You saved N/A for now. Please confirm your blood group as soon as you can â€”
+                          You saved N/A for now. Please confirm your blood group as soon as you can —
                           it is used in emergencies.
                         </p>
                       </div>
@@ -922,7 +922,7 @@ function EmployeeProfileContent() {
                       <button type="button" className={`${styles.secondaryBtn} ${styles.addRefBtn}`} onClick={() => setEducationDrafts((items) => [...items, { ...emptyEducationEntry }])}>Add education</button>
                       <div className={styles.editActions}>
                         <button type="button" className={styles.secondaryBtn} onClick={cancelEdit} disabled={saving}>Cancel</button>
-                        <button type="button" className={styles.primaryBtn} onClick={saveEducation} disabled={saving}>{saving ? "Savingâ€¦" : "Save education"}</button>
+                        <button type="button" className={styles.primaryBtn} onClick={saveEducation} disabled={saving}>{saving ? "Saving…" : "Save education"}</button>
                       </div>
                     </div>
                   }
@@ -967,8 +967,8 @@ function EmployeeProfileContent() {
                       {skills.certifications.map((cert, index) => (
                         <p key={index} className={styles.mutedLine}>
                           {cert.name}
-                          {cert.expiry_date ? ` Â· expires ${formatDate(cert.expiry_date)}` : ""}
-                          {cert.document_url ? " Â· document on file" : ""}
+                          {cert.expiry_date ? ` · expires ${formatDate(cert.expiry_date)}` : ""}
+                          {cert.document_url ? " · document on file" : ""}
                         </p>
                       ))}
                     </div>
@@ -1052,7 +1052,7 @@ function EmployeeProfileContent() {
                           Cancel
                         </button>
                         <button type="button" className={styles.primaryBtn} onClick={saveEmergency} disabled={saving}>
-                          {saving ? "Savingâ€¦" : "Save emergency contact"}
+                          {saving ? "Saving…" : "Save emergency contact"}
                         </button>
                       </div>
                     </div>
@@ -1159,7 +1159,7 @@ function EmployeeProfileContent() {
                           Cancel
                         </button>
                         <button type="button" className={styles.primaryBtn} onClick={saveEmployment} disabled={saving}>
-                          {saving ? "Savingâ€¦" : "Save banking details"}
+                          {saving ? "Saving…" : "Save banking details"}
                         </button>
                       </div>
                     </div>
@@ -1292,7 +1292,7 @@ function EmployeeProfileContent() {
                           Cancel
                         </button>
                         <button type="button" className={styles.primaryBtn} onClick={saveReferences} disabled={saving}>
-                          {saving ? "Savingâ€¦" : "Save references"}
+                          {saving ? "Saving…" : "Save references"}
                         </button>
                       </div>
                     </div>
@@ -1391,7 +1391,7 @@ function EmployeeProfileContent() {
                     {sectionsMeta.filter((item) => !item.done).length === 0 ? (
                       <div className={styles.insightRow}>
                         <span className={styles.insightIconOk}><IconCheckSmall /></span>
-                        <span>Every section on your profile is complete â€” nicely done.</span>
+                        <span>Every section on your profile is complete — nicely done.</span>
                       </div>
                     ) : (
                       sectionsMeta
@@ -1433,7 +1433,7 @@ function EmployeeProfileContent() {
               </div>
             )}
 
-            <div className={dashStyles.footerNote}>Talent by  Â· Employee Profile</div>
+            <div className={dashStyles.footerNote}>Talent by  · Employee Profile</div>
           </div>
         </main>
       </div>
@@ -1504,7 +1504,7 @@ function CompanyEmailPasswordReveal() {
       </p>
       {!otpSent ? (
         <button type="button" className={styles.secondaryBtn} disabled={busy} onClick={sendOtp}>
-          {busy ? "Sendingâ€¦" : "Send OTP to my personal email"}
+          {busy ? "Sending…" : "Send OTP to my personal email"}
         </button>
       ) : (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
@@ -1519,7 +1519,7 @@ function CompanyEmailPasswordReveal() {
             />
           </label>
           <button type="button" className={styles.primaryBtn} disabled={busy} onClick={reveal}>
-            {busy ? "Checkingâ€¦" : "Reveal password"}
+            {busy ? "Checking…" : "Reveal password"}
           </button>
           <button type="button" className={styles.secondaryBtn} disabled={busy} onClick={sendOtp}>
             Resend OTP
@@ -1582,7 +1582,7 @@ function ProfileSection({
   );
 }
 
-/* â”€â”€ Section icons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Section icons ────────────────────────────────────────────────────── */
 
 function IconBriefcase() {
   return (
@@ -1739,7 +1739,7 @@ function PolicyStatus({ label, accepted }) {
   return (
     <div className={styles.policyRow}>
       <span className={accepted ? styles.policyOk : styles.policyPending}>
-        {accepted ? "âœ“" : "â—‹"}
+        {accepted ? "✓" : "○"}
       </span>
       <span>{label}</span>
       <span className={accepted ? styles.policyOk : styles.policyPending}>
