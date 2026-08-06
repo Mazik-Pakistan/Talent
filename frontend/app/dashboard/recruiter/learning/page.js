@@ -29,6 +29,7 @@ import {
   FileText,
   FolderTree,
   Globe,
+  GraduationCap,
   Library,
   ListChecks,
   Milestone,
@@ -73,6 +74,7 @@ import {
   deleteManagedCourse,
   getCatalogFacets,
   getManagedFacets,
+  getOrgTaxonomy,
   getLearningAnalytics,
   listManagedCourses,
   listAssignments,
@@ -143,13 +145,19 @@ function sourceBadgeClass(source) {
 
 function LearningPageContent() {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState(() => (searchParams.get("tab") === "certificates" ? "certificates" : "catalog"));
+  const [tab, setTab] = useState(() => {
+    const t = searchParams.get("tab");
+    if (["certificates", "career-framework", "analytics", "managed", "knowledge", "assign", "assignments", "promotion-readiness", "catalog"].includes(t)) return t;
+    return "catalog";
+  });
   const [pendingAssign, setPendingAssign] = useState(null);
   const selectedCertificateId = searchParams.get("certificateId");
+  const initialDepartment = searchParams.get("department") || "";
 
   useEffect(() => {
-    if (searchParams.get("tab") === "certificates") {
-      setTab("certificates");
+    const t = searchParams.get("tab");
+    if (t && ["certificates", "career-framework", "analytics", "managed", "knowledge", "assign", "assignments", "promotion-readiness", "catalog"].includes(t)) {
+      setTab(t);
     }
   }, [searchParams]);
 
@@ -215,7 +223,7 @@ function LearningPageContent() {
       {tab === "assignments" && <AssignmentsTab />}
       {tab === "certificates" && <CertificatesTab selectedCertificateId={selectedCertificateId} />}
       {tab === "analytics" && <AnalyticsTab />}
-      {tab === "career-framework" && <CareerFrameworkTab />}
+      {tab === "career-framework" && <CareerFrameworkTab initialDepartment={initialDepartment} />}
       {tab === "promotion-readiness" && <PromotionReadinessTab />}
     </RecruiterShell>
   );
@@ -2091,13 +2099,13 @@ function ManagedLearningTab() {
 // Career Framework Tab                                                          //
 // ═══════════════════════════════════════════════════════════════════════════════ //
 
-const CF_DEPARTMENTS = ["MBS", "Innovations", "QA", "AI", "HR", "Finance", "IT", "Infra", "Odyssey"];
-
-function CareerFrameworkTab() {
+function CareerFrameworkTab({ initialDepartment = null }) {
   const [tracks, setTracks] = useState([]);
   const [levels, setLevels] = useState([]);
+  const [allDepartments, setAllDepartments] = useState([]);
+  const [selectedDept, setSelectedDept] = useState(initialDepartment || "");
+  const [deptSearch, setDeptSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [deptFilter, setDeptFilter] = useState("");
   const [showAddTrack, setShowAddTrack] = useState(false);
   const [showAddLevel, setShowAddLevel] = useState(null);
   const [editingLevel, setEditingLevel] = useState(null);
@@ -2106,23 +2114,35 @@ function CareerFrameworkTab() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef(null);
 
+  useEffect(() => {
+    if (initialDepartment) setSelectedDept(initialDepartment);
+  }, [initialDepartment]);
+
   const load = useCallback(async () => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
     try {
-      const [trackData, levelData] = await Promise.all([
-        listCareerTracks(token, deptFilter || undefined),
-        listCareerLevels(token, deptFilter || undefined),
+      const [trackData, levelData, taxonomy] = await Promise.all([
+        listCareerTracks(token),
+        listCareerLevels(token),
+        getOrgTaxonomy(token),
       ]);
       setTracks(trackData.tracks || []);
       setLevels(levelData.levels || []);
+      const taxDepts = taxonomy.departments || [];
+      const cfDepts = [...new Set([
+        ...taxDepts,
+        ...(trackData.tracks || []).map((t) => t.department),
+        ...(levelData.levels || []).map((l) => l.department),
+      ].filter(Boolean))].sort();
+      setAllDepartments(cfDepts);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not load career framework."));
     } finally {
       setLoading(false);
     }
-  }, [deptFilter]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -2178,9 +2198,7 @@ function CareerFrameworkTab() {
     try {
       const result = await importCareerFramework(token, importFile);
       toast.success(`Imported ${result.imported} levels. Skipped: ${result.skipped}`);
-      if (result.errors?.length) {
-        toast.warn(`${result.errors.length} rows had errors.`);
-      }
+      if (result.errors?.length) toast.warn(`${result.errors.length} rows had errors.`);
       setImportFile(null);
       load();
     } catch (err) {
@@ -2190,27 +2208,32 @@ function CareerFrameworkTab() {
     }
   }
 
-  // Group levels by department, merge with tracks that have no levels
   const levelsByDept = {};
   for (const level of levels) {
     const dept = level.department;
     if (!levelsByDept[dept]) levelsByDept[dept] = [];
     levelsByDept[dept].push(level);
   }
-  // Add tracks that don't have any levels yet
   for (const track of tracks) {
     const dept = track.department;
-    if (!levelsByDept[dept]) {
-      levelsByDept[dept] = [];
-    }
+    if (!levelsByDept[dept]) levelsByDept[dept] = [];
   }
   for (const dept of Object.keys(levelsByDept)) {
     levelsByDept[dept].sort((a, b) => a.level_number - b.level_number);
   }
 
+  const filteredDepts = allDepartments.filter(
+    (d) => !deptSearch.trim() || d.toLowerCase().includes(deptSearch.toLowerCase())
+  );
+
+  const visibleDepts = selectedDept
+    ? Object.entries(levelsByDept).filter(([dept]) => dept === selectedDept)
+    : Object.entries(levelsByDept);
+
+  const totalLevels = Object.values(levelsByDept).reduce((s, a) => s + a.length, 0);
+
   return (
     <>
-      {/* Header with actions */}
       <div className={shellStyles.section}>
         <div className={shellStyles.sectionHead}>
           <div className={shellStyles.sectionHeadLeft}>
@@ -2218,38 +2241,42 @@ function CareerFrameworkTab() {
             <div>
               <div className={shellStyles.sectionTitle}>Career Framework</div>
               <p className={shellStyles.sectionDesc}>
-                Define career progression tracks by department. Each level specifies required skills, certifications, and learning paths.
+                Define career progression tracks by department — each level specifies required skills, certifications, and learning paths.
               </p>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <select className={styles.filterSelect} value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
-              <option value="">All departments</option>
-              {CF_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <button type="button" className={styles.modeBtn} onClick={() => setShowAddTrack(true)}>+ Add Track</button>
-            <button type="button" className={styles.modeBtn} onClick={() => fileInputRef.current?.click()}>Import CSV</button>
-            <button type="button" className={styles.modeBtn} onClick={handleExport}>Export CSV</button>
-            <button type="button" className={styles.modeBtn} onClick={() => window.open("/api/career-framework/template", "_blank")}>Download Template</button>
+            <button type="button" className={styles.modeBtn} onClick={() => setShowAddTrack(true)}>
+              <Plus aria-hidden="true" /> Add Track
+            </button>
+            <button type="button" className={styles.modeBtn} onClick={() => fileInputRef.current?.click()}>
+              <Upload aria-hidden="true" /> Import CSV
+            </button>
+            <button type="button" className={styles.modeBtn} onClick={handleExport}>
+              <Download aria-hidden="true" /> Export CSV
+            </button>
+            <button type="button" className={styles.modeBtn} onClick={() => window.open("/api/career-framework/template", "_blank")}>
+              <FileText aria-hidden="true" /> Template
+            </button>
             <input ref={fileInputRef} type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
           </div>
         </div>
       </div>
 
-      {/* Import preview */}
       {importFile && (
         <div className={shellStyles.section}>
           <div className={shellStyles.sectionBody} style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <span>File: {importFile.name}</span>
-            <button type="button" className={styles.modeBtn} onClick={handleImport} disabled={importing}>
-              {importing ? "Importing…" : "Confirm Import"}
+            <span className={styles.metaChip}><FileText aria-hidden="true" />{importFile.name}</span>
+            <button type="button" className={styles.assignCourseBtn} onClick={handleImport} disabled={importing}>
+              <Check aria-hidden="true" /> {importing ? "Importing…" : "Confirm Import"}
             </button>
-            <button type="button" className={styles.modeBtn} onClick={() => setImportFile(null)}>Cancel</button>
+            <button type="button" className={styles.smallBtn} onClick={() => setImportFile(null)}>
+              <X aria-hidden="true" /> Cancel
+            </button>
           </div>
         </div>
       )}
 
-      {/* Add Track Form */}
       {showAddTrack && (
         <div className={shellStyles.section}>
           <div className={shellStyles.sectionHead}>
@@ -2261,32 +2288,38 @@ function CareerFrameworkTab() {
             </div>
           </div>
           <div className={shellStyles.sectionBody}>
-            <form onSubmit={handleCreateTrack} style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+            <form onSubmit={handleCreateTrack} className={styles.managedForm}>
               <label className={styles.fieldLabel}>
                 Department
                 <select value={newTrack.department} onChange={(e) => setNewTrack((f) => ({ ...f, department: e.target.value }))} required>
                   <option value="">Select department</option>
-                  {CF_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  {allDepartments.map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
               </label>
               <label className={styles.fieldLabel}>
                 Track Name
-                <input value={newTrack.track_name} onChange={(e) => setNewTrack((f) => ({ ...f, track_name: e.target.value }))} placeholder="e.g., Software Engineering" required />
+                <input value={newTrack.track_name} onChange={(e) => setNewTrack((f) => ({ ...f, track_name: e.target.value }))} placeholder="e.g. Software Engineering" required />
               </label>
-              <label className={styles.fieldLabel}>
+              <label className={`${styles.fieldLabel} ${styles.wide}`}>
                 Description
                 <input value={newTrack.description} onChange={(e) => setNewTrack((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description" />
               </label>
-              <button type="submit" className={styles.modeBtn}>Create Track</button>
-              <button type="button" className={styles.modeBtn} onClick={() => setShowAddTrack(false)}>Cancel</button>
+              <div className={styles.formActions}>
+                <button type="submit" className={styles.assignCourseBtn}>
+                  <Check aria-hidden="true" /> Create Track
+                </button>
+                <button type="button" className={styles.smallBtn} onClick={() => setShowAddTrack(false)}>
+                  <X aria-hidden="true" /> Cancel
+                </button>
+              </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Career Ladder Views by Department */}
-      {loading && <RecruiterLoader inline />}
-      {!loading && Object.keys(levelsByDept).length === 0 && tracks.length === 0 && (
+      {loading ? (
+        <RecruiterLoader inline />
+      ) : allDepartments.length === 0 ? (
         <div className={shellStyles.section}>
           <div className={shellStyles.sectionBody}>
             <div className={styles.emptyState}>
@@ -2296,116 +2329,188 @@ function CareerFrameworkTab() {
             </div>
           </div>
         </div>
-      )}
-
-      {Object.entries(levelsByDept).map(([dept, deptLevels]) => (
-        <div key={dept} className={shellStyles.section}>
-          <div className={shellStyles.sectionHead}>
-            <div className={shellStyles.sectionHeadLeft}>
-              <span className={`${shellStyles.bar} ${shellStyles.green}`} />
-              <div>
-                <div className={shellStyles.sectionTitle}>{dept} — Career Progression</div>
-                <p className={shellStyles.sectionDesc}>{deptLevels.length} level{deptLevels.length !== 1 ? "s" : ""}</p>
+      ) : (
+        <div className={styles.deptLayout}>
+          <div className={styles.deptSidebar}>
+            <div className={styles.deptSidebarHead}>
+              <div className={styles.deptSidebarTitle}>Departments</div>
+              <div className={styles.deptSidebarHint}>
+                {filteredDepts.length} department{filteredDepts.length !== 1 ? "s" : ""} · {totalLevels} total levels
               </div>
             </div>
+            <div className={styles.deptSearch}>
+              <div style={{ position: "relative" }}>
+                <Search className={styles.deptSearchIcon} aria-hidden="true" />
+                <input
+                  className={styles.deptSearchInput}
+                  aria-label="Search departments"
+                  placeholder="Search departments…"
+                  value={deptSearch}
+                  onChange={(e) => setDeptSearch(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className={styles.deptItemList}>
+              <button
+                type="button"
+                className={`${styles.deptItem} ${!selectedDept ? styles.deptItemActive : ""}`}
+                onClick={() => setSelectedDept("")}
+              >
+                <div className={styles.deptItemIcon} style={{ background: "var(--green-light)", color: "var(--green)" }}>
+                  <ListChecks aria-hidden="true" />
+                </div>
+                <div className={styles.deptItemBody}>
+                  <div className={styles.deptItemName}>All departments</div>
+                  <div className={styles.deptItemMeta}>
+                    {totalLevels} levels · {Object.keys(levelsByDept).length} depts
+                  </div>
+                </div>
+              </button>
+              {filteredDepts.map((d) => {
+                const lvlCount = (levelsByDept[d] || []).length;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`${styles.deptItem} ${selectedDept === d ? styles.deptItemActive : ""}`}
+                    onClick={() => setSelectedDept(d)}
+                  >
+                    <div className={styles.deptItemIcon}>
+                      {d.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className={styles.deptItemBody}>
+                      <div className={styles.deptItemName}>{d}</div>
+                      <div className={styles.deptItemMeta}>
+                        <GraduationCap aria-hidden="true" /> {lvlCount} level{lvlCount !== 1 ? "s" : ""}
+                      </div>
+                    </div>
+                    <span className={styles.deptItemBadge}>{lvlCount}</span>
+                  </button>
+                );
+              })}
+              {filteredDepts.length === 0 && (
+                <div style={{ padding: "20px 14px", textAlign: "center", fontSize: 12, color: "var(--text-muted)" }}>
+                  No departments match
+                </div>
+              )}
+            </div>
           </div>
-          <div className={shellStyles.sectionBody}>
-            {deptLevels.length === 0 && (
-              <div className={styles.emptyState}>
-                <div className={styles.emptyStateIcon}><Milestone aria-hidden="true" /></div>
-                <div className={styles.emptyStateTitle}>No levels defined yet</div>
-                <p className={styles.emptyStateHint}>Add the first career level to start building this progression.</p>
+
+          <div style={{ padding: 0, overflowY: "auto" }}>
+            {visibleDepts.length === 0 && (
+              <div style={{ padding: 40 }}>
+                <div className={styles.emptyState}>
+                  <div className={styles.emptyStateIcon}><Milestone aria-hidden="true" /></div>
+                  <div className={styles.emptyStateTitle}>
+                    {selectedDept ? `No levels in ${selectedDept}` : "No career levels defined"}
+                  </div>
+                  <p className={styles.emptyStateHint}>
+                    {selectedDept
+                      ? "Add the first career level to start building this department's progression."
+                      : "Import a CSV or add tracks manually to define career progressions."}
+                  </p>
+                </div>
               </div>
             )}
-            {deptLevels.length > 0 && (
-              <div className={styles.cfLadder}>
-                {deptLevels.map((level, idx) => (
-                  <div key={level.id} className={styles.cfLevelWrap}>
-                    {idx > 0 && (
-                      <div className={styles.cfArrow}>
-                        <ChevronRight aria-hidden="true" />
-                      </div>
-                    )}
-                    <div className={styles.cfLevelCard}>
-                      <div className={styles.cfLevelHead}>
-                        <span className={styles.cfLevelBadge}>
-                          <Milestone aria-hidden="true" />Level {level.level_number}
-                        </span>
-                        <div className={styles.cfLevelActions}>
-                          <button type="button" className={styles.cfLevelActionBtn} onClick={() => setEditingLevel(level)}>
-                            <Pencil aria-hidden="true" /> Edit
-                          </button>
-                          <button type="button" className={`${styles.cfLevelActionBtn} ${styles.danger}`} onClick={() => handleDeleteLevel(level.id)}>
-                            <Trash2 aria-hidden="true" /> Delete
-                          </button>
-                        </div>
-                      </div>
-                      <div className={styles.cfLevelTitle}>{level.role_title}</div>
-                      {level.min_experience_years > 0 && (
-                        <div className={styles.cfLevelFact}>
-                          <Clock aria-hidden="true" />Min {level.min_experience_years} years experience
-                        </div>
-                      )}
-                      {level.min_time_in_current_role_months > 0 && (
-                        <div className={styles.cfLevelFact}>
-                          <Calendar aria-hidden="true" />Min {level.min_time_in_current_role_months} months in role
-                        </div>
-                      )}
-                      {level.required_skills?.length > 0 && (
-                        <>
-                          <div className={styles.cfSectionLabel}>Skills</div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                            {level.required_skills.map((s, i) => (
-                              <span key={i} className={styles.cfSkillChip}>{s.skill} ({s.proficiency})</span>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                      {level.required_certifications?.length > 0 && (
-                        <>
-                          <div className={styles.cfSectionLabel}>Certifications</div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                            {level.required_certifications.map((c, i) => (
-                              <span key={i} className={styles.cfCertChip}>{c.certification}</span>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                      {level.learning_path?.length > 0 && (
-                        <>
-                          <div className={styles.cfSectionLabel}>Learning Path ({level.learning_path.length} courses)</div>
-                          {level.learning_path.slice(0, 3).map((c, i) => (
-                            <div key={i} className={styles.cfCourseRow}>
-                              <span className={styles.cfCourseNum}>{c.order}.</span>
-                              {c.course_title}
-                            </div>
-                          ))}
-                          {level.learning_path.length > 3 && (
-                            <div className={styles.cfMore}>+{level.learning_path.length - 3} more</div>
-                          )}
-                        </>
-                      )}
+            {visibleDepts.map(([dept, deptLevels]) => (
+              <div key={dept} style={{ padding: "24px 28px", borderBottom: "1px solid var(--border-soft)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui, sans-serif" }}>
+                      {dept}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                      {deptLevels.length} career level{deptLevels.length !== 1 ? "s" : ""} · ranked by progression order
                     </div>
                   </div>
-                ))}
-                <button
-                  type="button"
-                  className={styles.cfAddLevel}
-                  onClick={() => setShowAddLevel({ department: dept })}
-                >
-                  <Plus aria-hidden="true" /> Add Level
-                </button>
+                  <button type="button" className={styles.modeBtn} onClick={() => setShowAddLevel({ department: dept })}>
+                    <Plus aria-hidden="true" /> Add Level
+                  </button>
+                </div>
+                {deptLevels.length > 0 && (
+                  <div className={styles.cfLadder}>
+                    {deptLevels.map((level, idx) => (
+                      <div key={level.id} className={styles.cfLevelWrap}>
+                        {idx > 0 && (
+                          <div className={styles.cfArrow}>
+                            <ChevronRight aria-hidden="true" />
+                          </div>
+                        )}
+                        <div className={styles.cfLevelCard}>
+                          <div className={styles.cfLevelHead}>
+                            <span className={styles.cfLevelBadge}>
+                              <Milestone aria-hidden="true" />Level {level.level_number}
+                            </span>
+                            <div className={styles.cfLevelActions}>
+                              <button type="button" className={styles.cfLevelActionBtn} onClick={() => setEditingLevel(level)}>
+                                <Pencil aria-hidden="true" /> Edit
+                              </button>
+                              <button type="button" className={`${styles.cfLevelActionBtn} ${styles.danger}`} onClick={() => handleDeleteLevel(level.id)}>
+                                <Trash2 aria-hidden="true" /> Delete
+                              </button>
+                            </div>
+                          </div>
+                          <div className={styles.cfLevelTitle}>{level.role_title}</div>
+                          {level.min_experience_years > 0 && (
+                            <div className={styles.cfLevelFact}>
+                              <Clock aria-hidden="true" />Min {level.min_experience_years} years experience
+                            </div>
+                          )}
+                          {level.min_time_in_current_role_months > 0 && (
+                            <div className={styles.cfLevelFact}>
+                              <Calendar aria-hidden="true" />Min {level.min_time_in_current_role_months} months in role
+                            </div>
+                          )}
+                          {level.required_skills?.length > 0 && (
+                            <>
+                              <div className={styles.cfSectionLabel}>Skills</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {level.required_skills.map((s, i) => (
+                                  <span key={i} className={styles.cfSkillChip}>{s.skill} ({s.proficiency})</span>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                          {level.required_certifications?.length > 0 && (
+                            <>
+                              <div className={styles.cfSectionLabel}>Certifications</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {level.required_certifications.map((c, i) => (
+                                  <span key={i} className={styles.cfCertChip}>{c.certification}</span>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                          {level.learning_path?.length > 0 && (
+                            <>
+                              <div className={styles.cfSectionLabel}>Learning Path ({level.learning_path.length} courses)</div>
+                              {level.learning_path.slice(0, 3).map((c, i) => (
+                                <div key={i} className={styles.cfCourseRow}>
+                                  <span className={styles.cfCourseNum}>{c.order}.</span>
+                                  {c.course_title}
+                                </div>
+                              ))}
+                              {level.learning_path.length > 3 && (
+                                <div className={styles.cfMore}>+{level.learning_path.length - 3} more</div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            ))}
           </div>
         </div>
-      ))}
+      )}
 
-      {/* Add/Edit Level Form */}
       {(showAddLevel || editingLevel) && (
         <CFAddEditLevelForm
           initialData={showAddLevel ? { department: showAddLevel.department } : editingLevel}
           isEdit={Boolean(editingLevel)}
+          allDepartments={allDepartments}
           onClose={() => { setShowAddLevel(null); setEditingLevel(null); }}
           onSaved={() => { setShowAddLevel(null); setEditingLevel(null); load(); }}
         />
@@ -2414,7 +2519,7 @@ function CareerFrameworkTab() {
   );
 }
 
-function CFAddEditLevelForm({ initialData, isEdit, onClose, onSaved }) {
+function CFAddEditLevelForm({ initialData, isEdit, allDepartments = [], onClose, onSaved }) {
   const [form, setForm] = useState({
     department: initialData?.department || "",
     track_name: initialData?.track_name || "",
@@ -2522,7 +2627,7 @@ function CFAddEditLevelForm({ initialData, isEdit, onClose, onSaved }) {
               Department
               <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} required disabled={isEdit}>
                 <option value="">Select</option>
-                {CF_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                {allDepartments.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </label>
             <label className={styles.fieldLabel}>
