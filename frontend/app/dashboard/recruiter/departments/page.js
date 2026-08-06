@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
@@ -16,6 +16,8 @@ import {
   Building2,
   Calendar,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Clock,
   Compass,
   Eye,
@@ -82,6 +84,26 @@ function DepartmentsContent() {
   const [selectedDept, setSelectedDept] = useState(null);
   const [search, setSearch] = useState("");
   const [empSearch, setEmpSearch] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const isNarrowRef = useRef(typeof window !== "undefined" ? window.matchMedia("(max-width: 1100px)").matches : false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1100px)");
+    const onChange = (e) => {
+      isNarrowRef.current = e.matches;
+      setSidebarCollapsed(e.matches);
+    };
+    isNarrowRef.current = mq.matches;
+    setSidebarCollapsed(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  const selectDepartment = useCallback((name) => {
+    setSelectedDept(name);
+    setEmpSearch("");
+    if (isNarrowRef.current) setSidebarCollapsed(true);
+  }, []);
 
   useEffect(() => {
     publishRecruiterContext({ tab: "departments", section: "departments", hint: "Department management", fields: [] });
@@ -220,13 +242,24 @@ function DepartmentsContent() {
           </div>
         </div>
       ) : (
-        <div className={s.pageLayout}>
+        <div className={`${s.pageLayout} ${sidebarCollapsed ? s.sidebarCollapsed : ""}`}>
           {/* ─── Left Sidebar ─── */}
-          <div className={s.sidebar}>
+          <div className={s.sidebar} aria-label="Departments sidebar">
             <div className={s.sidebarHead}>
               <div className={s.sidebarHeadTop}>
                 <span className={s.sidebarTitle}>Departments</span>
-                <span className={s.sidebarCount}>{filteredDepts.length}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className={s.sidebarCount}>{filteredDepts.length}</span>
+                  <button
+                    type="button"
+                    className={s.sidebarToggle}
+                    aria-label={sidebarCollapsed ? "Expand department list" : "Collapse department list"}
+                    aria-expanded={!sidebarCollapsed}
+                    onClick={() => setSidebarCollapsed((v) => !v)}
+                  >
+                    {sidebarCollapsed ? <ChevronsRight aria-hidden="true" /> : <ChevronsLeft aria-hidden="true" />}
+                  </button>
+                </div>
               </div>
               <div className={s.sidebarHint}>{totalEmployees} employees across {departments.length} departments</div>
             </div>
@@ -249,8 +282,9 @@ function DepartmentsContent() {
                   type="button"
                   role="option"
                   aria-selected={selectedDept === d.name}
+                  title={d.name}
                   className={`${s.deptItem} ${selectedDept === d.name ? s.deptItemActive : ""}`}
-                  onClick={() => { setSelectedDept(d.name); setEmpSearch(""); }}
+                  onClick={() => selectDepartment(d.name)}
                 >
                   <div className={s.deptItemIcon}>{d.name.slice(0, 2).toUpperCase()}</div>
                   <div className={s.deptItemBody}>
@@ -267,6 +301,22 @@ function DepartmentsContent() {
               {filteredDepts.length === 0 && (
                 <div className={s.deptEmpty}>No departments match "{search}"</div>
               )}
+            </div>
+            {/* Quick-switch chips (mobile, collapsed state) */}
+            <div className={s.mobileChips}>
+              <div className={s.chipStrip}>
+                {filteredDepts.map((d) => (
+                  <button
+                    key={d.name}
+                    type="button"
+                    className={`${s.chipItem} ${selectedDept === d.name ? s.chipItemActive : ""}`}
+                    onClick={() => selectDepartment(d.name)}
+                  >
+                    <span className={s.chipName}>{d.name}</span>
+                    <span className={s.chipCount}>{d.employeeCount}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -500,7 +550,7 @@ function DepartmentsContent() {
                           <div className={s.sectionBlockTitle}><Users aria-hidden="true" /> Employees ({selectedInfo.employees.length})</div>
                           <div className={s.sectionBlockDesc}>All active employees in {selectedDept}</div>
                         </div>
-                        <div className={s.searchWrap} style={{ width: 220 }}>
+                        <div className={`${s.searchWrap} ${s.headSearch}`}>
                           <Search className={s.searchIcon} aria-hidden="true" />
                           <input className={s.searchInput} aria-label="Filter employees" placeholder="Filter employees…" value={empSearch} onChange={(e) => setEmpSearch(e.target.value)} />
                         </div>
