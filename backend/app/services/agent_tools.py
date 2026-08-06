@@ -27,6 +27,7 @@ from app.schemas.employee_profile import EmployeeProfileSaveRequest
 from app.schemas.invitation import CreateInvitationRequest, OnboardingSaveRequest
 from app.schemas.offer import OfferTermsPayload
 from app.schemas.offer import OfferApproveRequest, OfferCreateRequest
+from app.schemas.ticket import TicketCreateRequest
 from app.schemas.onboarding_assignment import (
     AssetAssignRequest,
     AssetUpdateRequest,
@@ -40,6 +41,7 @@ from app.services.email_service import email_service
 from app.services.employee_service import EmployeeService
 from app.services.invitation_service import InvitationService
 from app.services.offer_service import offer_service
+from app.services.ticket_service import ticket_service
 
 candidate_service = CandidateService()
 employee_service = EmployeeService()
@@ -1485,6 +1487,82 @@ async def _tool_create_announcement(user: CurrentUser, args: dict) -> ToolResult
         return _err(exc)
 
 
+def _normalize_ticket_text(value: Any, fallback: str | None = None) -> str | None:
+    if value is None:
+        return fallback
+    text = str(value).strip()
+    return text or fallback
+
+
+def _build_support_ticket_request(args: dict) -> dict:
+    title = _normalize_ticket_text(args.get("title") or args.get("subject"), "Support request") or "Support request"
+    details = _normalize_ticket_text(
+        args.get("details") or args.get("description") or args.get("message") or args.get("summary"),
+        "No additional details were provided.",
+    ) or "No additional details were provided."
+    category = _normalize_ticket_text(args.get("issue_type") or args.get("category"), "other") or "other"
+    category = category.strip().lower().replace(" ", "_")
+    if category not in {
+        "bug_report",
+        "feature_request",
+        "performance",
+        "ui_issue",
+        "login_issue",
+        "permission_issue",
+        "ai_assistant",
+        "recruitment",
+        "employee_module",
+        "learning",
+        "analytics",
+        "billing",
+        "security",
+        "integration",
+        "api",
+        "other",
+    }:
+        category = "other"
+
+    module = _normalize_ticket_text(args.get("module") or args.get("affected_module"), "system") or "system"
+    module = module.strip().lower().replace(" ", "_")
+    if module not in {"recruitment", "employees", "learning", "analytics", "ai", "reports", "dashboard", "organization", "settings", "system"}:
+        module = "system"
+
+    priority = _normalize_ticket_text(args.get("priority"), "medium") or "medium"
+    priority = priority.strip().lower()
+    if priority not in {"low", "medium", "high", "critical"}:
+        priority = "medium"
+
+    payload = {
+        "subject": title,
+        "description": details,
+        "category": category,
+        "priority": priority,
+        "affected_module": module,
+    }
+    browser = _normalize_ticket_text(args.get("browser"))
+    os = _normalize_ticket_text(args.get("os"))
+    if browser:
+        payload["browser"] = browser
+    if os:
+        payload["os"] = os
+    return payload
+
+
+async def _tool_create_support_ticket(user: CurrentUser, args: dict) -> ToolResult:
+    try:
+        payload = TicketCreateRequest(**_build_support_ticket_request(args))
+        result = await ticket_service.create_ticket(user, payload)
+        return ToolResult(
+            ok=True,
+            data={
+                "message": f"Support ticket created ({result.get('ticket_id') or result.get('id')}).",
+                "ticket": result,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 RECRUITER_TOOLS: list[Tool] = [
     Tool(
         name="send_invitation",
@@ -1937,6 +2015,24 @@ RECRUITER_TOOLS: list[Tool] = [
         roles=("recruiter", "super_admin"),
     ),
     Tool(
+        name="create_support_ticket",
+        description=(
+            "Create a support ticket when the recruiter reports a bug, broken workflow, login issue, missing access, "
+            "or any other platform problem. Use this instead of leaving the chat or asking the recruiter to fill a form manually."
+        ),
+        parameters={
+            "title": "string, short summary of the issue",
+            "details": "string, full issue description",
+            "issue_type": "bug_report|feature_request|performance|ui_issue|login_issue|permission_issue|ai_assistant|recruitment|employee_module|learning|analytics|billing|security|integration|api|other, optional",
+            "module": "recruitment|employees|learning|analytics|ai|reports|dashboard|organization|settings|system, optional",
+            "priority": "low|medium|high|critical, optional",
+            "browser": "string, optional",
+            "os": "string, optional",
+        },
+        handler=_tool_create_support_ticket,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
         name="list_announcements",
         description="List recent announcements (optional audience filter: candidates|employees|both).",
         parameters={"limit": "integer, optional", "audience": "candidates|employees|both, optional"},
@@ -2215,6 +2311,7 @@ EMPLOYEE_TOOLS: list[Tool] = [*SELF_SERVE_TOOLS, *EMPLOYEE_PARITY_TOOLS]
 RECRUITER_TOOL_CAPABILITIES: dict[str, str | tuple[str, ...]] = {
     # Invite & offer
     "send_invitation": "invite",
+    "create_support_ticket": "support",
     "bulk_invite": "invite",
     "create_offer": "invite",
     "approve_offer": "invite",
