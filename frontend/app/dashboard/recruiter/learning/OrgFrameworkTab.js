@@ -52,7 +52,6 @@ import {
   Layers,
   Pencil,
   Plus,
-  RefreshCw,
   Trash2,
   TrendingUp,
   Upload,
