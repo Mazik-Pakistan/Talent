@@ -278,3 +278,14 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.ticket_replies, [("ticket_id", 1), ("created_at", 1)])
     await _ensure_index(database.ticket_activity, [("ticket_id", 1), ("created_at", -1)])
     await _ensure_index(database.ticket_audit_logs, [("ticket_id", 1), ("created_at", -1)])
+
+    # Career Framework
+    await _ensure_index(database.career_tracks, [("department", 1), ("track_name", 1)])
+    await _ensure_index(database.career_tracks, [("department", 1), ("is_active", 1)])
+    await _ensure_index(database.career_levels, [("track_id", 1), ("level_number", 1)])
+    await _ensure_index(database.career_levels, [("department", 1), ("level_number", 1)])
+    await _ensure_index(database.career_levels, [("role_title", 1), ("is_active", 1)])
+    await _ensure_index(database.employee_career_assignments, [("employee_id", 1), ("status", 1)])
+    await _ensure_index(database.employee_career_assignments, [("target_level_id", 1), ("status", 1)])
+    await _ensure_index(database.employee_career_assignments, [("current_department", 1), ("status", 1)])
+    await _ensure_index(database.employee_career_assignments, [("assigned_by", 1), ("status", 1)])

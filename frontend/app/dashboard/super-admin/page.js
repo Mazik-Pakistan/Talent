@@ -163,6 +163,7 @@ export default function SuperAdminDashboardPage() {
   const [orgSaving, setOrgSaving] = useState(false);
   const [orgDeleteTarget, setOrgDeleteTarget] = useState(null);
   const [orgDeleting, setOrgDeleting] = useState(false);
+  const [orgDeleteError, setOrgDeleteError] = useState("");
   const [editOrgId, setEditOrgId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyEditForm);

@@ -95,6 +95,13 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
       icon: EMPLOYEE_NAV_ICONS.learning,
     },
     {
+      key: "career",
+      label: "My Career",
+      module: "learning",
+      href: "/dashboard/employee/career",
+      icon: EMPLOYEE_NAV_ICONS.talent,
+    },
+    {
       key: "talent",
       label: "My Talent",
       module: "learning",
