@@ -92,6 +92,7 @@ function recruiterPageKey(pathname) {
   if (pathMatchesPageKey(pathname, "messages")) return "messages";
   if (pathMatchesPageKey(pathname, "activity")) return "activity";
   if (pathMatchesPageKey(pathname, "profile")) return "profile";
+  if (pathMatchesPageKey(pathname, "support")) return "support";
   if (pathMatchesPageKey(pathname, "it-kits")) return "it-kits";
   if (pathMatchesPageKey(pathname, "it")) return "it";
   return "other";

@@ -347,13 +347,13 @@ export default function InviteRecruiter({
               </div>
               <div className={s.cardBody}>
                 <div className={s.roleGrid}>
-                  {Object.entries(ROLE_TEMPLATES).map(([key, role]) => {
+                  {Object.entries(ROLE_TEMPLATES).map(([key, role], index) => {
                     const isActive = activeTemplate === key;
                     const moduleCount = templates[key]
                       ? Object.values(templates[key]).filter(Boolean).length
                       : 0;
                     return (
-                      <button key={key} type="button" className={`${s.roleCard} ${isActive ? s.roleCardActive : ""}`} onClick={() => applyTemplate(key)}>
+                      <button key={`${key}-${index}`} type="button" className={`${s.roleCard} ${isActive ? s.roleCardActive : ""}`} onClick={() => applyTemplate(key)}>
                         <div className={s.roleCardIcon}>{role.icon}</div>
                         <div className={s.roleCardBody}>
                           <span className={s.roleCardTitle}>{role.label}</span>
@@ -394,18 +394,18 @@ export default function InviteRecruiter({
                   </svg>
                   <input type="text" className={s.moduleSearch} placeholder="Search modules…" value={moduleSearch} onChange={(e) => setModuleSearch(e.target.value)} />
                 </div>
-                {filteredCategories.map((cat) => (
-                  <div key={cat.label} className={s.permCategory}>
+                {filteredCategories.map((cat, catIndex) => (
+                  <div key={`${cat.label}-${catIndex}`} className={s.permCategory}>
                     <div className={s.permCatHeader}>
                       <span className={s.permCatIcon}>{cat.icon}</span>
                       <span className={s.permCatLabel}>{cat.label}</span>
                     </div>
                     <div className={s.permGrid}>
-                      {cat.keys.map((key) => {
+                      {cat.keys.map((key, keyIndex) => {
                         const orgAllows = orgModules[key] !== false;
                         const isEnabled = Boolean(inviteCaps[key]);
                         return (
-                          <button key={key} type="button" disabled={!orgAllows} className={`${s.permTile} ${isEnabled ? s.permTileOn : ""} ${!orgAllows ? s.permTileDisabled : ""}`} onClick={() => setInviteCaps((prev) => ({ ...prev, [key]: !prev[key] }))}>
+                          <button key={`${key}-${keyIndex}`} type="button" disabled={!orgAllows} className={`${s.permTile} ${isEnabled ? s.permTileOn : ""} ${!orgAllows ? s.permTileDisabled : ""}`} onClick={() => setInviteCaps((prev) => ({ ...prev, [key]: !prev[key] }))}>
                             <span className={s.permTileIcon}>{CAPABILITY_ICONS[key]}</span>
                             <span className={s.permTileBody}>
                               <span className={s.permTileLabel}>{CAPABILITY_LABELS[key]}</span>
@@ -475,7 +475,7 @@ export default function InviteRecruiter({
                 <span className={s.summaryLabel}>Enabled Modules</span>
                 <div className={s.moduleTagList}>
                   {enabledModules.length > 0 ? (
-                    enabledModules.map((m) => <span key={m} className={s.moduleTag}>{m}</span>)
+                    enabledModules.map((m, index) => <span key={`${m}-${index}`} className={s.moduleTag}>{m}</span>)
                   ) : (
                     <span className={s.summaryMuted}>No modules enabled</span>
                   )}
