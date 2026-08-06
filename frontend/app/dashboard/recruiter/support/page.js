@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -153,7 +154,7 @@ function RecruiterSupportPageContent() {
     if (!accessToken) return;
     setCreating(true);
     try {
-      const ticket = await createTicket(
+      const ticketPromise = createTicket(
         {
           subject: form.subject.trim(),
           category: form.category,
@@ -163,12 +164,22 @@ function RecruiterSupportPageContent() {
         },
         accessToken
       );
+      const ticket = await toast.promise(ticketPromise, {
+        pending: "Creating support ticket...",
+        success: "Support ticket sent.",
+        error: {
+          render({ data }) {
+            return getApiErrorMessage(data, "Could not create the support ticket.");
+          },
+        },
+      });
       setForm(EMPTY_FORM);
       setCreateMode(false);
       if (page !== 1) setPage(1);
       await loadTickets();
       openTicket(ticket);
     } catch (err) {
+      if (String(err?.message || "").includes("toast")) return;
       setError(getApiErrorMessage(err, "Could not create the support ticket."));
     } finally {
       setCreating(false);
