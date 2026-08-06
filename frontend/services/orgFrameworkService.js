@@ -18,6 +18,13 @@ export async function getFrameworkSummary(accessToken) {
   return data;
 }
 
+// ─── Org structure options (single source of truth for dropdowns) ───────────
+
+export async function getOrgStructureOptions(accessToken) {
+  const { data } = await client.get("/api/org-framework/options", auth(accessToken));
+  return data;
+}
+
 // ─── Departments ────────────────────────────────────────────────────────────
 
 export async function listOrgDepartments(accessToken) {
@@ -154,6 +161,11 @@ export async function updateOrgRoadmap(accessToken, roadmapId, payload) {
   return data;
 }
 
+export async function reorderOrgRoadmap(accessToken, roleName, orderedIds) {
+  const { data } = await client.put("/api/org-framework/roadmaps/reorder", { role_name: roleName, ordered_ids: orderedIds }, auth(accessToken));
+  return data;
+}
+
 export async function deleteOrgRoadmap(accessToken, roadmapId) {
   const { data } = await client.delete(`/api/org-framework/roadmaps/${encodeURIComponent(roadmapId)}`, auth(accessToken));
   return data;
@@ -202,7 +214,7 @@ export async function validateOrgFrameworkImport(accessToken, file) {
   const formData = new FormData();
   formData.append("file", file);
   const { data } = await client.post("/api/org-framework/import/validate", formData, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
   });
   return data;
 }

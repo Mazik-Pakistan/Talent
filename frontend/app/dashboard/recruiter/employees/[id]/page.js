@@ -15,6 +15,7 @@ import {
   updateEmployeeBanking,
 } from "@/services/authService";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
+import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
 import EmployeeTalentPanel from "@/components/recruiter/EmployeeTalentPanel";
 import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
@@ -760,6 +761,9 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
  * add-event form, and resign/exit controls.
  */
 function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeUpdate }) {
+  const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
+  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
+  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
   const [careerForm, setCareerForm] = useState({
     event_type: "promoted",
     effective_date: new Date().toISOString().slice(0, 10),
@@ -917,7 +921,7 @@ function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeU
                   onChange={(e) => setCareerForm({ ...careerForm, to_title: e.target.value })}
                 >
                   <option value="">Select designation</option>
-                  {RECRUITER_DESIGNATIONS.map((designation) => (
+                  {designationOptions.map((designation) => (
                     <option key={designation} value={designation}>
                       {designation}
                     </option>
@@ -931,7 +935,7 @@ function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeU
                   onChange={(e) => setCareerForm({ ...careerForm, to_department: e.target.value })}
                 >
                   <option value="">Select department</option>
-                  {RECRUITER_DEPARTMENTS.map((department) => (
+                  {departmentOptions.map((department) => (
                     <option key={department} value={department}>
                       {department}
                     </option>

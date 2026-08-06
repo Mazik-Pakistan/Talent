@@ -13,11 +13,15 @@ import {
 } from "@/services/learningService";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
+import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 
 const PROF = { Beginner: 25, Intermediate: 50, Advanced: 75, Expert: 100 };
 
 export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
   const employeeId = employee?.employee_id;
+  const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
+  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
+  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -176,7 +180,7 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
                   required
                 >
                   <option value="">Select designation</option>
-                  {RECRUITER_DESIGNATIONS.map((d) => (
+                  {designationOptions.map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
@@ -189,7 +193,7 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
                   required
                 >
                   <option value="">Select department</option>
-                  {RECRUITER_DEPARTMENTS.map((d) => (
+                  {departmentOptions.map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>

@@ -31,6 +31,7 @@ from app.services.organization_framework_service import (  # noqa: E402
     delete_role,
     delete_skill,
     get_framework_summary,
+    get_org_structure_options,
     list_certifications,
     list_courses,
     list_departments,
@@ -39,6 +40,7 @@ from app.services.organization_framework_service import (  # noqa: E402
     list_roles,
     list_skills,
     parse_import_workbook,
+    reorder_roadmap,
     update_certification,
     update_course,
     update_department,
@@ -130,11 +132,47 @@ async def main():
     rm1 = await create_roadmap(ORG, {"role_name": "Junior Engineer", "course_id": "MS001", "course_name": "C# Fundamentals", "mandatory": True, "order": 1})
     rmps = await list_roadmaps(ORG)
     check("roadmap create/list", len(rmps) == 1, f"({len(rmps)})")
+    try:
+        await create_roadmap(ORG, {"role_name": "Junior Engineer", "course_id": "MS001"})
+        check("roadmap duplicate rejected", False)
+    except ValueError:
+        check("roadmap duplicate rejected", True)
+    await reorder_roadmap(ORG, "Junior Engineer", [rm1["roadmap_id"]])
+    check("roadmap reorder", (await list_roadmaps(ORG))[0]["order"] == 1)
 
     # ─── Promotion rules ───
     await create_promotion_rule(ORG, {"role_name": "Junior Engineer", "min_experience_months": 12, "required_readiness_pct": 80, "manager_approval_required": True})
     rules = await list_promotion_rules(ORG)
     check("promotion rule upsert", len(rules) == 1, f"({len(rules)})")
+
+    # ─── Validation guards ───
+    try:
+        await create_skill(ORG, {"role_name": "Junior Engineer", "skill_name": "BadWeight", "weight": 150})
+        check("skill weight >100 rejected", False)
+    except ValueError:
+        check("skill weight >100 rejected", True)
+    try:
+        await create_skill(ORG, {"role_name": "No Such Role", "skill_name": "X"})
+        check("skill unknown role rejected", False)
+    except ValueError:
+        check("skill unknown role rejected", True)
+    try:
+        await create_certification(ORG, {"role_name": "No Such Role", "certification_name": "CERT-X"})
+        check("cert unknown role rejected", False)
+    except ValueError:
+        check("cert unknown role rejected", True)
+    try:
+        await create_promotion_rule(ORG, {"role_name": "No Such Role"})
+        check("promotion rule unknown role rejected", False)
+    except ValueError:
+        check("promotion rule unknown role rejected", True)
+
+    # ─── Org structure options (single source of truth) ───
+    opts = await get_org_structure_options(ORG)
+    check("options departments", "Engineering" in opts["departments"] and "QA" in opts["departments"])
+    check("options roles", any(r["name"] == "Engineer" for r in opts["roles"]))
+    check("options skills", "Python" in opts["skills"] and "Azure" in opts["skills"])
+    check("options certs", "AZ-900" in opts["certifications"])
 
     # ─── Summary ───
     summary = await get_framework_summary(ORG)
@@ -173,13 +211,13 @@ async def main():
     ):
         await coll.delete_many({"organization_id": org2})
 
-    # ─── Deletes ───
+    # ─── Deletes (dependents before parents so cascade assertions stay valid) ───
     check("delete skill", await delete_skill(ORG, s1["skill_id"]) is True)
     check("delete cert", await delete_certification(ORG, c1["cert_id"]) is True)
-    check("delete course", await delete_course(ORG, course1["course_id"]) is True)
     check("delete roadmap", await delete_roadmap(ORG, rm1["roadmap_id"]) is True)
-    check("delete role", await delete_role(ORG, r1["role_id"]) is True)
     check("delete promotion rule", await delete_promotion_rule(ORG, "Junior Engineer") is True)
+    check("delete course", await delete_course(ORG, course1["course_id"]) is True)
+    check("delete role", await delete_role(ORG, r1["role_id"]) is True)
     check("delete department", await delete_department(ORG, "QA") is True)
 
     await cleanup()

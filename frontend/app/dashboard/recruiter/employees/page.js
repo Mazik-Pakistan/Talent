@@ -7,6 +7,7 @@ import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
+import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import {
   exportEmployeesCsv,
   getApiErrorMessage,
@@ -29,6 +30,9 @@ export default function RecruiterEmployeesPage() {
 
 function RecruiterEmployeesPageContent() {
   const router = useRouter();
+  const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
+  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
+  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
   const [employees, setEmployees] = useState([]);
   const [employeeTotal, setEmployeeTotal] = useState(0);
   const [employeePage, setEmployeePage] = useState(1);
@@ -180,7 +184,7 @@ function RecruiterEmployeesPageContent() {
               <span>Department</span>
               <select value={dirFilters.department} onChange={(e) => setDirFilters({ ...dirFilters, department: e.target.value })}>
                 <option value="">All</option>
-                {RECRUITER_DEPARTMENTS.map((department) => (
+                {departmentOptions.map((department) => (
                   <option key={department} value={department}>{department}</option>
                 ))}
               </select>
@@ -189,7 +193,7 @@ function RecruiterEmployeesPageContent() {
               <span>Designation</span>
               <select value={dirFilters.job_title} onChange={(e) => setDirFilters({ ...dirFilters, job_title: e.target.value })}>
                 <option value="">All</option>
-                {RECRUITER_DESIGNATIONS.map((designation) => (
+                {designationOptions.map((designation) => (
                   <option key={designation} value={designation}>{designation}</option>
                 ))}
               </select>

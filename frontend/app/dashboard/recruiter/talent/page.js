@@ -9,6 +9,7 @@ import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./talent.module.css";
 import { RECRUITER_DEPARTMENTS } from "@/components/recruiter/recruiterOptions";
+import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import { getApiErrorMessage } from "@/services/authService";
 import { downloadCsv } from "@/utils/downloadCsv";
 import {
@@ -79,6 +80,8 @@ function RecruiterTalentPageContent() {
 // US-102: Recruiter talent metrics dashboard
 // ---------------------------------------------------------------------- //
 function MetricsTab() {
+  const { departments: frameworkDepartments } = useOrgFrameworkOptions();
+  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [department, setDepartment] = useState("");
@@ -137,7 +140,7 @@ function MetricsTab() {
       <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
         <select className={styles.filterSelect} value={department} onChange={(e) => setDepartment(e.target.value)}>
           <option value="">All departments</option>
-          {RECRUITER_DEPARTMENTS.map((d) => (
+          {departmentOptions.map((d) => (
             <option key={d} value={d}>{d}</option>
           ))}
         </select>
@@ -243,6 +246,8 @@ function MetricsTab() {
 // US-100: Talent search
 // ---------------------------------------------------------------------- //
 function SearchTab() {
+  const { departments: frameworkDepartments } = useOrgFrameworkOptions();
+  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
   const router = useRouter();
   const [q, setQ] = useState("");
   const [department, setDepartment] = useState("");
@@ -305,7 +310,7 @@ function SearchTab() {
             onChange={(e) => setDepartment(e.target.value)}
           >
             <option value="">All departments</option>
-            {RECRUITER_DEPARTMENTS.map((d) => (
+            {departmentOptions.map((d) => (
               <option key={d} value={d}>{d}</option>
             ))}
           </select>
@@ -407,6 +412,8 @@ const OPP_TYPES = [
 ];
 
 function OpportunitiesMgmtTab() {
+  const { departments: frameworkDepartments } = useOrgFrameworkOptions();
+  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -512,7 +519,7 @@ function OpportunitiesMgmtTab() {
             Department
             <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} required>
               <option value="">Select department</option>
-              {RECRUITER_DEPARTMENTS.map((department) => (
+              {departmentOptions.map((department) => (
                 <option key={department} value={department}>{department}</option>
               ))}
             </select>

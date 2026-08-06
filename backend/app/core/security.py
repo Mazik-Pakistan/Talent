@@ -83,19 +83,25 @@ async def get_current_user(authorization: str | None = Header(default=None)) -> 
     # Return the user_id or supabase_user_id as ID
     resolved_id = profile.get("user_id") or profile.get("supabase_user_id") or user_id
 
-    # Load capabilities + organization binding for recruiters.
+    # Load capabilities + organization binding.
     # Effective capability = organization's granted modules ∩ recruiter's own capabilities.
+    # Candidates and employees also carry an organization binding so the
+    # organization framework is available to every role of the org.
     capabilities = None
     organization_id = None
     organization_name = None
-    if active_role == "recruiter":
-        capabilities = profile.get("capabilities") or {}
+    if active_role in ("recruiter", "employee", "candidate"):
+        if active_role == "recruiter":
+            capabilities = profile.get("capabilities") or {}
         organization_id = profile.get("organization_id")
         try:
-            from app.services.organization_service import effective_capabilities, get_organization
+            if active_role == "recruiter":
+                from app.services.organization_service import effective_capabilities
 
-            capabilities = await effective_capabilities(capabilities, organization_id)
+                capabilities = await effective_capabilities(capabilities, organization_id)
             if organization_id:
+                from app.services.organization_service import get_organization
+
                 org = await get_organization(organization_id)
                 organization_name = org.get("name") if org else None
         except Exception:

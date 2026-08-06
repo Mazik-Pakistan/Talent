@@ -38,6 +38,7 @@ import {
   upsertSkill,
 } from "@/services/learningService";
 import { getCareerProgression } from "@/services/talentService";
+import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import { publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
 
@@ -791,6 +792,7 @@ function MyCoursesTab({ onChange }) {
 // Skill profile (US-092 / US-093 / US-094)
 // ------------------------------------------------------------------------ //
 function SkillsTab() {
+  const { skills: frameworkSkills } = useOrgFrameworkOptions();
   const [skills, setSkills] = useState([]);
   const [categories, setCategories] = useState([]);
   const [assessment, setAssessment] = useState(null);
@@ -938,7 +940,12 @@ function SkillsTab() {
         <form className={styles.addSkillForm} onSubmit={handleAdd}>
           <label>
             Skill name
-            <input value={form.skill_name} onChange={(e) => setForm((f) => ({ ...f, skill_name: e.target.value }))} placeholder="e.g. Docker" required />
+            <input value={form.skill_name} onChange={(e) => setForm((f) => ({ ...f, skill_name: e.target.value }))} placeholder="e.g. Docker" list="framework-skill-options" required />
+            {frameworkSkills.length > 0 && (
+              <datalist id="framework-skill-options">
+                {frameworkSkills.map((skill) => <option key={skill} value={skill} />)}
+              </datalist>
+            )}
           </label>
           <label>
             Category

@@ -280,6 +280,19 @@ async def purge_organization(organization_id: str) -> dict:
     if employee_user_ids:
         await _delete_many("hr_threads", {"employee_user_id": {"$in": employee_user_ids}})
 
+    # Organization Framework — the org's single source of truth for structure.
+    for collection_name in (
+        "org_framework_departments",
+        "org_framework_roles",
+        "org_framework_skills",
+        "org_framework_certifications",
+        "org_framework_courses",
+        "org_framework_roadmaps",
+        "org_framework_promotion_rules",
+        "org_framework_versions",
+    ):
+        await _delete_many(collection_name, org_filter)
+
     deleted = await delete_organization(organization_id)
     if not deleted:
         raise LookupError("Organization not found.")

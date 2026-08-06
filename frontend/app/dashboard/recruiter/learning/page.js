@@ -55,6 +55,7 @@ import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./learning.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
+import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import { getApiErrorMessage, listEmployees, remindCourseAssignments } from "@/services/authService";
 import { downloadCsv } from "@/utils/downloadCsv";
 import {
@@ -776,6 +777,9 @@ function KnowledgeBaseTab() {
 }
 
 function AssignTab({ initialCourse = null, initialSource = null, onConsumedInitial }) {
+  const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
+  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
+  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
   const [source, setSource] = useState(initialSource || "microsoft_learn");
   const [q, setQ] = useState("");
   const [courses, setCourses] = useState([]);
@@ -1086,11 +1090,11 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                 <div className={styles.filterBar}>
                   <select className={styles.filterSelect} value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
                     <option value="">All departments</option>
-                    {RECRUITER_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                    {departmentOptions.map((d) => <option key={d} value={d}>{d}</option>)}
                   </select>
                   <select className={styles.filterSelect} value={filterTitle} onChange={(e) => setFilterTitle(e.target.value)}>
                     <option value="">All designations</option>
-                    {RECRUITER_DESIGNATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+                    {designationOptions.map((d) => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
 
@@ -1469,6 +1473,8 @@ function CertificatesTab({ selectedCertificateId = null }) {
 }
 
 function AnalyticsTab() {
+  const { departments: frameworkDepartments } = useOrgFrameworkOptions();
+  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [department, setDepartment] = useState("");
@@ -1537,7 +1543,7 @@ function AnalyticsTab() {
         <div className={styles.toolbarLeft}>
           <select className={styles.filterSelect} value={department} onChange={(e) => setDepartment(e.target.value)}>
             <option value="">All departments</option>
-            {RECRUITER_DEPARTMENTS.map((d) => (
+            {departmentOptions.map((d) => (
               <option key={d} value={d}>{d}</option>
             ))}
           </select>

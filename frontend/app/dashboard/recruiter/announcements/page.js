@@ -7,6 +7,7 @@ import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
+import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import {
   createAnnouncement,
   deleteAnnouncement,
@@ -40,6 +41,9 @@ export default function RecruiterAnnouncementsPage() {
 }
 
 function RecruiterAnnouncementsPageContent() {
+  const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
+  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
+  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -266,13 +270,13 @@ function RecruiterAnnouncementsPageContent() {
                 <div className={styles.recipientGrid}>
                   <MultiSelectGroup
                     label="Departments"
-                    options={RECRUITER_DEPARTMENTS}
+                    options={departmentOptions}
                     selected={form.target_departments}
                     onChange={(values) => setForm({ ...form, target_departments: values })}
                   />
                   <MultiSelectGroup
                     label="Designations"
-                    options={RECRUITER_DESIGNATIONS}
+                    options={designationOptions}
                     selected={form.target_designations}
                     onChange={(values) => setForm({ ...form, target_designations: values })}
                   />

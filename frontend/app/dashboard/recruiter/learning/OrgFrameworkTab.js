@@ -27,6 +27,7 @@ import {
   deleteOrgCourse,
   listOrgRoadmaps,
   createOrgRoadmap,
+  reorderOrgRoadmap,
   deleteOrgRoadmap,
   listOrgPromotionRules,
   upsertOrgPromotionRule,
@@ -37,6 +38,7 @@ import {
   validateOrgFrameworkImport,
   applyOrgFrameworkImport,
 } from "@/services/orgFrameworkService";
+import { bustOrgFrameworkCache } from "@/hooks/useOrgFrameworkOptions";
 import {
   Award,
   BookOpen,
@@ -151,6 +153,9 @@ export default function OrgFrameworkTab() {
       setRoadmaps(rmps);
       setPromotionRules(rules);
       setVersions(vers);
+      // The framework is the single source of truth for every module's
+      // dropdowns — invalidate the shared cache so all pages pick up edits.
+      bustOrgFrameworkCache();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not load organization framework."));
     } finally {
@@ -194,10 +199,10 @@ export default function OrgFrameworkTab() {
 
       {/* Main content */}
       <div className={s.content} style={{ padding: 28, overflowY: "auto" }}>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleFile} />
+        <input ref={fileRef} type="file" accept=".xlsx" style={{ display: "none" }} onChange={handleFile} />
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading framework…</div>
-        ) : !hasData ? (
+        ) : !hasData && section === "overview" ? (
           <EmptyState
             onLoad={loadAll}
             onStart={() => setSection("departments")}
@@ -293,6 +298,21 @@ function EmptyState({ onLoad, onStart, onImport, importReport, applying, onApply
           {importReport.errors.length > 0 && (
             <div style={{ marginBottom: 8 }}>
               {importReport.errors.map((e, i) => <div key={i} style={{ fontSize: 12.5, color: "var(--red)", marginBottom: 3 }}>• {e}</div>)}
+            </div>
+          )}
+          {importReport.details?.length > 0 && (
+            <div style={{ marginBottom: 8, maxHeight: 220, overflowY: "auto", borderTop: "1px solid rgba(185, 28, 28, 0.15)", paddingTop: 8 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--navy)", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 6 }}>
+                Exact location
+              </div>
+              {importReport.details.map((d, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12.5, marginBottom: 5 }}>
+                  <span style={{ flexShrink: 0, fontFamily: "monospace", fontWeight: 700, color: "var(--red)", background: "#fdecec", borderRadius: 6, padding: "1px 7px" }}>
+                    {d.sheet} · row {d.row} · {d.column}
+                  </span>
+                  <span style={{ color: "var(--navy)" }}>{d.reason}</span>
+                </div>
+              ))}
             </div>
           )}
           {importReport.warnings.length > 0 && (
@@ -401,7 +421,7 @@ function OverviewSection({ summary, departments, roles, courses, versions, loadA
           <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => fileRef.current?.click()} disabled={importing}>
             <Upload aria-hidden="true" /> {importing ? "Importing…" : "Import Excel"}
           </button>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleFile} />
+          <input ref={fileRef} type="file" accept=".xlsx" style={{ display: "none" }} onChange={handleFile} />
         </div>
       </div>
 
@@ -423,6 +443,21 @@ function OverviewSection({ summary, departments, roles, courses, versions, loadA
           {importReport.errors.length > 0 && (
             <div style={{ marginBottom: 8 }}>
               {importReport.errors.map((e, i) => <div key={i} style={{ fontSize: 12.5, color: "var(--red)", marginBottom: 3 }}>• {e}</div>)}
+            </div>
+          )}
+          {importReport.details?.length > 0 && (
+            <div style={{ marginBottom: 8, maxHeight: 220, overflowY: "auto", borderTop: "1px solid rgba(185, 28, 28, 0.15)", paddingTop: 8 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--navy)", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 6 }}>
+                Exact location
+              </div>
+              {importReport.details.map((d, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12.5, marginBottom: 5 }}>
+                  <span style={{ flexShrink: 0, fontFamily: "monospace", fontWeight: 700, color: "var(--red)", background: "#fdecec", borderRadius: 6, padding: "1px 7px" }}>
+                    {d.sheet} · row {d.row} · {d.column}
+                  </span>
+                  <span style={{ color: "var(--navy)" }}>{d.reason}</span>
+                </div>
+              ))}
             </div>
           )}
           {importReport.warnings.length > 0 && (
@@ -660,17 +695,44 @@ function RolesSection({ roles, departments, loadAll }) {
 
 function SkillsSection({ skills, roles, loadAll }) {
   const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ role_name: "", skill_name: "", proficiency: "Intermediate", weight: 20 });
   const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState("");
   const token = () => localStorage.getItem("access_token");
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const roleNames = [...new Set(roles.map((r) => r.name))].sort();
 
-  const handleCreate = async () => {
-    if (!form.role_name.trim() || !form.skill_name.trim()) return toast.error("Role and skill required.");
+  const validateForm = () => {
+    if (!form.role_name.trim()) return "Role is required.";
+    if (!form.skill_name.trim()) return "Skill name is required.";
+    const weight = Number(form.weight);
+    if (!Number.isInteger(weight) || weight < 1 || weight > 100) return "Weight must be a whole number between 1 and 100.";
+    return "";
+  };
+
+  const handleSave = async () => {
+    const error = validateForm();
+    if (error) return setFormError(error);
     setBusy(true);
-    try { await createOrgSkill(token(), form); toast.success("Skill added."); setShowForm(false); setForm({ role_name: "", skill_name: "", proficiency: "Intermediate", weight: 20 }); await loadAll(); }
-    catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
+    setFormError("");
+    try {
+      if (editItem) {
+        await updateOrgSkill(token(), editItem.skill_id, {
+          skill_name: form.skill_name.trim(),
+          proficiency: form.proficiency,
+          weight: Number(form.weight),
+        });
+        toast.success("Skill updated.");
+      } else {
+        await createOrgSkill(token(), { ...form, skill_name: form.skill_name.trim(), weight: Number(form.weight) });
+        toast.success("Skill added.");
+      }
+      setShowForm(false);
+      setEditItem(null);
+      setForm({ role_name: "", skill_name: "", proficiency: "Intermediate", weight: 20 });
+      await loadAll();
+    } catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
     finally { setBusy(false); }
   };
 
@@ -680,24 +742,32 @@ function SkillsSection({ skills, roles, loadAll }) {
     catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
   };
 
+  const startEdit = (sk) => {
+    setEditItem(sk);
+    setForm({ role_name: sk.role_name, skill_name: sk.skill_name, proficiency: sk.proficiency || "Intermediate", weight: sk.weight || 20 });
+    setShowForm(true);
+    setFormError("");
+  };
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
         <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>Skills ({skills.length})</h2>
-        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => setShowForm(true)}><Plus aria-hidden="true" /> Add Skill</button>
+        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); setEditItem(null); setForm({ role_name: "", skill_name: "", proficiency: "Intermediate", weight: 20 }); setFormError(""); }}><Plus aria-hidden="true" /> Add Skill</button>
       </div>
       {showForm && (
         <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>New Skill</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Skill" : "New Skill"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
             <label className={s.fieldLabel} style={{ margin: 0 }}>Skill<input value={form.skill_name} onChange={(e) => setField("skill_name", e.target.value)} placeholder="e.g. Python" /></label>
             <label className={s.fieldLabel} style={{ margin: 0 }}>Proficiency<select value={form.proficiency} onChange={(e) => setField("proficiency", e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option></select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Weight<input type="number" min="1" max="100" value={form.weight} onChange={(e) => setField("weight", parseInt(e.target.value) || 20)} /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Weight<input type="number" min="1" max="100" value={form.weight} onChange={(e) => setField("weight", e.target.value)} /></label>
           </div>
+          {formError && <div style={{ fontSize: 12.5, color: "var(--red)", marginTop: 8 }}>{formError}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleCreate}>{busy ? "Saving…" : "Save"}</button>
-            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>
+            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => { setShowForm(false); setEditItem(null); }}>Cancel</button>
           </div>
         </div>
       )}
@@ -707,6 +777,9 @@ function SkillsSection({ skills, roles, loadAll }) {
             <span style={{ fontSize: 12.5, fontWeight: 650, color: "var(--navy)" }}>{sk.skill_name}</span>
             <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>{sk.role_name}</span>
             <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{sk.proficiency} · w:{sk.weight}</span>
+            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(sk)}>
+              <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
+            </button>
             <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(sk.skill_id || `${sk.organization_id}:${sk.role_name}:${sk.skill_name}`)}>
               <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
             </button>
@@ -799,17 +872,47 @@ function CoursesSection({ courses, loadAll }) {
 
 function CertsSection({ certifications, roles, loadAll }) {
   const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ role_name: "", certification_name: "", mandatory: true, expiration_months: "" });
   const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState("");
   const token = () => localStorage.getItem("access_token");
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const roleNames = [...new Set(roles.map((r) => r.name))].sort();
 
-  const handleCreate = async () => {
-    if (!form.role_name.trim() || !form.certification_name.trim()) return toast.error("Role and certification required.");
+  const validateForm = () => {
+    if (!form.role_name.trim()) return "Role is required.";
+    if (!form.certification_name.trim()) return "Certification name is required.";
+    if (form.expiration_months !== "" && form.expiration_months != null) {
+      const months = Number(form.expiration_months);
+      if (!Number.isInteger(months) || months < 1) return "Expiration must be a positive number of months.";
+    }
+    return "";
+  };
+
+  const handleSave = async () => {
+    const error = validateForm();
+    if (error) return setFormError(error);
     setBusy(true);
-    try { await createOrgCertification(token(), form); toast.success("Added."); setShowForm(false); setForm({ role_name: "", certification_name: "", mandatory: true, expiration_months: "" }); await loadAll(); }
-    catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
+    setFormError("");
+    const payload = {
+      certification_name: form.certification_name.trim(),
+      mandatory: form.mandatory,
+      expiration_months: form.expiration_months === "" ? null : Number(form.expiration_months),
+    };
+    try {
+      if (editItem) {
+        await updateOrgCertification(token(), editItem.cert_id, payload);
+        toast.success("Certification updated.");
+      } else {
+        await createOrgCertification(token(), { ...form, certification_name: form.certification_name.trim(), expiration_months: form.expiration_months === "" ? null : Number(form.expiration_months) });
+        toast.success("Added.");
+      }
+      setShowForm(false);
+      setEditItem(null);
+      setForm({ role_name: "", certification_name: "", mandatory: true, expiration_months: "" });
+      await loadAll();
+    } catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
     finally { setBusy(false); }
   };
 
@@ -819,24 +922,32 @@ function CertsSection({ certifications, roles, loadAll }) {
     catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
   };
 
+  const startEdit = (c) => {
+    setEditItem(c);
+    setForm({ role_name: c.role_name, certification_name: c.certification_name, mandatory: !!c.mandatory, expiration_months: c.expiration_months ?? "" });
+    setShowForm(true);
+    setFormError("");
+  };
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
         <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>Certifications ({certifications.length})</h2>
-        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => setShowForm(true)}><Plus aria-hidden="true" /> Add Certification</button>
+        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); setEditItem(null); setForm({ role_name: "", certification_name: "", mandatory: true, expiration_months: "" }); setFormError(""); }}><Plus aria-hidden="true" /> Add Certification</button>
       </div>
       {showForm && (
         <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>New Certification</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Certification" : "New Certification"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
             <label className={s.fieldLabel} style={{ margin: 0 }}>Certification<input value={form.certification_name} onChange={(e) => setField("certification_name", e.target.value)} placeholder="e.g. AZ-900" /></label>
             <label className={s.fieldLabel} style={{ margin: 0 }}>Expiration (months)<input value={form.expiration_months} onChange={(e) => setField("expiration_months", e.target.value)} placeholder="Optional" /></label>
           </div>
           <label className={s.cfCheckRow} style={{ marginTop: 8 }}><input type="checkbox" checked={form.mandatory} onChange={(e) => setField("mandatory", e.target.checked)} /> Mandatory</label>
+          {formError && <div style={{ fontSize: 12.5, color: "var(--red)", marginTop: 8 }}>{formError}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleCreate}>{busy ? "Saving…" : "Save"}</button>
-            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>
+            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => { setShowForm(false); setEditItem(null); }}>Cancel</button>
           </div>
         </div>
       )}
@@ -846,6 +957,9 @@ function CertsSection({ certifications, roles, loadAll }) {
             <span style={{ fontSize: 13, fontWeight: 650, color: "var(--navy)", flex: 1 }}>{c.certification_name}</span>
             <span className={`${s.statusPill} ${s.orange}`}>{c.role_name}</span>
             {c.mandatory && <span className={`${s.statusPill} ${s.red}`}>Mandatory</span>}
+            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(c)}>
+              <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
+            </button>
             <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(c.cert_id)}>
               <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
             </button>
@@ -878,6 +992,22 @@ function RoadmapsSection({ roadmaps, roles, courses, loadAll }) {
     catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
   };
 
+  const handleReorder = async (roleName, orderedIds) => {
+    setBusy(true);
+    try { await reorderOrgRoadmap(token(), roleName, orderedIds); toast.success("Order updated."); await loadAll(); }
+    catch (err) { toast.error(getApiErrorMessage(err, "Reorder failed.")); }
+    finally { setBusy(false); }
+  };
+
+  const moveEntry = async (roleName, entries, index, direction) => {
+    const target = index + direction;
+    if (target < 0 || target >= entries.length) return;
+    const next = [...entries];
+    const [item] = next.splice(index, 1);
+    next.splice(target, 0, item);
+    await handleReorder(roleName, next.map((e) => e.roadmap_id));
+  };
+
   const groupedByRole = {};
   roadmaps.forEach((r) => { if (!groupedByRole[r.role_name]) groupedByRole[r.role_name] = []; groupedByRole[r.role_name].push(r); });
 
@@ -901,23 +1031,34 @@ function RoadmapsSection({ roadmaps, roles, courses, loadAll }) {
           </div>
         </div>
       )}
-      {Object.entries(groupedByRole).map(([roleName, entries]) => (
-        <div key={roleName} style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 14, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui", marginBottom: 8 }}>{roleName}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {entries.sort((a, b) => (a.order || 0) - (b.order || 0)).map((r) => (
-              <div key={r.roadmap_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: "#fbfcfe", fontSize: 13 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-faint)", minWidth: 22 }}>{r.order}.</span>
-                <span style={{ fontWeight: 650, color: "var(--navy)", flex: 1 }}>{r.course_name || r.course_id}</span>
-                {r.mandatory && <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>Mandatory</span>}
-                <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(r.roadmap_id)}>
-                  <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-                </button>
-              </div>
-            ))}
+      {Object.entries(groupedByRole).map(([roleName, entries]) => {
+        const sorted = [...entries].sort((a, b) => (a.order || 0) - (b.order || 0));
+        return (
+          <div key={roleName} style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 14, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui", marginBottom: 8 }}>{roleName}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {sorted.map((r, index) => (
+                <div key={r.roadmap_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: "#fbfcfe", fontSize: 13 }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-faint)", minWidth: 22 }}>{index + 1}.</span>
+                  <span style={{ fontWeight: 650, color: "var(--navy)", flex: 1 }}>{r.course_name || r.course_id}</span>
+                  {r.mandatory && <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>Mandatory</span>}
+                  <div style={{ display: "flex", gap: 2 }}>
+                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === 0} onClick={() => moveEntry(roleName, sorted, index, -1)} aria-label="Move up">
+                      ↑
+                    </button>
+                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === sorted.length - 1} onClick={() => moveEntry(roleName, sorted, index, 1)} aria-label="Move down">
+                      ↓
+                    </button>
+                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(r.roadmap_id)}>
+                      <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

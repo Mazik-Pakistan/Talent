@@ -8,6 +8,7 @@ import ProfilePhotoEditor from "@/components/ProfilePhotoEditor";
 import SecuritySection from "@/components/SecuritySection";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
+import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import {
   getApiErrorMessage,
   getRecruiterProfile,
@@ -30,6 +31,9 @@ export default function RecruiterProfilePage() {
 }
 
 function RecruiterProfilePageContent() {
+  const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
+  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
+  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -229,7 +233,7 @@ function RecruiterProfilePageContent() {
                     onChange={(e) => setForm({ ...form, job_title: e.target.value })}
                   >
                     <option value="">Select designation</option>
-                    {RECRUITER_DESIGNATIONS.map((designation) => (
+                    {designationOptions.map((designation) => (
                       <option key={designation} value={designation}>{designation}</option>
                     ))}
                   </select>
@@ -242,7 +246,7 @@ function RecruiterProfilePageContent() {
                     onChange={(e) => setForm({ ...form, department: e.target.value })}
                   >
                     <option value="">Select department</option>
-                    {RECRUITER_DEPARTMENTS.map((department) => (
+                    {departmentOptions.map((department) => (
                       <option key={department} value={department}>{department}</option>
                     ))}
                   </select>

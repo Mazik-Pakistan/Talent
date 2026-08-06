@@ -30,6 +30,7 @@ import OcrScanOverlay, {
   RESUME_OCR_FIELDS,
 } from "@/components/ai-experience/OcrScanOverlay";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
+import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import styles from "./onboarding.module.css";
 
 const STEPS = [
@@ -208,6 +209,9 @@ function OnboardingContent() {
   const searchParams = useSearchParams();
   const requestedStep = searchParams.get("step");
   const isEditMode = searchParams.get("edit") === "true";
+
+  const { skills: frameworkSkills } = useOrgFrameworkOptions();
+  const technicalSkillOptions = frameworkSkills.length ? frameworkSkills : TECHNICAL_SKILLS;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -2466,7 +2470,7 @@ function OnboardingContent() {
                               </div>
                             </div>
                             <div className={styles.skillsPillContainer}>
-                              {TECHNICAL_SKILLS.map(skill => (
+                              {technicalSkillOptions.map(skill => (
                                 <button
                                   type="button"
                                   key={skill}

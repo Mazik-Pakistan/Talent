@@ -520,6 +520,38 @@ def _restricted_modules_text(user: CurrentUser) -> str:
     )
 
 
+async def _org_framework_context(user: CurrentUser) -> dict | None:
+    """Departments, roles, skills and certifications from the organization
+    framework (the single source of truth). Injected into the agent prompt so
+    the AI lists, suggests and validates selections against the org's own
+    structure instead of hardcoded values. Returns None when the account has no
+    org or no framework yet."""
+    if not user.organization_id:
+        return None
+    try:
+        from app.services.organization_framework_service import (
+            get_org_structure_options,
+        )
+
+        options = await get_org_structure_options(user.organization_id)
+    except Exception:
+        return None
+    departments = options.get("departments") or []
+    roles = options.get("roles") or []
+    if not departments and not roles:
+        return None
+    return {
+        "departments": departments[:100],
+        "roles": [
+            {"name": r.get("name"), "department": r.get("department")}
+            for r in roles[:200]
+            if r.get("name")
+        ],
+        "skills": (options.get("skills") or [])[:80],
+        "certifications": (options.get("certifications") or [])[:80],
+    }
+
+
 def _history_text(messages: list[dict]) -> str:
     recent = messages[-HISTORY_TURNS * 2 :]
     lines = []
@@ -578,9 +610,19 @@ def _context_text(context: dict | None) -> str:
     selected_record = context.get("selected_record")
     if isinstance(selected_record, dict) and selected_record:
         payload["selected_record"] = _compact_context_value(selected_record)
+    framework = context.get("framework")
+    has_framework = (
+        isinstance(framework, dict)
+        and (framework.get("departments") or framework.get("roles"))
+    )
+    if has_framework:
+        payload["organization_framework"] = framework
 
     text = json.dumps(payload, default=str, ensure_ascii=True)
-    return text if len(text) <= 1200 else text[:1197] + "…"
+    # The framework list is the authoritative org structure — give it a larger
+    # budget so a populated org isn't silently truncated out of the prompt.
+    limit = 3200 if has_framework else 1200
+    return text if len(text) <= limit else text[: limit - 3] + "…"
 
 
 def _build_prompt(
@@ -595,11 +637,22 @@ def _build_prompt(
     scratch_text = _scratchpad_text(scratchpad)
     context_text = _context_text(context)
     restricted_text = _restricted_modules_text(user)
+    framework = context.get("framework")
+    framework_rule = ""
+    if isinstance(framework, dict) and (framework.get("departments") or framework.get("roles")):
+        framework_rule = (
+            "\nOrganization framework (authoritative): only suggest departments, roles, titles, "
+            "skills and certifications that exist in organization_framework above, and reject "
+            "values that are not listed for this organization with a clear message. If the "
+            "organization has no framework configured, prefer the values already present in "
+            "tool results rather than inventing structure."
+        )
 
     return f"""{system_prompt}
 {SHARED_AGENT_RULES}
 Caller: {user.full_name} ({user.email}), role={user.role}.
 {restricted_text}
+{framework_rule}
 
 Current page context:
 {context_text}
@@ -1214,6 +1267,12 @@ class AgentService:
         tool_spec = _tool_spec_text(user)
         history_text = _history_text(convo.get("messages") or [])
         scratchpad: list[dict] = []
+
+        # Inject the organization framework so the agent validates against the
+        # org's real departments/roles instead of hardcoded values.
+        framework = await _org_framework_context(user)
+        if framework:
+            context = {**(context or {}), "framework": framework}
 
         for _ in range(MAX_TOOL_STEPS):
             prompt = _build_prompt(user, system_prompt, tool_spec, history_text, scratchpad, message, context)

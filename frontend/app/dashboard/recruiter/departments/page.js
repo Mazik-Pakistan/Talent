@@ -7,7 +7,12 @@ import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import { getApiErrorMessage, listEmployees } from "@/services/authService";
 import { listCareerLevels, listCareerTracks } from "@/services/careerService";
-import { getOrgTaxonomy, addDepartment, updateDepartment, deleteDepartment } from "@/services/learningService";
+import {
+  listOrgDepartments,
+  createOrgDepartment,
+  updateOrgDepartment,
+  deleteOrgDepartment,
+} from "@/services/orgFrameworkService";
 import { publishRecruiterContext, clearRecruiterContext } from "@/lib/ai/recruiterContext";
 import {
   ArrowUpRight,
@@ -119,13 +124,13 @@ function DepartmentsContent() {
     if (!token) return;
     setLoading(true);
     try {
-      const [taxonomy, levelsData, tracksData] = await Promise.all([
-        getOrgTaxonomy(token, { force: true }),
+      const [deptDocs, levelsData, tracksData] = await Promise.all([
+        listOrgDepartments(token),
         listCareerLevels(token),
         listCareerTracks(token),
       ]);
 
-      const deptNames = taxonomy.departments || [];
+      const deptNames = (deptDocs || []).map((d) => d.name);
       const levels = levelsData.levels || [];
       const tracks = tracksData.tracks || [];
 
@@ -208,7 +213,7 @@ function DepartmentsContent() {
     const token = localStorage.getItem("access_token");
     setAdding(true);
     try {
-      await addDepartment(token, name);
+      await createOrgDepartment(token, { name, description: "" });
       toast.success(`Department "${name}" created.`);
       setAddName("");
       setShowAddForm(false);
@@ -225,7 +230,7 @@ function DepartmentsContent() {
     const token = localStorage.getItem("access_token");
     setEditing(true);
     try {
-      const result = await updateDepartment(token, editTarget, editName.trim());
+      const result = await updateOrgDepartment(token, editTarget, { name: editName.trim(), description: "" });
       if (result.unchanged) {
         toast.info("No changes made.");
       } else {
@@ -247,7 +252,7 @@ function DepartmentsContent() {
     const token = localStorage.getItem("access_token");
     setDeleting(true);
     try {
-      await deleteDepartment(token, deleteTarget);
+      await deleteOrgDepartment(token, deleteTarget);
       toast.success(`Department "${deleteTarget}" deleted.`);
       if (selectedDept === deleteTarget) {
         setSelectedDept(null);
@@ -875,7 +880,7 @@ function DepartmentsContent() {
             Are you sure you want to delete <strong style={{ color: "var(--navy)" }}>{deleteTarget}</strong>?
           </p>
           <p style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5, margin: 0, marginBottom: 20 }}>
-            This removes the department from the taxonomy. Employees assigned to this department will not be affected — they keep their department field unchanged. This action cannot be undone.
+            This removes the department from the organization framework. Employees assigned to this department will not be affected — they keep their department field unchanged. This action cannot be undone.
           </p>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => setDeleteTarget(null)} disabled={deleting}>

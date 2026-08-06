@@ -11,6 +11,7 @@ import {
   RECRUITER_DESIGNATIONS,
 } from "@/components/recruiter/recruiterOptions";
 import { createInvitation, getApiErrorMessage, lookupPersonHistory } from "@/services/authService";
+import { listOrgDepartments, listOrgRoles } from "@/services/orgFrameworkService";
 import BulkInvitePanel from "@/components/recruiter/BulkInvitePanel";
 import {
   clearRecruiterContext,
@@ -214,6 +215,40 @@ function RecruiterInvitePageInner() {
   const [personHistory, setPersonHistory] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [inviteMode, setInviteMode] = useState("single"); // single | bulk
+  const [frameworkDepartments, setFrameworkDepartments] = useState(null);
+  const [frameworkRoles, setFrameworkRoles] = useState(null);
+
+  // Organization Framework is the single source of truth for department and
+  // role options. Falls back to the static lists only when the org has not
+  // configured a framework yet.
+  useEffect(() => {
+    const accessToken = localStorage.getItem("access_token");
+    if (!accessToken) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [depts, roles] = await Promise.all([
+          listOrgDepartments(accessToken),
+          listOrgRoles(accessToken),
+        ]);
+        if (cancelled) return;
+        setFrameworkDepartments((depts || []).map((d) => d.name).filter(Boolean));
+        setFrameworkRoles([...new Set((roles || []).map((r) => r.name))].sort());
+      } catch {
+        // Framework unavailable — keep the static fallback lists.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const departmentOptions =
+    frameworkDepartments && frameworkDepartments.length > 0
+      ? frameworkDepartments
+      : RECRUITER_DEPARTMENTS;
+  const designationOptions =
+    frameworkRoles && frameworkRoles.length > 0 ? frameworkRoles : RECRUITER_DESIGNATIONS;
 
   const allowancesTotal = useMemo(
     () => allowances.reduce((sum, row) => sum + (Number(row.amount) || 0), 0),
@@ -649,7 +684,7 @@ function RecruiterInvitePageInner() {
                     required
                   >
                     <option value="">Select designation</option>
-                    {RECRUITER_DESIGNATIONS.map((d) => (
+                    {designationOptions.map((d) => (
                       <option key={d} value={d}>
                         {d}
                       </option>
@@ -665,7 +700,7 @@ function RecruiterInvitePageInner() {
                     required
                   >
                     <option value="">Select department</option>
-                    {RECRUITER_DEPARTMENTS.map((d) => (
+                    {departmentOptions.map((d) => (
                       <option key={d} value={d}>
                         {d}
                       </option>
