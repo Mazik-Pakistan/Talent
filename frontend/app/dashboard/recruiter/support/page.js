@@ -323,6 +323,7 @@ function RecruiterSupportPageContent() {
               type="button"
               className={styles.primaryButton}
               onClick={() => { setError(""); setCreateMode(true); }}
+              style={{ position: "relative", zIndex: 2 }}
             >
               + Create Ticket
             </button>
@@ -457,7 +458,7 @@ function RecruiterSupportPageContent() {
                       type="button"
                       className={support.btnPrimary}
                       onClick={() => { setError(""); setCreateMode(true); }}
-                      style={{ position: "relative", zIndex: 1001 }}
+                      style={{ position: "relative", zIndex: 2 }}
                     >
                       Create Ticket
                     </button>
