@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
-import { toast } from "react-toastify";
+import { useState, useMemo, useCallback } from "react";
 
 import s from "./InviteRecruiter.module.css";
 
@@ -173,7 +172,6 @@ export default function InviteRecruiter({
   inviteCaps,
   setInviteCaps,
   inviteSubmitting,
-  inviteMessage,
   handleInvite,
   organizations,
   templates,
@@ -182,7 +180,6 @@ export default function InviteRecruiter({
   applyTemplate,
 }) {
   const [moduleSearch, setModuleSearch] = useState("");
-  const [lastToastMessage, setLastToastMessage] = useState("");
 
   const selectedOrg = useMemo(
     () => organizations.find((o) => o.id === inviteForm.organization_id) || null,
@@ -215,21 +212,6 @@ export default function InviteRecruiter({
       ),
     })).filter((cat) => cat.keys.length > 0);
   }, [moduleSearch]);
-
-  useEffect(() => {
-    if (!inviteMessage) {
-      setLastToastMessage("");
-      return;
-    }
-    if (inviteMessage === lastToastMessage) return;
-    const normalized = inviteMessage.toLowerCase();
-    if (normalized.includes("success")) {
-      toast.success(inviteMessage);
-    } else {
-      toast.error(inviteMessage);
-    }
-    setLastToastMessage(inviteMessage);
-  }, [inviteMessage, lastToastMessage]);
 
   const handleOrgChange = useCallback(
     (e) => {
@@ -453,12 +435,6 @@ export default function InviteRecruiter({
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
               <span>You can fine-tune module-level permissions after the recruiter accepts the invitation.</span>
             </div>
-
-            {inviteMessage && (
-              <div className={`${s.infoBanner} ${inviteMessage.includes("success") ? s.infoBannerSuccess : s.infoBannerError}`}>
-                <span>{inviteMessage}</span>
-              </div>
-            )}
           </form>
         </div>
 

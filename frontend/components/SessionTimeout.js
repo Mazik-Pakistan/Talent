@@ -104,6 +104,11 @@ export default function SessionTimeout() {
       clearLocalSession();
 
       if (pathname !== "/login") {
+        const isSuperAdminArea = pathname.startsWith("/dashboard/super-admin");
+        if (isSuperAdminArea) {
+          router.replace("/portal-root-x9f3");
+          return;
+        }
         const reasonParam =
           reason === "token" ? "session_expired" : reason === "idle" ? "session_timeout" : "";
         router.replace(reasonParam ? `/login?reason=${reasonParam}` : "/login");

@@ -155,7 +155,6 @@ export default function RecruitersPanel({
   setBulkTemplate = () => {},
   handleBulkApply = () => {},
   bulkBusy = false,
-  bulkMessage = "",
   templates = {},
   startEdit = () => {},
   editingId = null,
@@ -564,7 +563,6 @@ export default function RecruitersPanel({
           {bulkSelected.length} selected
         </span>
         <div className={s.bulkActions}>
-          {bulkMessage && <span className={s.bulkMsg}>{bulkMessage}</span>}
           <form
             className={s.bulkForm}
             onSubmit={(e) => {

@@ -13,6 +13,7 @@ import OrganizationDeleteModal from "@/components/OrganizationDeleteModal";
 import RecruiterDetailsModal from "@/components/super-admin/RecruiterDetailsModal";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import local from "./super-admin.module.css";
+import { toast } from "react-toastify";
 import {
   bootstrapSuperAdmin,
   bulkUpdateRecruiterCapabilities,
@@ -159,13 +160,11 @@ export default function SuperAdminDashboardPage() {
   const [inviteForm, setInviteForm] = useState(initialInviteForm);
   const [inviteCaps, setInviteCaps] = useState(() => allCapabilityFlags({}, true));
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
-  const [inviteMessage, setInviteMessage] = useState("");
   const [templates, setTemplates] = useState({});
   const [activeTemplate, setActiveTemplate] = useState("standard_recruiter");
   const [bulkSelected, setBulkSelected] = useState([]);
   const [bulkTemplate, setBulkTemplate] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [bulkMessage, setBulkMessage] = useState("");
   const [orgFilter, setOrgFilter] = useState("");
   const [organizations, setOrganizations] = useState([]);
   const [orgsLoading, setOrgsLoading] = useState(false);
@@ -173,10 +172,8 @@ export default function SuperAdminDashboardPage() {
   const [orgForm, setOrgForm] = useState({ name: "", contact_email: "", description: "" });
   const [orgModules, setOrgModules] = useState(() => orgModuleFlags({}, true));
   const [orgSaving, setOrgSaving] = useState(false);
-  const [orgMessage, setOrgMessage] = useState("");
   const [orgDeleteTarget, setOrgDeleteTarget] = useState(null);
   const [orgDeleting, setOrgDeleting] = useState(false);
-  const [orgDeleteError, setOrgDeleteError] = useState("");
   const [editOrgId, setEditOrgId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyEditForm);
@@ -235,7 +232,6 @@ export default function SuperAdminDashboardPage() {
     setOrgForm({ name: "", contact_email: "", description: "" });
     setOrgModules(orgModuleFlags({}, true));
     setOrgFormOpen(true);
-    setOrgMessage("");
   }
 
   function openEditOrg(org) {
@@ -247,14 +243,12 @@ export default function SuperAdminDashboardPage() {
     });
     setOrgModules(orgModuleFlags(org.modules || {}, true));
     setOrgFormOpen(true);
-    setOrgMessage("");
   }
 
   function closeOrgForm() {
     if (orgSaving) return;
     setOrgFormOpen(false);
     setEditOrgId(null);
-    setOrgMessage("");
   }
 
   async function handleOrgSubmit(event) {
@@ -262,7 +256,6 @@ export default function SuperAdminDashboardPage() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setOrgSaving(true);
-    setOrgMessage("");
     try {
       const payload = {
         name: orgForm.name.trim(),
@@ -272,16 +265,16 @@ export default function SuperAdminDashboardPage() {
       };
       if (editOrgId) {
         await updateOrganization(editOrgId, payload, accessToken);
-        setOrgMessage("Organization modules updated.");
+        toast.success("Organization modules updated.");
       } else {
         await createOrganization(payload, accessToken);
-        setOrgMessage("Organization created.");
+        toast.success("Organization created.");
       }
       setOrgFormOpen(false);
       setEditOrgId(null);
       loadOrganizations();
     } catch (err) {
-      setOrgMessage(getApiErrorMessage(err, "Could not save organization."));
+      toast.error(getApiErrorMessage(err, "Could not save organization."));
     } finally {
       setOrgSaving(false);
     }
@@ -296,11 +289,10 @@ export default function SuperAdminDashboardPage() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken || !orgDeleteTarget || orgDeleting) return;
     setOrgDeleting(true);
-    setOrgDeleteError("");
     try {
       const result = await deleteOrganization(orgDeleteTarget.id, accessToken);
       const wiped = result?.wiped || {};
-      setOrgMessage(
+      toast.success(
         result?.message ||
           `Organization deleted. Wiped ${wiped.recruiters || 0} recruiter(s), ` +
             `${wiped.candidates || 0} candidate(s), ${wiped.employees || 0} employee(s).`
@@ -309,7 +301,7 @@ export default function SuperAdminDashboardPage() {
       loadOrganizations();
       loadRecruiters();
     } catch (err) {
-      setOrgDeleteError(getApiErrorMessage(err, "Could not delete organization."));
+      toast.error(getApiErrorMessage(err, "Could not delete organization."));
     } finally {
       setOrgDeleting(false);
     }
@@ -371,13 +363,12 @@ export default function SuperAdminDashboardPage() {
 
   async function handleInvite(event) {
     event.preventDefault();
-    setInviteMessage("");
     setInviteSubmitting(true);
     try {
       const accessToken = localStorage.getItem("access_token");
       const orgModules = orgPurchasedModules(organizations, inviteForm.organization_id);
       const capabilities = clampCapsToOrg(inviteCaps, orgModules);
-      await inviteRecruiter({
+      const invitePayload = {
         ...inviteForm,
         full_name: inviteForm.full_name.trim(),
         email: inviteForm.email.trim(),
@@ -386,12 +377,13 @@ export default function SuperAdminDashboardPage() {
         office_location: inviteForm.office_location.trim() || undefined,
         organization_id: inviteForm.organization_id || undefined,
         capabilities,
-      }, accessToken);
-      setInviteMessage("Invitation sent successfully!");
+      };
+      await inviteRecruiter(invitePayload, accessToken);
+      toast.success("Invitation sent successfully!");
       setInviteForm(initialInviteForm);
       loadRecruiters();
     } catch (error) {
-      setInviteMessage(getApiErrorMessage(error, "Failed to send invitation."));
+      toast.error(getApiErrorMessage(error, "Failed to send invitation."));
     } finally {
       setInviteSubmitting(false);
     }
@@ -403,7 +395,10 @@ export default function SuperAdminDashboardPage() {
     try {
       const result = await updateRecruiterCapabilities(invitationId, { capabilities: { [key]: !currentValue } }, accessToken);
       setRecruiters((prev) => prev.map((r) => r.id === invitationId ? { ...r, capabilities: result.capabilities } : r));
-    } catch { loadRecruiters(); }
+    } catch {
+      toast.error("Could not update capability.");
+      loadRecruiters();
+    }
   }
 
   function toggleBulkSelect(id) {
@@ -422,17 +417,16 @@ export default function SuperAdminDashboardPage() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setBulkBusy(true);
-    setBulkMessage("");
     try {
       const result = await bulkUpdateRecruiterCapabilities(
         { invitation_ids: bulkSelected, capabilities: templates[bulkTemplate] },
         accessToken
       );
-      setBulkMessage(result.message || "Capabilities updated.");
+      toast.success(result.message || "Capabilities updated.");
       setBulkSelected([]);
       loadRecruiters();
     } catch (err) {
-      setBulkMessage(getApiErrorMessage(err, "Bulk update failed."));
+      toast.error(getApiErrorMessage(err, "Bulk update failed."));
     } finally {
       setBulkBusy(false);
     }
@@ -462,10 +456,11 @@ export default function SuperAdminDashboardPage() {
       const payload = { ...editForm };
       if (!recruiter?.recruiter_id) delete payload.status;
       await updateRecruiter(recruiterId, payload, accessToken);
+      toast.success("Recruiter updated.");
       setEditingId(null);
       loadRecruiters();
     } catch (error) {
-      alert(getApiErrorMessage(error, "Failed to update recruiter."));
+      toast.error(getApiErrorMessage(error, "Failed to update recruiter."));
     } finally {
       setEditSaving(false);
     }
@@ -500,9 +495,10 @@ export default function SuperAdminDashboardPage() {
     try {
       const accessToken = localStorage.getItem("access_token");
       await deleteRecruiter(recruiterId, accessToken);
+      toast.success("Recruiter deleted.");
       await loadRecruiters();
     } catch (error) {
-      alert(getApiErrorMessage(error, "Failed to delete recruiter."));
+      toast.error(getApiErrorMessage(error, "Failed to delete recruiter."));
     } finally {
       setDeletingRecruiterId(null);
     }
@@ -534,6 +530,7 @@ export default function SuperAdminDashboardPage() {
       const modules = editOrgModules[orgId];
       if (modules) {
         await updateOrganization(orgId, { modules }, accessToken);
+        toast.success("Organization modules updated.");
         loadOrganizations();
         setEditOrgModules(prev => {
           const updated = { ...prev };
@@ -542,7 +539,7 @@ export default function SuperAdminDashboardPage() {
         });
       }
     } catch (error) {
-      alert(getApiErrorMessage(error, "Failed to update organization modules."));
+      toast.error(getApiErrorMessage(error, "Failed to update organization modules."));
     }
   }
 
@@ -703,7 +700,6 @@ export default function SuperAdminDashboardPage() {
           inviteCaps={inviteCaps}
           setInviteCaps={setInviteCaps}
           inviteSubmitting={inviteSubmitting}
-          inviteMessage={inviteMessage}
           handleInvite={handleInvite}
           organizations={organizations}
           templates={templates}
@@ -730,7 +726,6 @@ export default function SuperAdminDashboardPage() {
           setBulkTemplate={setBulkTemplate}
           handleBulkApply={handleBulkApply}
           bulkBusy={bulkBusy}
-          bulkMessage={bulkMessage}
           templates={templates}
           startEdit={startEdit}
           editingId={editingId}
@@ -842,8 +837,6 @@ export default function SuperAdminDashboardPage() {
                 </div>
               </div>
 
-              {orgMessage && <div className={local.orgFormMessage}>{orgMessage}</div>}
-
               <div className={local.orgModalActions}>
                 <button type="button" className={local.orgSecondaryButton} onClick={closeOrgForm} disabled={orgSaving}>
                   Cancel
@@ -867,7 +860,6 @@ export default function SuperAdminDashboardPage() {
           orgDeleteTarget ? recruiters.filter((r) => r.organization_id === orgDeleteTarget.id).length : 0
         }
         busy={orgDeleting}
-        error={orgDeleteError}
         onConfirm={confirmOrgDelete}
       />
 
