@@ -1,39 +1,76 @@
 "use client";
 
-import { Suspense } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
-import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
-import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
-import learnStyles from "@/app/dashboard/recruiter/learning/learning.module.css";
 import { getApiErrorMessage, listEmployees } from "@/services/authService";
 import { listCareerLevels, listCareerTracks } from "@/services/careerService";
 import { getOrgTaxonomy } from "@/services/learningService";
 import { publishRecruiterContext, clearRecruiterContext } from "@/lib/ai/recruiterContext";
 import {
-  Building2,
+  ArrowUpRight,
+  Award,
   Briefcase,
+  Building2,
   Calendar,
   ChevronRight,
+  Clock,
+  Compass,
+  Eye,
   GraduationCap,
+  Layers,
+  Plus,
   Search,
+  ShieldCheck,
+  Target,
+  TrendingUp,
   Users,
+  Zap,
 } from "lucide-react";
+import s from "./departments.module.css";
 
 export const dynamic = "force-dynamic";
 
 export default function RecruiterDepartmentsPage() {
   return (
     <ProtectedRecruiterRoute requiredCapability="learning">
-      <Suspense fallback={<RecruiterLoader />}>
+      <Suspense fallback={<RecruiterShell activeKey="departments" capability="learning" title="Departments" subtitle="Loading…"><SkeletonPage /></RecruiterShell>}>
         <DepartmentsContent />
       </Suspense>
     </ProtectedRecruiterRoute>
   );
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════ //
+   Skeleton Loader
+// ═══════════════════════════════════════════════════════════════════════════════ */
+
+function SkeletonPage() {
+  return (
+    <>
+      <div className={s.skeletonHero}>
+        <div className={s.skeletonHeroLeft}>
+          <div className={s.skeleton} style={{ width: 200, height: 18, marginBottom: 10 }} />
+          <div className={s.skeleton} style={{ width: 340, height: 13, marginBottom: 8 }} />
+          <div className={s.skeleton} style={{ width: 260, height: 13 }} />
+        </div>
+        <div className={`${s.skeleton} ${s.skeletonHeroRight}`} />
+      </div>
+      <div className={s.skeletonKpiGrid}>
+        {[0, 1, 2, 3].map((i) => <div key={i} className={`${s.skeleton} ${s.skeletonKpi}`} />)}
+      </div>
+      <div className={s.skeletonLevelRow}>
+        {[0, 1, 2].map((i) => <div key={i} className={`${s.skeleton} ${s.skeletonLevel}`} />)}
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════ //
+   Main Component
+// ═══════════════════════════════════════════════════════════════════════════════ */
 
 function DepartmentsContent() {
   const router = useRouter();
@@ -44,6 +81,7 @@ function DepartmentsContent() {
   const [tracksMap, setTracksMap] = useState({});
   const [selectedDept, setSelectedDept] = useState(null);
   const [search, setSearch] = useState("");
+  const [empSearch, setEmpSearch] = useState("");
 
   useEffect(() => {
     publishRecruiterContext({ tab: "departments", section: "departments", hint: "Department management", fields: [] });
@@ -62,7 +100,6 @@ function DepartmentsContent() {
       ]);
 
       const deptNames = taxonomy.departments || [];
-
       const levels = levelsData.levels || [];
       const tracks = tracksData.tracks || [];
 
@@ -116,9 +153,8 @@ function DepartmentsContent() {
         designationCount: Object.keys(eMap[name]?.designations || {}).length,
         levelCount: (lMap[name] || []).length,
         trackCount: (tMap[name] || []).length,
-        topDesignations: Object.entries(eMap[name]?.designations || {})
-          .sort(([, a], [, b]) => b - a)
-          .slice(0, 5),
+        topDesignations: Object.entries(eMap[name]?.designations || {}).sort(([, a], [, b]) => b - a).slice(0, 8),
+        allDesignations: Object.entries(eMap[name]?.designations || {}).sort(([, a], [, b]) => b - a),
       }));
 
       setDepartments(enriched);
@@ -145,10 +181,26 @@ function DepartmentsContent() {
     const empData = employeeMap[selectedDept] || { employees: [], designations: {} };
     const levels = levelsMap[selectedDept] || [];
     const tracks = tracksMap[selectedDept] || [];
-    return { dept, employees: empData.employees, designations: Object.keys(empData.designations || {}), levels, tracks };
-  }, [selectedDept, departments, employeeMap, levelsMap, tracksMap]);
+    const allDesignations = Object.entries(empData.designations || {}).sort(([, a], [, b]) => b - a);
+    const filteredEmployees = empSearch.trim()
+      ? empData.employees.filter((e) => (e.full_name || "").toLowerCase().includes(empSearch.toLowerCase()) || (e.job_title || "").toLowerCase().includes(empSearch.toLowerCase()))
+      : empData.employees;
+    return { dept, employees: empData.employees, filteredEmployees, allDesignations, levels, tracks };
+  }, [selectedDept, departments, employeeMap, levelsMap, tracksMap, empSearch]);
 
   const totalEmployees = departments.reduce((sum, d) => sum + d.employeeCount, 0);
+  const totalLevels = Object.values(levelsMap).reduce((s, a) => s + a.length, 0);
+  const totalTracks = Object.values(tracksMap).reduce((s, a) => s + a.length, 0);
+  const totalDesignations = useMemo(() => {
+    const set = new Set();
+    Object.values(employeeMap).forEach((ed) => Object.keys(ed.designations || {}).forEach((d) => set.add(d)));
+    return set.size;
+  }, [employeeMap]);
+
+  /* Career health score: ratio of levels defined vs departments with employees */
+  const deptsWithLevels = departments.filter((d) => d.levelCount > 0).length;
+  const healthScore = departments.length > 0 ? Math.round((deptsWithLevels / departments.length) * 100) : 0;
+  const healthColor = healthScore >= 75 ? "var(--green)" : healthScore >= 40 ? "var(--orange)" : "var(--red)";
 
   return (
     <RecruiterShell
@@ -158,280 +210,461 @@ function DepartmentsContent() {
       subtitle="View and manage organizational departments, employees, and career progressions"
     >
       {loading ? (
-        <RecruiterLoader inline />
+        <SkeletonPage />
       ) : departments.length === 0 ? (
-        <div className={shellStyles.section}>
-          <div className={shellStyles.sectionBody}>
-            <div className={learnStyles.emptyState}>
-              <div className={learnStyles.emptyStateIcon}><Building2 aria-hidden="true" /></div>
-              <div className={learnStyles.emptyStateTitle}>No departments found</div>
-              <p className={learnStyles.emptyStateHint}>Departments will appear once employees are assigned to departments.</p>
-            </div>
+        <div style={{ background: "#fff", border: "1px solid var(--border)", borderRadius: 20, boxShadow: "var(--shadow)" }}>
+          <div className={s.emptyState}>
+            <div className={s.emptyIcon}><Building2 aria-hidden="true" /></div>
+            <div className={s.emptyTitle}>No departments found</div>
+            <p className={s.emptyDesc}>Departments will appear once employees are assigned to departments. Start by inviting employees and assigning them to departments.</p>
           </div>
         </div>
       ) : (
-        <>
-          <div className={shellStyles.section} style={{ marginBottom: 16 }}>
-            <div className={shellStyles.sectionBody}>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                {[
-                  { label: "Departments", value: departments.length, icon: Building2, color: "cyan" },
-                  { label: "Total employees", value: totalEmployees, icon: Users, color: "green" },
-                  { label: "Career levels defined", value: Object.values(levelsMap).reduce((s, a) => s + a.length, 0), icon: GraduationCap, color: "orange" },
-                  { label: "Career tracks", value: Object.values(tracksMap).reduce((s, a) => s + a.length, 0), icon: Briefcase, color: "navy" },
-                ].map((stat) => {
-                  const Icon = stat.icon;
-                  return (
-                    <div key={stat.label} className={shellStyles.statCard} style={{ flex: "1 1 180px" }}>
-                      <div className={shellStyles.statTop}>
-                        <span className={`${shellStyles.statIcon} ${shellStyles[stat.color]}`}>
-                          <Icon aria-hidden="true" />
-                        </span>
-                      </div>
-                      <div className={shellStyles.statValue}>{stat.value}</div>
-                      <div className={shellStyles.statLabel}>{stat.label}</div>
-                    </div>
-                  );
-                })}
+        <div className={s.pageLayout}>
+          {/* ─── Left Sidebar ─── */}
+          <div className={s.sidebar}>
+            <div className={s.sidebarHead}>
+              <div className={s.sidebarHeadTop}>
+                <span className={s.sidebarTitle}>Departments</span>
+                <span className={s.sidebarCount}>{filteredDepts.length}</span>
               </div>
+              <div className={s.sidebarHint}>{totalEmployees} employees across {departments.length} departments</div>
+            </div>
+            <div className={s.sidebarSearch}>
+              <div className={s.searchWrap}>
+                <Search className={s.searchIcon} aria-hidden="true" />
+                <input
+                  className={s.searchInput}
+                  aria-label="Search departments"
+                  placeholder="Search departments…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className={s.deptList} role="listbox" aria-label="Department list">
+              {filteredDepts.map((d) => (
+                <button
+                  key={d.name}
+                  type="button"
+                  role="option"
+                  aria-selected={selectedDept === d.name}
+                  className={`${s.deptItem} ${selectedDept === d.name ? s.deptItemActive : ""}`}
+                  onClick={() => { setSelectedDept(d.name); setEmpSearch(""); }}
+                >
+                  <div className={s.deptItemIcon}>{d.name.slice(0, 2).toUpperCase()}</div>
+                  <div className={s.deptItemBody}>
+                    <div className={s.deptItemName}>{d.name}</div>
+                    <div className={s.deptItemMeta}>
+                      <Users aria-hidden="true" /> {d.employeeCount}
+                      <span className={s.deptItemDot} />
+                      <GraduationCap aria-hidden="true" /> {d.levelCount} levels
+                    </div>
+                  </div>
+                  <span className={s.deptItemBadge}>{d.employeeCount}</span>
+                </button>
+              ))}
+              {filteredDepts.length === 0 && (
+                <div className={s.deptEmpty}>No departments match "{search}"</div>
+              )}
             </div>
           </div>
 
-          <div className={learnStyles.deptLayout}>
-            <div className={learnStyles.deptSidebar}>
-              <div className={learnStyles.deptSidebarHead}>
-                <div className={learnStyles.deptSidebarTitle}>All departments</div>
-                <div className={learnStyles.deptSidebarHint}>{filteredDepts.length} department{filteredDepts.length !== 1 ? "s" : ""} · {totalEmployees} total employees</div>
+          {/* ─── Main Content ─── */}
+          <div className={s.content}>
+            {!selectedDept ? (
+              <div className={s.emptyState}>
+                <div className={s.emptyIcon}><Building2 aria-hidden="true" /></div>
+                <div className={s.emptyTitle}>Select a department</div>
+                <p className={s.emptyDesc}>Choose a department from the sidebar to view its employees, designations, and career progression.</p>
               </div>
-              <div className={learnStyles.deptSearch}>
-                <div className={learnStyles.deptSearchWrap}>
-                  <Search className={learnStyles.deptSearchIcon} aria-hidden="true" />
-                  <input
-                    className={learnStyles.deptSearchInput}
-                    aria-label="Search departments"
-                    placeholder="Search departments…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className={learnStyles.deptItemList}>
-                {filteredDepts.map((d) => (
-                  <button
-                    key={d.name}
-                    type="button"
-                    className={`${learnStyles.deptItem} ${selectedDept === d.name ? learnStyles.deptItemActive : ""}`}
-                    onClick={() => setSelectedDept(d.name)}
-                  >
-                    <div className={learnStyles.deptItemIcon}>
-                      {d.name.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className={learnStyles.deptItemBody}>
-                      <div className={learnStyles.deptItemName}>{d.name}</div>
-                      <div className={learnStyles.deptItemMeta}>
-                        <Users aria-hidden="true" /> {d.employeeCount} employee{d.employeeCount !== 1 ? "s" : ""}
-                        <span style={{ opacity: 0.4 }}>·</span>
-                        {d.levelCount} level{d.levelCount !== 1 ? "s" : ""}
+            ) : (
+              <>
+                {/* ── Hero ── */}
+                <div className={s.hero}>
+                  <div className={s.heroTop}>
+                    <div className={s.heroLeft}>
+                      <div className={s.heroIconRow}>
+                        <div className={s.heroIcon}>{selectedDept.slice(0, 2).toUpperCase()}</div>
+                        <div className={s.heroBadges}>
+                          <span className={`${s.heroBadge} ${s.heroBadgeActive}`}>Active</span>
+                          {selectedInfo.levels.length > 0 && <span className={`${s.heroBadge} ${s.heroBadgeLevel}`}><Layers aria-hidden="true" style={{ width: 11, height: 11 }} /> {selectedInfo.levels.length} levels</span>}
+                          {selectedInfo.allDesignations.length > 0 && <span className={`${s.heroBadge} ${s.heroBadgeDesignation}`}><Briefcase aria-hidden="true" style={{ width: 11, height: 11 }} /> {selectedInfo.allDesignations.length} designations</span>}
+                        </div>
+                      </div>
+                      <h2 className={s.heroTitle}>{selectedDept}</h2>
+                      <p className={s.heroSubtitle}>
+                        {selectedInfo.employees.length} active employee{selectedInfo.employees.length !== 1 ? "s" : ""} · {selectedInfo.levels.length} career level{selectedInfo.levels.length !== 1 ? "s" : ""} · {selectedInfo.tracks.length} career track{selectedInfo.tracks.length !== 1 ? "s" : ""}
+                      </p>
+                      <div className={s.heroActions}>
+                        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => router.push(`/dashboard/recruiter/learning?tab=career-framework&department=${encodeURIComponent(selectedDept)}`)}>
+                          <Briefcase aria-hidden="true" /> Manage career framework
+                        </button>
+                        <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => router.push(`/dashboard/recruiter/learning?tab=analytics`)}>
+                          <Eye aria-hidden="true" /> Learning analytics
+                        </button>
                       </div>
                     </div>
-                    <span className={learnStyles.deptItemBadge}>
-                      {d.employeeCount}
-                    </span>
-                  </button>
-                ))}
-                {filteredDepts.length === 0 && (
-                  <div style={{ padding: "24px 16px", textAlign: "center", fontSize: 12.5, color: "var(--text-muted)" }}>
-                    No departments match "{search}"
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className={learnStyles.deptDetail}>
-              {!selectedDept ? (
-                <div className={learnStyles.emptyState}>
-                  <div className={learnStyles.emptyStateIcon}><Building2 aria-hidden="true" /></div>
-                  <div className={learnStyles.emptyStateTitle}>Select a department</div>
-                  <p className={learnStyles.emptyStateHint}>Choose a department from the list to view its employees, designations, and career progression.</p>
-                </div>
-              ) : (
-                <>
-                  <div className={learnStyles.deptDetailHeader}>
-                    <div>
-                      <div className={learnStyles.deptDetailTitle}>{selectedDept}</div>
-                      <div className={learnStyles.deptDetailSubtitle}>
-                        {selectedInfo.employees.length} employee{selectedInfo.employees.length !== 1 ? "s" : ""}
-                        {" · "}
-                        {selectedInfo.designations.length} designation{selectedInfo.designations.length !== 1 ? "s" : ""}
-                        {" · "}
-                        {selectedInfo.levels.length} career level{selectedInfo.levels.length !== 1 ? "s" : ""}
+                    <div className={s.heroRight}>
+                      <div className={s.healthRing}>
+                        <svg viewBox="0 0 36 36" style={{ transform: "rotate(-90deg)" }}>
+                          <circle className={s.healthTrack} cx="18" cy="18" r="15.9155" />
+                          <circle
+                            className={s.healthFill}
+                            cx="18" cy="18" r="15.9155"
+                            stroke={healthColor}
+                            strokeDasharray={`${healthScore * (2 * Math.PI * 15.9155) / 100} ${2 * Math.PI * 15.9155}`}
+                          />
+                        </svg>
+                        <div className={s.healthLabel}>
+                          <span className={s.healthValue} style={{ color: healthColor }}>{healthScore}%</span>
+                          <span className={s.healthText}>Health</span>
+                        </div>
                       </div>
                     </div>
-                    <div className={learnStyles.deptDetailActions}>
-                      <button
-                        type="button"
-                        className={learnStyles.modeBtn}
-                        onClick={() => router.push(`/dashboard/recruiter/learning?tab=career-framework&department=${encodeURIComponent(selectedDept)}`)}
-                      >
-                        <Briefcase aria-hidden="true" /> Manage career framework
-                      </button>
-                      <button
-                        type="button"
-                        className={learnStyles.modeBtn}
-                        onClick={() => router.push(`/dashboard/recruiter/learning?tab=analytics`)}
-                      >
-                        <Calendar aria-hidden="true" /> Learning analytics
-                      </button>
-                    </div>
                   </div>
+                </div>
 
-                  <div className={learnStyles.deptStatGrid}>
+                {/* ── Analytics KPIs ── */}
+                <div className={s.analyticsSection}>
+                  <div className={s.sectionLabel}><TrendingUp aria-hidden="true" /> Overview</div>
+                  <div className={s.analyticsGrid}>
                     {[
-                      { label: "Employees", value: selectedInfo.employees.length, color: "cyan", icon: Users },
-                      { label: "Career levels", value: selectedInfo.levels.length, color: "green", icon: GraduationCap },
-                      { label: "Designations", value: selectedInfo.designations.length, color: "orange", icon: Briefcase },
-                    ].map((s) => {
-                      const Icon = s.icon;
+                      { label: "Employees", value: selectedInfo.employees.length, icon: Users, color: "cyan", pct: totalEmployees > 0 ? Math.round((selectedInfo.employees.length / totalEmployees) * 100) : 0, desc: `${Math.round((selectedInfo.employees.length / Math.max(totalEmployees, 1)) * 100)}% of total workforce` },
+                      { label: "Career Levels", value: selectedInfo.levels.length, icon: GraduationCap, color: "green", pct: totalLevels > 0 ? Math.round((selectedInfo.levels.length / totalLevels) * 100) : 0, desc: `${selectedInfo.levels.length} of ${totalLevels} total levels defined` },
+                      { label: "Designations", value: selectedInfo.allDesignations.length, icon: Briefcase, color: "orange", pct: totalDesignations > 0 ? Math.round((selectedInfo.allDesignations.length / totalDesignations) * 100) : 0, desc: `${selectedInfo.allDesignations.length} distinct job titles` },
+                      { label: "Career Tracks", value: selectedInfo.tracks.length, icon: Compass, color: "navy", pct: totalTracks > 0 ? Math.round((selectedInfo.tracks.length / totalTracks) * 100) : 0, desc: `${selectedInfo.tracks.length} progression tracks defined` },
+                    ].map((kpi) => {
+                      const Icon = kpi.icon;
                       return (
-                        <div key={s.label} className={shellStyles.statCard}>
-                          <div className={shellStyles.statTop}>
-                            <span className={`${shellStyles.statIcon} ${shellStyles[s.color]}`}>
-                              <Icon aria-hidden="true" />
+                        <div key={kpi.label} className={s.kpiCard}>
+                          <div className={s.kpiTop}>
+                            <span className={`${s.kpiIcon} ${s[kpi.color]}`}><Icon aria-hidden="true" /></span>
+                            <span className={`${s.kpiTrend} ${s.kpiTrendUp}`}>
+                              <ArrowUpRight aria-hidden="true" /> {kpi.pct}%
                             </span>
                           </div>
-                          <div className={shellStyles.statValue}>{s.value}</div>
-                          <div className={shellStyles.statLabel}>{s.label}</div>
+                          <div className={s.kpiValue}>{kpi.value}</div>
+                          <div className={s.kpiLabel}>{kpi.label}</div>
+                          <div className={s.kpiBar}>
+                            <div className={s.kpiBarFill} style={{ width: `${Math.min(kpi.pct, 100)}%`, background: `var(--${kpi.color === "cyan" ? "blue" : kpi.color})` }} />
+                          </div>
                         </div>
                       );
                     })}
                   </div>
+                </div>
 
-                  {selectedInfo.designations.length > 0 && (
-                    <div className={learnStyles.deptDetailSection}>
-                      <div className={learnStyles.deptDetailSectionTitle}>
-                        <Briefcase aria-hidden="true" /> Designations
-                      </div>
-                      <div className={learnStyles.deptDesignationChips}>
-                        {selectedInfo.designations.map((d) => (
-                          <span key={d} className={learnStyles.hierarchyChip}>{d}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedInfo.levels.length > 0 && (
-                    <div className={learnStyles.deptDetailSection}>
-                      <div className={learnStyles.deptDetailSectionTitle}>
-                        <GraduationCap aria-hidden="true" /> Career Ladder ({selectedInfo.levels.length} levels)
-                      </div>
-                      <div className={learnStyles.cfLadder} style={{ paddingBottom: 0 }}>
-                        {selectedInfo.levels.map((level, idx) => (
-                          <div key={level.id} className={learnStyles.cfLevelWrap}>
-                            {idx > 0 && (
-                              <div className={learnStyles.cfArrow}>
-                                <ChevronRight aria-hidden="true" />
-                              </div>
-                            )}
-                            <div className={learnStyles.cfLevelCard} style={{ minWidth: 240 }}>
-                              <div className={learnStyles.cfLevelHead}>
-                                <span className={learnStyles.cfLevelBadge}>
-                                  <GraduationCap aria-hidden="true" />L{level.level_number}
-                                </span>
-                              </div>
-                              <div className={learnStyles.cfLevelTitle} style={{ fontSize: 13.5 }}>{level.role_title}</div>
-                              {level.required_skills?.length > 0 && (
-                                <>
-                                  <div className={learnStyles.cfSectionLabel}>Skills ({level.required_skills.length})</div>
-                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                    {level.required_skills.slice(0, 4).map((s, i) => (
-                                      <span key={i} className={learnStyles.cfSkillChip}>{s.skill}</span>
-                                    ))}
-                                    {level.required_skills.length > 4 && (
-                                      <span className={learnStyles.cfMore}>+{level.required_skills.length - 4}</span>
-                                    )}
-                                  </div>
-                                </>
-                              )}
-                            </div>
+                {/* ─── Two-Column Body ─── */}
+                <div className={s.bodyGrid}>
+                  <div className={s.bodyMain}>
+                    {/* ── Career Framework ── */}
+                    {selectedInfo.levels.length > 0 && (
+                      <div className={s.sectionBlock}>
+                        <div className={s.sectionBlockHead}>
+                          <div>
+                            <div className={s.sectionBlockTitle}><Layers aria-hidden="true" /> Career Progression</div>
+                            <div className={s.sectionBlockDesc}>Ranked career levels for {selectedDept} — progression from junior to senior</div>
                           </div>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        className={learnStyles.deptAllEmployeesLink}
-                        onClick={() => router.push(`/dashboard/recruiter/learning?tab=career-framework&department=${encodeURIComponent(selectedDept)}`)}
-                      >
-                        Open full career framework <ChevronRight aria-hidden="true" />
-                      </button>
-                    </div>
-                  )}
-
-                  {selectedInfo.tracks.length > 0 && (
-                    <div className={learnStyles.deptDetailSection}>
-                      <div className={learnStyles.deptDetailSectionTitle}>
-                        <Briefcase aria-hidden="true" /> Career Tracks ({selectedInfo.tracks.length})
-                      </div>
-                      {selectedInfo.tracks.map((t) => (
-                        <div key={t.id} className={learnStyles.deptEmployeeRow}>
-                          <div className={learnStyles.employeeAvatar} style={{ background: "linear-gradient(135deg, var(--blue-strong), var(--navy-2))" }}>
-                            {(t.track_name || "?").slice(0, 2).toUpperCase()}
-                          </div>
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div className={learnStyles.deptEmployeeName}>{t.track_name}</div>
-                            {t.description && <div className={learnStyles.deptEmployeeMeta}>{t.description}</div>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {selectedInfo.employees.length > 0 && (
-                    <div className={learnStyles.deptDetailSection}>
-                      <div className={learnStyles.deptDetailSectionTitle}>
-                        <Users aria-hidden="true" /> Employees ({selectedInfo.employees.length})
-                      </div>
-                      {selectedInfo.employees.slice(0, 10).map((emp) => (
-                        <div key={emp.employee_id} className={learnStyles.deptEmployeeRow}>
-                          <div className={learnStyles.employeeAvatar}>
-                            {(emp.full_name || "?").slice(0, 1).toUpperCase()}
-                          </div>
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div className={learnStyles.deptEmployeeName}>{emp.full_name}</div>
-                            <div className={learnStyles.deptEmployeeMeta}>{emp.job_title || "—"} · {emp.employee_id}</div>
-                          </div>
-                          <button
-                            type="button"
-                            className={learnStyles.smallBtn}
-                            onClick={() => router.push(`/dashboard/recruiter/employees/${emp.employee_id}`)}
-                          >
-                            View
+                          <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => router.push(`/dashboard/recruiter/learning?tab=career-framework&department=${encodeURIComponent(selectedDept)}`)}>
+                            Manage <ChevronRight aria-hidden="true" />
                           </button>
                         </div>
-                      ))}
-                      {selectedInfo.employees.length > 10 && (
-                        <button
-                          type="button"
-                          className={learnStyles.deptAllEmployeesLink}
-                          onClick={() => router.push("/dashboard/recruiter/employees")}
-                        >
-                          View all {selectedInfo.employees.length} employees <ChevronRight aria-hidden="true" />
-                        </button>
-                      )}
-                    </div>
-                  )}
+                        <div className={s.sectionBlockBody}>
+                          <div className={s.progression}>
+                            {selectedInfo.levels.map((level, idx) => {
+                              const lvlEmployees = selectedInfo.employees.filter((e) => {
+                                const jt = (e.job_title || "").toLowerCase();
+                                const rt = (level.role_title || "").toLowerCase();
+                                return jt === rt || jt.includes(rt) || rt.includes(jt);
+                              });
+                              return (
+                                <div key={level.id} className={s.levelWrap}>
+                                  {idx > 0 && (
+                                    <div className={s.levelArrow}>
+                                      <div className={s.levelArrowLine} />
+                                      <ChevronRight aria-hidden="true" />
+                                    </div>
+                                  )}
+                                  <div className={s.levelCard}>
+                                    <div className={s.levelHead}>
+                                      <span className={s.levelBadge}><GraduationCap aria-hidden="true" /> L{level.level_number}</span>
+                                      {lvlEmployees.length > 0 && (
+                                        <span className={s.levelEmployees}><Users aria-hidden="true" /> {lvlEmployees.length}</span>
+                                      )}
+                                    </div>
+                                    <div className={s.levelTitle}>{level.role_title}</div>
+                                    <div className={s.levelFacts}>
+                                      {level.min_experience_years > 0 && (
+                                        <div className={s.levelFact}><Clock aria-hidden="true" /> Min {level.min_experience_years}yr experience</div>
+                                      )}
+                                      {level.min_time_in_current_role_months > 0 && (
+                                        <div className={s.levelFact}><Calendar aria-hidden="true" /> {level.min_time_in_current_role_months}mo in role</div>
+                                      )}
+                                    </div>
+                                    {level.required_skills?.length > 0 && (
+                                      <>
+                                        <div className={s.sectionLabel2}>Skills ({level.required_skills.length})</div>
+                                        <div className={s.skillChips}>
+                                          {level.required_skills.slice(0, 5).map((sk, i) => (
+                                            <span key={i} className={s.skillChip}>{sk.skill}</span>
+                                          ))}
+                                          {level.required_skills.length > 5 && <span className={s.levelMore}>+{level.required_skills.length - 5}</span>}
+                                        </div>
+                                      </>
+                                    )}
+                                    {level.required_certifications?.length > 0 && (
+                                      <>
+                                        <div className={s.sectionLabel2}>Certifications ({level.required_certifications.length})</div>
+                                        <div className={s.skillChips}>
+                                          {level.required_certifications.map((c, i) => (
+                                            <span key={i} className={s.certChip}>{c.certification}</span>
+                                          ))}
+                                        </div>
+                                      </>
+                                    )}
+                                    {level.learning_path?.length > 0 && (
+                                      <>
+                                        <div className={s.sectionLabel2}>Courses ({level.learning_path.length})</div>
+                                        {level.learning_path.slice(0, 2).map((c, i) => (
+                                          <div key={i} className={s.courseRow}>
+                                            <span className={s.courseNum}>{c.order}.</span> {c.course_title}
+                                          </div>
+                                        ))}
+                                        {level.learning_path.length > 2 && <div className={s.levelMore}>+{level.learning_path.length - 2} more</div>}
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
-                  {selectedInfo.employees.length === 0 && selectedInfo.levels.length === 0 && selectedInfo.designations.length === 0 && (
-                    <div className={learnStyles.emptyState}>
-                      <div className={learnStyles.emptyStateIcon}><Building2 aria-hidden="true" /></div>
-                      <div className={learnStyles.emptyStateTitle}>No data yet for {selectedDept}</div>
-                      <p className={learnStyles.emptyStateHint}>Assign employees to this department and define career levels to populate this view.</p>
+                    {selectedInfo.levels.length === 0 && (
+                      <div className={s.sectionBlock}>
+                        <div className={s.sectionBlockBody}>
+                          <div className={s.emptyState}>
+                            <div className={s.emptyIcon}><Layers aria-hidden="true" /></div>
+                            <div className={s.emptyTitle}>No career levels defined</div>
+                            <p className={s.emptyDesc}>Define career levels to establish a clear progression path for {selectedDept}.</p>
+                            <button type="button" className={`${s.btn} ${s.btnPrimary}`} style={{ marginTop: 14 }} onClick={() => router.push(`/dashboard/recruiter/learning?tab=career-framework&department=${encodeURIComponent(selectedDept)}`)}>
+                              <Plus style={{ width: 14, height: 14 }} /> Define career framework
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Career Tracks ── */}
+                    <div className={s.sectionBlock}>
+                      <div className={s.sectionBlockHead}>
+                        <div>
+                          <div className={s.sectionBlockTitle}><Compass aria-hidden="true" /> Career Tracks</div>
+                          <div className={s.sectionBlockDesc}>Defined career progression tracks for this department</div>
+                        </div>
+                      </div>
+                      <div className={s.sectionBlockBody}>
+                        {selectedInfo.tracks.length === 0 ? (
+                          <div className={s.emptyState} style={{ padding: "32px 16px" }}>
+                            <div className={s.emptyIcon} style={{ width: 44, height: 44, borderRadius: 12 }}><Compass aria-hidden="true" /></div>
+                            <div className={s.emptyTitle}>No career tracks yet</div>
+                            <p className={s.emptyDesc}>Create career tracks to define progression paths within this department.</p>
+                          </div>
+                        ) : (
+                          <div className={s.trackCards}>
+                            {selectedInfo.tracks.map((t) => (
+                              <div key={t.id} className={s.trackCard}>
+                                <div className={s.trackCardHead}>
+                                  <div className={s.trackCardIcon}>{(t.track_name || "?").slice(0, 2).toUpperCase()}</div>
+                                  <div className={s.trackCardName}>{t.track_name}</div>
+                                </div>
+                                {t.description && <div className={s.trackCardDesc}>{t.description}</div>}
+                                <div className={s.trackCardMeta}>
+                                  <span className={s.trackCardChip}><GraduationCap aria-hidden="true" /> {selectedInfo.levels.filter((l) => l.department === t.department).length} levels</span>
+                                  <span className={s.trackCardChip}><Target aria-hidden="true" /> {selectedInfo.employees.length} employees</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </>
-              )}
-            </div>
+
+                    {/* ── Employees ── */}
+                    <div className={s.sectionBlock}>
+                      <div className={s.sectionBlockHead}>
+                        <div>
+                          <div className={s.sectionBlockTitle}><Users aria-hidden="true" /> Employees ({selectedInfo.employees.length})</div>
+                          <div className={s.sectionBlockDesc}>All active employees in {selectedDept}</div>
+                        </div>
+                        <div className={s.searchWrap} style={{ width: 220 }}>
+                          <Search className={s.searchIcon} aria-hidden="true" />
+                          <input className={s.searchInput} aria-label="Filter employees" placeholder="Filter employees…" value={empSearch} onChange={(e) => setEmpSearch(e.target.value)} />
+                        </div>
+                      </div>
+                      <div className={s.sectionBlockBody}>
+                        {selectedInfo.employees.length === 0 ? (
+                          <div className={s.emptyState} style={{ padding: "32px 16px" }}>
+                            <div className={s.emptyIcon} style={{ width: 44, height: 44, borderRadius: 12 }}><Users aria-hidden="true" /></div>
+                            <div className={s.emptyTitle}>No employees</div>
+                            <p className={s.emptyDesc}>No employees are currently assigned to {selectedDept}.</p>
+                          </div>
+                        ) : (
+                          <div className={s.tableContainer}>
+                            <div className={s.tableWrap}>
+                              <table className={s.table}>
+                                <thead>
+                                  <tr>
+                                    <th>Employee</th>
+                                    <th>Designation</th>
+                                    <th>Status</th>
+                                    <th style={{ textAlign: "right" }}>Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {selectedInfo.filteredEmployees.slice(0, 25).map((emp) => {
+                                    const hasLevel = selectedInfo.levels.some((l) => {
+                                      const rt = (l.role_title || "").toLowerCase();
+                                      const jt = (emp.job_title || "").toLowerCase();
+                                      return jt === rt || jt.includes(rt) || rt.includes(jt);
+                                    });
+                                    return (
+                                      <tr key={emp.employee_id}>
+                                        <td>
+                                          <div className={s.empCell}>
+                                            <div className={s.empAvatar}>{(emp.full_name || "?").slice(0, 1).toUpperCase()}</div>
+                                            <div>
+                                              <div className={s.empName}>{emp.full_name}</div>
+                                              <div className={s.empMeta}>{emp.employee_id}</div>
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td><span className={s.statusPill} style={{ background: "var(--blue-lighter)", color: "var(--navy-2)" }}>{emp.job_title || "—"}</span></td>
+                                        <td><span className={`${s.statusPill} ${hasLevel ? s.green : s.orange}`}>{hasLevel ? "On track" : "No level"}</span></td>
+                                        <td style={{ textAlign: "right" }}>
+                                          <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => router.push(`/dashboard/recruiter/employees/${emp.employee_id}`)}>
+                                            <Eye aria-hidden="true" /> View
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                            {selectedInfo.filteredEmployees.length > 25 && (
+                              <div className={s.tableFooter}>
+                                <span>Showing 25 of {selectedInfo.filteredEmployees.length} employee{selectedInfo.filteredEmployees.length !== 1 ? "s" : ""}</span>
+                                <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => router.push("/dashboard/recruiter/employees")}>View all</button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ─── Right Insights Panel ─── */}
+                  <div className={s.bodyAside}>
+                    <div className={s.insightsPanel}>
+                      <div className={s.insightHead}>
+                        <div className={s.insightTitle}>Department Insights</div>
+                      </div>
+
+                      {/* Department Health */}
+                      <div className={s.insightCard}>
+                        <div className={s.insightCardHead}>
+                          <div className={s.insightCardIcon} style={{ background: "var(--green-light)", color: "var(--green)" }}><ShieldCheck aria-hidden="true" /></div>
+                          <div className={s.insightCardLabel}>Department Health</div>
+                        </div>
+                        <div className={s.insightCardValue} style={{ color: healthColor }}>{healthScore}%</div>
+                        <div className={s.insightCardDesc}>{deptsWithLevels} of {departments.length} departments have career frameworks defined.</div>
+                      </div>
+
+                      {/* Employees */}
+                      <div className={s.insightCard}>
+                        <div className={s.insightCardHead}>
+                          <div className={s.insightCardIcon} style={{ background: "var(--cyan)", color: "#fff" }}><Users aria-hidden="true" /></div>
+                          <div className={s.insightCardLabel}>Employees</div>
+                        </div>
+                        <div className={s.insightCardValue}>{selectedInfo.employees.length}</div>
+                        <div className={s.insightCardDesc}>Active employees currently in {selectedDept}.</div>
+                      </div>
+
+                      {/* Top Skills */}
+                      {selectedInfo.levels.length > 0 && (
+                        <div className={s.insightCard}>
+                          <div className={s.insightCardHead}>
+                            <div className={s.insightCardIcon} style={{ background: "var(--blue-light)", color: "var(--blue-strong)" }}><Zap aria-hidden="true" /></div>
+                            <div className={s.insightCardLabel}>Top Skills</div>
+                          </div>
+                          <div className={s.insightSkillList}>
+                            {[...new Set(selectedInfo.levels.flatMap((l) => (l.required_skills || []).map((sk) => sk.skill)))].slice(0, 10).map((skill) => (
+                              <span key={skill} className={`${s.insightSkill} ${s.insightSkillTop}`}>{skill}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Designations */}
+                      {selectedInfo.allDesignations.length > 0 && (
+                        <div className={s.insightCard}>
+                          <div className={s.insightCardHead}>
+                            <div className={s.insightCardIcon} style={{ background: "var(--orange-light)", color: "#a57500" }}><Award aria-hidden="true" /></div>
+                            <div className={s.insightCardLabel}>Designations</div>
+                          </div>
+                          <div className={s.insightSkillList}>
+                            {selectedInfo.allDesignations.slice(0, 6).map(([title, count]) => (
+                              <span key={title} className={s.insightSkill} style={{ background: "var(--orange-light)", color: "#a57500", border: "1px solid #f6e0b8" }}>
+                                {title} ({count})
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Career Tracks */}
+                      <div className={s.insightCard}>
+                        <div className={s.insightCardHead}>
+                          <div className={s.insightCardIcon} style={{ background: "var(--navy-2)", color: "#fff" }}><Compass aria-hidden="true" /></div>
+                          <div className={s.insightCardLabel}>Career Tracks</div>
+                        </div>
+                        <div className={s.insightCardValue}>{selectedInfo.tracks.length}</div>
+                        <div className={s.insightCardDesc}>
+                          {selectedInfo.tracks.length > 0
+                            ? `${selectedInfo.tracks.map((t) => t.track_name).join(", ")}`
+                            : "No career tracks defined for this department."}
+                        </div>
+                      </div>
+
+                      {/* Quick Actions */}
+                      <div className={s.insightCard}>
+                        <div className={s.insightCardHead}>
+                          <div className={s.insightCardIcon} style={{ background: "var(--purple-light)", color: "var(--purple)" }}><Zap aria-hidden="true" /></div>
+                          <div className={s.insightCardLabel}>Quick Actions</div>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <button type="button" className={`${s.btn} ${s.btnSecondary}`} style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => router.push(`/dashboard/recruiter/learning?tab=career-framework&department=${encodeURIComponent(selectedDept)}`)}>
+                            <Briefcase aria-hidden="true" /> Manage Career Framework
+                          </button>
+                          <button type="button" className={`${s.btn} ${s.btnSecondary}`} style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => router.push(`/dashboard/recruiter/learning?tab=analytics`)}>
+                            <TrendingUp aria-hidden="true" /> Learning Analytics
+                          </button>
+                          <button type="button" className={`${s.btn} ${s.btnSecondary}`} style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => router.push("/dashboard/recruiter/employees")}>
+                            <Users aria-hidden="true" /> View All Employees
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
-        </>
+        </div>
       )}
     </RecruiterShell>
   );
