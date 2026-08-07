@@ -1,19 +1,5 @@
-import axios from "axios";
+import apiClient from "@/lib/apiClient";
 import { CacheKeys, cachedFetch, invalidateCachePrefix } from "@/utils/recruiterCache";
-
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-
-const client = axios.create({
-  baseURL: apiBaseUrl,
-  headers: {
-    "Content-Type": "application/json",
-    "ngrok-skip-browser-warning": "true",
-  },
-});
-
-function auth(accessToken) {
-  return { headers: { Authorization: `Bearer ${accessToken}` } };
-}
 
 function invalidateTalentCaches() {
   invalidateCachePrefix("talent-");
@@ -22,25 +8,24 @@ function invalidateTalentCaches() {
 // ─── Employee self-service (US-090/091/093/094/101) ──────────────────────────
 
 export async function getSkillMatrix(accessToken) {
-  const { data } = await client.get("/api/talent/skill-matrix", auth(accessToken));
+  const { data } = await apiClient.get("/api/talent/skill-matrix");
   return data;
 }
 
 export async function getCareerProgression(accessToken) {
-  const { data } = await client.get("/api/talent/career-progression", auth(accessToken));
+  const { data } = await apiClient.get("/api/talent/career-progression");
   return data;
 }
 
 export async function getJourneyTimeline(accessToken, types) {
-  const { data } = await client.get("/api/talent/journey", {
-    ...auth(accessToken),
+  const { data } = await apiClient.get("/api/talent/journey", {
     params: types ? { types } : {},
   });
   return data;
 }
 
 export async function getAchievements(accessToken) {
-  const { data } = await client.get("/api/talent/achievements", auth(accessToken));
+  const { data } = await apiClient.get("/api/talent/achievements");
   return data;
 }
 
@@ -57,13 +42,13 @@ export async function browseOpportunities(accessToken, params = {}, { force = fa
     !params.type &&
     (params.status === "all" || params.status === "open" || !params.status);
   if (!useCache) {
-    const { data } = await client.get("/api/talent/opportunities", { ...auth(accessToken), params });
+    const { data } = await apiClient.get("/api/talent/opportunities", { params });
     return data;
   }
   const { data } = await cachedFetch(
     `${key}:${params.status || "open"}:p${params.page || 1}:s${params.page_size || 20}`,
     async () => {
-      const res = await client.get("/api/talent/opportunities", { ...auth(accessToken), params });
+      const res = await apiClient.get("/api/talent/opportunities", { params });
       return res.data;
     },
     { force }
@@ -72,34 +57,31 @@ export async function browseOpportunities(accessToken, params = {}, { force = fa
 }
 
 export async function createOpportunity(accessToken, payload) {
-  const { data } = await client.post("/api/talent/opportunities", payload, auth(accessToken));
+  const { data } = await apiClient.post("/api/talent/opportunities", payload);
   invalidateTalentCaches();
   return data;
 }
 
 export async function updateOpportunity(accessToken, opportunityId, payload) {
-  const { data } = await client.put(
+  const { data } = await apiClient.put(
     `/api/talent/opportunities/${encodeURIComponent(opportunityId)}`,
-    payload,
-    auth(accessToken)
+    payload
   );
   invalidateTalentCaches();
   return data;
 }
 
 export async function applyToOpportunity(accessToken, opportunityId) {
-  const { data } = await client.post(
+  const { data } = await apiClient.post(
     `/api/talent/opportunities/${encodeURIComponent(opportunityId)}/apply`,
-    {},
-    auth(accessToken)
+    {}
   );
   return data;
 }
 
 export async function getOpportunityApplicants(accessToken, opportunityId) {
-  const { data } = await client.get(
-    `/api/talent/opportunities/${encodeURIComponent(opportunityId)}/applicants`,
-    auth(accessToken)
+  const { data } = await apiClient.get(
+    `/api/talent/opportunities/${encodeURIComponent(opportunityId)}/applicants`
   );
   return data;
 }
@@ -107,24 +89,23 @@ export async function getOpportunityApplicants(accessToken, opportunityId) {
 // ─── Competency evaluation (US-099) ───────────────────────────────────────────
 
 export async function submitCompetencyEvaluation(accessToken, employeeId, payload) {
-  const { data } = await client.post(
+  const { data } = await apiClient.post(
     `/api/talent/competency/${encodeURIComponent(employeeId)}`,
-    payload,
-    auth(accessToken)
+    payload
   );
   invalidateTalentCaches();
   return data;
 }
 
 export async function getCompetencyHistory(accessToken, employeeId) {
-  const { data } = await client.get(`/api/talent/competency/${encodeURIComponent(employeeId)}`, auth(accessToken));
+  const { data } = await apiClient.get(`/api/talent/competency/${encodeURIComponent(employeeId)}`);
   return data;
 }
 
 // ─── Talent search (US-100) ───────────────────────────────────────────────────
 
 export async function searchTalent(accessToken, payload) {
-  const { data } = await client.post("/api/talent/search", payload, auth(accessToken));
+  const { data } = await apiClient.post("/api/talent/search", payload);
   return data;
 }
 
@@ -134,8 +115,7 @@ export async function getTalentMetrics(accessToken, department, { force = false 
   const { data } = await cachedFetch(
     CacheKeys.talentMetrics(department || ""),
     async () => {
-      const res = await client.get("/api/talent/metrics", {
-        ...auth(accessToken),
+      const res = await apiClient.get("/api/talent/metrics", {
         params: department ? { department } : {},
       });
       return res.data;
@@ -148,15 +128,14 @@ export async function getTalentMetrics(accessToken, department, { force = false 
 // ─── Development plan (US-103) ────────────────────────────────────────────────
 
 export async function getDevelopmentPlan(accessToken, employeeId) {
-  const { data } = await client.get(`/api/talent/development-plan/${encodeURIComponent(employeeId)}`, auth(accessToken));
+  const { data } = await apiClient.get(`/api/talent/development-plan/${encodeURIComponent(employeeId)}`);
   return data;
 }
 
 export async function updateDevelopmentPlan(accessToken, employeeId, payload) {
-  const { data } = await client.put(
+  const { data } = await apiClient.put(
     `/api/talent/development-plan/${encodeURIComponent(employeeId)}`,
-    payload,
-    auth(accessToken)
+    payload
   );
   invalidateTalentCaches();
   return data;
@@ -165,6 +144,6 @@ export async function updateDevelopmentPlan(accessToken, employeeId, payload) {
 // ─── 360° profile (US-104) ────────────────────────────────────────────────────
 
 export async function getTalentProfile(accessToken, employeeId) {
-  const { data } = await client.get(`/api/talent/profile/${encodeURIComponent(employeeId)}`, auth(accessToken));
+  const { data } = await apiClient.get(`/api/talent/profile/${encodeURIComponent(employeeId)}`);
   return data;
 }

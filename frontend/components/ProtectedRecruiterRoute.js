@@ -30,14 +30,13 @@ export default function ProtectedRecruiterRoute({ requiredCapability, children }
 
     const capabilities = resolveRecruiterCapabilities(user);
 
-    // Backward compatible: no stored capabilities = not restricted yet.
     if (!capabilities || Object.keys(capabilities).length === 0) {
-      setIsAuthorized(true);
+      setIsAuthorized(false);
       setLoading(false);
       return;
     }
 
-    const allowed = capabilities[requiredCapability] !== false;
+    const allowed = capabilities[requiredCapability] === true;
 
     setIsAuthorized(allowed);
     setLoading(false);

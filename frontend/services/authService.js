@@ -1,20 +1,10 @@
-import axios from "axios";
+import apiClient from "@/lib/apiClient";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 if (!apiBaseUrl) {
   throw new Error("NEXT_PUBLIC_API_BASE_URL must be configured.");
 }
-
-const apiClient = axios.create({
-  baseURL: apiBaseUrl,
-  headers: {
-    "Content-Type": "application/json",
-    // ngrok's free tunnel can serve an interstitial page to browser requests.
-    // This header makes API requests pass through to the FastAPI application.
-    "ngrok-skip-browser-warning": "true",
-  },
-});
 
 // ─── Registration ────────────────────────────────────────────────────────────
 
@@ -109,6 +99,8 @@ export function clearLocalSession() {
   localStorage.removeItem("session_last_active");
   localStorage.removeItem("token_expires_at");
   localStorage.removeItem("remember_me");
+  document.cookie = "access_token=; path=/; max-age=0";
+  document.cookie = "refresh_token=; path=/; max-age=0";
 }
 
 /**
@@ -124,6 +116,12 @@ export function persistTokens(session) {
   }
   if (session.expires_in) {
     localStorage.setItem("token_expires_at", String(Date.now() + session.expires_in * 1000));
+  }
+
+  const maxAge = session.expires_in || 60 * 60;
+  document.cookie = `access_token=${session.access_token}; path=/; max-age=${maxAge}`;
+  if (session.refresh_token) {
+    document.cookie = `refresh_token=${session.refresh_token}; path=/; max-age=${maxAge * 24 * 7}`;
   }
 }
 
@@ -213,12 +211,12 @@ export function resolveRecruiterCapabilities(user = null) {
   return getStoredCapabilities();
 }
 
-/** Check if recruiter has a specific capability enabled. Missing key = allowed (legacy). */
+/** Check if recruiter has a specific capability enabled. Defaults to deny (fail-closed). */
 export function hasCapability(capability) {
-  if (!capability) return true;
+  if (!capability) return false;
   const capabilities = getStoredCapabilities();
-  if (!Object.keys(capabilities).length) return true;
-  return capabilities[capability] !== false;
+  if (!Object.keys(capabilities).length) return false;
+  return capabilities[capability] === true;
 }
 
 /** Check if recruiter has any of the specified capabilities. */
