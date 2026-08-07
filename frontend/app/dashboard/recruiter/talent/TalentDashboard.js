@@ -145,7 +145,7 @@ export default function TalentDashboard({
           min_competency_score: null,
           semantic: false,
           page: 1,
-          page_size: 100,
+          page_size: 60,
         }),
         listEmployees(token, {
           department: deptParam,

@@ -170,8 +170,16 @@ export default function TalentProfileView({
       getEmployeeLearningProfile(token, employeeId),
     ])
       .then(([empRes, talentRes, careerRes, learnRes]) => {
-        if (empRes.status === "fulfilled") setEmployee(empRes.value);
-        else toast.error(getApiErrorMessage(empRes.reason, "Could not load employee."));
+        console.log("[Profile] employee detail:", empRes.status, empRes.value || empRes.reason);
+        console.log("[Profile] talent:", talentRes.status);
+        console.log("[Profile] career:", careerRes.status);
+        console.log("[Profile] learning:", learnRes.status);
+        if (empRes.status === "fulfilled") {
+          console.log("[Profile] employee keys:", empRes.value ? Object.keys(empRes.value) : "null");
+          setEmployee(empRes.value);
+        } else {
+          toast.error(getApiErrorMessage(empRes.reason, "Could not load employee."));
+        }
         if (talentRes.status === "fulfilled") setTalent(talentRes.value);
         if (careerRes.status === "fulfilled") setCareer(careerRes.value);
         if (learnRes.status === "fulfilled") setLearning(learnRes.value);
@@ -182,9 +190,9 @@ export default function TalentProfileView({
   // eslint-disable-next-line react-hooks/set-state-in-effect -- Standard data-fetching pattern
   useEffect(() => { load(); }, [load]);
 
-  const name = employee?.full_name || talent?.full_name || employeeId;
-  const jobTitle = employee?.job_title || talent?.job_title || roleName || "—";
-  const dept = employee?.department || talent?.department || departmentName || "—";
+  const name = employee?.full_name || talent?.full_name || career?.assignment?.employee_name || employeeId;
+  const jobTitle = employee?.job_title || talent?.job_title || career?.assignment?.current_role_title || roleName || "—";
+  const dept = employee?.department || talent?.department || career?.assignment?.current_department || departmentName || "—";
 
   const crumbs = [
     { key: "talent", label: "Overview", onClick: () => onNavigate({ view: "dashboard", employee: null, department: null, role: null }) },
@@ -232,21 +240,6 @@ export default function TalentProfileView({
   return (
     <div className={styles.intelStack}>
       <Breadcrumbs crumbs={crumbs} />
-
-      <div className={styles.detailHero}>
-        <div>
-          <h2 className={styles.detailTitle}>{name}</h2>
-          <p className={styles.detailDesc}>{jobTitle} · {dept} · {employeeId}</p>
-        </div>
-        <div className={styles.detailStatRow}>
-          {readiness != null && (
-            <span><TrendingUp size={14} aria-hidden="true" /> Readiness {readiness}%</span>
-          )}
-          {career?.assignment?.status === "paused" && (
-            <span className={styles.pausedChip}>Paused</span>
-          )}
-        </div>
-      </div>
 
       <div className={styles.subTabBar} role="tablist">
         {[
@@ -341,7 +334,9 @@ export default function TalentProfileView({
                     <span className={styles.promoMetaItem}><Target size={13} aria-hidden="true" /> Target: {targetDate}</span>
                   )}
                   {isPaused && <span className={styles.promoStatusChip} style={{ background: "#f1f5f9", color: "#64748b" }}>Paused</span>}
-                  <span className={styles.promoMetaItem}><BarChart3 size={13} aria-hidden="true" /> Competency avg: {competencyAvg ?? "—"}</span>
+                  {competencyAvg != null && (
+                    <span className={styles.promoMetaItem}><BarChart3 size={13} aria-hidden="true" /> Competency avg: {competencyAvg}</span>
+                  )}
                 </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, minWidth: 140 }}>
@@ -494,13 +489,18 @@ export default function TalentProfileView({
               </div>
             </div>
             <div className={shellStyles.sectionBody}>
-              <p className={styles.inlineNote}>
-                Competency avg: {talent?.competency_average ?? talent?.average_competency ?? "—"}
-                {" · "}
-                Skills tracked: {skills.length || talent?.skill_count || "—"}
-                {" · "}
-                Learning progress: {learning?.overall_progress ?? learning?.completion_rate ?? talent?.learning_progress ?? "—"}%
-              </p>
+              {(talent?.competency_average || talent?.average_competency) && (
+                <p className={styles.inlineNote}>
+                  Competency avg: {talent?.competency_average ?? talent?.average_competency}
+                  {" · "}
+                  Skills tracked: {skills.length || talent?.skill_count || "—"}
+                </p>
+              )}
+              {(learning?.overall_progress || learning?.completion_rate || talent?.learning_progress) && (
+                <p className={styles.inlineNote}>
+                  Learning progress: {learning?.overall_progress ?? learning?.completion_rate ?? talent?.learning_progress}%
+                </p>
+              )}
               {career?.assignment && (
                 <p className={styles.inlineNote}>
                   Path: {career.assignment.current_role_title || career.current_role || "—"}
@@ -508,6 +508,9 @@ export default function TalentProfileView({
                   {career.assignment.target_role_title || career.target_role || "—"}
                   {career.assignment.target_date ? ` · Target ${career.assignment.target_date}` : ""}
                 </p>
+              )}
+              {!talent?.competency_average && !talent?.average_competency && !learning?.overall_progress && !career?.assignment && (
+                <p className={styles.inlineNote}>No overview data available yet.</p>
               )}
             </div>
           </div>
