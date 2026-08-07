@@ -7,20 +7,20 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.core.security import require_capabilities, require_roles
+from app.core.security import require_any_capability, require_roles
 from app.core.rbac import CurrentUser
 
 router = APIRouter(prefix="/api/org-framework", tags=["Organization Framework"])
 
-RequireRecruiterLearning = Annotated[CurrentUser, Depends(require_capabilities("learning"))]
-
-# Write access is restricted to recruiters (and super admins). Read-only
-# endpoints stay open to every org-bound role (recruiter, employee, candidate)
-# so dashboards, forms and AI assistants can read the org's framework.
-RequireRecruiterLearningWrite = Annotated[
-    CurrentUser,
-    Depends(require_capabilities("learning")),
+# Organization Setup writes are gated by org_config; learning kept for backward compatibility.
+# Reads also allow talent so Talent Intelligence can load departments/roles for filters.
+RequireRecruiterOrgConfig = Annotated[
+    CurrentUser, Depends(require_any_capability("org_config", "learning"))
 ]
+RequireFrameworkRead = Annotated[
+    CurrentUser, Depends(require_any_capability("org_config", "learning", "talent"))
+]
+
 RequireFrameworkWriteRole = Annotated[
     CurrentUser,
     Depends(require_roles("recruiter", "super_admin")),
@@ -28,10 +28,10 @@ RequireFrameworkWriteRole = Annotated[
 
 
 async def _framework_write_user(
-    current_user: RequireRecruiterLearning,
+    current_user: RequireRecruiterOrgConfig,
     role_user: RequireFrameworkWriteRole,
 ) -> CurrentUser:
-    """Write access = learning capability + recruiter/super_admin role."""
+    """Write access = org_config (or learning) + recruiter/super_admin role."""
     return current_user
 
 
@@ -39,6 +39,8 @@ RequireRecruiterLearningWrite = Annotated[
     CurrentUser,
     Depends(_framework_write_user),
 ]
+# Historical alias: GETs use read deps (includes talent); keep name for write wiring.
+RequireRecruiterLearning = RequireFrameworkRead
 
 
 def _org_id(user: CurrentUser) -> str:

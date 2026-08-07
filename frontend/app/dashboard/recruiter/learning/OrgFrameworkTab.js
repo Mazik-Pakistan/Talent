@@ -52,12 +52,14 @@ import {
   Layers,
   Pencil,
   Plus,
+  Target,
   Trash2,
   TrendingUp,
   Upload,
   Users,
   Zap,
 } from "lucide-react";
+import CareerTracksPanel from "../organization-config/CareerTracksPanel";
 import s from "./OrgFrameworkTab.module.css";
 
 const SECTIONS = [
@@ -69,6 +71,7 @@ const SECTIONS = [
   { key: "certifications", label: "Certs", icon: Award },
   { key: "roadmaps", label: "Roadmaps", icon: Compass },
   { key: "promotion", label: "Promotion", icon: TrendingUp },
+  { key: "career-tracks", label: "Career tracks", icon: Target },
 ];
 
 export default function OrgFrameworkTab() {
@@ -226,6 +229,8 @@ export default function OrgFrameworkTab() {
           <RoadmapsSection roadmaps={roadmaps} roles={roles} courses={courses} loadAll={loadAll} />
         ) : section === "promotion" ? (
           <PromotionSection rules={promotionRules} roles={roles} loadAll={loadAll} />
+        ) : section === "career-tracks" ? (
+          <CareerTracksPanel departments={departments} />
         ) : null}
       </div>
     </div>

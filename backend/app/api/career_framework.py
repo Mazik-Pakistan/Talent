@@ -21,7 +21,7 @@ from app.core.security import (
     RequireEmployee,
     RequireRecruiter,
     get_current_user,
-    require_capabilities,
+    require_any_capability,
 )
 from app.schemas.career_framework import (
     BulkCareerAssignRequest,
@@ -37,8 +37,10 @@ from app.services.career_framework_service import career_framework_service
 
 router = APIRouter(prefix="/api/career-framework", tags=["Career Framework"])
 
-# Capability-checked recruiter dependency
-RequireRecruiterWithLearning = Annotated[CurrentUser, Depends(require_capabilities("learning"))]
+# Talent Management owns career framework; Learning retains access for legacy/shared use.
+RequireRecruiterWithTalentOrLearning = Annotated[
+    CurrentUser, Depends(require_any_capability("talent", "learning"))
+]
 
 
 # --------------------------------------------------------------------------- #
@@ -48,7 +50,7 @@ RequireRecruiterWithLearning = Annotated[CurrentUser, Depends(require_capabiliti
 
 @router.post("/tracks")
 async def create_track(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     body: CareerTrackCreate,
 ):
     """Create a new career track for a department."""
@@ -62,7 +64,7 @@ async def create_track(
 
 @router.get("/tracks")
 async def list_tracks(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     department: str | None = Query(default=None, description="Filter by department"),
 ):
     """List all career tracks."""
@@ -71,7 +73,7 @@ async def list_tracks(
 
 @router.get("/tracks/{track_id}")
 async def get_track(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     track_id: str,
 ):
     """Get a career track by ID."""
@@ -80,7 +82,7 @@ async def get_track(
 
 @router.put("/tracks/{track_id}")
 async def update_track(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     track_id: str,
     body: CareerTrackUpdate,
 ):
@@ -91,7 +93,7 @@ async def update_track(
 
 @router.delete("/tracks/{track_id}")
 async def delete_track(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     track_id: str,
 ):
     """Delete a career track (soft delete)."""
@@ -105,7 +107,7 @@ async def delete_track(
 
 @router.post("/levels")
 async def create_level(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     body: CareerLevelCreate,
 ):
     """Create a new career level."""
@@ -128,7 +130,7 @@ async def create_level(
 
 @router.get("/levels")
 async def list_levels(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     department: str | None = Query(default=None, description="Filter by department"),
     track_id: str | None = Query(default=None, description="Filter by track ID"),
 ):
@@ -138,7 +140,7 @@ async def list_levels(
 
 @router.get("/levels/{level_id}")
 async def get_level(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     level_id: str,
 ):
     """Get a career level by ID."""
@@ -147,7 +149,7 @@ async def get_level(
 
 @router.put("/levels/{level_id}")
 async def update_level(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     level_id: str,
     body: CareerLevelUpdate,
 ):
@@ -158,7 +160,7 @@ async def update_level(
 
 @router.delete("/levels/{level_id}")
 async def delete_level(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     level_id: str,
 ):
     """Delete a career level (soft delete)."""
@@ -172,7 +174,7 @@ async def delete_level(
 
 @router.post("/employees/{employee_id}/assign")
 async def assign_employee_career(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     employee_id: str,
     body: EmployeeCareerAssignRequest,
 ):
@@ -187,7 +189,7 @@ async def assign_employee_career(
 
 @router.get("/employees/{employee_id}")
 async def get_employee_career(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     employee_id: str,
 ):
     """Get an employee's career assignment."""
@@ -196,7 +198,7 @@ async def get_employee_career(
 
 @router.put("/employees/{employee_id}")
 async def update_employee_career(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     employee_id: str,
     body: EmployeeCareerUpdateRequest,
 ):
@@ -207,7 +209,7 @@ async def update_employee_career(
 
 @router.post("/employees/{employee_id}/discussion")
 async def log_career_discussion(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     employee_id: str,
     body: CareerDiscussionRequest,
 ):
@@ -223,7 +225,7 @@ async def log_career_discussion(
 
 @router.post("/bulk-assign")
 async def bulk_assign_career(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     body: BulkCareerAssignRequest,
 ):
     """Assign career paths to multiple employees."""
@@ -237,7 +239,7 @@ async def bulk_assign_career(
 
 @router.get("/assignments")
 async def list_all_assignments(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     department: str | None = Query(default=None),
     status: str | None = Query(default=None),
 ):
@@ -273,7 +275,7 @@ async def get_my_career_progress(current_user: RequireEmployee):
 
 @router.get("/reports/promotion-readiness")
 async def get_promotion_readiness(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     department: str | None = Query(default=None),
 ):
     """Get promotion readiness report."""
@@ -284,7 +286,7 @@ async def get_promotion_readiness(
 
 
 @router.get("/reports/career-progress")
-async def get_career_progress_report(current_user: RequireRecruiterWithLearning):
+async def get_career_progress_report(current_user: RequireRecruiterWithTalentOrLearning):
     """Get career progress report by department."""
     return await career_framework_service.get_career_progress_report(current_user)
 
@@ -295,7 +297,7 @@ async def get_career_progress_report(current_user: RequireRecruiterWithLearning)
 
 
 @router.get("/export", response_class=PlainTextResponse)
-async def export_framework(current_user: RequireRecruiterWithLearning):
+async def export_framework(current_user: RequireRecruiterWithTalentOrLearning):
     """Export career framework as CSV."""
     csv_content = await career_framework_service.export_framework_csv()
     return PlainTextResponse(
@@ -307,7 +309,7 @@ async def export_framework(current_user: RequireRecruiterWithLearning):
 
 @router.post("/import")
 async def import_framework(
-    current_user: RequireRecruiterWithLearning,
+    current_user: RequireRecruiterWithTalentOrLearning,
     file: UploadFile = File(...),
 ):
     """Import career framework from CSV file."""
