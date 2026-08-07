@@ -361,6 +361,17 @@ export async function deleteManagedCourse(accessToken, courseId) {
   return data;
 }
 
+export async function bulkManagedCourseAction(accessToken, courseIds, action) {
+  const { data } = await client.post(
+    "/api/learning/managed/courses-bulk/action",
+    { course_ids: courseIds, action },
+    auth(accessToken)
+  );
+  invalidateLearningCaches();
+  notifyLearningProvidersUpdated();
+  return data;
+}
+
 async function postManagedImport(url, file, accessToken) {
   const formData = new FormData();
   formData.append("file", file, file?.name || "learning-roadmap.xlsx");
@@ -430,5 +441,131 @@ export async function deleteDepartment(accessToken, name) {
     auth(accessToken),
   );
   invalidateLearningCaches();
+  return data;
+}
+
+// ─── Catalog sources (dynamic provider tabs) ────────────────────────────────
+
+export async function getCatalogSources(accessToken) {
+  const { data } = await client.get("/api/learning/catalog/sources", auth(accessToken));
+  return data;
+}
+
+// ─── Generic provider management (Phase 1) ──────────────────────────────────
+
+export async function listProviders(accessToken, params = {}) {
+  const { data } = await client.get("/api/learning/providers", { ...auth(accessToken), params });
+  return data;
+}
+
+export async function getProvider(accessToken, providerId) {
+  const { data } = await client.get(`/api/learning/providers/${providerId}`, auth(accessToken));
+  return data;
+}
+
+export async function createProvider(accessToken, payload) {
+  const { data } = await client.post("/api/learning/providers", payload, auth(accessToken));
+  invalidateCachePrefix("learning-providers");
+  invalidateCachePrefix("learning-");
+  notifyLearningProvidersUpdated();
+  return data;
+}
+
+export async function updateProvider(accessToken, providerId, payload) {
+  const { data } = await client.put(`/api/learning/providers/${providerId}`, payload, auth(accessToken));
+  invalidateCachePrefix("learning-providers");
+  invalidateCachePrefix("learning-");
+  notifyLearningProvidersUpdated();
+  return data;
+}
+
+export async function deleteProvider(accessToken, providerId, force = false) {
+  const { data } = await client.delete(`/api/learning/providers/${providerId}`, {
+    ...auth(accessToken),
+    params: force ? { force: "true" } : {},
+  });
+  invalidateCachePrefix("learning-providers");
+  invalidateCachePrefix("learning-");
+  notifyLearningProvidersUpdated();
+  return data;
+}
+
+export async function activateProvider(accessToken, providerId) {
+  const { data } = await client.post(`/api/learning/providers/${providerId}/activate`, {}, auth(accessToken));
+  invalidateCachePrefix("learning-providers");
+  invalidateCachePrefix("learning-");
+  notifyLearningProvidersUpdated();
+  return data;
+}
+
+export async function deactivateProvider(accessToken, providerId) {
+  const { data } = await client.post(`/api/learning/providers/${providerId}/deactivate`, {}, auth(accessToken));
+  invalidateCachePrefix("learning-providers");
+  invalidateCachePrefix("learning-");
+  notifyLearningProvidersUpdated();
+  return data;
+}
+
+// ─── Universal import engine (Phase 2) ────────────────────────────────────
+
+async function postImportFile(url, accessToken, { file, providerId, providerName, missingAction }) {
+  const formData = new FormData();
+  formData.append("file", file, file?.name || "course-catalog.xlsx");
+  if (providerId) formData.append("provider_id", providerId);
+  if (providerName) formData.append("provider_name", providerName);
+  if (missingAction) formData.append("missing_action", missingAction);
+  const { data } = await client.post(url, formData, {
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function previewImport(accessToken, opts) {
+  return postImportFile("/api/learning/import/preview", accessToken, opts);
+}
+
+export async function commitImport(accessToken, opts) {
+  const data = await postImportFile("/api/learning/import/commit", accessToken, opts);
+  invalidateLearningCaches();
+  invalidateCachePrefix("learning-providers");
+  notifyLearningProvidersUpdated();
+  return data;
+}
+
+export async function rollbackImport(accessToken, historyId) {
+  const { data } = await client.post(`/api/learning/import/${historyId}/rollback`, {}, auth(accessToken));
+  invalidateLearningCaches();
+  invalidateCachePrefix("learning-providers");
+  notifyLearningProvidersUpdated();
+  return data;
+}
+
+export async function listImportHistory(accessToken, params = {}) {
+  const { data } = await client.get("/api/learning/import/history", { ...auth(accessToken), params });
+  return data;
+}
+
+export async function getImportHistory(accessToken, historyId) {
+  const { data } = await client.get(`/api/learning/import/history/${historyId}`, auth(accessToken));
+  return data;
+}
+
+export async function downloadImportReport(accessToken, historyId) {
+  const { data } = await client.get(`/api/learning/import/history/${historyId}/report`, {
+    ...auth(accessToken),
+    responseType: "blob",
+  });
+  return data;
+}
+
+export async function syncProviderFromApi(accessToken, providerId, missingAction = "keep") {
+  const formData = new FormData();
+  formData.append("missing_action", missingAction);
+  const { data } = await client.post(`/api/learning/import/providers/${providerId}/sync`, formData, {
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  });
+  invalidateLearningCaches();
+  invalidateCachePrefix("learning-providers");
+  notifyLearningProvidersUpdated();
   return data;
 }

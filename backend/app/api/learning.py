@@ -16,8 +16,14 @@ from app.schemas.learning import (
     ManagedLearningCourseUpdateRequest,
     SkillUpsertRequest,
 )
+from app.schemas.provider import (
+    LearningProviderCreate,
+    LearningProviderUpdate,
+)
 from app.services.learning_service import learning_service
 from app.services.managed_learning_service import managed_learning_service
+from app.services.provider_service import provider_service
+from app.services.import_engine_service import import_engine_service
 
 router = APIRouter(prefix="/api/learning", tags=["Learning"])
 
@@ -47,6 +53,7 @@ async def browse_catalog(
     learning_month: str | None = None,
     competency: str | None = None,
     archived: bool | None = None,
+    sort_by: str | None = Query(default="newest", description="newest|oldest|updated|title_asc|title_desc|duration|provider"),
     bookmarked_only: bool = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=60),
@@ -68,6 +75,7 @@ async def browse_catalog(
         learning_month=learning_month,
         competency=competency,
         archived=archived,
+        sort_by=sort_by,
     )
 
 
@@ -78,6 +86,21 @@ async def catalog_facets(
     source: str = Query(default="microsoft_learn"),
 ):
     return await learning_service.get_facets(source)
+
+
+@router.get("/catalog/sources")
+async def catalog_sources(
+    current_user: RequireAny,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("learning"))],
+):
+    """All available catalog sources (managed providers + external API providers).
+
+    Provider-agnostic: generated from the learning_providers collection, never
+    hardcoded. Used by recruiter and employee catalogs to build dynamic tabs.
+    """
+    from app.services.catalog_service import get_catalog_sources
+
+    return {"sources": await get_catalog_sources()}
 
 
 @router.get("/catalog/soft-skills/categories")
@@ -424,6 +447,7 @@ async def list_managed_courses(
     category: str | None = None,
     competency: str | None = None,
     archived: bool | None = None,
+    sort_by: str | None = Query(default="newest", description="newest|oldest|updated|title_asc|title_desc|duration|provider"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ):
@@ -435,6 +459,7 @@ async def list_managed_courses(
         category=category,
         competency=competency,
         archived=archived,
+        sort_by=sort_by,
         page=page,
         page_size=page_size,
     )
@@ -485,6 +510,17 @@ async def restore_managed_course(course_id: str, current_user: RequireRecruiterW
 @router.delete("/managed/courses/{course_id}")
 async def delete_managed_course(course_id: str, current_user: RequireRecruiterWithLearning):
     return await managed_learning_service.delete_course(current_user, course_id)
+
+
+@router.post("/managed/courses-bulk/action")
+async def bulk_managed_course_action(
+    payload: dict,
+    current_user: RequireRecruiterWithLearning,
+):
+    """Bulk archive / restore / delete managed courses (Phase 3)."""
+    course_ids = payload.get("course_ids") or []
+    action = (payload.get("action") or "").strip().lower()
+    return await managed_learning_service.bulk_course_action(current_user, course_ids, action)
 
 
 @router.post("/managed/import/preview")
@@ -553,3 +589,177 @@ async def remove_department(name: str, current_user: RequireRecruiterWithLearnin
         return await delete_department(name)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# ========================================================================== #
+# PROVIDER MANAGEMENT (Generic Learning Provider Framework)
+# ========================================================================== #
+@router.get("/providers")
+async def list_providers(
+    current_user: RequireRecruiterWithLearning,
+    include_inactive: bool = Query(default=False),
+    provider_type: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
+):
+    """List all learning providers with filtering and pagination."""
+    return await provider_service.list_providers(
+        include_inactive=include_inactive,
+        provider_type=provider_type,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/providers/{provider_id}")
+async def get_provider(
+    provider_id: str,
+    current_user: RequireRecruiterWithLearning,
+):
+    """Get a specific learning provider by ID."""
+    return await provider_service.get_provider(provider_id)
+
+
+@router.post("/providers", status_code=201)
+async def create_provider(
+    current_user: RequireRecruiterWithLearning,
+    payload: LearningProviderCreate,
+):
+    """Create a new learning provider."""
+    return await provider_service.create_provider(current_user, payload)
+
+
+@router.put("/providers/{provider_id}")
+async def update_provider(
+    provider_id: str,
+    current_user: RequireRecruiterWithLearning,
+    payload: LearningProviderUpdate,
+):
+    """Update an existing learning provider."""
+    return await provider_service.update_provider(current_user, provider_id, payload)
+
+
+@router.delete("/providers/{provider_id}")
+async def delete_provider(
+    provider_id: str,
+    current_user: RequireRecruiterWithLearning,
+    force: bool = Query(default=False),
+):
+    """Delete a learning provider (archives courses when force=true)."""
+    return await provider_service.delete_provider(current_user, provider_id, force=force)
+
+
+@router.post("/providers/{provider_id}/activate")
+async def activate_provider(
+    provider_id: str,
+    current_user: RequireRecruiterWithLearning,
+):
+    """Activate a learning provider."""
+    return await provider_service.activate_provider(current_user, provider_id)
+
+
+@router.post("/providers/{provider_id}/deactivate")
+async def deactivate_provider(
+    provider_id: str,
+    current_user: RequireRecruiterWithLearning,
+):
+    """Deactivate a learning provider."""
+    return await provider_service.deactivate_provider(current_user, provider_id)
+
+
+# ========================================================================== #
+# UNIVERSAL IMPORT ENGINE (Phase 2)
+# ========================================================================== #
+@router.post("/import/preview")
+async def import_preview(
+    current_user: RequireRecruiterWithLearning,
+    file: UploadFile = File(...),
+    provider_id: str | None = Form(default=None),
+    provider_name: str | None = Form(default=None),
+):
+    """Validate an upload and produce a full import preview (never writes data)."""
+    return await import_engine_service.preview_import(
+        current_user, file, provider_id=provider_id, provider_name=provider_name
+    )
+
+
+@router.post("/import/commit")
+async def import_commit(
+    current_user: RequireRecruiterWithLearning,
+    file: UploadFile = File(...),
+    provider_id: str | None = Form(default=None),
+    provider_name: str | None = Form(default=None),
+    missing_action: str = Form(default="keep"),
+):
+    """Validate + import courses in one shot, recording import history."""
+    return await import_engine_service.commit_import(
+        current_user,
+        file,
+        provider_id=provider_id,
+        provider_name=provider_name,
+        missing_action=missing_action,
+    )
+
+
+@router.post("/import/{history_id}/rollback")
+async def import_rollback(
+    history_id: str,
+    current_user: RequireRecruiterWithLearning,
+):
+    """Roll back a completed import."""
+    return await import_engine_service.rollback_import(current_user, history_id)
+
+
+@router.get("/import/history")
+async def import_history(
+    current_user: RequireRecruiterWithLearning,
+    provider_id: str | None = Query(default=None),
+    import_type: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+):
+    return await import_engine_service.list_import_history(
+        current_user,
+        provider_id=provider_id,
+        import_type=import_type,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/import/history/{history_id}")
+async def import_history_detail(
+    history_id: str,
+    current_user: RequireRecruiterWithLearning,
+):
+    return await import_engine_service.get_import_history(history_id)
+
+
+@router.get("/import/history/{history_id}/report")
+async def import_history_report(
+    history_id: str,
+    current_user: RequireRecruiterWithLearning,
+):
+    """Download a CSV validation/import report."""
+    from fastapi.responses import PlainTextResponse
+
+    csv_data = await import_engine_service.import_report_csv(history_id)
+    return PlainTextResponse(
+        csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="import-report-{history_id}.csv"'},
+    )
+
+
+@router.post("/import/providers/{provider_id}/sync")
+async def import_sync_from_api(
+    provider_id: str,
+    current_user: RequireRecruiterWithLearning,
+    missing_action: str = Form(default="keep"),
+):
+    """Run an API synchronization for an API provider (same engine as Excel)."""
+    return await import_engine_service.sync_from_api(
+        current_user, provider_id, missing_action=missing_action
+    )

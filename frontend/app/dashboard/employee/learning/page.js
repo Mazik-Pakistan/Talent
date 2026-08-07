@@ -244,7 +244,7 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
       <div className={dashStyles.hero}>
         <div>
           <div className={dashStyles.heroEyebrow}>Learning &amp; Development</div>
-          <h1>Grow your skills with Microsoft Learn</h1>
+          <h1>Grow your skills with your learning providers</h1>
           <div className={dashStyles.heroMeta}>
             Overall progress: <b>{s.overall_progress_percent ?? 0}%</b> · Learning hours logged:{" "}
             <b>{s.total_learning_hours ?? 0}</b>
@@ -1706,7 +1706,7 @@ function CertificatesTab({ onChange }) {
         {!loading && certificates.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>No certificates uploaded yet</div>
-            <div className={dashStyles.emptySub}>Completed a course on Microsoft Learn? Upload the certificate above.</div>
+            <div className={dashStyles.emptySub}>Completed a course? Upload the certificate above.</div>
           </div>
         )}
         {certificates.map((c) => (

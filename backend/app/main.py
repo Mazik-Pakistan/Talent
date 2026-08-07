@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.core.database import create_database_indexes, mongo_client
 from app.core.rbac_seed import seed_rbac_collections
 from app.services.employee_id_migration import migrate_employee_ids_to_emp_format
+from app.services.learning_provider_seed import seed_learning_providers
 from app.services.org_taxonomy_service import seed_org_taxonomy
 from app.services.organization_service import create_default_organization_if_needed
 from app.services import coursera_service
@@ -40,6 +41,9 @@ async def lifespan(_: FastAPI):
     await seed_rbac_collections()
     await seed_org_taxonomy()
     await seed_universities()
+    # Generic Learning Provider framework: auto-create default providers and
+    # backfill provider_id on existing courses (Phase 1).
+    await seed_learning_providers()
     # Multi-tenancy: ensure at least one organization exists for recruiter binds.
     await create_default_organization_if_needed()
 
