@@ -25,6 +25,13 @@ export async function getOrgStructureOptions(accessToken) {
   return data;
 }
 
+// ─── Seed from existing records ───────────────────────────────────────────────
+
+export async function seedOrgFramework(accessToken) {
+  const { data } = await client.post("/api/org-framework/seed", null, auth(accessToken));
+  return data;
+}
+
 // ─── Departments ────────────────────────────────────────────────────────────
 
 export async function listOrgDepartments(accessToken) {

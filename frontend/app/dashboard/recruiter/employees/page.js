@@ -6,7 +6,6 @@ import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
-import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import {
   exportEmployeesCsv,
@@ -31,8 +30,8 @@ export default function RecruiterEmployeesPage() {
 function RecruiterEmployeesPageContent() {
   const router = useRouter();
   const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
-  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
-  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
+  const departmentOptions = frameworkDepartments;
+  const designationOptions = frameworkDesignations;
   const [employees, setEmployees] = useState([]);
   const [employeeTotal, setEmployeeTotal] = useState(0);
   const [employeePage, setEmployeePage] = useState(1);

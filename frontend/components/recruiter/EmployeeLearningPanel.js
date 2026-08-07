@@ -12,7 +12,6 @@ import {
   getEmployeeLearningProfile,
 } from "@/services/learningService";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
-import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 
 const PROF = { Beginner: 25, Intermediate: 50, Advanced: 75, Expert: 100 };
@@ -20,8 +19,8 @@ const PROF = { Beginner: 25, Intermediate: 50, Advanced: 75, Expert: 100 };
 export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
   const employeeId = employee?.employee_id;
   const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
-  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
-  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
+  const departmentOptions = frameworkDepartments;
+  const designationOptions = frameworkDesignations;
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
