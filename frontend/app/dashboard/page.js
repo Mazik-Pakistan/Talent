@@ -4,13 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
-
-const ROLE_HOME = {
-  recruiter: "/dashboard/recruiter",
-  candidate: "/dashboard/candidate",
-  employee: "/dashboard/employee",
-  super_admin: "/dashboard/super-admin",
-};
+import { ROLE_HOME } from "@/services/rbac";
 
 export default function DashboardIndexPage() {
   const router = useRouter();
