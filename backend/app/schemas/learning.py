@@ -209,7 +209,7 @@ class ManagedLearningCourseBase(BaseModel):
 
     title: str = Field(min_length=1, max_length=300)
     url: str | None = Field(default=None, max_length=1000)
-    provider: str = Field(default="LinkedIn Learning", max_length=120)
+    provider: str = Field(default="Managed Learning", max_length=120)
     designation: str = Field(default="", max_length=120)
     learning_month: str = Field(default="", max_length=120)
     category: str = Field(default="", max_length=120)

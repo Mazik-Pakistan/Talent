@@ -42,6 +42,11 @@ async def browse_catalog(
     type: str | None = Query(default=None, alias="type"),
     source: str = Query(default="microsoft_learn", description="'microsoft_learn', 'coursera', or 'recruiter_kb'"),
     category: str | None = Query(default=None, description="Soft-skill category (source=coursera only)"),
+    provider: str | None = None,
+    designation: str | None = None,
+    learning_month: str | None = None,
+    competency: str | None = None,
+    archived: bool | None = None,
     bookmarked_only: bool = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=60),
@@ -58,6 +63,11 @@ async def browse_catalog(
         bookmarked_only=bookmarked_only,
         source=source,
         category=category,
+        provider=provider,
+        designation=designation,
+        learning_month=learning_month,
+        competency=competency,
+        archived=archived,
     )
 
 
@@ -402,7 +412,7 @@ async def analytics(current_user: RequireRecruiterWithLearning, department: str 
 
 
 # ---------------------------------------------------------------------- #
-# Managed roadmap courses (LinkedIn Learning module)
+# Managed roadmap courses (managed-learning module)
 # ---------------------------------------------------------------------- #
 @router.get("/managed/courses")
 async def list_managed_courses(
@@ -428,6 +438,19 @@ async def list_managed_courses(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/managed/providers")
+async def list_managed_providers(current_user: RequireRecruiterWithLearning):
+    return {"providers": await managed_learning_service.list_providers()}
+
+
+@router.post("/managed/providers", status_code=201)
+async def create_managed_provider(request: dict, current_user: RequireRecruiterWithLearning):
+    name = (request.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Provider name is required.")
+    return await managed_learning_service.create_provider(current_user, name)
 
 
 @router.get("/managed/facets")
@@ -465,13 +488,21 @@ async def delete_managed_course(course_id: str, current_user: RequireRecruiterWi
 
 
 @router.post("/managed/import/preview")
-async def preview_managed_import(current_user: RequireRecruiterWithLearning, file: UploadFile = File(...)):
-    return await managed_learning_service.preview_import(current_user, file)
+async def preview_managed_import(
+    current_user: RequireRecruiterWithLearning,
+    file: UploadFile = File(...),
+    provider: str | None = Form(default=None),
+):
+    return await managed_learning_service.preview_import(current_user, file, provider_name=provider)
 
 
 @router.post("/managed/import/commit")
-async def commit_managed_import(current_user: RequireRecruiterWithLearning, file: UploadFile = File(...)):
-    return await managed_learning_service.import_file(current_user, file)
+async def commit_managed_import(
+    current_user: RequireRecruiterWithLearning,
+    file: UploadFile = File(...),
+    provider: str | None = Form(default=None),
+):
+    return await managed_learning_service.import_file(current_user, file, provider_name=provider)
 
 
 @router.get("/org-taxonomy")

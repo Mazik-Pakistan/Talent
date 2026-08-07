@@ -142,6 +142,32 @@ def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
 
 
+def _normalize_provider_name(value: Any) -> str:
+    if value is None:
+        return "Managed Learning"
+    text = " ".join(str(value).split())
+    if not text:
+        return "Managed Learning"
+    aliases = {
+        "linkedin learning": "LinkedIn Learning",
+        "linkedin": "LinkedIn Learning",
+        "microsoft learn": "Microsoft Learn",
+        "microsoft": "Microsoft Learn",
+        "coursera": "Coursera",
+        "udemy": "Udemy",
+        "pluralsight": "Pluralsight",
+        "skillsoft": "Skillsoft",
+        "datacamp": "DataCamp",
+        "edx": "edX",
+    }
+    lower = text.lower()
+    return aliases.get(lower, text)
+
+
+def _provider_slug(value: str) -> str:
+    return _slug(_normalize_provider_name(value)) or "managed-learning"
+
+
 def _normalize(value: Any) -> str:
     return " ".join(_clean(value).lower().split())
 
@@ -244,7 +270,7 @@ def _public_course(doc: dict) -> dict:
         "uid": _course_uid(doc),
         "type": "course",
         "source": MANAGED_SOURCE,
-        "provider": doc.get("provider") or "LinkedIn Learning",
+        "provider": doc.get("provider") or "Managed Learning",
         "designation": doc.get("designation") or "",
         "learning_month": doc.get("learning_month") or "",
         "category": doc.get("category") or "",
@@ -264,6 +290,12 @@ def _public_course(doc: dict) -> dict:
 
 
 class ManagedLearningService:
+    def _normalize_provider_name(self, value: Any) -> str:
+        return _normalize_provider_name(value)
+
+    def _provider_slug(self, value: str) -> str:
+        return _provider_slug(value)
+
     def _collection_query(self, *, include_archived: bool = False) -> dict:
         query: dict[str, Any] = {}
         if not include_archived:
@@ -272,13 +304,17 @@ class ManagedLearningService:
 
     def _normalize_request_payload(self, payload: ManagedLearningCourseCreateRequest | ManagedLearningCourseUpdateRequest) -> dict[str, Any]:
         data = payload.model_dump()
-        for key in ("title", "provider", "designation", "learning_month", "category", "competency"):
+        for key in ("title", "designation", "learning_month", "category", "competency"):
             if key in data and data[key] is not None:
                 data[key] = " ".join(str(data[key]).split())
+        if "provider" in data and data.get("provider") is not None:
+            data["provider"] = _normalize_provider_name(data["provider"])
+        elif "provider" in data:
+            data["provider"] = "Managed Learning"
         if data.get("description") is not None:
             data["description"] = data["description"].strip()
         if data.get("provider") is None:
-            data["provider"] = "LinkedIn Learning"
+            data["provider"] = "Managed Learning"
         for key in ("designation", "learning_month", "category", "competency"):
             data[key] = data.get(key) or ""
         return data
@@ -290,18 +326,39 @@ class ManagedLearningService:
     async def _find_existing(self, course_key: str) -> dict | None:
         return await database.learning_courses.find_one({"course_key": course_key})
 
+    async def _ensure_provider(self, provider_name: str | None, *, current_user: CurrentUser | None = None) -> dict | None:
+        normalized = _normalize_provider_name(provider_name)
+        if not normalized:
+            return None
+        slug = _provider_slug(normalized)
+        existing = await database.learning_providers.find_one({"slug": slug})
+        if existing:
+            return existing
+        doc = {
+            "name": normalized,
+            "slug": slug,
+            "active": True,
+            "created_at": _now(),
+            "created_by_id": current_user.id if current_user else None,
+        }
+        result = await database.learning_providers.insert_one(doc)
+        doc["_id"] = result.inserted_id
+        return doc
+
     async def _save_course_doc(self, doc: dict) -> dict:
         doc = dict(doc)
         now = _now()
         doc.setdefault("created_at", now)
         doc["updated_at"] = now
+        doc["provider"] = _normalize_provider_name(doc.get("provider")) or "Managed Learning"
+        await self._ensure_provider(doc.get("provider"))
         doc["hierarchy_path"] = [
             part
             for part in [doc.get("designation"), doc.get("learning_month"), doc.get("category"), doc.get("competency")]
             if part
         ]
         doc["course_key"] = _course_key(
-            provider=doc.get("provider") or "LinkedIn Learning",
+            provider=doc.get("provider") or "Managed Learning",
             designation=doc.get("designation") or "",
             learning_month=doc.get("learning_month") or "",
             category=doc.get("category") or "",
@@ -316,7 +373,7 @@ class ManagedLearningService:
             competency=doc.get("competency") or "",
         )
         if not doc.get("provider"):
-            doc["provider"] = "LinkedIn Learning"
+            doc["provider"] = "Managed Learning"
         if doc.get("_id"):
             await database.learning_courses.update_one({"_id": doc["_id"]}, {"$set": doc})
             return await database.learning_courses.find_one({"_id": doc["_id"]})
@@ -351,7 +408,7 @@ class ManagedLearningService:
         competency = row.get("competency") or ""
         title = row.get("title") or ""
         url = row.get("url") or ""
-        provider = row.get("provider") or "LinkedIn Learning"
+        provider = _normalize_provider_name(row.get("provider") or "Managed Learning")
         duration_minutes = row.get("duration_minutes")
         description = row.get("description") or ""
         issues: list[str] = []
@@ -529,7 +586,7 @@ class ManagedLearningService:
         competency = get("competency") or previous_context.get("competency", "")
         title = get("title")
         url = get("url")
-        provider = get("provider") or previous_context.get("provider", "LinkedIn Learning")
+        provider = _normalize_provider_name(get("provider") or previous_context.get("provider", "Managed Learning"))
         description = get("description")
         duration_minutes = _parse_duration(row[indexes["duration_minutes"]], duration_unit) if indexes.get("duration_minutes") is not None else None
 
@@ -542,7 +599,7 @@ class ManagedLearningService:
                 "learning_month": learning_month or previous_context.get("learning_month", ""),
                 "category": category or previous_context.get("category", ""),
                 "competency": competency or previous_context.get("competency", ""),
-                "provider": provider or previous_context.get("provider", "LinkedIn Learning"),
+                "provider": provider or previous_context.get("provider", "Managed Learning"),
             }
         )
 
@@ -557,13 +614,13 @@ class ManagedLearningService:
             "competency": competency,
             "title": title,
             "url": url,
-            "provider": provider or "LinkedIn Learning",
+            "provider": provider or "Managed Learning",
             "description": description,
             "duration_minutes": duration_minutes,
             "filename": filename,
             "sheet_name": sheet_name,
             "course_key": _course_key(
-                provider=provider or "LinkedIn Learning",
+                provider=provider or "Managed Learning",
                 designation=designation,
                 learning_month=learning_month,
                 category=category,
@@ -602,7 +659,7 @@ class ManagedLearningService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The spreadsheet is empty.")
         return rows, sheet.title or "Sheet1"
 
-    async def preview_import(self, current_user: CurrentUser, file: UploadFile) -> dict:
+    async def preview_import(self, current_user: CurrentUser, file: UploadFile, provider_name: str | None = None) -> dict:
         rows, sheet_name = await self._read_upload(file)
         header_index = self._find_header_row(rows)
         header = rows[header_index] if rows else []
@@ -612,7 +669,8 @@ class ManagedLearningService:
         seen_keys: set[str] = set()
         preview_rows: list[ManagedLearningImportRow] = []
         new_courses = updated_courses = duplicate_courses = invalid_rows = 0
-        context = {"designation": "", "learning_month": "", "category": "", "competency": "", "provider": "LinkedIn Learning"}
+        fallback_provider = _normalize_provider_name(provider_name or None)
+        context = {"designation": "", "learning_month": "", "category": "", "competency": "", "provider": fallback_provider}
 
         existing_docs = await database.learning_courses.find({}).to_list(length=5000)
         existing_by_key = {doc.get("course_key"): doc for doc in existing_docs if doc.get("course_key")}
@@ -661,8 +719,8 @@ class ManagedLearningService:
             rows=preview_rows,
         ).model_dump()
 
-    async def import_file(self, current_user: CurrentUser, file: UploadFile) -> dict:
-        preview = await self.preview_import(current_user, file)
+    async def import_file(self, current_user: CurrentUser, file: UploadFile, provider_name: str | None = None) -> dict:
+        preview = await self.preview_import(current_user, file, provider_name=provider_name)
         imported = 0
         updated = 0
         skipped = 0
@@ -673,7 +731,8 @@ class ManagedLearningService:
                 skipped += 1
                 continue
             payload = {
-                "provider": row.get("provider") or "LinkedIn Learning",
+                # Preserve the provider resolved during preview so each tab stays isolated.
+                "provider": _normalize_provider_name(row.get("provider") or provider_name or "Managed Learning"),
                 "designation": row.get("designation") or "",
                 "learning_month": row.get("learning_month") or "",
                 "category": row.get("category") or "",
@@ -799,9 +858,50 @@ class ManagedLearningService:
             "pages": pages,
         }
 
+    async def list_providers(self) -> list[dict]:
+        docs = await database.learning_providers.find({"active": {"$ne": False}}).sort("name", 1).to_list(length=200)
+        names = [_normalize_provider_name(doc.get("name")) for doc in docs if doc.get("name")]
+        course_docs = await database.learning_courses.find({}, {"provider": 1}).to_list(length=5000)
+        for doc in course_docs:
+            name = _normalize_provider_name(doc.get("provider"))
+            if name and name not in names:
+                names.append(name)
+        managed_names = []
+        external_names = {"Microsoft Learn", "Coursera"}
+        for name in names:
+            if not name or name in external_names:
+                continue
+            managed_names.append(name)
+        if any(name != "Managed Learning" for name in managed_names):
+            managed_names = [name for name in managed_names if name != "Managed Learning"]
+        ordered = sorted({name for name in managed_names if name}, key=lambda value: value.lower())
+        return [{"name": name, "slug": _provider_slug(name)} for name in ordered]
+
+    async def create_provider(self, current_user: CurrentUser, provider_name: str) -> dict:
+        normalized = _normalize_provider_name(provider_name)
+        if not normalized or not normalized.strip():
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Provider name is required.")
+        existing = await database.learning_providers.find_one({"slug": _provider_slug(normalized)})
+        if existing:
+            return {"provider": {"name": existing.get("name") or normalized, "slug": existing.get("slug") or _provider_slug(normalized)}}
+        saved = await self._ensure_provider(normalized, current_user=current_user)
+        return {"provider": {"name": saved.get("name") or normalized, "slug": saved.get("slug") or _provider_slug(normalized)}}
+
     async def list_facets(self) -> dict:
         docs = await database.learning_courses.find(self._collection_query()).to_list(length=5000)
-        providers = sorted({(doc.get("provider") or "LinkedIn Learning").strip() for doc in docs if doc.get("provider") is not None})
+        providers = []
+        seen_providers: set[str] = set()
+        for doc in docs:
+            provider_name = _normalize_provider_name(doc.get("provider") or "Managed Learning")
+            if not provider_name or provider_name in {"Microsoft Learn", "Coursera"}:
+                continue
+            if any(existing.lower() == provider_name.lower() for existing in seen_providers):
+                continue
+            seen_providers.add(provider_name)
+            providers.append(provider_name)
+        if any(name != "Managed Learning" for name in providers):
+            providers = [name for name in providers if name != "Managed Learning"]
+        providers = sorted(providers, key=lambda value: value.lower())
         designations = sorted({(doc.get("designation") or "").strip() for doc in docs if doc.get("designation")})
         months = sorted({(doc.get("learning_month") or "").strip() for doc in docs if doc.get("learning_month")})
         categories = sorted({(doc.get("category") or "").strip() for doc in docs if doc.get("category")})
@@ -835,7 +935,7 @@ class ManagedLearningService:
             "updated_by_id": current_user.id,
         }
         doc["course_key"] = _course_key(
-            provider=doc.get("provider") or "LinkedIn Learning",
+            provider=doc.get("provider") or "Managed Learning",
             designation=doc.get("designation") or "",
             learning_month=doc.get("learning_month") or "",
             category=doc.get("category") or "",
@@ -864,7 +964,7 @@ class ManagedLearningService:
             merged = {**doc, **updates}
             merged["_id"] = doc["_id"]
             merged["course_key"] = _course_key(
-                provider=merged.get("provider") or "LinkedIn Learning",
+                provider=merged.get("provider") or "Managed Learning",
                 designation=merged.get("designation") or "",
                 learning_month=merged.get("learning_month") or "",
                 category=merged.get("category") or "",

@@ -202,7 +202,7 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.learning_certificates, [("user_id", 1), ("created_at", -1)])
     await _ensure_index(database.learning_certificates, [("recruiter_id", 1), ("verification_status", 1)])
 
-    # Managed roadmap courses (LinkedIn Learning and other configurable providers).
+    # Managed roadmap courses (configured providers such as LinkedIn Learning, Microsoft Learn, Coursera, and more).
     await _ensure_index(database.learning_courses, "course_key", unique=True, name="learning_courses_course_key_unique")
     await _ensure_index(database.learning_courses, [("designation", 1), ("learning_month", 1), ("category", 1), ("competency", 1)])
     await _ensure_index(database.learning_courses, [("provider", 1), ("archived", 1)])
