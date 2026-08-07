@@ -31,15 +31,16 @@ const ROLE_COPY = {
     ],
   },
   super_admin: {
-    title: "Hiring Agent",
-    subtitle: "Anything you do in recruiting — for one person or in bulk",
+    title: "Platform Admin Agent",
+    subtitle: "Recruiters, organizations, and platform-wide reports",
     empty:
-      "Tell me what you need — a person, a bulk action, or a goal. I can help across invites, pipeline, offers, documents, Day-1, Learning, Talent, reminders, search, and announcements.",
+      "I can help you manage recruiters, organizations, and get platform stats. Ask me about your platform overview, invite a recruiter, or check on any organization.",
     starters: [
-      "Show my hiring pipeline",
-      "Remind incomplete employee profiles",
-      "Assign a learning course",
-      "Search talent by skills",
+      "Show platform overview",
+      "Invite a new recruiter",
+      "List all recruiters",
+      "List all organizations",
+      "Create a new organization",
     ],
   },
   candidate: {
@@ -1232,7 +1233,7 @@ const AgentChatCoreInner = forwardRef(function AgentChatCoreInner({ variant = "f
         ) : null}
         <textarea
           className={styles.textarea}
-          placeholder={isRecruiter ? "Message the hiring agent…" : "Message the onboarding agent…"}
+          placeholder={isRecruiter ? (auth?.user?.role === "super_admin" ? "Message the platform admin agent…" : "Message the hiring agent…") : "Message the onboarding agent…"}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {

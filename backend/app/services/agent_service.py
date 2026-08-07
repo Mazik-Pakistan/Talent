@@ -369,6 +369,54 @@ by calling the tool without confirm so Approve/Cancel buttons appear.
 
 SELF_SERVE_SYSTEM_PROMPT = CANDIDATE_SYSTEM_PROMPT  # backward-compatible alias
 
+SUPER_ADMIN_SYSTEM_PROMPT = """You are the TalentAI Platform Admin Agent for super admins. You manage \
+the platform — recruiters, organizations, and can answer questions about platform stats. \
+You are precise and only report data from the platform's existing records via your tools.
+
+Platform reports (critical):
+- When the super admin asks about platform stats (how many recruiters, how many employees, \
+how many organizations, recruiter performance, etc.), ALWAYS use get_super_admin_overview first. \
+This tool returns the exact same data shown on the Super Admin dashboard. Report only what \
+get_super_admin_overview returns — never invent stats or counts.
+- Reports must be strictly limited to: total recruiters, active/pending recruiters, \
+total organizations, per-recruiter employee and candidate counts, offers created. \
+Do not report on candidate onboarding details, employee profiles, learning progress, \
+or any data not visible on the Super Admin dashboard.
+
+Recruiter management:
+- Use invite_recruiter to send new recruiter invitations. Required: full_name, email, \
+job_title, department. Optional: office_location, is_remote, organization_id.
+- Use list_recruiters to see all recruiters with their status and stats.
+- Use get_recruiter_detail to see a specific recruiter's stats (employees managed, \
+candidates managed, offers created).
+- Use update_recruiter to change job_title, department, office_location, or active/inactive status.
+- Use update_recruiter_capabilities to toggle module access for a recruiter.
+- Use delete_recruiter to permanently remove a recruiter (always confirm first).
+
+Organization management:
+- Use list_organizations to see all organizations with recruiter/employee counts.
+- Use create_organization to add a new company.
+- Organizations define which modules recruiters in that company can access.
+
+Also available (recruiter tools):
+- You have access to the same candidate/employee/pipeline tools as recruiters, \
+so you can also help with candidate lookups, employee directories, and invitations \
+if the super admin asks.
+
+Rules:
+- Only report data returned by your tools — never fabricate numbers or stats.
+- Always confirm before destructive actions (delete recruiter, etc.).
+- Keep replies concise and action-oriented.
+- When listing recruiters or organizations, include relevant counts.
+- Never expose passwords, tokens, or security codes.
+- For greetings / "what can you do?", describe your capabilities in one short paragraph \
+then invite them to try a specific action.
+- Stay in-role: you are a platform admin, not a recruiter doing candidate work.
+- When the super admin asks a question about platform stats, use the overview tool and \
+summarize the results clearly. Do not call recruiter-specific tools unless explicitly asked.
+- Never write raw routes or paths in the message.
+"""
+
 # Tool results that the frontend can render as rich cards instead of raw text.
 # When one of these was called this turn, we attach its data to the reply so the
 # UI never depends on the LLM perfectly re-typing structured data back out.
@@ -388,6 +436,9 @@ RENDERABLE_TOOLS = {
     "get_my_offer": "offer",
     "sign_offer": "offer",
     "export_employees": "csv_export",
+    "list_recruiters": "recruiters",
+    "list_organizations": "organizations",
+    "get_super_admin_overview": "platform_overview",
 }
 
 DOC_TYPE_CATEGORY = {
@@ -446,6 +497,15 @@ TOOL_STEP_LABELS = {
     "cancel_it_service_request": "Cancelled IT request",
     "list_it_officers": "Listed IT officers",
     "list_it_kits": "Listed IT kits",
+    "get_super_admin_overview": "Loaded platform overview",
+    "invite_recruiter": "Sent recruiter invitation",
+    "list_recruiters": "Listed recruiters",
+    "get_recruiter_detail": "Loaded recruiter details",
+    "list_organizations": "Listed organizations",
+    "create_organization": "Created organization",
+    "update_recruiter": "Updated recruiter",
+    "update_recruiter_capabilities": "Updated recruiter capabilities",
+    "delete_recruiter": "Deleted recruiter",
 }
 
 
@@ -688,7 +748,14 @@ def _action(kind: str, label: str, *, route: str | None = None, prompt: str | No
 
 
 def _default_actions_for_role(user: CurrentUser) -> list[dict]:
-    if user.role in ("recruiter", "super_admin"):
+    if user.role == "super_admin":
+        return [
+            _action("navigate", "Platform Overview", route="/dashboard/super-admin"),
+            _action("navigate", "Manage Recruiters", route="/dashboard/super-admin"),
+            _action("navigate", "Invite Recruiter", route="/dashboard/super-admin"),
+            _action("navigate", "Organizations", route="/dashboard/super-admin"),
+        ]
+    if user.role == "recruiter":
         actions = []
         if user.has_capability("candidates"):
             actions.append(_action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates"))
@@ -729,7 +796,15 @@ def _topic_text(*parts: str) -> str:
 def _actions_from_topic(user: CurrentUser, topic: str) -> list[dict] | None:
     """One primary navigate CTA matching the topic — never a full menu of identical pills."""
     t = topic or ""
-    if user.role in ("recruiter", "super_admin"):
+    if user.role == "super_admin":
+        if any(k in t for k in ("recruiter", "invite recruiter", "recruiters")):
+            return [_action("navigate", "Manage Recruiters", route="/dashboard/super-admin")]
+        if any(k in t for k in ("organization", "org", "company")):
+            return [_action("navigate", "Organizations", route="/dashboard/super-admin")]
+        if any(k in t for k in ("report", "overview", "stats", "how many", "summary")):
+            return [_action("navigate", "Platform Overview", route="/dashboard/super-admin")]
+        return [_action("navigate", "Platform Dashboard", route="/dashboard/super-admin")]
+    if user.role in ("recruiter",):
         if any(k in t for k in ("candidate", "pipeline", "invite", "offer")):
             if user.has_capability("candidates"):
                 return [_action("navigate", "Open Candidates", route="/dashboard/recruiter/candidates")]
@@ -783,7 +858,9 @@ def _actions_from_topic(user: CurrentUser, topic: str) -> list[dict] | None:
 
 
 def _system_prompt_for_role(role: str) -> str:
-    if role in ("recruiter", "super_admin"):
+    if role == "super_admin":
+        return SUPER_ADMIN_SYSTEM_PROMPT
+    if role == "recruiter":
         return RECRUITER_SYSTEM_PROMPT
     if role == "employee":
         return EMPLOYEE_SYSTEM_PROMPT
@@ -1054,6 +1131,13 @@ async def _save_messages(session_id: str, user_id: str, new_msgs: list[dict]) ->
 
 async def _fallback_reply(user: CurrentUser, context: dict | None = None) -> dict:
     """Deterministic response used only when no LLM key is configured."""
+    if user.role == "super_admin":
+        return {
+            "message": "I can help you manage recruiters, organizations, and view platform stats. What would you like to do?",
+            "suggested_replies": ["Platform overview", "Invite recruiter", "List organizations"],
+            "actions": _default_actions_for_role(user),
+            "ui_hint": None,
+        }
     status_tool = "get_status" if user.role in ("candidate", "employee") else "list_candidates"
     result = await agent_tools.run_tool(user, status_tool, {})
     if not result.ok:
@@ -1078,7 +1162,21 @@ async def _fallback_reply(user: CurrentUser, context: dict | None = None) -> dic
 
 async def _quick_offline_reply(user: CurrentUser, context: dict | None = None) -> dict:
     """Fast no-LLM reply used when the model call fails."""
-    if user.role in ("recruiter", "super_admin"):
+    if user.role == "super_admin":
+        return {
+            "message": (
+                "AI is temporarily unavailable, but your dashboard still works. "
+                "You can manage recruiters, organizations, and view platform stats from the dashboard."
+            ),
+            "suggested_replies": [
+                "Platform overview",
+                "Invite recruiter",
+                "List organizations",
+            ],
+            "actions": _default_actions_for_role(user),
+            "ui_hint": None,
+        }
+    if user.role == "recruiter":
         return {
             "message": (
                 "AI is temporarily unavailable, but I can still help fast. "

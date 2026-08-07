@@ -2303,6 +2303,18 @@ RECRUITER_TOOLS.extend(RECRUITER_PARITY_TOOLS)
 CANDIDATE_TOOLS: list[Tool] = [*SELF_SERVE_TOOLS, *CANDIDATE_PARITY_TOOLS]
 EMPLOYEE_TOOLS: list[Tool] = [*SELF_SERVE_TOOLS, *EMPLOYEE_PARITY_TOOLS]
 
+# Super Admin tools — loaded lazily to avoid circular import with
+# agent_tools_super_admin (which imports Tool/ToolResult from this module).
+_SUPER_ADMIN_TOOLS_CACHE: list[Tool] | None = None
+
+
+def _load_super_admin_tools() -> list[Tool]:
+    global _SUPER_ADMIN_TOOLS_CACHE
+    if _SUPER_ADMIN_TOOLS_CACHE is None:
+        from app.services.agent_tools_super_admin import SUPER_ADMIN_TOOLS
+        _SUPER_ADMIN_TOOLS_CACHE = SUPER_ADMIN_TOOLS
+    return _SUPER_ADMIN_TOOLS_CACHE
+
 # Recruiter tool → module capability. The agent only exposes a tool when the
 # recruiter's effective capabilities (org modules ∩ personal toggles) allow it,
 # so AI access always mirrors the sidebar / API permissions. A tuple means the
@@ -2426,7 +2438,9 @@ def _tool_allowed_for(user: CurrentUser, tool: Tool) -> bool:
 
 
 def tools_for_role(role: str) -> list[Tool]:
-    if role in ("recruiter", "super_admin"):
+    if role == "super_admin":
+        return [*_load_super_admin_tools(), *RECRUITER_TOOLS]
+    if role == "recruiter":
         return RECRUITER_TOOLS
     if role == "candidate":
         return CANDIDATE_TOOLS

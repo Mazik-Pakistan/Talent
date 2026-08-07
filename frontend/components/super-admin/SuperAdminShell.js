@@ -80,6 +80,17 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+  {
+    key: "assistant",
+    label: "AI Assistant",
+    route: "/dashboard/super-admin/ai-assistant",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1-5.1-1.9 5.1-1.9L12 2.5z" />
+        <path d="M19 15l.9 2.3L22 18l-2.1.7L19 21l-.9-2.3L16 18l2.1-.7L19 15z" />
+      </svg>
+    ),
+  },
 ];
 
 export default function SuperAdminShell({ activeTab, onTabChange, title, subtitle, user, capability, children }) {
@@ -94,6 +105,14 @@ export default function SuperAdminShell({ activeTab, onTabChange, title, subtitl
   useEffect(() => {
     setSidebarCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
   }, []);
+
+  function handleNavClick(item) {
+    if (item.route) {
+      router.push(item.route);
+    } else if (onTabChange) {
+      onTabChange(item.key);
+    }
+  }
 
   function toggleSidebar() {
     setSidebarCollapsed((value) => {
@@ -176,7 +195,7 @@ export default function SuperAdminShell({ activeTab, onTabChange, title, subtitl
                   <button
                     type="button"
                     className={`${styles.navItem} ${activeTab === item.key ? styles.navItemActive : ""}`}
-                    onClick={() => onTabChange(item.key)}
+                    onClick={() => handleNavClick(item)}
                     title={item.label}
                   >
                     <span className={styles.navIcon}>{item.icon}</span>
