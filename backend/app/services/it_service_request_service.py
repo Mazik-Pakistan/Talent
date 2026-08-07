@@ -92,8 +92,15 @@ class ItServiceRequestService:
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=404, detail="IT request not found.") from exc
         doc = await database.it_service_requests.find_one({"_id": oid})
-        if not doc or str(doc.get("recruiter_id")) != str(current_user.id):
+        if not doc:
             raise HTTPException(status_code=404, detail="IT request not found.")
+        if current_user.role != "super_admin":
+            record_org = doc.get("organization_id")
+            if record_org and current_user.organization_id:
+                if record_org != current_user.organization_id:
+                    raise HTTPException(status_code=404, detail="IT request not found.")
+            elif str(doc.get("recruiter_id")) != str(current_user.id):
+                raise HTTPException(status_code=404, detail="IT request not found.")
         return doc
 
     def _employee_payload(self, emp: dict, request: ItServiceRequestCreate) -> dict:

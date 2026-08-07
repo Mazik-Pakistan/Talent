@@ -1035,7 +1035,12 @@ class ManagedLearningService:
         if not ObjectId.is_valid(course_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
 
-        result = await database.learning_courses.delete_one({"_id": ObjectId(course_id)})
+        oid = ObjectId(course_id)
+        await database.learning_enrollments.delete_many({"course_uid": f"learning_course:{course_id}"})
+        await database.learning_assignments.delete_many({"course_uid": f"learning_course:{course_id}"})
+        await database.learning_bookmarks.delete_many({"course_uid": f"learning_course:{course_id}"})
+
+        result = await database.learning_courses.delete_one({"_id": oid})
         if result.deleted_count == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
         return {"deleted": True}

@@ -7,6 +7,34 @@ from app.core.config import settings
 mongo_client = AsyncIOMotorClient(settings.MONGODB_URI)
 database: AsyncIOMotorDatabase = mongo_client[settings.DATABASE_NAME]
 
+
+async def with_transaction(callback):
+    session = await mongo_client.start_session()
+    try:
+        await session.start_transaction()
+        await callback(session)
+        await session.commit_transaction()
+    except OperationFailure:
+        await session.abort_transaction()
+        raise
+    finally:
+        await session.end_session()
+
+
+async def try_transaction(callback):
+    try:
+        await with_transaction(callback)
+    except OperationFailure as exc:
+        msg = str(exc).lower()
+        if "transaction" in msg or "not supported" in msg or "replica" in msg:
+            await callback(None)
+        else:
+            raise
+
+
+def _db_kwargs(session):
+    return {"session": session} if session is not None else {}
+
 # Optional — app storage uses Cloudinary; only wire Supabase when configured.
 supabase: Client | None = None
 if settings.SUPABASE_URL and settings.SUPABASE_KEY:

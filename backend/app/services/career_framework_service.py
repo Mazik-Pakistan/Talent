@@ -19,7 +19,7 @@ from typing import Any
 from bson import ObjectId
 from fastapi import HTTPException, status
 
-from app.core.database import database
+from app.core.database import database, _db_kwargs, try_transaction
 from app.core.rbac import CurrentUser
 
 
@@ -864,6 +864,7 @@ class CareerFrameworkService:
         skipped = 0
         errors = []
 
+        parsed_rows = []
         for row_num, row in enumerate(reader, start=2):
             try:
                 department = (row.get("Department") or "").strip()
@@ -877,7 +878,6 @@ class CareerFrameworkService:
 
                 level_number = int(level_num_str) if level_num_str.isdigit() else 1
 
-                # Parse skills
                 required_skills = []
                 skills_str = (row.get("Required Skills") or "").strip()
                 if skills_str:
@@ -894,7 +894,6 @@ class CareerFrameworkService:
                         if name:
                             required_skills.append({"skill": name, "proficiency": prof, "weight": 10})
 
-                # Parse certifications
                 required_certifications = []
                 certs_str = (row.get("Required Certifications") or "").strip()
                 if certs_str:
@@ -903,7 +902,6 @@ class CareerFrameworkService:
                         if cert:
                             required_certifications.append({"certification": cert, "mandatory": True})
 
-                # Parse courses (simple list of titles — UIDs will be empty initially)
                 learning_path = []
                 courses_str = (row.get("Learning Path Courses") or "").strip()
                 if courses_str:
@@ -918,7 +916,6 @@ class CareerFrameworkService:
                                 "order": idx,
                             })
 
-                # Parse competencies
                 competencies = []
                 comp_str = (row.get("Competencies") or "").strip()
                 if comp_str:
@@ -939,36 +936,64 @@ class CareerFrameworkService:
                 manager_approval = (row.get("Manager Approval Required") or "").strip().lower() in ("yes", "true", "1")
                 description = (row.get("Description") or "").strip() or None
 
-                # Upsert level
+                parsed_rows.append({
+                    "row_num": row_num,
+                    "department": department,
+                    "track_name": track_name,
+                    "level_number": level_number,
+                    "role_title": role_title,
+                    "required_skills": required_skills,
+                    "required_certifications": required_certifications,
+                    "learning_path": learning_path,
+                    "competencies": competencies,
+                    "min_experience_years": min_exp,
+                    "min_time_in_current_role_months": min_months,
+                    "manager_approval_required": manager_approval,
+                    "description": description,
+                })
+            except Exception as e:
+                errors.append({"row": row_num, "error": str(e)})
+                skipped += 1
+
+        async def _write(session):
+            nonlocal imported
+            kwargs = _db_kwargs(session)
+            for row_data in parsed_rows:
+                department = row_data["department"]
+                track_name = row_data["track_name"]
+                level_number = row_data["level_number"]
+                role_title = row_data["role_title"]
+
                 existing = await database.career_levels.find_one({
                     "department": {"$regex": f"^{department}$", "$options": "i"},
                     "level_number": level_number,
                     "is_active": True,
-                })
+                }, **kwargs)
                 if existing:
                     await database.career_levels.update_one(
                         {"_id": existing["_id"]},
                         {"$set": {
                             "role_title": role_title,
-                            "required_skills": required_skills,
-                            "required_certifications": required_certifications,
-                            "learning_path": learning_path,
-                            "competencies": competencies,
-                            "min_experience_years": min_exp,
-                            "min_time_in_current_role_months": min_months,
-                            "manager_approval_required": manager_approval,
-                            "description": description,
+                            "required_skills": row_data["required_skills"],
+                            "required_certifications": row_data["required_certifications"],
+                            "learning_path": row_data["learning_path"],
+                            "competencies": row_data["competencies"],
+                            "min_experience_years": row_data["min_experience_years"],
+                            "min_time_in_current_role_months": row_data["min_time_in_current_role_months"],
+                            "manager_approval_required": row_data["manager_approval_required"],
+                            "description": row_data["description"],
                             "updated_at": now,
                         }},
+                        **kwargs
                     )
                 else:
-                    # Get or create track
+                    track_id = ""
                     if track_name:
                         track = await database.career_tracks.find_one({
                             "department": {"$regex": f"^{department}$", "$options": "i"},
                             "track_name": {"$regex": f"^{track_name}$", "$options": "i"},
                             "is_active": True,
-                        })
+                        }, **kwargs)
                         if not track:
                             track_doc = {
                                 "department": department,
@@ -980,12 +1005,10 @@ class CareerFrameworkService:
                                 "created_at": now,
                                 "updated_at": now,
                             }
-                            res = await database.career_tracks.insert_one(track_doc)
-                            track = await database.career_tracks.find_one({"_id": res.inserted_id})
+                            res = await database.career_tracks.insert_one(track_doc, **kwargs)
+                            track = await database.career_tracks.find_one({"_id": res.inserted_id}, **kwargs)
 
                         track_id = str(track["_id"])
-                    else:
-                        track_id = ""
 
                     level_doc = {
                         "track_id": track_id,
@@ -993,22 +1016,21 @@ class CareerFrameworkService:
                         "track_name": track_name,
                         "level_number": level_number,
                         "role_title": role_title,
-                        "required_skills": required_skills,
-                        "required_certifications": required_certifications,
-                        "learning_path": learning_path,
-                        "competencies": competencies,
-                        "min_experience_years": min_exp,
-                        "min_time_in_current_role_months": min_months,
-                        "manager_approval_required": manager_approval,
-                        "description": description,
+                        "required_skills": row_data["required_skills"],
+                        "required_certifications": row_data["required_certifications"],
+                        "learning_path": row_data["learning_path"],
+                        "competencies": row_data["competencies"],
+                        "min_experience_years": row_data["min_experience_years"],
+                        "min_time_in_current_role_months": row_data["min_time_in_current_role_months"],
+                        "manager_approval_required": row_data["manager_approval_required"],
+                        "description": row_data["description"],
                         "is_active": True,
                         "created_by": current_user.id,
                         "created_at": now,
                         "updated_at": now,
                     }
-                    result = await database.career_levels.insert_one(level_doc)
+                    result = await database.career_levels.insert_one(level_doc, **kwargs)
 
-                    # Update track levels
                     if track_id:
                         level_summary = {
                             "level_number": level_number,
@@ -1018,21 +1040,20 @@ class CareerFrameworkService:
                         await database.career_tracks.update_one(
                             {"_id": ObjectId(track_id)},
                             {"$push": {"levels": level_summary}, "$set": {"updated_at": now}},
+                            **kwargs
                         )
-
                 imported += 1
-            except Exception as e:
-                errors.append({"row": row_num, "error": str(e)})
-                skipped += 1
 
-        # Sort levels in tracks
-        all_tracks = await database.career_tracks.find({"is_active": True}).to_list(length=200)
-        for track in all_tracks:
-            levels = sorted(track.get("levels", []), key=lambda x: x.get("level_number", 0))
-            await database.career_tracks.update_one(
-                {"_id": track["_id"]},
-                {"$set": {"levels": levels}},
-            )
+            all_tracks = await database.career_tracks.find({"is_active": True}, **kwargs).to_list(length=200)
+            for track in all_tracks:
+                levels = sorted(track.get("levels", []), key=lambda x: x.get("level_number", 0))
+                await database.career_tracks.update_one(
+                    {"_id": track["_id"]},
+                    {"$set": {"levels": levels}},
+                    **kwargs
+                )
+
+        await try_transaction(_write)
 
         return {"imported": imported, "skipped": skipped, "errors": errors}
 
@@ -1080,26 +1101,29 @@ class CareerFrameworkService:
         skills_to_acquire: list[dict],
         certifications_to_earn: list[dict],
     ) -> dict:
-        total_items = 0
-        completed_items = 0
+        total_weight = 0
+        completed_weight = 0
 
         for course in learning_path:
-            total_items += 1
+            weight = int(course.get("weight") or 10)
+            total_weight += weight
             if course.get("status") == "completed":
-                completed_items += 1
+                completed_weight += weight
 
         for skill in skills_to_acquire:
-            total_items += 1
+            weight = int(skill.get("weight") or 10)
+            total_weight += weight
             if skill.get("current_status") == "acquired":
-                completed_items += 1
+                completed_weight += weight
 
         for cert in certifications_to_earn:
-            total_items += 1
+            weight = int(cert.get("weight") or 10)
+            total_weight += weight
             if cert.get("status") == "earned":
-                completed_items += 1
+                completed_weight += weight
 
-        overall = round(completed_items / total_items * 100) if total_items else 0
-        readiness = overall  # Can be customized with weights
+        overall = round(completed_weight / total_weight * 100) if total_weight else 100
+        readiness = overall
 
         return {
             "overall_progress_percent": overall,
