@@ -37,6 +37,7 @@ import {
   exportOrgFramework,
   validateOrgFrameworkImport,
   applyOrgFrameworkImport,
+  seedOrgFramework,
 } from "@/services/orgFrameworkService";
 import { bustOrgFrameworkCache } from "@/hooks/useOrgFrameworkOptions";
 import {
@@ -91,9 +92,30 @@ export default function OrgFrameworkTab() {
   const [importReport, setImportReport] = useState(null);
   const [applying, setApplying] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const fileRef = useRef(null);
 
   const token = () => localStorage.getItem("access_token");
+
+  const handleSeed = async () => {
+    if (!confirm("Create departments and roles from your existing employees, candidates, and recruiters? Their records will not be changed.")) return;
+    setSeeding(true);
+    try {
+      const result = await seedOrgFramework(token());
+      const created = (result.departments_created || []).length + (result.roles_created || []).length;
+      if (created > 0) {
+        toast.success(`Seeded ${result.departments_created.length} department(s) and ${result.roles_created.length} role(s) from existing records.`);
+      } else {
+        toast.info("Framework already covers all existing departments and roles.");
+      }
+      await loadAll();
+      setSection("overview");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Seed failed."));
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
@@ -209,12 +231,14 @@ export default function OrgFrameworkTab() {
             onLoad={loadAll}
             onStart={() => setSection("departments")}
             onImport={() => fileRef.current?.click()}
+            onSeed={handleSeed}
+            seeding={seeding}
             importReport={importReport}
             applying={applying}
             onApply={(val) => { if (val === null) setImportReport(null); else handleApply(); }}
           />
         ) : section === "overview" ? (
-          <OverviewSection summary={summary} departments={departments} roles={roles} courses={courses} versions={versions} loadAll={loadAll} />
+          <OverviewSection summary={summary} departments={departments} roles={roles} courses={courses} versions={versions} loadAll={loadAll} onSeed={handleSeed} seeding={seeding} />
         ) : section === "departments" ? (
           <DepartmentsSection departments={departments} loadAll={loadAll} />
         ) : section === "roles" ? (
@@ -241,7 +265,7 @@ export default function OrgFrameworkTab() {
    Empty State (no framework yet)
 // ═══════════════════════════════════════════════════════════════════════════════ */
 
-function EmptyState({ onLoad, onStart, onImport, importReport, applying, onApply }) {
+function EmptyState({ onLoad, onStart, onImport, onSeed, seeding, importReport, applying, onApply }) {
   const token = () => localStorage.getItem("access_token");
   const [exporting, setExporting] = useState(false);
 
@@ -273,10 +297,13 @@ function EmptyState({ onLoad, onStart, onImport, importReport, applying, onApply
         Set up your organization's career structure by importing an Excel template or building it manually. Everything you configure here automatically applies to all employees.
       </p>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onSeed} disabled={seeding}>
+          <Zap aria-hidden="true" /> {seeding ? "Building framework…" : "Auto-configure from existing employees"}
+        </button>
         <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={handleDownloadTemplate} disabled={exporting}>
           <Download aria-hidden="true" /> {exporting ? "Preparing…" : "Download Excel Template"}
         </button>
-        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onImport}>
+        <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={onImport}>
           <Upload aria-hidden="true" /> Import Organization Framework
         </button>
         <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={onStart}>
@@ -339,7 +366,7 @@ function EmptyState({ onLoad, onStart, onImport, importReport, applying, onApply
    Overview Section
 // ═══════════════════════════════════════════════════════════════════════════════ */
 
-function OverviewSection({ summary, departments, roles, courses, versions, loadAll }) {
+function OverviewSection({ summary, departments, roles, courses, versions, loadAll, onSeed, seeding }) {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importReport, setImportReport] = useState(null);
@@ -419,6 +446,9 @@ function OverviewSection({ summary, departments, roles, courses, versions, loadA
           Organization Framework Overview
         </h2>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={onSeed} disabled={seeding}>
+            <Zap aria-hidden="true" /> {seeding ? "Seeding…" : "Seed from existing records"}
+          </button>
           <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={handleExport} disabled={exporting}>
             <Download aria-hidden="true" /> {exporting ? "Exporting…" : "Export Excel"}
           </button>

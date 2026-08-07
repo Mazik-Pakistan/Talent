@@ -70,6 +70,17 @@ async def org_structure_options(current_user: RequireRecruiterLearning):
     return await get_org_structure_options(_org_id(current_user))
 
 
+@router.post("/seed", status_code=201)
+async def seed_framework(current_user: RequireRecruiterLearningWrite):
+    """Bootstrap the org framework from existing employees/candidates/recruiters.
+
+    Read-only over people records (they are never modified); writes only into
+    the org_framework_* collections. Idempotent — safe to re-run.
+    """
+    from app.services.organization_framework_service import seed_framework_from_existing
+    return await seed_framework_from_existing(_org_id(current_user))
+
+
 # ═══════════════════════════════════════════════════════════════════════════════ //
 #   Departments
 # ═══════════════════════════════════════════════════════════════════════════════ //

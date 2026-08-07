@@ -6,10 +6,6 @@ import { toast } from "react-toastify";
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
-import {
-  RECRUITER_DEPARTMENTS,
-  RECRUITER_DESIGNATIONS,
-} from "@/components/recruiter/recruiterOptions";
 import { createInvitation, getApiErrorMessage, lookupPersonHistory } from "@/services/authService";
 import { listOrgDepartments, listOrgRoles } from "@/services/orgFrameworkService";
 import BulkInvitePanel from "@/components/recruiter/BulkInvitePanel";
@@ -219,8 +215,7 @@ function RecruiterInvitePageInner() {
   const [frameworkRoles, setFrameworkRoles] = useState(null);
 
   // Organization Framework is the single source of truth for department and
-  // role options. Falls back to the static lists only when the org has not
-  // configured a framework yet.
+  // role options. Only framework-configured values are offered.
   useEffect(() => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return undefined;
@@ -235,7 +230,8 @@ function RecruiterInvitePageInner() {
         setFrameworkDepartments((depts || []).map((d) => d.name).filter(Boolean));
         setFrameworkRoles([...new Set((roles || []).map((r) => r.name))].sort());
       } catch {
-        // Framework unavailable — keep the static fallback lists.
+        setFrameworkDepartments([]);
+        setFrameworkRoles([]);
       }
     })();
     return () => {
@@ -243,12 +239,8 @@ function RecruiterInvitePageInner() {
     };
   }, []);
 
-  const departmentOptions =
-    frameworkDepartments && frameworkDepartments.length > 0
-      ? frameworkDepartments
-      : RECRUITER_DEPARTMENTS;
-  const designationOptions =
-    frameworkRoles && frameworkRoles.length > 0 ? frameworkRoles : RECRUITER_DESIGNATIONS;
+  const departmentOptions = frameworkDepartments || [];
+  const designationOptions = frameworkRoles || [];
 
   const allowancesTotal = useMemo(
     () => allowances.reduce((sum, row) => sum + (Number(row.amount) || 0), 0),

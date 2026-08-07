@@ -28,6 +28,10 @@ Plus:
 - `parse_import_workbook()` — parses an uploaded workbook into structured data.
 - `validate_import_data()` — validation report: duplicate departments, duplicate roles, circular promotion hierarchy, missing courses/roles, invalid course IDs, missing departments.
 - `apply_import_data()` — applies a validated import (clears current framework, imports fresh, snapshots a version).
+- `seed_framework_from_existing()` — POST `/api/org-framework/seed`. Bootstraps the framework from the org's existing **employees / candidates / recruiters** (READ-ONLY over people records — they are never modified). Derives distinct departments + roles from their `department` / `job_title` values, is idempotent (re-running only adds what is missing), and snapshots a version. UI: "Auto-configure from existing employees" (empty state) and "Seed from existing records" (Overview).
+
+### Single source of truth (enforced)
+The static fallback lists (`RECRUITER_DEPARTMENTS` / `RECRUITER_DESIGNATIONS`) were **removed** from every dropdown consumer (invite, employees, employee detail, announcements, recruiter profile, learning assign/analytics, OfferComposerModal, EmployeeLearningPanel). All department/role selects now render **only** from the org framework (`/api/org-framework/options`). An empty framework shows empty dropdowns until the recruiter configures or auto-seeds it.
 
 ### New backend API — `backend/app/api/organization_framework.py`
 Registered in `backend/app/main.py` (import + `app.include_router(...)`). Prefix `/api/org-framework`, all endpoints require the recruiter `learning` capability.

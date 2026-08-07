@@ -49,7 +49,6 @@ import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./learning.module.css";
-import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import { getApiErrorMessage, listEmployees, remindCourseAssignments } from "@/services/authService";
 import { downloadCsv } from "@/utils/downloadCsv";
@@ -906,8 +905,8 @@ function KnowledgeBaseTab() {
 
 function AssignTab({ initialCourse = null, initialSource = null, onConsumedInitial }) {
   const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
-  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
-  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
+  const departmentOptions = frameworkDepartments;
+  const designationOptions = frameworkDesignations;
   const [source, setSource] = useState(initialSource || "microsoft_learn");
   const [q, setQ] = useState("");
   const [courses, setCourses] = useState([]);
@@ -1612,7 +1611,7 @@ function CertificatesTab({ selectedCertificateId = null }) {
 
 function AnalyticsTab() {
   const { departments: frameworkDepartments } = useOrgFrameworkOptions();
-  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
+  const departmentOptions = frameworkDepartments;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [department, setDepartment] = useState("");

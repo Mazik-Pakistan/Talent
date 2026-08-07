@@ -14,7 +14,6 @@ import {
   scheduleEmployeeOrientation,
   updateEmployeeBanking,
 } from "@/services/authService";
-import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import EmployeeLearningPanel from "@/components/recruiter/EmployeeLearningPanel";
 import EmployeeTalentPanel from "@/components/recruiter/EmployeeTalentPanel";
@@ -762,8 +761,8 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
  */
 function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeUpdate }) {
   const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
-  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
-  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
+  const departmentOptions = frameworkDepartments;
+  const designationOptions = frameworkDesignations;
   const [careerForm, setCareerForm] = useState({
     event_type: "promoted",
     effective_date: new Date().toISOString().slice(0, 10),
