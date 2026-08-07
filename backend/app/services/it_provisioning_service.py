@@ -1418,7 +1418,11 @@ class ItProvisioningService:
     def _assert_recruiter_owns_offer(current_user: CurrentUser, offer: dict) -> None:
         if current_user.role == "super_admin":
             return
-        if offer.get("recruiter_id") != current_user.id:
+        record_org = offer.get("organization_id")
+        if record_org and current_user.organization_id:
+            if record_org != current_user.organization_id:
+                raise HTTPException(status_code=403, detail="Not authorized for this offer.")
+        elif offer.get("recruiter_id") != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized for this offer.")
 
 

@@ -14,11 +14,14 @@ URLs (see learning_ai_service.py for the no-hallucination design).
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException, status
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import database
 from app.core.rbac import CurrentUser
@@ -821,20 +824,69 @@ class LearningService:
         cert = await database.learning_certificates.find_one({"_id": ObjectId(certificate_id)})
         if not cert:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
-        if current_user.role != "super_admin" and str(cert.get("recruiter_id") or "") != str(current_user.id):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
+        if current_user.role != "super_admin":
+            record_org = cert.get("organization_id")
+            if record_org and current_user.organization_id:
+                if record_org != current_user.organization_id:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
+            elif str(cert.get("recruiter_id") or "") != str(current_user.id):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
 
         now = _now()
-        updates = {
-            "verification_status": "verified" if request.approve else "rejected",
-            "verified_by": current_user.full_name,
-            "verified_at": now,
-            "rejection_reason": None if request.approve else (request.note or "Certificate rejected."),
-            "updated_at": now,
-        }
-        await database.learning_certificates.update_one({"_id": cert["_id"]}, {"$set": updates})
 
-        if request.approve and cert.get("course_title"):
+        if not request.approve:
+            await database.learning_certificates.update_one(
+                {"_id": cert["_id"]},
+                {
+                    "$set": {
+                        "verification_status": "rejected",
+                        "verified_by": current_user.full_name,
+                        "verified_at": now,
+                        "rejection_reason": request.note or "Certificate rejected.",
+                        "updated_at": now,
+                    }
+                },
+            )
+            await create_notification(
+                recipient_id=cert["user_id"],
+                recipient_role="employee",
+                notif_type="certificate_rejected",
+                title="Certificate needs attention",
+                message=(
+                    f"Your certificate for \"{cert.get('course_title')}\" was rejected: {request.note or 'see recruiter notes'}."
+                ),
+                link="/dashboard/employee/learning",
+                related_id=str(cert["_id"]),
+            )
+            updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
+            return {"certificate": self._public_certificate(updated)}
+
+        if not cert.get("course_title"):
+            await database.learning_certificates.update_one(
+                {"_id": cert["_id"]},
+                {
+                    "$set": {
+                        "verification_status": "verified",
+                        "verified_by": current_user.full_name,
+                        "verified_at": now,
+                        "rejection_reason": None,
+                        "updated_at": now,
+                    }
+                },
+            )
+            await create_notification(
+                recipient_id=cert["user_id"],
+                recipient_role="employee",
+                notif_type="certificate_verified",
+                title="Certificate verified",
+                message=f"Your certificate for \"{cert.get('course_title')}\" was verified.",
+                link="/dashboard/employee/learning",
+                related_id=str(cert["_id"]),
+            )
+            updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
+            return {"certificate": self._public_certificate(updated)}
+
+        try:
             course_summary = None
             if cert.get("course_uid"):
                 course = await catalog_service.get_course_by_uid(cert["course_uid"])
@@ -846,6 +898,8 @@ class LearningService:
                 certificate_text=cert_text,
                 course_summary=course_summary,
             )
+
+            skill_names = []
             for skill in skills:
                 await self._upsert_verified_skill(
                     user_id=cert["user_id"],
@@ -855,23 +909,45 @@ class LearningService:
                     proficiency=skill.get("proficiency") or "Intermediate",
                     source="course",
                 )
+                skill_names.append(skill["skill_name"])
+
             await self._invalidate_ai_caches(cert["user_id"])
-            updates["skills_awarded"] = [s["skill_name"] for s in skills]
+
             await database.learning_certificates.update_one(
                 {"_id": cert["_id"]},
-                {"$set": {"skills_awarded": updates["skills_awarded"]}},
+                {
+                    "$set": {
+                        "verification_status": "verified",
+                        "verified_by": current_user.full_name,
+                        "verified_at": now,
+                        "rejection_reason": None,
+                        "skills_awarded": skill_names,
+                        "updated_at": now,
+                    }
+                },
             )
+        except Exception as exc:
+            await database.learning_certificates.update_one(
+                {"_id": cert["_id"]},
+                {
+                    "$set": {
+                        "verification_status": "rejected",
+                        "rejection_reason": f"Automated verification failed: {exc}",
+                        "updated_at": now,
+                    }
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Certificate verification failed: {exc}",
+            ) from exc
 
         await create_notification(
             recipient_id=cert["user_id"],
             recipient_role="employee",
-            notif_type="certificate_verified" if request.approve else "certificate_rejected",
-            title="Certificate verified" if request.approve else "Certificate needs attention",
-            message=(
-                f"Your certificate for \"{cert.get('course_title')}\" was verified."
-                if request.approve
-                else f"Your certificate for \"{cert.get('course_title')}\" was rejected: {request.note or 'see recruiter notes'}."
-            ),
+            notif_type="certificate_verified",
+            title="Certificate verified",
+            message=f"Your certificate for \"{cert.get('course_title')}\" was verified.",
             link="/dashboard/employee/learning",
             related_id=str(cert["_id"]),
         )
@@ -1700,8 +1776,8 @@ class LearningService:
                             recruiter_note=request.note,
                             eyebrow="Learning",
                         )
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Course assignment email failed: %s", exc, exc_info=True)
         return {"assigned": assigned, "skipped": skipped, "errors": errors, "due_date": due_date.isoformat()}
 
     def _public_assignment(self, doc: dict) -> dict:
@@ -1804,10 +1880,6 @@ class LearningService:
         if mandatory_only is True:
             query["mandatory"] = True
         docs = await database.learning_assignments.find(query).sort("created_at", -1).to_list(length=500)
-        # Clean true UID duplicates in the background of this request, then
-        # collapse any remaining same-title duplicates for display.
-        await self._purge_duplicate_assignments(docs)
-        docs = await database.learning_assignments.find(query).sort("created_at", -1).to_list(length=500)
         deduped = self._dedupe_assignment_docs(docs)
         return {"assignments": [self._public_assignment(d) for d in deduped]}
 
@@ -1818,8 +1890,6 @@ class LearningService:
         await self._assert_recruiter_owns(current_user, employee)
         user_id = employee.get("user_id")
         enrollments = await database.learning_enrollments.find({"user_id": user_id}).sort("updated_at", -1).to_list(length=300)
-        assignment_docs = await database.learning_assignments.find({"employee_id": employee_id}).sort("created_at", -1).to_list(length=300)
-        await self._purge_duplicate_assignments(assignment_docs)
         assignment_docs = await database.learning_assignments.find({"employee_id": employee_id}).sort("created_at", -1).to_list(length=300)
         assignments = self._dedupe_assignment_docs(assignment_docs)
         certificates = await database.learning_certificates.find({"user_id": user_id}).sort("created_at", -1).to_list(length=300)
