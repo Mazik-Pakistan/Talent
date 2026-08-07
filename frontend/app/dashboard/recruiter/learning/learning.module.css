@@ -1802,3 +1802,184 @@
 }
 .deptAllEmployeesLink:hover { text-decoration: underline; }
 .deptAllEmployeesLink svg { width: 13px; height: 13px; }
+
+/* ───────────────────── Generic provider management (Phase 1) ───────────────────── */
+
+.providerGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.providerCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .18s var(--ease), border-color .18s var(--ease), transform .18s var(--ease);
+}
+.providerCard:hover { border-color: var(--blue-mid); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.providerCardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.providerIdentity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.providerLogo {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, var(--blue-lighter), #fff);
+  border: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.providerLogo img { width: 100%; height: 100%; object-fit: contain; }
+.providerLogo svg { width: 20px; height: 20px; color: var(--blue-strong); }
+.providerName { font-size: 14.5px; font-weight: 750; color: var(--navy); line-height: 1.3; }
+.providerSlug { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+.providerDesc { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.providerChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.providerChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 750;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #0B5CAB;
+  background: #E8F3FF;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+}
+.providerChipGreen { color: #0E7C66; background: #E6F7F2; }
+.providerChipOrange { color: #B54708; background: #FEF0C7; }
+.providerChipRed { color: #B42318; background: #FEE4E2; }
+.providerChipGrey { color: #475467; background: #F2F4F7; }
+.providerChip svg { width: 11px; height: 11px; }
+.providerCardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 12px;
+  margin-top: auto;
+}
+.providerCourseCount { font-size: 12px; font-weight: 700; color: var(--navy); }
+.providerCourseCount span { color: var(--text-faint); font-weight: 600; }
+.providerActions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.providerActionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 650;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .16s var(--ease), color .16s var(--ease), border-color .16s var(--ease);
+}
+.providerActionBtn:hover:not(:disabled) { border-color: var(--blue-mid); color: var(--blue-strong); background: var(--blue-lighter); }
+.providerActionBtn:disabled { opacity: .55; cursor: not-allowed; }
+.providerActionBtn svg { width: 12px; height: 12px; }
+.providerActionDanger:hover:not(:disabled) { border-color: #f3c6c1; color: #b42318; background: var(--red-light); }
+.providerFormGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.providerFormGrid .wide { grid-column: 1 / -1; }
+.providerFormHint { font-size: 11.5px; color: var(--text-faint); margin-top: 4px; line-height: 1.45; }
+.providerToggle { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 650; color: var(--text-muted); cursor: pointer; user-select: none; }
+.providerToggle input { accent-color: var(--blue-strong); width: 15px; height: 15px; cursor: pointer; }
+
+/* ───────────────────── Universal import engine (Phase 2) ───────────────────── */
+
+.importStepBar { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+.importStep {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: #fff;
+  color: var(--text-muted);
+}
+.importStepActive { color: var(--blue-strong); border-color: var(--blue-mid); background: var(--blue-lighter); }
+.importStepDone { color: #0E7C66; border-color: #b3e6d5; background: #E6F7F2; }
+.importStepLine { flex: 1; height: 1px; background: var(--border-soft); min-width: 18px; }
+.importProviderSelect { width: 100%; }
+.importErrorBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 11px;
+  background: #FEF0C7;
+  border: 1px solid #FEDF89;
+  color: #B54708;
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin-top: 12px;
+}
+.importErrorBanner svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
+.importPreviewTable { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 14px; }
+.importPreviewTable th {
+  text-align: left;
+  font-weight: 750;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--blue-lighter);
+  white-space: nowrap;
+}
+.importPreviewTable td { padding: 8px 10px; border-bottom: 1px solid var(--border-soft); color: var(--navy); vertical-align: top; }
+.importPreviewTable tr:hover td { background: rgba(56, 162, 255, 0.04); }
+.rowStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 750;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+}
+.rowStatusNew { color: #0B5CAB; background: #E8F3FF; }
+.rowStatusUpdated { color: #0E7C66; background: #E6F7F2; }
+.rowStatusDuplicate { color: #B54708; background: #FEF0C7; }
+.rowStatusInvalid { color: #B42318; background: #FEE4E2; }
+.rowStatusSkipped { color: #475467; background: #F2F4F7; }
+.issueList { margin: 0; padding-left: 16px; color: #B42318; font-size: 11.5px; }
+.importHistoryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-wrap: wrap;
+}
+.importHistoryMain { min-width: 0; }
+.importHistoryTitle { font-size: 13.5px; font-weight: 700; color: var(--navy); }
+.importHistoryMeta { font-size: 11.5px; color: var(--text-faint); margin-top: 3px; display: flex; gap: 12px; flex-wrap: wrap; }
+.importHistoryMeta b { color: var(--text-muted); font-weight: 650; }
+.importHistoryActions { display: flex; gap: 8px; flex-wrap: wrap; }
+.emptyProviders {
+  text-align: center;
+  padding: 44px 20px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.6);
+}

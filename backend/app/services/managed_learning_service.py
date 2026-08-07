@@ -789,6 +789,7 @@ class ManagedLearningService:
         category: str | None = None,
         competency: str | None = None,
         archived: bool | None = None,
+        sort_by: str | None = "newest",
         page: int = 1,
         page_size: int = 20,
     ) -> dict:
@@ -805,7 +806,7 @@ class ManagedLearningService:
             query["category"] = {"$regex": f"^{re.escape(category.strip())}$", "$options": "i"}
         if competency:
             query["competency"] = {"$regex": f"^{re.escape(competency.strip())}$", "$options": "i"}
-        docs = await database.learning_courses.find(query).sort([("designation", 1), ("learning_month", 1), ("category", 1), ("competency", 1), ("title", 1)]).to_list(length=5000)
+        docs = await database.learning_courses.find(query).to_list(length=5000)
         if q:
             needle = q.strip().lower()
             docs = [
@@ -819,9 +820,31 @@ class ManagedLearningService:
                         doc.get("category") or "",
                         doc.get("competency") or "",
                         doc.get("provider") or "",
+                        *[str(t) for t in (doc.get("tags") or [])],
+                        doc.get("instructor") or "",
                     ]
                 ).lower()
             ]
+
+        # Phase 3: sortable catalog (newest first by default).
+        if sort_by == "oldest":
+            docs.sort(key=lambda d: d.get("created_at") or datetime.min.replace(tzinfo=UTC))
+        elif sort_by == "updated":
+            docs.sort(key=lambda d: d.get("updated_at") or d.get("created_at") or datetime.min.replace(tzinfo=UTC), reverse=True)
+        elif sort_by == "title_asc":
+            docs.sort(key=lambda d: (d.get("title") or "").lower())
+        elif sort_by == "title_desc":
+            docs.sort(key=lambda d: (d.get("title") or "").lower(), reverse=True)
+        elif sort_by == "duration":
+            def _dur(d):
+                v = d.get("duration_minutes")
+                return v if isinstance(v, (int, float)) else float("inf")
+            docs.sort(key=_dur)
+        elif sort_by == "provider":
+            docs.sort(key=lambda d: (d.get("provider") or "").lower())
+        else:  # newest (default)
+            docs.sort(key=lambda d: d.get("created_at") or datetime.min.replace(tzinfo=UTC), reverse=True)
+
         total = len(docs)
         start = (page - 1) * page_size
         page_items = docs[start : start + page_size]
@@ -899,6 +922,22 @@ class ManagedLearningService:
                 continue
             seen_providers.add(provider_name)
             providers.append(provider_name)
+
+        # Provider registry drives the tabs: freshly created providers (even with
+        # zero courses yet) must appear in the catalog. External API providers are
+        # surfaced by their own external tabs, so exclude them here.
+        registry_docs = await database.learning_providers.find(
+            {"active": {"$ne": False}}
+        ).sort("name", 1).to_list(length=500)
+        for provider_doc in registry_docs:
+            provider_name = _normalize_provider_name(provider_doc.get("name"))
+            if not provider_name or provider_name in {"Microsoft Learn", "Coursera"}:
+                continue
+            if any(existing.lower() == provider_name.lower() for existing in seen_providers):
+                continue
+            seen_providers.add(provider_name)
+            providers.append(provider_name)
+
         if any(name != "Managed Learning" for name in providers):
             providers = [name for name in providers if name != "Managed Learning"]
         providers = sorted(providers, key=lambda value: value.lower())
@@ -995,10 +1034,44 @@ class ManagedLearningService:
     async def delete_course(self, current_user: CurrentUser, course_id: str) -> dict:
         if not ObjectId.is_valid(course_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+
         result = await database.learning_courses.delete_one({"_id": ObjectId(course_id)})
         if result.deleted_count == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
         return {"deleted": True}
+
+    async def bulk_course_action(
+        self,
+        current_user: CurrentUser,
+        course_ids: list[str],
+        action: str,
+    ) -> dict:
+        """Bulk archive / restore / delete courses (Phase 3 management)."""
+        valid_ids = [ObjectId(cid) for cid in course_ids if cid and ObjectId.is_valid(cid)]
+        if not valid_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="No valid course IDs provided."
+            )
+        query = {"_id": {"$in": valid_ids}}
+        now = _now()
+
+        if action == "archive":
+            result = await database.learning_courses.update_many(
+                query, {"$set": {"archived": True, "updated_at": now, "updated_by_id": current_user.id}}
+            )
+            return {"action": "archive", "affected": result.modified_count}
+        if action == "restore":
+            result = await database.learning_courses.update_many(
+                query, {"$set": {"archived": False, "updated_at": now, "updated_by_id": current_user.id}}
+            )
+            return {"action": "restore", "affected": result.modified_count}
+        if action == "delete":
+            result = await database.learning_courses.delete_many(query)
+            return {"action": "delete", "affected": result.deleted_count}
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Action must be 'archive', 'restore', or 'delete'.",
+        )
 
     async def recommend_for_employee(self, employee: dict, *, limit: int = 8) -> list[dict]:
         designation = (employee.get("job_title") or "").strip()

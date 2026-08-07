@@ -1,18 +1,20 @@
 """Unified facade over every live, external course catalog we plug into the
-Learning module. Nothing about a course is ever stored on our side — every
-call here fetches (or reads the in-process cache of) the provider's live
-catalog, exactly like ms_learn_service.py did on its own. Adding a new
-provider later means adding one module here and one entry in SOURCES; no
-frontend or database changes required.
+Learning module.
 
-Current sources:
-  - "microsoft_learn" -> ms_learn_service (technical: paths/modules/certs)
-  - "coursera"         -> coursera_service (industry soft skills)
+Phase 1 refactor: this module now delegates to the dynamic catalog service,
+which resolves providers from the `learning_providers` collection instead of
+hardcoded sources. Adding a new provider (Udemy, Skillsoft, Company Academy,
+...) requires zero code changes — only a provider record + imported courses.
+
+The module keeps its original function signatures so existing callers
+(learning_service, learning_ai_service, learning_path_service, etc.) keep
+working unchanged.
 """
 
 from __future__ import annotations
 
 from app.services import coursera_service, ms_learn_service
+from app.services.dynamic_catalog_service import dynamic_catalog_service
 from app.services.managed_learning_service import MANAGED_SOURCE, managed_learning_service
 from app.services.recruiter_kb_service import recruiter_kb_service
 
@@ -20,34 +22,11 @@ SOURCES: tuple[str, ...] = (MANAGED_SOURCE, "microsoft_learn", "coursera", "recr
 
 
 def source_of(uid: str) -> str:
-    if uid.startswith("learning_course:"):
-        return MANAGED_SOURCE
-    if uid.startswith("coursera:"):
-        return "coursera"
-    if uid.startswith("recruiter_kb:"):
-        return "recruiter_kb"
-    return "microsoft_learn"
+    return dynamic_catalog_service.source_of(uid)
 
 
 async def get_course_by_uid(uid: str) -> dict | None:
-    src = source_of(uid)
-    if src == MANAGED_SOURCE:
-        return await managed_learning_service.get_course_by_uid(uid)
-    if src == "coursera":
-        return await coursera_service.get_course_by_uid(uid)
-    if src == "recruiter_kb":
-        from bson import ObjectId
-        from app.core.database import database
-
-        cert_id = uid.split(":", 1)[1]
-        if not ObjectId.is_valid(cert_id):
-            return None
-        doc = await database.recruiter_kb_certifications.find_one({"_id": ObjectId(cert_id)})
-        if not doc:
-            return None
-        courses = await recruiter_kb_service.list_as_catalog_courses(doc.get("recruiter_id"))
-        return next((c for c in courses if c["uid"] == uid), None)
-    return await ms_learn_service.get_course_by_uid(uid)
+    return await dynamic_catalog_service.get_course_by_uid(uid)
 
 
 async def search_catalog(
@@ -64,51 +43,31 @@ async def search_catalog(
     learning_month: str | None = None,
     competency: str | None = None,
     archived: bool | None = None,
+    sort_by: str | None = "newest",
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    if source in {MANAGED_SOURCE, "linkedin_learning"}:
-        return await managed_learning_service.list_courses(
-            q=q,
-            provider=provider,
-            designation=designation,
-            learning_month=learning_month,
-            category=category,
-            competency=competency,
-            archived=archived,
-            page=page,
-            page_size=page_size,
-        )
-    if source == "coursera":
-        return await coursera_service.search_catalog(q=q, category=category, page=page, page_size=page_size)
-    if source == "recruiter_kb":
-        courses = await recruiter_kb_service.list_as_catalog_courses()
-        if q:
-            from app.services.search_taxonomy import search_and_rank_items_async
-
-            courses = await search_and_rank_items_async(courses, q)
-        if course_type:
-            courses = [c for c in courses if c.get("type") == course_type]
-        total = len(courses)
-        start = (page - 1) * page_size
-        return {
-            "courses": courses[start : start + page_size],
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "pages": max(1, (total + page_size - 1) // page_size) if total else 1,
-        }
-    return await ms_learn_service.search_catalog(
-        q=q, role=role, level=level, product=product, course_type=course_type, page=page, page_size=page_size
+    return await dynamic_catalog_service.search_catalog(
+        source=source,
+        q=q,
+        role=role,
+        level=level,
+        product=product,
+        course_type=course_type,
+        category=category,
+        provider=provider,
+        designation=designation,
+        learning_month=learning_month,
+        competency=competency,
+        archived=archived,
+        sort_by=sort_by,
+        page=page,
+        page_size=page_size,
     )
 
 
 async def get_facets(source: str = "microsoft_learn") -> dict:
-    if source in {MANAGED_SOURCE, "linkedin_learning"}:
-        return await managed_learning_service.list_facets()
-    if source == "coursera":
-        return {"categories": coursera_service.get_categories()}
-    return await ms_learn_service.get_facets()
+    return await dynamic_catalog_service.get_facets(source)
 
 
 async def find_courses_for_keywords(
@@ -119,45 +78,15 @@ async def find_courses_for_keywords(
     sources: tuple[str, ...] = SOURCES,
     use_ai: bool = False,
 ) -> list[dict]:
-    """Merges real, live candidates from every requested source. This is what
-    lets AI recommendations and skill-gap course matching surface an industry
-    soft-skills course (Coursera) right alongside a Microsoft Learn technical
-    course for the same employee — whichever is the better real match."""
-    results: list[dict] = []
-    if MANAGED_SOURCE in sources:
-        managed = await managed_learning_service.list_courses(page=1, page_size=500)
-        courses = managed.get("courses") or []
-        lowered = [k.lower() for k in keywords if k]
-        for course in courses:
-            hay = " ".join(
-                [
-                    course.get("title") or "",
-                    course.get("designation") or "",
-                    course.get("learning_month") or "",
-                    course.get("category") or "",
-                    course.get("competency") or "",
-                    course.get("provider") or "",
-                    course.get("summary") or "",
-                ]
-            ).lower()
-            if any(k in hay for k in lowered):
-                results.append(course)
-    if "microsoft_learn" in sources:
-        results += await ms_learn_service.find_courses_for_keywords(
-            keywords, per_keyword=per_keyword, limit=limit, use_ai=use_ai
-        )
-    if "coursera" in sources:
-        results += await coursera_service.find_courses_for_keywords(
-            keywords, per_keyword=max(2, per_keyword // 2), limit=limit
-        )
-    if "recruiter_kb" in sources:
-        kb = await recruiter_kb_service.list_as_catalog_courses()
-        lowered = [k.lower() for k in keywords if k]
-        for course in kb:
-            hay = f"{course.get('title') or ''} {' '.join(course.get('products') or [])}".lower()
-            if any(k in hay for k in lowered):
-                results.append(course)
-    seen: dict[str, dict] = {}
-    for course in results:
-        seen.setdefault(course["uid"], course)
-    return list(seen.values())[:limit]
+    """Merges real, live candidates from every requested source."""
+    return await dynamic_catalog_service.find_courses_for_keywords(
+        keywords,
+        per_keyword=per_keyword,
+        limit=limit,
+        use_ai=use_ai,
+    )
+
+
+async def get_catalog_sources() -> list[dict]:
+    """Get all available catalog sources for the frontend (provider-agnostic)."""
+    return await dynamic_catalog_service.get_catalog_sources()

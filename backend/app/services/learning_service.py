@@ -187,6 +187,7 @@ class LearningService:
         learning_month: str | None = None,
         competency: str | None = None,
         archived: bool | None = None,
+        sort_by: str | None = "newest",
     ) -> dict:
         if bookmarked_only:
             bookmarks = await database.learning_bookmarks.find({"user_id": current_user.id}).sort(
@@ -308,6 +309,7 @@ class LearningService:
             learning_month=learning_month,
             competency=competency,
             archived=archived,
+            sort_by=sort_by,
             page=fetch_page,
             page_size=fetch_page_size,
         )
