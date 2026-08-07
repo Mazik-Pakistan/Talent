@@ -1,22 +1,8 @@
-import axios from "axios";
+import apiClient from "@/lib/apiClient";
 import { CacheKeys, cachedFetch, invalidateCache, invalidateCachePrefix } from "@/utils/recruiterCache";
-
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-
-const client = axios.create({
-  baseURL: apiBaseUrl,
-  headers: {
-    "Content-Type": "application/json",
-    "ngrok-skip-browser-warning": "true",
-  },
-});
 
 const LEARNING_PROVIDERS_UPDATED_EVENT = "learning-providers-updated";
 const LEARNING_PROVIDERS_UPDATED_STORAGE_KEY = "learning-providers-updated-at";
-
-function auth(accessToken) {
-  return { headers: { Authorization: `Bearer ${accessToken}` } };
-}
 
 function notifyLearningProvidersUpdated() {
   if (typeof window === "undefined") return;
@@ -38,67 +24,66 @@ export function invalidateLearningCaches() {
 // ─── Catalog (US-065 / US-066 / US-072) ──────────────────────────────────────
 
 export async function browseCatalog(accessToken, params = {}) {
-  const { data } = await client.get("/api/learning/catalog", { ...auth(accessToken), params });
+  const { data } = await apiClient.get("/api/learning/catalog", { params });
   return data;
 }
 
 export async function listManagedCourses(accessToken, params = {}) {
-  const { data } = await client.get("/api/learning/managed/courses", { ...auth(accessToken), params });
+  const { data } = await apiClient.get("/api/learning/managed/courses", { params });
   return data;
 }
 
 export async function getManagedFacets(accessToken) {
-  const { data } = await client.get("/api/learning/managed/facets", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/managed/facets");
   return data;
 }
 
 export async function listManagedProviders(accessToken) {
-  const { data } = await client.get("/api/learning/managed/providers", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/managed/providers");
   return data;
 }
 
 export async function createManagedProvider(accessToken, name) {
-  const { data } = await client.post("/api/learning/managed/providers", { name }, auth(accessToken));
+  const { data } = await apiClient.post("/api/learning/managed/providers", { name });
   invalidateLearningCaches();
   notifyLearningProvidersUpdated();
   return data;
 }
 
 export async function getCatalogFacets(accessToken, source = "microsoft_learn") {
-  const { data } = await client.get("/api/learning/catalog/facets", { ...auth(accessToken), params: { source } });
+  const { data } = await apiClient.get("/api/learning/catalog/facets", { params: { source } });
   return data;
 }
 
 export async function getSoftSkillCategories(accessToken) {
-  const { data } = await client.get("/api/learning/catalog/soft-skills/categories", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/catalog/soft-skills/categories");
   return data;
 }
 
 export async function getCourseDetail(accessToken, uid) {
-  const { data } = await client.get(`/api/learning/catalog/${encodeURIComponent(uid)}`, auth(accessToken));
+  const { data } = await apiClient.get(`/api/learning/catalog/${encodeURIComponent(uid)}`);
   return data;
 }
 
 export async function startCourse(accessToken, uid) {
-  const { data } = await client.post(`/api/learning/catalog/${encodeURIComponent(uid)}/start`, {}, auth(accessToken));
+  const { data } = await apiClient.post(`/api/learning/catalog/${encodeURIComponent(uid)}/start`, {});
   return data;
 }
 
 export async function updateCourseProgress(accessToken, uid, payload) {
-  const { data } = await client.put(`/api/learning/catalog/${encodeURIComponent(uid)}/progress`, payload, auth(accessToken));
+  const { data } = await apiClient.put(`/api/learning/catalog/${encodeURIComponent(uid)}/progress`, payload);
   return data;
 }
 
 // ─── My learning (US-069) ────────────────────────────────────────────────────
 
 export async function getLearningDashboard(accessToken) {
-  const { data } = await client.get("/api/learning/my/dashboard", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/my/dashboard");
   return data;
 }
 
 export async function listMyCourses(accessToken, status) {
-  const { data } = await client.get("/api/learning/my/courses", {
-    ...auth(accessToken),
+  const { data } = await apiClient.get("/api/learning/my/courses", {
     params: status ? { status } : {},
   });
   return data;
@@ -107,54 +92,54 @@ export async function listMyCourses(accessToken, status) {
 // ─── Bookmarks (US-073) ──────────────────────────────────────────────────────
 
 export async function listBookmarks(accessToken) {
-  const { data } = await client.get("/api/learning/bookmarks", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/bookmarks");
   return data;
 }
 
 export async function addBookmark(accessToken, payload) {
-  const { data } = await client.post("/api/learning/bookmarks", payload, auth(accessToken));
+  const { data } = await apiClient.post("/api/learning/bookmarks", payload);
   return data;
 }
 
 export async function removeBookmark(accessToken, uid) {
-  const { data } = await client.delete(`/api/learning/bookmarks/${encodeURIComponent(uid)}`, auth(accessToken));
+  const { data } = await apiClient.delete(`/api/learning/bookmarks/${encodeURIComponent(uid)}`);
   return data;
 }
 
 // ─── Certificates ─────────────────────────────────────────────────────────────
 
 export async function uploadCertificate(accessToken, formData) {
-  const { data } = await client.post("/api/learning/certificates", formData, {
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  const { data } = await apiClient.post("/api/learning/certificates", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
   return data;
 }
 
 export async function listMyCertificates(accessToken) {
-  const { data } = await client.get("/api/learning/certificates", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/certificates");
   return data;
 }
 
 export async function listPendingCertificates(accessToken) {
-  const { data } = await client.get("/api/learning/certificates/pending", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/certificates/pending");
   return data;
 }
 
 export async function verifyCertificate(accessToken, certificateId, payload) {
-  const { data } = await client.put(`/api/learning/certificates/${certificateId}/verify`, payload, auth(accessToken));
+  const { data } = await apiClient.put(`/api/learning/certificates/${certificateId}/verify`, payload);
   invalidateLearningCaches();
   return data;
 }
 
 export async function deleteCertificate(accessToken, certificateId) {
-  const { data } = await client.delete(`/api/learning/certificates/${certificateId}`, auth(accessToken));
+  const { data } = await apiClient.delete(`/api/learning/certificates/${certificateId}`);
   invalidateLearningCaches();
   return data;
 }
 
 export async function updateCertificate(accessToken, certificateId, formData) {
-  const { data } = await client.put(`/api/learning/certificates/${certificateId}`, formData, {
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  const { data } = await apiClient.put(`/api/learning/certificates/${certificateId}`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
   invalidateLearningCaches();
   return data;
@@ -163,39 +148,37 @@ export async function updateCertificate(accessToken, certificateId, formData) {
 // ─── Skill matrix (US-092 / US-093 / US-094) ─────────────────────────────────
 
 export async function getSkillCategories(accessToken) {
-  const { data } = await client.get("/api/learning/skills/categories", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/skills/categories");
   return data;
 }
 
 export async function listSkills(accessToken) {
-  const { data } = await client.get("/api/learning/skills", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/skills");
   return data;
 }
 
 export async function upsertSkill(accessToken, payload) {
-  const { data } = await client.post("/api/learning/skills", payload, auth(accessToken));
+  const { data } = await apiClient.post("/api/learning/skills", payload);
   return data;
 }
 
 export async function assessSkills(accessToken, refresh = false, lazy = false) {
-  const { data } = await client.post(
+  const { data } = await apiClient.post(
     `/api/learning/skills/assess?refresh=${refresh ? "true" : "false"}&lazy=${lazy ? "true" : "false"}`,
-    {},
-    auth(accessToken)
+    {}
   );
   return data;
 }
 
 export async function deleteSkill(accessToken, skillId) {
-  const { data } = await client.delete(`/api/learning/skills/${skillId}`, auth(accessToken));
+  const { data } = await apiClient.delete(`/api/learning/skills/${skillId}`);
   return data;
 }
 
 // ─── Skill gap + career path (US-075 / US-095 / US-099 / US-100) ────────────
 
 export async function getSkillGap(accessToken, targetRole, refresh = false) {
-  const { data } = await client.get("/api/learning/skill-gap", {
-    ...auth(accessToken),
+  const { data } = await apiClient.get("/api/learning/skill-gap", {
     params: {
       ...(targetRole ? { target_role: targetRole } : {}),
       ...(refresh ? { refresh: true } : {}),
@@ -205,76 +188,76 @@ export async function getSkillGap(accessToken, targetRole, refresh = false) {
 }
 
 export async function getCareerGoal(accessToken) {
-  const { data } = await client.get("/api/learning/career-goal", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/career-goal");
   return data;
 }
 
 export async function setCareerGoal(accessToken, targetRole) {
-  const { data } = await client.post("/api/learning/career-goal", { target_role: targetRole }, auth(accessToken));
+  const { data } = await apiClient.post("/api/learning/career-goal", { target_role: targetRole });
   return data;
 }
 
 export async function getCareerPath(accessToken, refresh = false) {
-  const { data } = await client.get("/api/learning/career-path", { ...auth(accessToken), params: { refresh } });
+  const { data } = await apiClient.get("/api/learning/career-path", { params: { refresh } });
   return data;
 }
 
 export async function getRoleMatches(accessToken, refresh = false) {
-  const { data } = await client.get("/api/learning/role-matches", { ...auth(accessToken), params: { refresh } });
+  const { data } = await apiClient.get("/api/learning/role-matches", { params: { refresh } });
   return data;
 }
 
 // ─── AI recommendations (US-074) ─────────────────────────────────────────────
 
 export async function getRecommendations(accessToken, refresh = false) {
-  const { data } = await client.get("/api/learning/recommendations", { ...auth(accessToken), params: { refresh } });
+  const { data } = await apiClient.get("/api/learning/recommendations", { params: { refresh } });
   return data;
 }
 
 // ─── Recruiter Knowledge Base ────────────────────────────────────────────────
 
 export async function listKbRoles(accessToken) {
-  const { data } = await client.get("/api/learning/knowledge-base/roles", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/knowledge-base/roles");
   return data;
 }
 
 export async function createKbRole(accessToken, payload) {
-  const { data } = await client.post("/api/learning/knowledge-base/roles", payload, auth(accessToken));
+  const { data } = await apiClient.post("/api/learning/knowledge-base/roles", payload);
   invalidateLearningCaches();
   return data;
 }
 
 export async function updateKbRole(accessToken, roleId, payload) {
-  const { data } = await client.put(`/api/learning/knowledge-base/roles/${roleId}`, payload, auth(accessToken));
+  const { data } = await apiClient.put(`/api/learning/knowledge-base/roles/${roleId}`, payload);
   invalidateLearningCaches();
   return data;
 }
 
 export async function deleteKbRole(accessToken, roleId) {
-  const { data } = await client.delete(`/api/learning/knowledge-base/roles/${roleId}`, auth(accessToken));
+  const { data } = await apiClient.delete(`/api/learning/knowledge-base/roles/${roleId}`);
   invalidateLearningCaches();
   return data;
 }
 
 export async function listKbCertifications(accessToken) {
-  const { data } = await client.get("/api/learning/knowledge-base/certifications", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/knowledge-base/certifications");
   return data;
 }
 
 export async function createKbCertification(accessToken, payload) {
-  const { data } = await client.post("/api/learning/knowledge-base/certifications", payload, auth(accessToken));
+  const { data } = await apiClient.post("/api/learning/knowledge-base/certifications", payload);
   invalidateLearningCaches();
   return data;
 }
 
 export async function updateKbCertification(accessToken, certId, payload) {
-  const { data } = await client.put(`/api/learning/knowledge-base/certifications/${certId}`, payload, auth(accessToken));
+  const { data } = await apiClient.put(`/api/learning/knowledge-base/certifications/${certId}`, payload);
   invalidateLearningCaches();
   return data;
 }
 
 export async function deleteKbCertification(accessToken, certId) {
-  const { data } = await client.delete(`/api/learning/knowledge-base/certifications/${certId}`, auth(accessToken));
+  const { data } = await apiClient.delete(`/api/learning/knowledge-base/certifications/${certId}`);
   invalidateLearningCaches();
   return data;
 }
@@ -282,7 +265,7 @@ export async function deleteKbCertification(accessToken, certId) {
 // ─── Recruiter: assign, oversight, analytics (US-067 / US-073) ─────────────
 
 export async function assignCourses(accessToken, payload) {
-  const { data } = await client.post("/api/learning/assignments", payload, auth(accessToken));
+  const { data } = await apiClient.post("/api/learning/assignments", payload);
   invalidateCachePrefix("learning-assignments");
   invalidateCachePrefix("learning-analytics");
   invalidateCachePrefix("talent-metrics");
@@ -296,7 +279,7 @@ export async function listAssignments(accessToken, params = {}, { force = false 
   const { data } = await cachedFetch(
     key,
     async () => {
-      const res = await client.get("/api/learning/assignments", { ...auth(accessToken), params });
+      const res = await apiClient.get("/api/learning/assignments", { params });
       return res.data;
     },
     { force }
@@ -305,8 +288,7 @@ export async function listAssignments(accessToken, params = {}, { force = false 
 }
 
 export async function getEmployeeLearningProfile(accessToken, employeeId, refresh = false) {
-  const { data } = await client.get(`/api/learning/employees/${encodeURIComponent(employeeId)}/profile`, {
-    ...auth(accessToken),
+  const { data } = await apiClient.get(`/api/learning/employees/${encodeURIComponent(employeeId)}/profile`, {
     params: refresh ? { refresh: true } : {},
   });
   return data;
@@ -317,8 +299,7 @@ export async function getLearningAnalytics(accessToken, department, { force = fa
   const { data } = await cachedFetch(
     key,
     async () => {
-      const res = await client.get("/api/learning/analytics", {
-        ...auth(accessToken),
+      const res = await apiClient.get("/api/learning/analytics", {
         params: department ? { department } : {},
       });
       return res.data;
@@ -329,43 +310,42 @@ export async function getLearningAnalytics(accessToken, department, { force = fa
 }
 
 export async function createManagedCourse(accessToken, payload) {
-  const { data } = await client.post("/api/learning/managed/courses", payload, auth(accessToken));
+  const { data } = await apiClient.post("/api/learning/managed/courses", payload);
   invalidateLearningCaches();
   notifyLearningProvidersUpdated();
   return data;
 }
 
 export async function updateManagedCourse(accessToken, courseId, payload) {
-  const { data } = await client.put(`/api/learning/managed/courses/${courseId}`, payload, auth(accessToken));
+  const { data } = await apiClient.put(`/api/learning/managed/courses/${courseId}`, payload);
   invalidateLearningCaches();
   notifyLearningProvidersUpdated();
   return data;
 }
 
 export async function archiveManagedCourse(accessToken, courseId) {
-  const { data } = await client.post(`/api/learning/managed/courses/${courseId}/archive`, {}, auth(accessToken));
+  const { data } = await apiClient.post(`/api/learning/managed/courses/${courseId}/archive`, {});
   invalidateLearningCaches();
   return data;
 }
 
 export async function restoreManagedCourse(accessToken, courseId) {
-  const { data } = await client.post(`/api/learning/managed/courses/${courseId}/restore`, {}, auth(accessToken));
+  const { data } = await apiClient.post(`/api/learning/managed/courses/${courseId}/restore`, {});
   invalidateLearningCaches();
   return data;
 }
 
 export async function deleteManagedCourse(accessToken, courseId) {
-  const { data } = await client.delete(`/api/learning/managed/courses/${courseId}`, auth(accessToken));
+  const { data } = await apiClient.delete(`/api/learning/managed/courses/${courseId}`);
   invalidateLearningCaches();
   notifyLearningProvidersUpdated();
   return data;
 }
 
 export async function bulkManagedCourseAction(accessToken, courseIds, action) {
-  const { data } = await client.post(
+  const { data } = await apiClient.post(
     "/api/learning/managed/courses-bulk/action",
-    { course_ids: courseIds, action },
-    auth(accessToken)
+    { course_ids: courseIds, action }
   );
   invalidateLearningCaches();
   notifyLearningProvidersUpdated();
@@ -375,8 +355,8 @@ export async function bulkManagedCourseAction(accessToken, courseIds, action) {
 async function postManagedImport(url, file, accessToken) {
   const formData = new FormData();
   formData.append("file", file, file?.name || "learning-roadmap.xlsx");
-  const { data } = await client.post(url, formData, {
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  const { data } = await apiClient.post(url, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
   return data;
 }
@@ -385,8 +365,8 @@ export async function previewManagedImport(file, accessToken, provider) {
   const formData = new FormData();
   formData.append("file", file, file?.name || "learning-roadmap.xlsx");
   if (provider) formData.append("provider", provider);
-  const { data } = await client.post("/api/learning/managed/import/preview", formData, {
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  const { data } = await apiClient.post("/api/learning/managed/import/preview", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
   return data;
 }
@@ -395,8 +375,8 @@ export async function commitManagedImport(file, accessToken, provider) {
   const formData = new FormData();
   formData.append("file", file, file?.name || "learning-roadmap.xlsx");
   if (provider) formData.append("provider", provider);
-  const { data } = await client.post("/api/learning/managed/import/commit", formData, {
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  const { data } = await apiClient.post("/api/learning/managed/import/commit", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
   invalidateLearningCaches();
   notifyLearningProvidersUpdated();
@@ -407,7 +387,7 @@ export async function getOrgTaxonomy(accessToken, { force = false } = {}) {
   const { data } = await cachedFetch(
     CacheKeys.taxonomy,
     async () => {
-      const res = await client.get("/api/learning/org-taxonomy", auth(accessToken));
+      const res = await apiClient.get("/api/learning/org-taxonomy");
       return res.data;
     },
     { force }
@@ -416,29 +396,26 @@ export async function getOrgTaxonomy(accessToken, { force = false } = {}) {
 }
 
 export async function addDepartment(accessToken, name) {
-  const { data } = await client.post(
+  const { data } = await apiClient.post(
     "/api/learning/org-taxonomy/departments",
-    { name },
-    auth(accessToken),
+    { name }
   );
   invalidateLearningCaches();
   return data;
 }
 
 export async function updateDepartment(accessToken, oldName, newName) {
-  const { data } = await client.put(
+  const { data } = await apiClient.put(
     "/api/learning/org-taxonomy/departments",
-    { old_name: oldName, new_name: newName },
-    auth(accessToken),
+    { old_name: oldName, new_name: newName }
   );
   invalidateLearningCaches();
   return data;
 }
 
 export async function deleteDepartment(accessToken, name) {
-  const { data } = await client.delete(
-    `/api/learning/org-taxonomy/departments/${encodeURIComponent(name)}`,
-    auth(accessToken),
+  const { data } = await apiClient.delete(
+    `/api/learning/org-taxonomy/departments/${encodeURIComponent(name)}`
   );
   invalidateLearningCaches();
   return data;
@@ -447,24 +424,24 @@ export async function deleteDepartment(accessToken, name) {
 // ─── Catalog sources (dynamic provider tabs) ────────────────────────────────
 
 export async function getCatalogSources(accessToken) {
-  const { data } = await client.get("/api/learning/catalog/sources", auth(accessToken));
+  const { data } = await apiClient.get("/api/learning/catalog/sources");
   return data;
 }
 
 // ─── Generic provider management (Phase 1) ──────────────────────────────────
 
 export async function listProviders(accessToken, params = {}) {
-  const { data } = await client.get("/api/learning/providers", { ...auth(accessToken), params });
+  const { data } = await apiClient.get("/api/learning/providers", { params });
   return data;
 }
 
 export async function getProvider(accessToken, providerId) {
-  const { data } = await client.get(`/api/learning/providers/${providerId}`, auth(accessToken));
+  const { data } = await apiClient.get(`/api/learning/providers/${providerId}`);
   return data;
 }
 
 export async function createProvider(accessToken, payload) {
-  const { data } = await client.post("/api/learning/providers", payload, auth(accessToken));
+  const { data } = await apiClient.post("/api/learning/providers", payload);
   invalidateCachePrefix("learning-providers");
   invalidateCachePrefix("learning-");
   notifyLearningProvidersUpdated();
@@ -472,7 +449,7 @@ export async function createProvider(accessToken, payload) {
 }
 
 export async function updateProvider(accessToken, providerId, payload) {
-  const { data } = await client.put(`/api/learning/providers/${providerId}`, payload, auth(accessToken));
+  const { data } = await apiClient.put(`/api/learning/providers/${providerId}`, payload);
   invalidateCachePrefix("learning-providers");
   invalidateCachePrefix("learning-");
   notifyLearningProvidersUpdated();
@@ -480,8 +457,7 @@ export async function updateProvider(accessToken, providerId, payload) {
 }
 
 export async function deleteProvider(accessToken, providerId, force = false) {
-  const { data } = await client.delete(`/api/learning/providers/${providerId}`, {
-    ...auth(accessToken),
+  const { data } = await apiClient.delete(`/api/learning/providers/${providerId}`, {
     params: force ? { force: "true" } : {},
   });
   invalidateCachePrefix("learning-providers");
@@ -491,7 +467,7 @@ export async function deleteProvider(accessToken, providerId, force = false) {
 }
 
 export async function activateProvider(accessToken, providerId) {
-  const { data } = await client.post(`/api/learning/providers/${providerId}/activate`, {}, auth(accessToken));
+  const { data } = await apiClient.post(`/api/learning/providers/${providerId}/activate`, {});
   invalidateCachePrefix("learning-providers");
   invalidateCachePrefix("learning-");
   notifyLearningProvidersUpdated();
@@ -499,7 +475,7 @@ export async function activateProvider(accessToken, providerId) {
 }
 
 export async function deactivateProvider(accessToken, providerId) {
-  const { data } = await client.post(`/api/learning/providers/${providerId}/deactivate`, {}, auth(accessToken));
+  const { data } = await apiClient.post(`/api/learning/providers/${providerId}/deactivate`, {});
   invalidateCachePrefix("learning-providers");
   invalidateCachePrefix("learning-");
   notifyLearningProvidersUpdated();
@@ -514,8 +490,8 @@ async function postImportFile(url, accessToken, { file, providerId, providerName
   if (providerId) formData.append("provider_id", providerId);
   if (providerName) formData.append("provider_name", providerName);
   if (missingAction) formData.append("missing_action", missingAction);
-  const { data } = await client.post(url, formData, {
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  const { data } = await apiClient.post(url, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
   return data;
 }
@@ -533,7 +509,7 @@ export async function commitImport(accessToken, opts) {
 }
 
 export async function rollbackImport(accessToken, historyId) {
-  const { data } = await client.post(`/api/learning/import/${historyId}/rollback`, {}, auth(accessToken));
+  const { data } = await apiClient.post(`/api/learning/import/${historyId}/rollback`, {});
   invalidateLearningCaches();
   invalidateCachePrefix("learning-providers");
   notifyLearningProvidersUpdated();
@@ -541,18 +517,17 @@ export async function rollbackImport(accessToken, historyId) {
 }
 
 export async function listImportHistory(accessToken, params = {}) {
-  const { data } = await client.get("/api/learning/import/history", { ...auth(accessToken), params });
+  const { data } = await apiClient.get("/api/learning/import/history", { params });
   return data;
 }
 
 export async function getImportHistory(accessToken, historyId) {
-  const { data } = await client.get(`/api/learning/import/history/${historyId}`, auth(accessToken));
+  const { data } = await apiClient.get(`/api/learning/import/history/${historyId}`);
   return data;
 }
 
 export async function downloadImportReport(accessToken, historyId) {
-  const { data } = await client.get(`/api/learning/import/history/${historyId}/report`, {
-    ...auth(accessToken),
+  const { data } = await apiClient.get(`/api/learning/import/history/${historyId}/report`, {
     responseType: "blob",
   });
   return data;
@@ -561,8 +536,8 @@ export async function downloadImportReport(accessToken, historyId) {
 export async function syncProviderFromApi(accessToken, providerId, missingAction = "keep") {
   const formData = new FormData();
   formData.append("missing_action", missingAction);
-  const { data } = await client.post(`/api/learning/import/providers/${providerId}/sync`, formData, {
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  const { data } = await apiClient.post(`/api/learning/import/providers/${providerId}/sync`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
   invalidateLearningCaches();
   invalidateCachePrefix("learning-providers");

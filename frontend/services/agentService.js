@@ -1,18 +1,6 @@
-import axios from "axios";
+import apiClient from "@/lib/apiClient";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-
-const client = axios.create({
-  baseURL: apiBaseUrl,
-  headers: {
-    "Content-Type": "application/json",
-    "ngrok-skip-browser-warning": "true",
-  },
-});
-
-function auth(accessToken) {
-  return { headers: { Authorization: `Bearer ${accessToken}` } };
-}
 
 /**
  * Send a message to the role-appropriate AI Agent (recruiter hiring
@@ -23,32 +11,29 @@ function auth(accessToken) {
  * @param {object|null} context
  */
 export async function sendAgentMessage(accessToken, message, sessionId, context) {
-  const { data } = await client.post(
+  const { data } = await apiClient.post(
     "/api/agent/chat",
     { message, session_id: sessionId || null, context: context || null },
-    auth(accessToken)
   );
   return data;
 }
 
 export async function getAgentHistory(accessToken, sessionId) {
-  const { data } = await client.get("/api/agent/history", {
-    ...auth(accessToken),
+  const { data } = await apiClient.get("/api/agent/history", {
     params: { session_id: sessionId },
   });
   return data;
 }
 
 export async function listAgentSessions(accessToken) {
-  const { data } = await client.get("/api/agent/sessions", auth(accessToken));
+  const { data } = await apiClient.get("/api/agent/sessions");
   return data;
 }
 
 export async function resetAgentSession(accessToken, sessionId) {
-  const { data } = await client.post(
+  const { data } = await apiClient.post(
     "/api/agent/reset",
     { session_id: sessionId || null },
-    auth(accessToken)
   );
   return data;
 }
