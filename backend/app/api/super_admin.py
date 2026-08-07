@@ -20,6 +20,7 @@ from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
 from app.services.organization_service import (
     ORG_MODULE_KEYS,
+    ORG_MODULE_LABELS,
     create_organization,
     get_organization,
     list_organizations,
@@ -39,20 +40,21 @@ router = APIRouter(prefix="/api/super-admin", tags=["Super Admin"])
 RequireSuperAdmin = Annotated[CurrentUser, Depends(require_roles("super_admin"))]
 
 DEFAULT_RECRUITER_CAPABILITIES = {
-    "overview": True,
-    "candidates": True,
-    "invite": True,
-    "employees": True,
-    "talent": True,
-    "learning": True,
-    "assistant": True,
-    "messages": True,
-    "announcements": True,
-    "it": True,
-    "reporting": True,
-    "profile": True,
-    "support": True,
-}
+     "overview": True,
+     "candidates": True,
+     "invite": True,
+     "employees": True,
+     "talent": True,
+     "learning": True,
+     "org_config": True,
+     "assistant": True,
+     "messages": True,
+     "announcements": True,
+     "it": True,
+     "reporting": True,
+     "profile": True,
+     "support": True,
+   }
 
 ALL_CAPABILITY_KEYS = list(DEFAULT_RECRUITER_CAPABILITIES.keys())
 
@@ -204,6 +206,7 @@ CAPABILITY_TEMPLATES: dict[str, dict[str, bool]] = {
         "employees": True,
         "talent": True,
         "learning": True,
+        "org_config": True,
         "assistant": True,
         "messages": True,
         "announcements": True,
@@ -218,6 +221,7 @@ CAPABILITY_TEMPLATES: dict[str, dict[str, bool]] = {
         "employees": False,
         "talent": False,
         "learning": False,
+        "org_config": False,
         "assistant": True,
         "messages": False,
         "announcements": False,
@@ -232,6 +236,7 @@ CAPABILITY_TEMPLATES: dict[str, dict[str, bool]] = {
         "employees": True,
         "talent": True,
         "learning": True,
+        "org_config": True,
         "assistant": True,
         "messages": True,
         "announcements": True,
@@ -246,6 +251,7 @@ CAPABILITY_TEMPLATES: dict[str, dict[str, bool]] = {
         "employees": True,
         "talent": False,
         "learning": False,
+        "org_config": False,
         "assistant": False,
         "messages": True,
         "announcements": True,
@@ -260,6 +266,7 @@ CAPABILITY_TEMPLATES: dict[str, dict[str, bool]] = {
         "employees": True,
         "talent": True,
         "learning": False,
+        "org_config": False,
         "assistant": False,
         "messages": False,
         "announcements": False,
@@ -688,12 +695,14 @@ async def get_capability_templates(current_user: RequireSuperAdmin):
             "employees": "Employees",
             "talent": "Talent analytics",
             "learning": "Learning",
+            "org_config": "Organization Setup",
             "assistant": "AI assistant",
             "messages": "Messages",
             "announcements": "Announcements",
             "it": "IT & support",
             "reporting": "Activity & reporting",
             "profile": "Profile",
+            "support": "Support",
         },
     }
 
@@ -710,20 +719,7 @@ async def list_orgs(
     """List all organizations (companies) the product has been sold to."""
     result = await list_organizations(status=status, page=page, page_size=page_size)
     result["modules"] = ORG_MODULE_KEYS
-    result["labels"] = {
-        "overview": "Overview dashboard",
-        "candidates": "Candidates",
-        "invite": "Invite & offer",
-        "employees": "Employees",
-        "talent": "Talent analytics",
-        "learning": "Learning",
-        "assistant": "AI assistant",
-        "messages": "Messages",
-        "announcements": "Announcements",
-        "it": "IT & support",
-        "reporting": "Activity & reporting",
-        "profile": "Profile",
-    }
+    result["labels"] = {**ORG_MODULE_LABELS}
     return result
 
 

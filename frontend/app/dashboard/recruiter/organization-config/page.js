@@ -18,12 +18,12 @@ export default function OrganizationConfigPage() {
   }, []);
 
   return (
-    <ProtectedRecruiterRoute requiredCapability="learning">
+    <ProtectedRecruiterRoute requiredCapability="org_config">
       <RecruiterShell
         activeKey="organization-config"
-        capability="learning"
-        title="Organization Configuration"
-        subtitle="Configure organization structure, departments, and hierarchy"
+        capability="org_config"
+        title="Organization Setup"
+        subtitle="Departments, roles, skills, roadmaps, promotion rules, and career tracks"
       >
         <OrgFrameworkTab />
       </RecruiterShell>

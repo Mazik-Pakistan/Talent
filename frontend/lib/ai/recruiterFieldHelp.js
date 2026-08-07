@@ -181,7 +181,7 @@ export const RECRUITER_PAGE_HELP = {
   candidates: "Work the pipeline: remind stalled onboarding → review docs/offers → activate signed offers.",
   employees: "Directory, career events, and incomplete profiles — open a person for day-1 and learning.",
   learning: "Browse courses, assign to people, track progress, and verify certificates.",
-  talent: "Org metrics, talent search, and internal opportunities.",
+  talent: "Talent Intelligence Center — dashboard, org drill-down, pipeline, and opportunities.",
   announcements: "Publish targeted updates to candidates and/or employees.",
   messages: "Employee inbox — reply to HR threads; each reply also emails the employee.",
   activity: "Live audit of invitations, offers, activations, and related actions.",
@@ -234,9 +234,9 @@ export const RECRUITER_PAGE_SUMMARIES = {
     why: "Closes skill gaps and keeps mandatory training on schedule.",
   },
   talent: {
-    title: "Talent insights",
-    what: "Review org metrics, search internal talent, and post opportunities.",
-    why: "Finds the right people inside before hiring outside.",
+    title: "Talent Intelligence Center",
+    what: "Overview drills org → department → role, plus employees, promotion pipeline, and internal opportunities.",
+    why: "Finds and develops the right people inside before hiring outside.",
   },
   announcements: {
     title: "Announcements",
@@ -309,20 +309,56 @@ export const LEARNING_TAB_HELP = {
 };
 
 export const TALENT_TAB_HELP = {
-  metrics: {
-    title: "Talent metrics",
-    hint: "Review headcount, promotion readiness, and high-potential people — open a profile to act.",
-    fields: ["department"],
+  dashboard: {
+    title: "Talent overview",
+    hint: "Filter by department or role from Organization Framework. Click KPI cards to open matching people or structure breakdowns.",
+    fields: ["department", "role", "focus"],
   },
-  search: {
-    title: "Talent search",
-    hint: "Filter by skills, certs, progress, and competency to find the right internal talent.",
-    fields: ["q", "department", "skillsInput", "certsInput", "minProgress", "minExperience", "minCompetency", "semantic"],
+  organization: {
+    title: "Department / role drill-down",
+    hint: "Department and role stats within Overview. Structure is configured in Organization Setup (sidebar).",
+    fields: ["department", "role"],
+  },
+  employees: {
+    title: "Employees directory",
+    hint: "Filter by department, role, high potential, and promotion readiness, then open a talent profile.",
+    fields: ["q", "department", "role", "promoBucket"],
+  },
+  profile: {
+    title: "Employee talent profile",
+    hint: "Review skills, learning, career readiness, and development plan for one employee.",
+    fields: ["technical", "leadership", "communication", "collaboration", "problem_solving", "innovation"],
+  },
+  pipeline: {
+    title: "Promotion pipeline",
+    hint: "Track Ready / Almost / Behind readiness and assign target career levels.",
+    fields: ["employee_id", "target_level_id", "target_date"],
   },
   opportunities: {
     title: "Internal opportunities",
     hint: "Post internal roles/projects, then review applicants and close when filled.",
     fields: ["title", "type", "department", "description", "required_skills", "location", "commitment"],
+  },
+  // Legacy keys (old ?tab= deep links)
+  overview: {
+    title: "Talent overview",
+    hint: "Whole-organization KPIs. Select a department, then a role, to drill into people and readiness.",
+    fields: [],
+  },
+  "career-paths": {
+    title: "Employees directory",
+    hint: "Filter by department, role, high potential, and promotion readiness, then open a talent profile.",
+    fields: ["q", "department"],
+  },
+  "promotion-readiness": {
+    title: "Promotion pipeline",
+    hint: "Track Ready / Almost / Behind readiness and assign target career levels.",
+    fields: ["employee_id", "target_level_id", "target_date"],
+  },
+  search: {
+    title: "Employees directory",
+    hint: "Filter by department, role, high potential, and promotion readiness, then open a talent profile.",
+    fields: ["q", "department"],
   },
 };
 

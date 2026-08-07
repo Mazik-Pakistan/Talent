@@ -48,14 +48,20 @@ export async function getAchievements(accessToken) {
 
 export async function browseOpportunities(accessToken, params = {}, { force = false } = {}) {
   const key = CacheKeys.opportunities;
-  // Only cache the default recruiter list; filtered/search queries bypass cache.
-  const useCache = !params.q && (params.status === "all" || params.status === "open" || !params.status);
+  // Only cache the default first-page list; search / filters / later pages skip cache.
+  const page = params.page == null || params.page === 1;
+  const useCache =
+    page &&
+    !params.q &&
+    !params.department &&
+    !params.type &&
+    (params.status === "all" || params.status === "open" || !params.status);
   if (!useCache) {
     const { data } = await client.get("/api/talent/opportunities", { ...auth(accessToken), params });
     return data;
   }
   const { data } = await cachedFetch(
-    `${key}:${params.status || "open"}`,
+    `${key}:${params.status || "open"}:p${params.page || 1}:s${params.page_size || 20}`,
     async () => {
       const res = await client.get("/api/talent/opportunities", { ...auth(accessToken), params });
       return res.data;
