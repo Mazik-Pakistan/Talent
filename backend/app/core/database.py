@@ -11,14 +11,12 @@ database: AsyncIOMotorDatabase = mongo_client[settings.DATABASE_NAME]
 async def with_transaction(callback):
     session = await mongo_client.start_session()
     try:
-        await session.start_transaction()
-        await callback(session)
-        await session.commit_transaction()
+        async with session.start_transaction():
+            await callback(session)
     except OperationFailure:
-        await session.abort_transaction()
         raise
     finally:
-        await session.end_session()
+        session.end_session()
 
 
 async def try_transaction(callback):
