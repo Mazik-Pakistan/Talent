@@ -1525,5 +1525,263 @@
 
 @media (prefers-reduced-motion: reduce) {
   .tabBtn, .resultCard, .cfLevelCard, .deptCard { transition: none !important; }
-  .resultCard:hover, .cfLevelCard:hover, .deptCard:hover { transform: none !important; }
+  .tabActive:hover, .resultCard:hover, .cfLevelCard:hover, .deptCard:hover { transform: none !important; }
+}
+
+/* ── Promotion Path ─────────────────────────────────────────────────────────── */
+.promoHero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--blue-lighter), #fff 55%);
+  box-shadow: var(--shadow-sm);
+}
+.promoHeroMain { flex: 1; min-width: 220px; }
+.promoHeroTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 750;
+  color: var(--navy);
+  font-family: 'Sora', system-ui, sans-serif;
+}
+.promoHeroSub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.promoPathRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--navy);
+}
+.promoPathRole {
+  padding: 5px 12px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.promoPathArrow { color: var(--text-faint); }
+.promoMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  align-items: center;
+}
+.promoMetaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.promoMetaItem svg { width: 13px; height: 13px; }
+
+.promoProgressWrap {
+  width: 100%;
+  margin-top: 12px;
+}
+.promoProgressLabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+.promoProgressTrack {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--border-soft);
+  overflow: hidden;
+}
+.promoProgressFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--blue), var(--blue-strong));
+  transition: width .3s var(--ease);
+}
+.promoProgressFill.green { background: linear-gradient(90deg, #22c55e, #16a34a); }
+.promoProgressFill.orange { background: linear-gradient(90deg, #f59e0b, #d97706); }
+.promoProgressFill.red { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
+.promoStatusChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.promoStatusReady { background: #dcfce7; color: #166534; }
+.promoStatusOnTrack { background: #dbeafe; color: #1e40af; }
+.promoStatusAtRisk { background: #ffedd5; color: #9a3412; }
+.promoStatusNoPath { background: #f1f5f9; color: #64748b; }
+.promoStatusPaused { background: #f1f5f9; color: #64748b; }
+
+.promoChecklistGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 980px) {
+  .promoChecklistGrid { grid-template-columns: 1fr; }
+}
+.promoChecklistCard {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.promoChecklistHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  background: linear-gradient(180deg, #f8fafc, #fff);
+}
+.promoChecklistTitle {
+  font-size: 12.5px;
+  font-weight: 750;
+  color: var(--navy);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.promoChecklistTitle svg { width: 14px; height: 14px; color: var(--text-faint); }
+.promoChecklistCount {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--blue-lighter);
+  color: var(--navy-2);
+}
+.promoChecklistBody { padding: 8px 10px; }
+.promoChecklistRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 6px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 12.5px;
+}
+.promoChecklistRow:last-child { border-bottom: none; }
+.promoChecklistName {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.promoChecklistStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.promoStatusDone { background: #dcfce7; color: #166534; }
+.promoStatusInProgress { background: #fef9c3; color: #854d0e; }
+.promoStatusMissing { background: #fee2e2; color: #991b1b; }
+
+.promoContext {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 720px) {
+  .promoContext { grid-template-columns: 1fr; }
+}
+.promoContextCard {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.promoContextTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--navy-2);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 8px;
+}
+.promoContextRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  padding: 5px 0;
+}
+.promoContextRow span:last-child {
+  font-weight: 700;
+  color: var(--navy);
+}
+.promoEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 48px 24px;
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fff, #fbfcfe);
+}
+.promoEmptyIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--blue-light);
+  color: var(--blue-strong);
+  margin-bottom: 6px;
+}
+.promoEmptyIcon svg { width: 22px; height: 22px; }
+.promoEmptyTitle {
+  font-size: 14px;
+  font-weight: 750;
+  color: var(--navy);
+  font-family: 'Sora', system-ui, sans-serif;
+}
+.promoEmptyHint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 440px;
+}
+.promoEmptyActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
