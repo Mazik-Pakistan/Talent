@@ -135,24 +135,43 @@ export function getAccessibleModules() {
   // For recruiters, also check capabilities
   if (user?.role === "recruiter") {
     const capabilities = getStoredCapabilities();
+    if (!Object.keys(capabilities).length) {
+      return {
+        overview: false,
+        candidates: false,
+        invite: false,
+        employees: false,
+        talent: false,
+        learning: false,
+        assistant: false,
+        messages: false,
+        announcements: false,
+        it: false,
+        reporting: false,
+        profile: false,
+        recruitment: false,
+        documents: false,
+        onboarding: false,
+        ai: false,
+      };
+    }
     return {
-      overview: capabilities.overview !== false,
-      candidates: capabilities.candidates !== false,
-      invite: capabilities.invite !== false,
-      employees: capabilities.employees !== false,
-      talent: capabilities.talent !== false,
-      learning: baseModules.learning && capabilities.learning !== false,
-      assistant: capabilities.assistant !== false,
-      messages: capabilities.messages !== false,
-      announcements: capabilities.announcements !== false,
-      it: capabilities.it !== false,
-      reporting: baseModules.reporting && capabilities.reporting !== false,
-      profile: baseModules.profile && capabilities.profile !== false,
-      // legacy aliases
-      recruitment: capabilities.candidates !== false || capabilities.overview !== false,
-      documents: capabilities.candidates !== false,
-      onboarding: baseModules.onboarding && capabilities.employees !== false,
-      ai: baseModules.ai && capabilities.assistant !== false,
+      overview: capabilities.overview === true,
+      candidates: capabilities.candidates === true,
+      invite: capabilities.invite === true,
+      employees: capabilities.employees === true,
+      talent: capabilities.talent === true,
+      learning: baseModules.learning && capabilities.learning === true,
+      assistant: capabilities.assistant === true,
+      messages: capabilities.messages === true,
+      announcements: capabilities.announcements === true,
+      it: capabilities.it === true,
+      reporting: baseModules.reporting && capabilities.reporting === true,
+      profile: baseModules.profile && capabilities.profile === true,
+      recruitment: capabilities.candidates === true || capabilities.overview === true,
+      documents: capabilities.candidates === true,
+      onboarding: baseModules.onboarding && capabilities.employees === true,
+      ai: baseModules.ai && capabilities.assistant === true,
     };
   }
   
