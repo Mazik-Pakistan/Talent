@@ -76,7 +76,10 @@ export async function deleteCareerLevel(accessToken, levelId) {
 // ─── Employee Career Assignment ─────────────────────────────────────────────
 
 export async function assignEmployeeCareer(accessToken, employeeId, payload) {
-  const { data } = await client.post(`/api/career-framework/employees/${employeeId}/assign`, payload, auth(accessToken));
+  const { data } = await client.post(`/api/career-framework/employees/${employeeId}/assign`, {
+    employee_id: employeeId,
+    ...payload,
+  }, auth(accessToken));
   return data;
 }
 
