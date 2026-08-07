@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -104,7 +104,7 @@ import {
 
 const TABS = [
   { key: "catalog", label: "Course Catalog", icon: Compass },
-  { key: "managed", label: "LinkedIn Learning", icon: BookOpen },
+  { key: "managed", label: "Managed Learning", icon: BookOpen },
   { key: "knowledge", label: "Knowledge Base", icon: Library },
   { key: "assign", label: "Assign Courses", icon: UserCheck },
   { key: "assignments", label: "Track Progress", icon: ListChecks },
@@ -114,34 +114,92 @@ const TABS = [
   { key: "promotion-readiness", label: "Promotion Readiness", icon: TrendingUp },
 ];
 
-const CATALOG_SOURCES = [
-  {
-    key: "managed_learning",
-    label: "LinkedIn Learning",
-    hint: "Managed roadmap courses imported from LinkedIn Learning and other configured providers.",
-  },
+const STATIC_CATALOG_SOURCES = [
   {
     key: "microsoft_learn",
     label: "Microsoft Courses",
     hint: "Technical learning paths, modules, and certifications from Microsoft Learn (English).",
+    type: "external",
   },
   {
     key: "coursera",
     label: "Coursera Courses",
-    hint: "Industry soft-skills courses from Coursera (English only) — communication, leadership, and more.",
+    hint: "Industry soft-skills courses from Coursera (English only) â€” communication, leadership, and more.",
+    type: "external",
   },
 ];
+const EXCLUDED_PROVIDER_TABS = new Set(["Microsoft Learn", "Coursera"]);
+const LEARNING_PROVIDERS_UPDATED_EVENT = "learning-providers-updated";
+const LEARNING_PROVIDERS_UPDATED_STORAGE_KEY = "learning-providers-updated-at";
+const MANAGED_PROVIDER_REGISTRY_KEY = "talent-managed-learning-providers";
+
+function normalizeManagedProviderTabs(providerValues) {
+  const seen = new Set();
+  const providers = [];
+  for (const raw of providerValues || []) {
+    const name = String(raw || "").trim();
+    if (!name || EXCLUDED_PROVIDER_TABS.has(name)) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    providers.push(name);
+  }
+  if (providers.length > 1) {
+    return providers.filter((name) => name.toLowerCase() !== "managed learning");
+  }
+  return providers;
+}
+
+function readManagedProviderRegistry() {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(MANAGED_PROVIDER_REGISTRY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeManagedProviderRegistry(providerValues) {
+  if (typeof window === "undefined") return;
+  try {
+    const normalized = normalizeManagedProviderTabs(providerValues);
+    window.localStorage.setItem(MANAGED_PROVIDER_REGISTRY_KEY, JSON.stringify(normalized));
+  } catch {
+    // Ignore storage write failures.
+  }
+}
 
 function sourceLabel(source) {
-  if (source === "managed_learning") return "LinkedIn Learning";
+  if (source.startsWith("provider:")) return source.split(":")[1];
   if (source === "coursera") return "Coursera";
-  return "Microsoft";
+  if (source === "microsoft_learn") return "Microsoft";
+  return "Courses";
 }
 
 function sourceBadgeClass(source) {
-  if (source === "managed_learning") return styles.sourceBadgeRecruiter;
+  if (source.startsWith("provider:")) return styles.sourceBadgeRecruiter;
   if (source === "coursera") return styles.sourceBadgeCoursera;
   return "";
+}
+
+function courseDisplayLabel(course, fallbackSource) {
+  const source = String(course?.source || fallbackSource || "");
+  if (source === "managed_learning" || source.startsWith("provider:")) {
+    return course?.provider || (source.startsWith("provider:") ? source.split(":")[1] : "Managed Learning");
+  }
+  if (source === "coursera") return "Coursera";
+  if (source === "microsoft_learn") return "Microsoft";
+  return sourceLabel(source);
+}
+
+function courseBadgeClass(course, fallbackSource) {
+  const source = String(course?.source || fallbackSource || "");
+  if (source === "managed_learning" || source.startsWith("provider:")) {
+    return styles.sourceBadgeRecruiter;
+  }
+  return sourceBadgeClass(source);
 }
 
 function LearningPageContent() {
@@ -165,7 +223,7 @@ function LearningPageContent() {
   function handleAssignFromCatalog(course, source) {
     setPendingAssign({ course, source: course?.source || source || "microsoft_learn" });
     setTab("assign");
-    toast.info(`Selected “${course.title}” — choose who should take it.`);
+    toast.info(`Selected â€œ${course.title}â€ â€” choose who should take it.`);
   }
 
   const clearPendingAssign = useCallback(() => {
@@ -241,9 +299,11 @@ export default function RecruiterLearningPage() {
 }
 
 function CatalogTab({ onAssignCourse }) {
-  const [source, setSource] = useState("managed_learning");
+  const [source, setSource] = useState("microsoft_learn");
   const [q, setQ] = useState("");
   const [facets, setFacets] = useState({ roles: [], levels: [], products: [], providers: [], designations: [], months: [], categories: [], competencies: [] });
+  const [providers, setProviders] = useState([]);
+  const [dynamicSources, setDynamicSources] = useState(STATIC_CATALOG_SOURCES);
   const [role, setRole] = useState("");
   const [level, setLevel] = useState("");
   const [type, setType] = useState("");
@@ -256,6 +316,64 @@ function CatalogTab({ onAssignCourse }) {
   const [page, setPage] = useState(1);
   const [result, setResult] = useState({ courses: [], total: 0, pages: 1 });
   const [loading, setLoading] = useState(true);
+  const initializedProvidersRef = useRef(false);
+
+  const loadManagedProviders = useCallback(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return Promise.resolve();
+    return getManagedFacets(token)
+      .then((data) => {
+        const providerList = normalizeManagedProviderTabs([
+          ...(data?.providers || []),
+          ...readManagedProviderRegistry(),
+        ]);
+        setProviders(providerList);
+        writeManagedProviderRegistry(providerList);
+        // Build dynamic sources with provider tabs first, then external sources
+        const providerSources = providerList.map((prov) => ({
+          key: `provider:${prov}`,
+          label: prov,
+          hint: `Managed roadmap courses from ${prov}.`,
+          type: "managed",
+          providerName: prov,
+        }));
+        setDynamicSources([...providerSources, ...STATIC_CATALOG_SOURCES]);
+        setSource((current) => {
+          if (current.startsWith("provider:")) {
+            const currentProvider = current.split(":")[1];
+            if (providerList.length && !providerList.includes(currentProvider)) {
+              return `provider:${providerList[0]}`;
+            }
+            return current;
+          }
+          if (!initializedProvidersRef.current && providerList.length) {
+            return `provider:${providerList[0]}`;
+          }
+          return current;
+        });
+        initializedProvidersRef.current = true;
+      })
+      .catch(() => setDynamicSources(STATIC_CATALOG_SOURCES));
+  }, []);
+
+  // Keep provider tabs current when Excel imports or provider changes happen elsewhere.
+  useEffect(() => {
+    loadManagedProviders();
+    const onProvidersChanged = () => {
+      loadManagedProviders().then(() => load());
+    };
+    const onStorage = (event) => {
+      if (event.key === LEARNING_PROVIDERS_UPDATED_STORAGE_KEY) {
+        loadManagedProviders().then(() => load());
+      }
+    };
+    window.addEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onProvidersChanged);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onProvidersChanged);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [loadManagedProviders]);
 
   function switchSource(nextSource) {
     if (nextSource === source) return;
@@ -271,31 +389,41 @@ function CatalogTab({ onAssignCourse }) {
     setArchivedOnly(false);
     setQ("");
     setPage(1);
+    // Auto-set provider filter if switching to a provider source
+    if (nextSource.startsWith("provider:")) {
+      setProvider(nextSource.split(":")[1]);
+    }
   }
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
-    const loader = source === "managed_learning" ? getManagedFacets : getCatalogFacets;
-    loader(token, source).then(setFacets).catch(() => {});
+    const isManagedProvider = source.startsWith("provider:");
+    const loader = isManagedProvider ? getManagedFacets : getCatalogFacets;
+    loader(token, isManagedProvider ? "managed_learning" : source)
+      .then(setFacets)
+      .catch(() => {});
   }, [source]);
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
+    const isManagedProvider = source.startsWith("provider:");
+    const actualSource = isManagedProvider ? "managed_learning" : source;
+    const selectedProvider = isManagedProvider ? source.split(":")[1] : "";
     browseCatalog(token, {
       q: q || undefined,
-      role: source === "microsoft_learn" ? role || undefined : undefined,
-      level: source === "microsoft_learn" ? level || undefined : undefined,
-      type: source === "microsoft_learn" ? type || undefined : undefined,
-      provider: source === "managed_learning" ? provider || undefined : undefined,
-      designation: source === "managed_learning" ? designation || undefined : undefined,
-      learning_month: source === "managed_learning" ? learningMonth || undefined : undefined,
-      category: source === "managed_learning" ? category || undefined : source === "coursera" ? category || undefined : undefined,
-      competency: source === "managed_learning" ? competency || undefined : undefined,
-      archived: source === "managed_learning" ? (archivedOnly ? true : undefined) : undefined,
-      source,
+      role: actualSource === "microsoft_learn" ? role || undefined : undefined,
+      level: actualSource === "microsoft_learn" ? level || undefined : undefined,
+      type: actualSource === "microsoft_learn" ? type || undefined : undefined,
+      provider: actualSource === "managed_learning" ? (selectedProvider || provider || undefined) : undefined,
+      designation: actualSource === "managed_learning" ? designation || undefined : undefined,
+      learning_month: actualSource === "managed_learning" ? learningMonth || undefined : undefined,
+      category: actualSource === "managed_learning" || actualSource === "coursera" ? category || undefined : undefined,
+      competency: actualSource === "managed_learning" ? competency || undefined : undefined,
+      archived: isManagedProvider ? (archivedOnly ? true : undefined) : undefined,
+      source: actualSource,
       page,
       page_size: 12,
     })
@@ -312,7 +440,8 @@ function CatalogTab({ onAssignCourse }) {
     return () => clearTimeout(timer);
   }, [load]);
 
-  const activeSource = CATALOG_SOURCES.find((s) => s.key === source) || CATALOG_SOURCES[0];
+  const activeSource = dynamicSources.find((s) => s.key === source) || dynamicSources[0];
+  const isManagedProvider = source.startsWith("provider:");
 
   return (
     <div className={shellStyles.section}>
@@ -333,7 +462,7 @@ function CatalogTab({ onAssignCourse }) {
       </div>
       <div className={shellStyles.sectionBody}>
         <div className={styles.sourceToggle} role="tablist" aria-label="Course source">
-          {CATALOG_SOURCES.map((s) => (
+          {dynamicSources.map((s) => (
             <button
               key={s.key}
               type="button"
@@ -356,16 +485,41 @@ function CatalogTab({ onAssignCourse }) {
               className={styles.searchFieldInput}
               aria-label="Search courses"
               placeholder={
-                source === "managed_learning"
-                  ? "Search roadmap courses, designations, competency, or provider…"
+                isManagedProvider
+                  ? `Search ${provider} courses, designations, competencyâ€¦`
                   : source === "coursera"
-                  ? "Search soft skills, e.g. negotiation, leadership…"
-                  : "Search Microsoft courses by title or skill…"
+                  ? "Search soft skills, e.g. negotiation, leadershipâ€¦"
+                  : "Search Microsoft courses by title or skillâ€¦"
               }
               value={q}
               onChange={(e) => { setPage(1); setQ(e.target.value); }}
             />
           </div>
+          {isManagedProvider && (
+            <>
+              <select className={styles.filterSelect} value={designation} onChange={(e) => { setPage(1); setDesignation(e.target.value); }}>
+                <option value="">All designations</option>
+                {(facets.designations || []).map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <select className={styles.filterSelect} value={learningMonth} onChange={(e) => { setPage(1); setLearningMonth(e.target.value); }}>
+                <option value="">All months</option>
+                {(facets.months || []).map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <select className={styles.filterSelect} value={category} onChange={(e) => { setPage(1); setCategory(e.target.value); }}>
+                <option value="">All categories</option>
+                {(facets.categories || []).map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <select className={styles.filterSelect} value={competency} onChange={(e) => { setPage(1); setCompetency(e.target.value); }}>
+                <option value="">All competencies</option>
+                {(facets.competencies || []).map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <label className={styles.checkPill}>
+                <input type="checkbox" checked={archivedOnly} onChange={(e) => { setPage(1); setArchivedOnly(e.target.checked); }} />
+                <Archive aria-hidden="true" />
+                Show archived
+              </label>
+            </>
+          )}
           {source === "managed_learning" && (
             <>
               <select className={styles.filterSelect} value={provider} onChange={(e) => { setPage(1); setProvider(e.target.value); }}>
@@ -430,8 +584,8 @@ function CatalogTab({ onAssignCourse }) {
           {(result.courses || []).map((c) => (
             <div key={c.uid} className={styles.courseCard}>
               <div className={styles.courseCardHead}>
-                <span className={`${styles.sourceBadge} ${sourceBadgeClass(c.source || source)}`}>
-                  {sourceLabel(c.source || source)}
+                <span className={`${styles.sourceBadge} ${courseBadgeClass(c, source)}`}>
+                  {courseDisplayLabel(c, source)}
                 </span>
               </div>
               <div className={styles.courseTitle}>{c.title}</div>
@@ -439,17 +593,17 @@ function CatalogTab({ onAssignCourse }) {
                 {source === "managed_learning" ? (
                   <>
                     <span className={styles.metaChip}>
-                      <Building2 aria-hidden="true" />{c.provider || "LinkedIn Learning"}
+                      <Building2 aria-hidden="true" />{c.provider || "Managed Learning"}
                     </span>
                     <span className={styles.metaChip}>
-                      <Clock aria-hidden="true" />{c.duration_minutes || "—"} min
+                      <Clock aria-hidden="true" />{c.duration_minutes || "â€”"} min
                     </span>
                   </>
                 ) : (
                   <>
                     <span className={styles.metaChip}>{c.type || "course"}</span>
                     <span className={styles.metaChip}>
-                      <Clock aria-hidden="true" />{c.duration_minutes || "—"} min
+                      <Clock aria-hidden="true" />{c.duration_minutes || "â€”"} min
                     </span>
                     {(c.levels || [])[0] || c.category ? (
                       <span className={styles.metaChip}>
@@ -461,7 +615,7 @@ function CatalogTab({ onAssignCourse }) {
               </div>
               <p className={styles.courseSummary}>
                 {source === "managed_learning"
-                  ? [c.designation, c.learning_month, c.category, c.competency].filter(Boolean).join(" · ") || (c.summary || "").slice(0, 140)
+                  ? [c.designation, c.learning_month, c.category, c.competency].filter(Boolean).join(" Â· ") || (c.summary || "").slice(0, 140)
                   : (c.summary || "").slice(0, 140)}
               </p>
               <div className={styles.courseActions}>
@@ -575,7 +729,7 @@ function KnowledgeBaseTab() {
         difficulty: "Intermediate",
         priority: "medium",
       });
-      toast.success("Certification added — it will appear in the course catalog.");
+      toast.success("Certification added â€” it will appear in the course catalog.");
       load();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not create certification."));
@@ -616,7 +770,7 @@ function KnowledgeBaseTab() {
             </label>
             <div className={styles.formActions}>
               <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                <Plus aria-hidden="true" /> {saving ? "Adding…" : "Add role"}
+                <Plus aria-hidden="true" /> {saving ? "Addingâ€¦" : "Add role"}
               </button>
             </div>
           </form>
@@ -670,7 +824,7 @@ function KnowledgeBaseTab() {
             <span className={`${shellStyles.bar} ${shellStyles.green}`} />
             <div>
               <div className={shellStyles.sectionTitle}>Certifications &amp; courses</div>
-              <p className={shellStyles.sectionDesc}>Shown in employee catalog as LinkedIn Learning</p>
+              <p className={shellStyles.sectionDesc}>Shown in the employee catalog as a managed-learning course</p>
             </div>
           </div>
         </div>
@@ -686,7 +840,7 @@ function KnowledgeBaseTab() {
             </label>
             <label className={styles.fieldLabel}>
               Official URL
-              <input placeholder="https://learn.microsoft.com/…" value={certForm.official_url} onChange={(e) => setCertForm((f) => ({ ...f, official_url: e.target.value }))} />
+              <input placeholder="https://learn.microsoft.com/â€¦" value={certForm.official_url} onChange={(e) => setCertForm((f) => ({ ...f, official_url: e.target.value }))} />
             </label>
             <label className={styles.fieldLabel}>
               Skills covered
@@ -716,7 +870,7 @@ function KnowledgeBaseTab() {
             </label>
             <div className={styles.formActions}>
               <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                <Plus aria-hidden="true" /> {saving ? "Adding…" : "Add certification"}
+                <Plus aria-hidden="true" /> {saving ? "Addingâ€¦" : "Add certification"}
               </button>
             </div>
           </form>
@@ -805,12 +959,20 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
+    const isManagedProvider = source.startsWith("provider:");
+    const actualSource = isManagedProvider ? "managed_learning" : source;
+    const selectedProvider = isManagedProvider ? source.split(":")[1] : "";
     const timer = setTimeout(() => {
       if (!q.trim()) { setCourses([]); return; }
-      browseCatalog(token, { q, source, page_size: 10 }).then((data) => setCourses(data.courses || [])).catch(() => {});
+      browseCatalog(token, {
+        q,
+        source: actualSource,
+        provider: actualSource === "managed_learning" ? (selectedProvider || provider || undefined) : undefined,
+        page_size: 10,
+      }).then((data) => setCourses(data.courses || [])).catch(() => {});
     }, 300);
     return () => clearTimeout(timer);
-  }, [q, source]);
+  }, [q, source, provider]);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -878,7 +1040,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       const assignedCount = result.assigned?.length || 0;
       const skippedCount = result.skipped?.length || 0;
       toast.success(
-        `Assigned to ${assignedCount} employee(s)${result.due_date ? ` · due ${result.due_date}` : ""}.`
+        `Assigned to ${assignedCount} employee(s)${result.due_date ? ` Â· due ${result.due_date}` : ""}.`
       );
       if (skippedCount) toast.warn(`${skippedCount} skipped (already assigned).`);
       if (result.errors?.length) toast.warn(`${result.errors.length} could not be assigned.`);
@@ -894,8 +1056,10 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
 
   const courseSource = selectedCourse?.source || source;
   const audienceReady = Boolean(selectedCourse);
+  const selectedCourseLabel = courseDisplayLabel(selectedCourse, courseSource);
+  const selectedCourseBadgeClass = courseBadgeClass(selectedCourse, courseSource);
   const assignLabel = submitting
-    ? "Assigning…"
+    ? "Assigningâ€¦"
     : assignMode === "employees"
       ? `Assign to ${selectedIds.length} employee${selectedIds.length === 1 ? "" : "s"}`
       : `Assign to ${employees.length} matching employee${employees.length === 1 ? "" : "s"}`;
@@ -935,14 +1099,14 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
         {selectedCourse ? (
           <div className={styles.assignCourseHero}>
             <div className={styles.assignCourseHeroMain}>
-              <span className={`${styles.sourceBadge} ${sourceBadgeClass(courseSource)}`}>
-                {sourceLabel(courseSource)}
+              <span className={`${styles.sourceBadge} ${selectedCourseBadgeClass}`}>
+                {selectedCourseLabel}
               </span>
               <h3 className={styles.assignCourseHeroTitle}>{selectedCourse.title}</h3>
               <div className={styles.assignCourseHeroMeta}>
                 <span className={styles.metaChip}>{selectedCourse.type || "course"}</span>
                 <span className={styles.metaChip}>
-                  <Clock aria-hidden="true" />{selectedCourse.duration_minutes || "—"} min
+                  <Clock aria-hidden="true" />{selectedCourse.duration_minutes || "â€”"} min
                 </span>
                 {(selectedCourse.levels || [])[0] || selectedCourse.category ? (
                   <span className={styles.metaChip}>
@@ -953,7 +1117,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               {selectedCourse.summary && (
                 <p className={styles.assignCourseHeroSummary}>
                   {String(selectedCourse.summary).slice(0, 180)}
-                  {String(selectedCourse.summary).length > 180 ? "…" : ""}
+                  {String(selectedCourse.summary).length > 180 ? "â€¦" : ""}
                 </p>
               )}
             </div>
@@ -972,9 +1136,9 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
           <div className={styles.assignPanel}>
             <div className={styles.assignPanelHead}>
               <div>
-                <div className={styles.assignPanelTitle}>1 · Select a course</div>
+                <div className={styles.assignPanelTitle}>1 Â· Select a course</div>
                 <p className={styles.assignPanelDesc}>
-                  Search below, or use Course Catalog → Assign to employees.
+                  Search below, or use Course Catalog â†’ Assign to employees.
                 </p>
               </div>
             </div>
@@ -1003,10 +1167,10 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                 aria-label="Search courses"
                 placeholder={
                   source === "coursera"
-                    ? "Search soft skills, e.g. negotiation, leadership…"
+                    ? "Search soft skills, e.g. negotiation, leadershipâ€¦"
                     : source === "managed_learning"
-                      ? "Search roadmap courses…"
-                      : "Search Microsoft courses…"
+                      ? "Search roadmap coursesâ€¦"
+                      : "Search Microsoft coursesâ€¦"
                 }
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -1021,11 +1185,11 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   onClick={() => setSelectedCourse(c)}
                 >
                   <div>
-                    <div className={styles.pickerRowTitle}>{c.title}</div>
-                    <div className={styles.pickerRowMeta}>
-                      <span className={styles.metaChip}>{sourceLabel(c.source || source)}</span>
+                  <div className={styles.pickerRowTitle}>{c.title}</div>
+                  <div className={styles.pickerRowMeta}>
+                      <span className={styles.metaChip}>{courseDisplayLabel(c, source)}</span>
                       <span className={styles.metaChip}>{c.type}</span>
-                      <span className={styles.metaChip}><Clock aria-hidden="true" />{c.duration_minutes || "—"} min</span>
+                      <span className={styles.metaChip}><Clock aria-hidden="true" />{c.duration_minutes || "â€”"} min</span>
                       {(c.levels || [])[0] || c.category ? <span className={styles.metaChip}>{(c.levels || [])[0] || c.category}</span> : null}
                     </div>
                   </div>
@@ -1036,7 +1200,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               ))}
               {q.trim() && courses.length === 0 && (
                 <div className={styles.assignEmpty}>
-                  No matches — try a different search term.
+                  No matches â€” try a different search term.
                 </div>
               )}
               {!q.trim() && (
@@ -1052,7 +1216,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
           <div className={styles.assignPanel}>
             <div className={styles.assignPanelHead}>
               <div>
-                <div className={styles.assignPanelTitle}>2 · Choose audience</div>
+                <div className={styles.assignPanelTitle}>2 Â· Choose audience</div>
                 <p className={styles.assignPanelDesc}>Employees, department, joining role, or skills.</p>
               </div>
               {assignMode === "employees" && selectedIds.length > 0 && (
@@ -1102,7 +1266,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                       <input
                         className={styles.searchFieldInput}
                         aria-label="Filter employees by name"
-                        placeholder="Filter employees by name…"
+                        placeholder="Filter employees by nameâ€¦"
                         value={empQuery}
                         onChange={(e) => setEmpQuery(e.target.value)}
                       />
@@ -1125,7 +1289,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                             </div>
                             <div>
                               <div className={styles.employeeName}>{emp.full_name}</div>
-                              <div className={styles.employeeMeta}>{emp.job_title || "—"} · {emp.department || "—"}</div>
+                              <div className={styles.employeeMeta}>{emp.job_title || "â€”"} Â· {emp.department || "â€”"}</div>
                             </div>
                           </label>
                         );
@@ -1182,7 +1346,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
           <div className={styles.assignPanel}>
             <div className={styles.assignPanelHead}>
               <div>
-                <div className={styles.assignPanelTitle}>3 · Details &amp; send</div>
+                <div className={styles.assignPanelTitle}>3 Â· Details &amp; send</div>
                 <p className={styles.assignPanelDesc}>Due date, note, and mandatory flag. Notes appear in the assignment email and in-app notification.</p>
               </div>
             </div>
@@ -1283,7 +1447,7 @@ function AssignmentsTab() {
           <div>
             <div className={shellStyles.sectionTitle}>Assigned courses</div>
             <p className={shellStyles.sectionDesc}>
-              Track completion — reminders go by email and notification
+              Track completion â€” reminders go by email and notification
             </p>
           </div>
         </div>
@@ -1326,8 +1490,8 @@ function AssignmentsTab() {
               </div>
               <div className={styles.listMeta}>
                 <span className={styles.metaChip}><Users aria-hidden="true" />{a.employee_name}</span>
-                <span className={styles.metaChip}>{a.job_title || "—"}</span>
-                <span className={styles.metaChip}><Building2 aria-hidden="true" />{a.department || "—"}</span>
+                <span className={styles.metaChip}>{a.job_title || "â€”"}</span>
+                <span className={styles.metaChip}><Building2 aria-hidden="true" />{a.department || "â€”"}</span>
                 {a.due_date ? <span className={styles.metaChip}><Calendar aria-hidden="true" />Due {a.due_date}</span> : null}
               </div>
             </div>
@@ -1340,7 +1504,7 @@ function AssignmentsTab() {
                 onClick={() => handleRemind(a)}
               >
                 {remindingId === a.id ? (
-                  <><RefreshCw aria-hidden="true" className="animate-spin" /> Sending…</>
+                  <><RefreshCw aria-hidden="true" className="animate-spin" /> Sendingâ€¦</>
                 ) : (
                   <><Bell aria-hidden="true" /> Remind</>
                 )}
@@ -1384,7 +1548,7 @@ function CertificatesTab({ selectedCertificateId = null }) {
     const token = localStorage.getItem("access_token");
     try {
       await verifyCertificate(token, id, { approve: true });
-      toast.success("Certificate verified — skill matrix updated via AI.");
+      toast.success("Certificate verified â€” skill matrix updated via AI.");
       load();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not verify certificate."));
@@ -1646,7 +1810,7 @@ function AnalyticsTab() {
 function ManagedLearningTab() {
   const emptyForm = {
     id: "",
-    provider: "LinkedIn Learning",
+    provider: "Managed Learning",
     designation: "",
     learning_month: "",
     category: "",
@@ -1674,6 +1838,9 @@ function ManagedLearningTab() {
   const [preview, setPreview] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [providers, setProviders] = useState([]);
+  const [providerInput, setProviderInput] = useState("");
+  const [providerBusy, setProviderBusy] = useState(false);
   const fileInputRef = useRef(null);
 
   const load = useCallback(() => {
@@ -1690,7 +1857,7 @@ function ManagedLearningTab() {
         competency: competency || undefined,
         archived: showArchived ? true : undefined,
         page: 1,
-        page_size: 200,
+        page_size: 100,
       }),
       getManagedFacets(token),
     ])
@@ -1698,8 +1865,13 @@ function ManagedLearningTab() {
         setCourses(courseData.courses || []);
         setHierarchy(courseData.hierarchy || []);
         setFacets(facetData || { providers: [], designations: [], months: [], categories: [], competencies: [] });
+        const providerList = (facetData?.providers || []).map((item) => item.name ?? item).filter(Boolean);
+        setProviders(providerList);
+        if (!form.provider && providerList.length) {
+          setForm((current) => ({ ...current, provider: providerList[0] }));
+        }
       })
-      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load LinkedIn Learning courses.")))
+      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load managed-learning courses.")))
       .finally(() => setLoading(false));
   }, [q, provider, designation, learningMonth, category, competency, showArchived]);
 
@@ -1715,7 +1887,7 @@ function ManagedLearningTab() {
   function beginEdit(course) {
     setForm({
       id: course.uid?.split(":")[1] || "",
-      provider: course.provider || "LinkedIn Learning",
+      provider: course.provider || "Managed Learning",
       designation: course.designation || "",
       learning_month: course.learning_month || "",
       category: course.category || "",
@@ -1726,7 +1898,7 @@ function ManagedLearningTab() {
       description: course.summary || "",
       archived: Boolean(course.archived),
     });
-    toast.info(`Editing “${course.title}”.`);
+    toast.info(`Editing â€œ${course.title}â€.`);
   }
 
   async function handleSubmit(event) {
@@ -1752,7 +1924,7 @@ function ManagedLearningTab() {
         toast.success("Course updated.");
       } else {
         await createManagedCourse(token, payload);
-        toast.success("Course added to LinkedIn Learning.");
+        toast.success("Course added to managed learning.");
       }
       resetForm();
       load();
@@ -1783,7 +1955,7 @@ function ManagedLearningTab() {
   async function handleDelete(course) {
     const token = localStorage.getItem("access_token");
     if (!token) return;
-    if (!window.confirm(`Delete “${course.title}”? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete â€œ${course.title}â€? This cannot be undone.`)) return;
     try {
       await deleteManagedCourse(token, course.uid.split(":")[1]);
       toast.success("Course deleted.");
@@ -1793,6 +1965,26 @@ function ManagedLearningTab() {
     }
   }
 
+  async function handleAddProvider() {
+    const trimmed = providerInput.trim();
+    if (!trimmed) return;
+    setProviderBusy(true);
+    const providerName = trimmed;
+    setProviders((current) => {
+      const next = current.includes(providerName) ? current : [...current, providerName];
+      writeManagedProviderRegistry(next);
+      return next;
+    });
+    setForm((current) => ({ ...current, provider: providerName }));
+    setProviderInput("");
+    setProviderBusy(false);
+    toast.success(`Provider “${providerName}” added locally.`);
+  }
+
+  function selectedImportProvider() {
+    return form.provider || providerInput.trim() || "Managed Learning";
+  }
+
   async function handlePreviewUpload(file) {
     const token = localStorage.getItem("access_token");
     if (!token || !file) return;
@@ -1800,7 +1992,7 @@ function ManagedLearningTab() {
     setPreview(null);
     setPreviewFile(file);
     try {
-      const data = await previewManagedImport(file, token);
+      const data = await previewManagedImport(file, token, selectedImportProvider());
       setPreview(data);
       toast.success(`Preview ready: ${data.total_rows || 0} rows parsed.`);
     } catch (err) {
@@ -1817,7 +2009,7 @@ function ManagedLearningTab() {
     if (!token || !previewFile) return;
     setSaving(true);
     try {
-      const data = await commitManagedImport(previewFile, token);
+      const data = await commitManagedImport(previewFile, token, selectedImportProvider());
       toast.success(data.message || "Roadmap imported.");
       setPreview(null);
       setPreviewFile(null);
@@ -1835,7 +2027,7 @@ function ManagedLearningTab() {
         <div className={shellStyles.sectionHeadLeft}>
           <span className={`${shellStyles.bar} ${shellStyles.green}`} />
           <div>
-            <div className={shellStyles.sectionTitle}>LinkedIn Learning roadmap</div>
+            <div className={shellStyles.sectionTitle}>Managed learning roadmap</div>
             <p className={shellStyles.sectionDesc}>Import, edit, archive, and delete managed roadmap courses by designation and month.</p>
           </div>
         </div>
@@ -1858,7 +2050,7 @@ function ManagedLearningTab() {
             <input
               className={styles.searchFieldInput}
               aria-label="Search roadmap courses"
-              placeholder="Search roadmap courses…"
+              placeholder="Search roadmap coursesâ€¦"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -1897,7 +2089,7 @@ function ManagedLearningTab() {
                 <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
                 <div>
                   <div className={shellStyles.sectionTitle}>{form.id ? "Edit course" : "Add course"}</div>
-                  <p className={shellStyles.sectionDesc}>Manual course management for LinkedIn Learning and other providers.</p>
+                  <p className={shellStyles.sectionDesc}>Manual course management for managed learning and other providers.</p>
                 </div>
               </div>
             </div>
@@ -1905,7 +2097,19 @@ function ManagedLearningTab() {
               <form className={styles.managedForm} onSubmit={handleSubmit}>
                 <label className={styles.fieldLabel}>
                   Provider
-                  <input placeholder="e.g. LinkedIn Learning" value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))} />
+                  <select value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))}>
+                    <option value="">Select provider</option>
+                    {(providers || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </label>
+                <label className={styles.fieldLabel}>
+                  Add provider
+                  <div className={styles.formActions} style={{ marginTop: 6 }}>
+                    <input placeholder="e.g. Coursera" value={providerInput} onChange={(e) => setProviderInput(e.target.value)} />
+                    <button type="button" className={styles.smallBtn} disabled={providerBusy} onClick={handleAddProvider}>
+                      {providerBusy ? "Addingâ€¦" : "Add"}
+                    </button>
+                  </div>
                 </label>
                 <label className={styles.fieldLabel}>
                   Designation
@@ -1933,7 +2137,7 @@ function ManagedLearningTab() {
                 </label>
                 <label className={`${styles.fieldLabel} ${styles.wide}`}>
                   Course URL
-                  <input placeholder="https://www.linkedin.com/learning/…" value={form.url} onChange={(e) => setForm((current) => ({ ...current, url: e.target.value }))} />
+                  <input placeholder="https://example.com/course" value={form.url} onChange={(e) => setForm((current) => ({ ...current, url: e.target.value }))} />
                 </label>
                 <label className={`${styles.fieldLabel} ${styles.wide}`}>
                   Description
@@ -1946,7 +2150,7 @@ function ManagedLearningTab() {
                 </label>
                 <div className={styles.formActions}>
                   <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                    <Check aria-hidden="true" /> {saving ? "Saving…" : form.id ? "Update course" : "Create course"}
+                    <Check aria-hidden="true" /> {saving ? "Savingâ€¦" : form.id ? "Update course" : "Create course"}
                   </button>
                   <button type="button" className={styles.smallBtn} onClick={resetForm}>
                     <X aria-hidden="true" /> Clear
@@ -1967,6 +2171,13 @@ function ManagedLearningTab() {
               </div>
             </div>
             <div className={shellStyles.sectionBody}>
+              <label className={styles.fieldLabel} style={{ marginBottom: 12 }}>
+                Import provider
+                <select value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))}>
+                  <option value="">Select provider</option>
+                  {(providers || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
               {!preview && (
                 <label className={styles.fileDrop}>
                   <input
@@ -1978,10 +2189,10 @@ function ManagedLearningTab() {
                   />
                   <Upload className={styles.fileDropIcon} aria-hidden="true" />
                   <strong>Choose a spreadsheet</strong>
-                  <span>.xlsx or .csv — parsed and previewed before saving</span>
+                  <span>.xlsx or .csv â€” parsed and previewed before saving</span>
                 </label>
               )}
-              {previewBusy && <p className={styles.inlineNote} style={{ marginTop: 12 }}>Parsing spreadsheet…</p>}
+              {previewBusy && <p className={styles.inlineNote} style={{ marginTop: 12 }}>Parsing spreadsheetâ€¦</p>}
               {preview ? (
                 <div style={{ marginTop: 12 }}>
                   <div className={styles.importStats}>
@@ -1993,14 +2204,14 @@ function ManagedLearningTab() {
                   </div>
                   <div className={styles.formActions}>
                     <button type="button" className={styles.assignCourseBtn} disabled={saving} onClick={handleCommitImport}>
-                      <Check aria-hidden="true" /> {saving ? "Importing…" : "Confirm import"}
+                      <Check aria-hidden="true" /> {saving ? "Importingâ€¦" : "Confirm import"}
                     </button>
                     <button type="button" className={styles.smallBtn} onClick={() => { setPreview(null); setPreviewFile(null); }}>
                       <X aria-hidden="true" /> Clear preview
                     </button>
                   </div>
                   <p className={styles.inlineNote} style={{ marginTop: 10, marginBottom: 0 }}>
-                    {preview.filename || "Uploaded file"} · {preview.rows?.length || 0} preview row(s)
+                    {preview.filename || "Uploaded file"} Â· {preview.rows?.length || 0} preview row(s)
                   </p>
                 </div>
               ) : null}
@@ -2015,7 +2226,7 @@ function ManagedLearningTab() {
                 <span className={`${shellStyles.bar} ${shellStyles.navy}`} />
                 <div>
                   <div className={shellStyles.sectionTitle}>Roadmap hierarchy</div>
-                  <p className={shellStyles.sectionDesc}>Designation → Month → Category → Competency</p>
+                  <p className={shellStyles.sectionDesc}>Designation â†’ Month â†’ Category â†’ Competency</p>
                 </div>
               </div>
             </div>
@@ -2059,7 +2270,7 @@ function ManagedLearningTab() {
           <div className={styles.emptyState}>
             <div className={styles.emptyStateIcon}><BookOpen aria-hidden="true" /></div>
             <div className={styles.emptyStateTitle}>No managed courses</div>
-            <p className={styles.emptyStateHint}>Clear your filters or add a new course to build your LinkedIn Learning roadmap.</p>
+            <p className={styles.emptyStateHint}>Clear your filters or add a new course to build your managed learning roadmap.</p>
           </div>
         )}
 
@@ -2067,16 +2278,16 @@ function ManagedLearningTab() {
           {courses.map((course) => (
             <div key={course.uid} className={styles.courseCard}>
               <div className={styles.courseCardHead}>
-                <span className={`${styles.sourceBadge} ${styles.sourceBadgeRecruiter}`}>{course.provider || "LinkedIn Learning"}</span>
+                <span className={`${styles.sourceBadge} ${styles.sourceBadgeRecruiter}`}>{course.provider || "Managed Learning"}</span>
                 {course.archived ? <span className={styles.statusChip}>Archived</span> : null}
               </div>
               <div className={styles.courseTitle}>{course.title}</div>
               <div className={styles.courseMeta}>
                 {course.designation ? <span className={styles.metaChip}><Briefcase aria-hidden="true" />{course.designation}</span> : null}
                 {course.learning_month ? <span className={styles.metaChip}><Calendar aria-hidden="true" />{course.learning_month}</span> : null}
-                <span className={styles.metaChip}><Clock aria-hidden="true" />{course.duration_minutes || "—"} min</span>
+                <span className={styles.metaChip}><Clock aria-hidden="true" />{course.duration_minutes || "â€”"} min</span>
               </div>
-              <p className={styles.courseSummary}>{[course.category, course.competency, course.summary].filter(Boolean).join(" · ")}</p>
+              <p className={styles.courseSummary}>{[course.category, course.competency, course.summary].filter(Boolean).join(" Â· ")}</p>
               <div className={styles.courseActions}>
                 {course.url && (
                   <a href={course.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
@@ -2101,9 +2312,9 @@ function ManagedLearningTab() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════ //
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• //
 // Career Framework Tab                                                          //
-// ═══════════════════════════════════════════════════════════════════════════════ //
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• //
 
 function CareerFrameworkTab({ initialDepartment = null }) {
   const [tracks, setTracks] = useState([]);
@@ -2247,7 +2458,7 @@ function CareerFrameworkTab({ initialDepartment = null }) {
             <div>
               <div className={shellStyles.sectionTitle}>Career Framework</div>
               <p className={shellStyles.sectionDesc}>
-                Define career progression tracks by department — each level specifies required skills, certifications, and learning paths.
+                Define career progression tracks by department â€” each level specifies required skills, certifications, and learning paths.
               </p>
             </div>
           </div>
@@ -2274,7 +2485,7 @@ function CareerFrameworkTab({ initialDepartment = null }) {
           <div className={shellStyles.sectionBody} style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <span className={styles.metaChip}><FileText aria-hidden="true" />{importFile.name}</span>
             <button type="button" className={styles.assignCourseBtn} onClick={handleImport} disabled={importing}>
-              <Check aria-hidden="true" /> {importing ? "Importing…" : "Confirm Import"}
+              <Check aria-hidden="true" /> {importing ? "Importingâ€¦" : "Confirm Import"}
             </button>
             <button type="button" className={styles.smallBtn} onClick={() => setImportFile(null)}>
               <X aria-hidden="true" /> Cancel
@@ -2341,7 +2552,7 @@ function CareerFrameworkTab({ initialDepartment = null }) {
             <div className={styles.deptSidebarHead}>
               <div className={styles.deptSidebarTitle}>Departments</div>
               <div className={styles.deptSidebarHint}>
-                {filteredDepts.length} department{filteredDepts.length !== 1 ? "s" : ""} · {totalLevels} total levels
+                {filteredDepts.length} department{filteredDepts.length !== 1 ? "s" : ""} Â· {totalLevels} total levels
               </div>
             </div>
             <div className={styles.deptSearch}>
@@ -2350,7 +2561,7 @@ function CareerFrameworkTab({ initialDepartment = null }) {
                 <input
                   className={styles.deptSearchInput}
                   aria-label="Search departments"
-                  placeholder="Search departments…"
+                  placeholder="Search departmentsâ€¦"
                   value={deptSearch}
                   onChange={(e) => setDeptSearch(e.target.value)}
                 />
@@ -2368,7 +2579,7 @@ function CareerFrameworkTab({ initialDepartment = null }) {
                 <div className={styles.deptItemBody}>
                   <div className={styles.deptItemName}>All departments</div>
                   <div className={styles.deptItemMeta}>
-                    {totalLevels} levels · {Object.keys(levelsByDept).length} depts
+                    {totalLevels} levels Â· {Object.keys(levelsByDept).length} depts
                   </div>
                 </div>
               </button>
@@ -2426,7 +2637,7 @@ function CareerFrameworkTab({ initialDepartment = null }) {
                       {dept}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                      {deptLevels.length} career level{deptLevels.length !== 1 ? "s" : ""} · ranked by progression order
+                      {deptLevels.length} career level{deptLevels.length !== 1 ? "s" : ""} Â· ranked by progression order
                     </div>
                   </div>
                   <button type="button" className={styles.modeBtn} onClick={() => setShowAddLevel({ department: dept })}>
@@ -2734,7 +2945,7 @@ function CFAddEditLevelForm({ initialData, isEdit, allDepartments = [], onClose,
 
           <div className={styles.formActions}>
             <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-              <Check aria-hidden="true" /> {saving ? "Saving…" : isEdit ? "Update Level" : "Create Level"}
+              <Check aria-hidden="true" /> {saving ? "Savingâ€¦" : isEdit ? "Update Level" : "Create Level"}
             </button>
             <button type="button" className={styles.smallBtn} onClick={onClose}>
               <X aria-hidden="true" /> Cancel
@@ -2746,9 +2957,9 @@ function CFAddEditLevelForm({ initialData, isEdit, allDepartments = [], onClose,
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════ //
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• //
 // Promotion Readiness Tab                                                       //
-// ═══════════════════════════════════════════════════════════════════════════════ //
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• //
 
 function PromotionReadinessTab() {
   const [report, setReport] = useState(null);
@@ -2848,7 +3059,7 @@ function PromotionReadinessTab() {
               <label className={styles.fieldLabel}>
                 Employee
                 <input
-                  placeholder="Search by name or ID…"
+                  placeholder="Search by name or IDâ€¦"
                   value={empQuery}
                   onChange={(e) => setEmpQuery(e.target.value)}
                 />
@@ -2856,7 +3067,7 @@ function PromotionReadinessTab() {
                   <select value={assignForm.employee_id} onChange={(e) => setAssignForm((f) => ({ ...f, employee_id: e.target.value }))}>
                     <option value="">Select employee</option>
                     {employees.map((emp) => (
-                      <option key={emp.employee_id} value={emp.employee_id}>{emp.full_name} ({emp.employee_id}) — {emp.job_title || "—"}</option>
+                      <option key={emp.employee_id} value={emp.employee_id}>{emp.full_name} ({emp.employee_id}) â€” {emp.job_title || "â€”"}</option>
                     ))}
                   </select>
                 )}
@@ -2876,7 +3087,7 @@ function PromotionReadinessTab() {
               </label>
               <div className={styles.formActions}>
                 <button type="submit" className={styles.assignCourseBtn} disabled={assigning}>
-                  <Check aria-hidden="true" /> {assigning ? "Assigning…" : "Assign"}
+                  <Check aria-hidden="true" /> {assigning ? "Assigningâ€¦" : "Assign"}
                 </button>
                 <button type="button" className={styles.smallBtn} onClick={() => setShowAssign(false)}>
                   <X aria-hidden="true" /> Cancel
@@ -2917,7 +3128,7 @@ function PromotionReadinessTab() {
               <span className={`${shellStyles.bar} ${shellStyles.orange}`} />
               <div>
                 <div className={shellStyles.sectionTitle}>Almost Ready ({report.almost_ready.length})</div>
-                <p className={shellStyles.sectionDesc}>50–79% readiness</p>
+                <p className={shellStyles.sectionDesc}>50â€“79% readiness</p>
               </div>
             </div>
           </div>
@@ -3013,3 +3224,5 @@ function CFAssignmentRow({ item }) {
     </div>
   );
 }
+
+

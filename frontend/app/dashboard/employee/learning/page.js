@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 
@@ -59,6 +59,8 @@ const CAREER_SUGGESTIONS = [
   "Data Scientist",
   "Security Engineer",
 ];
+const LEARNING_PROVIDERS_UPDATED_EVENT = "learning-providers-updated";
+const LEARNING_PROVIDERS_UPDATED_STORAGE_KEY = "learning-providers-updated-at";
 
 export default function EmployeeLearningPage() {
   return (
@@ -76,6 +78,7 @@ function EmployeeLearningPageInner() {
   );
   const [dashboard, setDashboard] = useState(null);
   const [loadError, setLoadError] = useState("");
+  const [providerRefreshSeed, setProviderRefreshSeed] = useState(0);
 
   const loadDashboard = useCallback(() => {
     const token = localStorage.getItem("access_token");
@@ -88,6 +91,21 @@ function EmployeeLearningPageInner() {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    const refresh = () => setProviderRefreshSeed((value) => value + 1);
+    const onStorage = (event) => {
+      if (event.key === LEARNING_PROVIDERS_UPDATED_STORAGE_KEY) {
+        refresh();
+      }
+    };
+    window.addEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, refresh);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, refresh);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   useEffect(() => {
     const next = searchParams.get("tab");
@@ -180,7 +198,7 @@ function EmployeeLearningPageInner() {
       </div>
 
       {tab === "overview" && <OverviewTab dashboard={dashboard} onGo={setTab} onRefresh={refreshAfterChange} />}
-      {tab === "catalog" && <CatalogTab onEnroll={refreshAfterChange} />}
+      {tab === "catalog" && <CatalogTab onEnroll={refreshAfterChange} refreshSeed={providerRefreshSeed} />}
       {tab === "my-courses" && <MyCoursesTab onChange={refreshAfterChange} />}
       {tab === "skills" && <SkillsTab />}
       {tab === "career" && <CareerTab />}
@@ -335,12 +353,7 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
 // ------------------------------------------------------------------------ //
 // Catalog (US-065 / US-066 / US-072 / US-073)
 // ------------------------------------------------------------------------ //
-const CATALOG_SOURCES = [
-  {
-    key: "managed_learning",
-    label: "LinkedIn Learning",
-    hint: "Managed roadmap courses imported for your designation.",
-  },
+const STATIC_CATALOG_SOURCES = [
   {
     key: "microsoft_learn",
     label: "Microsoft Courses",
@@ -352,11 +365,53 @@ const CATALOG_SOURCES = [
     hint: "Industry soft-skills courses from Coursera (English) — communication, leadership, and more.",
   },
 ];
+const EXCLUDED_PROVIDER_TABS = new Set(["Microsoft Learn", "Coursera"]);
+const MANAGED_PROVIDER_REGISTRY_KEY = "talent-managed-learning-providers";
 
-function CatalogTab({ onEnroll }) {
+function normalizeManagedProviderTabs(providerValues) {
+  const seen = new Set();
+  const providers = [];
+  for (const raw of providerValues || []) {
+    const name = String(raw || "").trim();
+    if (!name || EXCLUDED_PROVIDER_TABS.has(name)) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    providers.push(name);
+  }
+  if (providers.length > 1) {
+    return providers.filter((name) => name.toLowerCase() !== "managed learning");
+  }
+  return providers;
+}
+
+function readManagedProviderRegistry() {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(MANAGED_PROVIDER_REGISTRY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeManagedProviderRegistry(providerValues) {
+  if (typeof window === "undefined") return;
+  try {
+    const normalized = normalizeManagedProviderTabs(providerValues);
+    window.localStorage.setItem(MANAGED_PROVIDER_REGISTRY_KEY, JSON.stringify(normalized));
+  } catch {
+    // Ignore storage write failures.
+  }
+}
+
+function CatalogTab({ onEnroll, refreshSeed = 0 }) {
   const [source, setSource] = useState("managed_learning");
   const [q, setQ] = useState("");
   const [facets, setFacets] = useState({ roles: [], levels: [], products: [], providers: [], designations: [], months: [], categories: [], competencies: [] });
+  const [providers, setProviders] = useState([]);
+  const [dynamicSources, setDynamicSources] = useState(STATIC_CATALOG_SOURCES);
   const [softSkillCategories, setSoftSkillCategories] = useState([]);
   const [role, setRole] = useState("");
   const [level, setLevel] = useState("");
@@ -372,6 +427,7 @@ function CatalogTab({ onEnroll }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyUid, setBusyUid] = useState("");
+  const initializedProvidersRef = useRef(false);
 
   function switchSource(nextSource) {
     if (nextSource === source) return;
@@ -391,28 +447,77 @@ function CatalogTab({ onEnroll }) {
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
-    if (source === "coursera") {
+    const isManagedProvider = source.startsWith("provider:");
+    const facetSource = isManagedProvider ? "managed_learning" : source;
+    if (facetSource === "coursera") {
       getSoftSkillCategories(token).then((data) => setSoftSkillCategories(data.categories || [])).catch(() => {});
     } else {
-      getCatalogFacets(token, source).then(setFacets).catch(() => {});
+      getCatalogFacets(token, facetSource)
+        .then((data) => {
+          setFacets(data);
+          if (facetSource === "managed_learning") {
+            const providerList = normalizeManagedProviderTabs([
+              ...(data?.providers || []),
+              ...readManagedProviderRegistry(),
+            ]);
+            setProviders(providerList);
+            writeManagedProviderRegistry(providerList);
+            const providerSources = providerList.map((prov) => ({
+              key: `provider:${prov}`,
+              label: prov,
+              hint: `Managed roadmap courses from ${prov}.`,
+            }));
+            setDynamicSources(
+              providerSources.length
+                ? [...providerSources, ...STATIC_CATALOG_SOURCES]
+                : [
+                    {
+                      key: "managed_learning",
+                      label: "Managed Courses",
+                      hint: "Managed roadmap courses imported for your designation.",
+                    },
+                    ...STATIC_CATALOG_SOURCES,
+                  ]
+            );
+            setSource((current) => {
+              if (current.startsWith("provider:")) {
+                const currentProvider = current.split(":")[1];
+                if (providerList.length && !providerList.includes(currentProvider)) {
+                  return `provider:${providerList[0]}`;
+                }
+                return current;
+              }
+              if (!initializedProvidersRef.current && providerList.length) {
+                initializedProvidersRef.current = true;
+                return `provider:${providerList[0]}`;
+              }
+              initializedProvidersRef.current = true;
+              return current;
+            });
+          }
+        })
+        .catch(() => {});
     }
-  }, [source]);
+  }, [source, refreshSeed]);
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
+    const isManagedProvider = source.startsWith("provider:");
+    const actualSource = isManagedProvider ? "managed_learning" : source;
+    const selectedProvider = isManagedProvider ? source.split(":")[1] : "";
     browseCatalog(token, {
       q: q || undefined,
-      role: source === "microsoft_learn" ? role || undefined : undefined,
-      level: source === "microsoft_learn" ? level || undefined : undefined,
-      type: source === "microsoft_learn" ? type || undefined : undefined,
-      provider: source === "managed_learning" ? provider || undefined : undefined,
-      designation: source === "managed_learning" ? designation || undefined : undefined,
-      learning_month: source === "managed_learning" ? learningMonth || undefined : undefined,
-      category: source === "coursera" || source === "managed_learning" ? category || undefined : undefined,
-      competency: source === "managed_learning" ? competency || undefined : undefined,
-      source,
+      role: actualSource === "microsoft_learn" ? role || undefined : undefined,
+      level: actualSource === "microsoft_learn" ? level || undefined : undefined,
+      type: actualSource === "microsoft_learn" ? type || undefined : undefined,
+      provider: actualSource === "managed_learning" ? (selectedProvider || provider || undefined) : undefined,
+      designation: actualSource === "managed_learning" ? designation || undefined : undefined,
+      learning_month: actualSource === "managed_learning" ? learningMonth || undefined : undefined,
+      category: actualSource === "coursera" || actualSource === "managed_learning" ? category || undefined : undefined,
+      competency: actualSource === "managed_learning" ? competency || undefined : undefined,
+      source: actualSource,
       bookmarked_only: bookmarkedOnly || undefined,
       page,
       page_size: 12,
@@ -423,7 +528,7 @@ function CatalogTab({ onEnroll }) {
       })
       .catch((err) => setError(getApiErrorMessage(err, "Could not load the course catalog.")))
       .finally(() => setLoading(false));
-  }, [q, role, level, type, provider, designation, learningMonth, category, competency, source, bookmarkedOnly, page]);
+  }, [q, role, level, type, provider, designation, learningMonth, category, competency, source, bookmarkedOnly, page, refreshSeed]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -467,8 +572,10 @@ function CatalogTab({ onEnroll }) {
     }
   }
 
+  const isManagedProvider = source.startsWith("provider:");
+  const actualSource = isManagedProvider ? "managed_learning" : source;
   const isSoftSkills = source === "coursera";
-  const activeSource = CATALOG_SOURCES.find((s) => s.key === source) || CATALOG_SOURCES[0];
+  const activeSource = dynamicSources.find((s) => s.key === source) || dynamicSources[0];
 
   return (
     <div className={dashStyles.section}>
@@ -485,7 +592,7 @@ function CatalogTab({ onEnroll }) {
       </div>
       <div className={dashStyles.sectionBody}>
         <div className={styles.sourceToggle} role="tablist" aria-label="Course source">
-          {CATALOG_SOURCES.map((s) => (
+          {dynamicSources.map((s) => (
             <button
               key={s.key}
               type="button"
@@ -506,8 +613,8 @@ function CatalogTab({ onEnroll }) {
             placeholder={
               isSoftSkills
                 ? "Search soft skills, e.g. negotiation, leadership…"
-                : source === "managed_learning"
-                  ? "Search roadmap courses by title, month, or competency…"
+                : isManagedProvider
+                  ? `Search ${source.split(":")[1]} courses by title, month, or competency…`
                   : "Search by title, skill, product…"
             }
             value={q}
@@ -520,7 +627,7 @@ function CatalogTab({ onEnroll }) {
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-          ) : source === "microsoft_learn" ? (
+          ) : actualSource === "microsoft_learn" ? (
             <>
               <select className={styles.filterSelect} value={type} onChange={(e) => { setPage(1); setType(e.target.value); }}>
                 <option value="">All types</option>
@@ -542,6 +649,17 @@ function CatalogTab({ onEnroll }) {
               </select>
             </>
           ) : null}
+          {source === "managed_learning" && (
+            <select className={styles.filterSelect} value={provider} onChange={(e) => {
+              setPage(1);
+              setProvider(e.target.value);
+            }}>
+              <option value="">All providers</option>
+              {(providers.length ? providers : facets.providers || []).map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+          )}
           <label className={styles.bookmarkFilter}>
             <input
               type="checkbox"
@@ -550,7 +668,7 @@ function CatalogTab({ onEnroll }) {
             />
             Bookmarked only
           </label>
-          {source === "microsoft_learn" && (
+          {actualSource === "microsoft_learn" && (
             <button
               type="button"
               className={`${styles.filterSelect} ${type === "certification" ? styles.sourceBtnActive : ""}`}
@@ -591,7 +709,7 @@ function CatalogTab({ onEnroll }) {
                     {course.source === "coursera"
                       ? "Coursera"
                       : course.source === "managed_learning"
-                        ? "LinkedIn Learning"
+                        ? (course.provider || "Managed")
                         : "Microsoft"}
                   </span>
                   <span className={`${styles.courseType} ${course.type === "certification" ? styles.certification : ""}`}>

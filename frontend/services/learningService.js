@@ -11,8 +11,21 @@ const client = axios.create({
   },
 });
 
+const LEARNING_PROVIDERS_UPDATED_EVENT = "learning-providers-updated";
+const LEARNING_PROVIDERS_UPDATED_STORAGE_KEY = "learning-providers-updated-at";
+
 function auth(accessToken) {
   return { headers: { Authorization: `Bearer ${accessToken}` } };
+}
+
+function notifyLearningProvidersUpdated() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(LEARNING_PROVIDERS_UPDATED_EVENT));
+  try {
+    window.localStorage.setItem(LEARNING_PROVIDERS_UPDATED_STORAGE_KEY, String(Date.now()));
+  } catch {
+    // Ignore storage errors in private / restricted sessions.
+  }
 }
 
 /** Invalidate learning caches after cert verification / KB edits / assignments. */
@@ -36,6 +49,18 @@ export async function listManagedCourses(accessToken, params = {}) {
 
 export async function getManagedFacets(accessToken) {
   const { data } = await client.get("/api/learning/managed/facets", auth(accessToken));
+  return data;
+}
+
+export async function listManagedProviders(accessToken) {
+  const { data } = await client.get("/api/learning/managed/providers", auth(accessToken));
+  return data;
+}
+
+export async function createManagedProvider(accessToken, name) {
+  const { data } = await client.post("/api/learning/managed/providers", { name }, auth(accessToken));
+  invalidateLearningCaches();
+  notifyLearningProvidersUpdated();
   return data;
 }
 
@@ -306,12 +331,14 @@ export async function getLearningAnalytics(accessToken, department, { force = fa
 export async function createManagedCourse(accessToken, payload) {
   const { data } = await client.post("/api/learning/managed/courses", payload, auth(accessToken));
   invalidateLearningCaches();
+  notifyLearningProvidersUpdated();
   return data;
 }
 
 export async function updateManagedCourse(accessToken, courseId, payload) {
   const { data } = await client.put(`/api/learning/managed/courses/${courseId}`, payload, auth(accessToken));
   invalidateLearningCaches();
+  notifyLearningProvidersUpdated();
   return data;
 }
 
@@ -330,6 +357,7 @@ export async function restoreManagedCourse(accessToken, courseId) {
 export async function deleteManagedCourse(accessToken, courseId) {
   const { data } = await client.delete(`/api/learning/managed/courses/${courseId}`, auth(accessToken));
   invalidateLearningCaches();
+  notifyLearningProvidersUpdated();
   return data;
 }
 
@@ -342,13 +370,25 @@ async function postManagedImport(url, file, accessToken) {
   return data;
 }
 
-export async function previewManagedImport(file, accessToken) {
-  return postManagedImport("/api/learning/managed/import/preview", file, accessToken);
+export async function previewManagedImport(file, accessToken, provider) {
+  const formData = new FormData();
+  formData.append("file", file, file?.name || "learning-roadmap.xlsx");
+  if (provider) formData.append("provider", provider);
+  const { data } = await client.post("/api/learning/managed/import/preview", formData, {
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  });
+  return data;
 }
 
-export async function commitManagedImport(file, accessToken) {
-  const data = await postManagedImport("/api/learning/managed/import/commit", file, accessToken);
+export async function commitManagedImport(file, accessToken, provider) {
+  const formData = new FormData();
+  formData.append("file", file, file?.name || "learning-roadmap.xlsx");
+  if (provider) formData.append("provider", provider);
+  const { data } = await client.post("/api/learning/managed/import/commit", formData, {
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "multipart/form-data" },
+  });
   invalidateLearningCaches();
+  notifyLearningProvidersUpdated();
   return data;
 }
 
