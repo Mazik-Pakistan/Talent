@@ -847,6 +847,96 @@ async def get_org_structure_options(organization_id: str) -> dict:
 
 
 # ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ //
+#   Seed from existing records
+# ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ //
+
+async def seed_framework_from_existing(organization_id: str) -> dict:
+    """Bootstrap the org framework from records the org already owns.
+
+    Reads department/job_title values from the org's employees, candidates and
+    recruiters (READ-ONLY — those people records are never modified, deleted or
+    re-tagged) and writes only into the org_framework_* collections so existing
+    people keep their current values everywhere.
+
+    Idempotent: existing framework entries are never duplicated or overwritten,
+    so re-running after manual edits only adds what is still missing.
+    """
+    now = _now()
+
+    async def _distinct_pairs(collection: str) -> set[tuple[str, str]]:
+        docs = await database[collection].find(
+            {"organization_id": organization_id},
+            {"_id": 0, "department": 1, "job_title": 1},
+        ).to_list(100000)
+        pairs: set[tuple[str, str]] = set()
+        for d in docs:
+            dept = (d.get("department") or "").strip()
+            title = (d.get("job_title") or "").strip()
+            if dept and title:
+                pairs.add((dept, title))
+        return pairs
+
+    pairs: set[tuple[str, str]] = set()
+    for coll in ("employees", "candidates", "recruiters"):
+        try:
+            pairs.update(await _distinct_pairs(coll))
+        except Exception:
+            continue
+
+    existing_departments = {d["name"] for d in await list_departments(organization_id)}
+    existing_roles = {
+        (r["department"], r["name"]) for r in await list_roles(organization_id)
+    }
+
+    created_departments: list[str] = []
+    for dept, _title in pairs:
+        if dept in existing_departments:
+            continue
+        await database.org_framework_departments.insert_one({
+            "organization_id": organization_id,
+            "name": dept,
+            "description": "",
+            "created_at": now,
+            "updated_at": now,
+        })
+        existing_departments.add(dept)
+        created_departments.append(dept)
+
+    role_docs: list[dict] = []
+    created_roles: list[str] = []
+    for dept, title in pairs:
+        if (dept, title) in existing_roles:
+            continue
+        role_docs.append({
+            "organization_id": organization_id,
+            "role_id": f"{organization_id}:{dept}:{title}",
+            "name": title,
+            "department": dept,
+            "next_role": None,
+            "level_number": 1,
+            "description": "",
+            "created_at": now,
+            "updated_at": now,
+        })
+        existing_roles.add((dept, title))
+        created_roles.append(title)
+    if role_docs:
+        await database.org_framework_roles.insert_many(role_docs)
+
+    if created_departments or created_roles:
+        await create_version_snapshot(organization_id, "Seeded from existing records")
+
+    return {
+        "departments_created": created_departments,
+        "roles_created": created_roles,
+        "departments_total": len(existing_departments),
+        "roles_total": len(existing_roles),
+    }
+
+
+# ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ //
+#   Dashboard Summary
+# ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ //
 #   Version History
 # ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ //
 

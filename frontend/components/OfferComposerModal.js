@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 
-import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import { createOffer, getApiErrorMessage } from "@/services/authService";
 
@@ -51,8 +50,8 @@ const initialForm = {
 
 export default function OfferComposerModal({ candidate, onClose, onSent }) {
   const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
-  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
-  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
+  const departmentOptions = frameworkDepartments;
+  const designationOptions = frameworkDesignations;
   const [form, setForm] = useState({
     ...initialForm,
     job_title: candidate.job_title || "",

@@ -7,7 +7,6 @@ import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import ProfilePhotoEditor from "@/components/ProfilePhotoEditor";
 import SecuritySection from "@/components/SecuritySection";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
-import { RECRUITER_DEPARTMENTS, RECRUITER_DESIGNATIONS } from "@/components/recruiter/recruiterOptions";
 import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import {
   getApiErrorMessage,
@@ -32,8 +31,8 @@ export default function RecruiterProfilePage() {
 
 function RecruiterProfilePageContent() {
   const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
-  const departmentOptions = frameworkDepartments.length ? frameworkDepartments : RECRUITER_DEPARTMENTS;
-  const designationOptions = frameworkDesignations.length ? frameworkDesignations : RECRUITER_DESIGNATIONS;
+  const departmentOptions = frameworkDepartments;
+  const designationOptions = frameworkDesignations;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
