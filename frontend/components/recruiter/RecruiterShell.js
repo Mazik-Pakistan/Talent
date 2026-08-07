@@ -124,13 +124,10 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
 
   const allowedNavItems = RECRUITER_NAV_ITEMS.filter((item) => {
     if (!item.capability) return true;
-    // Super admin and non-recruiter roles always see the full navigation.
     if (user?.role !== "recruiter") return true;
     const capabilities = resolveRecruiterCapabilities(user);
-    // Legacy sessions with no capability map keep full nav.
-    if (!Object.keys(capabilities).length) return true;
-    // Explicit false (personal or org) hides the item; missing key stays visible.
-    return capabilities[item.capability] !== false;
+    if (!Object.keys(capabilities).length) return false;
+    return capabilities[item.capability] === true;
   });
 
   const hasCapability =
@@ -138,18 +135,16 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
     user?.role !== "recruiter" ||
     (() => {
       const capabilities = resolveRecruiterCapabilities(user);
-      if (!Object.keys(capabilities).length) return true;
-      return capabilities[capability] !== false;
+      if (!Object.keys(capabilities).length) return false;
+      return capabilities[capability] === true;
     })();
 
-  // Global search is backed by /api/search which is gated on the candidates
-  // capability — hide the box entirely when that module is disabled.
   const canSearch =
     user?.role !== "recruiter" ||
     (() => {
       const capabilities = resolveRecruiterCapabilities(user);
-      if (!Object.keys(capabilities).length) return true;
-      return capabilities.candidates !== false;
+      if (!Object.keys(capabilities).length) return false;
+      return capabilities.candidates === true;
     })();
 
   if (!user) {
