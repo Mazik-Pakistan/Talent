@@ -938,6 +938,12 @@ class LearningService:
                     }
                 },
             )
+
+            if cert.get("course_uid"):
+                await database.learning_enrollments.update_one(
+                    {"user_id": cert["user_id"], "course_uid": cert["course_uid"]},
+                    {"$set": {"status": "completed", "progress_percent": 100, "completed_at": now, "updated_at": now}},
+                )
         except Exception as exc:
             await database.learning_certificates.update_one(
                 {"_id": cert["_id"]},
