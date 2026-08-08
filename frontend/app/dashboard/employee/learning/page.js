@@ -19,6 +19,7 @@ import {
   getCareerGoal,
   getCareerPath,
   getCatalogFacets,
+  getDesignationReadiness,
   getLearningDashboard,
   getRecommendations,
   getRoleMatches,
@@ -1141,6 +1142,8 @@ function CareerTab() {
   const [startingStep, setStartingStep] = useState("");
   const [ladder, setLadder] = useState(null);
   const [ladderLoading, setLadderLoading] = useState(true);
+  const [designationReadiness, setDesignationReadiness] = useState(null);
+  const [designationLoading, setDesignationLoading] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -1160,6 +1163,7 @@ function CareerTab() {
       if (data.target_role) {
         setGoal(data.target_role);
         loadGapAndPath(data.target_role);
+        loadDesignationReadiness(data.target_role);
       }
     });
     loadRecommendations(false);
@@ -1180,6 +1184,16 @@ function CareerTab() {
       .finally(() => setGapLoading(false));
   }
 
+  function loadDesignationReadiness(role) {
+    const token = localStorage.getItem("access_token");
+    if (!token || !role) return;
+    setDesignationLoading(true);
+    getDesignationReadiness(token, role)
+      .then(setDesignationReadiness)
+      .catch(() => {})
+      .finally(() => setDesignationLoading(false));
+  }
+
   async function handleSetGoal(role) {
     const token = localStorage.getItem("access_token");
     const target = role || goal;
@@ -1193,7 +1207,8 @@ function CareerTab() {
       const gapData = await getSkillGap(token, target.trim(), true);
       setGap(gapData);
       loadRecommendations(true);
-      toast.success(`Career goal set to “${target.trim()}”.`);
+      loadDesignationReadiness(target.trim());
+      toast.success(`Career goal set to "${target.trim()}".`);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not set your career goal."));
     } finally {
@@ -1312,6 +1327,74 @@ function CareerTab() {
           )}
         </div>
       </div>
+
+      {savedGoal && (
+        <div className={dashStyles.section}>
+          <div className={dashStyles.sectionHead}>
+            <div className={dashStyles.sectionHeadLeft}>
+              <span className={`${dashStyles.bar} ${dashStyles.green}`} />
+              <div>
+                <div className={dashStyles.sectionTitle}>Designation requirements</div>
+                <p className={dashStyles.sectionDesc}>
+                  What you need to complete to become eligible for {savedGoal}.
+                </p>
+              </div>
+            </div>
+            {designationLoading && <RecruiterLoader inline />}
+            <button
+              type="button"
+              className={styles.smallBtn}
+              disabled={designationLoading}
+              onClick={() => loadDesignationReadiness(savedGoal)}
+            >
+              Refresh
+            </button>
+          </div>
+          <div className={dashStyles.sectionBody}>
+            {designationReadiness && (
+              <>
+                <div className={styles.readinessWrap} style={{ marginBottom: 16 }}>
+                  <ReadinessRing percentage={designationReadiness.readiness_percent ?? 0} />
+                  <div className={styles.readinessSummary}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "var(--navy)", marginBottom: 4 }}>
+                      {designationReadiness.eligible ? (
+                        <span style={{ color: "var(--green)" }}>Eligible</span>
+                      ) : (
+                        <span style={{ color: "var(--red)" }}>Not eligible</span>
+                      )}
+                    </div>
+                    <div className={styles.inlineNote}>
+                      {designationReadiness.completed_count ?? 0} of {designationReadiness.total_count ?? 0} requirements completed · {designationReadiness.missing_count ?? 0} remaining
+                    </div>
+                  </div>
+                </div>
+                <div className={styles.requirementsList}>
+                  {(designationReadiness.requirements || []).map((req, idx) => (
+                    <div key={idx} className={styles.requirementRow}>
+                      <span className={`${styles.requirementStatus} ${styles[req.status] || styles.not_started}`}>
+                        {req.status === "acquired" && "✓"}
+                        {req.status === "verified" && "✓"}
+                        {req.status === "completed" && "✓"}
+                        {req.status === "certificate_pending" && "◐"}
+                        {req.status === "in_progress" && "◐"}
+                        {req.status === "assigned" && "○"}
+                        {req.status === "missing" && "○"}
+                        {req.status === "not_started" && "○"}
+                      </span>
+                      <span className={styles.requirementType}>{req.type}</span>
+                      <span className={styles.requirementTitle}>{req.title}</span>
+                      {req.mandatory && <span className={styles.requirementMandatory}>Required</span>}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {!designationReadiness && !designationLoading && (
+              <p className={styles.inlineNote}>Click Refresh to load your designation requirements.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className={dashStyles.section}>
         <div className={dashStyles.sectionHead}>
@@ -1644,17 +1727,21 @@ function CertificatesTab({ onChange }) {
     }
     const token = localStorage.getItem("access_token");
     if (!token) return;
-    const fd = new FormData();
-    if (editForm.course_title) fd.append("course_title", editForm.course_title.trim());
-    if (editForm.completion_date) fd.append("completion_date", editForm.completion_date);
-    if (editForm.learning_hours) fd.append("learning_hours", editForm.learning_hours);
+    const payload = {
+      course_title: editForm.course_title.trim(),
+      completion_date: editForm.completion_date || undefined,
+      learning_hours: editForm.learning_hours ? parseFloat(editForm.learning_hours) : undefined,
+    };
+    console.log("[FRONTEND] Editing certificate:", certId, "payload:", payload);
     try {
-      await updateCertificate(token, certId, fd);
+      const result = await updateCertificate(token, certId, payload);
+      console.log("[FRONTEND] Update result:", result);
       toast.success("Certificate updated.");
       setEditingId(null);
-      load();
+      setTimeout(() => load(), 300);
       onChange?.();
     } catch (err) {
+      console.error("[FRONTEND] Update error:", err);
       toast.error(getApiErrorMessage(err, "Could not update certificate."));
     }
   }

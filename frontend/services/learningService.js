@@ -137,10 +137,8 @@ export async function deleteCertificate(accessToken, certificateId) {
   return data;
 }
 
-export async function updateCertificate(accessToken, certificateId, formData) {
-  const { data } = await apiClient.put(`/api/learning/certificates/${certificateId}`, formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+export async function updateCertificate(accessToken, certificateId, payload) {
+  const { data } = await apiClient.put(`/api/learning/certificates/${certificateId}`, payload);
   invalidateLearningCaches();
   return data;
 }
@@ -542,5 +540,28 @@ export async function syncProviderFromApi(accessToken, providerId, missingAction
   invalidateLearningCaches();
   invalidateCachePrefix("learning-providers");
   notifyLearningProvidersUpdated();
+  return data;
+}
+
+// ─── Designation requirements & readiness ────────────────────────────────────
+
+export async function getDesignationRequirements(accessToken, targetRole) {
+  const { data } = await apiClient.get("/api/learning/designation/requirements", {
+    params: { target_role: targetRole },
+  });
+  return data;
+}
+
+export async function getDesignationReadiness(accessToken, targetRole) {
+  const { data } = await apiClient.get("/api/learning/designation/readiness", {
+    params: targetRole ? { target_role: targetRole } : {},
+  });
+  return data;
+}
+
+export async function getEmployeeDesignationReadiness(accessToken, employeeId, targetRole) {
+  const { data } = await apiClient.get(`/api/learning/employees/${employeeId}/designation-readiness`, {
+    params: targetRole ? { target_role: targetRole } : {},
+  });
   return data;
 }

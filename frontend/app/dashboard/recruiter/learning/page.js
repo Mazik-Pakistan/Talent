@@ -569,6 +569,16 @@ function CatalogTab({ onAssignCourse }) {
             </>
           )}
         </div>
+        {(q || role || level || type || provider || designation || learningMonth || category || competency || archivedOnly) && (
+          <button type="button" className={styles.clearFiltersBtn} onClick={() => {
+            setQ(""); setRole(""); setLevel(""); setType("");
+            setProvider(""); setDesignation(""); setLearningMonth("");
+            setCategory(""); setCompetency(""); setArchivedOnly(false);
+            setPage(1);
+          }}>
+            <X aria-hidden="true" /> Clear filters
+          </button>
+        )}
         {loading && <RecruiterLoader inline />}
         {!loading && !(result.courses || []).length && (
           <div className={styles.emptyState}>
@@ -582,14 +592,20 @@ function CatalogTab({ onAssignCourse }) {
           </div>
         )}
         <div className={styles.courseGrid}>
-          {(result.courses || []).map((c) => (
+          {(result.courses || []).map((c) => {
+            const courseType = (c.type || "course").toLowerCase();
+            const TypeIcon = courseType.includes("path") ? Library : courseType.includes("module") ? ListChecks : courseType.includes("certif") ? Award : Globe;
+            return (
             <div key={c.uid} className={styles.courseCard}>
               <div className={styles.courseCardHead}>
                 <span className={`${styles.sourceBadge} ${courseBadgeClass(c, source)}`}>
                   {courseDisplayLabel(c, source)}
                 </span>
               </div>
-              <div className={styles.courseTitle}>{c.title}</div>
+              <div className={styles.courseTitleRow}>
+                <span className={styles.courseTypeIcon}><TypeIcon aria-hidden="true" /></span>
+                <div className={styles.courseTitle}>{c.title}</div>
+              </div>
               <div className={styles.courseMeta}>
                 {source === "managed_learning" ? (
                   <>
@@ -634,7 +650,8 @@ function CatalogTab({ onAssignCourse }) {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
         {result.pages > 1 && (
           <div className={styles.pagination}>
@@ -947,6 +964,8 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
   const [requiredSkills, setRequiredSkills] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [targetDesignation, setTargetDesignation] = useState("");
+  const [isDesignationRequirement, setIsDesignationRequirement] = useState(false);
 
   useEffect(() => {
     if (!initialCourse) return;
@@ -969,6 +988,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
         q,
         source: actualSource,
         provider: actualSource === "managed_learning" ? selectedProvider || undefined : undefined,
+        provider: actualSource === "managed_learning" ? (selectedProvider || undefined) : undefined,
         page_size: 10,
       }).then((data) => setCourses(data.courses || [])).catch(() => {});
     }, 300);
@@ -1016,6 +1036,8 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       due_date: dueDate || undefined,
       mandatory,
       note: note || undefined,
+      target_designation: isDesignationRequirement ? (targetDesignation || designationOptions[0] || "") : undefined,
+      is_designation_requirement: isDesignationRequirement,
     };
 
     if (assignMode === "department") {
@@ -1380,6 +1402,30 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   </div>
                 </label>
 
+                <label className={`${styles.mandatoryToggle} ${isDesignationRequirement ? styles.mandatoryOn : ""}`} style={{ marginTop: 10 }}>
+                  <input type="checkbox" checked={isDesignationRequirement} onChange={(e) => setIsDesignationRequirement(e.target.checked)} />
+                  <div>
+                    <strong>Designation requirement</strong>
+                    <span>Counts toward employee&apos;s target designation readiness</span>
+                  </div>
+                </label>
+
+                {isDesignationRequirement && (
+                  <div style={{ marginTop: 10 }}>
+                    <select
+                      className={styles.filterSelect}
+                      value={targetDesignation}
+                      onChange={(e) => setTargetDesignation(e.target.value)}
+                      style={{ width: "100%" }}
+                    >
+                      <option value="">Select target designation</option>
+                      {designationOptions.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   className={styles.assignSubmitBtn}
@@ -1550,7 +1596,7 @@ function CertificatesTab({ selectedCertificateId = null }) {
     try {
       await verifyCertificate(token, id, { approve: true });
       toast.success("Certificate verified — skill matrix updated via AI.");
-      load();
+      setTimeout(() => load(), 300);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not verify certificate."));
     }
@@ -1563,7 +1609,7 @@ function CertificatesTab({ selectedCertificateId = null }) {
       toast.success("Certificate rejected.");
       setRejecting(null);
       setRejectNote("");
-      load();
+      setTimeout(() => load(), 300);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not reject certificate."));
     }
@@ -1843,8 +1889,6 @@ function ManagedLearningTab() {
   const [previewFile, setPreviewFile] = useState(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [providers, setProviders] = useState([]);
-  const [providerInput, setProviderInput] = useState("");
-  const [providerBusy, setProviderBusy] = useState(false);
   const fileInputRef = useRef(null);
 
   const loadProviderList = useCallback(() => {
@@ -2063,81 +2107,45 @@ async function handleDelete(course) {
     downloadCsv(`managed-courses-${Date.now()}.csv`, headers, selected);
   }
 
-   async function handleAddProvider() {
-     const trimmed = providerInput.trim();
-     if (!trimmed) return;
-     const token = localStorage.getItem("access_token");
-     if (!token) return;
-     setProviderBusy(true);
-     const providerName = trimmed;
-     try {
-       // Persist provider to the server registry so it appears in the Providers tab
-       // and in every dropdown across the app, not just in this browser tab.
-       await createProvider(token, {
-         name: providerName,
-         provider_type: "manual",
-         import_method: "manual",
-         active: true,
-       });
-       setProviderInput("");
-       setForm((current) => ({ ...current, provider: providerName }));
-       toast.success(`Provider "${providerName}" created.`);
-       // Reload to pull the fresh merged provider list from both facets + registry.
-       load();
-     } catch (err) {
-       // 409 means it already exists — still select it and reload.
-       if (err?.response?.status === 409) {
-         setProviderInput("");
-         setForm((current) => ({ ...current, provider: providerName }));
-         toast.info(`Provider "${providerName}" already exists — selected.`);
-         load();
-       } else {
-         toast.error(getApiErrorMessage(err, "Could not create provider."));
-       }
-     } finally {
-       setProviderBusy(false);
-     }
-   }
-
   function selectedImportProvider() {
-    return form.provider || providerInput.trim() || "Managed Learning";
+    return form.provider || "Managed Learning";
   }
 
   async function handlePreviewUpload(file) {
-    const token = localStorage.getItem("access_token");
-    if (!token || !file) return;
-    setPreviewBusy(true);
-    setPreview(null);
-    setPreviewFile(file);
-    try {
-      const data = await previewManagedImport(file, token, selectedImportProvider());
-      setPreview(data);
-      toast.success(`Preview ready: ${data.total_rows || 0} rows parsed.`);
-    } catch (err) {
-      setPreview(null);
-      toast.error(getApiErrorMessage(err, "Could not preview roadmap import."));
-    } finally {
-      setPreviewBusy(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
+     const token = localStorage.getItem("access_token");
+     if (!token || !file) return;
+     setPreviewBusy(true);
+     setPreview(null);
+     setPreviewFile(file);
+     try {
+       const data = await previewManagedImport(file, token, form.provider || "Managed Learning");
+       setPreview(data);
+       toast.success(`Preview ready: ${data.total_rows || 0} rows parsed.`);
+     } catch (err) {
+       setPreview(null);
+       toast.error(getApiErrorMessage(err, "Could not preview roadmap import."));
+     } finally {
+       setPreviewBusy(false);
+       if (fileInputRef.current) fileInputRef.current.value = "";
+     }
+   }
 
-  async function handleCommitImport() {
-    const token = localStorage.getItem("access_token");
-    if (!token || !previewFile) return;
-    setSaving(true);
-    try {
-      const data = await commitManagedImport(previewFile, token, selectedImportProvider());
-      toast.success(data.message || "Roadmap imported.");
-      setPreview(null);
-      setPreviewFile(null);
-      load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not import roadmap."));
-    } finally {
-      setSaving(false);
-    }
-  }
+   async function handleCommitImport() {
+     const token = localStorage.getItem("access_token");
+     if (!token || !previewFile) return;
+     setSaving(true);
+     try {
+       const data = await commitManagedImport(previewFile, token, form.provider || "Managed Learning");
+       toast.success(data.message || "Roadmap imported.");
+       setPreview(null);
+       setPreviewFile(null);
+       load();
+     } catch (err) {
+       toast.error(getApiErrorMessage(err, "Could not import roadmap."));
+     } finally {
+       setSaving(false);
+     }
+   }
 
   return (
     <div className={shellStyles.section}>
@@ -2256,15 +2264,6 @@ async function handleDelete(course) {
                     <option value="">Select provider</option>
                     {(providers || []).map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
-                </label>
-                <label className={styles.fieldLabel}>
-                  Add provider
-                  <div className={styles.formActions} style={{ marginTop: 6 }}>
-                    <input placeholder="e.g. Coursera" value={providerInput} onChange={(e) => setProviderInput(e.target.value)} />
-                    <button type="button" className={styles.smallBtn} disabled={providerBusy} onClick={handleAddProvider}>
-                      {providerBusy ? "Adding…" : "Add"}
-                    </button>
-                  </div>
                 </label>
                 <label className={styles.fieldLabel}>
                   Designation

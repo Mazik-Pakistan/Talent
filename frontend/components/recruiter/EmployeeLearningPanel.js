@@ -9,6 +9,7 @@ import {
 import {
   assignCourses,
   browseCatalog,
+  getEmployeeDesignationReadiness,
   getEmployeeLearningProfile,
 } from "@/services/learningService";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
@@ -35,6 +36,8 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
   const [assignCoursesList, setAssignCoursesList] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [assigning, setAssigning] = useState(false);
+  const [designationReadiness, setDesignationReadiness] = useState(null);
+  const [designationLoading, setDesignationLoading] = useState(false);
 
   const load = useCallback(
     (refresh = false) => {
@@ -52,6 +55,25 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
   useEffect(() => {
     load(false);
   }, [load]);
+
+  const loadDesignationReadiness = useCallback(
+    (targetRole) => {
+      const token = localStorage.getItem("access_token");
+      if (!token || !employeeId) return;
+      setDesignationLoading(true);
+      getEmployeeDesignationReadiness(token, employeeId, targetRole)
+        .then(setDesignationReadiness)
+        .catch(() => {})
+        .finally(() => setDesignationLoading(false));
+    },
+    [employeeId]
+  );
+
+  useEffect(() => {
+    if (designationReadiness?.target_role) {
+      loadDesignationReadiness(designationReadiness.target_role);
+    }
+  }, [profile?.employee?.job_title]);
 
   useEffect(() => {
     setRoleForm((f) => ({
@@ -311,6 +333,68 @@ export default function EmployeeLearningPanel({ employee, onEmployeeUpdate }) {
                 </>
               )}
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Designation readiness */}
+      <div className={styles.section}>
+        <div className={styles.sectionHead}>
+          <div className={styles.sectionHeadLeft}>
+            <div className={`${styles.bar} ${styles.purple}`} />
+            <div>
+              <div className={styles.sectionTitle}>Designation readiness</div>
+              <div className={styles.sectionDesc}>
+                {designationReadiness?.target_role
+                  ? `Eligibility for ${designationReadiness.target_role}`
+                  : "Target designation progress and eligibility"}
+              </div>
+            </div>
+          </div>
+          <button type="button" className={styles.secondaryButton} disabled={designationLoading} onClick={() => loadDesignationReadiness(designationReadiness?.target_role || employee?.job_title)}>
+            {designationLoading ? "Loading…" : "Refresh"}
+          </button>
+        </div>
+        <div className={styles.sectionBody}>
+          {designationLoading && <p className={styles.emptySub}>Calculating readiness…</p>}
+          {!designationLoading && !designationReadiness && (
+            <p className={styles.emptySub}>Click Refresh to load designation requirements.</p>
+          )}
+          {designationReadiness && (
+            <>
+              <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--navy)" }}>
+                  {designationReadiness.eligible ? (
+                    <span style={{ color: "var(--green)" }}>Eligible</span>
+                  ) : (
+                    <span style={{ color: "var(--red)" }}>Not eligible</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  {designationReadiness.completed_count ?? 0} of {designationReadiness.total_count ?? 0} requirements · {designationReadiness.missing_count ?? 0} remaining
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  Readiness: <b>{designationReadiness.readiness_percent ?? 0}%</b>
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {(designationReadiness.requirements || []).map((req, idx) => (
+                  <div key={idx} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 8, background: "#FBFDFE", fontSize: 12 }}>
+                    <span style={{
+                      width: 20, height: 20, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 10, fontWeight: 800, flexShrink: 0,
+                      background: ["verified", "completed", "acquired"].includes(req.status) ? "var(--green-light, #E3F8F0)" : ["certificate_pending", "in_progress"].includes(req.status) ? "#FEF4E3" : "#F2F4F7",
+                      color: ["verified", "completed", "acquired"].includes(req.status) ? "var(--green, #1fae7a)" : ["certificate_pending", "in_progress"].includes(req.status) ? "#D97706" : "#475467",
+                    }}>
+                      {["verified", "completed", "acquired"].includes(req.status) ? "✓" : req.status === "certificate_pending" ? "◐" : req.status === "in_progress" ? "◐" : "○"}
+                    </span>
+                    <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--text-faint)", minWidth: 70 }}>{req.type}</span>
+                    <span style={{ flex: 1, fontWeight: 600, color: "var(--navy)" }}>{req.title}</span>
+                    {req.mandatory && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--red)", background: "var(--red-light, #FDEcec)", padding: "2px 8px", borderRadius: 20, textTransform: "uppercase", letterSpacing: ".3px" }}>Required</span>}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
