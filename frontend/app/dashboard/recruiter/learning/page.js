@@ -964,6 +964,8 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
   const [requiredSkills, setRequiredSkills] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [targetDesignation, setTargetDesignation] = useState("");
+  const [isDesignationRequirement, setIsDesignationRequirement] = useState(false);
 
   useEffect(() => {
     if (!initialCourse) return;
@@ -1033,6 +1035,8 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       due_date: dueDate || undefined,
       mandatory,
       note: note || undefined,
+      target_designation: isDesignationRequirement ? (targetDesignation || designationOptions[0] || "") : undefined,
+      is_designation_requirement: isDesignationRequirement,
     };
 
     if (assignMode === "department") {
@@ -1161,7 +1165,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               </div>
             </div>
             <div className={styles.sourceToggle} role="tablist" aria-label="Course source">
-              {CATALOG_SOURCES.map((s) => (
+              {STATIC_CATALOG_SOURCES.map((s) => (
                 <button
                   key={s.key}
                   type="button"
@@ -1176,7 +1180,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               ))}
             </div>
             <p className={styles.sourceHint}>
-              {(CATALOG_SOURCES.find((s) => s.key === source) || CATALOG_SOURCES[0]).hint}
+              {(STATIC_CATALOG_SOURCES.find((s) => s.key === source) || STATIC_CATALOG_SOURCES[0]).hint}
             </p>
             <div className={styles.searchField}>
               <Search className={styles.searchFieldIcon} aria-hidden="true" />
@@ -1397,6 +1401,30 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   </div>
                 </label>
 
+                <label className={`${styles.mandatoryToggle} ${isDesignationRequirement ? styles.mandatoryOn : ""}`} style={{ marginTop: 10 }}>
+                  <input type="checkbox" checked={isDesignationRequirement} onChange={(e) => setIsDesignationRequirement(e.target.checked)} />
+                  <div>
+                    <strong>Designation requirement</strong>
+                    <span>Counts toward employee&apos;s target designation readiness</span>
+                  </div>
+                </label>
+
+                {isDesignationRequirement && (
+                  <div style={{ marginTop: 10 }}>
+                    <select
+                      className={styles.filterSelect}
+                      value={targetDesignation}
+                      onChange={(e) => setTargetDesignation(e.target.value)}
+                      style={{ width: "100%" }}
+                    >
+                      <option value="">Select target designation</option>
+                      {designationOptions.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   className={styles.assignSubmitBtn}
@@ -1567,7 +1595,7 @@ function CertificatesTab({ selectedCertificateId = null }) {
     try {
       await verifyCertificate(token, id, { approve: true });
       toast.success("Certificate verified — skill matrix updated via AI.");
-      load();
+      setTimeout(() => load(), 300);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not verify certificate."));
     }
@@ -1580,7 +1608,7 @@ function CertificatesTab({ selectedCertificateId = null }) {
       toast.success("Certificate rejected.");
       setRejecting(null);
       setRejectNote("");
-      load();
+      setTimeout(() => load(), 300);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not reject certificate."));
     }
