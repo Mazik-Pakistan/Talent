@@ -20,6 +20,7 @@ import { MASCOT_PRIORITY } from "@/lib/ai/recruiterContext";
 import {
   EMPLOYEE_TAB_HELP,
   LEARNING_TAB_HELP,
+  ORG_CONFIG_TAB_HELP,
   TALENT_TAB_HELP,
   pathMatchesPageKey,
 } from "@/lib/ai/recruiterFieldHelp";
@@ -93,6 +94,7 @@ function recruiterPageKey(pathname) {
   if (pathMatchesPageKey(pathname, "activity")) return "activity";
   if (pathMatchesPageKey(pathname, "profile")) return "profile";
   if (pathMatchesPageKey(pathname, "support")) return "support";
+  if (pathMatchesPageKey(pathname, "organization-config")) return "organization-config";
   if (pathMatchesPageKey(pathname, "it-kits")) return "it-kits";
   if (pathMatchesPageKey(pathname, "it")) return "it";
   return "other";
@@ -1011,6 +1013,61 @@ function itKitsInsights() {
   ];
 }
 
+function orgConfigInsights(context) {
+  const insights = [];
+  const section = context?.tab || context?.section || "overview";
+  const sectionHelp = ORG_CONFIG_TAB_HELP[section];
+
+  if (sectionHelp?.hint) {
+    push(insights, {
+      id: `orgcfg-section-${section}`,
+      priority: MASCOT_PRIORITY.task,
+      message: sectionHelp.hint,
+    });
+  }
+  if (sectionHelp?.fields?.length) {
+    push(insights, {
+      id: `orgcfg-fields-${section}`,
+      priority: MASCOT_PRIORITY.insight,
+      message: `Fields on this section: ${listToSentence(sectionHelp.fields.map((f) => f.replace(/_/g, " ")))}. Focus one for a tip.`,
+    });
+  }
+  if (section === "overview") {
+    push(insights, {
+      id: "orgcfg-start",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Start fast: seed departments/roles from existing records, import an Excel template, or build the framework manually section by section.",
+    });
+    push(insights, {
+      id: "orgcfg-effect",
+      priority: MASCOT_PRIORITY.insight,
+      message: "Changes here apply everywhere — invites, learning assignments, and talent filters all read from this framework.",
+    });
+  }
+  if (section === "departments") {
+    push(insights, {
+      id: "orgcfg-dept-effect",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Renaming a department updates it everywhere it's referenced across the platform.",
+    });
+  }
+  if (section === "roles") {
+    push(insights, {
+      id: "orgcfg-role-effect",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Fill Next Role on each role so promotion pipelines and career tracks know the target.",
+    });
+  }
+  if (section === "promotion") {
+    push(insights, {
+      id: "orgcfg-promo-effect",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Promotion rules feed Talent Intelligence readiness — the Ready / Almost / Behind buckets.",
+    });
+  }
+  return insights;
+}
+
 async function maybeAiBrief(accessToken, page, snapshot, firstName) {
   if (!accessToken || page !== "overview") return null;
 
@@ -1060,7 +1117,11 @@ export async function buildRecruiterInsights(pathname, accessToken, rawContext =
   const snapshot = await loadRecruiterSnapshot(accessToken);
   const stats = pipelineStats(snapshot);
   const insights = [];
-  const tabScoped = page === "learning" || page === "talent" || page === "employee_detail";
+  const tabScoped =
+    page === "learning" ||
+    page === "talent" ||
+    page === "employee_detail" ||
+    page === "organization-config";
 
   // Tabbed pages already inject the right local tips — avoid duplicating context + module-wide noise.
   if (!tabScoped) {
@@ -1101,6 +1162,8 @@ export async function buildRecruiterInsights(pathname, accessToken, rawContext =
     insights.push(...(await itHubInsights(accessToken)));
   } else if (page === "it-kits") {
     insights.push(...itKitsInsights());
+  } else if (page === "organization-config") {
+    insights.push(...orgConfigInsights(context));
   }
 
   // Keep tips on this screen only — no AI brief (it invents off-page content).
