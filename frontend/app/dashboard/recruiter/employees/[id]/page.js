@@ -1168,17 +1168,7 @@ function EmployeeProfilePageContent({ params }) {
     return () => clearRecruiterContext();
   }, [activeTab, employee]);
 
-  if (loading) {
-    return (
-      <RecruiterShell activeKey="employees" capability="employees" title="Employee Profile" subtitle="Loading profile details...">
-        <div className={styles.section}>
-          <div className={styles.sectionBody}>
-            <p className={styles.emptySub}>Loading...</p>
-          </div>
-        </div>
-      </RecruiterShell>
-    );
-  }
+  if (loading) return null;
 
   if (error || !employee) {
     return (

@@ -284,7 +284,7 @@ function RecruiterOverviewPageContent() {
                 </li>
               ))}
             </ul>
-          ) : <p className={styles.emptySub}>{loading ? "Loading…" : "Nothing pending right now."}</p>}
+          ) : <p className={styles.emptySub}>Nothing pending right now.</p>}
         </div>
       </div>
 
@@ -314,7 +314,7 @@ function RecruiterOverviewPageContent() {
                     </li>
                   ))}
                 </ul>
-              ) : <p className={styles.emptySub}>{loading ? "Loading…" : "No candidates currently need an offer step."}</p>}
+              ) : <p className={styles.emptySub}>No candidates currently need an offer step.</p>}
             </div>
             <div>
               <h3 className={styles.sectionTitle} style={{ fontSize: 14, marginBottom: 10 }}>Ready to activate</h3>
@@ -335,7 +335,7 @@ function RecruiterOverviewPageContent() {
                     </li>
                   ))}
                 </ul>
-              ) : <p className={styles.emptySub}>{loading ? "Loading…" : "No signed offers awaiting approval."}</p>}
+              ) : <p className={styles.emptySub}>No signed offers awaiting approval.</p>}
             </div>
           </div>
         </div>
@@ -364,7 +364,7 @@ function RecruiterOverviewPageContent() {
                 </li>
               ))}
             </ul>
-          ) : <p className={styles.emptySub}>{loading ? "Loading…" : "No activity yet."}</p>}
+          ) : <p className={styles.emptySub}>No activity yet.</p>}
         </div>
       </div>
 

@@ -193,7 +193,7 @@ export default function RecruiterDocumentReview({ ownerId }) {
     }
   }
 
-  if (loading) return <p className="widget-placeholder">Loading documents…</p>;
+  if (loading) return null;
   if (error) return <p className="form-message" style={{ background: "#fee9e7", color: "#b42318" }}>{error}</p>;
   if (!documents.length) return <p className="widget-placeholder">No documents submitted yet.</p>;
 

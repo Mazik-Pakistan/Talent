@@ -76,9 +76,7 @@ function RecruiterActivityPageContent() {
           </button>
         </div>
         <div className={styles.sectionBody}>
-          {loading ? (
-            <p className={styles.emptySub}>Loading…</p>
-          ) : activity.length ? (
+          {activity.length ? (
             <ul className={styles.activityList}>
               {activity.map((item, index) => (
                 <li key={`${item.action}-${item.created_at}-${index}`}>

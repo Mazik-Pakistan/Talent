@@ -45,7 +45,6 @@ function EmployeeCareerInner() {
       title="My Career"
       subtitle={assignment ? `${assignment.current_role_title} → ${assignment.target_role_title}` : ""}
     >
-      {loading && <RecruiterLoader inline />}
       {error && <div className={dashStyles.loadError}>{error}</div>}
 
       {!loading && !error && !assignment && (

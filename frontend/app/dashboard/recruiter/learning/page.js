@@ -579,7 +579,6 @@ function CatalogTab({ onAssignCourse }) {
             <X aria-hidden="true" /> Clear filters
           </button>
         )}
-        {loading && <RecruiterLoader inline />}
         {!loading && !(result.courses || []).length && (
           <div className={styles.emptyState}>
             <div className={styles.emptyStateIcon}>
@@ -792,7 +791,6 @@ function KnowledgeBaseTab() {
               </button>
             </div>
           </form>
-          {loading && <RecruiterLoader inline />}
           {!loading && roles.length === 0 && (
             <div className={styles.emptyState}>
               <div className={styles.emptyStateIcon}><Library aria-hidden="true" /></div>
@@ -1520,7 +1518,6 @@ function AssignmentsTab() {
         </div>
       </div>
       <div className={shellStyles.sectionBody}>
-        {loading && <RecruiterLoader inline />}
         {!loading && assignments.length === 0 && (
           <div className={styles.emptyState}>
             <div className={styles.emptyStateIcon}><ListChecks aria-hidden="true" /></div>
@@ -1633,7 +1630,6 @@ function CertificatesTab({ selectedCertificateId = null }) {
         </div>
       </div>
       <div className={shellStyles.sectionBody}>
-        {loading && <RecruiterLoader inline />}
         {!loading && certificates.length === 0 && (
           <div className={styles.emptyState}>
             <div className={styles.emptyStateIcon}><BadgeCheck aria-hidden="true" /></div>
@@ -1735,11 +1731,7 @@ function AnalyticsTab() {
     toast.success("Analytics exported.");
   }
 
-  if (loading) return (
-    <div className={shellStyles.section}>
-      <div className={shellStyles.sectionBody}><RecruiterLoader inline /></div>
-    </div>
-  );
+  if (loading) return null;
   if (!data) return null;
 
   const stats = [
@@ -2425,7 +2417,6 @@ async function handleDelete(course) {
           </div>
         )}
 
-        {loading && <RecruiterLoader inline />}
         {!loading && courses.length === 0 && (
           <div className={styles.emptyState}>
             <div className={styles.emptyStateIcon}><BookOpen aria-hidden="true" /></div>
@@ -2719,7 +2710,6 @@ function ProvidersTab({ onImportProvider }) {
             </form>
           )}
 
-          {loading && <RecruiterLoader inline />}
           {!loading && providers.length === 0 && (
             <div className={styles.emptyProviders}>
               <div className={styles.emptyStateIcon}><Building2 aria-hidden="true" /></div>
@@ -3178,7 +3168,6 @@ function ImportsTab({ initialProvider = null, onConsumedInitial }) {
             <div className={shellStyles.sectionTitle}>Import history</div>
             <p className={shellStyles.sectionDesc}>Every import and API sync, with rollback and downloadable reports.</p>
             <div className={shellStyles.sectionBody} style={{ paddingLeft: 0, paddingRight: 0 }}>
-              {historyLoading && <RecruiterLoader inline />}
               {!historyLoading && history.length === 0 && (
                 <p className={styles.inlineNote}>No imports recorded yet.</p>
               )}

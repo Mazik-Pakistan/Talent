@@ -211,7 +211,7 @@ function EmployeeLearningPageInner() {
 // ------------------------------------------------------------------------ //
 function OverviewTab({ dashboard, onGo, onRefresh }) {
   const [startingUid, setStartingUid] = useState("");
-  if (!dashboard) return <RecruiterLoader inline />;
+  if (!dashboard) return null;
   const s = dashboard.summary || {};
 
   const stats = [
@@ -933,7 +933,6 @@ function MyCoursesTab({ onChange }) {
         </select>
       </div>
       <div className={dashStyles.sectionBody}>
-        {loading && <RecruiterLoader inline />}
         {!loading && enrollments.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>Nothing here yet</div>
@@ -1269,7 +1268,6 @@ function SkillsTab() {
           <button type="submit" className={dashStyles.btnPrimary} disabled={saving}>{saving ? "Saving…" : "Add / Update"}</button>
         </form>
 
-        {loading && <RecruiterLoader inline />}
         {!loading && skills.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>No skills recorded yet</div>
@@ -1454,7 +1452,6 @@ function CareerTab() {
           </div>
         </div>
         <div className={dashStyles.sectionBody}>
-          {ladderLoading && <RecruiterLoader inline />}
           {!ladderLoading && (!ladder?.ladder || ladder.ladder.length === 0) && (
             <div className={dashStyles.emptyState}>
               <div className={dashStyles.emptyTitle}>No org roles configured yet</div>
@@ -1524,7 +1521,6 @@ function CareerTab() {
                 </p>
               </div>
             </div>
-            {designationLoading && <RecruiterLoader inline />}
             <button
               type="button"
               className={styles.smallBtn}
@@ -1985,7 +1981,6 @@ function CertificatesTab({ onChange }) {
           </button>
         </form>
 
-        {loading && <RecruiterLoader inline />}
         {!loading && certificates.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>No certificates uploaded yet</div>

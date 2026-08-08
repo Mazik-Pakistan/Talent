@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import RecruiterShell from "@/components/recruiter/RecruiterShell";
@@ -64,20 +64,7 @@ function parseView(searchParams) {
 export default function RecruiterTalentPage() {
   return (
     <ProtectedRecruiterRoute requiredCapability="talent">
-      <Suspense
-        fallback={
-          <RecruiterShell
-            activeKey="talent"
-            capability="talent"
-            title="Talent Intelligence Center"
-            subtitle="Loading…"
-          >
-            <p className={styles.inlineNote}>Loading…</p>
-          </RecruiterShell>
-        }
-      >
-        <RecruiterTalentPageContent />
-      </Suspense>
+      <RecruiterTalentPageContent />
     </ProtectedRecruiterRoute>
   );
 }

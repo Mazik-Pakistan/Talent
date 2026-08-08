@@ -1790,9 +1790,7 @@ function OnboardingContent() {
           </div>
 
           <div className={styles.content}>
-            {loading ? (
-              <RecruiterLoader inline />
-            ) : (
+            {!loading ? (
               <section className={styles.card}>
                 {isEditMode && (
                   <div className={styles.editBanner}>

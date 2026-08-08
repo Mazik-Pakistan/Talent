@@ -593,7 +593,7 @@ function CompleteProfileContent() {
     showToast(result.ok ? "success" : "error", result.ok ? result.message || "Progress saved." : result.message);
   }
 
-  if (loading) return <RecruiterLoader />;
+  if (loading) return null;
 
   const percentage = progress?.percentage ?? (complete ? 100 : 0);
   const remaining = (progress?.missing_fields || []).filter((key) => key !== "submit").length;

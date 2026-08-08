@@ -118,7 +118,6 @@ function RecruiterEmployeesPageContent() {
         title="Employee directory"
         subtitle="Loading employee data…"
       >
-        <RecruiterLoader />
       </RecruiterShell>
     );
   }

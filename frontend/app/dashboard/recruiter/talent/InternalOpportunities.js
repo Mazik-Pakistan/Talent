@@ -224,8 +224,7 @@ export default function InternalOpportunities({ departmentNames = [], onNavigate
           </button>
         </div>
 
-        {loading && <p className={styles.inlineNote}>Loading…</p>}
-        {!loading && items.length === 0 && (
+        {items.length === 0 && (
           <div className={styles.emptyState}>
             <div className={styles.emptyStateIcon}><Lightbulb aria-hidden="true" /></div>
             <div className={styles.emptyStateTitle}>No opportunities found</div>

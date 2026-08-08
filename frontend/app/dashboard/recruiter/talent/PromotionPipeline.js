@@ -300,7 +300,7 @@ export default function PromotionPipeline({
             </select>
             <span className={styles.inlineNote} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <SearchIcon size={14} aria-hidden="true" />
-              {loading ? "Loading…" : `${filtered.ready.length + filtered.almost.length + filtered.behind.length} shown`}
+              {`${filtered.ready.length + filtered.almost.length + filtered.behind.length} shown`}
             </span>
           </div>
         </div>

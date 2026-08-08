@@ -687,8 +687,6 @@ function RecruiterCandidatesPageContent() {
         </div>
       ) : null}
 
-      {pipelineView === "active" && loading && <RecruiterLoader />}
-
       {pipelineView === "active" && !loading && (
         <>
           <div className={styles.section}>
