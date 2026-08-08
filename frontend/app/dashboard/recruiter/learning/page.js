@@ -1595,7 +1595,7 @@ function CertificatesTab({ selectedCertificateId = null }) {
     try {
       await verifyCertificate(token, id, { approve: true });
       toast.success("Certificate verified — skill matrix updated via AI.");
-      setTimeout(() => load(), 150);
+      setTimeout(() => load(), 300);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not verify certificate."));
     }
@@ -1608,7 +1608,7 @@ function CertificatesTab({ selectedCertificateId = null }) {
       toast.success("Certificate rejected.");
       setRejecting(null);
       setRejectNote("");
-      setTimeout(() => load(), 150);
+      setTimeout(() => load(), 300);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not reject certificate."));
     }

@@ -137,8 +137,8 @@ export async function deleteCertificate(accessToken, certificateId) {
   return data;
 }
 
-export async function updateCertificate(accessToken, certificateId, formData) {
-  const { data } = await apiClient.put(`/api/learning/certificates/${certificateId}`, formData);
+export async function updateCertificate(accessToken, certificateId, payload) {
+  const { data } = await apiClient.put(`/api/learning/certificates/${certificateId}`, payload);
   invalidateLearningCaches();
   return data;
 }

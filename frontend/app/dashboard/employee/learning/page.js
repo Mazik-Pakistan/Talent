@@ -1727,24 +1727,21 @@ function CertificatesTab({ onChange }) {
     }
     const token = localStorage.getItem("access_token");
     if (!token) return;
-    const fd = new FormData();
-    if (editForm.course_title) fd.append("course_title", editForm.course_title.trim());
-    if (editForm.completion_date) fd.append("completion_date", editForm.completion_date);
-    if (editForm.learning_hours) fd.append("learning_hours", editForm.learning_hours);
+    const payload = {
+      course_title: editForm.course_title.trim(),
+      completion_date: editForm.completion_date || undefined,
+      learning_hours: editForm.learning_hours ? parseFloat(editForm.learning_hours) : undefined,
+    };
+    console.log("[FRONTEND] Editing certificate:", certId, "payload:", payload);
     try {
-      const result = await updateCertificate(token, certId, fd);
-      const updated = result?.certificate;
+      const result = await updateCertificate(token, certId, payload);
+      console.log("[FRONTEND] Update result:", result);
       toast.success("Certificate updated.");
       setEditingId(null);
-      if (updated) {
-        setCertificates((prev) =>
-          prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
-        );
-      } else {
-        load();
-      }
+      setTimeout(() => load(), 300);
       onChange?.();
     } catch (err) {
+      console.error("[FRONTEND] Update error:", err);
       toast.error(getApiErrorMessage(err, "Could not update certificate."));
     }
   }

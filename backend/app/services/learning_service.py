@@ -998,7 +998,6 @@ class LearningService:
         cert = await database.learning_certificates.find_one({"_id": ObjectId(certificate_id), "user_id": current_user.id})
         if not cert:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
-        # Only allow edits if not verified
         if cert.get("verification_status") == "verified":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot edit verified certificates.")
         updates = {"updated_at": _now()}
@@ -1014,7 +1013,8 @@ class LearningService:
             updates["learning_hours"] = learning_hours
         await database.learning_certificates.update_one({"_id": cert["_id"]}, {"$set": updates})
         updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
-        return {"certificate": self._public_certificate(updated)}
+        result = {"certificate": self._public_certificate(updated)}
+        return result
 
     # ------------------------------------------------------------------ #
     # Designation requirements & readiness (extends existing Career Path)

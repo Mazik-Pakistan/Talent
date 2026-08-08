@@ -9,6 +9,7 @@ from app.core.rbac import CurrentUser
 from app.schemas.learning import (
     BookmarkRequest,
     CareerGoalRequest,
+    CertificateUpdateRequest,
     CertificateVerifyRequest,
     CourseAssignRequest,
     EnrollmentProgressRequest,
@@ -218,18 +219,19 @@ async def delete_certificate(certificate_id: str, current_user: RequireEmployee)
 @router.put("/certificates/{certificate_id}")
 async def update_certificate(
     certificate_id: str,
+    request: CertificateUpdateRequest,
     current_user: RequireEmployee,
-    course_title: str | None = Form(default=None),
-    completion_date: date | None = Form(default=None),
-    learning_hours: float | None = Form(default=None),
 ):
-    return await learning_service.update_certificate(
+    print(f"[API] update_certificate: id={certificate_id}, user={current_user.id}, title={request.course_title}, date={request.completion_date}, hours={request.learning_hours}")
+    result = await learning_service.update_certificate(
         current_user,
         certificate_id,
-        course_title=course_title,
-        completion_date=completion_date,
-        learning_hours=learning_hours,
+        course_title=request.course_title,
+        completion_date=request.completion_date,
+        learning_hours=request.learning_hours,
     )
+    print(f"[API] update_certificate result: {result}")
+    return result
 
 
 # ---------------------------------------------------------------------- #
