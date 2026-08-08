@@ -222,16 +222,13 @@ async def update_certificate(
     request: CertificateUpdateRequest,
     current_user: RequireEmployee,
 ):
-    print(f"[API] update_certificate: id={certificate_id}, user={current_user.id}, title={request.course_title}, date={request.completion_date}, hours={request.learning_hours}")
-    result = await learning_service.update_certificate(
+    return await learning_service.update_certificate(
         current_user,
         certificate_id,
         course_title=request.course_title,
         completion_date=request.completion_date,
         learning_hours=request.learning_hours,
     )
-    print(f"[API] update_certificate result: {result}")
-    return result
 
 
 # ---------------------------------------------------------------------- #
