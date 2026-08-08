@@ -525,7 +525,7 @@ async def list_courses(organization_id: str) -> list[dict]:
         "$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]
     }
     learning_docs = await database.learning_courses.find(
-        learning_query, {"_id": 0}
+        learning_query
     ).sort("title", 1).to_list(10000)
 
     seen = {c["course_id"] for c in framework_docs}
