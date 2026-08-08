@@ -116,13 +116,67 @@ class ProviderService:
             {"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}
         )
     
-    async def _count_provider_courses(self, provider_id: str) -> int:
-        """Count active courses for a provider."""
+    async def _count_provider_courses(self, provider_id: str, provider_name: str = "") -> int:
+        """Count active courses for a provider — matches by name since courses store
+        the provider name string, not a foreign-key ID."""
+        if provider_name:
+            return await database.learning_courses.count_documents({
+                "provider": {"$regex": f"^{re.escape(provider_name)}$", "$options": "i"},
+                "$or": [{"archived": {"$exists": False}}, {"archived": False}]
+            })
+        # Fallback: try matching by provider_id field for future-proofing
         return await database.learning_courses.count_documents({
             "provider_id": provider_id,
             "$or": [{"archived": {"$exists": False}}, {"archived": False}]
         })
     
+    async def _sync_providers_from_courses(self) -> None:
+        """Create registry entries for any provider name found in learning_courses
+        that does not yet have a learning_providers document.
+        This is idempotent — safe to call on every list request."""
+        EXCLUDED = {"Microsoft Learn", "Coursera"}
+        # Collect distinct provider names from courses
+        pipeline = [{"$group": {"_id": "$provider"}}]
+        cursor = database.learning_courses.aggregate(pipeline)
+        course_provider_names: list[str] = []
+        async for doc in cursor:
+            raw = doc.get("_id") or ""
+            name = _normalize_provider_name(raw)
+            if name and name not in EXCLUDED:
+                course_provider_names.append(name)
+
+        if not course_provider_names:
+            return
+
+        # Load existing slugs in one query
+        existing_slugs: set[str] = set()
+        async for doc in database.learning_providers.find({}, {"slug": 1}):
+            existing_slugs.add(doc.get("slug") or "")
+
+        now = _now()
+        for name in course_provider_names:
+            slug = _slug(name)
+            if slug in existing_slugs:
+                continue
+            # Insert minimal registry entry so it shows in the Providers tab
+            doc = {
+                "name": name,
+                "slug": slug,
+                "provider_type": "manual",
+                "import_method": "manual",
+                "active": True,
+                "description": None,
+                "logo_url": None,
+                "created_at": now,
+                "updated_at": now,
+            }
+            try:
+                await database.learning_providers.insert_one(doc)
+                existing_slugs.add(slug)
+            except Exception:  # noqa: BLE001
+                # Duplicate key race — fine, already exists
+                pass
+
     async def list_providers(
         self,
         *,
@@ -132,7 +186,13 @@ class ProviderService:
         page: int = 1,
         page_size: int = 50,
     ) -> dict:
-        """List all learning providers with filtering and pagination."""
+        """List all learning providers with filtering and pagination.
+        
+        Auto-syncs any provider names found in learning_courses that are missing
+        from the registry, so the Providers tab always shows the full picture.
+        """
+        # Ensure every provider name in courses has a registry entry.
+        await self._sync_providers_from_courses()
         
         # Build query
         query: dict[str, Any] = {}
@@ -163,7 +223,7 @@ class ProviderService:
         # Enrich with course counts
         enriched = []
         for provider in providers:
-            course_count = await self._count_provider_courses(str(provider["_id"]))
+            course_count = await self._count_provider_courses(str(provider["_id"]), provider.get("name", ""))
             enriched.append(self._public_provider(provider, course_count))
         
         pages = max(1, (total + page_size - 1) // page_size) if total else 1

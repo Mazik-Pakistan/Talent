@@ -121,7 +121,7 @@ const STATIC_CATALOG_SOURCES = [
   {
     key: "coursera",
     label: "Coursera Courses",
-    hint: "Industry soft-skills courses from Coursera (English only) â€” communication, leadership, and more.",
+    hint: "Industry soft-skills courses from Coursera (English only) — communication, leadership, and more.",
     type: "external",
   },
 ];
@@ -220,7 +220,7 @@ function LearningPageContent() {
   function handleAssignFromCatalog(course, source) {
     setPendingAssign({ course, source: course?.source || source || "microsoft_learn" });
     setTab("assign");
-    toast.info(`Selected â€œ${course.title}â€ â€” choose who should take it.`);
+    toast.info(`Selected "${course.title}" — choose who should take it.`);
   }
 
   const clearPendingAssign = useCallback(() => {
@@ -487,10 +487,10 @@ function CatalogTab({ onAssignCourse }) {
               aria-label="Search courses"
               placeholder={
                 isManagedProvider
-                  ? `Search ${provider} courses, designations, competencyâ€¦`
+                  ? `Search ${provider} courses, designations, competency…`
                   : source === "coursera"
-                  ? "Search soft skills, e.g. negotiation, leadershipâ€¦"
-                  : "Search Microsoft courses by title or skillâ€¦"
+                  ? "Search soft skills, e.g. negotiation, leadership…"
+                  : "Search Microsoft courses by title or skill…"
               }
               value={q}
               onChange={(e) => { setPage(1); setQ(e.target.value); }}
@@ -597,14 +597,14 @@ function CatalogTab({ onAssignCourse }) {
                       <Building2 aria-hidden="true" />{c.provider || "Managed Learning"}
                     </span>
                     <span className={styles.metaChip}>
-                      <Clock aria-hidden="true" />{c.duration_minutes || "â€”"} min
+                      <Clock aria-hidden="true" />{c.duration_minutes || "—"} min
                     </span>
                   </>
                 ) : (
                   <>
                     <span className={styles.metaChip}>{c.type || "course"}</span>
                     <span className={styles.metaChip}>
-                      <Clock aria-hidden="true" />{c.duration_minutes || "â€”"} min
+                      <Clock aria-hidden="true" />{c.duration_minutes || "—"} min
                     </span>
                     {(c.levels || [])[0] || c.category ? (
                       <span className={styles.metaChip}>
@@ -616,7 +616,7 @@ function CatalogTab({ onAssignCourse }) {
               </div>
               <p className={styles.courseSummary}>
                 {source === "managed_learning"
-                  ? [c.designation, c.learning_month, c.category, c.competency].filter(Boolean).join(" Â· ") || (c.summary || "").slice(0, 140)
+                  ? [c.designation, c.learning_month, c.category, c.competency].filter(Boolean).join(" · ") || (c.summary || "").slice(0, 140)
                   : (c.summary || "").slice(0, 140)}
               </p>
               <div className={styles.courseActions}>
@@ -730,7 +730,7 @@ function KnowledgeBaseTab() {
         difficulty: "Intermediate",
         priority: "medium",
       });
-      toast.success("Certification added â€” it will appear in the course catalog.");
+      toast.success("Certification added — it will appear in the course catalog.");
       load();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not create certification."));
@@ -771,7 +771,7 @@ function KnowledgeBaseTab() {
             </label>
             <div className={styles.formActions}>
               <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                <Plus aria-hidden="true" /> {saving ? "Addingâ€¦" : "Add role"}
+                <Plus aria-hidden="true" /> {saving ? "Adding…" : "Add role"}
               </button>
             </div>
           </form>
@@ -841,7 +841,7 @@ function KnowledgeBaseTab() {
             </label>
             <label className={styles.fieldLabel}>
               Official URL
-              <input placeholder="https://learn.microsoft.com/â€¦" value={certForm.official_url} onChange={(e) => setCertForm((f) => ({ ...f, official_url: e.target.value }))} />
+              <input placeholder="https://learn.microsoft.com/…" value={certForm.official_url} onChange={(e) => setCertForm((f) => ({ ...f, official_url: e.target.value }))} />
             </label>
             <label className={styles.fieldLabel}>
               Skills covered
@@ -871,7 +871,7 @@ function KnowledgeBaseTab() {
             </label>
             <div className={styles.formActions}>
               <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                <Plus aria-hidden="true" /> {saving ? "Addingâ€¦" : "Add certification"}
+                <Plus aria-hidden="true" /> {saving ? "Adding…" : "Add certification"}
               </button>
             </div>
           </form>
@@ -1041,7 +1041,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       const assignedCount = result.assigned?.length || 0;
       const skippedCount = result.skipped?.length || 0;
       toast.success(
-        `Assigned to ${assignedCount} employee(s)${result.due_date ? ` Â· due ${result.due_date}` : ""}.`
+        `Assigned to ${assignedCount} employee(s)${result.due_date ? ` · due ${result.due_date}` : ""}.`
       );
       if (skippedCount) toast.warn(`${skippedCount} skipped (already assigned).`);
       if (result.errors?.length) toast.warn(`${result.errors.length} could not be assigned.`);
@@ -1060,7 +1060,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
   const selectedCourseLabel = courseDisplayLabel(selectedCourse, courseSource);
   const selectedCourseBadgeClass = courseBadgeClass(selectedCourse, courseSource);
   const assignLabel = submitting
-    ? "Assigningâ€¦"
+    ? "Assigning…"
     : assignMode === "employees"
       ? `Assign to ${selectedIds.length} employee${selectedIds.length === 1 ? "" : "s"}`
       : `Assign to ${employees.length} matching employee${employees.length === 1 ? "" : "s"}`;
@@ -1107,7 +1107,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               <div className={styles.assignCourseHeroMeta}>
                 <span className={styles.metaChip}>{selectedCourse.type || "course"}</span>
                 <span className={styles.metaChip}>
-                  <Clock aria-hidden="true" />{selectedCourse.duration_minutes || "â€”"} min
+                  <Clock aria-hidden="true" />{selectedCourse.duration_minutes || "—"} min
                 </span>
                 {(selectedCourse.levels || [])[0] || selectedCourse.category ? (
                   <span className={styles.metaChip}>
@@ -1118,7 +1118,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               {selectedCourse.summary && (
                 <p className={styles.assignCourseHeroSummary}>
                   {String(selectedCourse.summary).slice(0, 180)}
-                  {String(selectedCourse.summary).length > 180 ? "â€¦" : ""}
+                  {String(selectedCourse.summary).length > 180 ? "…" : ""}
                 </p>
               )}
             </div>
@@ -1137,7 +1137,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
           <div className={styles.assignPanel}>
             <div className={styles.assignPanelHead}>
               <div>
-                <div className={styles.assignPanelTitle}>1 Â· Select a course</div>
+                <div className={styles.assignPanelTitle}>1 · Select a course</div>
                 <p className={styles.assignPanelDesc}>
                   Search below, or use Course Catalog â†’ Assign to employees.
                 </p>
@@ -1168,10 +1168,10 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                 aria-label="Search courses"
                 placeholder={
                   source === "coursera"
-                    ? "Search soft skills, e.g. negotiation, leadershipâ€¦"
+                    ? "Search soft skills, e.g. negotiation, leadership…"
                     : source === "managed_learning"
-                      ? "Search roadmap coursesâ€¦"
-                      : "Search Microsoft coursesâ€¦"
+                      ? "Search roadmap courses…"
+                      : "Search Microsoft courses…"
                 }
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -1190,7 +1190,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   <div className={styles.pickerRowMeta}>
                       <span className={styles.metaChip}>{courseDisplayLabel(c, source)}</span>
                       <span className={styles.metaChip}>{c.type}</span>
-                      <span className={styles.metaChip}><Clock aria-hidden="true" />{c.duration_minutes || "â€”"} min</span>
+                      <span className={styles.metaChip}><Clock aria-hidden="true" />{c.duration_minutes || "—"} min</span>
                       {(c.levels || [])[0] || c.category ? <span className={styles.metaChip}>{(c.levels || [])[0] || c.category}</span> : null}
                     </div>
                   </div>
@@ -1201,7 +1201,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               ))}
               {q.trim() && courses.length === 0 && (
                 <div className={styles.assignEmpty}>
-                  No matches â€” try a different search term.
+                  No matches — try a different search term.
                 </div>
               )}
               {!q.trim() && (
@@ -1217,7 +1217,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
           <div className={styles.assignPanel}>
             <div className={styles.assignPanelHead}>
               <div>
-                <div className={styles.assignPanelTitle}>2 Â· Choose audience</div>
+                <div className={styles.assignPanelTitle}>2 · Choose audience</div>
                 <p className={styles.assignPanelDesc}>Employees, department, joining role, or skills.</p>
               </div>
               {assignMode === "employees" && selectedIds.length > 0 && (
@@ -1267,7 +1267,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                       <input
                         className={styles.searchFieldInput}
                         aria-label="Filter employees by name"
-                        placeholder="Filter employees by nameâ€¦"
+                        placeholder="Filter employees by name…"
                         value={empQuery}
                         onChange={(e) => setEmpQuery(e.target.value)}
                       />
@@ -1290,7 +1290,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                             </div>
                             <div>
                               <div className={styles.employeeName}>{emp.full_name}</div>
-                              <div className={styles.employeeMeta}>{emp.job_title || "â€”"} Â· {emp.department || "â€”"}</div>
+                                <div className={styles.employeeMeta}>{emp.job_title || "—"} · {emp.department || "—"}</div>
                             </div>
                           </label>
                         );
@@ -1347,7 +1347,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
           <div className={styles.assignPanel}>
             <div className={styles.assignPanelHead}>
               <div>
-                <div className={styles.assignPanelTitle}>3 Â· Details &amp; send</div>
+                <div className={styles.assignPanelTitle}>3 · Details &amp; send</div>
                 <p className={styles.assignPanelDesc}>Due date, note, and mandatory flag. Notes appear in the assignment email and in-app notification.</p>
               </div>
             </div>
@@ -1448,7 +1448,7 @@ function AssignmentsTab() {
           <div>
             <div className={shellStyles.sectionTitle}>Assigned courses</div>
             <p className={shellStyles.sectionDesc}>
-              Track completion â€” reminders go by email and notification
+              Track completion — reminders go by email and notification
             </p>
           </div>
         </div>
@@ -1491,8 +1491,8 @@ function AssignmentsTab() {
               </div>
               <div className={styles.listMeta}>
                 <span className={styles.metaChip}><Users aria-hidden="true" />{a.employee_name}</span>
-                <span className={styles.metaChip}>{a.job_title || "â€”"}</span>
-                <span className={styles.metaChip}><Building2 aria-hidden="true" />{a.department || "â€”"}</span>
+                <span className={styles.metaChip}>{a.job_title || "—"}</span>
+                <span className={styles.metaChip}><Building2 aria-hidden="true" />{a.department || "—"}</span>
                 {a.due_date ? <span className={styles.metaChip}><Calendar aria-hidden="true" />Due {a.due_date}</span> : null}
               </div>
             </div>
@@ -1505,7 +1505,7 @@ function AssignmentsTab() {
                 onClick={() => handleRemind(a)}
               >
                 {remindingId === a.id ? (
-                  <><RefreshCw aria-hidden="true" className="animate-spin" /> Sendingâ€¦</>
+                  <><RefreshCw aria-hidden="true" className="animate-spin" /> Sending…</>
                 ) : (
                   <><Bell aria-hidden="true" /> Remind</>
                 )}
@@ -1549,7 +1549,7 @@ function CertificatesTab({ selectedCertificateId = null }) {
     const token = localStorage.getItem("access_token");
     try {
       await verifyCertificate(token, id, { approve: true });
-      toast.success("Certificate verified â€” skill matrix updated via AI.");
+      toast.success("Certificate verified — skill matrix updated via AI.");
       load();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not verify certificate."));
@@ -1847,6 +1847,23 @@ function ManagedLearningTab() {
   const [providerBusy, setProviderBusy] = useState(false);
   const fileInputRef = useRef(null);
 
+  const loadProviderList = useCallback(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return Promise.resolve([]);
+    return Promise.all([
+      getManagedFacets(token).catch(() => ({ providers: [] })),
+      listProviders(token, { include_inactive: false, page_size: 100 }).catch(() => ({ providers: [] })),
+    ]).then(([facetData, providerData]) => {
+      const fromFacets = (facetData?.providers || []).map((item) => item.name ?? item).filter(Boolean);
+      const fromRegistry = (providerData?.providers || []).map((p) => p.name ?? p).filter(Boolean);
+      const merged = Array.from(
+        new Map([...fromFacets, ...fromRegistry].map((n) => [n.toLowerCase(), n])).values()
+      ).sort((a, b) => a.localeCompare(b));
+      setProviders(merged);
+      return merged;
+    });
+  }, []);
+
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
@@ -1864,21 +1881,31 @@ function ManagedLearningTab() {
         page: 1,
         page_size: 100,
       }),
-      getManagedFacets(token),
+      getManagedFacets(token).catch(() => ({ providers: [], designations: [], months: [], categories: [], competencies: [] })),
     ])
       .then(([courseData, facetData]) => {
         setCourses(courseData.courses || []);
         setHierarchy(courseData.hierarchy || []);
         setFacets(facetData || { providers: [], designations: [], months: [], categories: [], competencies: [] });
-        const providerList = (facetData?.providers || []).map((item) => item.name ?? item).filter(Boolean);
-        setProviders(providerList);
-        if (!form.provider && providerList.length) {
-          setForm((current) => ({ ...current, provider: providerList[0] }));
-        }
+        // Refresh provider list after courses load so any new providers from
+        // saved courses also appear in the dropdown.
+        loadProviderList().then((merged) => {
+          setForm((current) => {
+            if (!current.provider && merged.length) {
+              return { ...current, provider: merged[0] };
+            }
+            return current;
+          });
+        });
       })
       .catch((err) => toast.error(getApiErrorMessage(err, "Could not load managed-learning courses.")))
       .finally(() => setLoading(false));
-  }, [q, provider, designation, learningMonth, category, competency, showArchived, sortBy]);
+  }, [q, provider, designation, learningMonth, category, competency, showArchived, sortBy, loadProviderList]);
+
+  // Load providers immediately on mount, independent of the course list.
+  useEffect(() => {
+    loadProviderList();
+  }, [loadProviderList]);
 
   useEffect(() => {
     const timer = setTimeout(load, 250);
@@ -1903,7 +1930,7 @@ function ManagedLearningTab() {
       description: course.summary || "",
       archived: Boolean(course.archived),
     });
-    toast.info(`Editing â€œ${course.title}â€.`);
+    toast.info(`Editing "${course.title}".`);
   }
 
   async function handleSubmit(event) {
@@ -2024,21 +2051,41 @@ async function handleDelete(course) {
     downloadCsv(`managed-courses-${Date.now()}.csv`, headers, selected);
   }
 
-  async function handleAddProvider() {
-    const trimmed = providerInput.trim();
-    if (!trimmed) return;
-    setProviderBusy(true);
-    const providerName = trimmed;
-    setProviders((current) => {
-      const next = current.includes(providerName) ? current : [...current, providerName];
-      writeManagedProviderRegistry(next);
-      return next;
-    });
-    setForm((current) => ({ ...current, provider: providerName }));
-    setProviderInput("");
-    setProviderBusy(false);
-    toast.success(`Provider “${providerName}” added locally.`);
-  }
+   async function handleAddProvider() {
+     const trimmed = providerInput.trim();
+     if (!trimmed) return;
+     const token = localStorage.getItem("access_token");
+     if (!token) return;
+     setProviderBusy(true);
+     const providerName = trimmed;
+     try {
+       // Persist provider to the server registry so it appears in the Providers tab
+       // and in every dropdown across the app, not just in this browser tab.
+       await createProvider(token, {
+         name: providerName,
+         provider_type: "manual",
+         import_method: "manual",
+         active: true,
+       });
+       setProviderInput("");
+       setForm((current) => ({ ...current, provider: providerName }));
+       toast.success(`Provider "${providerName}" created.`);
+       // Reload to pull the fresh merged provider list from both facets + registry.
+       load();
+     } catch (err) {
+       // 409 means it already exists — still select it and reload.
+       if (err?.response?.status === 409) {
+         setProviderInput("");
+         setForm((current) => ({ ...current, provider: providerName }));
+         toast.info(`Provider "${providerName}" already exists — selected.`);
+         load();
+       } else {
+         toast.error(getApiErrorMessage(err, "Could not create provider."));
+       }
+     } finally {
+       setProviderBusy(false);
+     }
+   }
 
   function selectedImportProvider() {
     return form.provider || providerInput.trim() || "Managed Learning";
@@ -2109,7 +2156,7 @@ async function handleDelete(course) {
             <input
               className={styles.searchFieldInput}
               aria-label="Search roadmap courses"
-              placeholder="Search roadmap coursesâ€¦"
+              placeholder="Search roadmap courses…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -2203,7 +2250,7 @@ async function handleDelete(course) {
                   <div className={styles.formActions} style={{ marginTop: 6 }}>
                     <input placeholder="e.g. Coursera" value={providerInput} onChange={(e) => setProviderInput(e.target.value)} />
                     <button type="button" className={styles.smallBtn} disabled={providerBusy} onClick={handleAddProvider}>
-                      {providerBusy ? "Addingâ€¦" : "Add"}
+                      {providerBusy ? "Adding…" : "Add"}
                     </button>
                   </div>
                 </label>
@@ -2246,7 +2293,7 @@ async function handleDelete(course) {
                 </label>
                 <div className={styles.formActions}>
                   <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                    <Check aria-hidden="true" /> {saving ? "Savingâ€¦" : form.id ? "Update course" : "Create course"}
+                    <Check aria-hidden="true" /> {saving ? "Saving…" : form.id ? "Update course" : "Create course"}
                   </button>
                   <button type="button" className={styles.smallBtn} onClick={resetForm}>
                     <X aria-hidden="true" /> Clear
@@ -2285,10 +2332,10 @@ async function handleDelete(course) {
                   />
                   <Upload className={styles.fileDropIcon} aria-hidden="true" />
                   <strong>Choose a spreadsheet</strong>
-                  <span>.xlsx or .csv â€” parsed and previewed before saving</span>
+                   <span>.xlsx or .csv — parsed and previewed before saving</span>
                 </label>
               )}
-              {previewBusy && <p className={styles.inlineNote} style={{ marginTop: 12 }}>Parsing spreadsheetâ€¦</p>}
+              {previewBusy && <p className={styles.inlineNote} style={{ marginTop: 12 }}>Parsing spreadsheet…</p>}
               {preview ? (
                 <div style={{ marginTop: 12 }}>
                   <div className={styles.importStats}>
@@ -2300,14 +2347,14 @@ async function handleDelete(course) {
                   </div>
                   <div className={styles.formActions}>
                     <button type="button" className={styles.assignCourseBtn} disabled={saving} onClick={handleCommitImport}>
-                      <Check aria-hidden="true" /> {saving ? "Importingâ€¦" : "Confirm import"}
+                      <Check aria-hidden="true" /> {saving ? "Importing…" : "Confirm import"}
                     </button>
                     <button type="button" className={styles.smallBtn} onClick={() => { setPreview(null); setPreviewFile(null); }}>
                       <X aria-hidden="true" /> Clear preview
                     </button>
                   </div>
                   <p className={styles.inlineNote} style={{ marginTop: 10, marginBottom: 0 }}>
-                    {preview.filename || "Uploaded file"} Â· {preview.rows?.length || 0} preview row(s)
+                    {preview.filename || "Uploaded file"} · {preview.rows?.length || 0} preview row(s)
                   </p>
                 </div>
               ) : null}
@@ -2460,7 +2507,19 @@ function ProvidersTab({ onImportProvider }) {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const onChanged = () => load();
+    window.addEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onChanged);
+    const onStorage = (event) => {
+      if (event.key === LEARNING_PROVIDERS_UPDATED_STORAGE_KEY) load();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onChanged);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [load]);
 
   function startCreate() {
     setEditingId(null);

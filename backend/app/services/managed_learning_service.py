@@ -32,7 +32,9 @@ from app.schemas.learning import (
     ManagedLearningImportRow,
     ManagedLearningCourseUpdateRequest,
 )
+from app.schemas.provider import LearningProviderCreate
 from app.services.dashboard_service import create_notification
+from app.services.provider_service import provider_service
 
 MANAGED_SOURCE = "managed_learning"
 MAX_IMPORT_BYTES = 8 * 1024 * 1024
@@ -287,6 +289,20 @@ def _public_course(doc: dict) -> dict:
         "hierarchy_key": doc.get("hierarchy_key"),
         "last_modified": _iso(doc.get("updated_at") or doc.get("created_at")),
     }
+
+
+def _sortable_date(value):
+    if isinstance(value, datetime):
+        # Normalize naive datetimes (legacy docs) to UTC-aware so comparisons
+        # never raise "can't compare offset-naive and offset-aware datetimes".
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+        except ValueError:
+            pass
+    return datetime.min.replace(tzinfo=UTC)
 
 
 class ManagedLearningService:
@@ -796,8 +812,6 @@ class ManagedLearningService:
         query = self._collection_query(include_archived=archived is True)
         if archived is True:
             query = {}
-        if provider:
-            query["provider"] = {"$regex": f"^{re.escape(provider.strip())}$", "$options": "i"}
         if designation:
             query["designation"] = {"$regex": f"^{re.escape(designation.strip())}$", "$options": "i"}
         if learning_month:
@@ -807,6 +821,8 @@ class ManagedLearningService:
         if competency:
             query["competency"] = {"$regex": f"^{re.escape(competency.strip())}$", "$options": "i"}
         docs = await database.learning_courses.find(query).to_list(length=5000)
+        if provider:
+            docs = [d for d in docs if _normalize_provider_name(d.get("provider") or "Managed Learning") == provider]
         if q:
             needle = q.strip().lower()
             docs = [
@@ -826,24 +842,49 @@ class ManagedLearningService:
                 ).lower()
             ]
 
+        for doc in docs:
+            for field in ("created_at", "updated_at"):
+                value = doc.get(field)
+                if isinstance(value, str):
+                    try:
+                        doc[field] = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    except (ValueError, TypeError):
+                        doc[field] = None
+
+        def _sort_ts(doc: dict, *fields: str) -> str:
+            """Return an ISO string for sorting — always a string, never raises."""
+            for field in fields:
+                value = doc.get(field)
+                if value is None:
+                    continue
+                if isinstance(value, datetime):
+                    try:
+                        # Normalize naive → UTC so isoformat is consistent
+                        if value.tzinfo is None:
+                            value = value.replace(tzinfo=UTC)
+                        return value.isoformat()
+                    except Exception:  # noqa: BLE001
+                        continue
+                if isinstance(value, str) and value:
+                    return value
+            return "0000-00-00T00:00:00+00:00"
+
         # Phase 3: sortable catalog (newest first by default).
         if sort_by == "oldest":
-            docs.sort(key=lambda d: d.get("created_at") or datetime.min.replace(tzinfo=UTC))
+            docs.sort(key=lambda d: _sort_ts(d, "created_at"))
         elif sort_by == "updated":
-            docs.sort(key=lambda d: d.get("updated_at") or d.get("created_at") or datetime.min.replace(tzinfo=UTC), reverse=True)
+            docs.sort(key=lambda d: _sort_ts(d, "updated_at", "created_at"), reverse=True)
         elif sort_by == "title_asc":
-            docs.sort(key=lambda d: (d.get("title") or "").lower())
+            docs.sort(key=lambda d: str(d.get("title") or "").lower())
         elif sort_by == "title_desc":
-            docs.sort(key=lambda d: (d.get("title") or "").lower(), reverse=True)
+            docs.sort(key=lambda d: str(d.get("title") or "").lower(), reverse=True)
         elif sort_by == "duration":
-            def _dur(d):
-                v = d.get("duration_minutes")
-                return v if isinstance(v, (int, float)) else float("inf")
-            docs.sort(key=_dur)
+            docs.sort(key=lambda d: d.get("duration_minutes") if isinstance(d.get("duration_minutes"), (int, float)) else float("inf"))
         elif sort_by == "provider":
-            docs.sort(key=lambda d: (d.get("provider") or "").lower())
-        else:  # newest (default)
-            docs.sort(key=lambda d: d.get("created_at") or datetime.min.replace(tzinfo=UTC), reverse=True)
+            docs.sort(key=lambda d: str(d.get("provider") or "").lower())
+        else:
+            # newest (default)
+            docs.sort(key=lambda d: _sort_ts(d, "created_at"), reverse=True)
 
         total = len(docs)
         start = (page - 1) * page_size
@@ -904,11 +945,27 @@ class ManagedLearningService:
         normalized = _normalize_provider_name(provider_name)
         if not normalized or not normalized.strip():
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Provider name is required.")
-        existing = await database.learning_providers.find_one({"slug": _provider_slug(normalized)})
+        slug = _provider_slug(normalized)
+        existing = await database.learning_providers.find_one({"slug": slug})
         if existing:
-            return {"provider": {"name": existing.get("name") or normalized, "slug": existing.get("slug") or _provider_slug(normalized)}}
-        saved = await self._ensure_provider(normalized, current_user=current_user)
-        return {"provider": {"name": saved.get("name") or normalized, "slug": saved.get("slug") or _provider_slug(normalized)}}
+            return {"provider": {"name": existing.get("name") or normalized, "slug": existing.get("slug") or slug}}
+        try:
+            result = await provider_service.create_provider(
+                current_user,
+                LearningProviderCreate(
+                    name=normalized,
+                    provider_type="manual",
+                    import_method="manual",
+                    active=True,
+                ),
+            )
+            return result
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_409_CONFLICT:
+                existing = await database.learning_providers.find_one({"slug": slug})
+                if existing:
+                    return {"provider": {"name": existing.get("name") or normalized, "slug": existing.get("slug") or slug}}
+            raise
 
     async def list_facets(self) -> dict:
         docs = await database.learning_courses.find(self._collection_query()).to_list(length=5000)
