@@ -10,7 +10,7 @@
 .tabBar {
   display: flex;
   gap: 4px;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -26,7 +26,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 15px;
+  padding: 12px 18px;
   font-size: 12.5px;
   font-weight: 650;
   color: var(--text-muted);
@@ -60,7 +60,7 @@
   background: var(--blue-lighter);
   border: 1px solid var(--border-soft);
   border-radius: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .sourceBtn {
   display: inline-flex;
@@ -156,18 +156,18 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 .toolbarLeft, .toolbarRight { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .filterBar {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 18px;
+  gap: 12px;
+  margin-bottom: 20px;
   align-items: center;
   background: var(--blue-lighter);
-  padding: 12px;
+  padding: 14px;
   border-radius: 12px;
   border: 1px solid var(--border-soft);
 }
@@ -515,7 +515,7 @@
 .courseGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
+  gap: 22px;
 }
 .courseCard {
   display: flex;
@@ -524,7 +524,7 @@
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 20px;
+  padding: 22px;
   box-shadow: var(--shadow-sm);
   transition: transform .2s var(--ease), box-shadow .2s var(--ease), border-color .2s var(--ease);
   position: relative;
@@ -816,11 +816,11 @@
 .fieldLabel {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   font-size: 12px;
   font-weight: 700;
   color: var(--navy);
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   min-width: 0;
 }
 .fieldLabel > span {
@@ -1033,11 +1033,11 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: #fff;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
   box-shadow: var(--shadow-sm);
   transition: border-color .16s var(--ease), box-shadow .16s var(--ease), transform .16s var(--ease);
@@ -1109,8 +1109,8 @@
 .analyticsGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 22px;
+  gap: 18px;
+  margin-bottom: 26px;
 }
 @media (max-width: 900px) { .analyticsGrid { grid-template-columns: repeat(2, 1fr); } }
 
@@ -1152,8 +1152,8 @@
 .kbForm {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px 14px;
-  margin-bottom: 10px;
+  gap: 16px 18px;
+  margin-bottom: 16px;
 }
 .kbForm .wide { grid-column: 1 / -1; }
 .kbForm .fieldLabel { margin-bottom: 0; }
@@ -1220,13 +1220,13 @@
 .importStats {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 10px;
+  gap: 12px;
 }
 @media (max-width: 900px) { .importStats { grid-template-columns: repeat(2, 1fr); } }
 .importStat {
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   background: #fff;
   text-align: center;
 }
@@ -1873,7 +1873,7 @@
 .providerGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 .providerCard {
   display: flex;
@@ -1882,12 +1882,12 @@
   background: #fff;
   border: 1px solid var(--border-soft);
   border-radius: 14px;
-  padding: 18px;
+  padding: 20px;
   box-shadow: var(--shadow-sm);
   transition: box-shadow .18s var(--ease), border-color .18s var(--ease), transform .18s var(--ease);
 }
 .providerCard:hover { border-color: var(--blue-mid); box-shadow: var(--shadow-md); transform: translateY(-1px); }
-.providerCardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.providerCardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .providerIdentity { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .providerLogo {
   width: 42px;
@@ -2047,4 +2047,17 @@
   border: 1px dashed var(--border);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.6);
+}
+
+@media (max-width: 900px) {
+  .analyticsGrid { grid-template-columns: repeat(2, 1fr); }
+  .importStats { grid-template-columns: repeat(2, 1fr); }
+  .assignGrid { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .courseGrid { grid-template-columns: 1fr; }
+  .providerGrid { grid-template-columns: 1fr; }
+  .kbForm { grid-template-columns: 1fr; }
+  .filterBar { flex-direction: column; align-items: stretch; }
+  .assignSteps { flex-wrap: wrap; }
 }

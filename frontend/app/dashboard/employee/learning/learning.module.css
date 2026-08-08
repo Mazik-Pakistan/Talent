@@ -4,9 +4,9 @@
 
 .tabBar {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 22px;
+  margin-bottom: 28px;
   overflow-x: auto;
 }
 .tabBtn {
@@ -101,16 +101,16 @@
 .courseGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 .courseCard {
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 16px;
+  padding: 18px;
   background: #FBFDFE;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 .sourceToggle {
   display: flex;
@@ -240,24 +240,24 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #FBFDFE;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 .courseListInfo { flex: 1; min-width: 200px; }
 .courseListTitle { font-size: 13.5px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
-.courseListMeta { font-size: 11.5px; color: var(--text-muted); }
+.courseListMeta { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
 .courseListProgress { width: 160px; flex-shrink: 0; }
 .progressLabel { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-align: right; }
 
-.skillGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
-.skillCard { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: #FBFDFE; }
+.skillGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.skillCard { border: 1px solid var(--border); border-radius: 12px; padding: 16px; background: #FBFDFE; }
 .skillCardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .skillName { font-size: 13.5px; font-weight: 700; color: var(--navy); }
-.skillCategory { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+.skillCategory { font-size: 11px; color: var(--text-faint); margin-top: 2px; line-height: 1.5; }
 .proficiencyBadge {
   font-size: 10px;
   font-weight: 700;
@@ -273,7 +273,7 @@
 .deleteSkillBtn { background: none; border: none; color: var(--text-faint); cursor: pointer; padding: 2px; }
 .deleteSkillBtn:hover { color: #B42318; }
 
-.addSkillForm { display: grid; grid-template-columns: 1.4fr 1fr 1fr 0.8fr auto; gap: 10px; align-items: end; margin-bottom: 18px; }
+.addSkillForm { display: grid; grid-template-columns: 1.4fr 1fr 1fr 0.8fr auto; gap: 12px; align-items: end; margin-bottom: 22px; }
 .addSkillForm label { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
 .addSkillForm input, .addSkillForm select {
   border: 1px solid var(--border);
@@ -285,17 +285,17 @@
   background: #fff;
 }
 
-.goalRow { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.goalRow { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .goalInput {
   flex: 1 1 260px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 11px 14px;
   font-size: 13px;
   color: var(--text);
   background: #fff;
 }
-.chipSuggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.chipSuggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
 .chipSuggestion {
   font-size: 11.5px;
   font-weight: 600;
@@ -308,10 +308,10 @@
 }
 .chipSuggestion:hover { border-color: var(--cyan); color: var(--cyan); }
 
-.readinessWrap { display: flex; align-items: center; gap: 20px; margin-bottom: 18px; flex-wrap: wrap; }
+.readinessWrap { display: flex; align-items: center; gap: 20px; margin-bottom: 22px; flex-wrap: wrap; }
 .readinessSummary { flex: 1; min-width: 220px; font-size: 12.5px; color: var(--text-muted); line-height: 1.6; }
 
-.missingSkillsRow { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 18px; }
+.missingSkillsRow { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 22px; }
 .missingSkillTag {
   font-size: 11.5px;
   font-weight: 700;
@@ -347,18 +347,18 @@
 .pathStepNumDone { background: var(--green); }
 .pathStepDone .pathCourseTitle { opacity: 0.75; }
 .pathStepLine { width: 2px; flex: 1; background: var(--border); min-height: 30px; margin: 4px 0; }
-.pathStepBody { padding-bottom: 22px; flex: 1; }
+.pathStepBody { padding-bottom: 24px; flex: 1; }
 .pathSkillLabel { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); font-weight: 700; margin-bottom: 4px; }
-.pathCourseTitle { font-size: 13.5px; font-weight: 700; color: var(--navy); margin-bottom: 3px; }
+.pathCourseTitle { font-size: 13.5px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
 .pathCourseMeta { font-size: 11.5px; color: var(--text-muted); }
 .pathCapstone .pathStepNum { background: var(--orange); }
 
-.aiGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-.aiCard { border: 1px solid var(--border); border-radius: 12px; padding: 16px; background: linear-gradient(180deg, #FBFDFE, #F6F9FC); }
-.aiReason { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.aiGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.aiCard { border: 1px solid var(--border); border-radius: 12px; padding: 18px; background: linear-gradient(180deg, #FBFDFE, #F6F9FC); }
+.aiReason { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
 .aiReasonLabel { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--cyan); margin-bottom: 3px; }
 
-.uploadCertForm { display: grid; grid-template-columns: 1.4fr 1fr 0.8fr auto; gap: 10px; align-items: end; margin-bottom: 18px; }
+.uploadCertForm { display: grid; grid-template-columns: 1.4fr 1fr 0.8fr auto; gap: 12px; align-items: end; margin-bottom: 20px; }
 .uploadCertForm label { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
 .uploadCertForm input, .uploadCertForm select {
   border: 1px solid var(--border);
@@ -370,10 +370,10 @@
   background: #fff;
 }
 
-.certRow { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 12px; background: #FBFDFE; margin-bottom: 10px; flex-wrap: wrap; }
+.certRow { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border: 1px solid var(--border); border-radius: 12px; background: #FBFDFE; margin-bottom: 12px; flex-wrap: wrap; }
 .certInfo { flex: 1; min-width: 200px; }
-.certTitle { font-size: 13px; font-weight: 700; color: var(--navy); }
-.certMeta { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.certTitle { font-size: 13px; font-weight: 700; color: var(--navy); margin-bottom: 2px; }
+.certMeta { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
 .certStatus { font-size: 10.5px; font-weight: 700; padding: 4px 10px; border-radius: 20px; }
 .certStatus.pending { background: var(--orange-light); color: var(--orange); }
 .certStatus.verified { background: var(--green-light); color: var(--green); }
@@ -418,9 +418,9 @@
 .editCertBtn:hover { background: #e9f4ff; border-color: #38a2ff; color: #38a2ff; }
 
 .editCertForm {
-  display: flex; flex-direction: column; gap: 12px;
-  border: 1.5px dashed var(--border); border-radius: 12px; padding: 16px;
-  background: var(--blue-lighter); margin-bottom: 10px;
+  display: flex; flex-direction: column; gap: 14px;
+  border: 1.5px dashed var(--border); border-radius: 12px; padding: 18px;
+  background: var(--blue-lighter); margin-bottom: 12px;
 }
 
 .editFormRow {
@@ -463,8 +463,8 @@
   background: var(--border-soft); border-color: var(--blue-mid); color: var(--navy);
 }
 
-.inlineNote { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
-.errorNote { font-size: 12px; color: #b42318; margin-bottom: 14px; }
+.inlineNote { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+.errorNote { font-size: 12px; color: #b42318; margin-bottom: 16px; }
 
 .bookmarkFilter {
   display: inline-flex;
@@ -484,9 +484,9 @@
   border: 1px solid var(--border);
   border-left: 4px solid var(--cyan);
   border-radius: 12px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   background: #F7FBFD;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -522,8 +522,8 @@
 .matrixBars {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 18px;
+  gap: 10px;
+  margin-bottom: 22px;
 }
 .matrixRow {
   display: grid;
@@ -558,12 +558,12 @@
 }
 
 /* ── Career progression ladder (US-093) ────────────────────────────────── */
-.ladderWrap { display: flex; flex-direction: column; gap: 10px; }
+.ladderWrap { display: flex; flex-direction: column; gap: 12px; }
 .ladderRung {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #FBFDFE;
@@ -598,16 +598,16 @@
 }
 .ladderRungTag.current { background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0)); color: #fff; }
 .ladderRungTag.next { background: var(--cyan-light); color: var(--cyan); }
-.ladderRungMeta { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; }
-.ladderRungGaps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ladderRungMeta { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+.ladderRungGaps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .ladderRungProgress { width: 110px; flex-shrink: 0; text-align: right; }
 .ladderRungPct { font-size: 15px; font-weight: 800; color: var(--navy); }
 .ladderRungPctLabel { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .3px; }
 .ladderConnector { width: 2px; height: 10px; background: var(--border); margin-left: 33px; }
 
 /* ── Designation requirements (new) ──────────────────────────────────────── */
-.requirementsList { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-.requirementRow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #FBFDFE; }
+.requirementsList { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.requirementRow { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: #FBFDFE; }
 .requirementStatus { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; flex-shrink: 0; }
 .requirementStatus.verified, .requirementStatus.completed, .requirementStatus.acquired { background: var(--green-light, #E3F8F0); color: var(--green, #1fae7a); }
 .requirementStatus.certificate_pending, .requirementStatus.in_progress { background: #FEF4E3; color: #D97706; }
@@ -615,3 +615,19 @@
 .requirementType { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint); min-width: 70px; }
 .requirementTitle { flex: 1; font-size: 12.5px; font-weight: 600; color: var(--navy); }
 .requirementMandatory { font-size: 10px; font-weight: 700; color: var(--red); background: var(--red-light, #FDEcec); padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .3px; }
+
+@media (max-width: 900px) {
+  .addSkillForm { grid-template-columns: 1fr 1fr; }
+  .uploadCertForm { grid-template-columns: 1fr 1fr; }
+  .addSkillForm button { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .addSkillForm { grid-template-columns: 1fr; }
+  .uploadCertForm { grid-template-columns: 1fr; }
+  .courseGrid { grid-template-columns: 1fr; }
+  .skillGrid { grid-template-columns: 1fr; }
+  .aiGrid { grid-template-columns: 1fr; }
+  .goalRow { flex-direction: column; }
+  .chipSuggestions { gap: 6px; }
+}
+
