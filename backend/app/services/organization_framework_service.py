@@ -549,6 +549,11 @@ async def create_course(organization_id: str, data: dict) -> dict:
         "updated_at": now,
     }
     await database.org_framework_courses.insert_one(doc)
+    try:
+        from app.services.course_sync_service import sync_to_learning
+        await sync_to_learning(organization_id, doc)
+    except Exception:
+        pass
     return {k: v for k, v in doc.items() if k != "_id"}
 
 
@@ -566,6 +571,12 @@ async def update_course(organization_id: str, course_id: str, data: dict) -> dic
     )
     if result.matched_count == 0:
         raise ValueError("Course not found.")
+    try:
+        from app.services.course_sync_service import sync_to_learning
+        updated = await get_course(organization_id, course_id)
+        await sync_to_learning(organization_id, updated)
+    except Exception:
+        pass
     return await get_course(organization_id, course_id)
 
 
@@ -574,6 +585,11 @@ async def delete_course(organization_id: str, course_id: str) -> bool:
     await database.org_framework_roadmaps.delete_many(
         {"organization_id": organization_id, "course_id": course_id},
     )
+    try:
+        from app.services.course_sync_service import sync_delete_from_learning
+        await sync_delete_from_learning(organization_id, course_id)
+    except Exception:
+        pass
     result = await database.org_framework_courses.delete_one(
         {"organization_id": organization_id, "course_id": course_id},
     )
@@ -822,15 +838,16 @@ async def get_framework_summary(organization_id: str) -> dict:
 async def get_org_structure_options(organization_id: str) -> dict:
     """Compact, org-scoped option sets for every module's dropdowns.
 
-    Single source of truth for departments, roles, skills and certifications so
-    recruiter, candidate and employee UIs (and their AI assistants) never need
-    independent or hardcoded lists.
+    Single source of truth for departments, roles, skills, certifications and
+    courses so recruiter, candidate and employee UIs (and their AI assistants)
+    never need independent or hardcoded lists.
     """
-    [departments, roles, skills, certifications] = await asyncio.gather(
+    [departments, roles, skills, certifications, courses] = await asyncio.gather(
         list_departments(organization_id),
         list_roles(organization_id),
         list_skills(organization_id),
         list_certifications(organization_id),
+        list_courses(organization_id),
     )
     return {
         "departments": [d["name"] for d in departments if d.get("name")],
@@ -843,6 +860,11 @@ async def get_org_structure_options(organization_id: str) -> dict:
         "certifications": sorted(
             {c.get("certification_name") for c in certifications if c.get("certification_name")}
         ),
+        "courses": [
+            {"course_id": c["course_id"], "name": c["name"], "provider": c.get("provider"), "category": c.get("category")}
+            for c in courses
+            if c.get("name")
+        ],
     }
 
 

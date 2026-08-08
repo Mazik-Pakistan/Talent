@@ -17,6 +17,7 @@ import {
   getCareerProgressReport,
 } from "@/services/careerService";
 import { getLearningAnalytics } from "@/services/learningService";
+import { onFrameworkInvalidated } from "@/lib/frameworkEvents";
 
 /**
  * Session-cached Talent Intelligence aggregates.
@@ -237,7 +238,14 @@ export function useTalentIntelligenceData() {
       setError(err?.message || "Could not load talent intelligence.");
       setLoading(false);
     });
-    return () => { cancelled = true; };
+    const unsub = onFrameworkInvalidated(() => {
+      bustTalentIntelligenceCache();
+      fetchBundle(false).then((bundle) => {
+        if (cancelled) return;
+        setData(bundle);
+      }).catch(() => {});
+    });
+    return () => { cancelled = true; unsub(); };
   }, []);
 
   const departmentNames = useMemo(() => {

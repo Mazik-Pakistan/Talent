@@ -58,6 +58,7 @@ import {
   publishRecruiterContext,
 } from "@/lib/ai/recruiterContext";
 import { LEARNING_TAB_HELP } from "@/lib/ai/recruiterFieldHelp";
+import { dispatchFrameworkInvalidated } from "@/lib/frameworkEvents";
 import {
   assignCourses,
   archiveManagedCourse,
@@ -714,6 +715,7 @@ function KnowledgeBaseTab() {
       });
       setRoleForm({ title: "", description: "", required_skills: "", required_certifications: "" });
       toast.success("Role added to knowledge base.");
+      dispatchFrameworkInvalidated();
       load();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not create role."));
@@ -748,6 +750,7 @@ function KnowledgeBaseTab() {
         priority: "medium",
       });
       toast.success("Certification added — it will appear in the course catalog.");
+      dispatchFrameworkInvalidated();
       load();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not create certification."));
@@ -821,6 +824,7 @@ function KnowledgeBaseTab() {
                       try {
                         await deleteKbRole(token, r.id);
                         toast.success("Role removed.");
+                        dispatchFrameworkInvalidated();
                         load();
                       } catch (err) {
                         toast.error(getApiErrorMessage(err, "Could not delete role."));
@@ -927,6 +931,7 @@ function KnowledgeBaseTab() {
                       try {
                         await deleteKbCertification(token, c.id);
                         toast.success("Certification removed.");
+                        dispatchFrameworkInvalidated();
                         load();
                       } catch (err) {
                         toast.error(getApiErrorMessage(err, "Could not delete certification."));
@@ -1065,6 +1070,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       toast.success(
         `Assigned to ${assignedCount} employee(s)${result.due_date ? ` · due ${result.due_date}` : ""}.`
       );
+      dispatchFrameworkInvalidated();
       if (skippedCount) toast.warn(`${skippedCount} skipped (already assigned).`);
       if (result.errors?.length) toast.warn(`${result.errors.length} could not be assigned.`);
       setSelectedIds([]);
@@ -1479,6 +1485,7 @@ function AssignmentsTab() {
         token
       );
       toast.success(data.message || "Course reminder sent.");
+      dispatchFrameworkInvalidated();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not send course reminder."));
     } finally {

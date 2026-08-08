@@ -104,6 +104,7 @@ class DynamicCatalogService:
         sort_by: str | None = "newest",
         page: int = 1,
         page_size: int = 20,
+        organization_id: str | None = None,
     ) -> dict:
         """Search courses from any provider dynamically."""
         
@@ -121,6 +122,7 @@ class DynamicCatalogService:
                 sort_by=sort_by,
                 page=page,
                 page_size=page_size,
+                organization_id=organization_id,
             )
         
         # Handle static external providers
@@ -136,6 +138,7 @@ class DynamicCatalogService:
                 sort_by=sort_by,
                 page=page,
                 page_size=page_size,
+                organization_id=organization_id,
             )
         elif source == "coursera":
             return await coursera_service.search_catalog(
@@ -164,11 +167,11 @@ class DynamicCatalogService:
                 course_type=course_type, page=page, page_size=page_size
             )
     
-    async def get_facets(self, source: str = "microsoft_learn") -> dict:
+    async def get_facets(self, source: str = "microsoft_learn", organization_id: str | None = None) -> dict:
         """Get facets/filters for a specific source."""
         
         if source.startswith("provider:") or source in {MANAGED_SOURCE, "managed_learning"}:
-            return await managed_learning_service.list_facets()
+            return await managed_learning_service.list_facets(organization_id=organization_id)
         elif source == "coursera":
             return {"categories": coursera_service.get_categories()}
         else:
@@ -340,8 +343,8 @@ async def get_course_by_uid(uid: str) -> dict | None:
 async def search_catalog(**kwargs) -> dict:
     return await dynamic_catalog_service.search_catalog(**kwargs)
 
-async def get_facets(source: str = "microsoft_learn") -> dict:
-    return await dynamic_catalog_service.get_facets(source)
+async def get_facets(source: str = "microsoft_learn", organization_id: str | None = None) -> dict:
+    return await dynamic_catalog_service.get_facets(source, organization_id=organization_id)
 
 async def find_courses_for_keywords(keywords: list[str], **kwargs) -> list[dict]:
     return await dynamic_catalog_service.find_courses_for_keywords(keywords, **kwargs)

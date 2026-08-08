@@ -59,6 +59,7 @@ async def create_track(
         department=body.department,
         track_name=body.track_name,
         description=body.description,
+        organization_id=current_user.organization_id,
     )
 
 
@@ -68,7 +69,7 @@ async def list_tracks(
     department: str | None = Query(default=None, description="Filter by department"),
 ):
     """List all career tracks."""
-    return await career_framework_service.list_tracks(department=department)
+    return await career_framework_service.list_tracks(department=department, organization_id=current_user.organization_id)
 
 
 @router.get("/tracks/{track_id}")
@@ -77,7 +78,7 @@ async def get_track(
     track_id: str,
 ):
     """Get a career track by ID."""
-    return await career_framework_service.get_track(track_id)
+    return await career_framework_service.get_track(track_id, organization_id=current_user.organization_id)
 
 
 @router.put("/tracks/{track_id}")
@@ -88,7 +89,7 @@ async def update_track(
 ):
     """Update a career track."""
     updates = body.model_dump(exclude_unset=True)
-    return await career_framework_service.update_track(track_id, updates)
+    return await career_framework_service.update_track(track_id, updates, organization_id=current_user.organization_id)
 
 
 @router.delete("/tracks/{track_id}")
@@ -97,7 +98,7 @@ async def delete_track(
     track_id: str,
 ):
     """Delete a career track (soft delete)."""
-    return await career_framework_service.delete_track(track_id)
+    return await career_framework_service.delete_track(track_id, organization_id=current_user.organization_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -125,6 +126,7 @@ async def create_level(
         min_time_in_current_role_months=body.min_time_in_current_role_months,
         manager_approval_required=body.manager_approval_required,
         description=body.description,
+        organization_id=current_user.organization_id,
     )
 
 
@@ -135,7 +137,7 @@ async def list_levels(
     track_id: str | None = Query(default=None, description="Filter by track ID"),
 ):
     """List all career levels."""
-    return await career_framework_service.list_levels(department=department, track_id=track_id)
+    return await career_framework_service.list_levels(department=department, track_id=track_id, organization_id=current_user.organization_id)
 
 
 @router.get("/levels/{level_id}")
@@ -144,7 +146,7 @@ async def get_level(
     level_id: str,
 ):
     """Get a career level by ID."""
-    return await career_framework_service.get_level(level_id)
+    return await career_framework_service.get_level(level_id, organization_id=current_user.organization_id)
 
 
 @router.put("/levels/{level_id}")
@@ -155,7 +157,7 @@ async def update_level(
 ):
     """Update a career level."""
     updates = body.model_dump(exclude_unset=True)
-    return await career_framework_service.update_level(level_id, updates)
+    return await career_framework_service.update_level(level_id, updates, organization_id=current_user.organization_id)
 
 
 @router.delete("/levels/{level_id}")
@@ -164,7 +166,7 @@ async def delete_level(
     level_id: str,
 ):
     """Delete a career level (soft delete)."""
-    return await career_framework_service.delete_level(level_id)
+    return await career_framework_service.delete_level(level_id, organization_id=current_user.organization_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -184,6 +186,7 @@ async def assign_employee_career(
         employee_id=employee_id,
         target_level_id=body.target_level_id,
         target_date=body.target_date,
+        organization_id=current_user.organization_id,
     )
 
 
@@ -193,7 +196,7 @@ async def get_employee_career(
     employee_id: str,
 ):
     """Get an employee's career assignment."""
-    return await career_framework_service.get_employee_career(employee_id)
+    return await career_framework_service.get_employee_career(employee_id, organization_id=current_user.organization_id)
 
 
 @router.put("/employees/{employee_id}")
@@ -204,7 +207,7 @@ async def update_employee_career(
 ):
     """Update an employee's career assignment."""
     updates = body.model_dump(exclude_unset=True)
-    return await career_framework_service.update_employee_career(employee_id, updates)
+    return await career_framework_service.update_employee_career(employee_id, updates, organization_id=current_user.organization_id)
 
 
 @router.post("/employees/{employee_id}/discussion")
@@ -220,6 +223,7 @@ async def log_career_discussion(
         discussion_date=body.discussion_date,
         notes=body.notes,
         action_items=body.action_items,
+        organization_id=current_user.organization_id,
     )
 
 
@@ -234,6 +238,7 @@ async def bulk_assign_career(
         employee_ids=body.employee_ids,
         target_level_id=body.target_level_id,
         target_date=body.target_date,
+        organization_id=current_user.organization_id,
     )
 
 
@@ -248,6 +253,7 @@ async def list_all_assignments(
         current_user=current_user,
         department=department,
         status_filter=status,
+        organization_id=current_user.organization_id,
     )
 
 
@@ -259,13 +265,13 @@ async def list_all_assignments(
 @router.get("/my-career")
 async def get_my_career(current_user: RequireEmployee):
     """Get my career path (employee self-service)."""
-    return await career_framework_service.get_my_career(current_user)
+    return await career_framework_service.get_my_career(current_user, organization_id=current_user.organization_id)
 
 
 @router.get("/my-career/progress")
 async def get_my_career_progress(current_user: RequireEmployee):
     """Get my career progress with enriched learning path status."""
-    return await career_framework_service.get_my_career_progress(current_user)
+    return await career_framework_service.get_my_career_progress(current_user, organization_id=current_user.organization_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -282,13 +288,14 @@ async def get_promotion_readiness(
     return await career_framework_service.get_promotion_readiness(
         current_user=current_user,
         department=department,
+        organization_id=current_user.organization_id,
     )
 
 
 @router.get("/reports/career-progress")
 async def get_career_progress_report(current_user: RequireRecruiterWithTalentOrLearning):
     """Get career progress report by department."""
-    return await career_framework_service.get_career_progress_report(current_user)
+    return await career_framework_service.get_career_progress_report(current_user, organization_id=current_user.organization_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -299,7 +306,7 @@ async def get_career_progress_report(current_user: RequireRecruiterWithTalentOrL
 @router.get("/export", response_class=PlainTextResponse)
 async def export_framework(current_user: RequireRecruiterWithTalentOrLearning):
     """Export career framework as CSV."""
-    csv_content = await career_framework_service.export_framework_csv()
+    csv_content = await career_framework_service.export_framework_csv(organization_id=current_user.organization_id)
     return PlainTextResponse(
         content=csv_content,
         media_type="text/csv",
@@ -322,7 +329,7 @@ async def import_framework(
     except UnicodeDecodeError:
         text = content.decode("latin-1")
 
-    return await career_framework_service.import_framework_csv(current_user, text)
+    return await career_framework_service.import_framework_csv(current_user, text, organization_id=current_user.organization_id)
 
 
 @router.get("/template", response_class=PlainTextResponse)

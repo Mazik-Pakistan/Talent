@@ -361,8 +361,10 @@ class ManagedLearningService:
         doc["_id"] = result.inserted_id
         return doc
 
-    async def _save_course_doc(self, doc: dict) -> dict:
+    async def _save_course_doc(self, doc: dict, organization_id: str | None = None) -> dict:
         doc = dict(doc)
+        if organization_id:
+            doc["organization_id"] = organization_id
         now = _now()
         doc.setdefault("created_at", now)
         doc["updated_at"] = now
@@ -774,14 +776,14 @@ class ManagedLearningService:
             try:
                 if existing:
                     payload["_id"] = existing["_id"]
-                    await self._save_course_doc({**existing, **payload})
+                    await self._save_course_doc({**existing, **payload}, organization_id=current_user.organization_id)
                     updated += 1
                 else:
                     await self._save_course_doc({
                         **payload,
                         "created_by_id": current_user.id,
                         "updated_by_id": current_user.id,
-                    })
+                    }, organization_id=current_user.organization_id)
                     imported += 1
             except Exception as exc:  # noqa: BLE001
                 errors.append({"row": row.get("row"), "error": str(exc)})
@@ -808,10 +810,17 @@ class ManagedLearningService:
         sort_by: str | None = "newest",
         page: int = 1,
         page_size: int = 20,
+        organization_id: str | None = None,
     ) -> dict:
         query = self._collection_query(include_archived=archived is True)
         if archived is True:
             query = {}
+        if organization_id:
+            org_filter = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
+            if query:
+                query = {"$and": [query, org_filter]}
+            else:
+                query = org_filter
         if designation:
             query["designation"] = {"$regex": f"^{re.escape(designation.strip())}$", "$options": "i"}
         if learning_month:
@@ -967,8 +976,15 @@ class ManagedLearningService:
                     return {"provider": {"name": existing.get("name") or normalized, "slug": existing.get("slug") or slug}}
             raise
 
-    async def list_facets(self) -> dict:
-        docs = await database.learning_courses.find(self._collection_query()).to_list(length=5000)
+    async def list_facets(self, organization_id: str | None = None) -> dict:
+        query = self._collection_query(include_archived=False)
+        if organization_id:
+            org_filter = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
+            if query:
+                query = {"$and": [query, org_filter]}
+            else:
+                query = org_filter
+        docs = await database.learning_courses.find(query).to_list(length=5000)
 
         # Sync any course provider names into the registry first (idempotent).
         # This ensures providers added via import always appear in catalog tabs.
@@ -1028,6 +1044,8 @@ class ManagedLearningService:
             "created_by_id": current_user.id,
             "updated_by_id": current_user.id,
         }
+        if current_user.organization_id:
+            doc["organization_id"] = current_user.organization_id
         doc["course_key"] = _course_key(
             provider=doc.get("provider") or "Managed Learning",
             designation=doc.get("designation") or "",
@@ -1040,7 +1058,13 @@ class ManagedLearningService:
         existing = await self._find_existing(doc["course_key"])
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course already exists.")
-        saved = await self._save_course_doc(doc)
+        saved = await self._save_course_doc(doc, organization_id=current_user.organization_id)
+        if current_user.organization_id:
+            try:
+                from app.services.course_sync_service import sync_to_framework
+                await sync_to_framework(current_user.organization_id, saved)
+            except Exception:
+                pass
         return {"course": _public_course(saved)}
 
     async def update_course(self, current_user: CurrentUser, course_id: str, payload: ManagedLearningCourseUpdateRequest) -> dict:
@@ -1069,9 +1093,15 @@ class ManagedLearningService:
             existing = await self._find_existing(merged["course_key"])
             if existing and str(existing["_id"]) != str(doc["_id"]):
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A different course already uses the same roadmap slot.")
-            saved = await self._save_course_doc(merged)
+            saved = await self._save_course_doc(merged, organization_id=doc.get("organization_id"))
         else:
             saved = doc
+        if doc.get("organization_id"):
+            try:
+                from app.services.course_sync_service import sync_to_framework
+                await sync_to_framework(doc["organization_id"], saved)
+            except Exception:
+                pass
         return {"course": _public_course(saved)}
 
     async def archive_course(self, current_user: CurrentUser, course_id: str, *, archived: bool = True) -> dict:
@@ -1098,6 +1128,12 @@ class ManagedLearningService:
         result = await database.learning_courses.delete_one({"_id": oid})
         if result.deleted_count == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+        if doc.get("organization_id"):
+            try:
+                from app.services.course_sync_service import sync_delete_from_framework
+                await sync_delete_from_framework(doc["organization_id"], course_id)
+            except Exception:
+                pass
         return {"deleted": True}
 
     async def bulk_course_action(
@@ -1133,7 +1169,7 @@ class ManagedLearningService:
             detail="Action must be 'archive', 'restore', or 'delete'.",
         )
 
-    async def recommend_for_employee(self, employee: dict, *, limit: int = 8) -> list[dict]:
+    async def recommend_for_employee(self, employee: dict, *, limit: int = 8, organization_id: str | None = None) -> list[dict]:
         designation = (employee.get("job_title") or "").strip()
         if not designation:
             return []
@@ -1145,7 +1181,11 @@ class ManagedLearningService:
             assigned_docs = await database.learning_assignments.find({"user_id": user_id}, {"course_uid": 1}).to_list(length=1000)
             completed = [d.get("course_uid") for d in completed_docs if d.get("course_uid")]
             assigned = [d.get("course_uid") for d in assigned_docs if d.get("course_uid")]
-        courses = await database.learning_courses.find(self._collection_query()).to_list(length=5000)
+        query = self._collection_query()
+        if organization_id:
+            org_filter = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
+            query = {"$and": [query, org_filter]}
+        courses = await database.learning_courses.find(query).to_list(length=5000)
         active = [doc for doc in courses if not doc.get("archived")]
         same_designation = [doc for doc in active if _normalize(doc.get("designation")) == _normalize(designation)]
         if not same_designation:

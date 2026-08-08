@@ -40,6 +40,7 @@ import {
   seedOrgFramework,
 } from "@/services/orgFrameworkService";
 import { bustOrgFrameworkCache } from "@/hooks/useOrgFrameworkOptions";
+import { dispatchFrameworkInvalidated } from "@/lib/frameworkEvents";
 import {
   Award,
   BookOpen,
@@ -188,6 +189,7 @@ export default function OrgFrameworkTab() {
       // The framework is the single source of truth for every module's
       // dropdowns — invalidate the shared cache so all pages pick up edits.
       bustOrgFrameworkCache();
+      dispatchFrameworkInvalidated();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not load organization framework."));
     } finally {
