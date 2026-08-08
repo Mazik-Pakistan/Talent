@@ -11,12 +11,14 @@ const CAPABILITY_LABELS = {
   employees: "Employees",
   talent: "Talent analytics",
   learning: "Learning",
+  org_config: "Organization Setup",
   assistant: "AI assistant",
   messages: "Messages",
   announcements: "Announcements",
   it: "IT & support",
   reporting: "Activity & reporting",
   profile: "Profile",
+  support: "Support tickets",
 };
 const CAPABILITY_ICONS = {
   overview: "📊",
@@ -25,12 +27,14 @@ const CAPABILITY_ICONS = {
   employees: "💼",
   talent: "⭐",
   learning: "📚",
+  org_config: "🏢",
   assistant: "🤖",
   messages: "💬",
   announcements: "📢",
   it: "🖥️",
   reporting: "📈",
   profile: "👤",
+  support: "🎫",
 };
 const CAPABILITY_KEYS = Object.keys(CAPABILITY_LABELS);
 

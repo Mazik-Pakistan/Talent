@@ -81,6 +81,7 @@ const CAPABILITY_LABELS = {
   employees: "Employees",
   talent: "Talent analytics",
   learning: "Learning",
+  org_config: "Organization Setup",
   assistant: "AI assistant",
   messages: "Messages",
   announcements: "Announcements",
@@ -90,7 +91,7 @@ const CAPABILITY_LABELS = {
   support: "Support tickets",
 };
 
-const ORG_MODULE_KEYS = Object.keys(CAPABILITY_LABELS).filter((key) => key !== "support");
+const ORG_MODULE_KEYS = Object.keys(CAPABILITY_LABELS);
 
 const TEMPLATE_LABELS = {
   standard_recruiter: "Standard Recruiter",
