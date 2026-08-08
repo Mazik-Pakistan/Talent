@@ -516,10 +516,38 @@ async def delete_certification(organization_id: str, cert_id: str) -> bool:
 # ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ //
 
 async def list_courses(organization_id: str) -> list[dict]:
-    docs = await database.org_framework_courses.find(
-        _oid_filter(organization_id), {"_id": 0}
+    oid_filter = _oid_filter(organization_id)
+    framework_docs = await database.org_framework_courses.find(
+        oid_filter, {"_id": 0}
     ).sort("name", 1).to_list(10000)
-    return docs
+
+    learning_query = {
+        "$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]
+    }
+    learning_docs = await database.learning_courses.find(
+        learning_query, {"_id": 0}
+    ).sort("title", 1).to_list(10000)
+
+    seen = {c["course_id"] for c in framework_docs}
+    for ld in learning_docs:
+        link_id = ld.get("org_framework_course_id") or ""
+        if link_id and link_id in seen:
+            continue
+        synthetic_id = link_id or f"LC-{str(ld.get('_id', ''))}"
+        framework_docs.append({
+            "organization_id": organization_id,
+            "course_id": synthetic_id,
+            "name": ld.get("title") or "",
+            "provider": ld.get("provider") or "",
+            "category": ld.get("category") or ld.get("designation") or "",
+            "duration_hours": round((ld.get("duration_minutes") or 0) / 60, 1) if ld.get("duration_minutes") else None,
+            "difficulty": ld.get("difficulty") or "Beginner",
+            "url": ld.get("url"),
+            "description": ld.get("description") or "",
+            "source": "learning_courses",
+        })
+        seen.add(synthetic_id)
+    return framework_docs
 
 
 async def get_course(organization_id: str, course_id: str) -> dict | None:
@@ -793,7 +821,12 @@ async def get_framework_summary(organization_id: str) -> dict:
     roles = await database.org_framework_roles.count_documents(_oid_filter(organization_id))
     skills = await database.org_framework_skills.count_documents(_oid_filter(organization_id))
     certifications = await database.org_framework_certifications.count_documents(_oid_filter(organization_id))
-    courses = await database.org_framework_courses.count_documents(_oid_filter(organization_id))
+    courses_framework = await database.org_framework_courses.count_documents(_oid_filter(organization_id))
+    learning_query = {
+        "$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]
+    }
+    courses_learning = await database.learning_courses.count_documents(learning_query)
+    courses = courses_framework + courses_learning
     roadmaps = await database.org_framework_roadmaps.count_documents(_oid_filter(organization_id))
     promotion_rules = await database.org_framework_promotion_rules.count_documents(_oid_filter(organization_id))
 
