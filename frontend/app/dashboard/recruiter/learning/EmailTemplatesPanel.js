@@ -9,14 +9,24 @@ import {
   resetEmailTemplate,
 } from "@/services/orgFrameworkService";
 import {
+  Bold,
   Braces,
   Check,
+  Code,
   Eye,
+  Heading2,
+  Italic,
+  Link2,
+  List,
+  ListOrdered,
   Mail,
   MailOpen,
   Pencil,
+  Redo2,
   RotateCcw,
   Sparkles,
+  Underline,
+  Undo2,
   X,
 } from "lucide-react";
 import s from "./OrgFrameworkTab.module.css";
@@ -89,8 +99,9 @@ export default function EmailTemplatesPanel() {
   const [formSubject, setFormSubject] = useState("");
   const [formBody, setFormBody] = useState("");
   const [mode, setMode] = useState("edit");
+  const [showHtml, setShowHtml] = useState(false);
   const [busy, setBusy] = useState(false);
-  const bodyRef = useRef(null);
+  const editorRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,27 +122,49 @@ export default function EmailTemplatesPanel() {
     setFormSubject(tpl.subject);
     setFormBody(tpl.body_html);
     setMode("edit");
+    setShowHtml(false);
   };
 
   const closeEditor = () => {
     if (busy) return;
     setEditing(null);
     setMode("edit");
+    setShowHtml(false);
+  };
+
+  // Keep the rich editor's DOM in sync with formBody whenever it changes
+  // from outside (openEditor, HTML-mode edits, reset).
+  useEffect(() => {
+    const el = editorRef.current;
+    if (el && document.activeElement !== el) {
+      el.innerHTML = formBody;
+    }
+  }, [formBody, mode, showHtml, editing]);
+
+  const exec = (command, value = null) => {
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    document.execCommand(command, false, value);
+    if (editorRef.current) setFormBody(editorRef.current.innerHTML);
   };
 
   const insertVariable = (varName) => {
-    const token = `{{${varName}}}`;
-    const el = bodyRef.current;
-    if (!el) return;
-    const start = el.selectionStart ?? formBody.length;
-    const end = el.selectionEnd ?? formBody.length;
-    const next = formBody.slice(0, start) + token + formBody.slice(end);
-    setFormBody(next);
-    requestAnimationFrame(() => {
+    const el = editorRef.current;
+    if (el) {
       el.focus();
-      const pos = start + token.length;
-      el.setSelectionRange(pos, pos);
-    });
+      document.execCommand("insertText", false, `{{${varName}}}`);
+      setFormBody(el.innerHTML);
+      return;
+    }
+    const token = `{{${varName}}}`;
+    setFormBody((prev) => prev + token);
+  };
+
+  const insertLink = () => {
+    const url = window.prompt("Link URL:", "https://");
+    if (!url) return;
+    exec("createLink", url);
   };
 
   const handleSave = async () => {
@@ -179,6 +212,30 @@ export default function EmailTemplatesPanel() {
     background: "#fff",
     transition: "border-color 0.15s, box-shadow 0.15s",
   };
+
+  const toolbarBtn = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    border: "none",
+    background: "transparent",
+    color: "var(--navy-2)",
+    cursor: "pointer",
+    transition: "background 0.12s, color 0.12s",
+  };
+
+  const TOOLBAR = [
+    { icon: <Bold style={{ width: 14, height: 14 }} />, cmd: "bold", label: "Bold" },
+    { icon: <Italic style={{ width: 14, height: 14 }} />, cmd: "italic", label: "Italic" },
+    { icon: <Underline style={{ width: 14, height: 14 }} />, cmd: "underline", label: "Underline" },
+    { icon: <Heading2 style={{ width: 15, height: 15 }} />, cmd: "formatBlock", value: "h2", label: "Heading" },
+    { icon: <List style={{ width: 15, height: 15 }} />, cmd: "insertUnorderedList", label: "Bullet list" },
+    { icon: <ListOrdered style={{ width: 15, height: 15 }} />, cmd: "insertOrderedList", label: "Numbered list" },
+    { icon: <Link2 style={{ width: 14, height: 14 }} />, action: "link", label: "Insert link" },
+  ];
 
   return (
     <div>
@@ -360,8 +417,8 @@ export default function EmailTemplatesPanel() {
             style={{
               background: "linear-gradient(180deg, #f7f9fc 0%, #fff 130px)",
               borderRadius: 20,
-              width: "min(860px, 95vw)",
-              maxHeight: "90vh",
+              width: "min(880px, 95vw)",
+              maxHeight: "92vh",
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
@@ -528,9 +585,31 @@ export default function EmailTemplatesPanel() {
               ) : (
                 /* ── Edit mode ── */
                 <div>
-                  {/* Variables chips */}
+                  {/* Subject */}
+                  <label style={{ display: "block", marginBottom: 14 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--navy)", display: "block", marginBottom: 5 }}>
+                      Subject line
+                    </span>
+                    <input
+                      type="text"
+                      value={formSubject}
+                      onChange={(e) => setFormSubject(e.target.value)}
+                      disabled={busy}
+                      style={{ ...inputBase, fontFamily: "'Sora', system-ui" }}
+                      onFocus={(e) => {
+                        e.currentTarget.style.borderColor = "var(--blue-mid)";
+                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(56,162,255,0.15)";
+                      }}
+                      onBlur={(e) => {
+                        e.currentTarget.style.borderColor = "var(--border)";
+                        e.currentTarget.style.boxShadow = "none";
+                      }}
+                    />
+                  </label>
+
+                  {/* Variables */}
                   {editing.variables?.length > 0 && (
-                    <div style={{ marginBottom: 16 }}>
+                    <div style={{ marginBottom: 14 }}>
                       <p
                         style={{
                           fontSize: 11,
@@ -541,7 +620,7 @@ export default function EmailTemplatesPanel() {
                           margin: "0 0 7px",
                         }}
                       >
-                        Click a variable to insert
+                        Click a variable to insert at the cursor
                       </p>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {editing.variables.map((v) => (
@@ -582,56 +661,182 @@ export default function EmailTemplatesPanel() {
                     </div>
                   )}
 
-                  {/* Subject */}
-                  <label style={{ display: "block", marginBottom: 14 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--navy)", display: "block", marginBottom: 5 }}>
-                      Subject line
-                    </span>
-                    <input
-                      type="text"
-                      value={formSubject}
-                      onChange={(e) => setFormSubject(e.target.value)}
-                      disabled={busy}
-                      style={{ ...inputBase, fontFamily: "'Sora', system-ui" }}
-                      onFocus={(e) => {
-                        e.currentTarget.style.borderColor = "var(--blue-mid)";
-                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(56,162,255,0.15)";
-                      }}
-                      onBlur={(e) => {
-                        e.currentTarget.style.borderColor = "var(--border)";
-                        e.currentTarget.style.boxShadow = "none";
-                      }}
-                    />
-                  </label>
-
                   {/* Body */}
-                  <label style={{ display: "block", marginBottom: 14 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--navy)", display: "block", marginBottom: 5 }}>
-                      Email content (HTML)
-                    </span>
-                    <textarea
-                      ref={bodyRef}
-                      value={formBody}
-                      onChange={(e) => setFormBody(e.target.value)}
-                      disabled={busy}
-                      rows={13}
-                      style={{
-                        ...inputBase,
-                        fontFamily: "Consolas, Menlo, monospace",
-                        fontSize: 12.5,
-                        lineHeight: 1.55,
-                        resize: "vertical",
-                      }}
-                      onFocus={(e) => {
-                        e.currentTarget.style.borderColor = "var(--blue-mid)";
-                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(56,162,255,0.15)";
-                      }}
-                      onBlur={(e) => {
-                        e.currentTarget.style.borderColor = "var(--border)";
-                        e.currentTarget.style.boxShadow = "none";
-                      }}
-                    />
-                  </label>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--navy)", display: "block" }}>
+                        Email content
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editorRef.current && !showHtml) setFormBody(editorRef.current.innerHTML);
+                          setShowHtml(!showHtml);
+                        }}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          padding: "4px 10px",
+                          borderRadius: 8,
+                          border: "1px solid var(--border)",
+                          background: showHtml ? "rgba(56,162,255,0.10)" : "#fff",
+                          color: showHtml ? "var(--blue-strong)" : "var(--text-muted)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <Code style={{ width: 12, height: 12 }} />
+                        {showHtml ? "Rich editor" : "HTML source"}
+                      </button>
+                    </div>
+
+                    {showHtml ? (
+                      /* Raw HTML view */
+                      <textarea
+                        value={formBody}
+                        onChange={(e) => setFormBody(e.target.value)}
+                        disabled={busy}
+                        rows={14}
+                        style={{
+                          width: "100%",
+                          padding: "12px 14px",
+                          fontFamily: "Consolas, Menlo, monospace",
+                          fontSize: 12.5,
+                          lineHeight: 1.55,
+                          color: "var(--navy-2)",
+                          border: "1.5px solid var(--border)",
+                          borderRadius: 12,
+                          outline: "none",
+                          resize: "vertical",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    ) : (
+                      /* Rich editor */
+                      <div
+                        style={{
+                          border: "1.5px solid var(--border)",
+                          borderRadius: 12,
+                          overflow: "hidden",
+                          background: "#fff",
+                          transition: "border-color 0.15s, box-shadow 0.15s",
+                        }}
+                        onFocusCapture={(e) => {
+                          e.currentTarget.style.borderColor = "var(--blue-mid)";
+                          e.currentTarget.style.boxShadow = "0 0 0 3px rgba(56,162,255,0.15)";
+                        }}
+                        onBlurCapture={(e) => {
+                          e.currentTarget.style.borderColor = "var(--border)";
+                          e.currentTarget.style.boxShadow = "none";
+                        }}
+                      >
+                        {/* Toolbar */}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 2,
+                            padding: "6px 8px",
+                            background: "#f6f8fb",
+                            borderBottom: "1px solid var(--border)",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {TOOLBAR.map((btn, i) => (
+                            <button
+                              key={btn.label}
+                              type="button"
+                              title={btn.label}
+                              aria-label={btn.label}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => (btn.action === "link" ? insertLink() : exec(btn.cmd, btn.value))}
+                              style={{
+                                ...toolbarBtn,
+                                marginRight: i === 3 ? 8 : 0,
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "rgba(56,162,255,0.12)";
+                                e.currentTarget.style.color = "var(--blue-strong)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "transparent";
+                                e.currentTarget.style.color = "var(--navy-2)";
+                              }}
+                            >
+                              {btn.icon}
+                            </button>
+                          ))}
+                          <div style={{ flex: 1 }} />
+                          <button
+                            type="button"
+                            title="Undo"
+                            aria-label="Undo"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => exec("undo")}
+                            style={toolbarBtn}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "rgba(56,162,255,0.12)";
+                              e.currentTarget.style.color = "var(--blue-strong)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "transparent";
+                              e.currentTarget.style.color = "var(--navy-2)";
+                            }}
+                          >
+                            <Undo2 style={{ width: 14, height: 14 }} />
+                          </button>
+                          <button
+                            type="button"
+                            title="Redo"
+                            aria-label="Redo"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => exec("redo")}
+                            style={toolbarBtn}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "rgba(56,162,255,0.12)";
+                              e.currentTarget.style.color = "var(--blue-strong)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "transparent";
+                              e.currentTarget.style.color = "var(--navy-2)";
+                            }}
+                          >
+                            <Redo2 style={{ width: 14, height: 14 }} />
+                          </button>
+                        </div>
+
+                        {/* Editable area */}
+                        <div
+                          ref={editorRef}
+                          contentEditable
+                          suppressContentEditableWarning
+                          onInput={() => {
+                            if (editorRef.current) setFormBody(editorRef.current.innerHTML);
+                          }}
+                          onBlur={() => {
+                            if (editorRef.current) setFormBody(editorRef.current.innerHTML);
+                          }}
+                          style={{
+                            minHeight: 260,
+                            maxHeight: 320,
+                            overflowY: "auto",
+                            padding: "14px 16px",
+                            fontSize: 14,
+                            lineHeight: 1.6,
+                            color: "var(--navy-2)",
+                            outline: "none",
+                            fontFamily: "'Inter', system-ui, sans-serif",
+                          }}
+                        />
+                      </div>
+                    )}
+                    <div style={{ marginTop: 7, fontSize: 11.5, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 5 }}>
+                      <Braces style={{ width: 12, height: 12 }} />
+                      Variables auto-fill with each recipient's real data when the email is sent.
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
