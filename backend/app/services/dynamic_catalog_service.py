@@ -191,6 +191,30 @@ class DynamicCatalogService:
         # Provider tabs from the registry — includes LinkedIn Learning and any
         # newly created provider, active or not (the UI can grey out inactive).
         providers = await database.learning_providers.find({}).sort("name", 1).to_list(length=500)
+
+        # Build managed course counts in one aggregation (non-blocking)
+        managed_counts: dict[str, int] = {}
+        pipeline = [
+            {"$match": {"$or": [{"archived": {"$exists": False}}, {"archived": False}]}},
+            {"$group": {"_id": "$provider", "count": {"$sum": 1}}},
+        ]
+        async for row in database.learning_courses.aggregate(pipeline):
+            key = (row.get("_id") or "").strip().lower()
+            if key:
+                managed_counts[key] = row.get("count", 0)
+
+        # External catalog counts — read directly from in-memory caches (non-blocking).
+        ms_count = 0
+        coursera_count = 0
+        try:
+            ms_count = sum(len(e.get("items", [])) for e in ms_learn_service._cache.values())
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            coursera_count = len(coursera_service._cache.get("items") or [])
+        except Exception:  # noqa: BLE001
+            pass
+
         for provider in providers:
             name = provider.get("name") or ""
             slug = provider.get("slug") or ""
@@ -206,6 +230,7 @@ class DynamicCatalogService:
                 "provider_id": str(provider["_id"]),
                 "provider_name": name,
                 "active": bool(provider.get("active", True)),
+                "course_count": managed_counts.get(name.strip().lower(), 0),
             })
 
         # External API providers (Microsoft Learn, Coursera) — live catalogs.
@@ -215,12 +240,14 @@ class DynamicCatalogService:
                 "label": "Microsoft Learn",
                 "hint": "Technical learning paths, modules, and certifications from Microsoft Learn (English).",
                 "type": "external",
+                "course_count": ms_count,
             },
             {
                 "key": "coursera",
                 "label": "Coursera",
                 "hint": "Industry soft-skills courses from Coursera (English) — communication, leadership, and more.",
                 "type": "external",
+                "course_count": coursera_count,
             },
         ])
 

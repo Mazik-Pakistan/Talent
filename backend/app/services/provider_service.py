@@ -236,17 +236,21 @@ class ProviderService:
             if name:
                 course_counts[name] = row.get("count", 0)
 
-        # External API providers — counts from their in-memory caches (non-blocking).
+        # External API providers — read directly from in-memory caches (non-blocking).
+        # If the cache is cold (server just started), returns 0 and updates on next load
+        # once warm_cache() has had time to populate. Never blocks the list response.
         try:
             from app.services import ms_learn_service as _ms
-            ms_items = await _ms.get_catalog()
-            course_counts["microsoft learn"] = len(ms_items)
+            ms_count = sum(len(e.get("items", [])) for e in _ms._cache.values())
+            if ms_count:
+                course_counts["microsoft learn"] = ms_count
         except Exception:  # noqa: BLE001
             pass
         try:
             from app.services import coursera_service as _cs
-            cs_items = await _cs.get_catalog()
-            course_counts["coursera"] = len(cs_items)
+            cs_items = _cs._cache.get("items") or []
+            if cs_items:
+                course_counts["coursera"] = len(cs_items)
         except Exception:  # noqa: BLE001
             pass
 
