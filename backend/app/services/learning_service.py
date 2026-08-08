@@ -1006,7 +1006,8 @@ class LearningService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
         if cert.get("verification_status") == "verified":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot edit verified certificates.")
-        updates = {"updated_at": _now()}
+        now = _now()
+        updates = {"updated_at": now}
         if course_title is not None:
             updates["course_title"] = course_title.strip()
         if completion_date is not None:
@@ -1017,7 +1018,30 @@ class LearningService:
             )
         if learning_hours is not None:
             updates["learning_hours"] = learning_hours
+
+        previous_status = cert.get("verification_status", "pending")
+        if previous_status in ("pending", "rejected"):
+            updates["verification_status"] = "pending"
+            updates["verified_by"] = None
+            updates["verified_at"] = None
+            updates["rejection_reason"] = None
+
         await database.learning_certificates.update_one({"_id": cert["_id"]}, {"$set": updates})
+
+        if previous_status == "rejected":
+            employee_name = cert.get("employee_name") or "An employee"
+            updated_course_title = course_title or cert.get("course_title") or "a course"
+            if cert.get("recruiter_id"):
+                await create_notification(
+                    recipient_id=str(cert["recruiter_id"]),
+                    recipient_role="recruiter",
+                    notif_type="certificate_uploaded",
+                    title="Certificate re-submitted for review",
+                    message=f"{employee_name} re-submitted their certificate for \"{updated_course_title}\" after revisions.",
+                    link="/dashboard/recruiter/learning",
+                    related_id=str(cert["_id"]),
+                )
+
         updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
         result = {"certificate": self._public_certificate(updated)}
         return result
