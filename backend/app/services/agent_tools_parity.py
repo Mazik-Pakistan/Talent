@@ -16,12 +16,14 @@ from app.schemas.dashboard import (
     UpdateAnnouncementRequest,
     UpdateRecruiterProfileRequest,
 )
+from app.schemas.invitation import OnboardingEmploymentInfo
 from app.schemas.learning import (
     BookmarkRequest,
     CareerGoalRequest,
     CertificateVerifyRequest,
     CourseAssignRequest,
     EnrollmentProgressRequest,
+    ManagedLearningCourseCreateRequest,
     SkillUpsertRequest,
 )
 from app.schemas.offer import OfferDeclineRequest, OfferSignRequest
@@ -33,13 +35,17 @@ from app.schemas.talent import (
     InternalOpportunityUpdateRequest,
     TalentSearchRequest,
 )
+from app.services.career_framework_service import career_framework_service
 from app.services.dashboard_service import DashboardService
 from app.services.document_service import document_service
 from app.services.employee_service import EmployeeService
 from app.services.learning_service import learning_service
+from app.services.managed_learning_service import managed_learning_service
+from app.services.message_service import message_service
 from app.services.offer_service import offer_service
 from app.services.recruiter_kb_service import recruiter_kb_service
 from app.services.talent_service import talent_service
+from app.services.ticket_service import ticket_service
 from app.schemas.date_utils import parse_natural_date
 
 # Imported late-safe symbols from agent_tools (loaded after base helpers exist).
@@ -1714,6 +1720,273 @@ async def _tool_close_my_it_request(user: CurrentUser, args: dict) -> ToolResult
 # Tool registrations
 # ─────────────────────────────────────────────────────────────────────────
 
+# ── Support ticket tools (recruiter) ──────────────────────────────────────
+
+
+async def _tool_list_my_support_tickets(user: CurrentUser, args: dict) -> ToolResult:
+    """List the recruiter's own support tickets with optional filters."""
+    try:
+        result = await ticket_service.list_my_tickets(
+            user,
+            status=(args.get("status") or None),
+            priority=(args.get("priority") or None),
+            category=(args.get("category") or None),
+            search=(args.get("search") or None),
+            page=int(args.get("page") or 1),
+            page_size=min(int(args.get("page_size") or 20), 50),
+        )
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_my_ticket_stats(user: CurrentUser, args: dict) -> ToolResult:
+    """Get the recruiter's own ticket stats (open, resolved, total, by priority)."""
+    try:
+        stats = await ticket_service.my_ticket_stats(user)
+        return ToolResult(ok=True, data=stats)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_view_support_ticket(user: CurrentUser, args: dict) -> ToolResult:
+    """View a single support ticket with its full conversation thread."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    if not ticket_id:
+        return ToolResult(ok=False, error="ticket_id is required.")
+    try:
+        result = await ticket_service.get_ticket(user, ticket_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_reply_support_ticket(user: CurrentUser, args: dict) -> ToolResult:
+    """Reply to an existing support ticket."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    message = (args.get("message") or "").strip()
+    if not ticket_id:
+        return ToolResult(ok=False, error="ticket_id is required.")
+    if not message:
+        return ToolResult(ok=False, error="message is required.")
+    try:
+        from app.schemas.ticket import TicketReplyRequest
+
+        request = TicketReplyRequest(message=message)
+        result = await ticket_service.reply_to_ticket(user, ticket_id, request)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_close_support_ticket(user: CurrentUser, args: dict) -> ToolResult:
+    """Close one of the recruiter's support tickets."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    if not ticket_id:
+        return ToolResult(ok=False, error="ticket_id is required.")
+    try:
+        result = await ticket_service.close_ticket(user, ticket_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ── Employee banking tool ─────────────────────────────────────────────────
+
+
+async def _tool_update_employee_banking(user: CurrentUser, args: dict) -> ToolResult:
+    """Update an employee's payroll banking details (recruiter-managed)."""
+    employee, err = await _resolve_employee(user, args)
+    if not employee:
+        return ToolResult(ok=False, error=err or "Employee not found.")
+    required = ("bank_name", "account_holder_name", "account_number", "iban", "branch", "branch_code")
+    missing = [k for k in required if not (args.get(k) or "").strip()]
+    if missing:
+        return ToolResult(ok=False, error=f"Missing required banking fields: {', '.join(missing)}")
+    try:
+        payload = OnboardingEmploymentInfo(
+            bank_name=args.get("bank_name").strip(),
+            account_holder_name=args.get("account_holder_name").strip(),
+            account_number=args.get("account_number").strip(),
+            iban=args.get("iban").strip(),
+            branch=args.get("branch").strip(),
+            branch_code=args.get("branch_code").strip(),
+            swift_code=(args.get("swift_code") or "").strip() or None,
+        )
+        result = await employee_service.update_employee_banking(
+            user, employee.get("employee_id") or str(employee.get("_id")), payload
+        )
+        return ToolResult(ok=True, data={"message": "Banking details updated.", "employee": result})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ── HR message tools (recruiter) ──────────────────────────────────────────
+
+
+async def _tool_close_hr_thread_recruiter(user: CurrentUser, args: dict) -> ToolResult:
+    """Close an HR message thread by thread_id (recruiter-side)."""
+    thread_id = (args.get("thread_id") or args.get("id") or "").strip()
+    if not thread_id:
+        return ToolResult(ok=False, error="thread_id is required.")
+    try:
+        result = await message_service.close_thread(user, thread_id)
+        return ToolResult(ok=True, data={"message": "Conversation closed.", "thread": result.get("thread")})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ── Organization framework tools (org_config) ─────────────────────────────
+
+
+def _org_id(user: CurrentUser) -> str:
+    if not user.organization_id:
+        raise ValueError("No organization bound to your account.")
+    return user.organization_id
+
+
+async def _tool_create_department(user: CurrentUser, args: dict) -> ToolResult:
+    """Create a department in the organization framework."""
+    from app.services.organization_framework_service import create_department
+
+    name = (args.get("name") or "").strip()
+    if not name:
+        return ToolResult(ok=False, error="Department name is required.")
+    try:
+        result = await create_department(_org_id(user), {"name": name, "description": (args.get("description") or "")})
+        return ToolResult(ok=True, data={"message": f"Department '{name}' created.", "department": result})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_delete_department(user: CurrentUser, args: dict) -> ToolResult:
+    """Delete a department from the organization framework (requires confirm=true)."""
+    from app.services.organization_framework_service import delete_department
+
+    name = (args.get("name") or "").strip()
+    if not name:
+        return ToolResult(ok=False, error="Department name is required.")
+    if not args.get("confirm"):
+        return confirm_gate("delete_department", args, f"Permanently delete department '{name}'?")
+    try:
+        ok = await delete_department(_org_id(user), name)
+        if not ok:
+            return ToolResult(ok=False, error="Department not found.")
+        return ToolResult(ok=True, data={"message": f"Department '{name}' deleted."})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_create_org_role(user: CurrentUser, args: dict) -> ToolResult:
+    """Create a career role in a department of the organization framework."""
+    from app.services.organization_framework_service import create_role
+
+    name = (args.get("name") or "").strip()
+    department = (args.get("department") or "").strip()
+    if not name or not department:
+        return ToolResult(ok=False, error="Role name and department are required.")
+    try:
+        payload = {"name": name, "department": department}
+        if (args.get("level_number") or 1) is not None:
+            payload["level_number"] = int(float(str(args.get("level_number") or 1)))
+        if args.get("next_role"):
+            payload["next_role"] = (args.get("next_role") or "").strip()
+        if args.get("description"):
+            payload["description"] = (args.get("description") or "").strip()
+        result = await create_role(_org_id(user), payload)
+        return ToolResult(ok=True, data={"message": f"Role '{name}' created in {department}.", "role": result})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_delete_org_role(user: CurrentUser, args: dict) -> ToolResult:
+    """Delete a career role from the organization framework (requires confirm=true)."""
+    from app.services.organization_framework_service import delete_role
+
+    role_id = (args.get("role_id") or args.get("id") or "").strip()
+    if not role_id:
+        return ToolResult(ok=False, error="role_id is required.")
+    if not args.get("confirm"):
+        return confirm_gate("delete_org_role", args, f"Permanently delete role {role_id}?")
+    try:
+        ok = await delete_role(_org_id(user), role_id)
+        if not ok:
+            return ToolResult(ok=False, error="Role not found.")
+        return ToolResult(ok=True, data={"message": f"Role {role_id} deleted."})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_create_career_track(user: CurrentUser, args: dict) -> ToolResult:
+    """Create a career track within a department."""
+    department = (args.get("department") or "").strip()
+    track_name = (args.get("track_name") or args.get("name") or "").strip()
+    if not department or not track_name:
+        return ToolResult(ok=False, error="department and track_name are required.")
+    try:
+        result = await career_framework_service.create_track(
+            user,
+            department=department,
+            track_name=track_name,
+            description=(args.get("description") or None),
+        )
+        return ToolResult(ok=True, data={"message": f"Career track '{track_name}' created.", "track": result})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ── Profile photo tools ───────────────────────────────────────────────────
+
+
+async def _tool_remove_recruiter_photo(user: CurrentUser, args: dict) -> ToolResult:
+    """Remove the signed-in recruiter's profile photo."""
+    try:
+        result = await dashboard_service.remove_recruiter_photo(user)
+        return ToolResult(ok=True, data={"message": "Profile photo removed.", **result})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+# ── Managed learning course tools ─────────────────────────────────────────
+
+
+async def _tool_create_managed_course(user: CurrentUser, args: dict) -> ToolResult:
+    """Create a manual managed-learning course in the catalog."""
+    title = (args.get("title") or "").strip()
+    if not title:
+        return ToolResult(ok=False, error="Course title is required.")
+    try:
+        payload = ManagedLearningCourseCreateRequest(
+            title=title,
+            url=(args.get("url") or None),
+            provider=(args.get("provider") or "Managed Learning"),
+            designation=(args.get("designation") or ""),
+            learning_month=(args.get("learning_month") or ""),
+            category=(args.get("category") or ""),
+            competency=(args.get("competency") or ""),
+            description=(args.get("description") or None),
+            duration_minutes=int(args["duration_minutes"]) if args.get("duration_minutes") else None,
+        )
+        result = await managed_learning_service.create_course(user, payload)
+        return ToolResult(ok=True, data={"message": "Course created.", "course": result.get("course")})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+async def _tool_delete_managed_course(user: CurrentUser, args: dict) -> ToolResult:
+    """Delete a managed-learning course (requires confirm=true)."""
+    course_id = (args.get("course_id") or args.get("id") or "").strip()
+    if not course_id:
+        return ToolResult(ok=False, error="course_id is required.")
+    if not args.get("confirm"):
+        return confirm_gate("delete_managed_course", args, f"Permanently delete course {course_id}?")
+    try:
+        result = await managed_learning_service.delete_course(user, course_id)
+        return ToolResult(ok=True, data={"message": "Course deleted.", **result})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 RECRUITER_PARITY_TOOLS: list[Tool] = [
     Tool(
         name="remind_candidate",
@@ -2261,6 +2534,184 @@ RECRUITER_PARITY_TOOLS: list[Tool] = [
         description="Reply to an HR message thread by thread_id.",
         parameters={"thread_id": "required", "body": "required"},
         handler=_tool_reply_hr_thread,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="close_hr_thread",
+        description="Close an HR message thread by thread_id.",
+        parameters={"thread_id": "required"},
+        handler=_tool_close_hr_thread_recruiter,
+        roles=("recruiter", "super_admin"),
+    ),
+    # ── Support ticket tools (recruiter) ────────────────────────────────
+    Tool(
+        name="list_my_support_tickets",
+        description=(
+            "List your own support tickets with optional filters "
+            "(status, priority, category, search). Returns tickets with subject, "
+            "status, priority, category, and created/updated dates."
+        ),
+        parameters={
+            "status": "string, optional: open|in_progress|waiting|resolved|closed",
+            "priority": "string, optional: low|medium|high|critical",
+            "category": "string, optional",
+            "search": "string, optional",
+            "page": "integer, optional, default 1",
+            "page_size": "integer, optional, max 50",
+        },
+        handler=_tool_list_my_support_tickets,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="my_ticket_stats",
+        description="Get your own support ticket stats: total, open, resolved, closed, by priority.",
+        parameters={},
+        handler=_tool_my_ticket_stats,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="view_support_ticket",
+        description="View a single support ticket with its full conversation thread.",
+        parameters={
+            "ticket_id": "string, required — the ticket ID (e.g. TKT-0001)",
+        },
+        handler=_tool_view_support_ticket,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="reply_support_ticket",
+        description="Reply to an existing support ticket.",
+        parameters={
+            "ticket_id": "string, required",
+            "message": "string, required — your reply message",
+        },
+        handler=_tool_reply_support_ticket,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="close_support_ticket",
+        description="Close one of your support tickets.",
+        parameters={
+            "ticket_id": "string, required",
+        },
+        handler=_tool_close_support_ticket,
+        roles=("recruiter", "super_admin"),
+    ),
+    # ── Employee banking ─────────────────────────────────────────────────
+    Tool(
+        name="update_employee_banking",
+        description=(
+            "Update an employee's payroll banking details. Required: bank_name, "
+            "account_holder_name, account_number, iban, branch, branch_code. "
+            "Optional: swift_code."
+        ),
+        parameters={
+            "employee_id": "string, preferred",
+            "email": "string, optional alternative to locate the employee",
+            "bank_name": "string, required",
+            "account_holder_name": "string, required",
+            "account_number": "string, required",
+            "iban": "string, required (PK format)",
+            "branch": "string, required",
+            "branch_code": "string, required",
+            "swift_code": "string, optional",
+        },
+        handler=_tool_update_employee_banking,
+        roles=("recruiter", "super_admin"),
+    ),
+    # ── Organization framework (org_config) ─────────────────────────────
+    Tool(
+        name="create_department",
+        description="Create a department in the organization framework.",
+        parameters={
+            "name": "string, required",
+            "description": "string, optional",
+        },
+        handler=_tool_create_department,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="delete_department",
+        description="Delete a department from the organization framework. Requires confirm=true.",
+        parameters={
+            "name": "string, required",
+            "confirm": "boolean, set true to proceed",
+        },
+        handler=_tool_delete_department,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="create_org_role",
+        description="Create a career role within a department of the organization framework.",
+        parameters={
+            "name": "string, required",
+            "department": "string, required",
+            "level_number": "integer, optional, default 1",
+            "next_role": "string, optional",
+            "description": "string, optional",
+        },
+        handler=_tool_create_org_role,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="delete_org_role",
+        description="Delete a career role from the organization framework. Requires confirm=true.",
+        parameters={
+            "role_id": "string, required",
+            "confirm": "boolean, set true to proceed",
+        },
+        handler=_tool_delete_org_role,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="create_career_track",
+        description="Create a career track within a department.",
+        parameters={
+            "department": "string, required",
+            "track_name": "string, required — e.g. 'Software Engineering'",
+            "description": "string, optional",
+        },
+        handler=_tool_create_career_track,
+        roles=("recruiter", "super_admin"),
+    ),
+    # ── Profile photo ────────────────────────────────────────────────────
+    Tool(
+        name="remove_recruiter_photo",
+        description="Remove the signed-in recruiter's profile photo.",
+        parameters={},
+        handler=_tool_remove_recruiter_photo,
+        roles=("recruiter", "super_admin"),
+    ),
+    # ── Managed learning courses ─────────────────────────────────────────
+    Tool(
+        name="create_managed_course",
+        description=(
+            "Create a manual managed-learning course in the catalog. "
+            "Required: title. Optional: url, provider, designation, learning_month, "
+            "category, competency, description, duration_minutes."
+        ),
+        parameters={
+            "title": "string, required",
+            "url": "string, optional",
+            "provider": "string, optional",
+            "designation": "string, optional",
+            "learning_month": "string, optional",
+            "category": "string, optional",
+            "competency": "string, optional",
+            "description": "string, optional",
+            "duration_minutes": "integer, optional",
+        },
+        handler=_tool_create_managed_course,
+        roles=("recruiter", "super_admin"),
+    ),
+    Tool(
+        name="delete_managed_course",
+        description="Delete a managed-learning course. Requires confirm=true.",
+        parameters={
+            "course_id": "string, required",
+            "confirm": "boolean, set true to proceed",
+        },
+        handler=_tool_delete_managed_course,
         roles=("recruiter", "super_admin"),
     ),
 ]
