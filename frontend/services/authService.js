@@ -211,12 +211,12 @@ export function resolveRecruiterCapabilities(user = null) {
   return getStoredCapabilities();
 }
 
-/** Check if recruiter has a specific capability enabled. Defaults to deny (fail-closed). */
+/** Check if recruiter has a specific capability enabled. Missing keys default to true (matches backend `get(cap, True)`). */
 export function hasCapability(capability) {
   if (!capability) return false;
   const capabilities = getStoredCapabilities();
   if (!Object.keys(capabilities).length) return false;
-  return capabilities[capability] === true;
+  return capabilities[capability] !== false;
 }
 
 /** Check if recruiter has any of the specified capabilities. */

@@ -129,7 +129,7 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
       if (user?.role !== "recruiter") return true;
       const capabilities = resolveRecruiterCapabilities(user);
       if (!Object.keys(capabilities).length) return false;
-      return capabilities[item.capability] === true;
+      return capabilities[item.capability] !== false;
     });
   }, [user]);
 
@@ -140,7 +140,7 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
       (() => {
         const capabilities = resolveRecruiterCapabilities(user);
         if (!Object.keys(capabilities).length) return false;
-        return capabilities[capability] === true;
+        return capabilities[capability] !== false;
       })()
     );
   }, [user, capability]);
@@ -151,7 +151,7 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
       (() => {
         const capabilities = resolveRecruiterCapabilities(user);
         if (!Object.keys(capabilities).length) return false;
-        return capabilities.candidates === true;
+        return capabilities.candidates !== false;
       })()
     );
   }, [user]);
