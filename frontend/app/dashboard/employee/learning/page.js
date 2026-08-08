@@ -1730,18 +1730,30 @@ function CertificatesTab({ onChange }) {
     const payload = {
       course_title: editForm.course_title.trim(),
       completion_date: editForm.completion_date || undefined,
-      learning_hours: editForm.learning_hours ? parseFloat(editForm.learning_hours) : undefined,
+      learning_hours: editForm.learning_hours !== "" && editForm.learning_hours != null ? parseFloat(editForm.learning_hours) : undefined,
     };
-    console.log("[FRONTEND] Editing certificate:", certId, "payload:", payload);
+    console.log("Updating certificate:", certId, payload);
     try {
       const result = await updateCertificate(token, certId, payload);
-      console.log("[FRONTEND] Update result:", result);
-      toast.success("Certificate updated.");
+      console.log("Certificate update result:", result);
+      
+      // Close edit mode
       setEditingId(null);
-      setTimeout(() => load(), 300);
+      setEditForm({ course_title: "", completion_date: "", learning_hours: "" });
+      
+      // Show success toast
+      toast.success("✓ Certificate updated successfully!", { 
+        autoClose: 4000,
+        position: "top-center"
+      });
+      
+      // Reload the certificate list
+      await load();
+      
+      // Notify parent component
       onChange?.();
     } catch (err) {
-      console.error("[FRONTEND] Update error:", err);
+      console.error("Certificate update error:", err);
       toast.error(getApiErrorMessage(err, "Could not update certificate."));
     }
   }

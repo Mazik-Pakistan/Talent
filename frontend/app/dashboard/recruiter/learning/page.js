@@ -1594,8 +1594,11 @@ function CertificatesTab({ selectedCertificateId = null }) {
     const token = localStorage.getItem("access_token");
     try {
       await verifyCertificate(token, id, { approve: true });
-      toast.success("Certificate verified — skill matrix updated via AI.");
-      setTimeout(() => load(), 300);
+      toast.success("✓ Certificate verified — skill matrix updated via AI.", { 
+        autoClose: 4000,
+        position: "top-center"
+      });
+      setTimeout(() => load(), 500);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not verify certificate."));
     }
@@ -1605,10 +1608,13 @@ function CertificatesTab({ selectedCertificateId = null }) {
     const token = localStorage.getItem("access_token");
     try {
       await verifyCertificate(token, id, { approve: false, note: rejectNote || undefined });
-      toast.success("Certificate rejected.");
+      toast.success("✓ Certificate rejected.", { 
+        autoClose: 4000,
+        position: "top-center"
+      });
       setRejecting(null);
       setRejectNote("");
-      setTimeout(() => load(), 300);
+      setTimeout(() => load(), 500);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not reject certificate."));
     }
