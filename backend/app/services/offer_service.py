@@ -1,5 +1,6 @@
 """Offer Letter cycle — invite+offer, candidate clarification/sign, then docs → IT → activate."""
 
+import logging
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -27,6 +28,8 @@ from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
 from app.services.organization_service import recruiter_scope
 
+logger = logging.getLogger(__name__)
+
 
 ACTIVE_OFFER_STATUSES = ("sent", "viewed", "signed")
 MAX_NEGOTIATION_ROUNDS = 3
@@ -37,13 +40,29 @@ def _iso(value):
 
 
 def _send_email_bg(fn, **kwargs) -> None:
-    """Fire-and-forget SMTP so API responses (and toasts) are not blocked by mail latency."""
+    """Background SMTP with retries and observability."""
 
     def _run() -> None:
-        try:
-            fn(**kwargs)
-        except Exception:
-            pass
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                fn(**kwargs)
+                return
+            except Exception as exc:  # noqa: BLE001
+                if attempt == max_retries:
+                    logger.error(
+                        "Background email failed after %s attempts: %s",
+                        max_retries,
+                        exc,
+                        exc_info=True,
+                    )
+                else:
+                    logger.warning(
+                        "Background email attempt %s/%s failed: %s",
+                        attempt,
+                        max_retries,
+                        exc,
+                    )
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -54,8 +73,7 @@ class OfferService:
         candidate = await self._find_candidate(request.candidate_id)
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found.")
-        if current_user.role != "super_admin" and candidate.get("recruiter_id") != current_user.id:
-            raise HTTPException(status_code=403, detail="You can only send offers to your own candidates.")
+        self._assert_recruiter_can_access(current_user, candidate, detail="You can only send offers to your own candidates.")
         if candidate.get("status") == "converted":
             raise HTTPException(status_code=409, detail="This candidate is already an employee.")
 
@@ -96,6 +114,7 @@ class OfferService:
                 job_title=request.job_title,
                 department=request.department,
                 start_date=request.start_date,
+                organization_id=getattr(current_user, "organization_id", None),
             )
         except Exception:
             pass
@@ -152,7 +171,7 @@ class OfferService:
         await database.offer_letters.update_many(
             {
                 "candidate_email": email.lower().strip(),
-                "status": {"$in": ["sent", "viewed", "draft"]},
+                "status": {"$in": ["sent", "viewed"]},
             },
             {"$set": {"status": "withdrawn", "updated_at": now, "withdrawn_at": now}},
         )
@@ -320,10 +339,12 @@ class OfferService:
             },
         )
 
-        await database.candidates.update_one(
-            {"$or": [{"user_id": current_user.id}, {"email": current_user.email}]},
-            {"$set": {"conversion_status": "offer_signed", "updated_at": now}},
-        )
+        candidate_query = {"user_id": offer.get("candidate_id")} if offer.get("candidate_id") else {"email": offer.get("candidate_email")}
+        if candidate_query:
+            await database.candidates.update_one(
+                candidate_query,
+                {"$set": {"conversion_status": "offer_signed", "updated_at": now}},
+            )
 
         if offer.get("recruiter_id"):
             await create_notification(
@@ -370,21 +391,23 @@ class OfferService:
         )
         from app.services.people_history import cycle_group_key, mark_candidate_historical_fields
 
-        await database.candidates.update_one(
-            {"$or": [{"user_id": current_user.id}, {"email": current_user.email}]},
-            {
-                "$set": {
-                    **mark_candidate_historical_fields(
-                        reason="offer_declined",
-                        lifecycle_state="declined",
-                        when=now,
-                    ),
-                    "conversion_status": "offer_declined",
-                    "cycle_group_key": cycle_group_key(current_user.email),
-                    "updated_at": now,
-                }
-            },
-        )
+        candidate_query = {"user_id": offer.get("candidate_id")} if offer.get("candidate_id") else {"email": offer.get("candidate_email")}
+        if candidate_query:
+            await database.candidates.update_one(
+                candidate_query,
+                {
+                    "$set": {
+                        **mark_candidate_historical_fields(
+                            reason="offer_declined",
+                            lifecycle_state="declined",
+                            when=now,
+                        ),
+                        "conversion_status": "offer_declined",
+                        "cycle_group_key": cycle_group_key(offer.get("candidate_email") or current_user.email),
+                        "updated_at": now,
+                    }
+                },
+            )
         if offer.get("recruiter_id"):
             await create_notification(
                 recipient_id=offer["recruiter_id"],
@@ -473,6 +496,7 @@ class OfferService:
                     candidate_name=offer.get("candidate_name") or "Candidate",
                     job_title=offer.get("job_title") or "",
                     note=request.note,
+                    organization_id=offer.get("organization_id"),
                 )
 
         refreshed = await database.offer_letters.find_one({"_id": offer["_id"]})
@@ -539,6 +563,7 @@ class OfferService:
                 job_title=offer.get("job_title") or "",
                 outcome="resolved",
                 recruiter_note=request.recruiter_note,
+                organization_id=offer.get("organization_id"),
             )
 
         refreshed = await database.offer_letters.find_one({"_id": offer["_id"]})
@@ -615,6 +640,7 @@ class OfferService:
                 job_title=offer.get("job_title") or "",
                 outcome="closed",
                 recruiter_note=request.recruiter_note,
+                organization_id=offer.get("organization_id"),
             )
 
         refreshed = await database.offer_letters.find_one({"_id": offer["_id"]})
@@ -762,6 +788,7 @@ class OfferService:
                 job_title=request.job_title,
                 department=request.department,
                 start_date=request.start_date,
+                organization_id=offer.get("organization_id"),
             )
             _send_email_bg(
                 email_service.send_offer_clarification_result,
@@ -770,6 +797,7 @@ class OfferService:
                 job_title=request.job_title,
                 outcome="updated",
                 recruiter_note=request.recruiter_note or decision_summary,
+                organization_id=offer.get("organization_id"),
             )
 
         await database.audit_logs.insert_one(
@@ -804,8 +832,7 @@ class OfferService:
         from app.services.employee_service import EmployeeService
 
         offer = await self._find(offer_id)
-        if current_user.role != "super_admin" and offer.get("recruiter_id") != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to approve this offer.")
+        self._assert_recruiter_can_access(current_user, offer, detail="Not authorized to approve this offer.")
         signed_at = offer.get("signed_at")
         is_signed_offer = bool(signed_at) or offer.get("status") == "signed"
         if not is_signed_offer:
@@ -934,6 +961,7 @@ class OfferService:
             new_expires_at=expiry_display,
             note=note,
             offer_link=f"{settings.frontend_base_url.rstrip('/')}/offer",
+            organization_id=offer.get("organization_id"),
         )
 
         await database.audit_logs.insert_one(
@@ -1046,6 +1074,17 @@ class OfferService:
             raise HTTPException(status_code=404, detail="Offer letter not found.")
         return offer
 
+    @staticmethod
+    def _assert_recruiter_can_access(current_user: CurrentUser, record: dict, detail: str = "Not authorized.") -> None:
+        if current_user.role == "super_admin":
+            return
+        record_org = record.get("organization_id")
+        if record_org and current_user.organization_id:
+            if record_org != current_user.organization_id:
+                raise HTTPException(status_code=403, detail=detail)
+        elif record.get("recruiter_id") != current_user.id:
+            raise HTTPException(status_code=403, detail=detail)
+
     def _assert_owner(self, current_user: CurrentUser, offer: dict) -> None:
         if current_user.role == "super_admin":
             return
@@ -1053,10 +1092,7 @@ class OfferService:
             raise HTTPException(status_code=403, detail="Not authorized for this offer letter.")
 
     def _assert_recruiter(self, current_user: CurrentUser, offer: dict) -> None:
-        if current_user.role == "super_admin":
-            return
-        if offer.get("recruiter_id") != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized for this offer letter.")
+        self._assert_recruiter_can_access(current_user, offer, detail="Not authorized for this offer letter.")
 
     @staticmethod
     def _empty_negotiation_state() -> dict:

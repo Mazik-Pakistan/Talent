@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -259,13 +258,11 @@ export default function ItSetupBatchPage() {
   return (
     <div className="it-shell">
       <div className="it-card">
-        <Image
+        <img
           src="/assets/logo-placeholder.png"
           alt="Company logo"
-          width={116}
-          height={40}
           className="it-logo"
-          priority
+          style={{ maxWidth: 116 }}
         />
         <p className="it-eyebrow">Bulk IT provisioning</p>
         <h1 className="it-title">Provision {pendingRows.length} new hire(s)</h1>

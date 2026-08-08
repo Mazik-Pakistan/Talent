@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -119,7 +118,7 @@ export default function VerifyEmailPage() {
       <div className={styles.card}>
         <aside className={styles.aside} aria-label="Email verification introduction">
           <div className={styles.asideBrandRow}>
-            <Image src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} className={styles.asideLogo} priority />
+            <img src="/talentai-logo.png" alt="Mazik Global" className={styles.asideLogo} />
           </div>
           <div className={styles.asideContent}>
             <div>

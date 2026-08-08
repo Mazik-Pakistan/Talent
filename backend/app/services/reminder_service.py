@@ -83,8 +83,13 @@ class ReminderService:
         candidate = await self.employees._find_candidate(candidate_id)
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found.")
-        if current_user.role != "super_admin" and candidate.get("recruiter_id") != current_user.id:
-            raise HTTPException(status_code=403, detail="Not allowed.")
+        if current_user.role != "super_admin":
+            record_org = candidate.get("organization_id")
+            if record_org and current_user.organization_id:
+                if record_org != current_user.organization_id:
+                    raise HTTPException(status_code=403, detail="Not allowed.")
+            elif candidate.get("recruiter_id") != current_user.id:
+                raise HTTPException(status_code=403, detail="Not allowed.")
 
         note_text = (note or "").strip() or None
         await self._throttle(candidate, field="person_reminder_sent_at", force=force, collection="candidates")
@@ -336,6 +341,7 @@ class ReminderService:
                     cta_link=cta_link,
                     cta_label=cta_label,
                     recruiter_note=note_text,
+                    organization_id=getattr(current_user, "organization_id", None),
                 )
                 email_sent = True
             except Exception as exc:  # noqa: BLE001

@@ -14,11 +14,14 @@ URLs (see learning_ai_service.py for the no-hallucination design).
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException, status
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import database
 from app.core.rbac import CurrentUser
@@ -821,20 +824,81 @@ class LearningService:
         cert = await database.learning_certificates.find_one({"_id": ObjectId(certificate_id)})
         if not cert:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
-        if current_user.role != "super_admin" and str(cert.get("recruiter_id") or "") != str(current_user.id):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
+        if current_user.role != "super_admin":
+            record_org = cert.get("organization_id")
+            if record_org and current_user.organization_id:
+                if record_org != current_user.organization_id:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
+            elif str(cert.get("recruiter_id") or "") != str(current_user.id):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
 
         now = _now()
-        updates = {
-            "verification_status": "verified" if request.approve else "rejected",
-            "verified_by": current_user.full_name,
-            "verified_at": now,
-            "rejection_reason": None if request.approve else (request.note or "Certificate rejected."),
-            "updated_at": now,
-        }
-        await database.learning_certificates.update_one({"_id": cert["_id"]}, {"$set": updates})
 
-        if request.approve and cert.get("course_title"):
+        if not request.approve:
+            await database.learning_certificates.update_one(
+                {"_id": cert["_id"]},
+                {
+                    "$set": {
+                        "verification_status": "rejected",
+                        "verified_by": current_user.full_name,
+                        "verified_at": now,
+                        "rejection_reason": request.note or "Certificate rejected.",
+                        "updated_at": now,
+                    }
+                },
+            )
+            await create_notification(
+                recipient_id=cert["user_id"],
+                recipient_role="employee",
+                notif_type="certificate_rejected",
+                title="Certificate needs attention",
+                message=(
+                    f"Your certificate for \"{cert.get('course_title')}\" was rejected: {request.note or 'see recruiter notes'}."
+                ),
+                link="/dashboard/employee/learning",
+                related_id=str(cert["_id"]),
+            )
+            try:
+                goal = await database.learning_career_goals.find_one({"user_id": cert["user_id"]})
+                if goal and goal.get("target_role"):
+                    await self._recalculate_designation_readiness(cert["user_id"], cert.get("employee_id"), goal["target_role"])
+            except Exception:
+                pass
+            updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
+            return {"certificate": self._public_certificate(updated)}
+
+        if not cert.get("course_title"):
+            await database.learning_certificates.update_one(
+                {"_id": cert["_id"]},
+                {
+                    "$set": {
+                        "verification_status": "verified",
+                        "verified_by": current_user.full_name,
+                        "verified_at": now,
+                        "rejection_reason": None,
+                        "updated_at": now,
+                    }
+                },
+            )
+            await create_notification(
+                recipient_id=cert["user_id"],
+                recipient_role="employee",
+                notif_type="certificate_verified",
+                title="Certificate verified",
+                message=f"Your certificate for \"{cert.get('course_title')}\" was verified.",
+                link="/dashboard/employee/learning",
+                related_id=str(cert["_id"]),
+            )
+            try:
+                goal = await database.learning_career_goals.find_one({"user_id": cert["user_id"]})
+                if goal and goal.get("target_role"):
+                    await self._recalculate_designation_readiness(cert["user_id"], cert.get("employee_id"), goal["target_role"])
+            except Exception:
+                pass
+            updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
+            return {"certificate": self._public_certificate(updated)}
+
+        try:
             course_summary = None
             if cert.get("course_uid"):
                 course = await catalog_service.get_course_by_uid(cert["course_uid"])
@@ -846,6 +910,8 @@ class LearningService:
                 certificate_text=cert_text,
                 course_summary=course_summary,
             )
+
+            skill_names = []
             for skill in skills:
                 await self._upsert_verified_skill(
                     user_id=cert["user_id"],
@@ -855,26 +921,60 @@ class LearningService:
                     proficiency=skill.get("proficiency") or "Intermediate",
                     source="course",
                 )
+                skill_names.append(skill["skill_name"])
+
             await self._invalidate_ai_caches(cert["user_id"])
-            updates["skills_awarded"] = [s["skill_name"] for s in skills]
+
             await database.learning_certificates.update_one(
                 {"_id": cert["_id"]},
-                {"$set": {"skills_awarded": updates["skills_awarded"]}},
+                {
+                    "$set": {
+                        "verification_status": "verified",
+                        "verified_by": current_user.full_name,
+                        "verified_at": now,
+                        "rejection_reason": None,
+                        "skills_awarded": skill_names,
+                        "updated_at": now,
+                    }
+                },
             )
+
+            if cert.get("course_uid"):
+                await database.learning_enrollments.update_one(
+                    {"user_id": cert["user_id"], "course_uid": cert["course_uid"]},
+                    {"$set": {"status": "completed", "progress_percent": 100, "completed_at": now, "updated_at": now}},
+                )
+        except Exception as exc:
+            await database.learning_certificates.update_one(
+                {"_id": cert["_id"]},
+                {
+                    "$set": {
+                        "verification_status": "rejected",
+                        "rejection_reason": f"Automated verification failed: {exc}",
+                        "updated_at": now,
+                    }
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Certificate verification failed: {exc}",
+            ) from exc
 
         await create_notification(
             recipient_id=cert["user_id"],
             recipient_role="employee",
-            notif_type="certificate_verified" if request.approve else "certificate_rejected",
-            title="Certificate verified" if request.approve else "Certificate needs attention",
-            message=(
-                f"Your certificate for \"{cert.get('course_title')}\" was verified."
-                if request.approve
-                else f"Your certificate for \"{cert.get('course_title')}\" was rejected: {request.note or 'see recruiter notes'}."
-            ),
+            notif_type="certificate_verified",
+            title="Certificate verified",
+            message=f"Your certificate for \"{cert.get('course_title')}\" was verified.",
             link="/dashboard/employee/learning",
             related_id=str(cert["_id"]),
         )
+        try:
+            goal = await database.learning_career_goals.find_one({"user_id": cert["user_id"]})
+            if goal and goal.get("target_role"):
+                await self._recalculate_designation_readiness(cert["user_id"], cert.get("employee_id"), goal["target_role"])
+        except Exception:
+            pass
         updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
         return {"certificate": self._public_certificate(updated)}
 
@@ -904,19 +1004,316 @@ class LearningService:
         cert = await database.learning_certificates.find_one({"_id": ObjectId(certificate_id), "user_id": current_user.id})
         if not cert:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
-        # Only allow edits if not verified
         if cert.get("verification_status") == "verified":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot edit verified certificates.")
-        updates = {"updated_at": _now()}
+        now = _now()
+        updates = {"updated_at": now}
         if course_title is not None:
             updates["course_title"] = course_title.strip()
         if completion_date is not None:
-            updates["completion_date"] = completion_date
+            updates["completion_date"] = (
+                datetime.combine(completion_date, datetime.min.time())
+                if not isinstance(completion_date, datetime)
+                else completion_date
+            )
         if learning_hours is not None:
             updates["learning_hours"] = learning_hours
+
+        previous_status = cert.get("verification_status", "pending")
+        if previous_status in ("pending", "rejected"):
+            updates["verification_status"] = "pending"
+            updates["verified_by"] = None
+            updates["verified_at"] = None
+            updates["rejection_reason"] = None
+
         await database.learning_certificates.update_one({"_id": cert["_id"]}, {"$set": updates})
+
+        if previous_status == "rejected":
+            employee_name = cert.get("employee_name") or "An employee"
+            updated_course_title = course_title or cert.get("course_title") or "a course"
+            if cert.get("recruiter_id"):
+                await create_notification(
+                    recipient_id=str(cert["recruiter_id"]),
+                    recipient_role="recruiter",
+                    notif_type="certificate_uploaded",
+                    title="Certificate re-submitted for review",
+                    message=f"{employee_name} re-submitted their certificate for \"{updated_course_title}\" after revisions.",
+                    link="/dashboard/recruiter/learning",
+                    related_id=str(cert["_id"]),
+                )
+
         updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
-        return {"certificate": self._public_certificate(updated)}
+        result = {"certificate": self._public_certificate(updated)}
+        return result
+
+    # ------------------------------------------------------------------ #
+    # Designation requirements & readiness (extends existing Career Path)
+    # ------------------------------------------------------------------ #
+
+    async def get_designation_requirements(self, current_user: CurrentUser, target_role: str) -> dict:
+        """Return the learning requirements for a target designation using existing
+        Career Framework / Organization Framework data.
+
+        Looks up the matching career level (from career_levels) and/or org framework
+        role to gather required courses, skills, and certifications.
+        """
+        target_role = " ".join(target_role.split())
+        if not target_role:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target role is required.")
+
+        employee = await self._get_employee(current_user)
+        department = employee.get("department")
+
+        # Try Career Framework first (career_levels has required_skills, required_certifications, learning_path)
+        level = await database.career_levels.find_one({
+            "role_title": {"$regex": f"^{_escape_regex(target_role)}$", "$options": "i"},
+            "is_active": True,
+        })
+
+        if level:
+            learning_path = level.get("learning_path") or []
+            required_courses = []
+            for course in learning_path:
+                required_courses.append({
+                    "course_uid": course.get("course_uid"),
+                    "course_title": course.get("course_title"),
+                    "source": course.get("source", "microsoft_learn"),
+                    "mandatory": course.get("mandatory", True),
+                    "order": course.get("order"),
+                })
+            required_skills = [s.get("skill") for s in (level.get("required_skills") or []) if s.get("skill")]
+            required_certifications = [c.get("certification") for c in (level.get("required_certifications") or []) if c.get("certification")]
+            return {
+                "target_role": target_role,
+                "department": level.get("department"),
+                "required_courses": required_courses,
+                "required_skills": required_skills,
+                "required_certifications": required_certifications,
+                "source": "career_framework",
+            }
+
+        # Fallback: Organization Framework roles
+        org_role = await database.org_framework_roles.find_one({
+            "name": {"$regex": f"^{_escape_regex(target_role)}$", "$options": "i"},
+        })
+
+        if org_role:
+            skill_docs = await database.org_framework_skills.find({"role_name": target_role}).to_list(length=100)
+            cert_docs = await database.org_framework_certifications.find({"role_name": target_role}).to_list(length=100)
+            required_skills = [s.get("skill_name") for s in skill_docs if s.get("skill_name")]
+            required_certifications = [c.get("certification_name") for c in cert_docs if c.get("certification_name")]
+            return {
+                "target_role": target_role,
+                "department": org_role.get("department"),
+                "required_courses": [],
+                "required_skills": required_skills,
+                "required_certifications": required_certifications,
+                "source": "org_framework",
+            }
+
+        # Last fallback: Knowledge Base roles
+        kb_role = await recruiter_kb_service.find_role_by_title(target_role, self._employee_recruiter_id(employee))
+        if kb_role:
+            required_skills = kb_role.get("required_skills") or []
+            required_certifications = kb_role.get("required_certifications") or []
+            return {
+                "target_role": target_role,
+                "department": None,
+                "required_courses": [],
+                "required_skills": required_skills,
+                "required_certifications": required_certifications,
+                "source": "knowledge_base",
+            }
+
+        return {
+            "target_role": target_role,
+            "department": department,
+            "required_courses": [],
+            "required_skills": [],
+            "required_certifications": [],
+            "source": "unknown",
+        }
+
+    async def get_designation_readiness(self, current_user: CurrentUser, target_role: str | None = None) -> dict:
+        """Calculate an employee's readiness and eligibility for a target designation.
+
+        Deterministic backend calculation — no AI. Queries actual:
+          - learning_assignments (assigned / in_progress / completed courses)
+          - learning_enrollments (started courses with progress)
+          - learning_certificates (verified certificates)
+          - employee_skills (acquired skills)
+        against the target role's requirements from Career Framework / Org Framework.
+        """
+        employee = await self._get_employee(current_user)
+        user_id = current_user.id
+        employee_id = employee.get("employee_id")
+
+        # Resolve target role
+        resolved_role = target_role
+        if not resolved_role:
+            goal = await database.learning_career_goals.find_one({"user_id": user_id})
+            resolved_role = (goal or {}).get("target_role")
+        if not resolved_role:
+            resolved_role = employee.get("job_title")
+        if not resolved_role:
+            return {
+                "target_role": None,
+                "readiness_percent": 0,
+                "eligible": False,
+                "requirements": [],
+                "missing_count": 0,
+                "message": "Set a career goal to see designation readiness.",
+            }
+
+        requirements = await self.get_designation_requirements(current_user, resolved_role)
+        req_courses = requirements.get("required_courses") or []
+        req_skills = requirements.get("required_skills") or []
+        req_certs = requirements.get("required_certifications") or []
+
+        # Gather actual employee data
+        assigned_courses = await database.learning_assignments.find({
+            "employee_id": employee_id,
+            "is_designation_requirement": True,
+            "target_designation": {"$regex": f"^{_escape_regex(resolved_role)}$", "$options": "i"},
+        }).to_list(length=200)
+
+        enrollments = await database.learning_enrollments.find({"user_id": user_id}).to_list(length=500)
+        enroll_by_uid = {e.get("course_uid"): e for e in enrollments if e.get("course_uid")}
+
+        verified_certs = await database.learning_certificates.find({
+            "user_id": user_id,
+            "verification_status": "verified",
+        }).to_list(length=200)
+        cert_titles = {c.get("course_title", "").lower() for c in verified_certs if c.get("course_title")}
+        cert_uids = {c.get("course_uid") for c in verified_certs if c.get("course_uid")}
+
+        employee_skills = await database.employee_skills.find({"user_id": user_id}).to_list(length=200)
+        emp_skill_names = {s.get("skill_name", "").lower() for s in employee_skills if s.get("skill_name")}
+
+        # Build requirement statuses
+        requirement_items = []
+        total_weight = 0
+        completed_weight = 0
+
+        for course in req_courses:
+            uid = course.get("course_uid") or ""
+            title = course.get("course_title") or ""
+            is_cert_required = not uid.startswith("kb-cert:")
+            mandatory = course.get("mandatory", True)
+
+            assignment = next((a for a in assigned_courses if a.get("course_uid") == uid or a.get("course_title", "").lower() == title.lower()), None)
+            enrollment = enroll_by_uid.get(uid)
+            has_verified_cert = uid in cert_uids or title.lower() in cert_titles
+
+            if has_verified_cert:
+                status = "verified"
+            elif enrollment and enrollment.get("status") == "completed":
+                status = "completed" if not is_cert_required else "certificate_pending"
+            elif assignment:
+                status = "in_progress" if enrollment and enrollment.get("status") == "in_progress" else "assigned"
+            else:
+                status = "not_started"
+
+            weight = 10 if mandatory else 5
+            total_weight += weight
+            if status in ("completed", "verified"):
+                completed_weight += weight
+
+            requirement_items.append({
+                "type": "course",
+                "title": title,
+                "course_uid": uid,
+                "mandatory": mandatory,
+                "status": status,
+                "source": course.get("source"),
+            })
+
+        for skill in req_skills:
+            skill_lower = skill.lower()
+            acquired = skill_lower in emp_skill_names
+            status = "acquired" if acquired else "missing"
+            weight = 8
+            total_weight += weight
+            if acquired:
+                completed_weight += weight
+            requirement_items.append({
+                "type": "skill",
+                "title": skill,
+                "mandatory": True,
+                "status": status,
+            })
+
+        for cert in req_certs:
+            cert_lower = cert.lower()
+            has_cert = cert_lower in cert_titles
+            status = "verified" if has_cert else "missing"
+            weight = 12
+            total_weight += weight
+            if has_cert:
+                completed_weight += weight
+            requirement_items.append({
+                "type": "certification",
+                "title": cert,
+                "mandatory": True,
+                "status": status,
+            })
+
+        readiness_pct = round(completed_weight / total_weight * 100) if total_weight else 100
+
+        # Eligibility: all mandatory items must be completed/verified/acquired
+        mandatory_incomplete = any(
+            item for item in requirement_items
+            if item.get("mandatory") and item.get("status") not in ("completed", "verified", "acquired")
+        )
+        eligible = not mandatory_incomplete and readiness_pct >= 100
+
+        return {
+            "target_role": resolved_role,
+            "readiness_percent": readiness_pct,
+            "eligible": eligible,
+            "requirements": requirement_items,
+            "missing_count": sum(1 for item in requirement_items if item.get("status") in ("not_started", "missing", "assigned", "in_progress", "certificate_pending")),
+            "completed_count": sum(1 for item in requirement_items if item.get("status") in ("completed", "verified", "acquired")),
+            "total_count": len(requirement_items),
+            "source": requirements.get("source"),
+        }
+
+    async def _recalculate_designation_readiness(self, user_id: str, employee_id: str, target_role: str) -> dict:
+        """Internal recalculation triggered by certificate verification or course completion."""
+        current_user = CurrentUser(id=user_id, role="employee", email="")
+        return await self.get_designation_readiness(current_user, target_role)
+
+    async def get_employee_designation_readiness(self, current_user: CurrentUser, employee_id: str, target_role: str | None = None) -> dict:
+        """Recruiter view: get an employee's designation readiness."""
+        employee = await self._get_employee_by_id(employee_id)
+        await self._assert_recruiter_owns(current_user, employee)
+
+        resolved_role = target_role
+        if not resolved_role:
+            goal = await database.learning_career_goals.find_one({"employee_id": employee_id})
+            resolved_role = (goal or {}).get("target_role")
+        if not resolved_role:
+            resolved_role = employee.get("job_title")
+        if not resolved_role:
+            return {
+                "employee_id": employee_id,
+                "employee_name": employee.get("full_name"),
+                "target_role": None,
+                "readiness_percent": 0,
+                "eligible": False,
+                "requirements": [],
+                "message": "Employee has no target designation set.",
+            }
+
+        # Use a synthetic current_user for the calculation
+        synth = CurrentUser(id=employee.get("user_id", ""), role="employee", email=employee.get("email", ""))
+        readiness = await self.get_designation_readiness(synth, resolved_role)
+        return {
+            "employee_id": employee_id,
+            "employee_name": employee.get("full_name"),
+            "current_designation": employee.get("job_title"),
+            **readiness,
+        }
 
     async def _extract_certificate_text(self, cert: dict) -> str | None:
         """Best-effort OCR of an uploaded certificate for skill extraction."""
@@ -1392,7 +1789,7 @@ class LearningService:
     # ------------------------------------------------------------------ #
     async def get_recommendations(self, current_user: CurrentUser, *, refresh: bool = False) -> dict:
         employee = await self._get_employee(current_user)
-        managed_recommendations = await managed_learning_service.recommend_for_employee(employee, limit=8)
+        managed_recommendations = await managed_learning_service.recommend_for_employee(employee, limit=8, organization_id=employee.get("organization_id"))
         if managed_recommendations:
             return {
                 "recommendations": managed_recommendations,
@@ -1646,6 +2043,8 @@ class LearningService:
                 "mandatory": bool(request.mandatory),
                 "note": request.note,
                 "status": "assigned",
+                "target_designation": request.target_designation or None,
+                "is_designation_requirement": bool(request.is_designation_requirement),
                 "created_at": now,
                 "updated_at": now,
             }
@@ -1699,9 +2098,10 @@ class LearningService:
                             cta_label="Open Learning",
                             recruiter_note=request.note,
                             eyebrow="Learning",
+                            organization_id=employee.get("organization_id"),
                         )
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Course assignment email failed: %s", exc, exc_info=True)
         return {"assigned": assigned, "skipped": skipped, "errors": errors, "due_date": due_date.isoformat()}
 
     def _public_assignment(self, doc: dict) -> dict:
@@ -1721,6 +2121,8 @@ class LearningService:
             "status": doc.get("status"),
             "assigned_by": doc.get("assigned_by"),
             "created_at": _iso(doc.get("created_at")),
+            "target_designation": doc.get("target_designation"),
+            "is_designation_requirement": bool(doc.get("is_designation_requirement")),
         }
 
     @staticmethod
@@ -1804,10 +2206,6 @@ class LearningService:
         if mandatory_only is True:
             query["mandatory"] = True
         docs = await database.learning_assignments.find(query).sort("created_at", -1).to_list(length=500)
-        # Clean true UID duplicates in the background of this request, then
-        # collapse any remaining same-title duplicates for display.
-        await self._purge_duplicate_assignments(docs)
-        docs = await database.learning_assignments.find(query).sort("created_at", -1).to_list(length=500)
         deduped = self._dedupe_assignment_docs(docs)
         return {"assignments": [self._public_assignment(d) for d in deduped]}
 
@@ -1818,8 +2216,6 @@ class LearningService:
         await self._assert_recruiter_owns(current_user, employee)
         user_id = employee.get("user_id")
         enrollments = await database.learning_enrollments.find({"user_id": user_id}).sort("updated_at", -1).to_list(length=300)
-        assignment_docs = await database.learning_assignments.find({"employee_id": employee_id}).sort("created_at", -1).to_list(length=300)
-        await self._purge_duplicate_assignments(assignment_docs)
         assignment_docs = await database.learning_assignments.find({"employee_id": employee_id}).sort("created_at", -1).to_list(length=300)
         assignments = self._dedupe_assignment_docs(assignment_docs)
         certificates = await database.learning_certificates.find({"user_id": user_id}).sort("created_at", -1).to_list(length=300)

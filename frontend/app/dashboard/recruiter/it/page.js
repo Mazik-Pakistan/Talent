@@ -17,6 +17,8 @@ import {
   listItServiceRequests,
   sendItServiceRequest,
 } from "@/services/authService";
+import { Settings, Wrench, ChevronDown, ChevronUp, Users, Search as SearchIcon } from "lucide-react";
+import s from "./it.module.css";
 
 const STATUS_LABELS = {
   draft: "Waiting for HR",
@@ -50,22 +52,8 @@ const TYPE_LABELS = {
 const NESTED_LIST_PREVIEW = 8;
 
 function StatusChip({ status }) {
-  const colors = STATUS_COLORS[status] || STATUS_COLORS.draft;
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "3px 10px",
-        borderRadius: 999,
-        fontSize: 11,
-        fontWeight: 800,
-        background: colors.bg,
-        color: colors.color,
-      }}
-    >
-      {STATUS_LABELS[status] || status}
-    </span>
-  );
+  const cls = { draft: s.pillDraft, reviewing: s.pillReviewing, sent: s.pillSent, fulfilled: s.pillFulfilled, closed: s.pillClosed, cancelled: s.pillCancelled };
+  return <span className={`${s.pill} ${cls[status] || s.pillDraft}`}>{STATUS_LABELS[status] || status}</span>;
 }
 
 function RequestTimeline({ r }) {
@@ -430,81 +418,103 @@ function RecruiterItHubPageContent() {
   return (
     <RecruiterShell capability="it">
       <div className={styles.content}>
-        <div className={styles.section}>
-          <div className={styles.sectionHead}>
-            <div className={styles.sectionHeadLeft}>
-              <div className={`${styles.bar} ${styles.green}`} />
+        {error && (
+          <div style={{ padding: "10px 16px", borderRadius: 10, background: "var(--red-light)", color: "var(--red)", fontSize: 13, fontWeight: 600, marginBottom: 14 }} role="alert">
+            {error}
+          </div>
+        )}
+
+        <div className={s.sectionCard}>
+          <div className={s.sectionHead}>
+            <div className={s.sectionHeadLeft}>
+              <div className={s.officerAvatar}><Settings size={18} /></div>
               <div>
-                <div className={styles.sectionTitle}>IT provisioning & support</div>
-                <div className={styles.sectionDesc}>
-                  Track the IT officers you work with, the people they provisioned, and support requests
-                  (e.g. replacement laptops).
+                <div className={s.sectionTitle}>IT provisioning & support</div>
+                <div className={s.sectionDesc}>
+                  Track the IT officers you work with, the people they provisioned, and support requests.
                 </div>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <Link href="/dashboard/recruiter/it-kits" className={styles.secondaryButton}>
-                Manage kits
-              </Link>
-              <button type="button" className={styles.primaryButton} onClick={openCreate}>
-                Request IT help
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <Link href="/dashboard/recruiter/it-kits" className="btn btnSecondary" style={{ fontSize: 12, padding: "7px 14px", minHeight: 32, borderRadius: 8, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5 }}>Manage kits</Link>
+              <button type="button" className="btn btnPrimary" onClick={openCreate} style={{ fontSize: 12, padding: "7px 14px", minHeight: 32, borderRadius: 8 }}>
+                <Wrench size={13} /> Request IT help
               </button>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8, padding: "0 18px" }}>
-            {[
-              { key: "officers", label: "IT officers" },
-              { key: "requests", label: "Requests" },
-            ].map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                className={styles.secondaryButton}
-                style={{
-                  background: tab === t.key ? "#e7f1f9" : "#fff",
-                  borderColor: tab === t.key ? "#0d5c91" : undefined,
-                  color: tab === t.key ? "#0d5c91" : undefined,
-                }}
-                onClick={() => setTab(t.key)}
-              >
-                {t.label}
+          <div className={s.sectionBody}>
+            <div className={s.tabGroup}>
+              <button type="button" className={`${s.tabBtn} ${tab === "officers" ? s.tabBtnActive : ""}`} onClick={() => setTab("officers")}>
+                <Settings size={13} style={{ marginRight: 5, verticalAlign: -2 }} /> IT Officers
               </button>
-            ))}
-          </div>
+              <button type="button" className={`${s.tabBtn} ${tab === "requests" ? s.tabBtnActive : ""}`} onClick={() => setTab("requests")}>
+                <Wrench size={13} style={{ marginRight: 5, verticalAlign: -2 }} /> Requests
+              </button>
+            </div>
 
-          <div className={styles.sectionBody}>
-            {error && <p style={{ color: "var(--danger, #c0392b)", marginBottom: 12 }}>{error}</p>}
+            {tab === "officers" && !loading && (
+              <div className={s.kpiGrid}>
+                <div className={s.kpiCard}>
+                  <div className={`${s.kpiIcon} ${s.navy}`}><Users size={18} /></div>
+                  <div><div className={s.kpiValue}>{officers.length}</div><div className={s.kpiLabel}>IT Officers</div></div>
+                </div>
+                <div className={s.kpiCard}>
+                  <div className={`${s.kpiIcon} ${s.orange}`}><Wrench size={18} /></div>
+                  <div><div className={s.kpiValue}>{officers.reduce((sum, o) => sum + (o.service_open || 0), 0)}</div><div className={s.kpiLabel}>Open tickets</div></div>
+                </div>
+                <div className={s.kpiCard}>
+                  <div className={`${s.kpiIcon} ${s.green}`}><Settings size={18} /></div>
+                  <div><div className={s.kpiValue}>{officers.reduce((sum, o) => sum + (o.provisioning_pending || 0), 0)}</div><div className={s.kpiLabel}>Pending setups</div></div>
+                </div>
+              </div>
+            )}
+
+            {tab === "requests" && !loading && (
+              <div className={s.kpiGrid}>
+                <div className={s.kpiCard}>
+                  <div className={`${s.kpiIcon} ${s.navy}`}><Wrench size={18} /></div>
+                  <div><div className={s.kpiValue}>{requests.length}</div><div className={s.kpiLabel}>Total requests</div></div>
+                </div>
+                <div className={s.kpiCard}>
+                  <div className={`${s.kpiIcon} ${s.orange}`}><Wrench size={18} /></div>
+                  <div><div className={s.kpiValue}>{requests.filter(r => r.status === "sent").length}</div><div className={s.kpiLabel}>With IT</div></div>
+                </div>
+                <div className={s.kpiCard}>
+                  <div className={`${s.kpiIcon} ${s.green}`}><Settings size={18} /></div>
+                  <div><div className={s.kpiValue}>{requests.filter(r => r.status === "closed").length}</div><div className={s.kpiLabel}>Closed</div></div>
+                </div>
+              </div>
+            )}
+
             {loading ? (
               <RecruiterLoader />
             ) : tab === "officers" ? (
               officers.length === 0 ? (
-                <p className={styles.emptySub}>
-                  No IT officers yet. Send an IT provisioning request or raise a support request to see them here.
-                </p>
+                <div className={s.emptyState}>
+                  <Users size={40} />
+                  <div className={s.emptyStateTitle}>No IT officers yet</div>
+                  <div className={s.emptyStateDesc}>Send an IT provisioning request or raise a support request to see them here.</div>
+                </div>
               ) : (
-                <div style={{ display: "grid", gap: 14 }}>
+                <div>
                   {officers.length > 6 ? (
-                    <input
-                      className={styles.input}
-                      value={officerSearch}
-                      onChange={(e) => setOfficerSearch(e.target.value)}
-                      placeholder="Search officers, people, or tickets…"
-                      style={{ maxWidth: 420 }}
-                    />
+                    <div className={s.filterBar}>
+                      <label className={`${s.filterField} ${s.flex}`}>
+                        <SearchIcon size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-faint)" }} />
+                        <input value={officerSearch} onChange={(e) => setOfficerSearch(e.target.value)} placeholder="Search officers, people, or tickets…" style={{ paddingLeft: 32, position: "relative" }} />
+                      </label>
+                    </div>
                   ) : null}
                   {filteredOfficers.length === 0 ? (
-                    <p className={styles.emptySub}>No officers match your search.</p>
+                    <div className={s.emptyState}>
+                      <SearchIcon size={36} />
+                      <div className={s.emptyStateTitle}>No officers match your search</div>
+                    </div>
                   ) : null}
                   {filteredOfficers.map((o) => {
-                    const supportParts = [
-                      `${o.service_open || 0} open`,
-                      `${o.service_fulfilled || 0} awaiting employee`,
-                      `${o.service_closed || 0} closed`,
-                    ];
-                    if ((o.service_cancelled || 0) > 0) {
-                      supportParts.push(`${o.service_cancelled} cancelled`);
-                    }
+                    const supportParts = [`${o.service_open || 0} open`, `${o.service_fulfilled || 0} awaiting employee`, `${o.service_closed || 0} closed`];
+                    if ((o.service_cancelled || 0) > 0) supportParts.push(`${o.service_cancelled} cancelled`);
                     const isOpen = expandedOfficer === o.email;
                     const people = o.provisioned_people || [];
                     const tickets = o.service_requests || [];
@@ -515,180 +525,60 @@ function RecruiterItHubPageContent() {
                     const visiblePeople = showAllPeople ? people : people.slice(0, NESTED_LIST_PREVIEW);
                     const visibleTickets = showAllTickets ? tickets : tickets.slice(0, NESTED_LIST_PREVIEW);
                     return (
-                      <div
-                        key={o.email}
-                        style={{
-                          border: "1px solid var(--border)",
-                          borderRadius: 12,
-                          padding: 16,
-                          background: "#fff",
-                        }}
-                      >
-                        <div
-                          style={{ display: "flex", justifyContent: "space-between", gap: 12, cursor: "pointer" }}
-                          onClick={() => setExpandedOfficer(isOpen ? "" : o.email)}
-                        >
-                          <div>
-                            <strong style={{ fontSize: 15 }}>{o.email}</strong>
-                            <div style={{ fontSize: 12, color: "#6b7a8f", marginTop: 2 }}>
-                              {o.provisioning_total} new-hire setup
-                              {o.provisioning_total === 1 ? "" : "s"} · {o.service_total} support ticket
-                              {o.service_total === 1 ? "" : "s"}
-                            </div>
+                      <div key={o.email} className={s.officerCard}>
+                        <div className={s.officerHead} onClick={() => setExpandedOfficer(isOpen ? "" : o.email)}>
+                          <div className={s.officerAvatar}>{(o.email || "?")[0].toUpperCase()}</div>
+                          <div className={s.officerInfo}>
+                            <div className={s.officerEmail}>{o.email}</div>
+                            <div className={s.officerMeta}>{o.provisioning_total} new-hire setup{o.provisioning_total === 1 ? "" : "s"} · {o.service_total} support ticket{o.service_total === 1 ? "" : "s"}</div>
                           </div>
-                          <span style={{ fontSize: 13, color: "#0d5c91", fontWeight: 700 }}>
-                            {isOpen ? "▲" : "▼"}
-                          </span>
+                          <div className={s.officerChevron}>{isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</div>
                         </div>
                         {isOpen && (
-                          <div style={{ marginTop: 12, borderTop: "1px solid #eef2f7", paddingTop: 14, display: "grid", gap: 16 }}>
-                            <div
-                              style={{
-                                display: "grid",
-                                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                                gap: 12,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  padding: "12px 14px",
-                                  borderRadius: 10,
-                                  background: "#f7fafc",
-                                  border: "1px solid #e8eef5",
-                                }}
-                              >
-                                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", color: "#64748b", textTransform: "uppercase" }}>
-                                  New-hire provisioning
-                                </div>
-                                <div style={{ fontSize: 12, color: "#6b7a8f", marginTop: 4, marginBottom: 8 }}>
-                                  IT setting up accounts for people before activation
-                                </div>
-                                <div style={{ fontSize: 13, color: "#1e293b", lineHeight: 1.55 }}>
-                                  <strong>{o.provisioning_pending}</strong> waiting ·{" "}
-                                  <strong>{o.provisioning_submitted}</strong> ready ·{" "}
-                                  <strong>{o.provisioning_applied}</strong> activated
-                                </div>
+                          <div className={s.officerBody}>
+                            <div className={s.officerStats}>
+                              <div className={s.statCard}>
+                                <div className={s.statCardLabel}>New-hire provisioning</div>
+                                <div className={s.statCardDesc}>IT setting up accounts before activation</div>
+                                <div className={s.statCardValues}><strong>{o.provisioning_pending}</strong> waiting · <strong>{o.provisioning_submitted}</strong> ready · <strong>{o.provisioning_applied}</strong> activated</div>
                               </div>
-                              <div
-                                style={{
-                                  padding: "12px 14px",
-                                  borderRadius: 10,
-                                  background: "#f7fafc",
-                                  border: "1px solid #e8eef5",
-                                }}
-                              >
-                                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", color: "#64748b", textTransform: "uppercase" }}>
-                                  Support tickets
-                                </div>
-                                <div style={{ fontSize: 12, color: "#6b7a8f", marginTop: 4, marginBottom: 8 }}>
-                                  Help requests for people who already have accounts
-                                </div>
-                                <div style={{ fontSize: 13, color: "#1e293b", lineHeight: 1.55 }}>
-                                  {supportParts.map((part, i) => (
-                                    <span key={part}>
-                                      {i > 0 ? " · " : ""}
-                                      <strong>{part.split(" ")[0]}</strong> {part.split(" ").slice(1).join(" ")}
-                                    </span>
-                                  ))}
-                                </div>
+                              <div className={s.statCard}>
+                                <div className={s.statCardLabel}>Support tickets</div>
+                                <div className={s.statCardDesc}>Help requests for people with accounts</div>
+                                <div className={s.statCardValues}>{supportParts.map((part, i) => (<span key={part}>{i > 0 ? " · " : ""}<strong>{part.split(" ")[0]}</strong> {part.split(" ").slice(1).join(" ")}</span>))}</div>
                               </div>
                             </div>
 
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
-                                Provisioned people ({people.length})
-                              </div>
-                              {people.length ? (
-                                <>
-                                  {visiblePeople.map((p, i) => (
-                                    <div key={i} style={{ fontSize: 13, lineHeight: 1.7, color: "#334155" }}>
-                                      • {p.full_name || "—"}
-                                      {p.company_email ? ` (${p.company_email})` : ""} —{" "}
-                                      {PROVISIONING_STATUS_LABELS[p.status] || p.status}
+                            <div className={s.nestedSection}>
+                              <div className={s.nestedTitle}><Users size={14} /> Provisioned people ({people.length})</div>
+                              {people.length ? (<>
+                                {visiblePeople.map((p, i) => (
+                                  <div key={i} className={s.nestedItem}>
+                                    <div className={s.nestedItemLeft}>
+                                      <div className={s.nestedItemName}>{p.full_name || "—"}</div>
+                                      {p.company_email && <div className={s.nestedItemMeta}>{p.company_email}</div>}
                                     </div>
-                                  ))}
-                                  {people.length > NESTED_LIST_PREVIEW ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleOfficerList(peopleKey)}
-                                      style={{
-                                        marginTop: 6,
-                                        border: "none",
-                                        background: "none",
-                                        color: "#0d5c91",
-                                        fontWeight: 700,
-                                        fontSize: 12.5,
-                                        cursor: "pointer",
-                                        padding: 0,
-                                      }}
-                                    >
-                                      {showAllPeople
-                                        ? "Show less"
-                                        : `Show all ${people.length} people`}
-                                    </button>
-                                  ) : null}
-                                </>
-                              ) : (
-                                <div style={{ fontSize: 13, color: "#999" }}>None yet.</div>
-                              )}
+                                    <StatusChip status={p.status === "pending" ? "draft" : p.status === "submitted" ? "reviewing" : "closed"} />
+                                  </div>
+                                ))}
+                                {people.length > NESTED_LIST_PREVIEW ? (<button type="button" className={s.nestedToggle} onClick={() => toggleOfficerList(peopleKey)}>{showAllPeople ? "Show less" : `Show all ${people.length} people`}</button>) : null}
+                              </>) : <div style={{ fontSize: 12.5, color: "var(--text-faint)" }}>None yet.</div>}
                             </div>
 
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
-                                Support tickets ({tickets.length})
-                              </div>
-                              {tickets.length ? (
-                                <>
-                                  {visibleTickets.map((r) => (
-                                    <div
-                                      key={r.request_id}
-                                      style={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        gap: 12,
-                                        alignItems: "center",
-                                        fontSize: 13,
-                                        lineHeight: 1.6,
-                                        padding: "6px 0",
-                                        borderBottom: "1px solid #f1f5f9",
-                                      }}
-                                    >
-                                      <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontWeight: 600, color: "#1e293b" }}>
-                                          {r.title || TYPE_LABELS[r.request_type] || "Support request"}
-                                        </div>
-                                        <div style={{ fontSize: 12, color: "#6b7a8f" }}>
-                                          {r.employee_name || r.employee_email || "Employee"}
-                                          {r.request_type ? ` · ${TYPE_LABELS[r.request_type] || r.request_type}` : ""}
-                                        </div>
-                                      </div>
-                                      <StatusChip status={r.status} />
+                            <div className={s.nestedSection}>
+                              <div className={s.nestedTitle}><Wrench size={14} /> Support tickets ({tickets.length})</div>
+                              {tickets.length ? (<>
+                                {visibleTickets.map((r) => (
+                                  <div key={r.request_id} className={s.nestedItem}>
+                                    <div className={s.nestedItemLeft}>
+                                      <div className={s.nestedItemName}>{r.title || TYPE_LABELS[r.request_type] || "Support request"}</div>
+                                      <div className={s.nestedItemMeta}>{r.employee_name || r.employee_email || "Employee"}{r.request_type ? ` · ${TYPE_LABELS[r.request_type] || r.request_type}` : ""}</div>
                                     </div>
-                                  ))}
-                                  {tickets.length > NESTED_LIST_PREVIEW ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleOfficerList(ticketsKey)}
-                                      style={{
-                                        marginTop: 8,
-                                        border: "none",
-                                        background: "none",
-                                        color: "#0d5c91",
-                                        fontWeight: 700,
-                                        fontSize: 12.5,
-                                        cursor: "pointer",
-                                        padding: 0,
-                                      }}
-                                    >
-                                      {showAllTickets
-                                        ? "Show less"
-                                        : `Show all ${tickets.length} tickets`}
-                                    </button>
-                                  ) : null}
-                                </>
-                              ) : (
-                                <div style={{ fontSize: 13, color: "#999" }}>No support tickets for this officer.</div>
-                              )}
+                                    <StatusChip status={r.status} />
+                                  </div>
+                                ))}
+                                {tickets.length > NESTED_LIST_PREVIEW ? (<button type="button" className={s.nestedToggle} onClick={() => toggleOfficerList(ticketsKey)}>{showAllTickets ? "Show less" : `Show all ${tickets.length} tickets`}</button>) : null}
+                              </>) : <div style={{ fontSize: 12.5, color: "var(--text-faint)" }}>No support tickets for this officer.</div>}
                             </div>
                           </div>
                         )}
@@ -699,145 +589,57 @@ function RecruiterItHubPageContent() {
               )
             ) : (
               <>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
-                  {["", "draft", "reviewing", "sent", "fulfilled", "closed", "cancelled"].map((s) => (
-                    <button
-                      key={s || "all"}
-                      type="button"
-                      className={styles.secondaryButton}
-                      style={{
-                        background: requestFilter === s ? "#e7f1f9" : "#fff",
-                        borderColor: requestFilter === s ? "#0d5c91" : undefined,
-                      }}
-                      onClick={() => {
-                        setRequestFilter(s);
-                        setExpandedRequest("");
-                      }}
-                    >
-                      {s === "" ? "All" : STATUS_LABELS[s]}
+                <div className={s.filterTabs}>
+                  {["", "draft", "reviewing", "sent", "fulfilled", "closed", "cancelled"].map((st) => (
+                    <button key={st || "all"} type="button" className={`${s.filterTab} ${requestFilter === st ? s.filterTabActive : ""}`} onClick={() => { setRequestFilter(st); setExpandedRequest(""); }}>
+                      {st === "" ? "All" : STATUS_LABELS[st]}
                     </button>
                   ))}
                 </div>
                 {requests.length > 6 ? (
-                  <input
-                    className={styles.input}
-                    value={requestSearch}
-                    onChange={(e) => setRequestSearch(e.target.value)}
-                    placeholder="Search by title, employee, or IT email…"
-                    style={{ maxWidth: 420, marginBottom: 14 }}
-                  />
+                  <div className={s.filterBar}>
+                    <label className={`${s.filterField} ${s.flex}`}>
+                      <input value={requestSearch} onChange={(e) => setRequestSearch(e.target.value)} placeholder="Search by title, employee, or IT email…" />
+                    </label>
+                  </div>
                 ) : null}
                 {filteredRequests.length === 0 ? (
-                  <p className={styles.emptySub}>
-                    {requests.length === 0
-                      ? "No IT support requests match this filter."
-                      : "No requests match your search."}
-                  </p>
+                  <div className={s.emptyState}>
+                    <SearchIcon size={36} />
+                    <div className={s.emptyStateTitle}>{requests.length === 0 ? "No IT support requests" : "No requests match your search"}</div>
+                  </div>
                 ) : (
-                  <div style={{ display: "grid", gap: 10 }}>
+                  <div className={s.requestCards}>
                     {filteredRequests.map((r) => {
                       const isOpen = expandedRequest === r.request_id;
                       const canSend = r.status === "draft" || r.status === "reviewing";
-                      const canCancel =
-                        r.status === "draft" || r.status === "reviewing" || r.status === "sent";
+                      const canCancel = r.status === "draft" || r.status === "reviewing" || r.status === "sent";
                       return (
-                        <div
-                          key={r.request_id}
-                          style={{
-                            border: "1px solid var(--border)",
-                            borderRadius: 12,
-                            padding: 14,
-                            background: "#fff",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              gap: 12,
-                              alignItems: "flex-start",
-                              cursor: "pointer",
-                            }}
-                            onClick={() => setExpandedRequest(isOpen ? "" : r.request_id)}
-                          >
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                                <strong style={{ fontSize: 14 }}>{r.title}</strong>
+                        <div key={r.request_id} className={s.requestCard}>
+                          <div className={s.requestHead} onClick={() => setExpandedRequest(isOpen ? "" : r.request_id)}>
+                            <div className={s.requestInfo}>
+                              <div className={s.requestTitle}>
+                                <strong>{r.title}</strong>
                                 <StatusChip status={r.status} />
-                                <span style={{ fontSize: 11, color: "#6b7a8f" }}>
-                                  {TYPE_LABELS[r.request_type] || r.request_type}
-                                </span>
+                                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{TYPE_LABELS[r.request_type] || r.request_type}</span>
                               </div>
-                              <div style={{ fontSize: 12.5, color: "#475569", marginTop: 4 }}>
-                                {r.employee_name}
-                                {r.employee_email ? ` (${r.employee_email})` : ""}
-                                {r.job_title || r.department
-                                  ? ` · ${[r.job_title, r.department].filter(Boolean).join(" · ")}`
-                                  : ""}
-                              </div>
-                              {!isOpen && r.it_manager_email ? (
-                                <div style={{ fontSize: 12, color: "#0d5c91", marginTop: 3 }}>
-                                  → {r.it_manager_email}
-                                </div>
-                              ) : null}
+                              <div className={s.requestMeta}>{r.employee_name}{r.employee_email ? ` (${r.employee_email})` : ""}{r.job_title || r.department ? ` · ${[r.job_title, r.department].filter(Boolean).join(" · ")}` : ""}</div>
+                              {!isOpen && r.it_manager_email && <div className={s.requestIT}>→ {r.it_manager_email}</div>}
                             </div>
-                            <div
-                              style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {canSend ? (
-                                <button
-                                  type="button"
-                                  className={styles.primaryButton}
-                                  onClick={() => {
-                                    setSendTarget(r);
-                                    setSendItEmail(r.it_manager_email || "");
-                                  }}
-                                >
-                                  Send to IT
-                                </button>
-                              ) : null}
-                              {canCancel ? (
-                                <button
-                                  type="button"
-                                  className={styles.secondaryButton}
-                                  onClick={() => setCancelTarget(r)}
-                                >
-                                  Cancel
-                                </button>
-                              ) : null}
-                              <span style={{ fontSize: 13, color: "#0d5c91", fontWeight: 700, minWidth: 16 }}>
-                                {isOpen ? "▲" : "▼"}
-                              </span>
+                            <div className={s.requestActions} onClick={(e) => e.stopPropagation()}>
+                              {canSend && <button type="button" className="btn btnPrimary" style={{ fontSize: 11, padding: "5px 10px", minHeight: 28, borderRadius: 7 }} onClick={() => { setSendTarget(r); setSendItEmail(r.it_manager_email || ""); }}>Send to IT</button>}
+                              {canCancel && <button type="button" className="btn btnGhost" style={{ fontSize: 11, padding: "5px 8px", minHeight: 28 }} onClick={() => setCancelTarget(r)}>Cancel</button>}
+                              <span style={{ color: "var(--text-faint)" }}>{isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
                             </div>
                           </div>
-                          {isOpen ? (
-                            <div
-                              style={{
-                                marginTop: 12,
-                                borderTop: "1px solid #eef2f7",
-                                paddingTop: 12,
-                              }}
-                            >
-                              {r.description ? (
-                                <div style={{ fontSize: 12.5, color: "#6b7a8f", marginBottom: 8 }}>
-                                  {r.description}
-                                </div>
-                              ) : null}
-                              {r.it_manager_email ? (
-                                <div style={{ fontSize: 12, color: "#0d5c91", marginBottom: 6 }}>
-                                  → {r.it_manager_email}
-                                </div>
-                              ) : null}
-                              {r.fulfillment_note ? (
-                                <div style={{ fontSize: 12.5, color: "#087a55", marginBottom: 8 }}>
-                                  Fulfilled: {r.fulfillment_note}
-                                  {r.serial_number ? ` · Serial: ${r.serial_number}` : ""}
-                                </div>
-                              ) : null}
+                          {isOpen && (
+                            <div className={s.requestBody}>
+                              {r.description && <div className={s.requestNote}>{r.description}</div>}
+                              {r.it_manager_email && <div className={s.requestNote} style={{ color: "var(--blue-strong)" }}>→ {r.it_manager_email}</div>}
+                              {r.fulfillment_note && <div className={s.requestFulfill}>Fulfilled: {r.fulfillment_note}{r.serial_number ? ` · Serial: ${r.serial_number}` : ""}</div>}
                               <RequestTimeline r={r} />
                             </div>
-                          ) : null}
+                          )}
                         </div>
                       );
                     })}

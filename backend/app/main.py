@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.admin_tickets import router as admin_tickets_router
 from app.api.agent import router as agent_router
 from app.api.auth import router as auth_router
+from app.api.email_templates import router as email_templates_router
 from app.api.career_framework import router as career_framework_router
 from app.api.dashboard import router as dashboard_router
 from app.api.documents import router as documents_router
@@ -85,8 +86,9 @@ app.include_router(offers_router)
 app.include_router(documents_router)
 app.include_router(learning_router)
 app.include_router(talent_router)
+app.include_router(email_templates_router)
 app.include_router(messages_router)
-app.include_router(career_framework_router)
+# app.include_router(career_framework_router)  # retired: use org-framework
 app.include_router(org_framework_router)
 app.include_router(agent_router)
 app.include_router(tickets_router)

@@ -65,6 +65,15 @@ class CourseAssignRequest(BaseModel):
     due_date: date | None = None
     mandatory: bool = False
     note: str | None = Field(default=None, max_length=1000)
+    target_designation: str | None = Field(
+        default=None,
+        max_length=150,
+        description="If set, marks this assignment as a requirement for the target designation.",
+    )
+    is_designation_requirement: bool = Field(
+        default=False,
+        description="When true, this course counts toward the employee's target designation readiness.",
+    )
 
     @field_validator("employee_ids")
     @classmethod
@@ -165,6 +174,14 @@ class CertificateVerifyRequest(BaseModel):
 
     approve: bool
     note: str | None = Field(default=None, max_length=500)
+
+
+class CertificateUpdateRequest(BaseModel):
+    """Employee edits their own pending/rejected certificate."""
+
+    course_title: str | None = Field(default=None, max_length=300)
+    completion_date: date | None = None
+    learning_hours: float | None = Field(default=None, ge=0, le=2000)
 
 
 class SkillUpsertRequest(BaseModel):

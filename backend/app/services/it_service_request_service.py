@@ -92,8 +92,15 @@ class ItServiceRequestService:
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=404, detail="IT request not found.") from exc
         doc = await database.it_service_requests.find_one({"_id": oid})
-        if not doc or str(doc.get("recruiter_id")) != str(current_user.id):
+        if not doc:
             raise HTTPException(status_code=404, detail="IT request not found.")
+        if current_user.role != "super_admin":
+            record_org = doc.get("organization_id")
+            if record_org and current_user.organization_id:
+                if record_org != current_user.organization_id:
+                    raise HTTPException(status_code=404, detail="IT request not found.")
+            elif str(doc.get("recruiter_id")) != str(current_user.id):
+                raise HTTPException(status_code=404, detail="IT request not found.")
         return doc
 
     def _employee_payload(self, emp: dict, request: ItServiceRequestCreate) -> dict:
@@ -175,7 +182,10 @@ class ItServiceRequestService:
         result = await database.it_service_requests.insert_one(doc)
         doc["_id"] = result.inserted_id
         if request.it_manager_email:
-            await self._send_to_it_doc(doc, str(request.it_manager_email).strip().lower(), request.note, now)
+            await self._send_to_it_doc(
+                doc, str(request.it_manager_email).strip().lower(), request.note, now,
+                organization_id=getattr(current_user, "organization_id", None),
+            )
         return _out(doc)
 
     async def create_employee_draft(self, current_user: CurrentUser, request: ItServiceRequestEmployeeCreate) -> dict:
@@ -221,10 +231,13 @@ class ItServiceRequestService:
         doc = await self._get_owned(request.request_id, current_user)
         if doc.get("status") in ("fulfilled", "closed", "cancelled"):
             raise HTTPException(status_code=409, detail="This request is already closed.")
-        await self._send_to_it_doc(doc, str(request.it_manager_email).strip().lower(), request.note, datetime.now(UTC))
+        await self._send_to_it_doc(
+            doc, str(request.it_manager_email).strip().lower(), request.note, datetime.now(UTC),
+            organization_id=getattr(current_user, "organization_id", None),
+        )
         return _out(doc)
 
-    async def _send_to_it_doc(self, doc: dict, it_email: str, note: str | None, now: datetime) -> None:
+    async def _send_to_it_doc(self, doc: dict, it_email: str, note: str | None, now: datetime, organization_id: str | None = None) -> None:
         await database.it_service_requests.update_one(
             {"_id": doc["_id"], "status": {"$in": ["draft", "reviewing", "sent"]}},
             {
@@ -255,6 +268,7 @@ class ItServiceRequestService:
                 note=doc.get("note"),
                 fulfill_link=settings.it_service_request_link(doc["token"]),
                 created_at=doc.get("created_at"),
+                organization_id=organization_id,
             )
         except Exception:
             pass

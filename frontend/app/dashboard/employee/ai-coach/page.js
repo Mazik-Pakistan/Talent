@@ -10,6 +10,6 @@ export default function AiCoachRedirectPage() {
   useEffect(() => {
     router.replace("/dashboard/employee/learning?tab=career");
   }, [router]);
-  return <RecruiterLoader />;
+  return null;
 }
 

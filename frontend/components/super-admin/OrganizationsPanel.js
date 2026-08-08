@@ -11,12 +11,14 @@ const MODULE_LABELS = {
   employees: "Employees",
   talent: "Talent analytics",
   learning: "Learning",
+  org_config: "Organization Setup",
   assistant: "AI assistant",
   messages: "Messages",
   announcements: "Announcements",
   it: "IT & support",
   reporting: "Activity & reporting",
   profile: "Profile",
+  support: "Support tickets",
 };
 const MODULE_KEYS = Object.keys(MODULE_LABELS);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import RequireAccess from "@/components/RequireAccess";
@@ -60,6 +60,7 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
     broadcastOnRefresh: true,
     broadcastOnMarkAll: true,
     broadcastOnMarkOne: true,
+    deferMs: 250,
   });
 
   const search = useGlobalSearch();
@@ -122,35 +123,38 @@ export default function RecruiterShell({ activeKey, capability, title, subtitle,
     router.push("/dashboard/recruiter/candidates");
   }
 
-  const allowedNavItems = RECRUITER_NAV_ITEMS.filter((item) => {
-    if (!item.capability) return true;
-    // Super admin and non-recruiter roles always see the full navigation.
-    if (user?.role !== "recruiter") return true;
-    const capabilities = resolveRecruiterCapabilities(user);
-    // Legacy sessions with no capability map keep full nav.
-    if (!Object.keys(capabilities).length) return true;
-    // Explicit false (personal or org) hides the item; missing key stays visible.
-    return capabilities[item.capability] !== false;
-  });
-
-  const hasCapability =
-    !capability ||
-    user?.role !== "recruiter" ||
-    (() => {
+  const allowedNavItems = useMemo(() => {
+    return RECRUITER_NAV_ITEMS.filter((item) => {
+      if (!item.capability) return true;
+      if (user?.role !== "recruiter") return true;
       const capabilities = resolveRecruiterCapabilities(user);
-      if (!Object.keys(capabilities).length) return true;
-      return capabilities[capability] !== false;
-    })();
+      if (!Object.keys(capabilities).length) return false;
+      return capabilities[item.capability] !== false;
+    });
+  }, [user]);
 
-  // Global search is backed by /api/search which is gated on the candidates
-  // capability — hide the box entirely when that module is disabled.
-  const canSearch =
-    user?.role !== "recruiter" ||
-    (() => {
-      const capabilities = resolveRecruiterCapabilities(user);
-      if (!Object.keys(capabilities).length) return true;
-      return capabilities.candidates !== false;
-    })();
+  const hasCapability = useMemo(() => {
+    return (
+      !capability ||
+      user?.role !== "recruiter" ||
+      (() => {
+        const capabilities = resolveRecruiterCapabilities(user);
+        if (!Object.keys(capabilities).length) return false;
+        return capabilities[capability] !== false;
+      })()
+    );
+  }, [user, capability]);
+
+  const canSearch = useMemo(() => {
+    return (
+      user?.role !== "recruiter" ||
+      (() => {
+        const capabilities = resolveRecruiterCapabilities(user);
+        if (!Object.keys(capabilities).length) return false;
+        return capabilities.candidates !== false;
+      })()
+    );
+  }, [user]);
 
   if (!user) {
     return <RecruiterLoader />;

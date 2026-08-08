@@ -240,9 +240,7 @@ function SuperAdminOverviewPageContent() {
           </div>
         </div>
         <div className={styles.sectionBody}>
-          {loading ? (
-            <p className={styles.emptySub}>Loading…</p>
-          ) : announcements.length ? (
+          {announcements.length ? (
             <ul className={styles.activityList}>
               {announcements.map((announcement, index) => (
                 <li key={`announcement-${announcement.id || index}`}>

@@ -212,18 +212,22 @@ export default function PromotionPipeline({
 
   async function handleAssign(e) {
     e.preventDefault();
+    console.log("[Assign] Form submitted", assignForm);
     if (!assignForm.employee_id || !assignForm.target_level_id) {
       toast.warn("Please select an employee and target level.");
       return;
     }
     const token = localStorage.getItem("access_token");
+    console.log("[Assign] Token present:", !!token);
     if (!token) return;
     setAssigning(true);
     try {
-      await assignEmployeeCareer(token, assignForm.employee_id, {
+      console.log("[Assign] Calling API...");
+      const result = await assignEmployeeCareer(token, assignForm.employee_id, {
         target_level_id: assignForm.target_level_id,
         target_date: assignForm.target_date || undefined,
       });
+      console.log("[Assign] API result:", result);
       toast.success("Career path assigned.");
       setShowAssign(false);
       setAssignForm({ employee_id: "", target_level_id: "", target_date: "" });
@@ -231,7 +235,11 @@ export default function PromotionPipeline({
       onRefreshIntel?.();
       reload();
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not assign career path."));
+      console.error("[Assign] API error:", err);
+      const detail = err.response?.data?.detail;
+      const msg = Array.isArray(detail) ? detail.map(d => d.msg || d.message || JSON.stringify(d)).join(" · ") : (detail || getApiErrorMessage(err, "Could not assign career path."));
+      console.error("[Assign] Error detail:", msg);
+      toast.error(msg);
     } finally {
       setAssigning(false);
     }
@@ -292,7 +300,7 @@ export default function PromotionPipeline({
             </select>
             <span className={styles.inlineNote} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <SearchIcon size={14} aria-hidden="true" />
-              {loading ? "Loading…" : `${filtered.ready.length + filtered.almost.length + filtered.behind.length} shown`}
+              {`${filtered.ready.length + filtered.almost.length + filtered.behind.length} shown`}
             </span>
           </div>
         </div>
@@ -318,16 +326,26 @@ export default function PromotionPipeline({
                 .
               </p>
             )}
-            <form className={styles.assignForm} onSubmit={handleAssign}>
-              <label className={styles.fieldLabel}>
-                Employee
+            <form data-partner-coach className={styles.assignForm} onSubmit={handleAssign}>
+              <div className={styles.fieldLabel}>
+                <span>Employee</span>
                 <input
+                  data-field-key="empQuery"
+                  className={styles.searchInput}
                   placeholder="Search by name or ID…"
                   value={empQuery}
-                  onChange={(e) => setEmpQuery(e.target.value)}
+                  onChange={(e) => {
+                    setEmpQuery(e.target.value);
+                    setAssignForm((f) => ({ ...f, employee_id: "" }));
+                  }}
                 />
-                {employees.length > 0 && (
-                  <select value={assignForm.employee_id} onChange={(e) => setAssignForm((f) => ({ ...f, employee_id: e.target.value }))}>
+                {empQuery.trim().length >= 2 && (
+                  <select
+                    data-field-key="employee_id"
+                    value={assignForm.employee_id}
+                    onChange={(e) => setAssignForm((f) => ({ ...f, employee_id: e.target.value }))}
+                    style={{ marginTop: 6 }}
+                  >
                     <option value="">Select employee</option>
                     {employees.map((emp) => (
                       <option key={emp.employee_id} value={emp.employee_id}>
@@ -336,10 +354,13 @@ export default function PromotionPipeline({
                     ))}
                   </select>
                 )}
-              </label>
+                {empQuery.trim().length >= 2 && employees.length === 0 && (
+                  <p className={styles.inlineNote} style={{ marginTop: 6 }}>No employees found.</p>
+                )}
+              </div>
               <label className={styles.fieldLabel}>
                 Target Level
-                <select value={assignForm.target_level_id} onChange={(e) => setAssignForm((f) => ({ ...f, target_level_id: e.target.value }))} required>
+                <select data-field-key="target_level_id" value={assignForm.target_level_id} onChange={(e) => setAssignForm((f) => ({ ...f, target_level_id: e.target.value }))} required>
                   <option value="">Select target level</option>
                   {levels.map((l) => (
                     <option key={l.id} value={l.id}>
@@ -350,7 +371,7 @@ export default function PromotionPipeline({
               </label>
               <label className={styles.fieldLabel}>
                 Target Date
-                <input type="date" value={assignForm.target_date} onChange={(e) => setAssignForm((f) => ({ ...f, target_date: e.target.value }))} />
+                <input data-field-key="target_date" type="date" value={assignForm.target_date} onChange={(e) => setAssignForm((f) => ({ ...f, target_date: e.target.value }))} />
               </label>
               <div className={styles.formActions}>
                 <button type="submit" className={styles.assignCourseBtn} disabled={assigning || levels.length === 0}>

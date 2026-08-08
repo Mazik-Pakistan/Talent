@@ -64,9 +64,7 @@ export default function OrganizationView({
   roleName,
   onNavigate,
 }) {
-  if (loading && !data) {
-    return <p className={styles.inlineNote}>Loading…</p>;
-  }
+  if (loading) return null;
 
   if (roleName && departmentName) {
     return (
@@ -253,7 +251,6 @@ function DepartmentDetail({ data, departmentName, onNavigate }) {
               <button type="button" className={styles.smallBtn} onClick={() => setSub("employees")}>See all</button>
             </div>
             <div className={shellStyles.sectionBody}>
-              {empLoading && <p className={styles.inlineNote}>Loading…</p>}
               {!empLoading && employees.length === 0 && (
                 <p className={styles.inlineNote}>No employees in this department.</p>
               )}
@@ -445,7 +442,6 @@ function RoleDetail({ data, departmentName, roleName, onNavigate }) {
             </div>
           </div>
           <div className={shellStyles.sectionBody}>
-            {loading && <p className={styles.inlineNote}>Loading…</p>}
             {!loading && employees.length === 0 && (
               <p className={styles.inlineNote}>No employees with this job title in the department.</p>
             )}

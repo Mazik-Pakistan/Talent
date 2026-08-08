@@ -324,9 +324,7 @@ function RecruiterAnnouncementsPageContent() {
           </div>
         </div>
         <div className={styles.sectionBody}>
-          {loading ? (
-            <p className={styles.emptySub}>Loading…</p>
-          ) : announcements.length ? (
+          {announcements.length ? (
             <div className={styles.announcementStack}>
               {announcements.map((item) => (
                 <article className={styles.announcementCard} key={item.id}>

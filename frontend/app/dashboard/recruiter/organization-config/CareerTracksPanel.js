@@ -126,10 +126,11 @@ export default function CareerTracksPanel({ departments = [] }) {
         </p>
       </div>
 
-      <form onSubmit={handleCreateTrack} style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+      <form data-partner-coach onSubmit={handleCreateTrack} style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
         <label className={s.fieldLabel} style={{ margin: 0, minWidth: 180 }}>
           New track name
           <input
+            data-field-key="track_name"
             value={trackForm.track_name}
             onChange={(e) => setTrackForm((f) => ({ ...f, track_name: e.target.value }))}
             placeholder="e.g. Engineering ladder"
@@ -138,6 +139,7 @@ export default function CareerTracksPanel({ departments = [] }) {
         <label className={s.fieldLabel} style={{ margin: 0, minWidth: 160 }}>
           Department
           <select
+            data-field-key="department"
             value={trackForm.department}
             onChange={(e) => setTrackForm((f) => ({ ...f, department: e.target.value }))}
           >
@@ -179,10 +181,11 @@ export default function CareerTracksPanel({ departments = [] }) {
         </div>
       )}
 
-      <form onSubmit={handleCreateLevel} style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+      <form data-partner-coach onSubmit={handleCreateLevel} style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
         <label className={s.fieldLabel} style={{ margin: 0, minWidth: 180 }}>
           Track
           <select
+            data-field-key="track_id"
             value={levelForm.track_id}
             onChange={(e) => setLevelForm((f) => ({ ...f, track_id: e.target.value }))}
           >
@@ -195,6 +198,7 @@ export default function CareerTracksPanel({ departments = [] }) {
         <label className={s.fieldLabel} style={{ margin: 0, width: 90 }}>
           Level #
           <input
+            data-field-key="level_number"
             type="number"
             min="1"
             value={levelForm.level_number}
@@ -204,6 +208,7 @@ export default function CareerTracksPanel({ departments = [] }) {
         <label className={s.fieldLabel} style={{ margin: 0, minWidth: 160 }}>
           Role title
           <input
+            data-field-key="role_title"
             value={levelForm.role_title}
             onChange={(e) => setLevelForm((f) => ({ ...f, role_title: e.target.value }))}
             placeholder="Senior Engineer"

@@ -755,6 +755,7 @@ class DashboardService:
                         title,
                         body,
                         dashboard_url=person["link"],
+                        organization_id=getattr(current_user, "organization_id", None),
                     )
                     emailed += 1
                 except Exception:

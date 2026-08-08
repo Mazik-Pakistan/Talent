@@ -159,6 +159,7 @@ class ItProvisioningService:
                     expires_at=expires_at.strftime("%B %d, %Y at %H:%M UTC"),
                     note=request.note,
                     is_reminder=False,
+                    organization_id=offer.get("organization_id"),
                 )
                 email_sent = True
             except Exception as exc:
@@ -282,7 +283,9 @@ class ItProvisioningService:
                 batch = await self.create_batch(current_user, offer_ids_created, it_email, request.note)
                 batch_id = str(batch["_id"])
                 batch_link = settings.it_provisioning_batch_link(batch["token"])
-                batch_email_sent = await self._send_batch_form_email(batch)
+                batch_email_sent = await self._send_batch_form_email(
+                    batch, organization_id=getattr(current_user, "organization_id", None)
+                )
                 if not batch_email_sent:
                     batch_email_error = "The batch form email could not be sent (mail provider error)."
             except Exception as exc:  # noqa: BLE001
@@ -313,6 +316,7 @@ class ItProvisioningService:
                     entries=entries,
                     expires_at=first_expiry or "",
                     note=request.note,
+                    organization_id=getattr(current_user, "organization_id", None),
                 )
                 batch_email_sent = True
             except Exception as exc:  # noqa: BLE001
@@ -433,7 +437,7 @@ class ItProvisioningService:
                 batch_link = settings.it_provisioning_batch_link(batch["token"])
         try:
             if batch_link:
-                email_sent = await self._send_batch_form_email(batch)
+                email_sent = await self._send_batch_form_email(batch, organization_id=offer.get("organization_id"))
                 if not email_sent:
                     email_error = "The batch form email could not be sent (mail provider error)."
             if not batch_link or not email_sent:
@@ -445,6 +449,7 @@ class ItProvisioningService:
                     expires_at=_iso(doc.get("expires_at")),
                     note=request.note,
                     is_reminder=True,
+                    organization_id=offer.get("organization_id"),
                 )
                 email_sent = True
         except Exception as exc:
@@ -1136,7 +1141,7 @@ class ItProvisioningService:
             )
         return entries
 
-    async def _send_batch_form_email(self, batch: dict, *, is_reminder: bool = False) -> bool:
+    async def _send_batch_form_email(self, batch: dict, *, is_reminder: bool = False, organization_id: str | None = None) -> bool:
         try:
             entries = await self._batch_entries(batch)
             email_service.send_it_provisioning_batch_form_request(
@@ -1146,6 +1151,7 @@ class ItProvisioningService:
                 form_link=settings.it_provisioning_batch_link(batch["token"]),
                 expires_at=batch["expires_at"].strftime("%B %d, %Y at %H:%M UTC"),
                 note=batch.get("note"),
+                organization_id=organization_id,
             )
             return True
         except Exception:
@@ -1418,7 +1424,11 @@ class ItProvisioningService:
     def _assert_recruiter_owns_offer(current_user: CurrentUser, offer: dict) -> None:
         if current_user.role == "super_admin":
             return
-        if offer.get("recruiter_id") != current_user.id:
+        record_org = offer.get("organization_id")
+        if record_org and current_user.organization_id:
+            if record_org != current_user.organization_id:
+                raise HTTPException(status_code=403, detail="Not authorized for this offer.")
+        elif offer.get("recruiter_id") != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized for this offer.")
 
 

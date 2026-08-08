@@ -160,10 +160,20 @@ function RecruiterProfilePageContent() {
     }
   }
 
+  const completedFields = [form.full_name, form.phone, form.department, form.job_title, form.office_location].filter(Boolean).length;
+  const totalFields = 5;
+  const completionPct = Math.round((completedFields / totalFields) * 100);
+  const profileComplete = completionPct >= 80;
+
   return (
     <RecruiterShell activeKey="profile" capability="profile" title="My profile" subtitle="Your recruiter account details">
       {loading ? (
-        <p className={styles.emptySub}>Loading profile…</p>
+        <div className={styles.section}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 20px", color: "var(--text-muted)" }}>
+            <div className={styles.spinner} style={{ marginBottom: 14 }} />
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--navy)" }}>Loading profile…</div>
+          </div>
+        </div>
       ) : (
         <>
           <div className={styles.section}>
@@ -184,6 +194,16 @@ function RecruiterProfilePageContent() {
                   {profile?.job_title && <span className={styles.chip}>{profile.job_title}</span>}
                   {profile?.department && <span className={styles.chip}>{profile.department}</span>}
                   {profile?.office_location && <span className={styles.chip}>{profile.office_location}</span>}
+                  <span
+                    className={styles.chip}
+                    style={{
+                      background: profileComplete ? "var(--green-light)" : "var(--orange-light)",
+                      color: profileComplete ? "var(--green)" : "var(--orange)",
+                      borderColor: "transparent",
+                    }}
+                  >
+                    {completionPct}% complete
+                  </span>
                 </div>
               </div>
             </div>
@@ -198,6 +218,17 @@ function RecruiterProfilePageContent() {
                   <div className={styles.sectionDesc}>Keep your contact and role details up to date.</div>
                 </div>
               </div>
+              <span
+                className={styles.chip}
+                style={{
+                  background: profileComplete ? "var(--green-light)" : "var(--orange-light)",
+                  color: profileComplete ? "var(--green)" : "var(--orange)",
+                  borderColor: "transparent",
+                  fontSize: 11,
+                }}
+              >
+                {profileComplete ? "Profile looks great" : `${5 - completedFields} field${5 - completedFields === 1 ? "" : "s"} remaining`}
+              </span>
             </div>
             <div className={styles.sectionBody}>
               <form data-partner-coach onSubmit={handleSave} className={styles.profileForm}>

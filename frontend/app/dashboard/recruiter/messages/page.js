@@ -233,7 +233,6 @@ function RecruiterMessagesInner() {
             ) : null}
           </div>
           <div className={styles.threadList}>
-            {loading && <p className={styles.empty}>Loading…</p>}
             {!loading && filteredThreads.length === 0 && (
               <p className={styles.empty}>
                 {employeeFilter

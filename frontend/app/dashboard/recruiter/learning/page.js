@@ -58,6 +58,7 @@ import {
   publishRecruiterContext,
 } from "@/lib/ai/recruiterContext";
 import { LEARNING_TAB_HELP } from "@/lib/ai/recruiterFieldHelp";
+import { dispatchFrameworkInvalidated } from "@/lib/frameworkEvents";
 import {
   assignCourses,
   archiveManagedCourse,
@@ -121,7 +122,7 @@ const STATIC_CATALOG_SOURCES = [
   {
     key: "coursera",
     label: "Coursera Courses",
-    hint: "Industry soft-skills courses from Coursera (English only) â€” communication, leadership, and more.",
+    hint: "Industry soft-skills courses from Coursera (English only) — communication, leadership, and more.",
     type: "external",
   },
 ];
@@ -220,7 +221,7 @@ function LearningPageContent() {
   function handleAssignFromCatalog(course, source) {
     setPendingAssign({ course, source: course?.source || source || "microsoft_learn" });
     setTab("assign");
-    toast.info(`Selected â€œ${course.title}â€ â€” choose who should take it.`);
+    toast.info(`Selected "${course.title}" — choose who should take it.`);
   }
 
   const clearPendingAssign = useCallback(() => {
@@ -324,12 +325,12 @@ function CatalogTab({ onAssignCourse }) {
     if (!token) return Promise.resolve();
     return getManagedFacets(token)
       .then((data) => {
-        const providerList = normalizeManagedProviderTabs([
-          ...(data?.providers || []),
-          ...readManagedProviderRegistry(),
-        ]);
-        setProviders(providerList);
+        // Source of truth is the server only — do NOT merge from localStorage
+        // (stale localStorage entries like "test" or "dfsd" would reappear otherwise).
+        const providerList = normalizeManagedProviderTabs(data?.providers || []);
+        // Overwrite localStorage with the clean server list.
         writeManagedProviderRegistry(providerList);
+        setProviders(providerList);
         // Build dynamic sources with provider tabs first, then external sources
         const providerSources = providerList.map((prov) => ({
           key: `provider:${prov}`,
@@ -487,10 +488,10 @@ function CatalogTab({ onAssignCourse }) {
               aria-label="Search courses"
               placeholder={
                 isManagedProvider
-                  ? `Search ${provider} courses, designations, competencyâ€¦`
+                  ? `Search ${provider} courses, designations, competency…`
                   : source === "coursera"
-                  ? "Search soft skills, e.g. negotiation, leadershipâ€¦"
-                  : "Search Microsoft courses by title or skillâ€¦"
+                  ? "Search soft skills, e.g. negotiation, leadership…"
+                  : "Search Microsoft courses by title or skill…"
               }
               value={q}
               onChange={(e) => { setPage(1); setQ(e.target.value); }}
@@ -569,7 +570,16 @@ function CatalogTab({ onAssignCourse }) {
             </>
           )}
         </div>
-        {loading && <RecruiterLoader inline />}
+        {(q || role || level || type || provider || designation || learningMonth || category || competency || archivedOnly) && (
+          <button type="button" className={styles.clearFiltersBtn} onClick={() => {
+            setQ(""); setRole(""); setLevel(""); setType("");
+            setProvider(""); setDesignation(""); setLearningMonth("");
+            setCategory(""); setCompetency(""); setArchivedOnly(false);
+            setPage(1);
+          }}>
+            <X aria-hidden="true" /> Clear filters
+          </button>
+        )}
         {!loading && !(result.courses || []).length && (
           <div className={styles.emptyState}>
             <div className={styles.emptyStateIcon}>
@@ -582,14 +592,20 @@ function CatalogTab({ onAssignCourse }) {
           </div>
         )}
         <div className={styles.courseGrid}>
-          {(result.courses || []).map((c) => (
+          {(result.courses || []).map((c) => {
+            const courseType = (c.type || "course").toLowerCase();
+            const TypeIcon = courseType.includes("path") ? Library : courseType.includes("module") ? ListChecks : courseType.includes("certif") ? Award : Globe;
+            return (
             <div key={c.uid} className={styles.courseCard}>
               <div className={styles.courseCardHead}>
                 <span className={`${styles.sourceBadge} ${courseBadgeClass(c, source)}`}>
                   {courseDisplayLabel(c, source)}
                 </span>
               </div>
-              <div className={styles.courseTitle}>{c.title}</div>
+              <div className={styles.courseTitleRow}>
+                <span className={styles.courseTypeIcon}><TypeIcon aria-hidden="true" /></span>
+                <div className={styles.courseTitle}>{c.title}</div>
+              </div>
               <div className={styles.courseMeta}>
                 {source === "managed_learning" ? (
                   <>
@@ -597,14 +613,14 @@ function CatalogTab({ onAssignCourse }) {
                       <Building2 aria-hidden="true" />{c.provider || "Managed Learning"}
                     </span>
                     <span className={styles.metaChip}>
-                      <Clock aria-hidden="true" />{c.duration_minutes || "â€”"} min
+                      <Clock aria-hidden="true" />{c.duration_minutes || "—"} min
                     </span>
                   </>
                 ) : (
                   <>
                     <span className={styles.metaChip}>{c.type || "course"}</span>
                     <span className={styles.metaChip}>
-                      <Clock aria-hidden="true" />{c.duration_minutes || "â€”"} min
+                      <Clock aria-hidden="true" />{c.duration_minutes || "—"} min
                     </span>
                     {(c.levels || [])[0] || c.category ? (
                       <span className={styles.metaChip}>
@@ -616,7 +632,7 @@ function CatalogTab({ onAssignCourse }) {
               </div>
               <p className={styles.courseSummary}>
                 {source === "managed_learning"
-                  ? [c.designation, c.learning_month, c.category, c.competency].filter(Boolean).join(" Â· ") || (c.summary || "").slice(0, 140)
+                  ? [c.designation, c.learning_month, c.category, c.competency].filter(Boolean).join(" · ") || (c.summary || "").slice(0, 140)
                   : (c.summary || "").slice(0, 140)}
               </p>
               <div className={styles.courseActions}>
@@ -634,7 +650,8 @@ function CatalogTab({ onAssignCourse }) {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
         {result.pages > 1 && (
           <div className={styles.pagination}>
@@ -697,6 +714,7 @@ function KnowledgeBaseTab() {
       });
       setRoleForm({ title: "", description: "", required_skills: "", required_certifications: "" });
       toast.success("Role added to knowledge base.");
+      dispatchFrameworkInvalidated();
       load();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not create role."));
@@ -730,7 +748,8 @@ function KnowledgeBaseTab() {
         difficulty: "Intermediate",
         priority: "medium",
       });
-      toast.success("Certification added â€” it will appear in the course catalog.");
+      toast.success("Certification added — it will appear in the course catalog.");
+      dispatchFrameworkInvalidated();
       load();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not create certification."));
@@ -771,11 +790,10 @@ function KnowledgeBaseTab() {
             </label>
             <div className={styles.formActions}>
               <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                <Plus aria-hidden="true" /> {saving ? "Addingâ€¦" : "Add role"}
+                <Plus aria-hidden="true" /> {saving ? "Adding…" : "Add role"}
               </button>
             </div>
           </form>
-          {loading && <RecruiterLoader inline />}
           {!loading && roles.length === 0 && (
             <div className={styles.emptyState}>
               <div className={styles.emptyStateIcon}><Library aria-hidden="true" /></div>
@@ -804,6 +822,7 @@ function KnowledgeBaseTab() {
                       try {
                         await deleteKbRole(token, r.id);
                         toast.success("Role removed.");
+                        dispatchFrameworkInvalidated();
                         load();
                       } catch (err) {
                         toast.error(getApiErrorMessage(err, "Could not delete role."));
@@ -841,7 +860,7 @@ function KnowledgeBaseTab() {
             </label>
             <label className={styles.fieldLabel}>
               Official URL
-              <input placeholder="https://learn.microsoft.com/â€¦" value={certForm.official_url} onChange={(e) => setCertForm((f) => ({ ...f, official_url: e.target.value }))} />
+              <input placeholder="https://learn.microsoft.com/…" value={certForm.official_url} onChange={(e) => setCertForm((f) => ({ ...f, official_url: e.target.value }))} />
             </label>
             <label className={styles.fieldLabel}>
               Skills covered
@@ -871,7 +890,7 @@ function KnowledgeBaseTab() {
             </label>
             <div className={styles.formActions}>
               <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                <Plus aria-hidden="true" /> {saving ? "Addingâ€¦" : "Add certification"}
+                <Plus aria-hidden="true" /> {saving ? "Adding…" : "Add certification"}
               </button>
             </div>
           </form>
@@ -910,6 +929,7 @@ function KnowledgeBaseTab() {
                       try {
                         await deleteKbCertification(token, c.id);
                         toast.success("Certification removed.");
+                        dispatchFrameworkInvalidated();
                         load();
                       } catch (err) {
                         toast.error(getApiErrorMessage(err, "Could not delete certification."));
@@ -947,6 +967,8 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
   const [requiredSkills, setRequiredSkills] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [targetDesignation, setTargetDesignation] = useState("");
+  const [isDesignationRequirement, setIsDesignationRequirement] = useState(false);
 
   useEffect(() => {
     if (!initialCourse) return;
@@ -968,12 +990,13 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       browseCatalog(token, {
         q,
         source: actualSource,
-        provider: actualSource === "managed_learning" ? (selectedProvider || provider || undefined) : undefined,
+        provider: actualSource === "managed_learning" ? selectedProvider || undefined : undefined,
+        provider: actualSource === "managed_learning" ? (selectedProvider || undefined) : undefined,
         page_size: 10,
       }).then((data) => setCourses(data.courses || [])).catch(() => {});
     }, 300);
     return () => clearTimeout(timer);
-  }, [q, source, provider]);
+  }, [q, source]);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -1016,6 +1039,8 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       due_date: dueDate || undefined,
       mandatory,
       note: note || undefined,
+      target_designation: isDesignationRequirement ? (targetDesignation || designationOptions[0] || "") : undefined,
+      is_designation_requirement: isDesignationRequirement,
     };
 
     if (assignMode === "department") {
@@ -1041,8 +1066,9 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       const assignedCount = result.assigned?.length || 0;
       const skippedCount = result.skipped?.length || 0;
       toast.success(
-        `Assigned to ${assignedCount} employee(s)${result.due_date ? ` Â· due ${result.due_date}` : ""}.`
+        `Assigned to ${assignedCount} employee(s)${result.due_date ? ` · due ${result.due_date}` : ""}.`
       );
+      dispatchFrameworkInvalidated();
       if (skippedCount) toast.warn(`${skippedCount} skipped (already assigned).`);
       if (result.errors?.length) toast.warn(`${result.errors.length} could not be assigned.`);
       setSelectedIds([]);
@@ -1060,7 +1086,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
   const selectedCourseLabel = courseDisplayLabel(selectedCourse, courseSource);
   const selectedCourseBadgeClass = courseBadgeClass(selectedCourse, courseSource);
   const assignLabel = submitting
-    ? "Assigningâ€¦"
+    ? "Assigning…"
     : assignMode === "employees"
       ? `Assign to ${selectedIds.length} employee${selectedIds.length === 1 ? "" : "s"}`
       : `Assign to ${employees.length} matching employee${employees.length === 1 ? "" : "s"}`;
@@ -1107,7 +1133,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               <div className={styles.assignCourseHeroMeta}>
                 <span className={styles.metaChip}>{selectedCourse.type || "course"}</span>
                 <span className={styles.metaChip}>
-                  <Clock aria-hidden="true" />{selectedCourse.duration_minutes || "â€”"} min
+                  <Clock aria-hidden="true" />{selectedCourse.duration_minutes || "—"} min
                 </span>
                 {(selectedCourse.levels || [])[0] || selectedCourse.category ? (
                   <span className={styles.metaChip}>
@@ -1118,7 +1144,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               {selectedCourse.summary && (
                 <p className={styles.assignCourseHeroSummary}>
                   {String(selectedCourse.summary).slice(0, 180)}
-                  {String(selectedCourse.summary).length > 180 ? "â€¦" : ""}
+                  {String(selectedCourse.summary).length > 180 ? "…" : ""}
                 </p>
               )}
             </div>
@@ -1137,14 +1163,14 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
           <div className={styles.assignPanel}>
             <div className={styles.assignPanelHead}>
               <div>
-                <div className={styles.assignPanelTitle}>1 Â· Select a course</div>
+                <div className={styles.assignPanelTitle}>1 · Select a course</div>
                 <p className={styles.assignPanelDesc}>
                   Search below, or use Course Catalog â†’ Assign to employees.
                 </p>
               </div>
             </div>
             <div className={styles.sourceToggle} role="tablist" aria-label="Course source">
-              {CATALOG_SOURCES.map((s) => (
+              {STATIC_CATALOG_SOURCES.map((s) => (
                 <button
                   key={s.key}
                   type="button"
@@ -1159,7 +1185,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               ))}
             </div>
             <p className={styles.sourceHint}>
-              {(CATALOG_SOURCES.find((s) => s.key === source) || CATALOG_SOURCES[0]).hint}
+              {(STATIC_CATALOG_SOURCES.find((s) => s.key === source) || STATIC_CATALOG_SOURCES[0]).hint}
             </p>
             <div className={styles.searchField}>
               <Search className={styles.searchFieldIcon} aria-hidden="true" />
@@ -1168,10 +1194,10 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                 aria-label="Search courses"
                 placeholder={
                   source === "coursera"
-                    ? "Search soft skills, e.g. negotiation, leadershipâ€¦"
+                    ? "Search soft skills, e.g. negotiation, leadership…"
                     : source === "managed_learning"
-                      ? "Search roadmap coursesâ€¦"
-                      : "Search Microsoft coursesâ€¦"
+                      ? "Search roadmap courses…"
+                      : "Search Microsoft courses…"
                 }
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -1190,7 +1216,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   <div className={styles.pickerRowMeta}>
                       <span className={styles.metaChip}>{courseDisplayLabel(c, source)}</span>
                       <span className={styles.metaChip}>{c.type}</span>
-                      <span className={styles.metaChip}><Clock aria-hidden="true" />{c.duration_minutes || "â€”"} min</span>
+                      <span className={styles.metaChip}><Clock aria-hidden="true" />{c.duration_minutes || "—"} min</span>
                       {(c.levels || [])[0] || c.category ? <span className={styles.metaChip}>{(c.levels || [])[0] || c.category}</span> : null}
                     </div>
                   </div>
@@ -1201,7 +1227,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               ))}
               {q.trim() && courses.length === 0 && (
                 <div className={styles.assignEmpty}>
-                  No matches â€” try a different search term.
+                  No matches — try a different search term.
                 </div>
               )}
               {!q.trim() && (
@@ -1217,7 +1243,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
           <div className={styles.assignPanel}>
             <div className={styles.assignPanelHead}>
               <div>
-                <div className={styles.assignPanelTitle}>2 Â· Choose audience</div>
+                <div className={styles.assignPanelTitle}>2 · Choose audience</div>
                 <p className={styles.assignPanelDesc}>Employees, department, joining role, or skills.</p>
               </div>
               {assignMode === "employees" && selectedIds.length > 0 && (
@@ -1267,7 +1293,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                       <input
                         className={styles.searchFieldInput}
                         aria-label="Filter employees by name"
-                        placeholder="Filter employees by nameâ€¦"
+                        placeholder="Filter employees by name…"
                         value={empQuery}
                         onChange={(e) => setEmpQuery(e.target.value)}
                       />
@@ -1290,7 +1316,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                             </div>
                             <div>
                               <div className={styles.employeeName}>{emp.full_name}</div>
-                              <div className={styles.employeeMeta}>{emp.job_title || "â€”"} Â· {emp.department || "â€”"}</div>
+                                <div className={styles.employeeMeta}>{emp.job_title || "—"} · {emp.department || "—"}</div>
                             </div>
                           </label>
                         );
@@ -1347,7 +1373,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
           <div className={styles.assignPanel}>
             <div className={styles.assignPanelHead}>
               <div>
-                <div className={styles.assignPanelTitle}>3 Â· Details &amp; send</div>
+                <div className={styles.assignPanelTitle}>3 · Details &amp; send</div>
                 <p className={styles.assignPanelDesc}>Due date, note, and mandatory flag. Notes appear in the assignment email and in-app notification.</p>
               </div>
             </div>
@@ -1379,6 +1405,30 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                     <span>Employees must complete this course</span>
                   </div>
                 </label>
+
+                <label className={`${styles.mandatoryToggle} ${isDesignationRequirement ? styles.mandatoryOn : ""}`} style={{ marginTop: 10 }}>
+                  <input type="checkbox" checked={isDesignationRequirement} onChange={(e) => setIsDesignationRequirement(e.target.checked)} />
+                  <div>
+                    <strong>Designation requirement</strong>
+                    <span>Counts toward employee&apos;s target designation readiness</span>
+                  </div>
+                </label>
+
+                {isDesignationRequirement && (
+                  <div style={{ marginTop: 10 }}>
+                    <select
+                      className={styles.filterSelect}
+                      value={targetDesignation}
+                      onChange={(e) => setTargetDesignation(e.target.value)}
+                      style={{ width: "100%" }}
+                    >
+                      <option value="">Select target designation</option>
+                      {designationOptions.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <button
                   type="button"
@@ -1433,6 +1483,7 @@ function AssignmentsTab() {
         token
       );
       toast.success(data.message || "Course reminder sent.");
+      dispatchFrameworkInvalidated();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not send course reminder."));
     } finally {
@@ -1448,7 +1499,7 @@ function AssignmentsTab() {
           <div>
             <div className={shellStyles.sectionTitle}>Assigned courses</div>
             <p className={shellStyles.sectionDesc}>
-              Track completion â€” reminders go by email and notification
+              Track completion — reminders go by email and notification
             </p>
           </div>
         </div>
@@ -1474,7 +1525,6 @@ function AssignmentsTab() {
         </div>
       </div>
       <div className={shellStyles.sectionBody}>
-        {loading && <RecruiterLoader inline />}
         {!loading && assignments.length === 0 && (
           <div className={styles.emptyState}>
             <div className={styles.emptyStateIcon}><ListChecks aria-hidden="true" /></div>
@@ -1491,8 +1541,8 @@ function AssignmentsTab() {
               </div>
               <div className={styles.listMeta}>
                 <span className={styles.metaChip}><Users aria-hidden="true" />{a.employee_name}</span>
-                <span className={styles.metaChip}>{a.job_title || "â€”"}</span>
-                <span className={styles.metaChip}><Building2 aria-hidden="true" />{a.department || "â€”"}</span>
+                <span className={styles.metaChip}>{a.job_title || "—"}</span>
+                <span className={styles.metaChip}><Building2 aria-hidden="true" />{a.department || "—"}</span>
                 {a.due_date ? <span className={styles.metaChip}><Calendar aria-hidden="true" />Due {a.due_date}</span> : null}
               </div>
             </div>
@@ -1505,7 +1555,7 @@ function AssignmentsTab() {
                 onClick={() => handleRemind(a)}
               >
                 {remindingId === a.id ? (
-                  <><RefreshCw aria-hidden="true" className="animate-spin" /> Sendingâ€¦</>
+                  <><RefreshCw aria-hidden="true" className="animate-spin" /> Sending…</>
                 ) : (
                   <><Bell aria-hidden="true" /> Remind</>
                 )}
@@ -1549,8 +1599,11 @@ function CertificatesTab({ selectedCertificateId = null }) {
     const token = localStorage.getItem("access_token");
     try {
       await verifyCertificate(token, id, { approve: true });
-      toast.success("Certificate verified â€” skill matrix updated via AI.");
-      load();
+      toast.success("✓ Certificate verified — skill matrix updated via AI.", { 
+        autoClose: 4000,
+        position: "top-center"
+      });
+      setTimeout(() => load(), 500);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not verify certificate."));
     }
@@ -1560,10 +1613,13 @@ function CertificatesTab({ selectedCertificateId = null }) {
     const token = localStorage.getItem("access_token");
     try {
       await verifyCertificate(token, id, { approve: false, note: rejectNote || undefined });
-      toast.success("Certificate rejected.");
+      toast.success("✓ Certificate rejected.", { 
+        autoClose: 4000,
+        position: "top-center"
+      });
       setRejecting(null);
       setRejectNote("");
-      load();
+      setTimeout(() => load(), 500);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not reject certificate."));
     }
@@ -1581,7 +1637,6 @@ function CertificatesTab({ selectedCertificateId = null }) {
         </div>
       </div>
       <div className={shellStyles.sectionBody}>
-        {loading && <RecruiterLoader inline />}
         {!loading && certificates.length === 0 && (
           <div className={styles.emptyState}>
             <div className={styles.emptyStateIcon}><BadgeCheck aria-hidden="true" /></div>
@@ -1683,11 +1738,7 @@ function AnalyticsTab() {
     toast.success("Analytics exported.");
   }
 
-  if (loading) return (
-    <div className={shellStyles.section}>
-      <div className={shellStyles.sectionBody}><RecruiterLoader inline /></div>
-    </div>
-  );
+  if (loading) return null;
   if (!data) return null;
 
   const stats = [
@@ -1843,9 +1894,25 @@ function ManagedLearningTab() {
   const [previewFile, setPreviewFile] = useState(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [providers, setProviders] = useState([]);
-  const [providerInput, setProviderInput] = useState("");
-  const [providerBusy, setProviderBusy] = useState(false);
   const fileInputRef = useRef(null);
+
+  const loadProviderList = useCallback(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return Promise.resolve([]);
+    // Single source of truth: the provider registry.
+    // Do NOT merge with getManagedFacets — facets include providers from course docs
+    // which may include deleted providers that haven't been fully cleaned up yet.
+    return listProviders(token, { include_inactive: false, page_size: 100 })
+      .catch(() => ({ providers: [] }))
+      .then((providerData) => {
+        const list = (providerData?.providers || [])
+          .map((p) => p.name ?? p)
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
+        setProviders(list);
+        return list;
+      });
+  }, []);
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
@@ -1864,21 +1931,42 @@ function ManagedLearningTab() {
         page: 1,
         page_size: 100,
       }),
-      getManagedFacets(token),
+      getManagedFacets(token).catch(() => ({ providers: [], designations: [], months: [], categories: [], competencies: [] })),
     ])
       .then(([courseData, facetData]) => {
         setCourses(courseData.courses || []);
         setHierarchy(courseData.hierarchy || []);
         setFacets(facetData || { providers: [], designations: [], months: [], categories: [], competencies: [] });
-        const providerList = (facetData?.providers || []).map((item) => item.name ?? item).filter(Boolean);
-        setProviders(providerList);
-        if (!form.provider && providerList.length) {
-          setForm((current) => ({ ...current, provider: providerList[0] }));
-        }
+        // Refresh provider list after courses load so any new providers from
+        // saved courses also appear in the dropdown.
+        loadProviderList().then((merged) => {
+          setForm((current) => {
+            if (!current.provider && merged.length) {
+              return { ...current, provider: merged[0] };
+            }
+            return current;
+          });
+        });
       })
       .catch((err) => toast.error(getApiErrorMessage(err, "Could not load managed-learning courses.")))
       .finally(() => setLoading(false));
-  }, [q, provider, designation, learningMonth, category, competency, showArchived, sortBy]);
+  }, [q, provider, designation, learningMonth, category, competency, showArchived, sortBy, loadProviderList]);
+
+  // Load providers immediately on mount, independent of the course list.
+  // Also re-load whenever a provider is created, updated, or deleted elsewhere.
+  useEffect(() => {
+    loadProviderList();
+    const onChanged = () => loadProviderList();
+    window.addEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onChanged);
+    const onStorage = (e) => {
+      if (e.key === LEARNING_PROVIDERS_UPDATED_STORAGE_KEY) loadProviderList();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onChanged);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [loadProviderList]);
 
   useEffect(() => {
     const timer = setTimeout(load, 250);
@@ -1903,7 +1991,7 @@ function ManagedLearningTab() {
       description: course.summary || "",
       archived: Boolean(course.archived),
     });
-    toast.info(`Editing â€œ${course.title}â€.`);
+    toast.info(`Editing "${course.title}".`);
   }
 
   async function handleSubmit(event) {
@@ -2024,61 +2112,45 @@ async function handleDelete(course) {
     downloadCsv(`managed-courses-${Date.now()}.csv`, headers, selected);
   }
 
-  async function handleAddProvider() {
-    const trimmed = providerInput.trim();
-    if (!trimmed) return;
-    setProviderBusy(true);
-    const providerName = trimmed;
-    setProviders((current) => {
-      const next = current.includes(providerName) ? current : [...current, providerName];
-      writeManagedProviderRegistry(next);
-      return next;
-    });
-    setForm((current) => ({ ...current, provider: providerName }));
-    setProviderInput("");
-    setProviderBusy(false);
-    toast.success(`Provider “${providerName}” added locally.`);
-  }
-
   function selectedImportProvider() {
-    return form.provider || providerInput.trim() || "Managed Learning";
+    return form.provider || "Managed Learning";
   }
 
   async function handlePreviewUpload(file) {
-    const token = localStorage.getItem("access_token");
-    if (!token || !file) return;
-    setPreviewBusy(true);
-    setPreview(null);
-    setPreviewFile(file);
-    try {
-      const data = await previewManagedImport(file, token, selectedImportProvider());
-      setPreview(data);
-      toast.success(`Preview ready: ${data.total_rows || 0} rows parsed.`);
-    } catch (err) {
-      setPreview(null);
-      toast.error(getApiErrorMessage(err, "Could not preview roadmap import."));
-    } finally {
-      setPreviewBusy(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
+     const token = localStorage.getItem("access_token");
+     if (!token || !file) return;
+     setPreviewBusy(true);
+     setPreview(null);
+     setPreviewFile(file);
+     try {
+       const data = await previewManagedImport(file, token, form.provider || "Managed Learning");
+       setPreview(data);
+       toast.success(`Preview ready: ${data.total_rows || 0} rows parsed.`);
+     } catch (err) {
+       setPreview(null);
+       toast.error(getApiErrorMessage(err, "Could not preview roadmap import."));
+     } finally {
+       setPreviewBusy(false);
+       if (fileInputRef.current) fileInputRef.current.value = "";
+     }
+   }
 
-  async function handleCommitImport() {
-    const token = localStorage.getItem("access_token");
-    if (!token || !previewFile) return;
-    setSaving(true);
-    try {
-      const data = await commitManagedImport(previewFile, token, selectedImportProvider());
-      toast.success(data.message || "Roadmap imported.");
-      setPreview(null);
-      setPreviewFile(null);
-      load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not import roadmap."));
-    } finally {
-      setSaving(false);
-    }
-  }
+   async function handleCommitImport() {
+     const token = localStorage.getItem("access_token");
+     if (!token || !previewFile) return;
+     setSaving(true);
+     try {
+       const data = await commitManagedImport(previewFile, token, form.provider || "Managed Learning");
+       toast.success(data.message || "Roadmap imported.");
+       setPreview(null);
+       setPreviewFile(null);
+       load();
+     } catch (err) {
+       toast.error(getApiErrorMessage(err, "Could not import roadmap."));
+     } finally {
+       setSaving(false);
+     }
+   }
 
   return (
     <div className={shellStyles.section}>
@@ -2109,7 +2181,7 @@ async function handleDelete(course) {
             <input
               className={styles.searchFieldInput}
               aria-label="Search roadmap courses"
-              placeholder="Search roadmap coursesâ€¦"
+              placeholder="Search roadmap courses…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -2190,54 +2262,45 @@ async function handleDelete(course) {
               </div>
             </div>
             <div className={shellStyles.sectionBody}>
-              <form className={styles.managedForm} onSubmit={handleSubmit}>
+              <form data-partner-coach className={styles.managedForm} onSubmit={handleSubmit}>
                 <label className={styles.fieldLabel}>
                   Provider
-                  <select value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))}>
+                  <select data-field-key="managed_provider" value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))}>
                     <option value="">Select provider</option>
                     {(providers || []).map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
                 <label className={styles.fieldLabel}>
-                  Add provider
-                  <div className={styles.formActions} style={{ marginTop: 6 }}>
-                    <input placeholder="e.g. Coursera" value={providerInput} onChange={(e) => setProviderInput(e.target.value)} />
-                    <button type="button" className={styles.smallBtn} disabled={providerBusy} onClick={handleAddProvider}>
-                      {providerBusy ? "Addingâ€¦" : "Add"}
-                    </button>
-                  </div>
-                </label>
-                <label className={styles.fieldLabel}>
                   Designation
-                  <input placeholder="e.g. Software Engineer" value={form.designation} onChange={(e) => setForm((current) => ({ ...current, designation: e.target.value }))} />
+                  <input data-field-key="designation" placeholder="e.g. Software Engineer" value={form.designation} onChange={(e) => setForm((current) => ({ ...current, designation: e.target.value }))} />
                 </label>
                 <label className={styles.fieldLabel}>
                   Learning month
-                  <input placeholder="e.g. 2025-03" value={form.learning_month} onChange={(e) => setForm((current) => ({ ...current, learning_month: e.target.value }))} />
+                  <input data-field-key="learning_month" placeholder="e.g. 2025-03" value={form.learning_month} onChange={(e) => setForm((current) => ({ ...current, learning_month: e.target.value }))} />
                 </label>
                 <label className={styles.fieldLabel}>
                   Category
-                  <input placeholder="e.g. Cloud" value={form.category} onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))} />
+                  <input data-field-key="managed_category" placeholder="e.g. Cloud" value={form.category} onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))} />
                 </label>
                 <label className={styles.fieldLabel}>
                   Competency
-                  <input placeholder="e.g. Azure" value={form.competency} onChange={(e) => setForm((current) => ({ ...current, competency: e.target.value }))} />
+                  <input data-field-key="competency" placeholder="e.g. Azure" value={form.competency} onChange={(e) => setForm((current) => ({ ...current, competency: e.target.value }))} />
                 </label>
                 <label className={styles.fieldLabel}>
                   Duration (minutes)
-                  <input type="number" min="1" placeholder="e.g. 45" value={form.duration_minutes} onChange={(e) => setForm((current) => ({ ...current, duration_minutes: e.target.value }))} />
+                  <input data-field-key="duration_minutes" type="number" min="1" placeholder="e.g. 45" value={form.duration_minutes} onChange={(e) => setForm((current) => ({ ...current, duration_minutes: e.target.value }))} />
                 </label>
                 <label className={`${styles.fieldLabel} ${styles.wide}`}>
                   Course title
-                  <input placeholder="e.g. Azure Fundamentals" value={form.title} onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))} required />
+                  <input data-field-key="course_title" placeholder="e.g. Azure Fundamentals" value={form.title} onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))} required />
                 </label>
                 <label className={`${styles.fieldLabel} ${styles.wide}`}>
                   Course URL
-                  <input placeholder="https://example.com/course" value={form.url} onChange={(e) => setForm((current) => ({ ...current, url: e.target.value }))} />
+                  <input data-field-key="url" placeholder="https://example.com/course" value={form.url} onChange={(e) => setForm((current) => ({ ...current, url: e.target.value }))} />
                 </label>
                 <label className={`${styles.fieldLabel} ${styles.wide}`}>
                   Description
-                  <textarea rows={3} placeholder="Short summary shown in the catalog" value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} />
+                  <textarea data-field-key="description" rows={3} placeholder="Short summary shown in the catalog" value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} />
                 </label>
                 <label className={styles.checkPill} style={{ justifySelf: "start" }}>
                   <input type="checkbox" checked={Boolean(form.archived)} onChange={(e) => setForm((current) => ({ ...current, archived: e.target.checked }))} />
@@ -2246,7 +2309,7 @@ async function handleDelete(course) {
                 </label>
                 <div className={styles.formActions}>
                   <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                    <Check aria-hidden="true" /> {saving ? "Savingâ€¦" : form.id ? "Update course" : "Create course"}
+                    <Check aria-hidden="true" /> {saving ? "Saving…" : form.id ? "Update course" : "Create course"}
                   </button>
                   <button type="button" className={styles.smallBtn} onClick={resetForm}>
                     <X aria-hidden="true" /> Clear
@@ -2285,10 +2348,10 @@ async function handleDelete(course) {
                   />
                   <Upload className={styles.fileDropIcon} aria-hidden="true" />
                   <strong>Choose a spreadsheet</strong>
-                  <span>.xlsx or .csv â€” parsed and previewed before saving</span>
+                   <span>.xlsx or .csv — parsed and previewed before saving</span>
                 </label>
               )}
-              {previewBusy && <p className={styles.inlineNote} style={{ marginTop: 12 }}>Parsing spreadsheetâ€¦</p>}
+              {previewBusy && <p className={styles.inlineNote} style={{ marginTop: 12 }}>Parsing spreadsheet…</p>}
               {preview ? (
                 <div style={{ marginTop: 12 }}>
                   <div className={styles.importStats}>
@@ -2300,14 +2363,14 @@ async function handleDelete(course) {
                   </div>
                   <div className={styles.formActions}>
                     <button type="button" className={styles.assignCourseBtn} disabled={saving} onClick={handleCommitImport}>
-                      <Check aria-hidden="true" /> {saving ? "Importingâ€¦" : "Confirm import"}
+                      <Check aria-hidden="true" /> {saving ? "Importing…" : "Confirm import"}
                     </button>
                     <button type="button" className={styles.smallBtn} onClick={() => { setPreview(null); setPreviewFile(null); }}>
                       <X aria-hidden="true" /> Clear preview
                     </button>
                   </div>
                   <p className={styles.inlineNote} style={{ marginTop: 10, marginBottom: 0 }}>
-                    {preview.filename || "Uploaded file"} Â· {preview.rows?.length || 0} preview row(s)
+                    {preview.filename || "Uploaded file"} · {preview.rows?.length || 0} preview row(s)
                   </p>
                 </div>
               ) : null}
@@ -2361,7 +2424,6 @@ async function handleDelete(course) {
           </div>
         )}
 
-        {loading && <RecruiterLoader inline />}
         {!loading && courses.length === 0 && (
           <div className={styles.emptyState}>
             <div className={styles.emptyStateIcon}><BookOpen aria-hidden="true" /></div>
@@ -2460,7 +2522,19 @@ function ProvidersTab({ onImportProvider }) {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const onChanged = () => load();
+    window.addEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onChanged);
+    const onStorage = (event) => {
+      if (event.key === LEARNING_PROVIDERS_UPDATED_STORAGE_KEY) load();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onChanged);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [load]);
 
   function startCreate() {
     setEditingId(null);
@@ -2581,6 +2655,7 @@ function ProvidersTab({ onImportProvider }) {
                 <label className={styles.fieldLabel}>
                   Provider name
                   <input
+                    data-field-key="provider_name"
                     placeholder="e.g. Udemy, DataCamp, Company Academy"
                     value={form.name}
                     onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -2590,7 +2665,7 @@ function ProvidersTab({ onImportProvider }) {
                 </label>
                 <label className={styles.fieldLabel}>
                   Provider type
-                  <select value={form.provider_type} onChange={(e) => setForm((f) => ({ ...f, provider_type: e.target.value }))}>
+                  <select data-field-key="provider_type" value={form.provider_type} onChange={(e) => setForm((f) => ({ ...f, provider_type: e.target.value }))}>
                     <option value="manual">Manual</option>
                     <option value="api">API</option>
                   </select>
@@ -2598,7 +2673,7 @@ function ProvidersTab({ onImportProvider }) {
                 </label>
                 <label className={styles.fieldLabel}>
                   Import method
-                  <select value={form.import_method} onChange={(e) => setForm((f) => ({ ...f, import_method: e.target.value }))}>
+                  <select data-field-key="import_method" value={form.import_method} onChange={(e) => setForm((f) => ({ ...f, import_method: e.target.value }))}>
                     <option value="excel">Excel</option>
                     <option value="api">API</option>
                     <option value="manual">Manual entry</option>
@@ -2607,6 +2682,7 @@ function ProvidersTab({ onImportProvider }) {
                 <label className={styles.fieldLabel}>
                   Logo URL
                   <input
+                    data-field-key="logo_url"
                     placeholder="https://…/logo.png (optional)"
                     value={form.logo_url}
                     onChange={(e) => setForm((f) => ({ ...f, logo_url: e.target.value }))}
@@ -2615,6 +2691,7 @@ function ProvidersTab({ onImportProvider }) {
                 <label className={`${styles.fieldLabel} ${styles.wide}`}>
                   Description
                   <input
+                    data-field-key="description"
                     placeholder="What does this provider offer?"
                     value={form.description}
                     onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
@@ -2640,7 +2717,6 @@ function ProvidersTab({ onImportProvider }) {
             </form>
           )}
 
-          {loading && <RecruiterLoader inline />}
           {!loading && providers.length === 0 && (
             <div className={styles.emptyProviders}>
               <div className={styles.emptyStateIcon}><Building2 aria-hidden="true" /></div>
@@ -3099,7 +3175,6 @@ function ImportsTab({ initialProvider = null, onConsumedInitial }) {
             <div className={shellStyles.sectionTitle}>Import history</div>
             <p className={shellStyles.sectionDesc}>Every import and API sync, with rollback and downloadable reports.</p>
             <div className={shellStyles.sectionBody} style={{ paddingLeft: 0, paddingRight: 0 }}>
-              {historyLoading && <RecruiterLoader inline />}
               {!historyLoading && history.length === 0 && (
                 <p className={styles.inlineNote}>No imports recorded yet.</p>
               )}

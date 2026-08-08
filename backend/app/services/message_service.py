@@ -240,6 +240,7 @@ class MessageService:
             recipient_name=thread.get("recruiter_name") or "HR",
             sender_label=thread.get("employee_name") or "Employee",
             link=f"/dashboard/recruiter/messages?thread={thread['_id']}",
+            organization_id=employee.get("organization_id"),
         )
         await database.hr_threads.update_one(
             {"_id": thread["_id"], "messages.id": msg["id"]},
@@ -327,6 +328,7 @@ class MessageService:
             recipient_name=thread.get("recruiter_name") or "HR",
             sender_label=thread.get("candidate_name") or "Candidate",
             link=f"/dashboard/recruiter/messages?thread={thread['_id']}",
+            organization_id=candidate.get("organization_id"),
         )
         await database.hr_threads.update_one(
             {"_id": thread["_id"], "messages.id": msg["id"]},
@@ -377,6 +379,7 @@ class MessageService:
                 if recipient_role == "employee"
                 else f"/dashboard/candidate/ai-assistant?thread={thread['_id']}"
             ),
+            organization_id=getattr(user, "organization_id", None),
         )
         await database.hr_threads.update_one(
             {"_id": thread["_id"], "messages.id": msg["id"]},
@@ -408,8 +411,13 @@ class MessageService:
             employee = await database.employees.find_one({"employee_id": emp_key})
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
-        if user.role != "super_admin" and employee.get("recruiter_id") and employee.get("recruiter_id") != user.id:
-            raise HTTPException(status_code=403, detail="Employee is not assigned to you.")
+        if user.role != "super_admin":
+            record_org = employee.get("organization_id")
+            if record_org and user.organization_id:
+                if record_org != user.organization_id:
+                    raise HTTPException(status_code=403, detail="Employee is not assigned to you.")
+            elif employee.get("recruiter_id") and employee.get("recruiter_id") != user.id:
+                raise HTTPException(status_code=403, detail="Employee is not assigned to you.")
 
         employee_user_id = employee.get("user_id")
         if not employee_user_id:
@@ -461,6 +469,7 @@ class MessageService:
             recipient_name=thread.get("employee_name") or "there",
             sender_label=user.full_name or "HR",
             link=f"/dashboard/employee/messages?thread={thread['_id']}",
+            organization_id=employee.get("organization_id"),
         )
         await database.hr_threads.update_one(
             {"_id": thread["_id"], "messages.id": msg["id"]},
@@ -526,6 +535,7 @@ class MessageService:
         recipient_name: str,
         sender_label: str,
         link: str,
+        organization_id: str | None = None,
     ) -> bool:
         subject = thread.get("subject") or "HR conversation"
         preview = (message.get("body") or "")[:160]
@@ -550,6 +560,7 @@ class MessageService:
                     body_text=message.get("body") or "",
                     sender_label=sender_label,
                     cta_link=f"{settings.frontend_base_url}{link}",
+                    organization_id=organization_id,
                 )
                 email_sent = True
             except Exception:  # noqa: BLE001

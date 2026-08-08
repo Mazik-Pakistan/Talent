@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -55,11 +55,7 @@ function validateForm(values) {
 }
 
 export default function LoginPage() {
-  return (
-    <Suspense fallback={<p style={{ textAlign: "center", marginTop: "2rem" }}>Loading…</p>}>
-      <LoginForm />
-    </Suspense>
-  );
+  return <LoginForm />;
 }
 
 function LoginForm() {
@@ -199,11 +195,12 @@ function LoginForm() {
           <div className={styles.asideBrandRow}>
             <Image
               src="/talentai-logo.png"
-              alt="Mazik Global"
-              width={192}
-              height={52}
-              className={styles.asideLogo}
+              alt="Mazik Global TalentAI"
+              width={164}
+              height={80}
               priority
+              className={styles.asideLogo}
+              style={{ height: "auto", objectFit: "contain" }}
             />
           </div>
 

@@ -32,15 +32,15 @@ const ROLE_COPY = {
   },
   super_admin: {
     title: "Platform Admin Agent",
-    subtitle: "Recruiters, organizations, and platform-wide reports",
+    subtitle: "Recruiters, organizations, tickets, and platform-wide operations",
     empty:
-      "I can help you manage recruiters, organizations, and get platform stats. Ask me about your platform overview, invite a recruiter, or check on any organization.",
+      "I can help you manage recruiters, organizations, support tickets, and get platform stats. Try asking about your platform overview, support ticket stats, or manage a recruiter.",
     starters: [
       "Show platform overview",
-      "Invite a new recruiter",
+      "Check support ticket stats",
       "List all recruiters",
       "List all organizations",
-      "Create a new organization",
+      "Invite a new recruiter",
     ],
   },
   candidate: {

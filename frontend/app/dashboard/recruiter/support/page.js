@@ -131,6 +131,12 @@ function RecruiterSupportPageContent() {
     setReplyText("");
   }
 
+  function cancelCreate() {
+    setCreateMode(false);
+    setForm(EMPTY_FORM);
+    setError("");
+  }
+
   async function openTicket(ticket) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
@@ -257,7 +263,7 @@ function RecruiterSupportPageContent() {
         hint: detailTab === "conversation"
           ? "Read the thread, reply with the next update, or close the ticket when it is done."
           : "Review the ticket details and status before replying or closing.",
-        fields: [],
+        fields: detailTab === "conversation" ? ["reply"] : [],
       });
       return () => clearRecruiterContext();
     }
@@ -328,8 +334,30 @@ function RecruiterSupportPageContent() {
               + Create Ticket
             </button>
           )}
+          {createMode && !selectedTicket && (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={cancelCreate}
+              style={{ position: "relative", zIndex: 2 }}
+            >
+              ← Back to Tickets
+            </button>
+          )}
+          {selectedTicket && !createMode && (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={closePanels}
+              style={{ position: "relative", zIndex: 2 }}
+            >
+              ← Back to Tickets
+            </button>
+          )}
         </div>
 
+        {!createMode && !selectedTicket && (
+        <>
         <div className={styles.stats}>
           <StatCard tone="green" value={stats ? stats.open ?? 0 : "—"} label="Open" icon={ICONS.open} />
           <StatCard tone="orange" value={stats ? stats.by_status?.in_progress ?? 0 : "—"} label="In Progress" icon={ICONS.inProgress} />
@@ -381,11 +409,7 @@ function RecruiterSupportPageContent() {
             </div>
 
             <div className={support.tableWrap}>
-              {loading && tickets.length === 0 ? (
-                <div className={support.emptyState}>
-                  <div className={support.emptyTitle}>Loading…</div>
-                </div>
-              ) : tickets.length ? (
+              {tickets.length ? (
                 <>
                   <div style={{ overflowX: "auto" }}>
                     <table className={support.table}>
@@ -456,7 +480,7 @@ function RecruiterSupportPageContent() {
                   {!hasFilters && (
                     <button
                       type="button"
-                      className={support.btnPrimary}
+                      className={styles.primaryButton}
                       onClick={() => { setError(""); setCreateMode(true); }}
                       style={{ position: "relative", zIndex: 2 }}
                     >
@@ -468,21 +492,16 @@ function RecruiterSupportPageContent() {
             </div>
           </div>
         </div>
-
-        {(createMode || selectedTicket) && (
-          <div
-            className={support.panelOverlay}
-            onClick={closePanels}
-            style={{ opacity: createMode || selectedTicket ? 1 : 0 }}
-          />
+        </>
         )}
 
-        <div className={`${support.panel} ${createMode ? support.panelOpen : support.panelClosed}`} role="dialog" aria-modal="true" aria-label="Create support ticket">
-          <div className={support.panelHeader}>
+        {createMode && !selectedTicket && (
+        <div className={support.createForm}>
+          <div className={support.createFormHeader}>
             <div className={support.panelTitle}>Create support ticket</div>
             <button
               type="button"
-              onClick={closePanels}
+              onClick={cancelCreate}
               disabled={creating}
               style={{ background: "transparent", border: "none", fontSize: 24, color: "#94a3b8", cursor: "pointer", lineHeight: 1, padding: 0 }}
               aria-label="Close"
@@ -491,6 +510,7 @@ function RecruiterSupportPageContent() {
             </button>
           </div>
           <form
+            data-partner-coach
             onSubmit={handleCreate}
             data-mascot-command={!createMode ? "" : undefined}
             style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
@@ -499,6 +519,7 @@ function RecruiterSupportPageContent() {
               <div className={support.formField}>
                 <label className={support.formLabel} htmlFor="ticket-subject">Subject</label>
                 <input
+                  data-field-key="subject"
                   id="ticket-subject"
                   className={support.formInput}
                   value={form.subject}
@@ -512,6 +533,7 @@ function RecruiterSupportPageContent() {
               <div className={support.formField}>
                 <label className={support.formLabel} htmlFor="ticket-category">Category</label>
                 <select
+                  data-field-key="category"
                   id="ticket-category"
                   className={support.formSelect}
                   value={form.category}
@@ -527,6 +549,7 @@ function RecruiterSupportPageContent() {
               <div className={support.formField}>
                 <label className={support.formLabel} htmlFor="ticket-priority">Priority</label>
                 <select
+                  data-field-key="ticket_priority"
                   id="ticket-priority"
                   className={support.formSelect}
                   value={form.priority}
@@ -542,6 +565,7 @@ function RecruiterSupportPageContent() {
               <div className={support.formField}>
                 <label className={support.formLabel} htmlFor="ticket-module">Affected Module</label>
                 <select
+                  data-field-key="affected_module"
                   id="ticket-module"
                   className={support.formSelect}
                   value={form.affected_module}
@@ -557,6 +581,7 @@ function RecruiterSupportPageContent() {
               <div className={support.formField}>
                 <label className={support.formLabel} htmlFor="ticket-description">Description</label>
                 <textarea
+                  data-field-key="ticket_description"
                   id="ticket-description"
                   className={support.formTextarea}
                   value={form.description}
@@ -570,19 +595,21 @@ function RecruiterSupportPageContent() {
               </div>
             </div>
             <div className={support.panelFooter}>
-              <button type="button" className={support.btnGhost} onClick={closePanels} disabled={creating}>
+              <button type="button" className={support.btnGhost} onClick={cancelCreate} disabled={creating}>
                 Cancel
               </button>
-              <button type="submit" className={support.btnPrimary} disabled={creating}>
+              <button type="submit" className={styles.primaryButton} disabled={creating}>
                 {creating && <span className={support.spinner} style={{ marginRight: 8 }} />}
                 {creating ? "Creating…" : "Submit ticket"}
               </button>
             </div>
           </form>
         </div>
+        )}
 
-        <div className={`${support.panel} ${selectedTicket ? support.panelOpen : support.panelClosed}`} role="dialog" aria-modal="true" aria-label="Ticket details">
-          <div className={support.panelHeader}>
+        {selectedTicket && (
+        <div className={support.createForm} aria-label="Ticket details">
+          <div className={support.createFormHeader}>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className={support.panelTitle}>{selectedTicket?.ticket_id || "Ticket"}</div>
               <div style={{ fontSize: 13, color: "#64748b", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -621,7 +648,7 @@ function RecruiterSupportPageContent() {
 
             {!ticketDetail ? (
               <div className={support.emptyState}>
-                <div className={support.emptyTitle}>Loading…</div>
+                <div className={support.emptyTitle}>Select a ticket to view details</div>
               </div>
             ) : detailTab === "conversation" ? (
               <>
@@ -642,8 +669,9 @@ function RecruiterSupportPageContent() {
                     <p style={{ fontSize: 13, color: "#94a3b8" }}>No messages yet — the support team will respond shortly.</p>
                   )}
                 </div>
-                <div className={support.replyArea}>
+                <form data-partner-coach className={support.replyArea} onSubmit={(e) => { e.preventDefault(); handleSendReply(); }}>
                   <textarea
+                    data-field-key="reply"
                     className={support.replyInput}
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
@@ -652,14 +680,13 @@ function RecruiterSupportPageContent() {
                     aria-label="Reply message"
                   />
                   <button
-                    type="button"
+                    type="submit"
                     className={support.sendBtn}
-                    onClick={handleSendReply}
                     disabled={sendingReply || !replyText.trim()}
                   >
                     {sendingReply ? <span className={support.spinner} /> : "Send"}
                   </button>
-                </div>
+                </form>
               </>
             ) : (
               <div className={support.detailGrid}>
@@ -727,8 +754,9 @@ function RecruiterSupportPageContent() {
             <button type="button" className={support.btnGhost} onClick={closePanels}>
               Close
             </button>
-          </div>
+           </div>
         </div>
+        )}
       </div>
     </RecruiterShell>
   );

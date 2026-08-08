@@ -1790,9 +1790,7 @@ function OnboardingContent() {
           </div>
 
           <div className={styles.content}>
-            {loading ? (
-              <RecruiterLoader inline />
-            ) : (
+            {!loading && (
               <section className={styles.card}>
                 {isEditMode && (
                   <div className={styles.editBanner}>
@@ -1826,14 +1824,15 @@ function OnboardingContent() {
                   ) : null}
                 </p>
 
-                {submitted && !isEditMode ? (
+                {submitted && !isEditMode && (
                   <SubmittedState
                     styles={styles}
                     candidate={candidate}
                     onEdit={() => router.push("/onboarding?edit=true")}
                     onDashboard={() => router.push("/dashboard/candidate")}
                   />
-                ) : showModeChooser ? (
+                )}
+                {!submitted && showModeChooser && (
                   <div className={styles.modeChooser}>
                     <p className={styles.eyebrow}>Get started</p>
                     <h1>How would you like to fill your profile?</h1>
@@ -1873,7 +1872,8 @@ function OnboardingContent() {
                       </button>
                     </div>
                   </div>
-                ) : (
+                )}
+                {!submitted && !showModeChooser && (
                   <>
                     <div className={styles.modeBanner}>
                       <span>
@@ -2710,6 +2710,7 @@ function OnboardingContent() {
                 )}
               </section>
             )}
+            {loading && <RecruiterLoader inline />}
           </div>
         </main>
       </div>

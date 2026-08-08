@@ -32,7 +32,9 @@ from app.schemas.learning import (
     ManagedLearningImportRow,
     ManagedLearningCourseUpdateRequest,
 )
+from app.schemas.provider import LearningProviderCreate
 from app.services.dashboard_service import create_notification
+from app.services.provider_service import provider_service
 
 MANAGED_SOURCE = "managed_learning"
 MAX_IMPORT_BYTES = 8 * 1024 * 1024
@@ -289,6 +291,20 @@ def _public_course(doc: dict) -> dict:
     }
 
 
+def _sortable_date(value):
+    if isinstance(value, datetime):
+        # Normalize naive datetimes (legacy docs) to UTC-aware so comparisons
+        # never raise "can't compare offset-naive and offset-aware datetimes".
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+        except ValueError:
+            pass
+    return datetime.min.replace(tzinfo=UTC)
+
+
 class ManagedLearningService:
     def _normalize_provider_name(self, value: Any) -> str:
         return _normalize_provider_name(value)
@@ -345,8 +361,10 @@ class ManagedLearningService:
         doc["_id"] = result.inserted_id
         return doc
 
-    async def _save_course_doc(self, doc: dict) -> dict:
+    async def _save_course_doc(self, doc: dict, organization_id: str | None = None) -> dict:
         doc = dict(doc)
+        if organization_id:
+            doc["organization_id"] = organization_id
         now = _now()
         doc.setdefault("created_at", now)
         doc["updated_at"] = now
@@ -758,14 +776,14 @@ class ManagedLearningService:
             try:
                 if existing:
                     payload["_id"] = existing["_id"]
-                    await self._save_course_doc({**existing, **payload})
+                    await self._save_course_doc({**existing, **payload}, organization_id=current_user.organization_id)
                     updated += 1
                 else:
                     await self._save_course_doc({
                         **payload,
                         "created_by_id": current_user.id,
                         "updated_by_id": current_user.id,
-                    })
+                    }, organization_id=current_user.organization_id)
                     imported += 1
             except Exception as exc:  # noqa: BLE001
                 errors.append({"row": row.get("row"), "error": str(exc)})
@@ -792,12 +810,17 @@ class ManagedLearningService:
         sort_by: str | None = "newest",
         page: int = 1,
         page_size: int = 20,
+        organization_id: str | None = None,
     ) -> dict:
         query = self._collection_query(include_archived=archived is True)
         if archived is True:
             query = {}
-        if provider:
-            query["provider"] = {"$regex": f"^{re.escape(provider.strip())}$", "$options": "i"}
+        if organization_id:
+            org_filter = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
+            if query:
+                query = {"$and": [query, org_filter]}
+            else:
+                query = org_filter
         if designation:
             query["designation"] = {"$regex": f"^{re.escape(designation.strip())}$", "$options": "i"}
         if learning_month:
@@ -807,6 +830,8 @@ class ManagedLearningService:
         if competency:
             query["competency"] = {"$regex": f"^{re.escape(competency.strip())}$", "$options": "i"}
         docs = await database.learning_courses.find(query).to_list(length=5000)
+        if provider:
+            docs = [d for d in docs if _normalize_provider_name(d.get("provider") or "Managed Learning") == provider]
         if q:
             needle = q.strip().lower()
             docs = [
@@ -826,24 +851,49 @@ class ManagedLearningService:
                 ).lower()
             ]
 
+        for doc in docs:
+            for field in ("created_at", "updated_at"):
+                value = doc.get(field)
+                if isinstance(value, str):
+                    try:
+                        doc[field] = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    except (ValueError, TypeError):
+                        doc[field] = None
+
+        def _sort_ts(doc: dict, *fields: str) -> str:
+            """Return an ISO string for sorting — always a string, never raises."""
+            for field in fields:
+                value = doc.get(field)
+                if value is None:
+                    continue
+                if isinstance(value, datetime):
+                    try:
+                        # Normalize naive → UTC so isoformat is consistent
+                        if value.tzinfo is None:
+                            value = value.replace(tzinfo=UTC)
+                        return value.isoformat()
+                    except Exception:  # noqa: BLE001
+                        continue
+                if isinstance(value, str) and value:
+                    return value
+            return "0000-00-00T00:00:00+00:00"
+
         # Phase 3: sortable catalog (newest first by default).
         if sort_by == "oldest":
-            docs.sort(key=lambda d: d.get("created_at") or datetime.min.replace(tzinfo=UTC))
+            docs.sort(key=lambda d: _sort_ts(d, "created_at"))
         elif sort_by == "updated":
-            docs.sort(key=lambda d: d.get("updated_at") or d.get("created_at") or datetime.min.replace(tzinfo=UTC), reverse=True)
+            docs.sort(key=lambda d: _sort_ts(d, "updated_at", "created_at"), reverse=True)
         elif sort_by == "title_asc":
-            docs.sort(key=lambda d: (d.get("title") or "").lower())
+            docs.sort(key=lambda d: str(d.get("title") or "").lower())
         elif sort_by == "title_desc":
-            docs.sort(key=lambda d: (d.get("title") or "").lower(), reverse=True)
+            docs.sort(key=lambda d: str(d.get("title") or "").lower(), reverse=True)
         elif sort_by == "duration":
-            def _dur(d):
-                v = d.get("duration_minutes")
-                return v if isinstance(v, (int, float)) else float("inf")
-            docs.sort(key=_dur)
+            docs.sort(key=lambda d: d.get("duration_minutes") if isinstance(d.get("duration_minutes"), (int, float)) else float("inf"))
         elif sort_by == "provider":
-            docs.sort(key=lambda d: (d.get("provider") or "").lower())
-        else:  # newest (default)
-            docs.sort(key=lambda d: d.get("created_at") or datetime.min.replace(tzinfo=UTC), reverse=True)
+            docs.sort(key=lambda d: str(d.get("provider") or "").lower())
+        else:
+            # newest (default)
+            docs.sort(key=lambda d: _sort_ts(d, "created_at"), reverse=True)
 
         total = len(docs)
         start = (page - 1) * page_size
@@ -904,38 +954,59 @@ class ManagedLearningService:
         normalized = _normalize_provider_name(provider_name)
         if not normalized or not normalized.strip():
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Provider name is required.")
-        existing = await database.learning_providers.find_one({"slug": _provider_slug(normalized)})
+        slug = _provider_slug(normalized)
+        existing = await database.learning_providers.find_one({"slug": slug})
         if existing:
-            return {"provider": {"name": existing.get("name") or normalized, "slug": existing.get("slug") or _provider_slug(normalized)}}
-        saved = await self._ensure_provider(normalized, current_user=current_user)
-        return {"provider": {"name": saved.get("name") or normalized, "slug": saved.get("slug") or _provider_slug(normalized)}}
+            return {"provider": {"name": existing.get("name") or normalized, "slug": existing.get("slug") or slug}}
+        try:
+            result = await provider_service.create_provider(
+                current_user,
+                LearningProviderCreate(
+                    name=normalized,
+                    provider_type="manual",
+                    import_method="manual",
+                    active=True,
+                ),
+            )
+            return result
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_409_CONFLICT:
+                existing = await database.learning_providers.find_one({"slug": slug})
+                if existing:
+                    return {"provider": {"name": existing.get("name") or normalized, "slug": existing.get("slug") or slug}}
+            raise
 
-    async def list_facets(self) -> dict:
-        docs = await database.learning_courses.find(self._collection_query()).to_list(length=5000)
-        providers = []
-        seen_providers: set[str] = set()
-        for doc in docs:
-            provider_name = _normalize_provider_name(doc.get("provider") or "Managed Learning")
-            if not provider_name or provider_name in {"Microsoft Learn", "Coursera"}:
-                continue
-            if any(existing.lower() == provider_name.lower() for existing in seen_providers):
-                continue
-            seen_providers.add(provider_name)
-            providers.append(provider_name)
+    async def list_facets(self, organization_id: str | None = None) -> dict:
+        query = self._collection_query(include_archived=False)
+        if organization_id:
+            org_filter = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
+            if query:
+                query = {"$and": [query, org_filter]}
+            else:
+                query = org_filter
+        docs = await database.learning_courses.find(query).to_list(length=5000)
 
-        # Provider registry drives the tabs: freshly created providers (even with
-        # zero courses yet) must appear in the catalog. External API providers are
-        # surfaced by their own external tabs, so exclude them here.
+        # Sync any course provider names into the registry first (idempotent).
+        # This ensures providers added via import always appear in catalog tabs.
+        await provider_service.sync_providers_from_courses()
+
+        # Registry is the single source of truth for which providers appear in tabs.
+        # Courses whose provider was deleted from the registry are NOT surfaced —
+        # this ensures that deleting a provider immediately removes it from the catalog.
+        EXCLUDED = {"Microsoft Learn", "Coursera"}
         registry_docs = await database.learning_providers.find(
             {"active": {"$ne": False}}
         ).sort("name", 1).to_list(length=500)
+        registered_names: set[str] = set()
+        providers: list[str] = []
         for provider_doc in registry_docs:
             provider_name = _normalize_provider_name(provider_doc.get("name"))
-            if not provider_name or provider_name in {"Microsoft Learn", "Coursera"}:
+            if not provider_name or provider_name in EXCLUDED:
                 continue
-            if any(existing.lower() == provider_name.lower() for existing in seen_providers):
+            key = provider_name.lower()
+            if key in registered_names:
                 continue
-            seen_providers.add(provider_name)
+            registered_names.add(key)
             providers.append(provider_name)
 
         if any(name != "Managed Learning" for name in providers):
@@ -973,6 +1044,8 @@ class ManagedLearningService:
             "created_by_id": current_user.id,
             "updated_by_id": current_user.id,
         }
+        if current_user.organization_id:
+            doc["organization_id"] = current_user.organization_id
         doc["course_key"] = _course_key(
             provider=doc.get("provider") or "Managed Learning",
             designation=doc.get("designation") or "",
@@ -985,7 +1058,13 @@ class ManagedLearningService:
         existing = await self._find_existing(doc["course_key"])
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course already exists.")
-        saved = await self._save_course_doc(doc)
+        saved = await self._save_course_doc(doc, organization_id=current_user.organization_id)
+        if current_user.organization_id:
+            try:
+                from app.services.course_sync_service import sync_to_framework
+                await sync_to_framework(current_user.organization_id, saved)
+            except Exception:
+                pass
         return {"course": _public_course(saved)}
 
     async def update_course(self, current_user: CurrentUser, course_id: str, payload: ManagedLearningCourseUpdateRequest) -> dict:
@@ -1014,9 +1093,15 @@ class ManagedLearningService:
             existing = await self._find_existing(merged["course_key"])
             if existing and str(existing["_id"]) != str(doc["_id"]):
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A different course already uses the same roadmap slot.")
-            saved = await self._save_course_doc(merged)
+            saved = await self._save_course_doc(merged, organization_id=doc.get("organization_id"))
         else:
             saved = doc
+        if doc.get("organization_id"):
+            try:
+                from app.services.course_sync_service import sync_to_framework
+                await sync_to_framework(doc["organization_id"], saved)
+            except Exception:
+                pass
         return {"course": _public_course(saved)}
 
     async def archive_course(self, current_user: CurrentUser, course_id: str, *, archived: bool = True) -> dict:
@@ -1035,9 +1120,20 @@ class ManagedLearningService:
         if not ObjectId.is_valid(course_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
 
-        result = await database.learning_courses.delete_one({"_id": ObjectId(course_id)})
+        oid = ObjectId(course_id)
+        await database.learning_enrollments.delete_many({"course_uid": f"learning_course:{course_id}"})
+        await database.learning_assignments.delete_many({"course_uid": f"learning_course:{course_id}"})
+        await database.learning_bookmarks.delete_many({"course_uid": f"learning_course:{course_id}"})
+
+        result = await database.learning_courses.delete_one({"_id": oid})
         if result.deleted_count == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+        if doc.get("organization_id"):
+            try:
+                from app.services.course_sync_service import sync_delete_from_framework
+                await sync_delete_from_framework(doc["organization_id"], course_id)
+            except Exception:
+                pass
         return {"deleted": True}
 
     async def bulk_course_action(
@@ -1073,7 +1169,7 @@ class ManagedLearningService:
             detail="Action must be 'archive', 'restore', or 'delete'.",
         )
 
-    async def recommend_for_employee(self, employee: dict, *, limit: int = 8) -> list[dict]:
+    async def recommend_for_employee(self, employee: dict, *, limit: int = 8, organization_id: str | None = None) -> list[dict]:
         designation = (employee.get("job_title") or "").strip()
         if not designation:
             return []
@@ -1085,7 +1181,11 @@ class ManagedLearningService:
             assigned_docs = await database.learning_assignments.find({"user_id": user_id}, {"course_uid": 1}).to_list(length=1000)
             completed = [d.get("course_uid") for d in completed_docs if d.get("course_uid")]
             assigned = [d.get("course_uid") for d in assigned_docs if d.get("course_uid")]
-        courses = await database.learning_courses.find(self._collection_query()).to_list(length=5000)
+        query = self._collection_query()
+        if organization_id:
+            org_filter = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
+            query = {"$and": [query, org_filter]}
+        courses = await database.learning_courses.find(query).to_list(length=5000)
         active = [doc for doc in courses if not doc.get("archived")]
         same_designation = [doc for doc in active if _normalize(doc.get("designation")) == _normalize(designation)]
         if not same_designation:

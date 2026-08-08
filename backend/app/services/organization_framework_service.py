@@ -8,6 +8,7 @@ and promotion rules scoped to an organization.  Every collection is keyed by
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
@@ -303,6 +304,41 @@ async def list_skills(organization_id: str, role_id: str | None = None, role_nam
     elif role_name:
         q["role_name"] = role_name
     docs = await database.org_framework_skills.find(q, {"_id": 0}).to_list(10000)
+
+    try:
+        emp_filter = {"organization_id": organization_id, "status": "active"} if organization_id else {"status": "active"}
+        emp_ids = await database.employees.find(
+            emp_filter, {"_id": 0, "employee_id": 1}
+        ).to_list(length=50000)
+        id_set = [e["employee_id"] for e in emp_ids if e.get("employee_id")]
+        if id_set:
+            pipeline = [
+                {"$match": {"employee_id": {"$in": id_set}}},
+                {"$group": {
+                    "_id": "$skill_name",
+                    "proficiency": {"$first": "$proficiency"},
+                    "employee_count": {"$sum": 1},
+                }},
+                {"$sort": {"_id": 1}},
+            ]
+            results = await database.employee_skills.aggregate(pipeline).to_list(length=10000)
+            existing_names = {d["skill_name"] for d in docs}
+            for r in results:
+                name = r.get("_id") or ""
+                if name and name not in existing_names:
+                    docs.append({
+                        "skill_id": f"EMP-{organization_id}:{name}",
+                        "role_name": "Employee Skills",
+                        "skill_name": name,
+                        "proficiency": r.get("proficiency") or "Intermediate",
+                        "weight": 20,
+                        "source": "employee_skills",
+                        "employee_count": r.get("employee_count", 0),
+                    })
+                    existing_names.add(name)
+    except Exception:
+        pass
+
     return docs
 
 
@@ -412,6 +448,39 @@ async def list_certifications(organization_id: str, role_name: str | None = None
     if role_name:
         q["role_name"] = role_name
     docs = await database.org_framework_certifications.find(q, {"_id": 0}).to_list(5000)
+
+    try:
+        emp_filter = {"organization_id": organization_id, "status": "active"} if organization_id else {"status": "active"}
+        emp_ids = await database.employees.find(
+            emp_filter, {"_id": 0, "employee_id": 1}
+        ).to_list(length=50000)
+        id_set = [e["employee_id"] for e in emp_ids if e.get("employee_id")]
+        if id_set:
+            pipeline = [
+                {"$match": {"employee_id": {"$in": id_set}, "verification_status": "verified"}},
+                {"$group": {
+                    "_id": "$course_title",
+                    "employee_count": {"$sum": 1},
+                }},
+                {"$sort": {"_id": 1}},
+            ]
+            results = await database.learning_certificates.aggregate(pipeline).to_list(length=10000)
+            existing_names = {d["certification_name"] for d in docs}
+            for r in results:
+                name = r.get("_id") or ""
+                if name and name not in existing_names:
+                    docs.append({
+                        "cert_id": f"EMP-{organization_id}:{name}",
+                        "role_name": "Employee Certifications",
+                        "certification_name": name,
+                        "mandatory": False,
+                        "source": "learning_certificates",
+                        "employee_count": r.get("employee_count", 0),
+                    })
+                    existing_names.add(name)
+    except Exception:
+        pass
+
     return docs
 
 
@@ -516,10 +585,38 @@ async def delete_certification(organization_id: str, cert_id: str) -> bool:
 # ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ //
 
 async def list_courses(organization_id: str) -> list[dict]:
-    docs = await database.org_framework_courses.find(
-        _oid_filter(organization_id), {"_id": 0}
+    oid_filter = _oid_filter(organization_id)
+    framework_docs = await database.org_framework_courses.find(
+        oid_filter, {"_id": 0}
     ).sort("name", 1).to_list(10000)
-    return docs
+
+    learning_query = {
+        "$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]
+    }
+    learning_docs = await database.learning_courses.find(
+        learning_query
+    ).sort("title", 1).to_list(10000)
+
+    seen = {c["course_id"] for c in framework_docs}
+    for ld in learning_docs:
+        link_id = ld.get("org_framework_course_id") or ""
+        if link_id and link_id in seen:
+            continue
+        synthetic_id = link_id or f"LC-{str(ld.get('_id', ''))}"
+        framework_docs.append({
+            "organization_id": organization_id,
+            "course_id": synthetic_id,
+            "name": ld.get("title") or "",
+            "provider": ld.get("provider") or "",
+            "category": ld.get("category") or ld.get("designation") or "",
+            "duration_hours": round((ld.get("duration_minutes") or 0) / 60, 1) if ld.get("duration_minutes") else None,
+            "difficulty": ld.get("difficulty") or "Beginner",
+            "url": ld.get("url"),
+            "description": ld.get("description") or "",
+            "source": "learning_courses",
+        })
+        seen.add(synthetic_id)
+    return framework_docs
 
 
 async def get_course(organization_id: str, course_id: str) -> dict | None:
@@ -549,6 +646,11 @@ async def create_course(organization_id: str, data: dict) -> dict:
         "updated_at": now,
     }
     await database.org_framework_courses.insert_one(doc)
+    try:
+        from app.services.course_sync_service import sync_to_learning
+        await sync_to_learning(organization_id, doc)
+    except Exception:
+        pass
     return {k: v for k, v in doc.items() if k != "_id"}
 
 
@@ -566,6 +668,12 @@ async def update_course(organization_id: str, course_id: str, data: dict) -> dic
     )
     if result.matched_count == 0:
         raise ValueError("Course not found.")
+    try:
+        from app.services.course_sync_service import sync_to_learning
+        updated = await get_course(organization_id, course_id)
+        await sync_to_learning(organization_id, updated)
+    except Exception:
+        pass
     return await get_course(organization_id, course_id)
 
 
@@ -574,6 +682,11 @@ async def delete_course(organization_id: str, course_id: str) -> bool:
     await database.org_framework_roadmaps.delete_many(
         {"organization_id": organization_id, "course_id": course_id},
     )
+    try:
+        from app.services.course_sync_service import sync_delete_from_learning
+        await sync_delete_from_learning(organization_id, course_id)
+    except Exception:
+        pass
     result = await database.org_framework_courses.delete_one(
         {"organization_id": organization_id, "course_id": course_id},
     )
@@ -591,6 +704,38 @@ async def list_roadmaps(organization_id: str, role_name: str | None = None) -> l
     docs = await database.org_framework_roadmaps.find(q, {"_id": 0}).sort(
         [("role_name", 1), ("order", 1)]
     ).to_list(10000)
+
+    try:
+        level_query = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
+        if role_name:
+            level_query = {"$and": [level_query, {"role_title": {"$regex": f"^{re.escape(role_name.strip())}$", "$options": "i"}}]}
+        levels = await database.career_levels.find(
+            level_query, {"_id": 0, "role_title": 1, "learning_path": 1}
+        ).to_list(length=10000)
+
+        seen = {(d.get("role_name"), d.get("course_id")) for d in docs}
+        for level in levels:
+            role = level.get("role_title") or ""
+            if not role:
+                continue
+            for course in level.get("learning_path") or []:
+                title = course.get("course_title") or ""
+                if not title:
+                    continue
+                row_key = (role, title)
+                if row_key in seen:
+                    continue
+                seen.add(row_key)
+                docs.append({
+                    "role_name": role,
+                    "course_id": course.get("course_uid") or title,
+                    "course_name": title,
+                    "order": course.get("order") or 1,
+                    "source": "career_levels",
+                })
+    except Exception:
+        pass
+
     return docs
 
 
@@ -701,6 +846,35 @@ async def list_promotion_rules(organization_id: str) -> list[dict]:
     docs = await database.org_framework_promotion_rules.find(
         _oid_filter(organization_id), {"_id": 0}
     ).sort("role_name", 1).to_list(5000)
+
+    try:
+        level_query = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
+        levels = await database.career_levels.find(
+            level_query, {"_id": 0, "role_title": 1, "min_experience_years": 1,
+                          "manager_approval_required": 1, "required_skills": 1,
+                          "required_certifications": 1}
+        ).to_list(length=10000)
+
+        seen_roles = {d["role_name"] for d in docs}
+        for level in levels:
+            role = (level.get("role_title") or "").strip()
+            if not role or role in seen_roles:
+                continue
+            seen_roles.add(role)
+            skills_req = level.get("required_skills") or []
+            certs_req = level.get("required_certifications") or []
+            docs.append({
+                "role_name": role,
+                "min_experience_months": round((level.get("min_experience_years") or 0) * 12),
+                "required_readiness_pct": 80,
+                "manager_approval_required": bool(level.get("manager_approval_required", False)),
+                "min_skills_completed_pct": 100 if skills_req else 0,
+                "min_certs_completed": len(certs_req),
+                "source": "career_levels",
+            })
+    except Exception:
+        pass
+
     return docs
 
 
@@ -775,19 +949,55 @@ async def get_framework_summary(organization_id: str) -> dict:
     """Aggregate counts across all framework collections."""
     departments = await database.org_framework_departments.count_documents(_oid_filter(organization_id))
     roles = await database.org_framework_roles.count_documents(_oid_filter(organization_id))
-    skills = await database.org_framework_skills.count_documents(_oid_filter(organization_id))
-    certifications = await database.org_framework_certifications.count_documents(_oid_filter(organization_id))
-    courses = await database.org_framework_courses.count_documents(_oid_filter(organization_id))
-    roadmaps = await database.org_framework_roadmaps.count_documents(_oid_filter(organization_id))
-    promotion_rules = await database.org_framework_promotion_rules.count_documents(_oid_filter(organization_id))
+    skills_framework = await database.org_framework_skills.count_documents(_oid_filter(organization_id))
+    certifications_framework = await database.org_framework_certifications.count_documents(_oid_filter(organization_id))
+    courses_framework = await database.org_framework_courses.count_documents(_oid_filter(organization_id))
+    learning_query = {
+        "$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]
+    }
+    courses_learning = await database.learning_courses.count_documents(learning_query)
+    courses = courses_framework + courses_learning
+    roadmaps = len(await list_roadmaps(organization_id))
+    promotion_rules = len(await list_promotion_rules(organization_id))
 
     # Employees in this org
     try:
-        employees = await database.employees.count_documents(
-            {"organization_id": organization_id, "status": "active"} if organization_id else {"status": "active"}
-        )
+        emp_filter = {"organization_id": organization_id, "status": "active"} if organization_id else {"status": "active"}
+        employees = await database.employees.count_documents(emp_filter)
     except Exception:
         employees = 0
+
+    # Unique skills & certifications from the Learning module (employee skills + certs)
+    try:
+        emp_ids = await database.employees.find(
+            emp_filter, {"_id": 0, "employee_id": 1}
+        ).to_list(length=50000)
+        id_set = [e["employee_id"] for e in emp_ids if e.get("employee_id")]
+        if id_set:
+            skills_pipeline = [
+                {"$match": {"employee_id": {"$in": id_set}}},
+                {"$group": {"_id": "$skill_name"}},
+                {"$count": "total"},
+            ]
+            result = await database.employee_skills.aggregate(skills_pipeline).to_list(1)
+            skills_learning = result[0]["total"] if result else 0
+
+            certs_pipeline = [
+                {"$match": {"employee_id": {"$in": id_set}, "verification_status": "verified"}},
+                {"$group": {"_id": "$course_title"}},
+                {"$count": "total"},
+            ]
+            result = await database.learning_certificates.aggregate(certs_pipeline).to_list(1)
+            certs_learning = result[0]["total"] if result else 0
+        else:
+            skills_learning = 0
+            certs_learning = 0
+    except Exception:
+        skills_learning = 0
+        certs_learning = 0
+
+    skills = skills_framework + skills_learning
+    certifications = certifications_framework + certs_learning
 
     # Recently updated across all collections
     recent: list[dict] = []
@@ -822,15 +1032,16 @@ async def get_framework_summary(organization_id: str) -> dict:
 async def get_org_structure_options(organization_id: str) -> dict:
     """Compact, org-scoped option sets for every module's dropdowns.
 
-    Single source of truth for departments, roles, skills and certifications so
-    recruiter, candidate and employee UIs (and their AI assistants) never need
-    independent or hardcoded lists.
+    Single source of truth for departments, roles, skills, certifications and
+    courses so recruiter, candidate and employee UIs (and their AI assistants)
+    never need independent or hardcoded lists.
     """
-    [departments, roles, skills, certifications] = await asyncio.gather(
+    [departments, roles, skills, certifications, courses] = await asyncio.gather(
         list_departments(organization_id),
         list_roles(organization_id),
         list_skills(organization_id),
         list_certifications(organization_id),
+        list_courses(organization_id),
     )
     return {
         "departments": [d["name"] for d in departments if d.get("name")],
@@ -843,6 +1054,11 @@ async def get_org_structure_options(organization_id: str) -> dict:
         "certifications": sorted(
             {c.get("certification_name") for c in certifications if c.get("certification_name")}
         ),
+        "courses": [
+            {"course_id": c["course_id"], "name": c["name"], "provider": c.get("provider"), "category": c.get("category")}
+            for c in courses
+            if c.get("name")
+        ],
     }
 
 

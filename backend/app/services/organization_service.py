@@ -35,6 +35,7 @@ ORG_MODULE_KEYS = [
     "it",
     "reporting",
     "profile",
+    "support",
 ]
 
 DEFAULT_ORG_MODULES: dict[str, bool] = {key: True for key in ORG_MODULE_KEYS}
@@ -53,6 +54,7 @@ ORG_MODULE_LABELS = {
     "it": "IT & support",
     "reporting": "Activity & reporting",
     "profile": "Profile",
+    "support": "Support tickets",
 }
 
 
@@ -294,6 +296,12 @@ async def purge_organization(organization_id: str) -> dict:
         "org_framework_versions",
     ):
         await _delete_many(collection_name, org_filter)
+
+    await _delete_many("career_tracks", org_filter)
+    await _delete_many("career_levels", org_filter)
+    await _delete_many("employee_career_assignments", org_filter)
+
+    await _delete_many("learning_courses", org_filter)
 
     deleted = await delete_organization(organization_id)
     if not deleted:

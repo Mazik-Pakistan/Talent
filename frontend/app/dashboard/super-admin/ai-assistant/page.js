@@ -15,13 +15,18 @@ const QUICK_ACTIONS = [
       "Show me a platform overview — how many recruiters, active/pending, organizations, and per-recruiter employee counts.",
   },
   {
-    label: "Invite recruiter",
+    label: "Ticket stats",
     prompt:
-      "I want to invite a new recruiter. Ask me for their full name, email, job title, and department.",
+      "Show me support ticket stats — total, open, in-progress, resolved, and by priority.",
   },
   {
     label: "List all recruiters",
     prompt: "Show me all recruiters on the platform with their status and employee counts.",
+  },
+  {
+    label: "Invite recruiter",
+    prompt:
+      "I want to invite a new recruiter. Ask me for their full name, email, job title, and department.",
   },
   {
     label: "List organizations",
@@ -30,6 +35,10 @@ const QUICK_ACTIONS = [
   {
     label: "Create organization",
     prompt: "I want to create a new organization. Ask me for the name and any optional details.",
+  },
+  {
+    label: "Capability templates",
+    prompt: "List all available capability templates and what modules each one enables.",
   },
 ];
 

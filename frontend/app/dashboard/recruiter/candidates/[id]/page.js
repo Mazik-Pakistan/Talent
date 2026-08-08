@@ -69,7 +69,7 @@ function CandidateProfilePageContent({ params }) {
     setReminderOpen(true);
   }
 
-  if (loading) return <RecruiterShell activeKey="candidates" capability="candidates" title="Candidate Profile" subtitle="Loading profile details..."><Loading /></RecruiterShell>;
+  if (loading) return null;
   if (error || !candidate) return <RecruiterShell activeKey="candidates" capability="candidates" title="Candidate Profile" subtitle="Profile Error"><div className={styles.section}><div className={styles.sectionBody}><div className={styles.formMessage} role="alert">{error || "Candidate not found."}</div><button type="button" className={styles.secondaryButton} style={{ marginTop: 16 }} onClick={() => router.back()}>← Back to Candidates</button></div></div></RecruiterShell>;
 
   const onboarding = candidate.onboarding || {};
@@ -188,7 +188,6 @@ function CandidateProfilePageContent({ params }) {
   </RecruiterShell>;
 }
 
-function Loading() { return <div className={styles.section}><div className={styles.sectionBody}><p className={styles.emptySub}>Loading…</p></div></div>; }
 function DetailSection({ tone, title, description, children }) { return <section className={styles.section} style={{ marginBottom: 16 }}><div className={styles.sectionHead}><div className={styles.sectionHeadLeft}><div className={`${styles.bar} ${styles[tone]}`} /><div><div className={styles.sectionTitle}>{title}</div><div className={styles.sectionDesc}>{description}</div></div></div></div><div className={styles.sectionBody}>{children}</div></section>; }
 function Fact({ label, value }) { return <div className={styles.employeeFact}><dt>{label}</dt><dd>{value || "—"}</dd></div>; }
 function TagGroup({ label, values }) { return values?.length ? <div style={{ marginBottom: 12 }}><strong style={{ fontSize: 13 }}>{label}</strong><div className={styles.chipRow} style={{ marginTop: 6 }}>{values.map((value) => <span className={styles.chip} key={value}>{value}</span>)}</div></div> : null; }

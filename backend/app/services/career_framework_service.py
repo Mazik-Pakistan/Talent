@@ -19,7 +19,7 @@ from typing import Any
 from bson import ObjectId
 from fastapi import HTTPException, status
 
-from app.core.database import database
+from app.core.database import database, _db_kwargs, try_transaction
 from app.core.rbac import CurrentUser
 
 
@@ -34,12 +34,19 @@ def _iso(value: Any) -> Any:
 class CareerFrameworkService:
     """Service for managing organization-wide career frameworks."""
 
+    @staticmethod
+    def _org_filter(organization_id: str | None) -> dict:
+        if organization_id:
+            return {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
+        return {}
+
     # ------------------------------------------------------------------ #
     # Career Tracks (department-level career paths)
     # ------------------------------------------------------------------ #
 
     async def create_track(
-        self, current_user: CurrentUser, department: str, track_name: str, description: str | None = None
+        self, current_user: CurrentUser, department: str, track_name: str, description: str | None = None,
+        organization_id: str | None = None,
     ) -> dict:
         now = _now()
 
@@ -62,32 +69,44 @@ class CareerFrameworkService:
             "created_by": current_user.id,
             "created_at": now,
             "updated_at": now,
+            "organization_id": organization_id,
         }
         result = await database.career_tracks.insert_one(doc)
         doc["_id"] = result.inserted_id
         return self._public_track(doc)
 
-    async def list_tracks(self, department: str | None = None) -> dict:
+    async def list_tracks(self, department: str | None = None, organization_id: str | None = None) -> dict:
         query: dict[str, Any] = {"is_active": True}
         if department:
             query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            query = {"$and": [query, org_filter]}
         docs = await database.career_tracks.find(query).sort([("department", 1), ("track_name", 1)]).to_list(length=200)
         return {"tracks": [self._public_track(d) for d in docs]}
 
-    async def get_track(self, track_id: str) -> dict:
+    async def get_track(self, track_id: str, organization_id: str | None = None) -> dict:
         if not ObjectId.is_valid(track_id):
             raise HTTPException(status_code=404, detail="Career track not found.")
         doc = await database.career_tracks.find_one({"_id": ObjectId(track_id)})
         if not doc:
             raise HTTPException(status_code=404, detail="Career track not found.")
+        if organization_id:
+            doc_org = doc.get("organization_id")
+            if doc_org and doc_org != organization_id:
+                raise HTTPException(status_code=404, detail="Career track not found.")
         return self._public_track(doc)
 
-    async def update_track(self, track_id: str, updates: dict) -> dict:
+    async def update_track(self, track_id: str, updates: dict, organization_id: str | None = None) -> dict:
         if not ObjectId.is_valid(track_id):
             raise HTTPException(status_code=404, detail="Career track not found.")
         doc = await database.career_tracks.find_one({"_id": ObjectId(track_id)})
         if not doc:
             raise HTTPException(status_code=404, detail="Career track not found.")
+        if organization_id:
+            doc_org = doc.get("organization_id")
+            if doc_org and doc_org != organization_id:
+                raise HTTPException(status_code=404, detail="Career track not found.")
 
         now = _now()
         update_fields = {"updated_at": now}
@@ -98,12 +117,16 @@ class CareerFrameworkService:
         updated = await database.career_tracks.find_one({"_id": ObjectId(track_id)})
         return self._public_track(updated)
 
-    async def delete_track(self, track_id: str) -> dict:
+    async def delete_track(self, track_id: str, organization_id: str | None = None) -> dict:
         if not ObjectId.is_valid(track_id):
             raise HTTPException(status_code=404, detail="Career track not found.")
         doc = await database.career_tracks.find_one({"_id": ObjectId(track_id)})
         if not doc:
             raise HTTPException(status_code=404, detail="Career track not found.")
+        if organization_id:
+            doc_org = doc.get("organization_id")
+            if doc_org and doc_org != organization_id:
+                raise HTTPException(status_code=404, detail="Career track not found.")
 
         # Check if any employees are assigned to this track
         assigned = await database.employee_career_assignments.count_documents({"current_track_id": track_id, "status": "active"})
@@ -165,13 +188,20 @@ class CareerFrameworkService:
         min_time_in_current_role_months: int = 0,
         manager_approval_required: bool = False,
         description: str | None = None,
+        organization_id: str | None = None,
     ) -> dict:
         now = _now()
 
         # Get or create the parent track
-        track = await database.career_tracks.find_one(
-            {"department": {"$regex": f"^{department}$", "$options": "i"}, "track_name": {"$regex": f"^{track_name}$", "$options": "i"}, "is_active": True}
-        )
+        track_query: dict[str, Any] = {
+            "department": {"$regex": f"^{department}$", "$options": "i"},
+            "track_name": {"$regex": f"^{track_name}$", "$options": "i"},
+            "is_active": True,
+        }
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            track_query = {"$and": [track_query, org_filter]}
+        track = await database.career_tracks.find_one(track_query)
         if not track:
             # Auto-create the track
             track_doc = {
@@ -183,6 +213,7 @@ class CareerFrameworkService:
                 "created_by": current_user.id,
                 "created_at": now,
                 "updated_at": now,
+                "organization_id": organization_id,
             }
             result = await database.career_tracks.insert_one(track_doc)
             track = await database.career_tracks.find_one({"_id": result.inserted_id})
@@ -215,6 +246,7 @@ class CareerFrameworkService:
             "created_by": current_user.id,
             "created_at": now,
             "updated_at": now,
+            "organization_id": organization_id,
         }
         result = await database.career_levels.insert_one(level_doc)
         level_doc["_id"] = result.inserted_id
@@ -239,29 +271,40 @@ class CareerFrameworkService:
 
         return self._public_level(level_doc)
 
-    async def list_levels(self, department: str | None = None, track_id: str | None = None) -> dict:
+    async def list_levels(self, department: str | None = None, track_id: str | None = None, organization_id: str | None = None) -> dict:
         query: dict[str, Any] = {"is_active": True}
         if track_id:
             query["track_id"] = track_id
         if department:
             query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            query = {"$and": [query, org_filter]}
         docs = await database.career_levels.find(query).sort([("department", 1), ("level_number", 1)]).to_list(length=200)
         return {"levels": [self._public_level(d) for d in docs]}
 
-    async def get_level(self, level_id: str) -> dict:
+    async def get_level(self, level_id: str, organization_id: str | None = None) -> dict:
         if not ObjectId.is_valid(level_id):
             raise HTTPException(status_code=404, detail="Career level not found.")
         doc = await database.career_levels.find_one({"_id": ObjectId(level_id)})
         if not doc:
             raise HTTPException(status_code=404, detail="Career level not found.")
+        if organization_id:
+            doc_org = doc.get("organization_id")
+            if doc_org and doc_org != organization_id:
+                raise HTTPException(status_code=404, detail="Career level not found.")
         return self._public_level(doc)
 
-    async def update_level(self, level_id: str, updates: dict) -> dict:
+    async def update_level(self, level_id: str, updates: dict, organization_id: str | None = None) -> dict:
         if not ObjectId.is_valid(level_id):
             raise HTTPException(status_code=404, detail="Career level not found.")
         doc = await database.career_levels.find_one({"_id": ObjectId(level_id)})
         if not doc:
             raise HTTPException(status_code=404, detail="Career level not found.")
+        if organization_id:
+            doc_org = doc.get("organization_id")
+            if doc_org and doc_org != organization_id:
+                raise HTTPException(status_code=404, detail="Career level not found.")
 
         now = _now()
         update_fields = {"updated_at": now}
@@ -295,12 +338,16 @@ class CareerFrameworkService:
         updated = await database.career_levels.find_one({"_id": ObjectId(level_id)})
         return self._public_level(updated)
 
-    async def delete_level(self, level_id: str) -> dict:
+    async def delete_level(self, level_id: str, organization_id: str | None = None) -> dict:
         if not ObjectId.is_valid(level_id):
             raise HTTPException(status_code=404, detail="Career level not found.")
         doc = await database.career_levels.find_one({"_id": ObjectId(level_id)})
         if not doc:
             raise HTTPException(status_code=404, detail="Career level not found.")
+        if organization_id:
+            doc_org = doc.get("organization_id")
+            if doc_org and doc_org != organization_id:
+                raise HTTPException(status_code=404, detail="Career level not found.")
 
         # Check if any employees have this as their target
         assigned = await database.employee_career_assignments.count_documents(
@@ -363,6 +410,7 @@ class CareerFrameworkService:
         employee_id: str,
         target_level_id: str,
         target_date: date | None = None,
+        organization_id: str | None = None,
     ) -> dict:
         now = _now()
 
@@ -375,6 +423,10 @@ class CareerFrameworkService:
         target_level = await database.career_levels.find_one({"_id": ObjectId(target_level_id), "is_active": True})
         if not target_level:
             raise HTTPException(status_code=404, detail="Target career level not found.")
+        if organization_id:
+            level_org = target_level.get("organization_id")
+            if level_org and level_org != organization_id:
+                raise HTTPException(status_code=404, detail="Target career level not found.")
 
         # Check if employee already has an active assignment
         existing = await database.employee_career_assignments.find_one(
@@ -387,7 +439,7 @@ class CareerFrameworkService:
             )
 
         # Find current level based on employee's job title
-        current_level = await self._find_level_by_title(employee.get("job_title"), employee.get("department"))
+        current_level = await self._find_level_by_title(employee.get("job_title"), employee.get("department"), organization_id)
         current_level_number = current_level.get("level_number", 0) if current_level else 0
         current_role_title = current_level.get("role_title", employee.get("job_title", "")) if current_level else employee.get("job_title", "")
 
@@ -473,6 +525,7 @@ class CareerFrameworkService:
             "assigned_by": current_user.id,
             "assigned_at": now,
             "updated_at": now,
+            "organization_id": organization_id,
         }
 
         result = await database.employee_career_assignments.insert_one(assignment_doc)
@@ -495,18 +548,22 @@ class CareerFrameworkService:
 
         return self._public_assignment(assignment_doc)
 
-    async def get_employee_career(self, employee_id: str) -> dict:
-        doc = await database.employee_career_assignments.find_one(
-            {"employee_id": employee_id, "status": "active"}
-        )
+    async def get_employee_career(self, employee_id: str, organization_id: str | None = None) -> dict:
+        query: dict[str, Any] = {"employee_id": employee_id, "status": "active"}
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            query = {"$and": [query, org_filter]}
+        doc = await database.employee_career_assignments.find_one(query)
         if not doc:
             return {"assignment": None}
         return {"assignment": self._public_assignment(doc)}
 
-    async def update_employee_career(self, employee_id: str, updates: dict) -> dict:
-        doc = await database.employee_career_assignments.find_one(
-            {"employee_id": employee_id, "status": "active"}
-        )
+    async def update_employee_career(self, employee_id: str, updates: dict, organization_id: str | None = None) -> dict:
+        query: dict[str, Any] = {"employee_id": employee_id, "status": "active"}
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            query = {"$and": [query, org_filter]}
+        doc = await database.employee_career_assignments.find_one(query)
         if not doc:
             raise HTTPException(status_code=404, detail="No active career assignment found.")
 
@@ -519,6 +576,10 @@ class CareerFrameworkService:
             )
             if not target_level:
                 raise HTTPException(status_code=404, detail="Target career level not found.")
+            if organization_id:
+                level_org = target_level.get("organization_id")
+                if level_org and level_org != organization_id:
+                    raise HTTPException(status_code=404, detail="Target career level not found.")
             update_fields["target_level_id"] = updates["target_level_id"]
             update_fields["target_level_number"] = target_level.get("level_number")
             update_fields["target_role_title"] = target_level.get("role_title")
@@ -561,10 +622,13 @@ class CareerFrameworkService:
         discussion_date: date,
         notes: str | None = None,
         action_items: list[str] | None = None,
+        organization_id: str | None = None,
     ) -> dict:
-        doc = await database.employee_career_assignments.find_one(
-            {"employee_id": employee_id, "status": "active"}
-        )
+        query: dict[str, Any] = {"employee_id": employee_id, "status": "active"}
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            query = {"$and": [query, org_filter]}
+        doc = await database.employee_career_assignments.find_one(query)
         if not doc:
             raise HTTPException(status_code=404, detail="No active career assignment found.")
 
@@ -583,14 +647,14 @@ class CareerFrameworkService:
         updated = await database.employee_career_assignments.find_one({"_id": doc["_id"]})
         return self._public_assignment(updated)
 
-    async def bulk_assign(self, current_user: CurrentUser, employee_ids: list[str], target_level_id: str, target_date: date | None = None) -> dict:
+    async def bulk_assign(self, current_user: CurrentUser, employee_ids: list[str], target_level_id: str, target_date: date | None = None, organization_id: str | None = None) -> dict:
         assigned = []
         skipped = []
         errors = []
 
         for eid in employee_ids:
             try:
-                result = await self.assign_career(current_user, eid, target_level_id, target_date)
+                result = await self.assign_career(current_user, eid, target_level_id, target_date, organization_id)
                 assigned.append(result)
             except HTTPException as e:
                 if e.status_code == 409:
@@ -606,7 +670,7 @@ class CareerFrameworkService:
     # Employee self-service: View my career path
     # ------------------------------------------------------------------ #
 
-    async def get_my_career(self, current_user: CurrentUser) -> dict:
+    async def get_my_career(self, current_user: CurrentUser, organization_id: str | None = None) -> dict:
         """Get career assignment for the logged-in employee."""
         employee = await database.employees.find_one(
             {"$or": [{"user_id": current_user.id}, {"email": current_user.email}], "status": "active"}
@@ -614,15 +678,17 @@ class CareerFrameworkService:
         if not employee:
             return {"assignment": None}
 
-        doc = await database.employee_career_assignments.find_one(
-            {"employee_id": employee.get("employee_id"), "status": "active"}
-        )
+        query: dict[str, Any] = {"employee_id": employee.get("employee_id"), "status": "active"}
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            query = {"$and": [query, org_filter]}
+        doc = await database.employee_career_assignments.find_one(query)
         if not doc:
             return {"assignment": None, "message": "No career path assigned yet. Your recruiter will set this up."}
 
         return {"assignment": self._public_assignment(doc)}
 
-    async def get_my_career_progress(self, current_user: CurrentUser) -> dict:
+    async def get_my_career_progress(self, current_user: CurrentUser, organization_id: str | None = None) -> dict:
         """Get detailed career progress for the logged-in employee."""
         employee = await database.employees.find_one(
             {"$or": [{"user_id": current_user.id}, {"email": current_user.email}], "status": "active"}
@@ -630,9 +696,11 @@ class CareerFrameworkService:
         if not employee:
             return {"progress": None}
 
-        doc = await database.employee_career_assignments.find_one(
-            {"employee_id": employee.get("employee_id"), "status": "active"}
-        )
+        query: dict[str, Any] = {"employee_id": employee.get("employee_id"), "status": "active"}
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            query = {"$and": [query, org_filter]}
+        doc = await database.employee_career_assignments.find_one(query)
         if not doc:
             return {"progress": None}
 
@@ -655,12 +723,15 @@ class CareerFrameworkService:
     # Reports
     # ------------------------------------------------------------------ #
 
-    async def get_promotion_readiness(self, current_user: CurrentUser, department: str | None = None) -> dict:
+    async def get_promotion_readiness(self, current_user: CurrentUser, department: str | None = None, organization_id: str | None = None) -> dict:
         query: dict[str, Any] = {"status": "active"}
         if department:
             query["current_department"] = {"$regex": f"^{department}$", "$options": "i"}
         if current_user.role != "super_admin":
             query["assigned_by"] = current_user.id
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            query = {"$and": [query, org_filter]}
 
         docs = await database.employee_career_assignments.find(query).to_list(length=500)
 
@@ -700,10 +771,13 @@ class CareerFrameworkService:
             "total_count": len(docs),
         }
 
-    async def get_career_progress_report(self, current_user: CurrentUser) -> dict:
+    async def get_career_progress_report(self, current_user: CurrentUser, organization_id: str | None = None) -> dict:
         query: dict[str, Any] = {"status": "active"}
         if current_user.role != "super_admin":
             query["assigned_by"] = current_user.id
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            query = {"$and": [query, org_filter]}
 
         docs = await database.employee_career_assignments.find(query).to_list(length=500)
 
@@ -757,7 +831,7 @@ class CareerFrameworkService:
             "total_behind": total_behind,
         }
 
-    async def list_all_assignments(self, current_user: CurrentUser, department: str | None = None, status_filter: str | None = None) -> dict:
+    async def list_all_assignments(self, current_user: CurrentUser, department: str | None = None, status_filter: str | None = None, organization_id: str | None = None) -> dict:
         query: dict[str, Any] = {}
         if current_user.role != "super_admin":
             query["assigned_by"] = current_user.id
@@ -767,6 +841,9 @@ class CareerFrameworkService:
             query["status"] = status_filter
         else:
             query["status"] = {"$in": ["active", "paused"]}
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            query = {"$and": [query, org_filter]}
 
         docs = await database.employee_career_assignments.find(query).sort("updated_at", -1).to_list(length=500)
         return {"assignments": [self._public_assignment(d) for d in docs]}
@@ -775,10 +852,16 @@ class CareerFrameworkService:
     # Excel Import / Export
     # ------------------------------------------------------------------ #
 
-    async def export_framework_csv(self) -> str:
+    async def export_framework_csv(self, organization_id: str | None = None) -> str:
         """Export the entire career framework as CSV."""
-        tracks = await database.career_tracks.find({"is_active": True}).to_list(length=200)
-        levels = await database.career_levels.find({"is_active": True}).to_list(length=500)
+        tracks_query: dict[str, Any] = {"is_active": True}
+        levels_query: dict[str, Any] = {"is_active": True}
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            tracks_query = {"$and": [tracks_query, org_filter]}
+            levels_query = {"$and": [levels_query, org_filter]}
+        tracks = await database.career_tracks.find(tracks_query).to_list(length=200)
+        levels = await database.career_levels.find(levels_query).to_list(length=500)
 
         levels_by_track: dict[str, list[dict]] = {}
         for level in levels:
@@ -855,7 +938,7 @@ class CareerFrameworkService:
 
         return buffer.getvalue()
 
-    async def import_framework_csv(self, current_user: CurrentUser, content: str) -> dict:
+    async def import_framework_csv(self, current_user: CurrentUser, content: str, organization_id: str | None = None) -> dict:
         """Import career framework from CSV content."""
         now = _now()
         reader = csv.DictReader(io.StringIO(content))
@@ -864,6 +947,7 @@ class CareerFrameworkService:
         skipped = 0
         errors = []
 
+        parsed_rows = []
         for row_num, row in enumerate(reader, start=2):
             try:
                 department = (row.get("Department") or "").strip()
@@ -877,7 +961,6 @@ class CareerFrameworkService:
 
                 level_number = int(level_num_str) if level_num_str.isdigit() else 1
 
-                # Parse skills
                 required_skills = []
                 skills_str = (row.get("Required Skills") or "").strip()
                 if skills_str:
@@ -894,7 +977,6 @@ class CareerFrameworkService:
                         if name:
                             required_skills.append({"skill": name, "proficiency": prof, "weight": 10})
 
-                # Parse certifications
                 required_certifications = []
                 certs_str = (row.get("Required Certifications") or "").strip()
                 if certs_str:
@@ -903,7 +985,6 @@ class CareerFrameworkService:
                         if cert:
                             required_certifications.append({"certification": cert, "mandatory": True})
 
-                # Parse courses (simple list of titles — UIDs will be empty initially)
                 learning_path = []
                 courses_str = (row.get("Learning Path Courses") or "").strip()
                 if courses_str:
@@ -918,7 +999,6 @@ class CareerFrameworkService:
                                 "order": idx,
                             })
 
-                # Parse competencies
                 competencies = []
                 comp_str = (row.get("Competencies") or "").strip()
                 if comp_str:
@@ -939,36 +1019,71 @@ class CareerFrameworkService:
                 manager_approval = (row.get("Manager Approval Required") or "").strip().lower() in ("yes", "true", "1")
                 description = (row.get("Description") or "").strip() or None
 
-                # Upsert level
-                existing = await database.career_levels.find_one({
+                parsed_rows.append({
+                    "row_num": row_num,
+                    "department": department,
+                    "track_name": track_name,
+                    "level_number": level_number,
+                    "role_title": role_title,
+                    "required_skills": required_skills,
+                    "required_certifications": required_certifications,
+                    "learning_path": learning_path,
+                    "competencies": competencies,
+                    "min_experience_years": min_exp,
+                    "min_time_in_current_role_months": min_months,
+                    "manager_approval_required": manager_approval,
+                    "description": description,
+                })
+            except Exception as e:
+                errors.append({"row": row_num, "error": str(e)})
+                skipped += 1
+
+        async def _write(session):
+            nonlocal imported
+            kwargs = _db_kwargs(session)
+            org_filter = self._org_filter(organization_id)
+            for row_data in parsed_rows:
+                department = row_data["department"]
+                track_name = row_data["track_name"]
+                level_number = row_data["level_number"]
+                role_title = row_data["role_title"]
+
+                existing_query: dict[str, Any] = {
                     "department": {"$regex": f"^{department}$", "$options": "i"},
                     "level_number": level_number,
                     "is_active": True,
-                })
+                }
+                if org_filter:
+                    existing_query = {"$and": [existing_query, org_filter]}
+                existing = await database.career_levels.find_one(existing_query, **kwargs)
                 if existing:
                     await database.career_levels.update_one(
                         {"_id": existing["_id"]},
                         {"$set": {
                             "role_title": role_title,
-                            "required_skills": required_skills,
-                            "required_certifications": required_certifications,
-                            "learning_path": learning_path,
-                            "competencies": competencies,
-                            "min_experience_years": min_exp,
-                            "min_time_in_current_role_months": min_months,
-                            "manager_approval_required": manager_approval,
-                            "description": description,
+                            "required_skills": row_data["required_skills"],
+                            "required_certifications": row_data["required_certifications"],
+                            "learning_path": row_data["learning_path"],
+                            "competencies": row_data["competencies"],
+                            "min_experience_years": row_data["min_experience_years"],
+                            "min_time_in_current_role_months": row_data["min_time_in_current_role_months"],
+                            "manager_approval_required": row_data["manager_approval_required"],
+                            "description": row_data["description"],
                             "updated_at": now,
                         }},
+                        **kwargs
                     )
                 else:
-                    # Get or create track
+                    track_id = ""
                     if track_name:
-                        track = await database.career_tracks.find_one({
+                        track_query: dict[str, Any] = {
                             "department": {"$regex": f"^{department}$", "$options": "i"},
                             "track_name": {"$regex": f"^{track_name}$", "$options": "i"},
                             "is_active": True,
-                        })
+                        }
+                        if org_filter:
+                            track_query = {"$and": [track_query, org_filter]}
+                        track = await database.career_tracks.find_one(track_query, **kwargs)
                         if not track:
                             track_doc = {
                                 "department": department,
@@ -979,13 +1094,12 @@ class CareerFrameworkService:
                                 "created_by": current_user.id,
                                 "created_at": now,
                                 "updated_at": now,
+                                "organization_id": organization_id,
                             }
-                            res = await database.career_tracks.insert_one(track_doc)
-                            track = await database.career_tracks.find_one({"_id": res.inserted_id})
+                            res = await database.career_tracks.insert_one(track_doc, **kwargs)
+                            track = await database.career_tracks.find_one({"_id": res.inserted_id}, **kwargs)
 
                         track_id = str(track["_id"])
-                    else:
-                        track_id = ""
 
                     level_doc = {
                         "track_id": track_id,
@@ -993,22 +1107,22 @@ class CareerFrameworkService:
                         "track_name": track_name,
                         "level_number": level_number,
                         "role_title": role_title,
-                        "required_skills": required_skills,
-                        "required_certifications": required_certifications,
-                        "learning_path": learning_path,
-                        "competencies": competencies,
-                        "min_experience_years": min_exp,
-                        "min_time_in_current_role_months": min_months,
-                        "manager_approval_required": manager_approval,
-                        "description": description,
+                        "required_skills": row_data["required_skills"],
+                        "required_certifications": row_data["required_certifications"],
+                        "learning_path": row_data["learning_path"],
+                        "competencies": row_data["competencies"],
+                        "min_experience_years": row_data["min_experience_years"],
+                        "min_time_in_current_role_months": row_data["min_time_in_current_role_months"],
+                        "manager_approval_required": row_data["manager_approval_required"],
+                        "description": row_data["description"],
                         "is_active": True,
                         "created_by": current_user.id,
                         "created_at": now,
                         "updated_at": now,
+                        "organization_id": organization_id,
                     }
-                    result = await database.career_levels.insert_one(level_doc)
+                    result = await database.career_levels.insert_one(level_doc, **kwargs)
 
-                    # Update track levels
                     if track_id:
                         level_summary = {
                             "level_number": level_number,
@@ -1018,21 +1132,23 @@ class CareerFrameworkService:
                         await database.career_tracks.update_one(
                             {"_id": ObjectId(track_id)},
                             {"$push": {"levels": level_summary}, "$set": {"updated_at": now}},
+                            **kwargs
                         )
-
                 imported += 1
-            except Exception as e:
-                errors.append({"row": row_num, "error": str(e)})
-                skipped += 1
 
-        # Sort levels in tracks
-        all_tracks = await database.career_tracks.find({"is_active": True}).to_list(length=200)
-        for track in all_tracks:
-            levels = sorted(track.get("levels", []), key=lambda x: x.get("level_number", 0))
-            await database.career_tracks.update_one(
-                {"_id": track["_id"]},
-                {"$set": {"levels": levels}},
-            )
+            all_tracks_query: dict[str, Any] = {"is_active": True}
+            if org_filter:
+                all_tracks_query = {"$and": [all_tracks_query, org_filter]}
+            all_tracks = await database.career_tracks.find(all_tracks_query, **kwargs).to_list(length=200)
+            for track in all_tracks:
+                levels = sorted(track.get("levels", []), key=lambda x: x.get("level_number", 0))
+                await database.career_tracks.update_one(
+                    {"_id": track["_id"]},
+                    {"$set": {"levels": levels}},
+                    **kwargs
+                )
+
+        await try_transaction(_write)
 
         return {"imported": imported, "skipped": skipped, "errors": errors}
 
@@ -1040,7 +1156,7 @@ class CareerFrameworkService:
     # Internal helpers
     # ------------------------------------------------------------------ #
 
-    async def _find_level_by_title(self, job_title: str | None, department: str | None) -> dict | None:
+    async def _find_level_by_title(self, job_title: str | None, department: str | None, organization_id: str | None = None) -> dict | None:
         if not job_title:
             return None
         query: dict[str, Any] = {
@@ -1049,6 +1165,9 @@ class CareerFrameworkService:
         }
         if department:
             query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+        org_filter = self._org_filter(organization_id)
+        if org_filter:
+            query = {"$and": [query, org_filter]}
         return await database.career_levels.find_one(query)
 
     async def _get_employee_skill_names(self, user_id: str | None) -> list[dict]:
@@ -1080,26 +1199,29 @@ class CareerFrameworkService:
         skills_to_acquire: list[dict],
         certifications_to_earn: list[dict],
     ) -> dict:
-        total_items = 0
-        completed_items = 0
+        total_weight = 0
+        completed_weight = 0
 
         for course in learning_path:
-            total_items += 1
+            weight = int(course.get("weight") or 10)
+            total_weight += weight
             if course.get("status") == "completed":
-                completed_items += 1
+                completed_weight += weight
 
         for skill in skills_to_acquire:
-            total_items += 1
+            weight = int(skill.get("weight") or 10)
+            total_weight += weight
             if skill.get("current_status") == "acquired":
-                completed_items += 1
+                completed_weight += weight
 
         for cert in certifications_to_earn:
-            total_items += 1
+            weight = int(cert.get("weight") or 10)
+            total_weight += weight
             if cert.get("status") == "earned":
-                completed_items += 1
+                completed_weight += weight
 
-        overall = round(completed_items / total_items * 100) if total_items else 0
-        readiness = overall  # Can be customized with weights
+        overall = round(completed_weight / total_weight * 100) if total_weight else 100
+        readiness = overall
 
         return {
             "overall_progress_percent": overall,

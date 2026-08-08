@@ -2404,6 +2404,7 @@ RECRUITER_TOOL_CAPABILITIES: dict[str, str | tuple[str, ...]] = {
     "list_hr_threads": "messages",
     "message_employee": "messages",
     "reply_hr_thread": "messages",
+    "close_hr_thread": "messages",
     # Announcements
     "list_announcements": "announcements",
     "create_announcement": "announcements",
@@ -2414,6 +2415,24 @@ RECRUITER_TOOL_CAPABILITIES: dict[str, str | tuple[str, ...]] = {
     "get_activity": "reporting",
     "get_recruiter_profile": "profile",
     "update_recruiter_profile": "profile",
+    "remove_recruiter_photo": "profile",
+    # Support
+    "list_my_support_tickets": "support",
+    "my_ticket_stats": "support",
+    "view_support_ticket": "support",
+    "reply_support_ticket": "support",
+    "close_support_ticket": "support",
+    # Employees
+    "update_employee_banking": "employees",
+    # Organization framework
+    "create_department": ("org_config", "learning"),
+    "delete_department": ("org_config", "learning"),
+    "create_org_role": ("org_config", "learning"),
+    "delete_org_role": ("org_config", "learning"),
+    "create_career_track": ("talent", "learning"),
+    # Managed learning
+    "create_managed_course": "learning",
+    "delete_managed_course": "learning",
 }
 
 

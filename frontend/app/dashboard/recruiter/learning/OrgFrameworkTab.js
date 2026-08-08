@@ -40,6 +40,7 @@ import {
   seedOrgFramework,
 } from "@/services/orgFrameworkService";
 import { bustOrgFrameworkCache } from "@/hooks/useOrgFrameworkOptions";
+import { dispatchFrameworkInvalidated } from "@/lib/frameworkEvents";
 import {
   Award,
   BookOpen,
@@ -51,6 +52,7 @@ import {
   Compass,
   Download,
   Layers,
+  Mail,
   Pencil,
   Plus,
   Target,
@@ -61,6 +63,12 @@ import {
   Zap,
 } from "lucide-react";
 import CareerTracksPanel from "../organization-config/CareerTracksPanel";
+import EmailTemplatesPanel from "./EmailTemplatesPanel";
+import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
+import { ORG_CONFIG_TAB_HELP } from "@/lib/ai/recruiterFieldHelp";
 import s from "./OrgFrameworkTab.module.css";
 
 const SECTIONS = [
@@ -73,6 +81,7 @@ const SECTIONS = [
   { key: "roadmaps", label: "Roadmaps", icon: Compass },
   { key: "promotion", label: "Promotion", icon: TrendingUp },
   { key: "career-tracks", label: "Career tracks", icon: Target },
+  { key: "emails", label: "Email Templates", icon: Mail },
 ];
 
 export default function OrgFrameworkTab() {
@@ -180,6 +189,7 @@ export default function OrgFrameworkTab() {
       // The framework is the single source of truth for every module's
       // dropdowns — invalidate the shared cache so all pages pick up edits.
       bustOrgFrameworkCache();
+      dispatchFrameworkInvalidated();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not load organization framework."));
     } finally {
@@ -188,6 +198,17 @@ export default function OrgFrameworkTab() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  useEffect(() => {
+    const help = ORG_CONFIG_TAB_HELP[section] || {};
+    publishRecruiterContext({
+      tab: section,
+      section,
+      hint: help.hint || null,
+      fields: help.fields || [],
+    });
+    return () => clearRecruiterContext();
+  }, [section]);
 
   const hasData = departments.length > 0 || roles.length > 0 || courses.length > 0;
 
@@ -255,6 +276,8 @@ export default function OrgFrameworkTab() {
           <PromotionSection rules={promotionRules} roles={roles} loadAll={loadAll} />
         ) : section === "career-tracks" ? (
           <CareerTracksPanel departments={departments} />
+        ) : section === "emails" ? (
+          <EmailTemplatesPanel />
         ) : null}
       </div>
     </div>
@@ -607,11 +630,11 @@ function DepartmentsSection({ departments, loadAll }) {
         </button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Department" : "New Department"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Name<input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Engineering" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Description<input value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Name<input data-field-key="department_name" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Engineering" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Description<input data-field-key="description" value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional" /></label>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={editItem ? handleUpdate : handleCreate}>{busy ? "Saving…" : "Save"}</button>
@@ -685,16 +708,16 @@ function RolesSection({ roles, departments, loadAll }) {
         </button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Role" : "New Role"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role Name<input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="e.g. Solution Engineer" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Department<select value={form.department} onChange={(e) => setField("department", e.target.value)}><option value="">Select</option>{deptNames.map((d) => <option key={d} value={d}>{d}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Career Level<input type="number" min="1" value={form.level_number} onChange={(e) => setField("level_number", parseInt(e.target.value) || 1)} /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role Name<input data-field-key="role_name" value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="e.g. Solution Engineer" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Department<select data-field-key="department" value={form.department} onChange={(e) => setField("department", e.target.value)}><option value="">Select</option>{deptNames.map((d) => <option key={d} value={d}>{d}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Career Level<input data-field-key="level_number" type="number" min="1" value={form.level_number} onChange={(e) => setField("level_number", parseInt(e.target.value) || 1)} /></label>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12, marginTop: 8 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Next Role<input value={form.next_role} onChange={(e) => setField("next_role", e.target.value)} placeholder="Promotion target role" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Description<input value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Description" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Next Role<input data-field-key="next_role" value={form.next_role} onChange={(e) => setField("next_role", e.target.value)} placeholder="Promotion target role" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Description<input data-field-key="description" value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Description" /></label>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={editItem ? handleUpdate : handleCreate}>{busy ? "Saving…" : "Save"}</button>
@@ -790,13 +813,13 @@ function SkillsSection({ skills, roles, loadAll }) {
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); setEditItem(null); setForm({ role_name: "", skill_name: "", proficiency: "Intermediate", weight: 20 }); setFormError(""); }}><Plus aria-hidden="true" /> Add Skill</button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Skill" : "New Skill"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Skill<input value={form.skill_name} onChange={(e) => setField("skill_name", e.target.value)} placeholder="e.g. Python" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Proficiency<select value={form.proficiency} onChange={(e) => setField("proficiency", e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option></select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Weight<input type="number" min="1" max="100" value={form.weight} onChange={(e) => setField("weight", e.target.value)} /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Skill<input data-field-key="skill_name" value={form.skill_name} onChange={(e) => setField("skill_name", e.target.value)} placeholder="e.g. Python" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Proficiency<select data-field-key="proficiency" value={form.proficiency} onChange={(e) => setField("proficiency", e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option></select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Weight<input data-field-key="weight" type="number" min="1" max="100" value={form.weight} onChange={(e) => setField("weight", e.target.value)} /></label>
           </div>
           {formError && <div style={{ fontSize: 12.5, color: "var(--red)", marginTop: 8 }}>{formError}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -806,19 +829,26 @@ function SkillsSection({ skills, roles, loadAll }) {
         </div>
       )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {skills.map((sk) => (
-          <div key={sk.skill_id || `${sk.role_name}-${sk.skill_name}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 12, background: "#fff" }}>
-            <span style={{ fontSize: 12.5, fontWeight: 650, color: "var(--navy)" }}>{sk.skill_name}</span>
-            <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>{sk.role_name}</span>
-            <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{sk.proficiency} · w:{sk.weight}</span>
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(sk)}>
-              <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
-            </button>
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(sk.skill_id || `${sk.organization_id}:${sk.role_name}:${sk.skill_name}`)}>
-              <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-            </button>
-          </div>
-        ))}
+        {skills.map((sk) => {
+          const isEmployeeSkill = sk.source === "employee_skills";
+          return (
+            <div key={sk.skill_id || `${sk.role_name}-${sk.skill_name}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 12, background: isEmployeeSkill ? "#f8fafb" : "#fff" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 650, color: "var(--navy)" }}>{sk.skill_name}</span>
+              <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>{sk.role_name}</span>
+              <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{sk.proficiency}{isEmployeeSkill && sk.employee_count ? ` · ${sk.employee_count} employee${sk.employee_count > 1 ? "s" : ""}` : ` · w:${sk.weight}`}</span>
+              {!isEmployeeSkill && (
+                <>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(sk)}>
+                    <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
+                  </button>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(sk.skill_id || `${sk.organization_id}:${sk.role_name}:${sk.skill_name}`)}>
+                    <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -859,19 +889,19 @@ function CoursesSection({ courses, loadAll }) {
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); resetForm(); }}><Plus aria-hidden="true" /> Add Course</button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Course" : "New Course"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Name<input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="Course name" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Provider<input value={form.provider} onChange={(e) => setField("provider", e.target.value)} placeholder="e.g. Microsoft Learn" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Category<input value={form.category} onChange={(e) => setField("category", e.target.value)} placeholder="e.g. Programming" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Name<input data-field-key="course_name" value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="Course name" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Provider<input data-field-key="provider" value={form.provider} onChange={(e) => setField("provider", e.target.value)} placeholder="e.g. Microsoft Learn" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Category<input data-field-key="course_category" value={form.category} onChange={(e) => setField("category", e.target.value)} placeholder="e.g. Programming" /></label>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 8 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Duration (hours)<input value={form.duration_hours} onChange={(e) => setField("duration_hours", e.target.value)} placeholder="e.g. 10" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Difficulty<select value={form.difficulty} onChange={(e) => setField("difficulty", e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option></select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>URL (optional)<input value={form.url} onChange={(e) => setField("url", e.target.value)} placeholder="https://…" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Duration (hours)<input data-field-key="duration_hours" value={form.duration_hours} onChange={(e) => setField("duration_hours", e.target.value)} placeholder="e.g. 10" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Difficulty<select data-field-key="difficulty" value={form.difficulty} onChange={(e) => setField("difficulty", e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option></select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>URL (optional)<input data-field-key="url" value={form.url} onChange={(e) => setField("url", e.target.value)} placeholder="https://…" /></label>
           </div>
-          <label className={s.fieldLabel} style={{ margin: "8px 0 0" }}>Description<textarea rows={2} value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Course description" style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 10, padding: 8, fontSize: 13, fontFamily: "inherit" }} /></label>
+          <label className={s.fieldLabel} style={{ margin: "8px 0 0" }}>Description<textarea data-field-key="description" rows={2} value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Course description" style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 10, padding: 8, fontSize: 13, fontFamily: "inherit" }} /></label>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>
             <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => { setShowForm(false); resetForm(); }}>Cancel</button>
@@ -970,14 +1000,14 @@ function CertsSection({ certifications, roles, loadAll }) {
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); setEditItem(null); setForm({ role_name: "", certification_name: "", mandatory: true, expiration_months: "" }); setFormError(""); }}><Plus aria-hidden="true" /> Add Certification</button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Certification" : "New Certification"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Certification<input value={form.certification_name} onChange={(e) => setField("certification_name", e.target.value)} placeholder="e.g. AZ-900" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Expiration (months)<input value={form.expiration_months} onChange={(e) => setField("expiration_months", e.target.value)} placeholder="Optional" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Certification<input data-field-key="certification_name" value={form.certification_name} onChange={(e) => setField("certification_name", e.target.value)} placeholder="e.g. AZ-900" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Expiration (months)<input data-field-key="expiration_months" value={form.expiration_months} onChange={(e) => setField("expiration_months", e.target.value)} placeholder="Optional" /></label>
           </div>
-          <label className={s.cfCheckRow} style={{ marginTop: 8 }}><input type="checkbox" checked={form.mandatory} onChange={(e) => setField("mandatory", e.target.checked)} /> Mandatory</label>
+          <label className={s.cfCheckRow} style={{ marginTop: 8 }}><input data-field-key="mandatory" type="checkbox" checked={form.mandatory} onChange={(e) => setField("mandatory", e.target.checked)} /> Mandatory</label>
           {formError && <div style={{ fontSize: 12.5, color: "var(--red)", marginTop: 8 }}>{formError}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>
@@ -986,19 +1016,27 @@ function CertsSection({ certifications, roles, loadAll }) {
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
-        {certifications.map((c) => (
-          <div key={c.cert_id || `${c.role_name}-${c.certification_name}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 12, background: "#fff" }}>
-            <span style={{ fontSize: 13, fontWeight: 650, color: "var(--navy)", flex: 1 }}>{c.certification_name}</span>
-            <span className={`${s.statusPill} ${s.orange}`}>{c.role_name}</span>
-            {c.mandatory && <span className={`${s.statusPill} ${s.red}`}>Mandatory</span>}
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(c)}>
-              <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
-            </button>
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(c.cert_id)}>
-              <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-            </button>
-          </div>
-        ))}
+        {certifications.map((c) => {
+          const isEmployeeCert = c.source === "learning_certificates";
+          return (
+            <div key={c.cert_id || `${c.role_name}-${c.certification_name}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 12, background: isEmployeeCert ? "#f8fafb" : "#fff" }}>
+              <span style={{ fontSize: 13, fontWeight: 650, color: "var(--navy)", flex: 1 }}>{c.certification_name}</span>
+              <span className={`${s.statusPill} ${s.orange}`}>{c.role_name}</span>
+              {c.mandatory && <span className={`${s.statusPill} ${s.red}`}>Mandatory</span>}
+              {isEmployeeCert && c.employee_count ? <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{c.employee_count} earned</span> : null}
+              {!isEmployeeCert && (
+                <>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(c)}>
+                    <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
+                  </button>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(c.cert_id)}>
+                    <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1052,12 +1090,12 @@ function RoadmapsSection({ roadmaps, roles, courses, loadAll }) {
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => setShowForm(true)}><Plus aria-hidden="true" /> Add to Roadmap</button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>Add Course to Roadmap</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 12, alignItems: "end" }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Course<select value={form.course_id} onChange={(e) => setField("course_id", e.target.value)}><option value="">Select</option>{courses.map((c) => <option key={c.course_id} value={c.course_id}>{c.name}</option>)}</select></label>
-            <label className={s.cfCheckRow}><input type="checkbox" checked={form.mandatory} onChange={(e) => setField("mandatory", e.target.checked)} /> Mandatory</label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Course<select data-field-key="course_id" value={form.course_id} onChange={(e) => setField("course_id", e.target.value)}><option value="">Select</option>{courses.map((c) => <option key={c.course_id} value={c.course_id}>{c.name}</option>)}</select></label>
+            <label className={s.cfCheckRow}><input data-field-key="mandatory" type="checkbox" checked={form.mandatory} onChange={(e) => setField("mandatory", e.target.checked)} /> Mandatory</label>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleCreate}>{busy ? "Saving…" : "Save"}</button>
@@ -1071,24 +1109,32 @@ function RoadmapsSection({ roadmaps, roles, courses, loadAll }) {
           <div key={roleName} style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui", marginBottom: 8 }}>{roleName}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {sorted.map((r, index) => (
-                <div key={r.roadmap_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: "#fbfcfe", fontSize: 13 }}>
+              {sorted.map((r, index) => {
+                const fromCareer = r.source === "career_levels";
+                return (
+                <div key={r.roadmap_id || `${r.role_name}-${r.course_name || r.course_id}-${index}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: fromCareer ? "#f8fafb" : "#fbfcfe", fontSize: 13 }}>
                   <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-faint)", minWidth: 22 }}>{index + 1}.</span>
                   <span style={{ fontWeight: 650, color: "var(--navy)", flex: 1 }}>{r.course_name || r.course_id}</span>
                   {r.mandatory && <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>Mandatory</span>}
+                  {fromCareer && <span className={`${s.statusPill} ${s.orange}`} style={{ fontSize: 10 }}>Career Level</span>}
                   <div style={{ display: "flex", gap: 2 }}>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === 0} onClick={() => moveEntry(roleName, sorted, index, -1)} aria-label="Move up">
-                      ↑
-                    </button>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === sorted.length - 1} onClick={() => moveEntry(roleName, sorted, index, 1)} aria-label="Move down">
-                      ↓
-                    </button>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(r.roadmap_id)}>
-                      <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-                    </button>
+                    {!fromCareer && (
+                      <>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === 0} onClick={() => moveEntry(roleName, sorted, index, -1)} aria-label="Move up">
+                          ↑
+                        </button>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === sorted.length - 1} onClick={() => moveEntry(roleName, sorted, index, 1)} aria-label="Move down">
+                          ↓
+                        </button>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(r.roadmap_id)}>
+                          <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );
@@ -1126,17 +1172,17 @@ function PromotionSection({ rules, roles, loadAll }) {
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => setShowForm(true)}><Plus aria-hidden="true" /> Add Rule</button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>Promotion Rule</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Experience (months)<input type="number" min="0" value={form.min_experience_months} onChange={(e) => setField("min_experience_months", parseInt(e.target.value) || 0)} /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Required Readiness %<input type="number" min="0" max="100" value={form.required_readiness_pct} onChange={(e) => setField("required_readiness_pct", parseInt(e.target.value) || 0)} /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Experience (months)<input data-field-key="min_experience_months" type="number" min="0" value={form.min_experience_months} onChange={(e) => setField("min_experience_months", parseInt(e.target.value) || 0)} /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Required Readiness %<input data-field-key="required_readiness_pct" type="number" min="0" max="100" value={form.required_readiness_pct} onChange={(e) => setField("required_readiness_pct", parseInt(e.target.value) || 0)} /></label>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 8 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Skills %<input type="number" min="0" max="100" value={form.min_skills_completed_pct} onChange={(e) => setField("min_skills_completed_pct", parseInt(e.target.value) || 0)} /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Certs Completed<input type="number" min="0" value={form.min_certs_completed} onChange={(e) => setField("min_certs_completed", parseInt(e.target.value) || 0)} /></label>
-            <label className={s.cfCheckRow} style={{ marginTop: 22 }}><input type="checkbox" checked={form.manager_approval_required} onChange={(e) => setField("manager_approval_required", e.target.checked)} /> Manager Approval Required</label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Skills %<input data-field-key="min_skills_completed_pct" type="number" min="0" max="100" value={form.min_skills_completed_pct} onChange={(e) => setField("min_skills_completed_pct", parseInt(e.target.value) || 0)} /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Certs Completed<input data-field-key="min_certs_completed" type="number" min="0" value={form.min_certs_completed} onChange={(e) => setField("min_certs_completed", parseInt(e.target.value) || 0)} /></label>
+            <label className={s.cfCheckRow} style={{ marginTop: 22 }}><input data-field-key="manager_approval_required" type="checkbox" checked={form.manager_approval_required} onChange={(e) => setField("manager_approval_required", e.target.checked)} /> Manager Approval Required</label>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>
@@ -1149,8 +1195,10 @@ function PromotionSection({ rules, roles, loadAll }) {
           <table className={s.table}>
             <thead><tr><th>Role</th><th>Min Experience</th><th>Readiness %</th><th>Skills %</th><th>Min Certs</th><th>Manager Approval</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
             <tbody>
-              {rules.map((r) => (
-                <tr key={r.role_name}>
+              {rules.map((r) => {
+                const fromCareer = r.source === "career_levels";
+                return (
+                <tr key={r.role_name} style={fromCareer ? { background: "#f8fafb" } : undefined}>
                   <td style={{ fontWeight: 650, color: "var(--navy)" }}>{r.role_name}</td>
                   <td>{r.min_experience_months}mo</td>
                   <td>{r.required_readiness_pct}%</td>
@@ -1158,11 +1206,17 @@ function PromotionSection({ rules, roles, loadAll }) {
                   <td>{r.min_certs_completed}</td>
                   <td>{r.manager_approval_required ? <span className={`${s.statusPill} ${s.green}`}>Required</span> : <span className={`${s.statusPill} ${s.neutral}`}>Not required</span>}</td>
                   <td style={{ textAlign: "right" }}>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => { setForm({ role_name: r.role_name, min_experience_months: r.min_experience_months, required_readiness_pct: r.required_readiness_pct, manager_approval_required: r.manager_approval_required, min_skills_completed_pct: r.min_skills_completed_pct || 100, min_certs_completed: r.min_certs_completed || 0 }); setShowForm(true); }}><Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ color: "var(--red)" }} onClick={() => handleDelete(r.role_name)}><Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
+                    {!fromCareer && (
+                      <>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => { setForm({ role_name: r.role_name, min_experience_months: r.min_experience_months, required_readiness_pct: r.required_readiness_pct, manager_approval_required: r.manager_approval_required, min_skills_completed_pct: r.min_skills_completed_pct || 100, min_certs_completed: r.min_certs_completed || 0 }); setShowForm(true); }}><Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ color: "var(--red)" }} onClick={() => handleDelete(r.role_name)}><Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
+                      </>
+                    )}
+                    {fromCareer && <span className={`${s.statusPill} ${s.orange}`} style={{ fontSize: 10 }}>Career Level</span>}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

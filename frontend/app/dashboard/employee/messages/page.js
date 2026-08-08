@@ -176,7 +176,6 @@ function EmployeeMessagesInner() {
             </button>
           </div>
           <div className={styles.threadList}>
-            {loading && <RecruiterLoader inline />}
             {!loading && threads.length === 0 && (
               <p className={styles.empty}>No messages yet. Start a conversation with HR.</p>
             )}
@@ -234,7 +233,7 @@ function EmployeeMessagesInner() {
           ) : !selectedId ? (
             <p className={styles.empty}>Select a conversation or start a new one.</p>
           ) : !thread ? (
-            <RecruiterLoader inline />
+            null
           ) : (
             <>
               <div className={styles.panelHead}>

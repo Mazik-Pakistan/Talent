@@ -104,7 +104,10 @@ class TalentService:
     async def _assert_recruiter_owns(self, current_user: CurrentUser, employee: dict) -> None:
         if current_user.role == "super_admin":
             return
-        if self._recruiter_id(employee) != current_user.id:
+        rid = self._recruiter_id(employee)
+        if rid is None:
+            return
+        if rid != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this employee.")
 
     async def _employee_skills(self, user_id: str) -> list[dict]:

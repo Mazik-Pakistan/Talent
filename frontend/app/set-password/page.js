@@ -6,14 +6,8 @@ import { useEffect, useState } from "react";
 
 import AuthAside, { RECOVERY_SLIDES } from "@/components/auth/AuthAside";
 import { changePassword, clearLocalSession, getApiErrorMessage, patchLocalUser } from "@/services/authService";
+import { ROLE_HOME } from "@/services/rbac";
 import styles from "@/app/styles/auth.module.css";
-
-const ROLE_HOME = {
-  recruiter: "/dashboard/recruiter",
-  candidate: "/dashboard/candidate",
-  employee: "/dashboard/employee",
-  super_admin: "/dashboard/super-admin",
-};
 
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$/;
 

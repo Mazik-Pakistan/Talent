@@ -2,15 +2,18 @@
 Also owns the post-hire 'complete your profile' flow (US-025..US-033 subset
 that moved to the employee side of the offer-letter flow)."""
 
+import logging
 from datetime import UTC, datetime
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
 
+logger = logging.getLogger(__name__)
+
 from app.core.config import settings
 from app.core.crypto import decrypt_banking_payload, decrypt_text, encrypt_banking_payload, iban_fingerprint
-from app.core.database import database
+from app.core.database import database, _db_kwargs, try_transaction
 from app.core.rbac import CurrentUser
 from app.core.security import hash_password
 from app.schemas.auth import names_match
@@ -24,7 +27,6 @@ from app.services.people_history import (
     archive_user_login,
     cycle_group_key,
     lookup_history_by_email,
-
     mark_employee_historical_fields,
 )
 
@@ -81,34 +83,38 @@ class EmployeeService:
         counter_id = EMPLOYEE_ID_COUNTER
 
         if allocate:
-            counter = await database.counters.find_one_and_update(
-                {"_id": counter_id},
-                {"$inc": {"seq": 1}, "$set": {"updated_at": datetime.now(UTC)}},
-                upsert=True,
-                return_document=ReturnDocument.AFTER,
-            )
-            next_seq = int((counter or {}).get("seq") or 1)
+            while True:
+                counter = await database.counters.find_one_and_update(
+                    {"_id": counter_id},
+                    {"$inc": {"seq": 1}, "$set": {"updated_at": datetime.now(UTC)}},
+                    upsert=True,
+                    return_document=ReturnDocument.AFTER,
+                )
+                next_seq = int((counter or {}).get("seq") or 1)
+                employee_id = f"{prefix}{next_seq:06d}"
+                if not await database.employees.find_one({"employee_id": employee_id}):
+                    break
         else:
             counter = await database.counters.find_one({"_id": counter_id})
             next_seq = int((counter or {}).get("seq") or 0) + 1
-
-        employee_id = f"{prefix}{next_seq:06d}"
-
-        while await database.employees.find_one({"employee_id": employee_id}):
-            next_seq += 1
             employee_id = f"{prefix}{next_seq:06d}"
-            if allocate:
-                await database.counters.update_one(
-                    {"_id": counter_id},
-                    {"$set": {"seq": next_seq, "updated_at": datetime.now(UTC)}},
-                    upsert=True,
-                )
 
         return {
             "employee_id": employee_id,
             "sequence": next_seq,
             "allocated": allocate,
         }
+
+    @staticmethod
+    def _assert_org_or_owner(current_user: CurrentUser, record: dict, detail: str = "Not allowed.") -> None:
+        if current_user.role == "super_admin":
+            return
+        record_org = record.get("organization_id")
+        if record_org and current_user.organization_id:
+            if record_org != current_user.organization_id:
+                raise HTTPException(status_code=403, detail=detail)
+        elif record.get("recruiter_id") != current_user.id:
+            raise HTTPException(status_code=403, detail=detail)
 
     async def list_pending_review(self, current_user: CurrentUser) -> dict:
         """Candidates who signed and submitted docs — ready for IT (formerly pending offer)."""
@@ -296,8 +302,7 @@ class EmployeeService:
         candidate = await self._find_candidate(candidate_id)
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found.")
-        if current_user.role != "super_admin" and candidate.get("recruiter_id") != current_user.id:
-            raise HTTPException(status_code=403, detail="Not allowed.")
+        self._assert_org_or_owner(current_user, candidate)
 
         progress = CandidateService()._progress_payload(candidate)
         if progress["status"] == "submitted" or candidate.get("conversion_status") == "converted" or candidate.get("status") == "converted":
@@ -332,6 +337,7 @@ class EmployeeService:
             email_service.send_candidate_onboarding_reminder(
                 candidate.get("email"), candidate.get("full_name") or "there", missing_labels,
                 f"{settings.frontend_base_url}/onboarding", note_text,
+                organization_id=candidate.get("organization_id"),
             )
             email_sent = True
         except Exception as exc:  # noqa: BLE001
@@ -411,7 +417,7 @@ class EmployeeService:
             )
         return {"candidates": ready, "count": len(ready)}
 
-    async def _apply_first_time_password(self, it_doc: dict, user_id: str | None, now: datetime) -> str | None:
+    async def _apply_first_time_password(self, it_doc: dict, user_id: str | None, now: datetime, session=None) -> str | None:
         """Apply the IT-set first-time password to the single account at activation.
 
         Returns the plaintext temporary password (for emailing it to the
@@ -419,6 +425,7 @@ class EmployeeService:
         once; `must_change_password` forces them to set their own password on
         first sign-in (that new password then covers both login emails).
         """
+        kwargs = _db_kwargs(session)
         temp_password = None
         if it_doc.get("temporary_password_encrypted") and user_id:
             try:
@@ -436,6 +443,7 @@ class EmployeeService:
                         "updated_at": now,
                     }
                 },
+                **kwargs
             )
         return temp_password
 
@@ -445,11 +453,9 @@ class EmployeeService:
         if not candidate:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found.")
 
-        if current_user.role != "super_admin" and candidate.get("recruiter_id") != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only convert candidates assigned to you.",
-            )
+        self._assert_org_or_owner(
+            current_user, candidate, detail="You can only convert candidates assigned to you."
+        )
 
         if candidate.get("status") == "converted" or candidate.get("conversion_status") == "converted":
             raise HTTPException(
@@ -557,16 +563,11 @@ class EmployeeService:
             "company_email": company_email,
             "company_email_assigned_at": it_doc.get("submitted_at") or now,
             "company_email_assigned_by": "it",
-            # No separate mailbox password exists: the employee's single
-            # account password covers both the personal and company email
-            # login. Legacy records may still carry an encrypted copy.
             "has_company_email_password": bool(it_doc.get("company_email_password_encrypted")),
             "assets": it_assets,
             "licenses": it_licenses,
             "it_provisioning_id": str(it_doc.get("_id")),
             "it_notes": it_doc.get("it_notes"),
-            # Intake fields carry over as-is; post-hire fields start empty and
-            # drive the "Profile incomplete" banner until completed.
             "onboarding": onboarding,
             "profile_status": "incomplete",
             "profile_completed_at": None,
@@ -576,13 +577,94 @@ class EmployeeService:
             "created_at": now,
             "updated_at": now,
         }
-        await database.employees.insert_one(employee_doc)
 
-        # First-time password: IT set a temporary password during provisioning.
-        # Apply it to the single account at activation — the employee uses it
-        # ONCE to sign in and is then forced to set their own password, which
-        # covers both the personal and company email login.
-        temp_password = await self._apply_first_time_password(it_doc, user_id, now)
+        temp_password_container = [None]
+
+        async def _persist(session):
+            kwargs = _db_kwargs(session)
+            await database.employees.insert_one(employee_doc, **kwargs)
+            temp_password_container[0] = await self._apply_first_time_password(it_doc, user_id, now, session=session)
+            await database.offer_letters.update_one(
+                {"_id": offer["_id"]},
+                {"$set": {"status": "approved", "approved_at": now, "approved_by": current_user.id}},
+                **kwargs
+            )
+            await database.candidates.update_one(
+                {"_id": candidate["_id"]},
+                {
+                    "$set": {
+                        "status": "converted",
+                        "conversion_status": "converted",
+                        "lifecycle_state": "converted",
+                        "history_bucket": "converted",
+                        "converted_at": now,
+                        "employee_id": employee_id,
+                        "cycle_group_key": email_key,
+                        "updated_at": now,
+                    }
+                },
+                **kwargs
+            )
+            if user_id:
+                await database.users.update_one(
+                    {"_id": ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id},
+                    {"$set": {"role": "employee", "updated_at": now}},
+                    **kwargs
+                )
+            else:
+                await database.users.update_one(
+                    {"email": candidate["email"]},
+                    {"$set": {"role": "employee", "updated_at": now}},
+                    **kwargs
+                )
+            await database.audit_logs.insert_one(
+                {
+                    "user_id": current_user.id,
+                    "recruiter_id": current_user.id,
+                    "candidate_id": user_id or str(candidate["_id"]),
+                    "employee_id": employee_id,
+                    "email": candidate["email"],
+                    "actor_email": current_user.email,
+                    "role": current_user.role,
+                    "module": "employees",
+                    "action": "candidate_converted_to_employee",
+                    "outcome": "success",
+                    "created_at": now,
+                },
+                **kwargs
+            )
+            await database.employee_career_events.insert_one(
+                {
+                    "employee_id": employee_id,
+                    "employee_user_id": user_id,
+                    "event_type": "joined",
+                    "effective_date": employee_doc.get("start_date") or now.date().isoformat(),
+                    "to_title": employee_doc.get("job_title"),
+                    "to_department": employee_doc.get("department"),
+                    "to_manager": employee_doc.get("reporting_manager"),
+                    "to_status": "active",
+                    "note": "Employee record created from signed offer.",
+                    "actor_id": current_user.id,
+                    "actor_email": current_user.email,
+                    "created_at": now,
+                },
+                **kwargs
+            )
+            await database.it_provisioning_requests.update_one(
+                {"_id": it_doc["_id"]},
+                {
+                    "$set": {
+                        "status": "applied",
+                        "applied_employee_id": employee_id,
+                        "applied_at": now,
+                        "updated_at": now,
+                    }
+                },
+                **kwargs
+            )
+
+        await try_transaction(_persist)
+        temp_password = temp_password_container[0]
 
         if company_email:
             # Notify the new employee that their company email is live and
@@ -599,8 +681,8 @@ class EmployeeService:
                     ),
                     link="/dashboard/employee/profile",
                 )
-            except Exception:
-                pass  # Best-effort; activation already succeeded
+            except Exception as exc:
+                logger.warning("Company email notification failed: %s", exc, exc_info=True)
             try:
                 email_service.send_to_both(
                     employee_doc.get("email"),
@@ -608,9 +690,10 @@ class EmployeeService:
                     email_service.send_company_email_assigned,
                     employee_doc.get("full_name") or "Team member",
                     company_email,
+                    organization_id=employee_doc.get("organization_id"),
                 )
-            except Exception:
-                pass  # Best-effort
+            except Exception as exc:
+                logger.warning("Company email send failed: %s", exc, exc_info=True)
             if temp_password:
                 try:
                     email_service.send_to_both(
@@ -619,76 +702,12 @@ class EmployeeService:
                         email_service.send_first_time_password,
                         employee_doc.get("full_name") or "Team member",
                         temp_password,
+                        organization_id=employee_doc.get("organization_id"),
                     )
-                except Exception:
-                    pass  # Best-effort
+                except Exception as exc:
+                    logger.warning("First-time password email send failed: %s", exc, exc_info=True)
 
         await it_provisioning_service.mark_applied(it_doc["_id"], employee_id)
-
-        await database.offer_letters.update_one(
-            {"_id": offer["_id"]}, {"$set": {"status": "approved", "approved_at": now, "approved_by": current_user.id}}
-        )
-
-        await database.candidates.update_one(
-            {"_id": candidate["_id"]},
-            {
-                "$set": {
-                    # Converted ≠ historical candidate. Person is tracked as an employee.
-                    "status": "converted",
-                    "conversion_status": "converted",
-                    "lifecycle_state": "converted",
-                    "history_bucket": "converted",
-                    "converted_at": now,
-                    "employee_id": employee_id,
-                    "cycle_group_key": email_key,
-                    "updated_at": now,
-                }
-            },
-        )
-
-        if user_id:
-            await database.users.update_one(
-                {"_id": ObjectId(user_id)} if ObjectId.is_valid(user_id) else {"email": candidate["email"]},
-                {"$set": {"role": "employee", "updated_at": now}},
-            )
-        else:
-            await database.users.update_one(
-                {"email": candidate["email"]},
-                {"$set": {"role": "employee", "updated_at": now}},
-            )
-
-        await database.audit_logs.insert_one(
-            {
-                "user_id": current_user.id,
-                "recruiter_id": current_user.id,
-                "candidate_id": user_id or str(candidate["_id"]),
-                "employee_id": employee_id,
-                "email": candidate["email"],
-                "actor_email": current_user.email,
-                "role": current_user.role,
-                "module": "employees",
-                "action": "candidate_converted_to_employee",
-                "outcome": "success",
-                "created_at": now,
-            }
-        )
-
-        await database.employee_career_events.insert_one(
-            {
-                "employee_id": employee_id,
-                "employee_user_id": user_id,
-                "event_type": "joined",
-                "effective_date": employee_doc.get("start_date") or now.date().isoformat(),
-                "to_title": employee_doc.get("job_title"),
-                "to_department": employee_doc.get("department"),
-                "to_manager": employee_doc.get("reporting_manager"),
-                "to_status": "active",
-                "note": "Employee record created from signed offer.",
-                "actor_id": current_user.id,
-                "actor_email": current_user.email,
-                "created_at": now,
-            }
-        )
 
         email_sent = False
         try:
@@ -698,9 +717,11 @@ class EmployeeService:
                 employee_id=employee_id,
                 job_title=employee_doc.get("job_title") or "Team Member",
                 department=employee_doc.get("department") or "—",
+                organization_id=candidate.get("organization_id"),
             )
             email_sent = True
-        except Exception:
+        except Exception as exc:
+            logger.warning("Employee welcome email failed: %s", exc, exc_info=True)
             email_sent = False
 
         await create_notification(
@@ -947,10 +968,7 @@ class EmployeeService:
         employee = await database.employees.find_one({"$or": query_or})
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
-        if current_user.role != "super_admin":
-            owner = str(employee.get("recruiter_id") or "")
-            if owner and owner != str(current_user.id):
-                raise HTTPException(status_code=403, detail="Not allowed.")
+        self._assert_org_or_owner(current_user, employee)
         # Recruiters manage on-site banking, so reveal full values for those employees.
         # Remote employee banking stays masked on the recruiter view.
         should_reveal = reveal_banking or not _employee_is_remote(employee)
@@ -1133,8 +1151,7 @@ class EmployeeService:
         employee = await database.employees.find_one({"employee_id": employee_id})
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
-        if current_user.role != "super_admin" and employee.get("recruiter_id") != current_user.id:
-            raise HTTPException(status_code=403, detail="Not allowed.")
+        self._assert_org_or_owner(current_user, employee)
 
         now = datetime.now(UTC)
         data = request.model_dump(mode="json")
@@ -1338,8 +1355,7 @@ class EmployeeService:
         employee = await database.employees.find_one({"employee_id": employee_id})
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
-        if current_user.role != "super_admin" and employee.get("recruiter_id") != current_user.id:
-            raise HTTPException(status_code=403, detail="Not allowed.")
+        self._assert_org_or_owner(current_user, employee)
 
         event_type = request.event_type
         if request.job_title != employee.get("job_title") and request.department != employee.get("department"):
@@ -1461,8 +1477,7 @@ class EmployeeService:
         candidate = await self._find_candidate(candidate_id)
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found.")
-        if current_user.role != "super_admin" and candidate.get("recruiter_id") != current_user.id:
-            raise HTTPException(status_code=403, detail="Not allowed.")
+        self._assert_org_or_owner(current_user, candidate)
         payload = self._public_candidate(candidate, CandidateService()._progress_payload(candidate), include_onboarding=True)
         payload["offers"] = await self._list_related_offers(
             candidate_id=candidate.get("user_id") or str(candidate.get("_id") or ""),
@@ -1996,10 +2011,7 @@ class EmployeeService:
         employee = await database.employees.find_one({"$or": query_or})
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
-        if current_user.role != "super_admin":
-            owner = str(employee.get("recruiter_id") or "")
-            if owner and owner != str(current_user.id):
-                raise HTTPException(status_code=403, detail="Not allowed.")
+        self._assert_org_or_owner(current_user, employee)
         return employee
 
     async def update_employee_banking(self, current_user: CurrentUser, employee_id: str, request) -> dict:
@@ -2085,9 +2097,10 @@ class EmployeeService:
                     account_holder_name=data.get("account_holder_name") or "",
                     iban=data.get("iban") or "",
                     is_update=had_banking,
+                    organization_id=employee.get("organization_id"),
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Banking details notice email failed: %s", exc, exc_info=True)
 
         refreshed = await database.employees.find_one({"_id": employee["_id"]})
         profile = await self.get_employee_profile(
@@ -2201,6 +2214,7 @@ class EmployeeService:
                     missing_labels=missing_labels,
                     dashboard_link=profile_link,
                     recruiter_note=note_text,
+                    organization_id=employee.get("organization_id"),
                 )
                 email_sent = True
             except Exception as exc:  # noqa: BLE001
@@ -2295,9 +2309,10 @@ class EmployeeService:
                 email_service.send_company_email_assigned,
                 employee.get("full_name") or "Team member",
                 email,
+                organization_id=employee.get("organization_id"),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Company email assigned send failed: %s", exc, exc_info=True)
 
         await database.audit_logs.insert_one(
             {
@@ -2351,9 +2366,10 @@ class EmployeeService:
                 asset_name=asset["name"],
                 asset_type=asset["asset_type"],
                 serial_number=asset.get("serial_number"),
+                organization_id=employee.get("organization_id"),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Asset assigned email failed: %s", exc, exc_info=True)
 
         return {"message": "Asset assigned.", "asset": asset, "employee": self._public_employee(employee)}
 
@@ -2431,9 +2447,10 @@ class EmployeeService:
                 trainer=orientation["trainer"],
                 agenda=orientation["agenda"],
                 is_update=is_update,
+                organization_id=employee.get("organization_id"),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Orientation scheduled email failed: %s", exc, exc_info=True)
 
         return {
             "message": "Orientation updated." if is_update else "Orientation scheduled.",

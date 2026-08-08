@@ -9,6 +9,7 @@ from app.core.rbac import CurrentUser
 from app.schemas.learning import (
     BookmarkRequest,
     CareerGoalRequest,
+    CertificateUpdateRequest,
     CertificateVerifyRequest,
     CourseAssignRequest,
     EnrollmentProgressRequest,
@@ -218,18 +219,47 @@ async def delete_certificate(certificate_id: str, current_user: RequireEmployee)
 @router.put("/certificates/{certificate_id}")
 async def update_certificate(
     certificate_id: str,
+    request: CertificateUpdateRequest,
     current_user: RequireEmployee,
-    course_title: str | None = Form(default=None),
-    completion_date: date | None = Form(default=None),
-    learning_hours: float | None = Form(default=None),
 ):
     return await learning_service.update_certificate(
         current_user,
         certificate_id,
-        course_title=course_title,
-        completion_date=completion_date,
-        learning_hours=learning_hours,
+        course_title=request.course_title,
+        completion_date=request.completion_date,
+        learning_hours=request.learning_hours,
     )
+
+
+# ---------------------------------------------------------------------- #
+# Designation requirements & readiness
+# ---------------------------------------------------------------------- #
+@router.get("/designation/requirements")
+async def designation_requirements(
+    current_user: RequireEmployee,
+    target_role: str = Query(..., min_length=2, max_length=150),
+):
+    """Return the learning requirements (courses, skills, certifications) for a target designation."""
+    return await learning_service.get_designation_requirements(current_user, target_role)
+
+
+@router.get("/designation/readiness")
+async def designation_readiness(
+    current_user: RequireEmployee,
+    target_role: str | None = Query(default=None, max_length=150),
+):
+    """Return the employee's readiness percentage and eligibility for a target designation."""
+    return await learning_service.get_designation_readiness(current_user, target_role)
+
+
+@router.get("/employees/{employee_id}/designation-readiness")
+async def employee_designation_readiness(
+    employee_id: str,
+    current_user: RequireRecruiterWithLearning,
+    target_role: str | None = Query(default=None, max_length=150),
+):
+    """Recruiter view: employee's designation readiness and eligibility."""
+    return await learning_service.get_employee_designation_readiness(current_user, employee_id, target_role)
 
 
 # ---------------------------------------------------------------------- #
@@ -462,6 +492,7 @@ async def list_managed_courses(
         sort_by=sort_by,
         page=page,
         page_size=page_size,
+        organization_id=current_user.organization_id,
     )
 
 
@@ -480,7 +511,7 @@ async def create_managed_provider(request: dict, current_user: RequireRecruiterW
 
 @router.get("/managed/facets")
 async def managed_facets(current_user: RequireRecruiterWithLearning):
-    return await managed_learning_service.list_facets()
+    return await managed_learning_service.list_facets(organization_id=current_user.organization_id)
 
 
 @router.post("/managed/courses", status_code=201)
