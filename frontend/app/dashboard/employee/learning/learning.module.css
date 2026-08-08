@@ -604,3 +604,14 @@
 .ladderRungPct { font-size: 15px; font-weight: 800; color: var(--navy); }
 .ladderRungPctLabel { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .3px; }
 .ladderConnector { width: 2px; height: 10px; background: var(--border); margin-left: 33px; }
+
+/* ── Designation requirements (new) ──────────────────────────────────────── */
+.requirementsList { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.requirementRow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #FBFDFE; }
+.requirementStatus { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; flex-shrink: 0; }
+.requirementStatus.verified, .requirementStatus.completed, .requirementStatus.acquired { background: var(--green-light, #E3F8F0); color: var(--green, #1fae7a); }
+.requirementStatus.certificate_pending, .requirementStatus.in_progress { background: #FEF4E3; color: #D97706; }
+.requirementStatus.assigned, .requirementStatus.not_started, .requirementStatus.missing { background: #F2F4F7; color: #475467; }
+.requirementType { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint); min-width: 70px; }
+.requirementTitle { flex: 1; font-size: 12.5px; font-weight: 600; color: var(--navy); }
+.requirementMandatory { font-size: 10px; font-weight: 700; color: var(--red); background: var(--red-light, #FDEcec); padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .3px; }

@@ -233,6 +233,37 @@ async def update_certificate(
 
 
 # ---------------------------------------------------------------------- #
+# Designation requirements & readiness
+# ---------------------------------------------------------------------- #
+@router.get("/designation/requirements")
+async def designation_requirements(
+    current_user: RequireEmployee,
+    target_role: str = Query(..., min_length=2, max_length=150),
+):
+    """Return the learning requirements (courses, skills, certifications) for a target designation."""
+    return await learning_service.get_designation_requirements(current_user, target_role)
+
+
+@router.get("/designation/readiness")
+async def designation_readiness(
+    current_user: RequireEmployee,
+    target_role: str | None = Query(default=None, max_length=150),
+):
+    """Return the employee's readiness percentage and eligibility for a target designation."""
+    return await learning_service.get_designation_readiness(current_user, target_role)
+
+
+@router.get("/employees/{employee_id}/designation-readiness")
+async def employee_designation_readiness(
+    employee_id: str,
+    current_user: RequireRecruiterWithLearning,
+    target_role: str | None = Query(default=None, max_length=150),
+):
+    """Recruiter view: employee's designation readiness and eligibility."""
+    return await learning_service.get_employee_designation_readiness(current_user, employee_id, target_role)
+
+
+# ---------------------------------------------------------------------- #
 # Skill matrix (US-092, US-093, US-094)
 # ---------------------------------------------------------------------- #
 @router.get("/skills/categories")
