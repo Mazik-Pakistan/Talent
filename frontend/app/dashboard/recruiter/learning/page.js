@@ -324,12 +324,12 @@ function CatalogTab({ onAssignCourse }) {
     if (!token) return Promise.resolve();
     return getManagedFacets(token)
       .then((data) => {
-        const providerList = normalizeManagedProviderTabs([
-          ...(data?.providers || []),
-          ...readManagedProviderRegistry(),
-        ]);
-        setProviders(providerList);
+        // Source of truth is the server only — do NOT merge from localStorage
+        // (stale localStorage entries like "test" or "dfsd" would reappear otherwise).
+        const providerList = normalizeManagedProviderTabs(data?.providers || []);
+        // Overwrite localStorage with the clean server list.
         writeManagedProviderRegistry(providerList);
+        setProviders(providerList);
         // Build dynamic sources with provider tabs first, then external sources
         const providerSources = providerList.map((prov) => ({
           key: `provider:${prov}`,

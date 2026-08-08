@@ -969,30 +969,28 @@ class ManagedLearningService:
 
     async def list_facets(self) -> dict:
         docs = await database.learning_courses.find(self._collection_query()).to_list(length=5000)
-        providers = []
-        seen_providers: set[str] = set()
-        for doc in docs:
-            provider_name = _normalize_provider_name(doc.get("provider") or "Managed Learning")
-            if not provider_name or provider_name in {"Microsoft Learn", "Coursera"}:
-                continue
-            if any(existing.lower() == provider_name.lower() for existing in seen_providers):
-                continue
-            seen_providers.add(provider_name)
-            providers.append(provider_name)
 
-        # Provider registry drives the tabs: freshly created providers (even with
-        # zero courses yet) must appear in the catalog. External API providers are
-        # surfaced by their own external tabs, so exclude them here.
+        # Sync any course provider names into the registry first (idempotent).
+        # This ensures providers added via import always appear in catalog tabs.
+        await provider_service.sync_providers_from_courses()
+
+        # Registry is the single source of truth for which providers appear in tabs.
+        # Courses whose provider was deleted from the registry are NOT surfaced —
+        # this ensures that deleting a provider immediately removes it from the catalog.
+        EXCLUDED = {"Microsoft Learn", "Coursera"}
         registry_docs = await database.learning_providers.find(
             {"active": {"$ne": False}}
         ).sort("name", 1).to_list(length=500)
+        registered_names: set[str] = set()
+        providers: list[str] = []
         for provider_doc in registry_docs:
             provider_name = _normalize_provider_name(provider_doc.get("name"))
-            if not provider_name or provider_name in {"Microsoft Learn", "Coursera"}:
+            if not provider_name or provider_name in EXCLUDED:
                 continue
-            if any(existing.lower() == provider_name.lower() for existing in seen_providers):
+            key = provider_name.lower()
+            if key in registered_names:
                 continue
-            seen_providers.add(provider_name)
+            registered_names.add(key)
             providers.append(provider_name)
 
         if any(name != "Managed Learning" for name in providers):
