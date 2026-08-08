@@ -8,6 +8,7 @@ and promotion rules scoped to an organization.  Every collection is keyed by
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
@@ -703,6 +704,38 @@ async def list_roadmaps(organization_id: str, role_name: str | None = None) -> l
     docs = await database.org_framework_roadmaps.find(q, {"_id": 0}).sort(
         [("role_name", 1), ("order", 1)]
     ).to_list(10000)
+
+    try:
+        level_query = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
+        if role_name:
+            level_query = {"$and": [level_query, {"role_title": {"$regex": f"^{re.escape(role_name.strip())}$", "$options": "i"}}]}
+        levels = await database.career_levels.find(
+            level_query, {"_id": 0, "role_title": 1, "learning_path": 1}
+        ).to_list(length=10000)
+
+        seen = {(d.get("role_name"), d.get("course_id")) for d in docs}
+        for level in levels:
+            role = level.get("role_title") or ""
+            if not role:
+                continue
+            for course in level.get("learning_path") or []:
+                title = course.get("course_title") or ""
+                if not title:
+                    continue
+                row_key = (role, title)
+                if row_key in seen:
+                    continue
+                seen.add(row_key)
+                docs.append({
+                    "role_name": role,
+                    "course_id": course.get("course_uid") or title,
+                    "course_name": title,
+                    "order": course.get("order") or 1,
+                    "source": "career_levels",
+                })
+    except Exception:
+        pass
+
     return docs
 
 
@@ -895,7 +928,7 @@ async def get_framework_summary(organization_id: str) -> dict:
     }
     courses_learning = await database.learning_courses.count_documents(learning_query)
     courses = courses_framework + courses_learning
-    roadmaps = await database.org_framework_roadmaps.count_documents(_oid_filter(organization_id))
+    roadmaps = len(await list_roadmaps(organization_id))
     promotion_rules = await database.org_framework_promotion_rules.count_documents(_oid_filter(organization_id))
 
     # Employees in this org

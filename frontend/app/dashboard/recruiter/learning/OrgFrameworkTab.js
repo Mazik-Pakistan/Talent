@@ -1109,24 +1109,32 @@ function RoadmapsSection({ roadmaps, roles, courses, loadAll }) {
           <div key={roleName} style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui", marginBottom: 8 }}>{roleName}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {sorted.map((r, index) => (
-                <div key={r.roadmap_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: "#fbfcfe", fontSize: 13 }}>
+              {sorted.map((r, index) => {
+                const fromCareer = r.source === "career_levels";
+                return (
+                <div key={r.roadmap_id || `${r.role_name}-${r.course_name || r.course_id}-${index}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: fromCareer ? "#f8fafb" : "#fbfcfe", fontSize: 13 }}>
                   <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-faint)", minWidth: 22 }}>{index + 1}.</span>
                   <span style={{ fontWeight: 650, color: "var(--navy)", flex: 1 }}>{r.course_name || r.course_id}</span>
                   {r.mandatory && <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>Mandatory</span>}
+                  {fromCareer && <span className={`${s.statusPill} ${s.orange}`} style={{ fontSize: 10 }}>Career Level</span>}
                   <div style={{ display: "flex", gap: 2 }}>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === 0} onClick={() => moveEntry(roleName, sorted, index, -1)} aria-label="Move up">
-                      ↑
-                    </button>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === sorted.length - 1} onClick={() => moveEntry(roleName, sorted, index, 1)} aria-label="Move down">
-                      ↓
-                    </button>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(r.roadmap_id)}>
-                      <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-                    </button>
+                    {!fromCareer && (
+                      <>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === 0} onClick={() => moveEntry(roleName, sorted, index, -1)} aria-label="Move up">
+                          ↑
+                        </button>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === sorted.length - 1} onClick={() => moveEntry(roleName, sorted, index, 1)} aria-label="Move down">
+                          ↓
+                        </button>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(r.roadmap_id)}>
+                          <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );
