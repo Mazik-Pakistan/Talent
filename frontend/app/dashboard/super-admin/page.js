@@ -31,6 +31,8 @@ import {
   updateRecruiterCapabilities,
 } from "@/services/authService";
 import { can } from "@/services/rbac";
+import { clearSuperAdminContext, publishSuperAdminContext } from "@/lib/ai/superAdminContext";
+import { SUPER_ADMIN_TAB_HELP } from "@/lib/ai/superAdminFieldHelp";
 
 const SparkleIcon = (props) => (
   <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -186,6 +188,17 @@ export default function SuperAdminDashboardPage() {
       }).catch(() => {});
     }
   }, []);
+
+  useEffect(() => {
+    const help = SUPER_ADMIN_TAB_HELP[activeTab] || {};
+    publishSuperAdminContext({
+      tab: activeTab,
+      section: activeTab,
+      hint: help.hint || null,
+      fields: help.fields || [],
+    });
+    return () => clearSuperAdminContext();
+  }, [activeTab]);
 
   const loadOrganizations = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
@@ -558,7 +571,7 @@ export default function SuperAdminDashboardPage() {
               </div>
             </div>
             <div className={styles.sectionBody}>
-              <form onSubmit={handleBootstrap}>
+              <form data-partner-coach onSubmit={handleBootstrap}>
                 {["full_name", "email", "phone", "password", "confirm_password"].map((field) => (
                   <label key={field} className={styles.field} style={{ marginBottom: 12 }}>
                     <span>{field.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} *</span>
@@ -777,11 +790,12 @@ export default function SuperAdminDashboardPage() {
               </button>
             </div>
 
-            <form className={local.orgModalBody} onSubmit={handleOrgSubmit}>
+            <form data-partner-coach className={local.orgModalBody} onSubmit={handleOrgSubmit}>
               <label className={local.orgField}>
                 <span>Name</span>
                 <input
                   type="text"
+                  data-field-key="organization_name"
                   value={orgForm.name}
                   onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
                   placeholder="Acme Corporation"
@@ -793,6 +807,7 @@ export default function SuperAdminDashboardPage() {
                 <span>Contact Email</span>
                 <input
                   type="email"
+                  data-field-key="contact_email"
                   value={orgForm.contact_email}
                   onChange={(e) => setOrgForm({ ...orgForm, contact_email: e.target.value })}
                   placeholder="hr@company.com"
@@ -802,6 +817,7 @@ export default function SuperAdminDashboardPage() {
               <label className={local.orgField}>
                 <span>Description</span>
                 <textarea
+                  data-field-key="description"
                   value={orgForm.description}
                   onChange={(e) => setOrgForm({ ...orgForm, description: e.target.value })}
                   placeholder="Short description of the organization"

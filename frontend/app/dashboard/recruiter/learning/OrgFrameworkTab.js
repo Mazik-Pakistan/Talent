@@ -63,6 +63,11 @@ import {
 } from "lucide-react";
 import CareerTracksPanel from "../organization-config/CareerTracksPanel";
 import EmailTemplatesPanel from "./EmailTemplatesPanel";
+import {
+  clearRecruiterContext,
+  publishRecruiterContext,
+} from "@/lib/ai/recruiterContext";
+import { ORG_CONFIG_TAB_HELP } from "@/lib/ai/recruiterFieldHelp";
 import s from "./OrgFrameworkTab.module.css";
 
 const SECTIONS = [
@@ -191,6 +196,17 @@ export default function OrgFrameworkTab() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  useEffect(() => {
+    const help = ORG_CONFIG_TAB_HELP[section] || {};
+    publishRecruiterContext({
+      tab: section,
+      section,
+      hint: help.hint || null,
+      fields: help.fields || [],
+    });
+    return () => clearRecruiterContext();
+  }, [section]);
 
   const hasData = departments.length > 0 || roles.length > 0 || courses.length > 0;
 
@@ -612,11 +628,11 @@ function DepartmentsSection({ departments, loadAll }) {
         </button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Department" : "New Department"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Name<input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Engineering" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Description<input value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Name<input data-field-key="department_name" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Engineering" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Description<input data-field-key="description" value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional" /></label>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={editItem ? handleUpdate : handleCreate}>{busy ? "Saving…" : "Save"}</button>
@@ -690,16 +706,16 @@ function RolesSection({ roles, departments, loadAll }) {
         </button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Role" : "New Role"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role Name<input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="e.g. Solution Engineer" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Department<select value={form.department} onChange={(e) => setField("department", e.target.value)}><option value="">Select</option>{deptNames.map((d) => <option key={d} value={d}>{d}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Career Level<input type="number" min="1" value={form.level_number} onChange={(e) => setField("level_number", parseInt(e.target.value) || 1)} /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role Name<input data-field-key="role_name" value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="e.g. Solution Engineer" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Department<select data-field-key="department" value={form.department} onChange={(e) => setField("department", e.target.value)}><option value="">Select</option>{deptNames.map((d) => <option key={d} value={d}>{d}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Career Level<input data-field-key="level_number" type="number" min="1" value={form.level_number} onChange={(e) => setField("level_number", parseInt(e.target.value) || 1)} /></label>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12, marginTop: 8 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Next Role<input value={form.next_role} onChange={(e) => setField("next_role", e.target.value)} placeholder="Promotion target role" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Description<input value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Description" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Next Role<input data-field-key="next_role" value={form.next_role} onChange={(e) => setField("next_role", e.target.value)} placeholder="Promotion target role" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Description<input data-field-key="description" value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Description" /></label>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={editItem ? handleUpdate : handleCreate}>{busy ? "Saving…" : "Save"}</button>
@@ -795,13 +811,13 @@ function SkillsSection({ skills, roles, loadAll }) {
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); setEditItem(null); setForm({ role_name: "", skill_name: "", proficiency: "Intermediate", weight: 20 }); setFormError(""); }}><Plus aria-hidden="true" /> Add Skill</button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Skill" : "New Skill"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Skill<input value={form.skill_name} onChange={(e) => setField("skill_name", e.target.value)} placeholder="e.g. Python" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Proficiency<select value={form.proficiency} onChange={(e) => setField("proficiency", e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option></select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Weight<input type="number" min="1" max="100" value={form.weight} onChange={(e) => setField("weight", e.target.value)} /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Skill<input data-field-key="skill_name" value={form.skill_name} onChange={(e) => setField("skill_name", e.target.value)} placeholder="e.g. Python" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Proficiency<select data-field-key="proficiency" value={form.proficiency} onChange={(e) => setField("proficiency", e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option></select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Weight<input data-field-key="weight" type="number" min="1" max="100" value={form.weight} onChange={(e) => setField("weight", e.target.value)} /></label>
           </div>
           {formError && <div style={{ fontSize: 12.5, color: "var(--red)", marginTop: 8 }}>{formError}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -864,19 +880,19 @@ function CoursesSection({ courses, loadAll }) {
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); resetForm(); }}><Plus aria-hidden="true" /> Add Course</button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Course" : "New Course"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Name<input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="Course name" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Provider<input value={form.provider} onChange={(e) => setField("provider", e.target.value)} placeholder="e.g. Microsoft Learn" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Category<input value={form.category} onChange={(e) => setField("category", e.target.value)} placeholder="e.g. Programming" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Name<input data-field-key="course_name" value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="Course name" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Provider<input data-field-key="provider" value={form.provider} onChange={(e) => setField("provider", e.target.value)} placeholder="e.g. Microsoft Learn" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Category<input data-field-key="course_category" value={form.category} onChange={(e) => setField("category", e.target.value)} placeholder="e.g. Programming" /></label>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 8 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Duration (hours)<input value={form.duration_hours} onChange={(e) => setField("duration_hours", e.target.value)} placeholder="e.g. 10" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Difficulty<select value={form.difficulty} onChange={(e) => setField("difficulty", e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option></select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>URL (optional)<input value={form.url} onChange={(e) => setField("url", e.target.value)} placeholder="https://…" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Duration (hours)<input data-field-key="duration_hours" value={form.duration_hours} onChange={(e) => setField("duration_hours", e.target.value)} placeholder="e.g. 10" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Difficulty<select data-field-key="difficulty" value={form.difficulty} onChange={(e) => setField("difficulty", e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option></select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>URL (optional)<input data-field-key="url" value={form.url} onChange={(e) => setField("url", e.target.value)} placeholder="https://…" /></label>
           </div>
-          <label className={s.fieldLabel} style={{ margin: "8px 0 0" }}>Description<textarea rows={2} value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Course description" style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 10, padding: 8, fontSize: 13, fontFamily: "inherit" }} /></label>
+          <label className={s.fieldLabel} style={{ margin: "8px 0 0" }}>Description<textarea data-field-key="description" rows={2} value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Course description" style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 10, padding: 8, fontSize: 13, fontFamily: "inherit" }} /></label>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>
             <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => { setShowForm(false); resetForm(); }}>Cancel</button>
@@ -975,14 +991,14 @@ function CertsSection({ certifications, roles, loadAll }) {
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); setEditItem(null); setForm({ role_name: "", certification_name: "", mandatory: true, expiration_months: "" }); setFormError(""); }}><Plus aria-hidden="true" /> Add Certification</button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Certification" : "New Certification"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Certification<input value={form.certification_name} onChange={(e) => setField("certification_name", e.target.value)} placeholder="e.g. AZ-900" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Expiration (months)<input value={form.expiration_months} onChange={(e) => setField("expiration_months", e.target.value)} placeholder="Optional" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Certification<input data-field-key="certification_name" value={form.certification_name} onChange={(e) => setField("certification_name", e.target.value)} placeholder="e.g. AZ-900" /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Expiration (months)<input data-field-key="expiration_months" value={form.expiration_months} onChange={(e) => setField("expiration_months", e.target.value)} placeholder="Optional" /></label>
           </div>
-          <label className={s.cfCheckRow} style={{ marginTop: 8 }}><input type="checkbox" checked={form.mandatory} onChange={(e) => setField("mandatory", e.target.checked)} /> Mandatory</label>
+          <label className={s.cfCheckRow} style={{ marginTop: 8 }}><input data-field-key="mandatory" type="checkbox" checked={form.mandatory} onChange={(e) => setField("mandatory", e.target.checked)} /> Mandatory</label>
           {formError && <div style={{ fontSize: 12.5, color: "var(--red)", marginTop: 8 }}>{formError}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>
@@ -1057,12 +1073,12 @@ function RoadmapsSection({ roadmaps, roles, courses, loadAll }) {
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => setShowForm(true)}><Plus aria-hidden="true" /> Add to Roadmap</button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>Add Course to Roadmap</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 12, alignItems: "end" }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Course<select value={form.course_id} onChange={(e) => setField("course_id", e.target.value)}><option value="">Select</option>{courses.map((c) => <option key={c.course_id} value={c.course_id}>{c.name}</option>)}</select></label>
-            <label className={s.cfCheckRow}><input type="checkbox" checked={form.mandatory} onChange={(e) => setField("mandatory", e.target.checked)} /> Mandatory</label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Course<select data-field-key="course_id" value={form.course_id} onChange={(e) => setField("course_id", e.target.value)}><option value="">Select</option>{courses.map((c) => <option key={c.course_id} value={c.course_id}>{c.name}</option>)}</select></label>
+            <label className={s.cfCheckRow}><input data-field-key="mandatory" type="checkbox" checked={form.mandatory} onChange={(e) => setField("mandatory", e.target.checked)} /> Mandatory</label>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleCreate}>{busy ? "Saving…" : "Save"}</button>
@@ -1131,17 +1147,17 @@ function PromotionSection({ rules, roles, loadAll }) {
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => setShowForm(true)}><Plus aria-hidden="true" /> Add Rule</button>
       </div>
       {showForm && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
+        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>Promotion Rule</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Experience (months)<input type="number" min="0" value={form.min_experience_months} onChange={(e) => setField("min_experience_months", parseInt(e.target.value) || 0)} /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Required Readiness %<input type="number" min="0" max="100" value={form.required_readiness_pct} onChange={(e) => setField("required_readiness_pct", parseInt(e.target.value) || 0)} /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Experience (months)<input data-field-key="min_experience_months" type="number" min="0" value={form.min_experience_months} onChange={(e) => setField("min_experience_months", parseInt(e.target.value) || 0)} /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Required Readiness %<input data-field-key="required_readiness_pct" type="number" min="0" max="100" value={form.required_readiness_pct} onChange={(e) => setField("required_readiness_pct", parseInt(e.target.value) || 0)} /></label>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 8 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Skills %<input type="number" min="0" max="100" value={form.min_skills_completed_pct} onChange={(e) => setField("min_skills_completed_pct", parseInt(e.target.value) || 0)} /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Certs Completed<input type="number" min="0" value={form.min_certs_completed} onChange={(e) => setField("min_certs_completed", parseInt(e.target.value) || 0)} /></label>
-            <label className={s.cfCheckRow} style={{ marginTop: 22 }}><input type="checkbox" checked={form.manager_approval_required} onChange={(e) => setField("manager_approval_required", e.target.checked)} /> Manager Approval Required</label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Skills %<input data-field-key="min_skills_completed_pct" type="number" min="0" max="100" value={form.min_skills_completed_pct} onChange={(e) => setField("min_skills_completed_pct", parseInt(e.target.value) || 0)} /></label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Certs Completed<input data-field-key="min_certs_completed" type="number" min="0" value={form.min_certs_completed} onChange={(e) => setField("min_certs_completed", parseInt(e.target.value) || 0)} /></label>
+            <label className={s.cfCheckRow} style={{ marginTop: 22 }}><input data-field-key="manager_approval_required" type="checkbox" checked={form.manager_approval_required} onChange={(e) => setField("manager_approval_required", e.target.checked)} /> Manager Approval Required</label>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>

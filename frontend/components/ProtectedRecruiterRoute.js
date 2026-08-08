@@ -36,7 +36,7 @@ export default function ProtectedRecruiterRoute({ requiredCapability, children }
       return;
     }
 
-    const allowed = capabilities[requiredCapability] === true;
+    const allowed = capabilities[requiredCapability] !== false;
 
     setIsAuthorized(allowed);
     setLoading(false);

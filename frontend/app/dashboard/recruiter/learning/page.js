@@ -987,6 +987,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       browseCatalog(token, {
         q,
         source: actualSource,
+        provider: actualSource === "managed_learning" ? selectedProvider || undefined : undefined,
         provider: actualSource === "managed_learning" ? (selectedProvider || undefined) : undefined,
         page_size: 10,
       }).then((data) => setCourses(data.courses || [])).catch(() => {});
@@ -2256,45 +2257,45 @@ async function handleDelete(course) {
               </div>
             </div>
             <div className={shellStyles.sectionBody}>
-              <form className={styles.managedForm} onSubmit={handleSubmit}>
+              <form data-partner-coach className={styles.managedForm} onSubmit={handleSubmit}>
                 <label className={styles.fieldLabel}>
                   Provider
-                  <select value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))}>
+                  <select data-field-key="managed_provider" value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))}>
                     <option value="">Select provider</option>
                     {(providers || []).map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
                 <label className={styles.fieldLabel}>
                   Designation
-                  <input placeholder="e.g. Software Engineer" value={form.designation} onChange={(e) => setForm((current) => ({ ...current, designation: e.target.value }))} />
+                  <input data-field-key="designation" placeholder="e.g. Software Engineer" value={form.designation} onChange={(e) => setForm((current) => ({ ...current, designation: e.target.value }))} />
                 </label>
                 <label className={styles.fieldLabel}>
                   Learning month
-                  <input placeholder="e.g. 2025-03" value={form.learning_month} onChange={(e) => setForm((current) => ({ ...current, learning_month: e.target.value }))} />
+                  <input data-field-key="learning_month" placeholder="e.g. 2025-03" value={form.learning_month} onChange={(e) => setForm((current) => ({ ...current, learning_month: e.target.value }))} />
                 </label>
                 <label className={styles.fieldLabel}>
                   Category
-                  <input placeholder="e.g. Cloud" value={form.category} onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))} />
+                  <input data-field-key="managed_category" placeholder="e.g. Cloud" value={form.category} onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))} />
                 </label>
                 <label className={styles.fieldLabel}>
                   Competency
-                  <input placeholder="e.g. Azure" value={form.competency} onChange={(e) => setForm((current) => ({ ...current, competency: e.target.value }))} />
+                  <input data-field-key="competency" placeholder="e.g. Azure" value={form.competency} onChange={(e) => setForm((current) => ({ ...current, competency: e.target.value }))} />
                 </label>
                 <label className={styles.fieldLabel}>
                   Duration (minutes)
-                  <input type="number" min="1" placeholder="e.g. 45" value={form.duration_minutes} onChange={(e) => setForm((current) => ({ ...current, duration_minutes: e.target.value }))} />
+                  <input data-field-key="duration_minutes" type="number" min="1" placeholder="e.g. 45" value={form.duration_minutes} onChange={(e) => setForm((current) => ({ ...current, duration_minutes: e.target.value }))} />
                 </label>
                 <label className={`${styles.fieldLabel} ${styles.wide}`}>
                   Course title
-                  <input placeholder="e.g. Azure Fundamentals" value={form.title} onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))} required />
+                  <input data-field-key="course_title" placeholder="e.g. Azure Fundamentals" value={form.title} onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))} required />
                 </label>
                 <label className={`${styles.fieldLabel} ${styles.wide}`}>
                   Course URL
-                  <input placeholder="https://example.com/course" value={form.url} onChange={(e) => setForm((current) => ({ ...current, url: e.target.value }))} />
+                  <input data-field-key="url" placeholder="https://example.com/course" value={form.url} onChange={(e) => setForm((current) => ({ ...current, url: e.target.value }))} />
                 </label>
                 <label className={`${styles.fieldLabel} ${styles.wide}`}>
                   Description
-                  <textarea rows={3} placeholder="Short summary shown in the catalog" value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} />
+                  <textarea data-field-key="description" rows={3} placeholder="Short summary shown in the catalog" value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} />
                 </label>
                 <label className={styles.checkPill} style={{ justifySelf: "start" }}>
                   <input type="checkbox" checked={Boolean(form.archived)} onChange={(e) => setForm((current) => ({ ...current, archived: e.target.checked }))} />
@@ -2650,6 +2651,7 @@ function ProvidersTab({ onImportProvider }) {
                 <label className={styles.fieldLabel}>
                   Provider name
                   <input
+                    data-field-key="provider_name"
                     placeholder="e.g. Udemy, DataCamp, Company Academy"
                     value={form.name}
                     onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -2659,7 +2661,7 @@ function ProvidersTab({ onImportProvider }) {
                 </label>
                 <label className={styles.fieldLabel}>
                   Provider type
-                  <select value={form.provider_type} onChange={(e) => setForm((f) => ({ ...f, provider_type: e.target.value }))}>
+                  <select data-field-key="provider_type" value={form.provider_type} onChange={(e) => setForm((f) => ({ ...f, provider_type: e.target.value }))}>
                     <option value="manual">Manual</option>
                     <option value="api">API</option>
                   </select>
@@ -2667,7 +2669,7 @@ function ProvidersTab({ onImportProvider }) {
                 </label>
                 <label className={styles.fieldLabel}>
                   Import method
-                  <select value={form.import_method} onChange={(e) => setForm((f) => ({ ...f, import_method: e.target.value }))}>
+                  <select data-field-key="import_method" value={form.import_method} onChange={(e) => setForm((f) => ({ ...f, import_method: e.target.value }))}>
                     <option value="excel">Excel</option>
                     <option value="api">API</option>
                     <option value="manual">Manual entry</option>
@@ -2676,6 +2678,7 @@ function ProvidersTab({ onImportProvider }) {
                 <label className={styles.fieldLabel}>
                   Logo URL
                   <input
+                    data-field-key="logo_url"
                     placeholder="https://…/logo.png (optional)"
                     value={form.logo_url}
                     onChange={(e) => setForm((f) => ({ ...f, logo_url: e.target.value }))}
@@ -2684,6 +2687,7 @@ function ProvidersTab({ onImportProvider }) {
                 <label className={`${styles.fieldLabel} ${styles.wide}`}>
                   Description
                   <input
+                    data-field-key="description"
                     placeholder="What does this provider offer?"
                     value={form.description}
                     onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}

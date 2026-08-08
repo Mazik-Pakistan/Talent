@@ -8,6 +8,7 @@ import {
   getPendingReview,
   getReadyForConversion,
   getRecruiterMascotBrief,
+  getMyTicketStats,
   listEmployees,
   listItServiceRequests,
 } from "@/services/authService";
@@ -20,6 +21,7 @@ import { MASCOT_PRIORITY } from "@/lib/ai/recruiterContext";
 import {
   EMPLOYEE_TAB_HELP,
   LEARNING_TAB_HELP,
+  ORG_CONFIG_TAB_HELP,
   TALENT_TAB_HELP,
   pathMatchesPageKey,
 } from "@/lib/ai/recruiterFieldHelp";
@@ -93,6 +95,7 @@ function recruiterPageKey(pathname) {
   if (pathMatchesPageKey(pathname, "activity")) return "activity";
   if (pathMatchesPageKey(pathname, "profile")) return "profile";
   if (pathMatchesPageKey(pathname, "support")) return "support";
+  if (pathMatchesPageKey(pathname, "organization-config")) return "organization-config";
   if (pathMatchesPageKey(pathname, "it-kits")) return "it-kits";
   if (pathMatchesPageKey(pathname, "it")) return "it";
   return "other";
@@ -706,6 +709,68 @@ async function learningPageInsights(accessToken, context) {
     return insights;
   }
 
+  if (tab === "managed") {
+    push(insights, {
+      id: "learn-managed-what",
+      priority: MASCOT_PRIORITY.task,
+      message: tabHelp?.hint || "Create and manage courses for your own providers here.",
+    });
+    push(insights, {
+      id: "learn-managed-form",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Add a course with provider, title, designation, and category — use Import roadmap for bulk uploads.",
+    });
+    push(insights, {
+      id: "learn-managed-hierarchy",
+      priority: MASCOT_PRIORITY.insight,
+      message: "The roadmap hierarchy groups courses by designation → month → category → competency.",
+    });
+    push(insights, {
+      id: "learn-managed-guide",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Need help filling the course form? Tap Guide me through it.",
+    });
+    return insights;
+  }
+
+  if (tab === "providers") {
+    push(insights, {
+      id: "learn-providers-what",
+      priority: MASCOT_PRIORITY.task,
+      message: tabHelp?.hint || "Add any learning provider here — they appear as source tabs in the catalog.",
+    });
+    push(insights, {
+      id: "learn-providers-create",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Create a provider with a name, type (manual or API), and import method — then import courses for it.",
+    });
+    push(insights, {
+      id: "learn-providers-guide",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Need help filling the provider form? Tap Guide me through it.",
+    });
+    return insights;
+  }
+
+  if (tab === "imports") {
+    push(insights, {
+      id: "learn-imports-what",
+      priority: MASCOT_PRIORITY.task,
+      message: tabHelp?.hint || "Select a provider, upload a spreadsheet, preview, then confirm the import.",
+    });
+    push(insights, {
+      id: "learn-imports-steps",
+      priority: MASCOT_PRIORITY.pipeline,
+      message: "Import flow: select provider → upload .xlsx/.csv → review preview → confirm. Invalid rows are flagged before import.",
+    });
+    push(insights, {
+      id: "learn-imports-history",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Import history is at the bottom — you can download reports or roll back any import.",
+    });
+    return insights;
+  }
+
   // Unknown tab — still stay local, never dump the whole module.
   if (tabHelp?.hint) {
     push(insights, {
@@ -719,14 +784,14 @@ async function learningPageInsights(accessToken, context) {
 
 async function talentPageInsights(accessToken, context) {
   const insights = [];
-  const tab = context?.tab || context?.section || "metrics";
+  const tab = context?.tab || context?.section || "dashboard";
   const tabHelp = TALENT_TAB_HELP[tab];
 
-  if (tab === "metrics") {
+  if (tab === "dashboard") {
     push(insights, {
-      id: "talent-metrics-what",
+      id: "talent-dash-what",
       priority: MASCOT_PRIORITY.task,
-      message: tabHelp?.hint || "Review headcount and readiness signals here.",
+      message: tabHelp?.hint || "Filter by department or role to see readiness signals and talent KPIs.",
     });
     try {
       if (accessToken) {
@@ -734,7 +799,7 @@ async function talentPageInsights(accessToken, context) {
         const readyCount = metrics?.promotion_readiness_count ?? metrics?.promotion_ready_count;
         if (readyCount > 0) {
           push(insights, {
-            id: "talent-promo",
+            id: "talent-dash-promo",
             priority: MASCOT_PRIORITY.task,
             message: `${readyCount} people show promotion readiness — open a profile to act.`,
           });
@@ -742,7 +807,7 @@ async function talentPageInsights(accessToken, context) {
         const highPotential = metrics?.high_potential_employees?.length;
         if (highPotential) {
           push(insights, {
-            id: "talent-hipo",
+            id: "talent-dash-hipo",
             priority: MASCOT_PRIORITY.insight,
             message: `${highPotential} high-potential employee${highPotential === 1 ? "" : "s"} flagged on this view.`,
           });
@@ -750,7 +815,7 @@ async function talentPageInsights(accessToken, context) {
         const gaps = metrics?.skill_gaps?.length ?? metrics?.top_gaps?.length ?? metrics?.skill_distribution?.length;
         if (gaps) {
           push(insights, {
-            id: "talent-gaps",
+            id: "talent-dash-gaps",
             priority: MASCOT_PRIORITY.tip,
             message: "Skill gap signals are on this page — use them before hiring outside.",
           });
@@ -759,24 +824,79 @@ async function talentPageInsights(accessToken, context) {
     } catch {
       // keep base tip
     }
+    push(insights, {
+      id: "talent-dash-filter",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Click any KPI card to drill down — it opens matching people or structure breakdowns.",
+    });
     return insights;
   }
 
-  if (tab === "search") {
+  if (tab === "employees") {
     push(insights, {
-      id: "talent-search-what",
+      id: "talent-emp-what",
       priority: MASCOT_PRIORITY.task,
-      message: tabHelp?.hint || "Filter by skills, certs, and competency to find internal talent.",
+      message: tabHelp?.hint || "Filter by department, role, and promotion readiness, then open a talent profile.",
     });
     push(insights, {
-      id: "talent-search-filters",
+      id: "talent-emp-filters",
       priority: MASCOT_PRIORITY.insight,
-      message: "Combine department + skills (and optional semantic search) for sharper matches.",
+      message: "Combine department + role + promotion bucket to find the right people fast.",
     });
     push(insights, {
-      id: "talent-search-act",
+      id: "talent-emp-profile",
       priority: MASCOT_PRIORITY.tip,
-      message: "Open a profile from results to assign learning or plan development.",
+      message: "Open a profile to score competencies, assign learning, and plan career development.",
+    });
+    return insights;
+  }
+
+  if (tab === "pipeline") {
+    push(insights, {
+      id: "talent-pipe-what",
+      priority: MASCOT_PRIORITY.task,
+      message: tabHelp?.hint || "Track Ready / Almost / Behind readiness and assign target career levels.",
+    });
+    try {
+      if (accessToken) {
+        const metrics = await cached("talent-metrics", () => getTalentMetrics(accessToken)).catch(() => null);
+        const readyCount = metrics?.promotion_readiness_count ?? metrics?.promotion_ready_count;
+        if (readyCount > 0) {
+          push(insights, {
+            id: "talent-pipe-ready",
+            priority: MASCOT_PRIORITY.task,
+            message: `${readyCount} people are promotion-ready — open the assign form to assign target career levels.`,
+          });
+        }
+      }
+    } catch {
+      // keep base tip
+    }
+    push(insights, {
+      id: "talent-pipe-assign",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Use Assign Career Path to set target level and date for each person.",
+    });
+    return insights;
+  }
+
+  if (tab === "profile") {
+    push(insights, {
+      id: "talent-prof-what",
+      priority: MASCOT_PRIORITY.task,
+      message: context?.employeeName
+        ? `You're viewing ${context.employeeName}'s talent profile — review skills, learning, and development plan.`
+        : tabHelp?.hint || "Review skills, learning, career readiness, and development plan for one employee.",
+    });
+    push(insights, {
+      id: "talent-prof-tabs",
+      priority: MASCOT_PRIORITY.insight,
+      message: "Use the sub-tabs for Overview, Skills, Learning, Career, and Development — each has focused data.",
+    });
+    push(insights, {
+      id: "talent-prof-eval",
+      priority: MASCOT_PRIORITY.tip,
+      message: "On the Development tab, score competencies 1–5 and save a development plan with milestones.",
     });
     return insights;
   }
@@ -1006,9 +1126,114 @@ function itKitsInsights() {
     {
       id: "it-kits-back",
       priority: MASCOT_PRIORITY.tip,
-      message: "When you’re done here, go back to IT & support to raise tickets or review officers.",
+      message: "When you're done here, go back to IT & support to raise tickets or review officers.",
     },
   ];
+}
+
+async function supportInsights(accessToken) {
+  const insights = [];
+  try {
+    if (accessToken) {
+      const ticketStats = await cached("support-my-stats", () =>
+        getMyTicketStats(accessToken)
+      ).catch(() => null);
+      if (ticketStats) {
+        if (ticketStats.open > 0) {
+          push(insights, {
+            id: "support-open",
+            priority: MASCOT_PRIORITY.task,
+            tone: "warn",
+            message:
+              ticketStats.open === 1
+                ? "You have 1 open ticket — check for replies and update if needed."
+                : `You have ${ticketStats.open} open tickets — check for replies and follow up.`,
+          });
+        }
+        if (ticketStats.resolved > 0) {
+          push(insights, {
+            id: "support-resolved",
+            priority: MASCOT_PRIORITY.insight,
+            message: `${ticketStats.resolved} ticket${ticketStats.resolved === 1 ? " has" : "s have"} been resolved.`,
+          });
+        }
+        if (ticketStats.created_today > 0) {
+          push(insights, {
+            id: "support-today",
+            priority: MASCOT_PRIORITY.tip,
+            message: `${ticketStats.created_today} ticket${ticketStats.created_today === 1 ? "" : "s"} created today.`,
+          });
+        }
+        const criticalCount = ticketStats.by_priority?.critical || 0;
+        if (criticalCount > 0) {
+          push(insights, {
+            id: "support-critical",
+            priority: MASCOT_PRIORITY.pipeline,
+            tone: "warn",
+            message: `${criticalCount} critical-priority ticket${criticalCount === 1 ? "" : "s"} — prioritize these first.`,
+          });
+        }
+      }
+    }
+  } catch {
+    // optional
+  }
+  return insights;
+}
+
+function orgConfigInsights(context) {
+  const insights = [];
+  const section = context?.tab || context?.section || "overview";
+  const sectionHelp = ORG_CONFIG_TAB_HELP[section];
+
+  if (sectionHelp?.hint) {
+    push(insights, {
+      id: `orgcfg-section-${section}`,
+      priority: MASCOT_PRIORITY.task,
+      message: sectionHelp.hint,
+    });
+  }
+  if (sectionHelp?.fields?.length) {
+    push(insights, {
+      id: `orgcfg-fields-${section}`,
+      priority: MASCOT_PRIORITY.insight,
+      message: `Fields on this section: ${listToSentence(sectionHelp.fields.map((f) => f.replace(/_/g, " ")))}. Focus one for a tip.`,
+    });
+  }
+  if (section === "overview") {
+    push(insights, {
+      id: "orgcfg-start",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Start fast: seed departments/roles from existing records, import an Excel template, or build the framework manually section by section.",
+    });
+    push(insights, {
+      id: "orgcfg-effect",
+      priority: MASCOT_PRIORITY.insight,
+      message: "Changes here apply everywhere — invites, learning assignments, and talent filters all read from this framework.",
+    });
+  }
+  if (section === "departments") {
+    push(insights, {
+      id: "orgcfg-dept-effect",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Renaming a department updates it everywhere it's referenced across the platform.",
+    });
+  }
+  if (section === "roles") {
+    push(insights, {
+      id: "orgcfg-role-effect",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Fill Next Role on each role so promotion pipelines and career tracks know the target.",
+    });
+  }
+  if (section === "promotion") {
+    push(insights, {
+      id: "orgcfg-promo-effect",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Promotion rules feed Talent Intelligence readiness — the Ready / Almost / Behind buckets.",
+    });
+  }
+  return insights;
 }
 
 async function maybeAiBrief(accessToken, page, snapshot, firstName) {
@@ -1057,10 +1282,15 @@ async function maybeAiBrief(accessToken, page, snapshot, firstName) {
 export async function buildRecruiterInsights(pathname, accessToken, rawContext = {}) {
   const page = recruiterPageKey(pathname);
   const context = scopedContext(rawContext, pathname);
-  const snapshot = await loadRecruiterSnapshot(accessToken);
-  const stats = pipelineStats(snapshot);
+  const isSupport = page === "support";
+  const snapshot = isSupport ? null : await loadRecruiterSnapshot(accessToken);
+  const stats = isSupport ? {} : pipelineStats(snapshot);
   const insights = [];
-  const tabScoped = page === "learning" || page === "talent" || page === "employee_detail";
+  const tabScoped =
+    page === "learning" ||
+    page === "talent" ||
+    page === "employee_detail" ||
+    page === "organization-config";
 
   // Tabbed pages already inject the right local tips — avoid duplicating context + module-wide noise.
   if (!tabScoped) {
@@ -1101,6 +1331,10 @@ export async function buildRecruiterInsights(pathname, accessToken, rawContext =
     insights.push(...(await itHubInsights(accessToken)));
   } else if (page === "it-kits") {
     insights.push(...itKitsInsights());
+  } else if (page === "organization-config") {
+    insights.push(...orgConfigInsights(context));
+  } else if (page === "support") {
+    insights.push(...(await supportInsights(accessToken)));
   }
 
   // Keep tips on this screen only — no AI brief (it invents off-page content).
