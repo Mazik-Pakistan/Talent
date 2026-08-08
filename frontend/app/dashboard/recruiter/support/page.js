@@ -257,7 +257,7 @@ function RecruiterSupportPageContent() {
         hint: detailTab === "conversation"
           ? "Read the thread, reply with the next update, or close the ticket when it is done."
           : "Review the ticket details and status before replying or closing.",
-        fields: [],
+        fields: detailTab === "conversation" ? ["reply"] : [],
       });
       return () => clearRecruiterContext();
     }
@@ -491,6 +491,7 @@ function RecruiterSupportPageContent() {
             </button>
           </div>
           <form
+            data-partner-coach
             onSubmit={handleCreate}
             data-mascot-command={!createMode ? "" : undefined}
             style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
@@ -499,6 +500,7 @@ function RecruiterSupportPageContent() {
               <div className={support.formField}>
                 <label className={support.formLabel} htmlFor="ticket-subject">Subject</label>
                 <input
+                  data-field-key="subject"
                   id="ticket-subject"
                   className={support.formInput}
                   value={form.subject}
@@ -512,6 +514,7 @@ function RecruiterSupportPageContent() {
               <div className={support.formField}>
                 <label className={support.formLabel} htmlFor="ticket-category">Category</label>
                 <select
+                  data-field-key="category"
                   id="ticket-category"
                   className={support.formSelect}
                   value={form.category}
@@ -527,6 +530,7 @@ function RecruiterSupportPageContent() {
               <div className={support.formField}>
                 <label className={support.formLabel} htmlFor="ticket-priority">Priority</label>
                 <select
+                  data-field-key="ticket_priority"
                   id="ticket-priority"
                   className={support.formSelect}
                   value={form.priority}
@@ -542,6 +546,7 @@ function RecruiterSupportPageContent() {
               <div className={support.formField}>
                 <label className={support.formLabel} htmlFor="ticket-module">Affected Module</label>
                 <select
+                  data-field-key="affected_module"
                   id="ticket-module"
                   className={support.formSelect}
                   value={form.affected_module}
@@ -557,6 +562,7 @@ function RecruiterSupportPageContent() {
               <div className={support.formField}>
                 <label className={support.formLabel} htmlFor="ticket-description">Description</label>
                 <textarea
+                  data-field-key="ticket_description"
                   id="ticket-description"
                   className={support.formTextarea}
                   value={form.description}
@@ -642,8 +648,9 @@ function RecruiterSupportPageContent() {
                     <p style={{ fontSize: 13, color: "#94a3b8" }}>No messages yet — the support team will respond shortly.</p>
                   )}
                 </div>
-                <div className={support.replyArea}>
+                <form data-partner-coach className={support.replyArea} onSubmit={(e) => { e.preventDefault(); handleSendReply(); }}>
                   <textarea
+                    data-field-key="reply"
                     className={support.replyInput}
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
@@ -652,14 +659,13 @@ function RecruiterSupportPageContent() {
                     aria-label="Reply message"
                   />
                   <button
-                    type="button"
+                    type="submit"
                     className={support.sendBtn}
-                    onClick={handleSendReply}
                     disabled={sendingReply || !replyText.trim()}
                   >
                     {sendingReply ? <span className={support.spinner} /> : "Send"}
                   </button>
-                </div>
+                </form>
               </>
             ) : (
               <div className={support.detailGrid}>

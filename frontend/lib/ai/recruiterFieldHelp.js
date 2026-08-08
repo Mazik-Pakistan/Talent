@@ -136,6 +136,11 @@ export const RECRUITER_FIELD_HELP = {
   actionReason: "Pick why the document needs re-upload or rejection (blurry, wrong type, expired…).",
   actionNote: "Optional detail for the candidate/employee about what to fix.",
 
+  // Support
+  ticket_description: "Describe the issue, what you expected, and steps to reproduce — the more detail, the faster the fix.",
+  ticket_priority: "How urgent: Low, Medium, High, or Critical — this determines the response queue.",
+  reply: "Write your reply to the support team — they'll be notified by email.",
+
   // IT support request (hub + create modal)
   request_type: "What kind of help — new asset, replacement, license, access, or other.",
   it_request_title: "Short summary of what’s needed — IT and the employee see this title.",

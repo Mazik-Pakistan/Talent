@@ -8,6 +8,7 @@ import {
   getPendingReview,
   getReadyForConversion,
   getRecruiterMascotBrief,
+  getMyTicketStats,
   listEmployees,
   listItServiceRequests,
 } from "@/services/authService";
@@ -1125,9 +1126,59 @@ function itKitsInsights() {
     {
       id: "it-kits-back",
       priority: MASCOT_PRIORITY.tip,
-      message: "When you’re done here, go back to IT & support to raise tickets or review officers.",
+      message: "When you're done here, go back to IT & support to raise tickets or review officers.",
     },
   ];
+}
+
+async function supportInsights(accessToken) {
+  const insights = [];
+  try {
+    if (accessToken) {
+      const ticketStats = await cached("support-my-stats", () =>
+        getMyTicketStats(accessToken)
+      ).catch(() => null);
+      if (ticketStats) {
+        if (ticketStats.open > 0) {
+          push(insights, {
+            id: "support-open",
+            priority: MASCOT_PRIORITY.task,
+            tone: "warn",
+            message:
+              ticketStats.open === 1
+                ? "You have 1 open ticket — check for replies and update if needed."
+                : `You have ${ticketStats.open} open tickets — check for replies and follow up.`,
+          });
+        }
+        if (ticketStats.resolved > 0) {
+          push(insights, {
+            id: "support-resolved",
+            priority: MASCOT_PRIORITY.insight,
+            message: `${ticketStats.resolved} ticket${ticketStats.resolved === 1 ? " has" : "s have"} been resolved.`,
+          });
+        }
+        if (ticketStats.created_today > 0) {
+          push(insights, {
+            id: "support-today",
+            priority: MASCOT_PRIORITY.tip,
+            message: `${ticketStats.created_today} ticket${ticketStats.created_today === 1 ? "" : "s"} created today.`,
+          });
+        }
+        const criticalCount = ticketStats.by_priority?.critical || 0;
+        if (criticalCount > 0) {
+          push(insights, {
+            id: "support-critical",
+            priority: MASCOT_PRIORITY.pipeline,
+            tone: "warn",
+            message: `${criticalCount} critical-priority ticket${criticalCount === 1 ? "" : "s"} — prioritize these first.`,
+          });
+        }
+      }
+    }
+  } catch {
+    // optional
+  }
+  return insights;
 }
 
 function orgConfigInsights(context) {
@@ -1231,8 +1282,9 @@ async function maybeAiBrief(accessToken, page, snapshot, firstName) {
 export async function buildRecruiterInsights(pathname, accessToken, rawContext = {}) {
   const page = recruiterPageKey(pathname);
   const context = scopedContext(rawContext, pathname);
-  const snapshot = await loadRecruiterSnapshot(accessToken);
-  const stats = pipelineStats(snapshot);
+  const isSupport = page === "support";
+  const snapshot = isSupport ? null : await loadRecruiterSnapshot(accessToken);
+  const stats = isSupport ? {} : pipelineStats(snapshot);
   const insights = [];
   const tabScoped =
     page === "learning" ||
@@ -1281,6 +1333,8 @@ export async function buildRecruiterInsights(pathname, accessToken, rawContext =
     insights.push(...itKitsInsights());
   } else if (page === "organization-config") {
     insights.push(...orgConfigInsights(context));
+  } else if (page === "support") {
+    insights.push(...(await supportInsights(accessToken)));
   }
 
   // Keep tips on this screen only — no AI brief (it invents off-page content).
