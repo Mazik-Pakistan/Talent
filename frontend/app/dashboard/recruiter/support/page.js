@@ -131,6 +131,12 @@ function RecruiterSupportPageContent() {
     setReplyText("");
   }
 
+  function cancelCreate() {
+    setCreateMode(false);
+    setForm(EMPTY_FORM);
+    setError("");
+  }
+
   async function openTicket(ticket) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
@@ -328,8 +334,30 @@ function RecruiterSupportPageContent() {
               + Create Ticket
             </button>
           )}
+          {createMode && !selectedTicket && (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={cancelCreate}
+              style={{ position: "relative", zIndex: 2 }}
+            >
+              ← Back to Tickets
+            </button>
+          )}
+          {selectedTicket && !createMode && (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={closePanels}
+              style={{ position: "relative", zIndex: 2 }}
+            >
+              ← Back to Tickets
+            </button>
+          )}
         </div>
 
+        {!createMode && !selectedTicket && (
+        <>
         <div className={styles.stats}>
           <StatCard tone="green" value={stats ? stats.open ?? 0 : "—"} label="Open" icon={ICONS.open} />
           <StatCard tone="orange" value={stats ? stats.by_status?.in_progress ?? 0 : "—"} label="In Progress" icon={ICONS.inProgress} />
@@ -456,7 +484,7 @@ function RecruiterSupportPageContent() {
                   {!hasFilters && (
                     <button
                       type="button"
-                      className={support.btnPrimary}
+                      className={styles.primaryButton}
                       onClick={() => { setError(""); setCreateMode(true); }}
                       style={{ position: "relative", zIndex: 2 }}
                     >
@@ -468,21 +496,16 @@ function RecruiterSupportPageContent() {
             </div>
           </div>
         </div>
-
-        {(createMode || selectedTicket) && (
-          <div
-            className={support.panelOverlay}
-            onClick={closePanels}
-            style={{ opacity: createMode || selectedTicket ? 1 : 0 }}
-          />
+        </>
         )}
 
-        <div className={`${support.panel} ${createMode ? support.panelOpen : support.panelClosed}`} role="dialog" aria-modal="true" aria-label="Create support ticket">
-          <div className={support.panelHeader}>
+        {createMode && !selectedTicket && (
+        <div className={support.createForm}>
+          <div className={support.createFormHeader}>
             <div className={support.panelTitle}>Create support ticket</div>
             <button
               type="button"
-              onClick={closePanels}
+              onClick={cancelCreate}
               disabled={creating}
               style={{ background: "transparent", border: "none", fontSize: 24, color: "#94a3b8", cursor: "pointer", lineHeight: 1, padding: 0 }}
               aria-label="Close"
@@ -576,19 +599,21 @@ function RecruiterSupportPageContent() {
               </div>
             </div>
             <div className={support.panelFooter}>
-              <button type="button" className={support.btnGhost} onClick={closePanels} disabled={creating}>
+              <button type="button" className={support.btnGhost} onClick={cancelCreate} disabled={creating}>
                 Cancel
               </button>
-              <button type="submit" className={support.btnPrimary} disabled={creating}>
+              <button type="submit" className={styles.primaryButton} disabled={creating}>
                 {creating && <span className={support.spinner} style={{ marginRight: 8 }} />}
                 {creating ? "Creating…" : "Submit ticket"}
               </button>
             </div>
           </form>
         </div>
+        )}
 
-        <div className={`${support.panel} ${selectedTicket ? support.panelOpen : support.panelClosed}`} role="dialog" aria-modal="true" aria-label="Ticket details">
-          <div className={support.panelHeader}>
+        {selectedTicket && (
+        <div className={support.createForm} aria-label="Ticket details">
+          <div className={support.createFormHeader}>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className={support.panelTitle}>{selectedTicket?.ticket_id || "Ticket"}</div>
               <div style={{ fontSize: 13, color: "#64748b", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -733,8 +758,9 @@ function RecruiterSupportPageContent() {
             <button type="button" className={support.btnGhost} onClick={closePanels}>
               Close
             </button>
-          </div>
+           </div>
         </div>
+        )}
       </div>
     </RecruiterShell>
   );
