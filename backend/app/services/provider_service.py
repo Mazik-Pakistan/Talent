@@ -116,13 +116,69 @@ class ProviderService:
             {"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}
         )
     
-    async def _count_provider_courses(self, provider_id: str) -> int:
-        """Count active courses for a provider."""
+    async def _count_provider_courses(self, provider_id: str, provider_name: str = "") -> int:
+        """Count active courses for a provider — matches by name since courses store
+        the provider name string, not a foreign-key ID."""
+        if provider_name:
+            return await database.learning_courses.count_documents({
+                "provider": {"$regex": f"^{re.escape(provider_name)}$", "$options": "i"},
+                "$or": [{"archived": {"$exists": False}}, {"archived": False}]
+            })
+        # Fallback: try matching by provider_id field for future-proofing
         return await database.learning_courses.count_documents({
             "provider_id": provider_id,
             "$or": [{"archived": {"$exists": False}}, {"archived": False}]
         })
     
+    async def sync_providers_from_courses(self) -> None:
+        """Create registry entries for any provider name found in active (non-archived)
+        learning_courses that does not yet have a learning_providers document.
+        This is idempotent — safe to call on every list request."""
+        EXCLUDED = {"Microsoft Learn", "Coursera"}
+        # Only scan non-archived courses — archived courses belong to deleted providers
+        # and must not re-create a registry entry that was intentionally deleted.
+        pipeline = [
+            {"$match": {"$or": [{"archived": {"$exists": False}}, {"archived": False}]}},
+            {"$group": {"_id": "$provider"}},
+        ]
+        cursor = database.learning_courses.aggregate(pipeline)
+        course_provider_names: list[str] = []
+        async for doc in cursor:
+            raw = doc.get("_id") or ""
+            name = _normalize_provider_name(raw)
+            if name and name not in EXCLUDED:
+                course_provider_names.append(name)
+
+        if not course_provider_names:
+            return
+
+        # Load existing slugs in one query
+        existing_slugs: set[str] = set()
+        async for doc in database.learning_providers.find({}, {"slug": 1}):
+            existing_slugs.add(doc.get("slug") or "")
+
+        now = _now()
+        for name in course_provider_names:
+            slug = _slug(name)
+            if slug in existing_slugs:
+                continue
+            doc = {
+                "name": name,
+                "slug": slug,
+                "provider_type": "manual",
+                "import_method": "manual",
+                "active": True,
+                "description": None,
+                "logo_url": None,
+                "created_at": now,
+                "updated_at": now,
+            }
+            try:
+                await database.learning_providers.insert_one(doc)
+                existing_slugs.add(slug)
+            except Exception:  # noqa: BLE001
+                pass
+
     async def list_providers(
         self,
         *,
@@ -132,7 +188,13 @@ class ProviderService:
         page: int = 1,
         page_size: int = 50,
     ) -> dict:
-        """List all learning providers with filtering and pagination."""
+        """List all learning providers with filtering and pagination.
+        
+        Auto-syncs any provider names found in learning_courses that are missing
+        from the registry, so the Providers tab always shows the full picture.
+        """
+        # Ensure every provider name in courses has a registry entry.
+        await self.sync_providers_from_courses()
         
         # Build query
         query: dict[str, Any] = {}
@@ -160,11 +222,43 @@ class ProviderService:
             "name", 1
         ).skip(skip).limit(page_size).to_list(length=page_size)
         
-        # Enrich with course counts
+        # Enrich with course counts — one aggregation for managed courses,
+        # plus in-memory cache lookups for external API providers.
+        course_counts: dict[str, int] = {}
+
+        # Managed / imported courses (stored in MongoDB)
+        pipeline = [
+            {"$match": {"$or": [{"archived": {"$exists": False}}, {"archived": False}]}},
+            {"$group": {"_id": "$provider", "count": {"$sum": 1}}},
+        ]
+        async for row in database.learning_courses.aggregate(pipeline):
+            name = (row.get("_id") or "").strip().lower()
+            if name:
+                course_counts[name] = row.get("count", 0)
+
+        # External API providers — read from in-memory caches, triggering inline
+        # fetch on cold start so counts match the catalog page exactly.
+        try:
+            from app.services import coursera_service as _cs
+            await _cs._get_cached_catalog(force_refresh=False)
+            cs_items = _cs._cache.get("items") or []
+            if cs_items:
+                course_counts["coursera"] = len(cs_items)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from app.services import ms_learn_service as _ms
+            ms_items = await _ms.get_catalog()
+            if ms_items:
+                course_counts["microsoft learn"] = len(ms_items)
+        except Exception:  # noqa: BLE001
+            pass
+
         enriched = []
         for provider in providers:
-            course_count = await self._count_provider_courses(str(provider["_id"]))
-            enriched.append(self._public_provider(provider, course_count))
+            name_lower = (provider.get("name") or "").strip().lower()
+            count = course_counts.get(name_lower, 0)
+            enriched.append(self._public_provider(provider, count))
         
         pages = max(1, (total + page_size - 1) // page_size) if total else 1
         
@@ -367,25 +461,32 @@ class ProviderService:
         """
         
         provider = await self._get_provider_by_id(provider_id)
+        provider_name = provider.get("name") or ""
         
-        # Check for dependent courses
-        course_count = await self._count_provider_courses(provider_id)
+        # Count courses by name (courses store provider as a name string, not an ID)
+        course_count = await self._count_provider_courses(provider_id, provider_name)
         
         if course_count > 0 and not force:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Cannot delete provider with {course_count} active course(s). "
-                       f"Archive the provider or use force=true to archive all courses."
+                       f"Use force=true to archive all courses and delete the provider."
             )
         
-        # If force=true, archive all courses first
-        if force and course_count > 0:
-            await database.learning_courses.update_many(
-                {"provider_id": provider_id},
-                {"$set": {"archived": True, "updated_at": _now()}}
+        # Archive all courses under this provider by name so they don't re-surface
+        # the provider via the auto-sync (which reads course provider names).
+        courses_archived = 0
+        if provider_name:
+            result = await database.learning_courses.update_many(
+                {
+                    "provider": {"$regex": f"^{re.escape(provider_name)}$", "$options": "i"},
+                    "$or": [{"archived": {"$exists": False}}, {"archived": False}],
+                },
+                {"$set": {"archived": True, "updated_at": _now()}},
             )
+            courses_archived = result.modified_count
         
-        # Delete the provider
+        # Delete the provider registry entry
         await database.learning_providers.delete_one({"_id": provider["_id"]})
         
 # Audit log
@@ -395,7 +496,7 @@ class ProviderService:
             provider_name=provider.get("name"),
             user_id=current_user.id,
             user_name=current_user.full_name or current_user.email,
-            details={"force": force, "courses_affected": course_count},
+            details={"force": force, "courses_archived": courses_archived},
         )
 
         await self._notify(
@@ -403,13 +504,13 @@ class ProviderService:
             recipient_role="recruiter",
             notif_type="provider_deleted",
             title="Learning provider removed",
-            message=f"Provider '{provider.get('name')}' was deleted.",
+            message=f"Provider '{provider_name}' was deleted.",
         )
 
         return {
             "deleted": True,
             "provider_id": provider_id,
-            "courses_archived": course_count if force else 0,
+            "courses_archived": courses_archived,
         }
     
     async def activate_provider(
