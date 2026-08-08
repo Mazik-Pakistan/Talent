@@ -49,7 +49,6 @@ const TABS = [
   { key: "my-courses", label: "My Learning" },
   { key: "skills", label: "Skill Profile" },
   { key: "career", label: "Career Path" },
-  { key: "certificates", label: "Certificates" },
 ];
 
 const CAREER_SUGGESTIONS = [
@@ -203,7 +202,6 @@ function EmployeeLearningPageInner() {
       {tab === "my-courses" && <MyCoursesTab onChange={refreshAfterChange} />}
       {tab === "skills" && <SkillsTab />}
       {tab === "career" && <CareerTab />}
-      {tab === "certificates" && <CertificatesTab onChange={refreshAfterChange} />}
     </EmployeeShell>
   );
 }
@@ -787,20 +785,37 @@ function CatalogTab({ onEnroll, refreshSeed = 0 }) {
 function MyCoursesTab({ onChange }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [enrollments, setEnrollments] = useState([]);
+  const [certificates, setCertificates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [startingUid, setStartingUid] = useState("");
+  const [uploadingFor, setUploadingFor] = useState(null);
+  const [uploadForm, setUploadForm] = useState({ course_title: "", completion_date: "", learning_hours: "", source_url: "" });
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [editingCertId, setEditingCertId] = useState(null);
+  const [editForm, setEditForm] = useState({ course_title: "", completion_date: "", learning_hours: "" });
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
-    listMyCourses(token, statusFilter || undefined)
-      .then((data) => setEnrollments(data.enrollments || []))
+    Promise.all([
+      listMyCourses(token, statusFilter || undefined),
+      listMyCertificates(token),
+    ])
+      .then(([coursesData, certsData]) => {
+        setEnrollments(coursesData.enrollments || []);
+        setCertificates(certsData.certificates || []);
+      })
       .catch((err) => toast.error(getApiErrorMessage(err, "Could not load your courses.")))
       .finally(() => setLoading(false));
   }, [statusFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  function getCertificateForCourse(courseUid) {
+    return certificates.find((c) => c.course_uid === courseUid);
+  }
 
   async function bump(uid, current) {
     const token = localStorage.getItem("access_token");
@@ -831,6 +846,75 @@ function MyCoursesTab({ onChange }) {
     }
   }
 
+  async function handleUploadCertificate(courseUid, e) {
+    e.preventDefault();
+    if (!uploadFile || !uploadForm.course_title.trim()) {
+      toast.error("Add a course title and select a file.");
+      return;
+    }
+    const token = localStorage.getItem("access_token");
+    const fd = new FormData();
+    fd.append("file", uploadFile);
+    fd.append("course_title", uploadForm.course_title.trim());
+    fd.append("course_uid", courseUid);
+    if (uploadForm.completion_date) fd.append("completion_date", uploadForm.completion_date);
+    if (uploadForm.learning_hours) fd.append("learning_hours", uploadForm.learning_hours);
+    if (uploadForm.source_url?.trim()) fd.append("source_url", uploadForm.source_url.trim());
+    setUploading(true);
+    try {
+      await uploadCertificate(token, fd);
+      toast.success("Certificate submitted for recruiter verification.");
+      setUploadForm({ course_title: "", completion_date: "", learning_hours: "", source_url: "" });
+      setUploadFile(null);
+      setUploadingFor(null);
+      load();
+      onChange?.();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not upload certificate."));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDeleteCertificate(certId) {
+    if (!window.confirm("Delete this certificate? This cannot be undone.")) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    try {
+      await deleteCertificate(token, certId);
+      toast.success("Certificate deleted.");
+      setEditingCertId(null);
+      load();
+      onChange?.();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not delete certificate."));
+    }
+  }
+
+  async function handleEditSave(certId) {
+    if (!editForm.course_title.trim()) {
+      toast.error("Course title is required.");
+      return;
+    }
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    const payload = {
+      course_title: editForm.course_title.trim(),
+      completion_date: editForm.completion_date || undefined,
+      learning_hours: editForm.learning_hours !== "" && editForm.learning_hours != null ? parseFloat(editForm.learning_hours) : undefined,
+    };
+    try {
+      await updateCertificate(token, certId, payload);
+      toast.success("Certificate updated.");
+      setEditingCertId(null);
+      setEditForm({ course_title: "", completion_date: "", learning_hours: "" });
+      load();
+      onChange?.();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not update certificate."));
+    }
+  }
+
   return (
     <div className={dashStyles.section}>
       <div className={dashStyles.sectionHead}>
@@ -858,6 +942,10 @@ function MyCoursesTab({ onChange }) {
         )}
         {enrollments.map((e) => {
           const isAssignedOnly = e.status === "assigned";
+          const cert = getCertificateForCourse(e.course_uid);
+          const isVerified = cert?.verification_status === "verified";
+          const isPending = cert?.verification_status === "pending";
+          const isRejected = cert?.verification_status === "rejected";
           return (
             <div key={e.id} className={styles.courseListRow}>
               <div className={styles.courseListInfo}>
@@ -868,17 +956,18 @@ function MyCoursesTab({ onChange }) {
                   {isAssignedOnly
                     ? "Not started yet"
                     : `Started ${e.started_at ? new Date(e.started_at).toLocaleDateString() : "—"}`}
+                  {isVerified && " · Complete and Verified"}
                 </div>
               </div>
               <div className={styles.courseListProgress}>
-                <div className={styles.progressLabel}>{isAssignedOnly ? "—" : `${e.progress_percent}%`}</div>
-                {!isAssignedOnly && (
-                  <div className={styles.progressTrackSm}>
-                    <div className={styles.progressFillSm} style={{ width: `${e.progress_percent}%` }} />
-                  </div>
-                )}
+                <div className={styles.progressLabel}>
+                  {isVerified ? "100%" : isPending ? "Pending" : "0%"}
+                </div>
+                <div className={styles.progressTrackSm}>
+                  <div className={styles.progressFillSm} style={{ width: `${isVerified ? 100 : isPending ? 50 : 0}%` }} />
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 {isAssignedOnly ? (
                   <button
                     type="button"
@@ -891,12 +980,107 @@ function MyCoursesTab({ onChange }) {
                 ) : (
                   <>
                     <a href={e.course_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open</a>
-                    {e.status !== "completed" && (
-                      <button type="button" className={styles.smallBtn} onClick={() => bump(e.course_uid, e.progress_percent)}>
-                        +25%
-                      </button>
-                    )}
                   </>
+                )}
+                {!isVerified && !isPending && !isRejected && (
+                  <button type="button" className={styles.smallBtn} onClick={() => setUploadingFor(e.course_uid)}>
+                    Upload Certificate
+                  </button>
+                )}
+              </div>
+
+              {/* Certificate section */}
+              <div style={{ width: "100%", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border-soft)" }}>
+                {uploadingFor === e.course_uid && (
+                  <form className={styles.uploadCertForm} onSubmit={(ev) => handleUploadCertificate(e.course_uid, ev)}>
+                    <label>
+                      Course / certification title
+                      <input value={uploadForm.course_title} onChange={(ev) => setUploadForm((f) => ({ ...f, course_title: ev.target.value }))} required />
+                    </label>
+                    <label>
+                      Completion date
+                      <input type="date" value={uploadForm.completion_date} onChange={(ev) => setUploadForm((f) => ({ ...f, completion_date: ev.target.value }))} />
+                    </label>
+                    <label>
+                      Learning hours
+                      <input type="number" min="0" step="0.5" value={uploadForm.learning_hours} onChange={(ev) => setUploadForm((f) => ({ ...f, learning_hours: ev.target.value }))} />
+                    </label>
+                    <label>
+                      Certificate file
+                      <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(ev) => setUploadFile(ev.target.files?.[0] || null)} required />
+                    </label>
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                      <button type="submit" className={dashStyles.btnPrimary} disabled={uploading}>
+                        {uploading ? "Uploading…" : "Submit"}
+                      </button>
+                      <button type="button" className={styles.editCancelBtn} onClick={() => { setUploadingFor(null); setUploadForm({ course_title: "", completion_date: "", learning_hours: "", source_url: "" }); setUploadFile(null); }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {cert && uploadingFor !== e.course_uid && (
+                  <div className={styles.certRow}>
+                    <div className={styles.certInfo}>
+                      <div className={styles.certTitle}>{cert.course_title}</div>
+                      <div className={styles.certMeta}>
+                        {cert.completion_date ? `Completed ${cert.completion_date} · ` : ""}
+                        {cert.learning_hours ? `${cert.learning_hours} hrs · ` : ""}
+                        Submitted {new Date(cert.created_at).toLocaleDateString()}
+                        {cert.rejection_reason ? ` · ${cert.rejection_reason}` : ""}
+                      </div>
+                    </div>
+                    <span className={`${styles.certStatus} ${styles[cert.verification_status]}`}>
+                      {cert.verification_status === "verified" ? "Verified" : cert.verification_status === "rejected" ? "Rejected" : "Pending review"}
+                    </span>
+                    <a href={cert.file_url || cert.certificate_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View</a>
+                    {cert.source_url && cert.source_url !== cert.file_url ? (
+                      <a href={cert.source_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Public URL</a>
+                    ) : null}
+                    {cert.verification_status !== "verified" && (
+                      <>
+                        {editingCertId === cert.id ? (
+                          <form className={styles.editCertForm} onSubmit={(ev) => { ev.preventDefault(); handleEditSave(cert.id); }}>
+                            <div className={styles.editFormRow}>
+                              <label>
+                                Course / certification title
+                                <input value={editForm.course_title} onChange={(ev) => setEditForm((f) => ({ ...f, course_title: ev.target.value }))} required />
+                              </label>
+                            </div>
+                            <div className={styles.editFormRow}>
+                              <label>
+                                Completion date
+                                <input type="date" value={editForm.completion_date} onChange={(ev) => setEditForm((f) => ({ ...f, completion_date: ev.target.value }))} />
+                              </label>
+                              <label>
+                                Learning hours
+                                <input type="number" min="0" step="0.5" value={editForm.learning_hours} onChange={(ev) => setEditForm((f) => ({ ...f, learning_hours: ev.target.value }))} />
+                              </label>
+                            </div>
+                            <div className={styles.editFormActions}>
+                              <button type="submit" className={dashStyles.btnPrimary}>Save changes</button>
+                              <button type="button" className={styles.editCancelBtn} onClick={() => { setEditingCertId(null); setEditForm({ course_title: "", completion_date: "", learning_hours: "" }); }}>Cancel</button>
+                            </div>
+                          </form>
+                        ) : (
+                          <>
+                            <button type="button" className={styles.editCertBtn} onClick={() => { setEditingCertId(cert.id); setEditForm({ course_title: cert.course_title, completion_date: cert.completion_date || "", learning_hours: cert.learning_hours || "" }); }} title="Edit certificate">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                              </svg>
+                            </button>
+                            <button type="button" className={styles.deleteCertBtn} onClick={() => handleDeleteCertificate(cert.id)} title="Delete certificate">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h16zM10 11v6M14 11v6" />
+                              </svg>
+                            </button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
