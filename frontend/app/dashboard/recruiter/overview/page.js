@@ -108,21 +108,31 @@ function RecruiterOverviewPageContent() {
   const loadDashboard = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
+    setLoading(true);
+    setError("");
     try {
-      const [summaryData, activityData, pendingData, readyData, announcementsData] = await Promise.all([
-        getDashboardSummary(accessToken),
-        getDashboardActivity(accessToken, 8),
-        getPendingReview(accessToken),
-        getReadyForConversion(accessToken),
-        getAnnouncements(accessToken, 4),
-      ]);
-      setSummary(summaryData);
-      setActivities(activityData.activities || []);
+      const summaryPromise = getDashboardSummary(accessToken).then((data) => {
+        setSummary(data);
+        return data;
+      });
+      const activityPromise = getDashboardActivity(accessToken, 8).then((data) => {
+        setActivities(data.activities || []);
+        return data;
+      });
+      const pendingPromise = getPendingReview(accessToken).then((data) => {
+        setPendingCandidates(data.candidates || []);
+        return data;
+      });
+      const readyPromise = getReadyForConversion(accessToken).then((data) => {
+        setReadyCandidates(data.candidates || []);
+        return data;
+      });
+      const announcementsPromise = getAnnouncements(accessToken, 4).then((data) => {
+        setAnnouncements(data.announcements || []);
+        return data;
+      });
+      const [summaryData] = await Promise.all([summaryPromise, activityPromise, pendingPromise, readyPromise, announcementsPromise]);
       setPendingApprovals(summaryData.pending_approvals || []);
-      setPendingCandidates(pendingData.candidates || []);
-      setReadyCandidates(readyData.candidates || []);
-      setAnnouncements(announcementsData.announcements || []);
-      setError("");
     } catch (err) {
       setError(getApiErrorMessage(err, "Could not load the recruiter overview."));
     } finally {
@@ -131,7 +141,9 @@ function RecruiterOverviewPageContent() {
   }, []);
 
   useEffect(() => {
-    loadDashboard();
+    (async () => {
+      await loadDashboard();
+    })();
     const interval = setInterval(loadDashboard, DASHBOARD_REFRESH_MS);
     return () => clearInterval(interval);
   }, [loadDashboard]);
@@ -233,10 +245,10 @@ function RecruiterOverviewPageContent() {
       </div>
 
       <div className={styles.stats}>
-        <StatCard tone="green" value={loading ? "—" : summary?.kpis?.active_employees ?? 0} label="Active employees" icon={ICONS.employees} />
-        <StatCard tone="orange" value={loading ? "—" : summary?.kpis?.pending_onboarding ?? 0} label="Pending onboarding" icon={ICONS.approvals} />
-        <StatCard tone="cyan" value={loading ? "—" : summary?.kpis?.documents_pending ?? 0} label="Documents pending" icon={ICONS.offers} />
-        <StatCard tone="navy" value={loading ? "—" : summary?.kpis?.upcoming_joinings ?? 0} label="Upcoming joinings" icon={ICONS.activate} />
+        <StatCard tone="green" value={summary?.kpis?.active_employees ?? (loading ? "—" : 0)} label="Active employees" icon={ICONS.employees} />
+        <StatCard tone="orange" value={summary?.kpis?.pending_onboarding ?? (loading ? "—" : 0)} label="Pending onboarding" icon={ICONS.approvals} />
+        <StatCard tone="cyan" value={summary?.kpis?.documents_pending ?? (loading ? "—" : 0)} label="Documents pending" icon={ICONS.offers} />
+        <StatCard tone="navy" value={summary?.kpis?.upcoming_joinings ?? (loading ? "—" : 0)} label="Upcoming joinings" icon={ICONS.activate} />
       </div>
 
       <div className={styles.quickGrid}>
@@ -260,7 +272,7 @@ function RecruiterOverviewPageContent() {
           </div>
         </div>
         <div className={styles.sectionBody}>
-          {loading ? <p className={styles.emptySub}>Loading…</p> : pendingApprovals.length ? (
+          {pendingApprovals.length ? (
             <ul className={styles.miniList}>
               {pendingApprovals.map((item) => (
                 <li className={styles.miniListItem} key={`${item.full_name}-${item.email}`}>
@@ -272,7 +284,7 @@ function RecruiterOverviewPageContent() {
                 </li>
               ))}
             </ul>
-          ) : <p className={styles.emptySub}>Nothing pending right now.</p>}
+          ) : <p className={styles.emptySub}>{loading ? "Loading…" : "Nothing pending right now."}</p>}
         </div>
       </div>
 
@@ -302,7 +314,7 @@ function RecruiterOverviewPageContent() {
                     </li>
                   ))}
                 </ul>
-              ) : <p className={styles.emptySub}>No candidates currently need an offer step.</p>}
+              ) : <p className={styles.emptySub}>{loading ? "Loading…" : "No candidates currently need an offer step."}</p>}
             </div>
             <div>
               <h3 className={styles.sectionTitle} style={{ fontSize: 14, marginBottom: 10 }}>Ready to activate</h3>
@@ -323,7 +335,7 @@ function RecruiterOverviewPageContent() {
                     </li>
                   ))}
                 </ul>
-              ) : <p className={styles.emptySub}>No signed offers awaiting approval.</p>}
+              ) : <p className={styles.emptySub}>{loading ? "Loading…" : "No signed offers awaiting approval."}</p>}
             </div>
           </div>
         </div>
@@ -340,7 +352,7 @@ function RecruiterOverviewPageContent() {
           </div>
         </div>
         <div className={styles.sectionBody}>
-          {loading ? <p className={styles.emptySub}>Loading…</p> : activities.length ? (
+          {activities.length ? (
             <ul className={styles.activityList}>
               {activities.map((activity, index) => (
                 <li key={`${activity.action}-${activity.created_at}-${index}`}>
@@ -352,7 +364,7 @@ function RecruiterOverviewPageContent() {
                 </li>
               ))}
             </ul>
-          ) : <p className={styles.emptySub}>No activity yet.</p>}
+          ) : <p className={styles.emptySub}>{loading ? "Loading…" : "No activity yet."}</p>}
         </div>
       </div>
 

@@ -40,6 +40,7 @@ export function useNotificationsCenter({
   broadcastOnRefresh = false,
   broadcastOnMarkAll = false,
   broadcastOnMarkOne = false,
+  deferMs = 0,
 } = {}) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -85,10 +86,25 @@ export function useNotificationsCenter({
   );
 
   useEffect(() => {
-    refresh(false);
-    const timer = setInterval(() => refresh(true), pollMs);
-    return () => clearInterval(timer);
-  }, [refresh, pollMs]);
+    let timeoutId = null;
+    let timer = null;
+
+    const startPolling = () => {
+      refresh(false);
+      timer = setInterval(() => refresh(true), pollMs);
+    };
+
+    if (deferMs > 0) {
+      timeoutId = setTimeout(startPolling, deferMs);
+    } else {
+      startPolling();
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (timer) clearInterval(timer);
+    };
+  }, [refresh, pollMs, deferMs]);
 
   const markAllRead = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
