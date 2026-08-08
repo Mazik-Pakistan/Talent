@@ -958,14 +958,7 @@ function MyCoursesTab({ onChange }) {
                   {isVerified && " · Complete and Verified"}
                 </div>
               </div>
-              <div className={styles.courseListProgress}>
-                <div className={styles.progressLabel}>
-                  {isVerified ? "100%" : isPending ? "Pending" : "0%"}
-                </div>
-                <div className={styles.progressTrackSm}>
-                  <div className={styles.progressFillSm} style={{ width: `${isVerified ? 100 : isPending ? 50 : 0}%` }} />
-                </div>
-              </div>
+
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 {isAssignedOnly ? (
                   <button
