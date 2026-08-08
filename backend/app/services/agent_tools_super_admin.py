@@ -18,11 +18,14 @@ from app.core.rbac import CurrentUser
 from app.services.agent_tools import Tool, ToolResult, confirm_gate, _err
 from app.services.email_service import email_service
 from app.services.organization_service import (
+    ORG_MODULE_KEYS,
     create_organization,
+    delete_organization,
     get_organization,
     list_organizations,
     update_organization,
 )
+from app.services.ticket_service import ticket_service
 
 
 async def _tool_get_super_admin_overview(user: CurrentUser, args: dict) -> ToolResult:
@@ -503,6 +506,341 @@ async def _tool_update_super_admin_recruiter_capabilities(user: CurrentUser, arg
     )
 
 
+# ── Organization management tools ─────────────────────────────────────────
+
+
+async def _tool_create_organization_with_modules(user: CurrentUser, args: dict) -> ToolResult:
+    """Create a new organization with optional module toggles."""
+    name = (args.get("name") or "").strip()
+    if not name:
+        return ToolResult(ok=False, error="Organization name is required.")
+    try:
+        modules = args.get("modules")
+        if isinstance(modules, dict) and modules:
+            filtered = {k: bool(v) for k, v in modules.items() if k in ORG_MODULE_KEYS}
+            modules = filtered if filtered else None
+        org = await create_organization(
+            name=name,
+            modules=modules,
+            contact_email=(args.get("contact_email") or "").strip() or None,
+            description=(args.get("description") or "").strip() or None,
+        )
+        return ToolResult(ok=True, data={"message": f"Organization '{org.get('name')}' created.", "organization": org})
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_update_organization(user: CurrentUser, args: dict) -> ToolResult:
+    """Update an organization's name, contact_email, description, status, or modules."""
+    org_id = (args.get("organization_id") or args.get("org_id") or "").strip()
+    if not org_id:
+        return ToolResult(ok=False, error="organization_id is required.")
+
+    existing = await get_organization(org_id)
+    if not existing:
+        return ToolResult(ok=False, error="Organization not found.")
+
+    kwargs: dict = {}
+    for key in ("name", "contact_email", "description"):
+        val = (args.get(key) or "").strip() or None
+        if val:
+            kwargs[key] = val
+    status_val = (args.get("status") or "").strip().lower()
+    if status_val in ("active", "inactive"):
+        kwargs["status"] = status_val
+
+    modules = args.get("modules")
+    if isinstance(modules, dict) and modules:
+        kwargs["modules"] = {k: bool(v) for k, v in modules.items() if k in ORG_MODULE_KEYS}
+
+    if not kwargs:
+        return ToolResult(ok=False, error="No valid fields to update. Provide name, contact_email, description, status, or modules.")
+
+    try:
+        updated = await update_organization(org_id, **kwargs)
+        return ToolResult(ok=True, data={"message": f"Organization '{existing.get('name')}' updated.", "organization": updated})
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_delete_organization(user: CurrentUser, args: dict) -> ToolResult:
+    """Delete an organization and unlink its recruiters (requires confirm=true)."""
+    org_id = (args.get("organization_id") or args.get("org_id") or "").strip()
+    if not org_id:
+        return ToolResult(ok=False, error="organization_id is required.")
+
+    existing = await get_organization(org_id)
+    if not existing:
+        return ToolResult(ok=False, error="Organization not found.")
+
+    if not args.get("confirm"):
+        return confirm_gate("delete_organization", args, f"Permanently delete organization '{existing.get('name')}' and unlink all its recruiters?")
+
+    try:
+        deleted = await delete_organization(org_id)
+        if deleted:
+            return ToolResult(ok=True, data={"message": f"Organization '{existing.get('name')}' deleted."})
+        return ToolResult(ok=False, error="Delete failed.")
+    except Exception as exc:
+        return _err(exc)
+
+
+# ── Support ticket management tools ───────────────────────────────────────
+
+
+async def _tool_list_admin_tickets(user: CurrentUser, args: dict) -> ToolResult:
+    """List all support tickets with optional filters."""
+    try:
+        result = await ticket_service.list_all_tickets(
+            user,
+            status=(args.get("status") or None),
+            priority=(args.get("priority") or None),
+            category=(args.get("category") or None),
+            search=(args.get("search") or None),
+            page=int(args.get("page") or 1),
+            page_size=min(int(args.get("page_size") or 20), 50),
+        )
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_get_ticket_stats(user: CurrentUser, args: dict) -> ToolResult:
+    """Get platform-wide support ticket stats (total, open, resolved, by priority)."""
+    try:
+        stats = await ticket_service.get_ticket_stats(user)
+        return ToolResult(ok=True, data=stats)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_get_admin_ticket(user: CurrentUser, args: dict) -> ToolResult:
+    """Get a specific ticket with its full conversation thread."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    if not ticket_id:
+        return ToolResult(ok=False, error="ticket_id is required.")
+    try:
+        result = await ticket_service.get_ticket_admin(user, ticket_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_assign_ticket(user: CurrentUser, args: dict) -> ToolResult:
+    """Assign a support ticket to an admin."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    assignee_email = (args.get("assignee_email") or args.get("email") or "").strip()
+    if not ticket_id:
+        return ToolResult(ok=False, error="ticket_id is required.")
+    if not assignee_email:
+        return ToolResult(ok=False, error="assignee_email is required.")
+    try:
+        from app.schemas.ticket import TicketAssignRequest
+        request = TicketAssignRequest(assignee_email=assignee_email)
+        result = await ticket_service.assign_ticket(user, ticket_id, request)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_reply_to_admin_ticket(user: CurrentUser, args: dict) -> ToolResult:
+    """Reply to a support ticket as admin."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    message = (args.get("message") or "").strip()
+    if not ticket_id:
+        return ToolResult(ok=False, error="ticket_id is required.")
+    if not message:
+        return ToolResult(ok=False, error="message is required.")
+    try:
+        from app.schemas.ticket import TicketReplyRequest
+        request = TicketReplyRequest(message=message)
+        result = await ticket_service.reply_to_ticket_admin(user, ticket_id, request)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_update_ticket_status(user: CurrentUser, args: dict) -> ToolResult:
+    """Update a ticket's status (open, in_progress, waiting, resolved, closed)."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    status = (args.get("status") or "").strip()
+    if not ticket_id or not status:
+        return ToolResult(ok=False, error="ticket_id and status are required.")
+    valid = {"open", "in_progress", "waiting", "resolved", "closed"}
+    if status not in valid:
+        return ToolResult(ok=False, error=f"Invalid status. Must be one of: {', '.join(sorted(valid))}")
+    try:
+        from app.schemas.ticket import TicketStatusUpdateRequest
+        request = TicketStatusUpdateRequest(status=status)
+        result = await ticket_service.update_status(user, ticket_id, request)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_update_ticket_priority(user: CurrentUser, args: dict) -> ToolResult:
+    """Update a ticket's priority (low, medium, high, critical)."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    priority = (args.get("priority") or "").strip()
+    if not ticket_id or not priority:
+        return ToolResult(ok=False, error="ticket_id and priority are required.")
+    valid = {"low", "medium", "high", "critical"}
+    if priority not in valid:
+        return ToolResult(ok=False, error=f"Invalid priority. Must be one of: {', '.join(sorted(valid))}")
+    try:
+        from app.schemas.ticket import TicketPriorityUpdateRequest
+        request = TicketPriorityUpdateRequest(priority=priority)
+        result = await ticket_service.update_priority(user, ticket_id, request)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_resolve_ticket(user: CurrentUser, args: dict) -> ToolResult:
+    """Resolve a support ticket (marks as resolved)."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    if not ticket_id:
+        return ToolResult(ok=False, error="ticket_id is required.")
+    try:
+        result = await ticket_service.resolve_ticket(user, ticket_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_close_admin_ticket(user: CurrentUser, args: dict) -> ToolResult:
+    """Close a support ticket."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    if not ticket_id:
+        return ToolResult(ok=False, error="ticket_id is required.")
+    try:
+        result = await ticket_service.close_ticket_admin(user, ticket_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_reopen_ticket(user: CurrentUser, args: dict) -> ToolResult:
+    """Reopen a closed/resolved support ticket."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    if not ticket_id:
+        return ToolResult(ok=False, error="ticket_id is required.")
+    try:
+        result = await ticket_service.reopen_ticket(user, ticket_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_delete_admin_ticket(user: CurrentUser, args: dict) -> ToolResult:
+    """Delete a support ticket (requires confirm=true)."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    if not ticket_id:
+        return ToolResult(ok=False, error="ticket_id is required.")
+    if not args.get("confirm"):
+        return confirm_gate("delete_ticket", args, f"Permanently delete ticket {ticket_id}?")
+    try:
+        result = await ticket_service.delete_ticket(user, ticket_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _tool_get_ticket_activity(user: CurrentUser, args: dict) -> ToolResult:
+    """Get activity/audit logs for a support ticket."""
+    ticket_id = (args.get("ticket_id") or args.get("id") or "").strip()
+    if not ticket_id:
+        return ToolResult(ok=False, error="ticket_id is required.")
+    try:
+        result = await ticket_service.get_activity(user, ticket_id)
+        return ToolResult(ok=True, data=result)
+    except Exception as exc:
+        return _err(exc)
+
+
+# ── Bulk capability template tools ────────────────────────────────────────
+
+
+async def _tool_list_capability_templates(user: CurrentUser, args: dict) -> ToolResult:
+    """List available capability templates with their descriptions."""
+    from app.api.super_admin import CAPABILITY_TEMPLATES
+    descriptions = {
+        "standard_recruiter": "Full access to all modules — the default for most recruiters.",
+        "hiring_only": "Recruitment-focused: candidates, invite, overview, assistant. No employee/learning/IT access.",
+        "people_ops": "People operations: employees, talent, learning, messages, announcements. No direct hiring.",
+        "it_admin": "IT provisioning and support: employees, IT, messages, announcements. No recruitment.",
+        "viewer": "Read-only: overview, candidates, employees, talent, reporting. Cannot invite or manage.",
+    }
+    result = {}
+    for key, caps in CAPABILITY_TEMPLATES.items():
+        enabled = sum(1 for v in caps.values() if v)
+        result[key] = {
+            "name": key.replace("_", " ").title(),
+            "description": descriptions.get(key, ""),
+            "enabled_count": enabled,
+            "total_count": len(caps),
+            "capabilities": caps,
+        }
+    return ToolResult(ok=True, data={"templates": result})
+
+
+async def _tool_bulk_apply_template(user: CurrentUser, args: dict) -> ToolResult:
+    """Apply a capability template to multiple recruiters at once."""
+    template_name = (args.get("template") or "").strip().lower()
+    recruiter_emails = args.get("recruiter_emails") or args.get("emails") or []
+
+    if not template_name:
+        return ToolResult(ok=False, error="template is required (standard_recruiter, hiring_only, people_ops, it_admin, viewer).")
+    if not recruiter_emails or not isinstance(recruiter_emails, list):
+        return ToolResult(ok=False, error="recruiter_emails must be a list of email addresses.")
+
+    from app.api.super_admin import CAPABILITY_TEMPLATES
+    template = CAPABILITY_TEMPLATES.get(template_name)
+    if not template:
+        return ToolResult(ok=False, error=f"Unknown template: {template_name}. Available: {', '.join(CAPABILITY_TEMPLATES.keys())}")
+
+    now = datetime.now(UTC)
+    updated = []
+    not_found = []
+
+    for email in recruiter_emails:
+        email_str = (email or "").strip().lower()
+        if not email_str:
+            continue
+
+        recruiter = await database.recruiters.find_one({"email": email_str})
+        if not recruiter:
+            not_found.append(email_str)
+            continue
+
+        merged = {**template}
+        existing = recruiter.get("capabilities") or {}
+
+        await database.recruiters.update_one(
+            {"_id": recruiter["_id"]},
+            {"$set": {"capabilities": merged, "updated_at": now}},
+        )
+
+        inv = await database.invitations.find_one({"kind": "recruiter", "email": email_str})
+        if inv:
+            await database.invitations.update_one(
+                {"_id": inv["_id"]},
+                {"$set": {"capabilities": merged, "updated_at": now}},
+            )
+
+        updated.append(email_str)
+
+    return ToolResult(
+        ok=True,
+        data={
+            "message": f"Template '{template_name}' applied to {len(updated)} recruiter(s).",
+            "template": template_name,
+            "updated": updated,
+            "not_found": not_found,
+        },
+    )
+
+
 SUPER_ADMIN_TOOLS: list[Tool] = [
     Tool(
         name="get_super_admin_overview",
@@ -571,54 +909,182 @@ SUPER_ADMIN_TOOLS: list[Tool] = [
     ),
     Tool(
         name="create_organization",
-        description="Create a new organization (company).",
+        description=(
+            "Create a new organization with optional module access. "
+            "Modules control what features recruiters in this org can access."
+        ),
         parameters={
             "name": "string, required",
             "contact_email": "string, optional",
             "description": "string, optional",
+            "modules": "object, optional — key-value pairs of module: true/false (overview, candidates, invite, employees, talent, learning, org_config, assistant, messages, announcements, it, reporting, profile, support)",
         },
-        handler=_tool_create_super_admin_organization,
+        handler=_tool_create_organization_with_modules,
         roles=("super_admin",),
     ),
     Tool(
-        name="update_recruiter",
-        description="Update a recruiter's details (job_title, department, office_location, or status: active|inactive).",
+        name="update_organization",
+        description="Update an organization's name, contact email, description, status, or module access.",
         parameters={
-            "email": "string, optional",
-            "recruiter_id": "string, optional",
-            "job_title": "string, optional",
-            "department": "string, optional",
-            "office_location": "string, optional",
+            "organization_id": "string, required",
+            "name": "string, optional",
+            "contact_email": "string, optional",
+            "description": "string, optional",
             "status": "string, optional: active|inactive",
+            "modules": "object, optional — key-value pairs of module: true/false",
         },
-        handler=_tool_update_super_admin_recruiter,
+        handler=_tool_update_organization,
         roles=("super_admin",),
     ),
     Tool(
-        name="update_recruiter_capabilities",
-        description=(
-            "Update a recruiter's module capabilities (e.g. candidates, invite, employees, "
-            "learning, assistant, messages, announcements, it, reporting, profile, talent)."
-        ),
+        name="delete_organization",
+        description="Delete an organization and unlink its recruiters. Requires confirm=true.",
         parameters={
-            "email": "string, optional",
-            "recruiter_id": "string, optional",
-            "capabilities": "object — key-value pairs of capability: true/false",
-        },
-        handler=_tool_update_super_admin_recruiter_capabilities,
-        roles=("super_admin",),
-    ),
-    Tool(
-        name="delete_recruiter",
-        description=(
-            "Permanently delete a recruiter and all associated data. Requires confirm=true."
-        ),
-        parameters={
-            "email": "string, optional",
-            "recruiter_id": "string, optional",
+            "organization_id": "string, required",
             "confirm": "boolean, set true to proceed",
         },
-        handler=_tool_delete_super_admin_recruiter,
+        handler=_tool_delete_organization,
+        roles=("super_admin",),
+    ),
+    # ── Support ticket tools ─────────────────────────────────────────────
+    Tool(
+        name="list_admin_tickets",
+        description=(
+            "List all support tickets across the platform with optional filters. "
+            "Returns ticket list with subject, status, priority, category, assignee, and dates."
+        ),
+        parameters={
+            "status": "string, optional: open|in_progress|waiting|resolved|closed",
+            "priority": "string, optional: low|medium|high|critical",
+            "category": "string, optional",
+            "search": "string, optional — search by subject",
+            "page": "integer, optional, default 1",
+            "page_size": "integer, optional, max 50",
+        },
+        handler=_tool_list_admin_tickets,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="get_ticket_stats",
+        description="Get platform-wide support ticket stats: total, open, in-progress, resolved, closed, by-priority, by-category.",
+        parameters={},
+        handler=_tool_get_ticket_stats,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="get_admin_ticket",
+        description="Get a specific support ticket with its full conversation thread and details.",
+        parameters={
+            "ticket_id": "string, required — the ticket ID (e.g. TKT-0001)",
+        },
+        handler=_tool_get_admin_ticket,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="assign_ticket",
+        description="Assign a support ticket to an admin by email.",
+        parameters={
+            "ticket_id": "string, required",
+            "assignee_email": "string, required — admin email to assign to",
+        },
+        handler=_tool_assign_ticket,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="reply_to_ticket",
+        description="Reply to a support ticket as admin. The reply appears in the ticket thread.",
+        parameters={
+            "ticket_id": "string, required",
+            "message": "string, required — your reply message",
+        },
+        handler=_tool_reply_to_admin_ticket,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="update_ticket_status",
+        description="Update a ticket's status. Valid: open, in_progress, waiting, resolved, closed.",
+        parameters={
+            "ticket_id": "string, required",
+            "status": "string, required: open|in_progress|waiting|resolved|closed",
+        },
+        handler=_tool_update_ticket_status,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="update_ticket_priority",
+        description="Update a ticket's priority. Valid: low, medium, high, critical.",
+        parameters={
+            "ticket_id": "string, required",
+            "priority": "string, required: low|medium|high|critical",
+        },
+        handler=_tool_update_ticket_priority,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="resolve_ticket",
+        description="Mark a support ticket as resolved.",
+        parameters={
+            "ticket_id": "string, required",
+        },
+        handler=_tool_resolve_ticket,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="close_ticket",
+        description="Close a support ticket.",
+        parameters={
+            "ticket_id": "string, required",
+        },
+        handler=_tool_close_admin_ticket,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="reopen_ticket",
+        description="Reopen a closed or resolved support ticket.",
+        parameters={
+            "ticket_id": "string, required",
+        },
+        handler=_tool_reopen_ticket,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="delete_ticket",
+        description="Permanently delete a support ticket. Requires confirm=true.",
+        parameters={
+            "ticket_id": "string, required",
+            "confirm": "boolean, set true to proceed",
+        },
+        handler=_tool_delete_admin_ticket,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="get_ticket_activity",
+        description="Get the activity and audit log for a support ticket.",
+        parameters={
+            "ticket_id": "string, required",
+        },
+        handler=_tool_get_ticket_activity,
+        roles=("super_admin",),
+    ),
+    # ── Bulk capability template tools ───────────────────────────────────
+    Tool(
+        name="list_capability_templates",
+        description="List all available capability templates with descriptions and which modules each enables.",
+        parameters={},
+        handler=_tool_list_capability_templates,
+        roles=("super_admin",),
+    ),
+    Tool(
+        name="bulk_apply_template",
+        description=(
+            "Apply a capability template to multiple recruiters at once. "
+            "Available templates: standard_recruiter, hiring_only, people_ops, it_admin, viewer."
+        ),
+        parameters={
+            "template": "string, required — one of: standard_recruiter, hiring_only, people_ops, it_admin, viewer",
+            "recruiter_emails": "array of strings — emails of recruiters to apply the template to",
+        },
+        handler=_tool_bulk_apply_template,
         roles=("super_admin",),
     ),
 ]
