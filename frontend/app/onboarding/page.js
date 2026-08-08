@@ -2707,6 +2707,8 @@ function OnboardingContent() {
                   </>
                 )}
               </section>
+            ) : (
+              <RecruiterLoader inline />
             )}
           </div>
         </main>
