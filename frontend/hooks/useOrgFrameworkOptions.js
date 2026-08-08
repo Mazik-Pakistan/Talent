@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getOrgStructureOptions } from "@/services/orgFrameworkService";
+import { onFrameworkInvalidated } from "@/lib/frameworkEvents";
 
 /**
  * Organization Framework options — the single source of truth for every
@@ -55,6 +56,14 @@ export function useOrgFrameworkOptions() {
     };
   }, [version]);
 
+  useEffect(() => {
+    const unsub = onFrameworkInvalidated(() => {
+      frameworkCache = null;
+      setVersion((v) => v + 1);
+    });
+    return unsub;
+  }, []);
+
   function refresh() {
     frameworkCache = null;
     setVersion((v) => v + 1);
@@ -64,6 +73,7 @@ export function useOrgFrameworkOptions() {
   const roleNames = [...new Set((options?.roles || []).map((r) => r.name).filter(Boolean))].sort();
   const skills = (options?.skills || []).filter(Boolean);
   const certifications = (options?.certifications || []).filter(Boolean);
+  const courses = (options?.courses || []).filter(Boolean);
 
   return {
     options,
@@ -73,5 +83,6 @@ export function useOrgFrameworkOptions() {
     roleNames,
     skills,
     certifications,
+    courses,
   };
 }

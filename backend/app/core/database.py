@@ -247,6 +247,8 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.learning_courses, [("archived", 1), ("updated_at", -1)])
     await _ensure_index(database.learning_courses, [("created_at", -1)])
     await _ensure_index(database.learning_courses, [("external_id", 1), ("provider_id", 1)], unique=True, sparse=True, name="learning_courses_external_id_provider_unique")
+    await _ensure_index(database.learning_courses, [("organization_id", 1), ("created_at", -1)])
+    await _ensure_index(database.learning_courses, [("organization_id", 1), ("archived", 1)])
 
     await _ensure_index(database.employee_skills, [("user_id", 1), ("skill_name", 1)], unique=True)
     await _ensure_index(database.employee_skills, [("employee_id", 1)])
@@ -329,6 +331,9 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.employee_career_assignments, [("target_level_id", 1), ("status", 1)])
     await _ensure_index(database.employee_career_assignments, [("current_department", 1), ("status", 1)])
     await _ensure_index(database.employee_career_assignments, [("assigned_by", 1), ("status", 1)])
+    await _ensure_index(database.career_tracks, [("organization_id", 1), ("is_active", 1)])
+    await _ensure_index(database.career_levels, [("organization_id", 1), ("is_active", 1)])
+    await _ensure_index(database.employee_career_assignments, [("organization_id", 1), ("status", 1)])
 
     # Organization Framework (single source of truth per org)
     await _ensure_index(database.org_framework_departments, [("organization_id", 1), ("name", 1)], unique=True)

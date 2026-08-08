@@ -1765,7 +1765,7 @@ class LearningService:
     # ------------------------------------------------------------------ #
     async def get_recommendations(self, current_user: CurrentUser, *, refresh: bool = False) -> dict:
         employee = await self._get_employee(current_user)
-        managed_recommendations = await managed_learning_service.recommend_for_employee(employee, limit=8)
+        managed_recommendations = await managed_learning_service.recommend_for_employee(employee, limit=8, organization_id=employee.get("organization_id"))
         if managed_recommendations:
             return {
                 "recommendations": managed_recommendations,

@@ -8,6 +8,18 @@ import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
+  MessageCircle,
+  Clock,
+  FileText,
+  Send,
+  History,
+  Search as SearchIcon,
+  ChevronDown,
+  CheckCircle,
+  AlertTriangle,
+} from "lucide-react";
+import s from "./candidates.module.css";
+import {
   acceptOfferNegotiation,
   approveOffer,
   counterOfferNegotiation,
@@ -581,107 +593,208 @@ function RecruiterCandidatesPageContent() {
       }
     >
       {error && (
-        <div className={styles.formMessage} role="alert">
+        <div
+          style={{
+            padding: "10px 16px",
+            borderRadius: 10,
+            background: "var(--red-light)",
+            color: "var(--red)",
+            fontSize: 13,
+            fontWeight: 600,
+            marginBottom: 14,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+          role="alert"
+        >
+          <AlertTriangle size={15} style={{ flexShrink: 0 }} />
           {error}
         </div>
       )}
       {conversionMessage && (
-        <div className={styles.formMessage} role="status">
+        <div
+          style={{
+            padding: "10px 16px",
+            borderRadius: 10,
+            background: "var(--green-light)",
+            color: "var(--green)",
+            fontSize: 13,
+            fontWeight: 600,
+            marginBottom: 14,
+          }}
+          role="status"
+        >
           {conversionMessage}
         </div>
       )}
 
-      <div className={styles.actions} style={{ marginBottom: 16, gap: 8 }}>
-        <button
-          type="button"
-          className={pipelineView === "active" ? styles.primaryButton : styles.secondaryButton}
-          onClick={() => setPipelineView("active")}
-        >
-          Active pipeline
+      <div className={s.tabGroup} style={{ marginBottom: 18 }}>
+        <button type="button" className={`${s.tabBtn} ${pipelineView === "active" ? s.tabBtnActive : ""}`} onClick={() => setPipelineView("active")}>
+          <Send size={13} style={{ marginRight: 5, verticalAlign: -2 }} /> Active pipeline
         </button>
-        <button
-          type="button"
-          className={pipelineView === "historical" ? styles.primaryButton : styles.secondaryButton}
-          onClick={() => setPipelineView("historical")}
-        >
-          Historical
+        <button type="button" className={`${s.tabBtn} ${pipelineView === "historical" ? s.tabBtnActive : ""}`} onClick={() => setPipelineView("historical")}>
+          <History size={13} style={{ marginRight: 5, verticalAlign: -2 }} /> Historical
         </button>
       </div>
 
+      {pipelineView === "active" && !loading && (
+        <div className={s.kpiGrid}>
+          <div className={s.kpiCard}>
+            <div className={`${s.kpiIcon} ${s.orange}`}><MessageCircle size={18} /></div>
+            <div>
+              <div className={s.kpiValue}>{negotiations.length}</div>
+              <div className={s.kpiLabel}>Clarifications</div>
+            </div>
+          </div>
+          <div className={s.kpiCard}>
+            <div className={`${s.kpiIcon} ${s.blue}`}><Clock size={18} /></div>
+            <div>
+              <div className={s.kpiValue}>{awaitingOffers.length}</div>
+              <div className={s.kpiLabel}>Awaiting response</div>
+            </div>
+          </div>
+          <div className={s.kpiCard}>
+            <div className={`${s.kpiIcon} ${s.navy}`}><FileText size={18} /></div>
+            <div>
+              <div className={s.kpiValue}>{visibleNewCandidates.length}</div>
+              <div className={s.kpiLabel}>Documents in progress</div>
+            </div>
+          </div>
+          <div className={s.kpiCard}>
+            <div className={`${s.kpiIcon} ${s.green}`}><CheckCircle size={18} /></div>
+            <div>
+              <div className={s.kpiValue}>{readyCandidates.length}</div>
+              <div className={s.kpiLabel}>Ready for activation</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pipelineView === "historical" ? (
-        <div className={styles.section}>
-          <div className={styles.sectionHead}>
-            <div className={styles.sectionHeadLeft}>
-              <div className={`${styles.bar} ${styles.navy}`} />
-              <div>
-                <div className={styles.sectionTitle}>Historical candidates</div>
-                <div className={styles.sectionDesc}>
-                  {historicalTotal} prior cycle{historicalTotal === 1 ? "" : "s"} — declined offers, expired invites, or archived.
-                  People who are active employees again are not listed here; their history is on the employee Career timeline.
-                </div>
+        <div className={s.sectionCard}>
+          <div className={`${s.sectionStripe} ${s.navy}`} />
+          <div className={s.sectionHead}>
+            <div>
+              <div className={s.sectionTitle}>Historical candidates</div>
+              <div className={s.sectionDesc}>
+                {historicalTotal} prior cycle{historicalTotal === 1 ? "" : "s"} — declined offers, expired invites, or archived.
+                People who are active employees again are not listed here; their history is on the employee Career timeline.
               </div>
             </div>
           </div>
-          <div className={styles.sectionBody}>
-            <div className={styles.formGrid}>
-              <label className={styles.field}>
+          <div className={s.sectionBody}>
+            <div className={s.filterBar}>
+              <label className={`${s.filterField} ${s.search}`}>
                 <span>Search history</span>
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Name, email, role"
-                />
+                <div style={{ position: "relative" }}>
+                  <SearchIcon
+                    size={14}
+                    style={{
+                      position: "absolute",
+                      left: 10,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "var(--text-faint)",
+                    }}
+                  />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Name, email, role"
+                    onKeyDown={(e) => e.key === "Enter" && loadHistorical(search)}
+                    style={{ paddingLeft: 32 }}
+                  />
+                </div>
               </label>
-              <div className={styles.actions}>
-                <button type="button" className={styles.primaryButton} onClick={() => loadHistorical(search)}>
+              <div className={s.filterActions}>
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  style={{ padding: "7px 14px", minHeight: 34, fontSize: 12 }}
+                  onClick={() => loadHistorical(search)}
+                >
                   Search
                 </button>
               </div>
             </div>
+
             {historicalLoading ? (
-              <div className={styles.pageLoader}>
+              <div className={styles.pageLoader} style={{ minHeight: 240 }}>
                 <div className={styles.spinner} />
                 <span>Loading historical candidates…</span>
               </div>
             ) : historicalCandidates.length ? (
-              <ul className={styles.miniList}>
-                {historicalCandidates.map((candidate) => (
-                  <li className={styles.miniListItem} key={candidate.id}>
-                    <div>
-                      <strong>{candidate.full_name}</strong>
-                      <div className={styles.mutedText}>
-                        {candidate.email} · {candidate.job_title || "—"} ·{" "}
-                        <span style={{ textTransform: "capitalize" }}>
-                          {(candidate.historical_reason || candidate.conversion_status || candidate.status || "historical").replace(/_/g, " ")}
-                        </span>
-                        {candidate.employee_id ? ` · was ${candidate.employee_id}` : ""}
-                      </div>
-                    </div>
-                    <div className={styles.actions}>
-                      <button
-                        type="button"
-                        className={styles.secondaryButton}
-                        onClick={() => router.push(`/dashboard/recruiter/candidates/${candidate.id}`)}
-                      >
-                        Open history
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.primaryButton}
-                        onClick={() =>
-                          router.push(
-                            `/dashboard/recruiter/invite?email=${encodeURIComponent(candidate.email || "")}&full_name=${encodeURIComponent(candidate.full_name || "")}`
-                          )
-                        }
-                      >
-                        Invite again
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <div className={s.tableCard}>
+                <div className={s.tableWrap}>
+                  <table className={s.table}>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Reason</th>
+                        <th style={{ textAlign: "right" }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historicalCandidates.map((candidate) => (
+                        <tr key={candidate.id}>
+                          <td>
+                            <div className={s.avatarCell}>
+                              <div className={s.avatar}>{getInitials(candidate.full_name)}</div>
+                              <div>
+                                <div className={s.avatarName}>{candidate.full_name}</div>
+                                {candidate.employee_id ? (
+                                  <div className={s.avatarEmail}>was {candidate.employee_id}</div>
+                                ) : null}
+                              </div>
+                            </div>
+                          </td>
+                          <td className={s.muted}>{candidate.email}</td>
+                          <td>{candidate.job_title || "—"}</td>
+                          <td>
+                            <span className={`${s.pill} ${s.pillNeutral}`} style={{ textTransform: "capitalize" }}>
+                              {(candidate.historical_reason || candidate.conversion_status || candidate.status || "historical").replace(/_/g, " ")}
+                            </span>
+                          </td>
+                          <td>
+                            <div className={s.actionsCell}>
+                              <button
+                                type="button"
+                                className={styles.secondaryButton}
+                                style={{ fontSize: 11.5, padding: "6px 10px", minHeight: 30 }}
+                                onClick={() => router.push(`/dashboard/recruiter/candidates/${candidate.id}`)}
+                              >
+                                Open history
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.primaryButton}
+                                style={{ fontSize: 11.5, padding: "6px 10px", minHeight: 30 }}
+                                onClick={() =>
+                                  router.push(
+                                    `/dashboard/recruiter/invite?email=${encodeURIComponent(candidate.email || "")}&full_name=${encodeURIComponent(candidate.full_name || "")}`
+                                  )
+                                }
+                              >
+                                Invite again
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             ) : (
-              <p className={styles.emptySub}>No historical candidates yet.</p>
+              <div className={s.emptyState}>
+                <SearchIcon size={36} style={{ marginBottom: 10, color: "var(--text-faint)" }} />
+                <div style={{ fontWeight: 650, color: "var(--navy)", fontSize: 14 }}>
+                  {search ? "No historical candidates match your search." : "No historical candidates yet."}
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -689,126 +802,150 @@ function RecruiterCandidatesPageContent() {
 
       {pipelineView === "active" && !loading && (
         <>
-          <div className={styles.section}>
-            <div className={styles.sectionHead}>
-              <div className={styles.sectionHeadLeft}>
-                <div className={`${styles.bar} ${styles.orange}`} />
-                <div>
-                  <div className={styles.sectionTitle}>Offer clarifications</div>
-                  <div className={styles.sectionDesc}>
-                    Candidate questions on the offer letter. Respond here so they can continue signing.
-                  </div>
+          <div className={s.sectionCard}>
+            <div className={`${s.sectionStripe} ${s.orange}`} />
+            <div className={s.sectionHead}>
+              <div>
+                <div className={s.sectionTitle}>Offer clarifications</div>
+                <div className={s.sectionDesc}>
+                  Candidate questions on the offer letter. Respond here so they can continue signing.
                 </div>
               </div>
             </div>
-            <div className={styles.sectionBody}>
+            <div className={s.sectionBody}>
               {negotiations.length ? (
-                negotiations.map((offer) => (
-                  <div className={styles.candidateCard} key={offer.id}>
-                    <div className={styles.candidateHead}>
-                      <div>
-                        <h4>{offer.candidate_name}</h4>
-                        <span>
-                          {offer.candidate_email} · {offer.job_title} · v{offer.version || 1}
-                        </span>
+                <div className={s.cardList}>
+                  {negotiations.map((offer) => (
+                    <div className={s.candidateCard} key={offer.id}>
+                      <div className={s.candidateHead}>
+                        <div className={s.candidateRow}>
+                          <div className={s.avatar}>{getInitials(offer.candidate_name)}</div>
+                          <div className={s.candidateInfo}>
+                            <div className={s.candidateName}>{offer.candidate_name}</div>
+                            <div className={s.candidateMeta}>
+                              {offer.candidate_email} · {offer.job_title} · v{offer.version || 1}
+                            </div>
+                          </div>
+                        </div>
+                        <div className={s.candidateActions}>
+                          <button type="button" className={styles.primaryButton} onClick={() => openClarificationPopup(offer)}>
+                            Review
+                          </button>
+                        </div>
                       </div>
-                      <div className={styles.rowActions}>
-                        <button type="button" className={styles.primaryButton} onClick={() => openClarificationPopup(offer)}>
-                          Review
-                        </button>
+                      <div className={styles.mutedText} style={{ marginTop: 6 }}>
+                        <strong style={{ color: "var(--navy)" }}>Clarification:</strong>{" "}
+                        {offer.negotiation?.note || "No clarification note provided."}
                       </div>
                     </div>
-                    <div className={styles.mutedText} style={{ marginTop: 6 }}>
-                      <strong style={{ color: "var(--navy)" }}>Clarification:</strong>{" "}
-                      {offer.negotiation?.note || "No clarification note provided."}
-                    </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               ) : (
-                <p className={styles.emptySub}>No pending clarifications.</p>
+                <div className={s.emptyState}>
+                  <MessageCircle size={36} style={{ marginBottom: 10, color: "var(--text-faint)" }} />
+                  <div style={{ fontWeight: 650, color: "var(--navy)", fontSize: 14 }}>
+                    No pending clarifications.
+                  </div>
+                </div>
               )}
             </div>
           </div>
 
-          <div className={styles.section}>
-            <div className={styles.sectionHead}>
-              <div className={styles.sectionHeadLeft}>
-                <div className={`${styles.bar} ${styles.cyan}`} />
-                <div>
-                  <div className={styles.sectionTitle}>Awaiting offer response</div>
-                  <div className={styles.sectionDesc}>
-                    Registered candidates who have not signed or declined yet.
-                  </div>
+          <div className={s.sectionCard}>
+            <div className={`${s.sectionStripe} ${s.blue}`} />
+            <div className={s.sectionHead}>
+              <div>
+                <div className={s.sectionTitle}>Awaiting offer response</div>
+                <div className={s.sectionDesc}>
+                  Registered candidates who have not signed or declined yet.
                 </div>
               </div>
             </div>
-            <div className={styles.sectionBody}>
+            <div className={s.sectionBody}>
               {awaitingOffers.length ? (
-                <ul className={styles.miniList}>
+                <div className={s.cardList}>
                   {awaitingOffers.map((offer) => (
-                    <li className={styles.miniListItem} key={offer.id}>
-                      <div style={{ flex: 1 }}>
-                        <strong>{offer.candidate_name}</strong>
-                        <div className={styles.mutedText}>
-                          {offer.candidate_email} · {offer.job_title} · {offer.status}
-                          {offer.negotiation?.status === "closed" ? " · clarification closed" : ""}
+                    <div className={s.candidateCard} key={offer.id}>
+                      <div className={s.candidateHead}>
+                        <div className={s.candidateRow}>
+                          <div className={s.avatar}>{getInitials(offer.candidate_name)}</div>
+                          <div className={s.candidateInfo}>
+                            <div className={s.candidateName}>{offer.candidate_name}</div>
+                            <div className={s.candidateMeta}>
+                              <span className={s.statusDot}>{offer.status}</span>
+                              {offer.negotiation?.status === "closed" ? " · clarification closed" : ""}
+                            </div>
+                            <div className={styles.mutedText}>
+                              {offer.candidate_email} · {offer.job_title}
+                            </div>
+                            <div className={styles.chipRow} style={{ marginTop: 8 }}>
+                              {offer.is_expired ? (
+                                <span className={`${s.pill} ${s.pillRed}`}>Offer expired</span>
+                              ) : (
+                                <span className={`${s.pill} ${s.pillOrange}`}>Awaiting signature</span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className={styles.chipRow} style={{ marginTop: 8 }}>
+                        <div className={s.candidateActions}>
                           {offer.is_expired ? (
-                            <span
-                              className={styles.chip}
-                              style={{
-                                background: "var(--red-light)",
-                                color: "var(--red)",
-                              }}
+                            <button
+                              type="button"
+                              className={styles.primaryButton}
+                              title="Extend validity for this expired unsigned offer"
+                              onClick={() => openExtendOfferValidity(offer)}
                             >
-                              Offer expired
-                            </span>
+                              Extend validity
+                            </button>
                           ) : null}
                         </div>
                       </div>
-                      <div className={styles.rowActions}>
-                        {offer.is_expired ? (
-                          <button
-                            type="button"
-                            className={styles.primaryButton}
-                            title="Extend validity for this expired unsigned offer"
-                            onClick={() => openExtendOfferValidity(offer)}
-                          >
-                            Extend validity
-                          </button>
-                        ) : null}
-                      </div>
-                    </li>
+                    </div>
                   ))}
-                </ul>
+                </div>
               ) : (
-                <p className={styles.emptySub}>No unsigned offers waiting on candidates.</p>
+                <div className={s.emptyState}>
+                  <Clock size={36} style={{ marginBottom: 10, color: "var(--text-faint)" }} />
+                  <div style={{ fontWeight: 650, color: "var(--navy)", fontSize: 14 }}>
+                    No unsigned offers waiting on candidates.
+                  </div>
+                </div>
               )}
             </div>
           </div>
 
-          <div className={styles.section}>
-            <div className={styles.sectionHead}>
-              <div className={styles.sectionHeadLeft}>
-                <div className={`${styles.bar} ${styles.orange}`} />
-                <div>
-                  <div className={styles.sectionTitle}>Documents in progress</div>
-                  <div className={styles.sectionDesc}>
-                    Candidates who signed (or received) an offer and are completing profile / documents.
-                  </div>
+          <div className={s.sectionCard}>
+            <div className={`${s.sectionStripe} ${s.orange}`} />
+            <div className={s.sectionHead}>
+              <div>
+                <div className={s.sectionTitle}>Documents in progress</div>
+                <div className={s.sectionDesc}>
+                  Candidates who signed (or received) an offer and are completing profile / documents.
                 </div>
               </div>
             </div>
-            <div className={styles.sectionBody}>
-              <div className={styles.formGrid} style={{ marginBottom: 16 }}>
-                <label className={styles.field}>
+            <div className={s.sectionBody}>
+              <div className={s.filterBar} style={{ marginBottom: 14, borderRadius: 12, borderBottom: "1px solid var(--border)" }}>
+                <label className={`${s.filterField} ${s.search}`}>
                   <span>Search</span>
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search candidates..."
-                  />
+                  <div style={{ position: "relative" }}>
+                    <SearchIcon
+                      size={14}
+                      style={{
+                        position: "absolute",
+                        left: 10,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: "var(--text-faint)",
+                      }}
+                    />
+                    <input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Search candidates..."
+                      style={{ paddingLeft: 32 }}
+                    />
+                  </div>
                 </label>
               </div>
               {visibleNewCandidates.length ? (
@@ -828,44 +965,33 @@ function RecruiterCandidatesPageContent() {
                   ))}
                 </div>
               ) : (
-                <p className={styles.emptySub}>
-                  {search ? "No candidates match your search." : "No candidates are mid-documents."}
-                </p>
+                <div className={s.emptyState}>
+                  <SearchIcon size={36} style={{ marginBottom: 10, color: "var(--text-faint)" }} />
+                  <div style={{ fontWeight: 650, color: "var(--navy)", fontSize: 14 }}>
+                    {search ? "No candidates match your search." : "No candidates are mid-documents."}
+                  </div>
+                </div>
               )}
             </div>
           </div>
 
-          <div className={styles.section}>
-            <div className={styles.sectionHead}>
-              <div className={styles.sectionHeadLeft}>
-                <div className={`${styles.bar} ${styles.green}`} />
-                <div>
-                  <div className={styles.sectionTitle}>Ready for IT & activation</div>
-                  <div className={styles.sectionDesc}>
-                    Signed offers — send IT provisioning after documents are complete, then activate.
-                    Select multiple people to bulk-email IT in one click.
-                  </div>
+          <div className={s.sectionCard}>
+            <div className={`${s.sectionStripe} ${s.green}`} />
+            <div className={s.sectionHead}>
+              <div>
+                <div className={s.sectionTitle}>Ready for IT & activation</div>
+                <div className={s.sectionDesc}>
+                  Signed offers — send IT provisioning after documents are complete, then activate.
+                  Select multiple people to bulk-email IT in one click.
                 </div>
               </div>
             </div>
-            <div className={styles.sectionBody}>
+            <div className={s.sectionBody}>
               {readyCandidates.length ? (
                 <>
                   {itActionableCandidates.length ? (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 12,
-                        alignItems: "flex-end",
-                        marginBottom: 16,
-                        padding: 14,
-                        borderRadius: 12,
-                        border: "1px solid var(--border)",
-                        background: "#f7faf8",
-                      }}
-                    >
-                      <label className={styles.field} style={{ margin: 0, minWidth: 220, flex: 1 }}>
+                    <div className={s.bulkToolbar}>
+                      <label className={`${styles.field} ${s.bulkField}`}>
                         <span>Shared IT manager email (optional)</span>
                         <input
                           type="email"
@@ -874,7 +1000,7 @@ function RecruiterCandidatesPageContent() {
                           placeholder="Uses server default if blank"
                         />
                       </label>
-                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, paddingBottom: 8 }}>
+                      <label className={s.bulkCheck}>
                         <input
                           type="checkbox"
                           checked={bulkItBatch}
@@ -882,7 +1008,7 @@ function RecruiterCandidatesPageContent() {
                         />
                         One batch email
                       </label>
-                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, paddingBottom: 8 }}>
+                      <label className={s.bulkCheck}>
                         <input
                           type="checkbox"
                           checked={bulkItForm}
@@ -890,7 +1016,7 @@ function RecruiterCandidatesPageContent() {
                         />
                         Bulk form for IT (they do all in one form)
                       </label>
-                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, paddingBottom: 8 }}>
+                      <label className={s.bulkCheck}>
                         <input
                           type="checkbox"
                           checked={
@@ -958,7 +1084,7 @@ function RecruiterCandidatesPageContent() {
                       </button>
                     </div>
                   ) : null}
-                  <ul className={styles.miniList}>
+                  <div className={s.cardList}>
                     {readyCandidates.map((candidate) => {
                       const it = candidate.it_provisioning;
                       const itComplete = Boolean(candidate.can_activate);
@@ -973,43 +1099,34 @@ function RecruiterCandidatesPageContent() {
                         : "Waiting for IT";
                       const busy = itBusyOfferId === candidate.offer_id;
                       return (
-                        <li
-                          className={styles.miniListItem}
-                          key={candidate.offer_id}
-                          style={{ alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}
-                        >
-                          <div style={{ flex: 1, minWidth: 220 }}>
-                            <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                        <div className={s.candidateCard} key={candidate.offer_id}>
+                          <div className={s.candidateHead}>
+                            <div className={s.candidateRow} style={{ alignItems: "flex-start" }}>
                               {!itComplete ? (
                                 <input
                                   type="checkbox"
                                   checked={selectedItOfferIds.includes(candidate.offer_id)}
                                   onChange={(e) => toggleItSelection(candidate.offer_id, e.target.checked)}
-                                  style={{ marginTop: 4 }}
+                                  style={{ marginTop: 12, accentColor: "var(--blue)", width: 15, height: 15 }}
                                   aria-label={`Select ${candidate.full_name} for bulk IT`}
                                 />
                               ) : null}
-                              <div>
-                                <strong>{candidate.full_name}</strong>
-                                <div className={styles.mutedText}>
+                              <div className={s.avatar}>{getInitials(candidate.full_name)}</div>
+                              <div className={s.candidateInfo}>
+                                <div className={s.candidateName}>{candidate.full_name}</div>
+                                <div className={s.candidateMeta}>
                                   {candidate.email} · {candidate.department || "—"} · Signed{" "}
                                   {formatDate(candidate.signed_at)}
                                 </div>
                                 <div className={styles.chipRow} style={{ marginTop: 8 }}>
                                   <span
-                                    className={styles.chip}
-                                    style={{
-                                      background: itComplete
-                                        ? "var(--green-light)"
+                                    className={`${s.pill} ${
+                                      itComplete
+                                        ? s.pillGreen
                                         : itPending
-                                        ? "var(--orange-light)"
-                                        : "var(--bg)",
-                                      color: itComplete
-                                        ? "var(--green)"
-                                        : itPending
-                                        ? "var(--orange)"
-                                        : "var(--text-muted)",
-                                    }}
+                                        ? s.pillOrange
+                                        : s.pillNeutral
+                                    }`}
                                   >
                                     {itComplete
                                       ? `IT complete · ${it?.company_email || "email set"}`
@@ -1018,19 +1135,11 @@ function RecruiterCandidatesPageContent() {
                                       : "IT not requested"}
                                   </span>
                                   {isExpired ? (
-                                    <span
-                                      className={styles.chip}
-                                      style={{
-                                        background: "var(--red-light)",
-                                        color: "var(--red)",
-                                      }}
-                                    >
-                                      Offer expired
-                                    </span>
+                                    <span className={`${s.pill} ${s.pillRed}`}>Offer expired</span>
                                   ) : null}
                                 </div>
                                 {!itComplete && (
-                                  <label className={styles.field} style={{ marginTop: 10, maxWidth: 320 }}>
+                                  <label className={`${styles.field} ${s.bulkField}`} style={{ marginTop: 10, maxWidth: 320 }}>
                                     <span>IT manager email</span>
                                     <input
                                       type="email"
@@ -1047,57 +1156,85 @@ function RecruiterCandidatesPageContent() {
                                 )}
                               </div>
                             </div>
-                          </div>
-                          <div className={styles.rowActions} style={{ flexWrap: "wrap" }}>
-                            <button
-                              type="button"
-                              className={styles.secondaryButton}
-                              onClick={() =>
-                                setExpandedCandidateId((current) =>
-                                  current === candidate.id ? null : candidate.id
-                                )
-                              }
-                            >
-                              {expandedCandidateId === candidate.id ? "Hide documents" : "View documents"}
-                            </button>
-                            {!itComplete && (
+                            <div className={s.candidateActions}>
+                              <span
+                                className={`${s.stageIndicator} ${
+                                  itComplete ? s.stageGreen : itPending ? s.stageOrange : ""
+                                }`}
+                              >
+                                {itComplete
+                                  ? isExpired
+                                    ? "Force approve"
+                                    : "Ready to activate"
+                                  : itPending
+                                  ? "IT pending"
+                                  : "Awaiting IT"}
+                              </span>
                               <button
                                 type="button"
                                 className={styles.secondaryButton}
-                                disabled={busy}
-                                onClick={() => (itPending ? handleRemindIt(candidate) : handleSendIt(candidate))}
+                                onClick={() =>
+                                  setExpandedCandidateId((current) =>
+                                    current === candidate.id ? null : candidate.id
+                                  )
+                                }
                               >
-                                {busy ? "Sending…" : itPending ? "Follow up IT" : "Send email to IT"}
+                                {expandedCandidateId === candidate.id ? (
+                                  <>
+                                    <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
+                                    Hide documents
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown size={13} />
+                                    View documents
+                                  </>
+                                )}
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              className={styles.primaryButton}
-                              disabled={!itComplete || approvingOfferId === candidate.offer_id}
-                              title={
-                                itComplete
-                                  ? isExpired
-                                    ? "Force approve expired offer and activate employee account"
-                                    : "Activate employee account"
-                                  : "Waiting for IT to submit company email and assets"
-                              }
-                              onClick={() => handleApproveOffer(candidate.offer_id, isExpired)}
-                            >
-                              {approveLabel}
-                            </button>
+                              {!itComplete && (
+                                <button
+                                  type="button"
+                                  className={styles.secondaryButton}
+                                  disabled={busy}
+                                  onClick={() => (itPending ? handleRemindIt(candidate) : handleSendIt(candidate))}
+                                >
+                                  {busy ? "Sending…" : itPending ? "Follow up IT" : "Send email to IT"}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className={styles.primaryButton}
+                                disabled={!itComplete || approvingOfferId === candidate.offer_id}
+                                title={
+                                  itComplete
+                                    ? isExpired
+                                      ? "Force approve expired offer and activate employee account"
+                                      : "Activate employee account"
+                                    : "Waiting for IT to submit company email and assets"
+                                }
+                                onClick={() => handleApproveOffer(candidate.offer_id, isExpired)}
+                              >
+                                {approveLabel}
+                              </button>
+                            </div>
                           </div>
                           {expandedCandidateId === candidate.id && (
                             <div style={{ width: "100%", marginTop: 8 }}>
                               <RecruiterDocumentReview ownerId={candidate.id} />
                             </div>
                           )}
-                        </li>
+                        </div>
                       );
                     })}
-                  </ul>
+                  </div>
                 </>
               ) : (
-                <p className={styles.emptySub}>No signed offers are waiting for IT or activation.</p>
+                <div className={s.emptyState}>
+                  <CheckCircle size={36} style={{ marginBottom: 10, color: "var(--text-faint)" }} />
+                  <div style={{ fontWeight: 650, color: "var(--navy)", fontSize: 14 }}>
+                    No signed offers are waiting for IT or activation.
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -1907,6 +2044,16 @@ function NewSignupCard({ candidate, reminding, onView, onRemind, expanded, onTog
       )}
     </article>
   );
+}
+
+function getInitials(name) {
+  if (!name) return "?";
+  return name
+    .split(" ")
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 }
 
 function formatDate(value) {

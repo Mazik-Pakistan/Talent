@@ -297,6 +297,12 @@ async def purge_organization(organization_id: str) -> dict:
     ):
         await _delete_many(collection_name, org_filter)
 
+    await _delete_many("career_tracks", org_filter)
+    await _delete_many("career_levels", org_filter)
+    await _delete_many("employee_career_assignments", org_filter)
+
+    await _delete_many("learning_courses", org_filter)
+
     deleted = await delete_organization(organization_id)
     if not deleted:
         raise LookupError("Organization not found.")

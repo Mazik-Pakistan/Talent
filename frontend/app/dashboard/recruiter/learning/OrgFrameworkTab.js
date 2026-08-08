@@ -40,6 +40,7 @@ import {
   seedOrgFramework,
 } from "@/services/orgFrameworkService";
 import { bustOrgFrameworkCache } from "@/hooks/useOrgFrameworkOptions";
+import { dispatchFrameworkInvalidated } from "@/lib/frameworkEvents";
 import {
   Award,
   BookOpen,
@@ -188,6 +189,7 @@ export default function OrgFrameworkTab() {
       // The framework is the single source of truth for every module's
       // dropdowns — invalidate the shared cache so all pages pick up edits.
       bustOrgFrameworkCache();
+      dispatchFrameworkInvalidated();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not load organization framework."));
     } finally {
@@ -827,19 +829,26 @@ function SkillsSection({ skills, roles, loadAll }) {
         </div>
       )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {skills.map((sk) => (
-          <div key={sk.skill_id || `${sk.role_name}-${sk.skill_name}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 12, background: "#fff" }}>
-            <span style={{ fontSize: 12.5, fontWeight: 650, color: "var(--navy)" }}>{sk.skill_name}</span>
-            <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>{sk.role_name}</span>
-            <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{sk.proficiency} · w:{sk.weight}</span>
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(sk)}>
-              <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
-            </button>
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(sk.skill_id || `${sk.organization_id}:${sk.role_name}:${sk.skill_name}`)}>
-              <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-            </button>
-          </div>
-        ))}
+        {skills.map((sk) => {
+          const isEmployeeSkill = sk.source === "employee_skills";
+          return (
+            <div key={sk.skill_id || `${sk.role_name}-${sk.skill_name}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 12, background: isEmployeeSkill ? "#f8fafb" : "#fff" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 650, color: "var(--navy)" }}>{sk.skill_name}</span>
+              <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>{sk.role_name}</span>
+              <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{sk.proficiency}{isEmployeeSkill && sk.employee_count ? ` · ${sk.employee_count} employee${sk.employee_count > 1 ? "s" : ""}` : ` · w:${sk.weight}`}</span>
+              {!isEmployeeSkill && (
+                <>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(sk)}>
+                    <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
+                  </button>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(sk.skill_id || `${sk.organization_id}:${sk.role_name}:${sk.skill_name}`)}>
+                    <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1007,19 +1016,27 @@ function CertsSection({ certifications, roles, loadAll }) {
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
-        {certifications.map((c) => (
-          <div key={c.cert_id || `${c.role_name}-${c.certification_name}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 12, background: "#fff" }}>
-            <span style={{ fontSize: 13, fontWeight: 650, color: "var(--navy)", flex: 1 }}>{c.certification_name}</span>
-            <span className={`${s.statusPill} ${s.orange}`}>{c.role_name}</span>
-            {c.mandatory && <span className={`${s.statusPill} ${s.red}`}>Mandatory</span>}
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(c)}>
-              <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
-            </button>
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(c.cert_id)}>
-              <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-            </button>
-          </div>
-        ))}
+        {certifications.map((c) => {
+          const isEmployeeCert = c.source === "learning_certificates";
+          return (
+            <div key={c.cert_id || `${c.role_name}-${c.certification_name}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 12, background: isEmployeeCert ? "#f8fafb" : "#fff" }}>
+              <span style={{ fontSize: 13, fontWeight: 650, color: "var(--navy)", flex: 1 }}>{c.certification_name}</span>
+              <span className={`${s.statusPill} ${s.orange}`}>{c.role_name}</span>
+              {c.mandatory && <span className={`${s.statusPill} ${s.red}`}>Mandatory</span>}
+              {isEmployeeCert && c.employee_count ? <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{c.employee_count} earned</span> : null}
+              {!isEmployeeCert && (
+                <>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(c)}>
+                    <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
+                  </button>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(c.cert_id)}>
+                    <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1092,24 +1109,32 @@ function RoadmapsSection({ roadmaps, roles, courses, loadAll }) {
           <div key={roleName} style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui", marginBottom: 8 }}>{roleName}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {sorted.map((r, index) => (
-                <div key={r.roadmap_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: "#fbfcfe", fontSize: 13 }}>
+              {sorted.map((r, index) => {
+                const fromCareer = r.source === "career_levels";
+                return (
+                <div key={r.roadmap_id || `${r.role_name}-${r.course_name || r.course_id}-${index}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: fromCareer ? "#f8fafb" : "#fbfcfe", fontSize: 13 }}>
                   <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-faint)", minWidth: 22 }}>{index + 1}.</span>
                   <span style={{ fontWeight: 650, color: "var(--navy)", flex: 1 }}>{r.course_name || r.course_id}</span>
                   {r.mandatory && <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>Mandatory</span>}
+                  {fromCareer && <span className={`${s.statusPill} ${s.orange}`} style={{ fontSize: 10 }}>Career Level</span>}
                   <div style={{ display: "flex", gap: 2 }}>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === 0} onClick={() => moveEntry(roleName, sorted, index, -1)} aria-label="Move up">
-                      ↑
-                    </button>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === sorted.length - 1} onClick={() => moveEntry(roleName, sorted, index, 1)} aria-label="Move down">
-                      ↓
-                    </button>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(r.roadmap_id)}>
-                      <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-                    </button>
+                    {!fromCareer && (
+                      <>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === 0} onClick={() => moveEntry(roleName, sorted, index, -1)} aria-label="Move up">
+                          ↑
+                        </button>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === sorted.length - 1} onClick={() => moveEntry(roleName, sorted, index, 1)} aria-label="Move down">
+                          ↓
+                        </button>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(r.roadmap_id)}>
+                          <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );
@@ -1170,8 +1195,10 @@ function PromotionSection({ rules, roles, loadAll }) {
           <table className={s.table}>
             <thead><tr><th>Role</th><th>Min Experience</th><th>Readiness %</th><th>Skills %</th><th>Min Certs</th><th>Manager Approval</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
             <tbody>
-              {rules.map((r) => (
-                <tr key={r.role_name}>
+              {rules.map((r) => {
+                const fromCareer = r.source === "career_levels";
+                return (
+                <tr key={r.role_name} style={fromCareer ? { background: "#f8fafb" } : undefined}>
                   <td style={{ fontWeight: 650, color: "var(--navy)" }}>{r.role_name}</td>
                   <td>{r.min_experience_months}mo</td>
                   <td>{r.required_readiness_pct}%</td>
@@ -1179,11 +1206,17 @@ function PromotionSection({ rules, roles, loadAll }) {
                   <td>{r.min_certs_completed}</td>
                   <td>{r.manager_approval_required ? <span className={`${s.statusPill} ${s.green}`}>Required</span> : <span className={`${s.statusPill} ${s.neutral}`}>Not required</span>}</td>
                   <td style={{ textAlign: "right" }}>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => { setForm({ role_name: r.role_name, min_experience_months: r.min_experience_months, required_readiness_pct: r.required_readiness_pct, manager_approval_required: r.manager_approval_required, min_skills_completed_pct: r.min_skills_completed_pct || 100, min_certs_completed: r.min_certs_completed || 0 }); setShowForm(true); }}><Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ color: "var(--red)" }} onClick={() => handleDelete(r.role_name)}><Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
+                    {!fromCareer && (
+                      <>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => { setForm({ role_name: r.role_name, min_experience_months: r.min_experience_months, required_readiness_pct: r.required_readiness_pct, manager_approval_required: r.manager_approval_required, min_skills_completed_pct: r.min_skills_completed_pct || 100, min_certs_completed: r.min_certs_completed || 0 }); setShowForm(true); }}><Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ color: "var(--red)" }} onClick={() => handleDelete(r.role_name)}><Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
+                      </>
+                    )}
+                    {fromCareer && <span className={`${s.statusPill} ${s.orange}`} style={{ fontSize: 10 }}>Career Level</span>}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -1929,6 +1929,7 @@ async def _tool_create_career_track(user: CurrentUser, args: dict) -> ToolResult
             department=department,
             track_name=track_name,
             description=(args.get("description") or None),
+            organization_id=_org_id(user),
         )
         return ToolResult(ok=True, data={"message": f"Career track '{track_name}' created.", "track": result})
     except Exception as exc:  # noqa: BLE001

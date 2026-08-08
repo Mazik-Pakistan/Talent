@@ -492,6 +492,7 @@ async def list_managed_courses(
         sort_by=sort_by,
         page=page,
         page_size=page_size,
+        organization_id=current_user.organization_id,
     )
 
 
@@ -510,7 +511,7 @@ async def create_managed_provider(request: dict, current_user: RequireRecruiterW
 
 @router.get("/managed/facets")
 async def managed_facets(current_user: RequireRecruiterWithLearning):
-    return await managed_learning_service.list_facets()
+    return await managed_learning_service.list_facets(organization_id=current_user.organization_id)
 
 
 @router.post("/managed/courses", status_code=201)

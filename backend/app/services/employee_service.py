@@ -968,10 +968,7 @@ class EmployeeService:
         employee = await database.employees.find_one({"$or": query_or})
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
-        if current_user.role != "super_admin":
-            owner = str(employee.get("recruiter_id") or "")
-            if owner and owner != str(current_user.id):
-                raise HTTPException(status_code=403, detail="Not allowed.")
+        self._assert_org_or_owner(current_user, employee)
         # Recruiters manage on-site banking, so reveal full values for those employees.
         # Remote employee banking stays masked on the recruiter view.
         should_reveal = reveal_banking or not _employee_is_remote(employee)
@@ -2014,10 +2011,7 @@ class EmployeeService:
         employee = await database.employees.find_one({"$or": query_or})
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
-        if current_user.role != "super_admin":
-            owner = str(employee.get("recruiter_id") or "")
-            if owner and owner != str(current_user.id):
-                raise HTTPException(status_code=403, detail="Not allowed.")
+        self._assert_org_or_owner(current_user, employee)
         return employee
 
     async def update_employee_banking(self, current_user: CurrentUser, employee_id: str, request) -> dict:
