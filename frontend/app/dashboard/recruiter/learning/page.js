@@ -569,6 +569,16 @@ function CatalogTab({ onAssignCourse }) {
             </>
           )}
         </div>
+        {(q || role || level || type || provider || designation || learningMonth || category || competency || archivedOnly) && (
+          <button type="button" className={styles.clearFiltersBtn} onClick={() => {
+            setQ(""); setRole(""); setLevel(""); setType("");
+            setProvider(""); setDesignation(""); setLearningMonth("");
+            setCategory(""); setCompetency(""); setArchivedOnly(false);
+            setPage(1);
+          }}>
+            <X aria-hidden="true" /> Clear filters
+          </button>
+        )}
         {loading && <RecruiterLoader inline />}
         {!loading && !(result.courses || []).length && (
           <div className={styles.emptyState}>
@@ -582,14 +592,20 @@ function CatalogTab({ onAssignCourse }) {
           </div>
         )}
         <div className={styles.courseGrid}>
-          {(result.courses || []).map((c) => (
+          {(result.courses || []).map((c) => {
+            const courseType = (c.type || "course").toLowerCase();
+            const TypeIcon = courseType.includes("path") ? Library : courseType.includes("module") ? ListChecks : courseType.includes("certif") ? Award : Globe;
+            return (
             <div key={c.uid} className={styles.courseCard}>
               <div className={styles.courseCardHead}>
                 <span className={`${styles.sourceBadge} ${courseBadgeClass(c, source)}`}>
                   {courseDisplayLabel(c, source)}
                 </span>
               </div>
-              <div className={styles.courseTitle}>{c.title}</div>
+              <div className={styles.courseTitleRow}>
+                <span className={styles.courseTypeIcon}><TypeIcon aria-hidden="true" /></span>
+                <div className={styles.courseTitle}>{c.title}</div>
+              </div>
               <div className={styles.courseMeta}>
                 {source === "managed_learning" ? (
                   <>
@@ -634,7 +650,8 @@ function CatalogTab({ onAssignCourse }) {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
         {result.pages > 1 && (
           <div className={styles.pagination}>
@@ -968,12 +985,12 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       browseCatalog(token, {
         q,
         source: actualSource,
-        provider: actualSource === "managed_learning" ? (selectedProvider || provider || undefined) : undefined,
+        provider: actualSource === "managed_learning" ? (selectedProvider || undefined) : undefined,
         page_size: 10,
       }).then((data) => setCourses(data.courses || [])).catch(() => {});
     }, 300);
     return () => clearTimeout(timer);
-  }, [q, source, provider]);
+  }, [q, source]);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
