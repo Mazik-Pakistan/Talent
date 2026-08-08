@@ -819,8 +819,8 @@ async def get_framework_summary(organization_id: str) -> dict:
     """Aggregate counts across all framework collections."""
     departments = await database.org_framework_departments.count_documents(_oid_filter(organization_id))
     roles = await database.org_framework_roles.count_documents(_oid_filter(organization_id))
-    skills = await database.org_framework_skills.count_documents(_oid_filter(organization_id))
-    certifications = await database.org_framework_certifications.count_documents(_oid_filter(organization_id))
+    skills_framework = await database.org_framework_skills.count_documents(_oid_filter(organization_id))
+    certifications_framework = await database.org_framework_certifications.count_documents(_oid_filter(organization_id))
     courses_framework = await database.org_framework_courses.count_documents(_oid_filter(organization_id))
     learning_query = {
         "$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]
@@ -832,11 +832,42 @@ async def get_framework_summary(organization_id: str) -> dict:
 
     # Employees in this org
     try:
-        employees = await database.employees.count_documents(
-            {"organization_id": organization_id, "status": "active"} if organization_id else {"status": "active"}
-        )
+        emp_filter = {"organization_id": organization_id, "status": "active"} if organization_id else {"status": "active"}
+        employees = await database.employees.count_documents(emp_filter)
     except Exception:
         employees = 0
+
+    # Unique skills & certifications from the Learning module (employee skills + certs)
+    try:
+        emp_ids = await database.employees.find(
+            emp_filter, {"_id": 0, "employee_id": 1}
+        ).to_list(length=50000)
+        id_set = [e["employee_id"] for e in emp_ids if e.get("employee_id")]
+        if id_set:
+            skills_pipeline = [
+                {"$match": {"employee_id": {"$in": id_set}}},
+                {"$group": {"_id": "$skill_name"}},
+                {"$count": "total"},
+            ]
+            result = await database.employee_skills.aggregate(skills_pipeline).to_list(1)
+            skills_learning = result[0]["total"] if result else 0
+
+            certs_pipeline = [
+                {"$match": {"employee_id": {"$in": id_set}, "verification_status": "verified"}},
+                {"$group": {"_id": "$course_title"}},
+                {"$count": "total"},
+            ]
+            result = await database.learning_certificates.aggregate(certs_pipeline).to_list(1)
+            certs_learning = result[0]["total"] if result else 0
+        else:
+            skills_learning = 0
+            certs_learning = 0
+    except Exception:
+        skills_learning = 0
+        certs_learning = 0
+
+    skills = skills_framework + skills_learning
+    certifications = certifications_framework + certs_learning
 
     # Recently updated across all collections
     recent: list[dict] = []
