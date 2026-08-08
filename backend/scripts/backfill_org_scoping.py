@@ -18,18 +18,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from app.core.database import database
 
 
-async def backfill_learning_courses() -> int:
-    """Match learning_courses to orgs via their created_by_id -> recruiter's org."""
-    recruiter_lookup = {}
-    async for r in database.recruiters.find({}, {"_id": 1, "organization_id": 1}).to_list(length=10000):
-        recruiter_lookup[str(r["_id"])] = r.get("organization_id")
+async def _build_recruiter_lookup() -> dict[str, str | None]:
+    docs = await database.recruiters.find(
+        {}, {"_id": 1, "organization_id": 1}
+    ).to_list(length=10000)
+    return {str(d["_id"]): d.get("organization_id") for d in docs}
 
-    updated = 0
-    async for doc in database.learning_courses.find(
+
+async def backfill_learning_courses() -> int:
+    recruiter_lookup = await _build_recruiter_lookup()
+    docs = await database.learning_courses.find(
         {"organization_id": {"$exists": False}}
-    ).to_list(length=50000):
-        created_by = str(doc.get("created_by_id") or "")
-        org_id = recruiter_lookup.get(created_by)
+    ).to_list(length=50000)
+    updated = 0
+    for doc in docs:
+        org_id = recruiter_lookup.get(str(doc.get("created_by_id") or ""))
         if org_id:
             await database.learning_courses.update_one(
                 {"_id": doc["_id"]},
@@ -40,17 +43,13 @@ async def backfill_learning_courses() -> int:
 
 
 async def backfill_career_tracks() -> int:
-    """Match career_tracks to orgs via created_by -> recruiter's org."""
-    recruiter_lookup = {}
-    async for r in database.recruiters.find({}, {"_id": 1, "organization_id": 1}).to_list(length=10000):
-        recruiter_lookup[str(r["_id"])] = r.get("organization_id")
-
-    updated = 0
-    async for doc in database.career_tracks.find(
+    recruiter_lookup = await _build_recruiter_lookup()
+    docs = await database.career_tracks.find(
         {"organization_id": {"$exists": False}}
-    ).to_list(length=10000):
-        created_by = str(doc.get("created_by") or "")
-        org_id = recruiter_lookup.get(created_by)
+    ).to_list(length=10000)
+    updated = 0
+    for doc in docs:
+        org_id = recruiter_lookup.get(str(doc.get("created_by") or ""))
         if org_id:
             await database.career_tracks.update_one(
                 {"_id": doc["_id"]},
@@ -65,17 +64,13 @@ async def backfill_career_tracks() -> int:
 
 
 async def backfill_career_assignments() -> int:
-    """Match employee_career_assignments via assigned_by -> recruiter's org."""
-    recruiter_lookup = {}
-    async for r in database.recruiters.find({}, {"_id": 1, "organization_id": 1}).to_list(length=10000):
-        recruiter_lookup[str(r["_id"])] = r.get("organization_id")
-
-    updated = 0
-    async for doc in database.employee_career_assignments.find(
+    recruiter_lookup = await _build_recruiter_lookup()
+    docs = await database.employee_career_assignments.find(
         {"organization_id": {"$exists": False}}
-    ).to_list(length=10000):
-        assigned_by = str(doc.get("assigned_by") or "")
-        org_id = recruiter_lookup.get(assigned_by)
+    ).to_list(length=10000)
+    updated = 0
+    for doc in docs:
+        org_id = recruiter_lookup.get(str(doc.get("assigned_by") or ""))
         if org_id:
             await database.employee_career_assignments.update_one(
                 {"_id": doc["_id"]},
