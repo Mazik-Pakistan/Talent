@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { cloneElement, useEffect, useState } from "react";
 
 import styles from "@/app/styles/auth.module.css";
@@ -258,13 +257,10 @@ export default function AuthAside({ slides, ariaLabel = "Talent platform introdu
       <div className={styles.asideBackdrop} aria-hidden="true" />
 
       <div className={styles.asideBrand} style={{ marginBottom: "32px" }}>
-        <Image
+        <img
           src="/talentai-logo.png"
           alt="Mazik Global"
-          width={140}
-          height={40}
           style={{ width: "140px", height: "auto" }}
-          priority
         />
       </div>
 

@@ -119,6 +119,7 @@ class InvitationService:
                 monthly_salary=request.offer.monthly_salary,
                 invite_link=invite_link,
                 expires_at=expires_display,
+                organization_id=invitation.get("organization_id"),
             )
             email_sent = True
         except Exception as exc:

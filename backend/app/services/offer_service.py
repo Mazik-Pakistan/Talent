@@ -114,6 +114,7 @@ class OfferService:
                 job_title=request.job_title,
                 department=request.department,
                 start_date=request.start_date,
+                organization_id=getattr(current_user, "organization_id", None),
             )
         except Exception:
             pass
@@ -495,6 +496,7 @@ class OfferService:
                     candidate_name=offer.get("candidate_name") or "Candidate",
                     job_title=offer.get("job_title") or "",
                     note=request.note,
+                    organization_id=offer.get("organization_id"),
                 )
 
         refreshed = await database.offer_letters.find_one({"_id": offer["_id"]})
@@ -561,6 +563,7 @@ class OfferService:
                 job_title=offer.get("job_title") or "",
                 outcome="resolved",
                 recruiter_note=request.recruiter_note,
+                organization_id=offer.get("organization_id"),
             )
 
         refreshed = await database.offer_letters.find_one({"_id": offer["_id"]})
@@ -637,6 +640,7 @@ class OfferService:
                 job_title=offer.get("job_title") or "",
                 outcome="closed",
                 recruiter_note=request.recruiter_note,
+                organization_id=offer.get("organization_id"),
             )
 
         refreshed = await database.offer_letters.find_one({"_id": offer["_id"]})
@@ -784,6 +788,7 @@ class OfferService:
                 job_title=request.job_title,
                 department=request.department,
                 start_date=request.start_date,
+                organization_id=offer.get("organization_id"),
             )
             _send_email_bg(
                 email_service.send_offer_clarification_result,
@@ -792,6 +797,7 @@ class OfferService:
                 job_title=request.job_title,
                 outcome="updated",
                 recruiter_note=request.recruiter_note or decision_summary,
+                organization_id=offer.get("organization_id"),
             )
 
         await database.audit_logs.insert_one(
@@ -955,6 +961,7 @@ class OfferService:
             new_expires_at=expiry_display,
             note=note,
             offer_link=f"{settings.frontend_base_url.rstrip('/')}/offer",
+            organization_id=offer.get("organization_id"),
         )
 
         await database.audit_logs.insert_one(

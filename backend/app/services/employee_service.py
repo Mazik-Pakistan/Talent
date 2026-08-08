@@ -337,6 +337,7 @@ class EmployeeService:
             email_service.send_candidate_onboarding_reminder(
                 candidate.get("email"), candidate.get("full_name") or "there", missing_labels,
                 f"{settings.frontend_base_url}/onboarding", note_text,
+                organization_id=candidate.get("organization_id"),
             )
             email_sent = True
         except Exception as exc:  # noqa: BLE001
@@ -689,6 +690,7 @@ class EmployeeService:
                     email_service.send_company_email_assigned,
                     employee_doc.get("full_name") or "Team member",
                     company_email,
+                    organization_id=employee_doc.get("organization_id"),
                 )
             except Exception as exc:
                 logger.warning("Company email send failed: %s", exc, exc_info=True)
@@ -700,6 +702,7 @@ class EmployeeService:
                         email_service.send_first_time_password,
                         employee_doc.get("full_name") or "Team member",
                         temp_password,
+                        organization_id=employee_doc.get("organization_id"),
                     )
                 except Exception as exc:
                     logger.warning("First-time password email send failed: %s", exc, exc_info=True)
@@ -714,6 +717,7 @@ class EmployeeService:
                 employee_id=employee_id,
                 job_title=employee_doc.get("job_title") or "Team Member",
                 department=employee_doc.get("department") or "—",
+                organization_id=candidate.get("organization_id"),
             )
             email_sent = True
         except Exception as exc:
@@ -2099,6 +2103,7 @@ class EmployeeService:
                     account_holder_name=data.get("account_holder_name") or "",
                     iban=data.get("iban") or "",
                     is_update=had_banking,
+                    organization_id=employee.get("organization_id"),
                 )
         except Exception as exc:
             logger.warning("Banking details notice email failed: %s", exc, exc_info=True)
@@ -2215,6 +2220,7 @@ class EmployeeService:
                     missing_labels=missing_labels,
                     dashboard_link=profile_link,
                     recruiter_note=note_text,
+                    organization_id=employee.get("organization_id"),
                 )
                 email_sent = True
             except Exception as exc:  # noqa: BLE001
@@ -2309,6 +2315,7 @@ class EmployeeService:
                 email_service.send_company_email_assigned,
                 employee.get("full_name") or "Team member",
                 email,
+                organization_id=employee.get("organization_id"),
             )
         except Exception as exc:
             logger.warning("Company email assigned send failed: %s", exc, exc_info=True)
@@ -2365,6 +2372,7 @@ class EmployeeService:
                 asset_name=asset["name"],
                 asset_type=asset["asset_type"],
                 serial_number=asset.get("serial_number"),
+                organization_id=employee.get("organization_id"),
             )
         except Exception as exc:
             logger.warning("Asset assigned email failed: %s", exc, exc_info=True)
@@ -2445,6 +2453,7 @@ class EmployeeService:
                 trainer=orientation["trainer"],
                 agenda=orientation["agenda"],
                 is_update=is_update,
+                organization_id=employee.get("organization_id"),
             )
         except Exception as exc:
             logger.warning("Orientation scheduled email failed: %s", exc, exc_info=True)

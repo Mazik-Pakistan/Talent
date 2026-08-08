@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -605,7 +604,7 @@ function OfferLetterPageContent() {
       <div className={styles.offerCard}>
         <header className={styles.offerPageHeader}>
           <div className={styles.offerBrandRow}>
-            <Image src="/talentai-logo.png" alt="Mazik Global" width={160} height={44} priority />
+            <img src="/talentai-logo.png" alt="Mazik Global" style={{ maxWidth: 160 }} />
           </div>
           <div className={styles.offerHeaderActions}>
             {offer && (

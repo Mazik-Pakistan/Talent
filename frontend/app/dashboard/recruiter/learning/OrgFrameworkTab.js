@@ -51,6 +51,7 @@ import {
   Compass,
   Download,
   Layers,
+  Mail,
   Pencil,
   Plus,
   Target,
@@ -61,6 +62,7 @@ import {
   Zap,
 } from "lucide-react";
 import CareerTracksPanel from "../organization-config/CareerTracksPanel";
+import EmailTemplatesPanel from "./EmailTemplatesPanel";
 import s from "./OrgFrameworkTab.module.css";
 
 const SECTIONS = [
@@ -73,6 +75,7 @@ const SECTIONS = [
   { key: "roadmaps", label: "Roadmaps", icon: Compass },
   { key: "promotion", label: "Promotion", icon: TrendingUp },
   { key: "career-tracks", label: "Career tracks", icon: Target },
+  { key: "emails", label: "Email Templates", icon: Mail },
 ];
 
 export default function OrgFrameworkTab() {
@@ -255,6 +258,8 @@ export default function OrgFrameworkTab() {
           <PromotionSection rules={promotionRules} roles={roles} loadAll={loadAll} />
         ) : section === "career-tracks" ? (
           <CareerTracksPanel departments={departments} />
+        ) : section === "emails" ? (
+          <EmailTemplatesPanel />
         ) : null}
       </div>
     </div>

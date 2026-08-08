@@ -218,3 +218,25 @@ export async function applyOrgFrameworkImport(accessToken, importData) {
   const { data } = await apiClient.post("/api/org-framework/import/apply", { data: importData });
   return data;
 }
+
+// ─── Email Templates ────────────────────────────────────────────────────────
+
+export async function listEmailTemplates() {
+  const { data } = await apiClient.get("/api/email-templates");
+  return data;
+}
+
+export async function getEmailTemplate(key) {
+  const { data } = await apiClient.get(`/api/email-templates/${encodeURIComponent(key)}`);
+  return data;
+}
+
+export async function saveEmailTemplate(key, payload) {
+  const { data } = await apiClient.put(`/api/email-templates/${encodeURIComponent(key)}`, payload);
+  return data;
+}
+
+export async function resetEmailTemplate(key) {
+  const { data } = await apiClient.delete(`/api/email-templates/${encodeURIComponent(key)}`);
+  return data;
+}

@@ -341,6 +341,7 @@ class ReminderService:
                     cta_link=cta_link,
                     cta_label=cta_label,
                     recruiter_note=note_text,
+                    organization_id=getattr(current_user, "organization_id", None),
                 )
                 email_sent = True
             except Exception as exc:  # noqa: BLE001

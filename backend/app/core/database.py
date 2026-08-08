@@ -343,3 +343,7 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.org_framework_roadmaps, [("organization_id", 1), ("role_name", 1), ("course_id", 1)])
     await _ensure_index(database.org_framework_promotion_rules, [("organization_id", 1), ("role_name", 1)], unique=True)
     await _ensure_index(database.org_framework_versions, [("organization_id", 1), ("created_at", -1)])
+
+    # Organization-scoped email templates
+    await _ensure_index(database.org_email_templates, "_id")
+    await _ensure_index(database.org_email_templates, [("organization_id", 1), ("template_key", 1)])
