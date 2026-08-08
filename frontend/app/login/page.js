@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -192,10 +193,14 @@ function LoginForm() {
       <div className={styles.card}>
         <aside className={styles.aside} aria-label="Talent platform introduction">
           <div className={styles.asideBrandRow}>
-            <img
+            <Image
               src="/talentai-logo.png"
-              alt="Mazik Global"
+              alt="Mazik Global TalentAI"
+              width={164}
+              height={80}
+              priority
               className={styles.asideLogo}
+              style={{ height: "auto", objectFit: "contain" }}
             />
           </div>
 
