@@ -409,11 +409,7 @@ function RecruiterSupportPageContent() {
             </div>
 
             <div className={support.tableWrap}>
-              {loading && tickets.length === 0 ? (
-                <div className={support.emptyState}>
-                  <div className={support.emptyTitle}>Loading…</div>
-                </div>
-              ) : tickets.length ? (
+              {tickets.length ? (
                 <>
                   <div style={{ overflowX: "auto" }}>
                     <table className={support.table}>
@@ -652,7 +648,7 @@ function RecruiterSupportPageContent() {
 
             {!ticketDetail ? (
               <div className={support.emptyState}>
-                <div className={support.emptyTitle}>Loading…</div>
+                <div className={support.emptyTitle}>Select a ticket to view details</div>
               </div>
             ) : detailTab === "conversation" ? (
               <>

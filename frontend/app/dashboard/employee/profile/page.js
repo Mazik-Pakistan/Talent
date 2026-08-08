@@ -651,9 +651,7 @@ function EmployeeProfileContent() {
               </div>
             )}
 
-            {loading ? (
-              <RecruiterLoader inline />
-            ) : (
+            {loading ? null : (
               <div className={styles.layout}>
                 <nav className={styles.sectionsNav} aria-label="Profile sections">
                   <div className={styles.sectionsNavLabel}>Sections</div>

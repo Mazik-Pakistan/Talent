@@ -16,15 +16,12 @@ import ModuleNotAvailable from "@/components/ModuleNotAvailable";
  */
 export default function ProtectedRecruiterRoute({ requiredCapability, children }) {
   const [isAuthorized, setIsAuthorized] = useState(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const user = getStoredUser();
 
-    // If not a recruiter, allow (super admin and other roles have full access)
     if (!user || user.role !== "recruiter") {
       setIsAuthorized(true);
-      setLoading(false);
       return;
     }
 
@@ -32,23 +29,13 @@ export default function ProtectedRecruiterRoute({ requiredCapability, children }
 
     if (!capabilities || Object.keys(capabilities).length === 0) {
       setIsAuthorized(false);
-      setLoading(false);
       return;
     }
 
-    const allowed = capabilities[requiredCapability] !== false;
-
-    setIsAuthorized(allowed);
-    setLoading(false);
+    setIsAuthorized(capabilities[requiredCapability] !== false);
   }, [requiredCapability]);
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
-        <div>Loading...</div>
-      </div>
-    );
-  }
+  if (isAuthorized === null) return null;
 
   if (!isAuthorized) {
     return <ModuleNotAvailable capability={requiredCapability} />;

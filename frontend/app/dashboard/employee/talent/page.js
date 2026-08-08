@@ -176,7 +176,6 @@ function JourneyTab() {
           ))}
         </div>
 
-        {loading && <RecruiterLoader inline />}
         {!loading && timeline.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>Nothing here yet</div>
@@ -240,7 +239,6 @@ function AchievementsTab() {
         </div>
       </div>
       <div className={dashStyles.sectionBody}>
-        {loading && <RecruiterLoader inline />}
         {!loading && (!data?.achievements || data.achievements.length === 0) && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>No achievements yet</div>
@@ -351,7 +349,6 @@ function OpportunitiesTab() {
           ))}
         </div>
 
-        {loading && <RecruiterLoader inline />}
         {!loading && items.length === 0 && (
           <div className={dashStyles.emptyState}>
             <div className={dashStyles.emptyTitle}>No open opportunities right now</div>
