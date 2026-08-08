@@ -37,10 +37,11 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
         ],
         "default_subject": "You've Been Invited to Join TalentAI",
         "default_body": (
-            "<p>You have been invited to join <strong>{{company_name}}</strong> "
-            "as a candidate for the position of <strong>{{job_title}}</strong> "
-            "in the <strong>{{department}}</strong> department.</p>"
-            "<p>Click the button below to complete your registration. "
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "You have been invited to join <strong>TalentAI</strong> as a candidate for the position of "
+            "<strong>{{job_title}}</strong> in the <strong>{{department}}</strong> department.</p>"
+            "<p style=\"margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Click the button below to complete your registration and begin onboarding. "
             "This invitation expires on <strong>{{expires_at}}</strong>.</p>"
         ),
     },
@@ -59,13 +60,17 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "expires_at", "label": "Expiry date"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Your Invitation to Join TalentAI",
+        "default_subject": "Your Invitation to Join Mazik Global",
         "default_body": (
-            "<p>You have been invited to join <strong>{{company_name}}</strong> as a candidate for the position of "
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "You have been invited to join <strong>Mazik Global</strong> as a candidate for the position of "
             "<strong>{{job_title}}</strong> in the <strong>{{department}}</strong> department.</p>"
-            "<p>Your offer includes <strong>{{currency}} {{salary}}</strong> per month, "
+            "<p style=\"margin:0 0 12px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Your offer includes <strong>{{currency}} {{salary}}</strong> per month, "
             "with a start date of <strong>{{start_date}}</strong>.</p>"
-            "<p>Click the button below to review the offer. This invitation expires on <strong>{{expires_at}}</strong>.</p>"
+            "<p style=\"margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Click the button below to review the offer and complete your registration. "
+            "This invitation expires on <strong>{{expires_at}}</strong>.</p>"
         ),
     },
     "employee_welcome": {
@@ -81,9 +86,25 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
         ],
         "default_subject": "Congratulations — Welcome to TalentAI",
         "default_body": (
-            "<p>Your onboarding has been approved and you are now an official employee at {{company_name}}.</p>"
-            "<p>Sign in to TalentAI and choose the Employee role to open your employee dashboard. "
-            "Please complete your post-hire profile so HR can finish your onboarding.</p>"
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Your onboarding has been approved and you are now an official employee "
+            "at Mazik Global Pakistan.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:24px;\">"
+            "<p style=\"margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Your Employee ID</p>"
+            "<p style=\"margin:0 0 12px;color:#0D5C91;font-size:32px;font-weight:700;"
+            "letter-spacing:4px;line-height:1.1;\">{{employee_id}}</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;font-weight:600;\">"
+            "{{job_title}}&ensp;&middot;&ensp;{{department}}</p>"
+            "</td></tr></table>"
+            "<p style=\"margin:0 0 12px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Sign in to TalentAI and choose the <strong>Employee</strong> role to open "
+            "your employee dashboard.</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Please complete your post-hire profile (emergency contact, banking, "
+            "references, policies, and Self Declaration) so HR can finish your onboarding.</p>"
         ),
     },
     "offer_letter": {
@@ -97,11 +118,21 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "start_date", "label": "Start date"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Your Offer Letter — TalentAI",
+        "default_subject": "Your Offer Letter for {{job_title}} — Mazik Global",
         "default_body": (
-            "<p>We're delighted to offer you the position below. Sign in to review "
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "We&rsquo;re delighted to offer you the position below. Sign in to review "
             "the full terms and digitally sign your offer letter.</p>"
-            "<p><strong>{{job_title}}</strong> · {{department}} · Starting {{start_date}}</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:24px;\">"
+            "<p style=\"margin:0 0 4px;color:#0D5C91;font-size:18px;font-weight:700;\">{{job_title}}</p>"
+            "<p style=\"margin:0;color:#6b7a8f;font-size:14px;\">"
+            "{{department}}&ensp;&middot;&ensp;Starting {{start_date}}</p>"
+            "</td></tr></table>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Sign in to your candidate dashboard and open <strong>My Offer Letter</strong> "
+            "to review and sign.</p>"
         ),
     },
     "offer_validity_extended": {
@@ -117,12 +148,18 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "note", "label": "Recruiter note"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Your offer letter was extended",
+        "default_subject": "Your offer letter was extended — {{job_title}}",
         "default_body": (
-            "<p>{{recruiter_name}} extended the validity of your offer for <strong>{{job_title}}</strong> "
-            "by <strong>{{days_label}}</strong>.</p>"
-            "<p>Your updated response deadline is <strong>{{new_expires_at}}</strong>. "
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "{{recruiter_name}} extended the validity of your offer for "
+            "<strong>{{job_title}}</strong> by <strong>{{days_label}}</strong>.</p>"
+            "<p style=\"margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Your updated response deadline is <strong>{{new_expires_at}}</strong>. "
             "Review the letter and sign before then.</p>"
+            "<p style=\"margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;"
+            "background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;padding:16px 18px;\">"
+            "<strong style=\"display:block;margin-bottom:6px;color:#0D5C91;\">"
+            "Message from {{recruiter_name}}</strong>{{note}}</p>"
         ),
     },
     "offer_clarification_request": {
@@ -136,11 +173,20 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "note", "label": "Candidate question"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Offer clarification — TalentAI",
+        "default_subject": "Offer clarification from {{candidate_name}} — Mazik Global",
         "default_body": (
-            "<p>Hi {{recruiter_name}}, <strong>{{candidate_name}}</strong> requested clarification "
-            "on the offer for <strong>{{job_title}}</strong>.</p>"
-            "<p>Open the candidate pipeline to reply, or edit and resend an updated offer letter.</p>"
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hi {{recruiter_name}}, <strong>{{candidate_name}}</strong> requested clarification on the offer "
+            "for <strong>{{job_title}}</strong>.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#fff8ef;border:1px solid #f3e0c2;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:18px 22px;\">"
+            "<p style=\"margin:0 0 6px;color:#9a6700;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Candidate question</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;\">{{note}}</p>"
+            "</td></tr></table>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Open the candidate pipeline to reply, or edit and resend an updated offer letter.</p>"
         ),
     },
     "offer_clarification_result": {
@@ -154,10 +200,20 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "recruiter_note", "label": "Recruiter note"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Offer clarification — TalentAI",
+        "default_subject": "{{headline}} — {{job_title}} | Mazik Global",
         "default_body": (
-            "<p>Hi {{full_name}}, {{headline}} for <strong>{{job_title}}</strong>.</p>"
-            "<p>Sign in and open My Offer Letter to continue.</p>"
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hi {{full_name}}, Your recruiter responded to your clarification on "
+            "<strong>{{job_title}}</strong>. Open your offer letter to continue.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:16px 0 24px;\">"
+            "<tr><td style=\"padding:18px 22px;\">"
+            "<p style=\"margin:0 0 6px;color:#0D5C91;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Recruiter note</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;\">{{recruiter_note}}</p>"
+            "</td></tr></table>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Sign in and open <strong>My Offer Letter</strong> to continue.</p>"
         ),
     },
     "it_service_request": {
@@ -177,12 +233,33 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "fulfill_link", "label": "Fulfill link"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "IT service request — TalentAI",
+        "default_subject": "IT request: {{title}} — {{employee_name}}",
         "default_body": (
-            "<p><strong>{{recruiter_name}}</strong> needs IT help for an existing employee.</p>"
-            "<p>Request: <strong>{{title}}</strong><br/>Employee: {{employee_name}} "
-            "({{employee_email}}) · Role: {{job_title}} · {{department}}</p>"
-            "<p>Click to mark the request as fulfilled.</p>"
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "<strong>{{recruiter_name}}</strong> needs IT help for an existing employee.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#ffffff;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:18px 22px;\">"
+            "<p style=\"margin:0 0 4px;color:#6b7a8f;font-size:11px;text-transform:uppercase;"
+            "letter-spacing:0.8px;\">Request</p>"
+            "<p style=\"margin:0 0 12px;color:#1a1a2e;font-size:16px;font-weight:700;\">{{title}}</p>"
+            "<p style=\"margin:0;color:#6b7a8f;font-size:13px;line-height:1.6;\">"
+            "Employee: <strong>{{employee_name}}</strong> ({{employee_email}})<br/>"
+            "Role: {{job_title}} · {{department}}<br/>"
+            "Type: {{request_type}}</p>"
+            "</td></tr></table>"
+            "<p style=\"margin:0 0 18px;color:#1a1a2e;font-size:14px;line-height:1.6;"
+            "background:#f7f9fc;border:1px solid #e8edf3;border-radius:10px;padding:14px 16px;\">"
+            "{{description}}</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#fff8ef;border:1px solid #f3e0c2;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:18px 22px;\">"
+            "<p style=\"margin:0 0 6px;color:#9a6700;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Note from HR</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;\">{{note}}</p>"
+            "</td></tr></table>"
+            "<p style=\"margin:0;color:#6b7a8f;font-size:13px;line-height:1.6;\">"
+            "Open the link to mark this request as fulfilled (add serial numbers or notes as needed).</p>"
         ),
     },
     "document_reupload_request": {
@@ -196,11 +273,22 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "note", "label": "Recruiter note"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Action required: Re-upload your document — TalentAI",
+        "default_subject": "Action required: Re-upload your {{document_label}} — TalentAI",
         "default_body": (
-            "<p>Your recruiter has requested a new copy of your <strong>{{document_label}}</strong>. "
+            "<p style=\"margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Your recruiter has requested a new copy of your <strong>{{document_label}}</strong>. "
             "Only this document needs to be replaced.</p>"
-            "<p>Reason: {{reason}}</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:22px;\">"
+            "<p style=\"margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Reason</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;\">{{reason}}</p>"
+            "<p style=\"margin:12px 0 0;color:#b45309;font-size:14px;line-height:1.6;\">"
+            "<strong>Recruiter note:</strong> {{note}}</p>"
+            "</td></tr></table>"
+            "<p style=\"margin:0;color:#8a9bb0;font-size:13px;line-height:1.6;\">"
+            "The replacement will be validated and sent back to your recruiter automatically.</p>"
         ),
     },
     "document_status_update": {
@@ -214,11 +302,13 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "note", "label": "Note"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Document update — TalentAI",
+        "default_subject": "Document update: {{document_label}} — TalentAI",
         "default_body": (
-            "<p>Hello {{full_name}}, your <strong>{{document_label}}</strong> was marked "
+            "<p style=\"margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hello {{full_name}}, your <strong>{{document_label}}</strong> was marked "
             "<strong>{{status_label}}</strong>.</p>"
-            "<p>Sign in to open your documents page.</p>"
+            "<p style=\"margin:12px 0 0;color:#b45309;font-size:14px;line-height:1.6;\">"
+            "<strong>Note:</strong> {{note}}</p>"
         ),
     },
     "it_provisioning_request": {
@@ -236,13 +326,30 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "expires_at", "label": "Link expiry"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "IT provisioning requested — TalentAI",
+        "default_subject": "IT provisioning for {{name}} — TalentAI",
         "default_body": (
-            "<p>Hi, <strong>{{recruiter_name}}</strong> requested IT provisioning for "
-            "<strong>{{name}}</strong>.</p>"
-            "<p>Role: {{job_title}} · {{department}}<br/>Start date: {{start_date}}<br/>"
-            "Personal email: {{personal_email}}</p>"
-            "<p>Open the form to assign a company email, password, assets, and licenses. "
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hi, <strong>{{recruiter_name}}</strong> requested IT provisioning "
+            "for <strong>{{name}}</strong>.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:18px 22px;\">"
+            "<p style=\"margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
+            "<strong>Role:</strong> {{job_title}} · {{department}}</p>"
+            "<p style=\"margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
+            "<strong>Start date:</strong> {{start_date}}</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
+            "<strong>Personal email:</strong> {{personal_email}}</p>"
+            "</td></tr></table>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#fff8ef;border:1px solid #f3e0c2;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:18px 22px;\">"
+            "<p style=\"margin:0 0 6px;color:#9a6700;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Recruiter note</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;\">{{note}}</p>"
+            "</td></tr></table>"
+            "<p style=\"margin:0 0 28px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Open the form to assign a company email, password, assets, and licenses. "
             "This link expires on <strong>{{expires_at}}</strong>.</p>"
         ),
     },
@@ -253,12 +360,23 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
         "variables": [
             {"name": "employee_name", "label": "Employee name"},
             {"name": "company_email", "label": "Company email"},
+            {"name": "assets_count", "label": "Number of assets"},
+            {"name": "licenses_count", "label": "Number of licenses"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "IT provisioning complete — TalentAI",
+        "default_subject": "IT provisioning complete for {{employee_name}} — TalentAI",
         "default_body": (
-            "<p>IT finished provisioning for <strong>{{employee_name}}</strong>. You can now approve "
-            "and activate the employee from the candidate pipeline.</p>"
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "IT finished provisioning for <strong>{{employee_name}}</strong>. You can now approve and activate "
+            "the employee from the candidate pipeline.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 8px;\">"
+            "<tr><td style=\"padding:18px 22px;\">"
+            "<p style=\"margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
+            "<strong>Company email:</strong> {{company_email}}</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
+            "<strong>Assets:</strong> {{assets_count}} · <strong>Licenses:</strong> {{licenses_count}}</p>"
+            "</td></tr></table>"
         ),
     },
     "it_provisioning_edited": {
@@ -268,12 +386,23 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
         "variables": [
             {"name": "employee_name", "label": "Employee name"},
             {"name": "company_email", "label": "Company email"},
+            {"name": "assets_count", "label": "Number of assets"},
+            {"name": "licenses_count", "label": "Number of licenses"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "IT provisioning updated — TalentAI",
+        "default_subject": "IT provisioning updated for {{employee_name}} — TalentAI",
         "default_body": (
-            "<p>IT updated the provisioning for <strong>{{employee_name}}</strong>. The latest details "
-            "below are what will be used when you activate the employee.</p>"
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "IT updated the provisioning for <strong>{{employee_name}}</strong>. The latest details below "
+            "are what will be used when you activate the employee.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 8px;\">"
+            "<tr><td style=\"padding:18px 22px;\">"
+            "<p style=\"margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
+            "<strong>Company email:</strong> {{company_email}}</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
+            "<strong>Assets:</strong> {{assets_count}} · <strong>Licenses:</strong> {{licenses_count}}</p>"
+            "</td></tr></table>"
         ),
     },
     "first_time_password": {
@@ -287,10 +416,15 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
         ],
         "default_subject": "Your employee account is ready — TalentAI",
         "default_body": (
-            "<p>Hello {{full_name}}, your employee account is ready.</p>"
-            "<p>Sign in with your personal or company email using this one-time password:</p>"
-            "<p><strong>{{temp_password}}</strong></p>"
-            "<p>After signing in you will be asked to create your own password.</p>"
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hello {{full_name}}, your employee account is ready.</p>"
+            "<p style=\"margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
+            "Sign in with your personal or company email using this one-time password:</p>"
+            "<p style=\"margin:0 0 18px;font-size:20px;font-weight:800;color:#1e3a5f;"
+            "font-family:Consolas,Menlo,monospace;\">{{temp_password}}</p>"
+            "<p style=\"margin:0;color:#8a9bb0;font-size:13px;line-height:1.6;\">"
+            "After signing in you will be asked to create your own password. From then on, "
+            "that single password covers both your personal and company email logins.</p>"
         ),
     },
     "banking_details_notice": {
@@ -306,8 +440,21 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
         ],
         "default_subject": "Banking details updated — TalentAI",
         "default_body": (
-            "<p>Hi {{full_name}}, your recruiter added or updated your payroll banking details. "
-            "You can review them on your employee profile.</p>"
+            "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hi {{full_name}}, your recruiter updated your payroll banking details. "
+            "You can review them (view only) on your employee profile.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:18px 22px;\">"
+            "<p style=\"margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
+            "<strong>Bank:</strong> {{bank_name}}</p>"
+            "<p style=\"margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
+            "<strong>Account title:</strong> {{account_holder_name}}</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
+            "<strong>IBAN:</strong> {{masked_iban}}</p>"
+            "</td></tr></table>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Sign in and open <strong>My Profile → Banking</strong> to see the full details.</p>"
         ),
     },
     "company_email_assigned": {
@@ -321,9 +468,17 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
         ],
         "default_subject": "Your company email has been assigned — TalentAI",
         "default_body": (
-            "<p>Hello {{full_name}}, your recruiter has recorded your official company email. "
+            "<p style=\"margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hello {{full_name}}, your recruiter has recorded your official company email. "
             "Please use this address for workplace communications going forward.</p>"
-            "<p>Company email: <strong>{{company_email}}</strong></p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 8px;\">"
+            "<tr><td style=\"padding:24px;\">"
+            "<p style=\"margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Company email</p>"
+            "<p style=\"margin:0;color:#0D5C91;font-size:24px;font-weight:700;letter-spacing:1px;\">"
+            "{{company_email}}</p>"
+            "</td></tr></table>"
         ),
     },
     "asset_assigned": {
@@ -337,11 +492,19 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "serial_number", "label": "Serial number"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Asset assigned — TalentAI",
+        "default_subject": "Asset assigned: {{asset_name}} — TalentAI",
         "default_body": (
-            "<p>Hello {{full_name}}, a company asset has been assigned to you. "
+            "<p style=\"margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hello {{full_name}}, a company asset has been assigned to you. "
             "Please keep it safe and report any issues to HR.</p>"
-            "<p><strong>{{asset_name}}</strong> · {{asset_type}}</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;\">"
+            "<tr><td style=\"padding:24px;\">"
+            "<p style=\"margin:0 0 4px;color:#0D5C91;font-size:18px;font-weight:700;\">{{asset_name}}</p>"
+            "<p style=\"margin:0;color:#6b7a8f;font-size:14px;\">Type: {{asset_type}}</p>"
+            "<p style=\"margin:8px 0 0;color:#475569;font-size:13px;\">"
+            "<strong>Serial:</strong> {{serial_number}}</p>"
+            "</td></tr></table>"
         ),
     },
     "orientation_scheduled": {
@@ -359,10 +522,23 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
         ],
         "default_subject": "Your orientation session is scheduled — TalentAI",
         "default_body": (
-            "<p>Hello {{full_name}}, your orientation session has been scheduled.</p>"
-            "<p>Date: <strong>{{date}}</strong> · Time: <strong>{{time}}</strong> "
-            "· Trainer: <strong>{{trainer}}</strong></p>"
-            "<p>Agenda: {{agenda}}</p>"
+            "<p style=\"margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hello {{full_name}}, your onboarding orientation has been scheduled.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:24px;\">"
+            "<p style=\"margin:0 0 4px;color:#0D5C91;font-size:18px;font-weight:700;\">"
+            "{{date}}&ensp;&middot;&ensp;{{time}}</p>"
+            "<p style=\"margin:0;color:#6b7a8f;font-size:14px;\">"
+            "<strong>Trainer:</strong> {{trainer}}</p>"
+            "<p style=\"margin:12px 0 0;\">"
+            "<a href=\"{{meeting_link}}\" style=\"color:#0D5C91;font-weight:600;text-decoration:none;\">"
+            "Join meeting →</a></p>"
+            "</td></tr></table>"
+            "<p style=\"margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:0.8px;\">Agenda</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.7;white-space:pre-wrap;\">"
+            "{{agenda}}</p>"
         ),
     },
     "profile_completion_reminder": {
@@ -376,11 +552,20 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "recruiter_note", "label": "Recruiter note"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Complete your profile — TalentAI",
+        "default_subject": "Reminder: Complete your employee profile — TalentAI",
         "default_body": (
-            "<p>Hello {{full_name}}, please complete the remaining steps in your employee profile. "
-            "HR needs this information to finalize your onboarding.</p>"
-            "<p>Items remaining: {{missing_items}}</p>"
+            "<p style=\"margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hello {{full_name}}, your recruiter is waiting on a few post-hire details before "
+            "your onboarding is finished. Employee ID <strong>{{employee_id}}</strong>.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:22px;\">"
+            "<p style=\"margin:0 0 10px;color:#6b7a8f;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Still needed</p>"
+            "<ul style=\"margin:0;padding-left:20px;\">{{missing_items}}</ul>"
+            "<p style=\"margin:16px 0 0;color:#1a1a2e;font-size:13px;line-height:1.6;\">"
+            "<strong>Note from your recruiter:</strong> {{recruiter_note}}</p>"
+            "</td></tr></table>"
         ),
     },
     "candidate_onboarding_reminder": {
@@ -395,8 +580,18 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
         ],
         "default_subject": "Reminder: Complete your onboarding — TalentAI",
         "default_body": (
-            "<p>Hello {{full_name}}, please complete the remaining steps in your onboarding "
-            "so your recruiter can proceed with your hiring process.</p>"
+            "<p style=\"margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hello {{full_name}}, your recruiter is waiting for a few onboarding details "
+            "before they can review your application.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;\">"
+            "<tr><td style=\"padding:22px;\">"
+            "<p style=\"margin:0 0 10px;color:#6b7a8f;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Still needed</p>"
+            "<ul style=\"margin:0;padding-left:20px;\">{{missing_items}}</ul>"
+            "<p style=\"margin:16px 0 0;color:#1a1a2e;font-size:13px;line-height:1.6;\">"
+            "<strong>Note from your recruiter:</strong> {{recruiter_note}}</p>"
+            "</td></tr></table>"
         ),
     },
     "announcement": {
@@ -409,11 +604,16 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "body_text", "label": "Announcement body"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Announcement — TalentAI",
+        "default_subject": "Announcement: {{title}} — TalentAI",
         "default_body": (
-            "<p>Hi {{full_name}}, you have a new announcement.</p>"
-            "<p><strong>{{title}}</strong></p>"
-            "<p>{{body_text}}</p>"
+            "<p style=\"margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hello {{full_name}}, your recruiting team shared a new announcement.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 8px;\">"
+            "<tr><td style=\"padding:22px;\">"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:15px;line-height:1.7;white-space:pre-wrap;\">"
+            "{{body_text}}</p>"
+            "</td></tr></table>"
         ),
     },
     "custom_reminder": {
@@ -428,10 +628,20 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "recruiter_note", "label": "Recruiter note"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Reminder — TalentAI",
+        "default_subject": "Reminder: {{title}} — TalentAI",
         "default_body": (
-            "<p>Hello {{full_name}}, {{title}}.</p>"
-            "<p>{{body_text}}</p>"
+            "<p style=\"margin:0 0 24px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hello {{full_name}}, your recruiter sent you a reminder.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 28px;\">"
+            "<tr><td style=\"padding:22px;\">"
+            "<p style=\"margin:0 0 10px;color:#6b7a8f;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">{{title}}</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.7;white-space:pre-wrap;\">"
+            "{{body_text}}</p>"
+            "<p style=\"margin:16px 0 0;color:#1a1a2e;font-size:13px;line-height:1.6;\">"
+            "<strong>Note from your recruiter:</strong> {{recruiter_note}}</p>"
+            "</td></tr></table>"
         ),
     },
     "hr_message": {
@@ -445,10 +655,18 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
             {"name": "body_text", "label": "Message body"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Message — TalentAI",
+        "default_subject": "Message: {{subject_line}} — TalentAI",
         "default_body": (
-            "<p>Hello {{full_name}}, you have a new message from <strong>{{sender_label}}</strong>.</p>"
-            "<p>{{body_text}}</p>"
+            "<p style=\"margin:0 0 24px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
+            "Hello {{full_name}}, you have a new message from <strong>{{sender_label}}</strong>.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 28px;\">"
+            "<tr><td style=\"padding:22px;\">"
+            "<p style=\"margin:0 0 10px;color:#0D5C91;font-size:18px;font-weight:700;\">"
+            "{{subject_line}}</p>"
+            "<p style=\"margin:0;color:#1a1a2e;font-size:14px;line-height:1.7;white-space:pre-wrap;\">"
+            "{{body_text}}</p>"
+            "</td></tr></table>"
         ),
     },
 }

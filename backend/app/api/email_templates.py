@@ -51,7 +51,8 @@ async def get_registry():
 @router.get("")
 async def list_email_templates(current_user: RequireRecruiterOrgConfig):
     from app.services.email_template_service import list_templates
-    return await list_templates(_org_id(current_user))
+    templates = await list_templates(_org_id(current_user))
+    return {"templates": templates}
 
 
 # ── Get one ──────────────────────────────────────────────────────────────────
