@@ -326,10 +326,11 @@ export default function PromotionPipeline({
                 .
               </p>
             )}
-            <form className={styles.assignForm} onSubmit={handleAssign}>
+            <form data-partner-coach className={styles.assignForm} onSubmit={handleAssign}>
               <div className={styles.fieldLabel}>
                 <span>Employee</span>
                 <input
+                  data-field-key="empQuery"
                   className={styles.searchInput}
                   placeholder="Search by name or ID…"
                   value={empQuery}
@@ -340,6 +341,7 @@ export default function PromotionPipeline({
                 />
                 {empQuery.trim().length >= 2 && (
                   <select
+                    data-field-key="employee_id"
                     value={assignForm.employee_id}
                     onChange={(e) => setAssignForm((f) => ({ ...f, employee_id: e.target.value }))}
                     style={{ marginTop: 6 }}
@@ -358,7 +360,7 @@ export default function PromotionPipeline({
               </div>
               <label className={styles.fieldLabel}>
                 Target Level
-                <select value={assignForm.target_level_id} onChange={(e) => setAssignForm((f) => ({ ...f, target_level_id: e.target.value }))} required>
+                <select data-field-key="target_level_id" value={assignForm.target_level_id} onChange={(e) => setAssignForm((f) => ({ ...f, target_level_id: e.target.value }))} required>
                   <option value="">Select target level</option>
                   {levels.map((l) => (
                     <option key={l.id} value={l.id}>
@@ -369,7 +371,7 @@ export default function PromotionPipeline({
               </label>
               <label className={styles.fieldLabel}>
                 Target Date
-                <input type="date" value={assignForm.target_date} onChange={(e) => setAssignForm((f) => ({ ...f, target_date: e.target.value }))} />
+                <input data-field-key="target_date" type="date" value={assignForm.target_date} onChange={(e) => setAssignForm((f) => ({ ...f, target_date: e.target.value }))} />
               </label>
               <div className={styles.formActions}>
                 <button type="submit" className={styles.assignCourseBtn} disabled={assigning || levels.length === 0}>

@@ -21,6 +21,10 @@ import {
   ArrowRight,
   BarChart3,
 } from "lucide-react";
+import {
+  publishRecruiterContext,
+  clearRecruiterContext,
+} from "@/lib/ai/recruiterContext";
 
 function asArray(value) {
   if (Array.isArray(value)) return value;
@@ -191,6 +195,18 @@ export default function TalentProfileView({
   useEffect(() => { load(); }, [load]);
 
   const name = employee?.full_name || talent?.full_name || career?.assignment?.employee_name || employeeId;
+
+  useEffect(() => {
+    if (name) {
+      publishRecruiterContext({
+        tab: "profile",
+        section: "profile",
+        employeeName: name,
+        hint: `You're viewing ${name}'s talent profile — review skills, learning, and development plan.`,
+      });
+    }
+    return () => clearRecruiterContext();
+  }, [name]);
   const jobTitle = employee?.job_title || talent?.job_title || career?.assignment?.current_role_title || roleName || "—";
   const dept = employee?.department || talent?.department || career?.assignment?.current_department || departmentName || "—";
 

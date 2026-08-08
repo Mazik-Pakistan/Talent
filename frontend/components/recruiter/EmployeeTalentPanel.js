@@ -370,7 +370,7 @@ export default function EmployeeTalentPanel({ employee }) {
           </div>
         </div>
         <div className={styles.sectionBody}>
-          <form onSubmit={handleSubmitEvaluation}>
+          <form data-partner-coach onSubmit={handleSubmitEvaluation}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 14 }}>
               {COMPETENCY_DIMENSIONS.map((d) => (
                 <label key={d.key} style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 11.5, fontWeight: 600, color: "var(--text-muted)" }}>
@@ -441,12 +441,14 @@ export default function EmployeeTalentPanel({ employee }) {
             <>
               <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
                 <input
+                  data-field-key="planTimeline"
                   placeholder="Target timeline (e.g. 6 months)"
                   value={planTimeline}
                   onChange={(e) => setPlanTimeline(e.target.value)}
                   style={{ flex: 1, minWidth: 180, border: "1px solid var(--border)", borderRadius: 9, padding: 9, fontSize: 12.5, fontFamily: "inherit" }}
                 />
                 <input
+                  data-field-key="planNote"
                   placeholder="Recruiter note"
                   value={planNote}
                   onChange={(e) => setPlanNote(e.target.value)}

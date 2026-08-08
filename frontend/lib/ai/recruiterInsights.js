@@ -783,14 +783,14 @@ async function learningPageInsights(accessToken, context) {
 
 async function talentPageInsights(accessToken, context) {
   const insights = [];
-  const tab = context?.tab || context?.section || "metrics";
+  const tab = context?.tab || context?.section || "dashboard";
   const tabHelp = TALENT_TAB_HELP[tab];
 
-  if (tab === "metrics") {
+  if (tab === "dashboard") {
     push(insights, {
-      id: "talent-metrics-what",
+      id: "talent-dash-what",
       priority: MASCOT_PRIORITY.task,
-      message: tabHelp?.hint || "Review headcount and readiness signals here.",
+      message: tabHelp?.hint || "Filter by department or role to see readiness signals and talent KPIs.",
     });
     try {
       if (accessToken) {
@@ -798,7 +798,7 @@ async function talentPageInsights(accessToken, context) {
         const readyCount = metrics?.promotion_readiness_count ?? metrics?.promotion_ready_count;
         if (readyCount > 0) {
           push(insights, {
-            id: "talent-promo",
+            id: "talent-dash-promo",
             priority: MASCOT_PRIORITY.task,
             message: `${readyCount} people show promotion readiness — open a profile to act.`,
           });
@@ -806,7 +806,7 @@ async function talentPageInsights(accessToken, context) {
         const highPotential = metrics?.high_potential_employees?.length;
         if (highPotential) {
           push(insights, {
-            id: "talent-hipo",
+            id: "talent-dash-hipo",
             priority: MASCOT_PRIORITY.insight,
             message: `${highPotential} high-potential employee${highPotential === 1 ? "" : "s"} flagged on this view.`,
           });
@@ -814,7 +814,7 @@ async function talentPageInsights(accessToken, context) {
         const gaps = metrics?.skill_gaps?.length ?? metrics?.top_gaps?.length ?? metrics?.skill_distribution?.length;
         if (gaps) {
           push(insights, {
-            id: "talent-gaps",
+            id: "talent-dash-gaps",
             priority: MASCOT_PRIORITY.tip,
             message: "Skill gap signals are on this page — use them before hiring outside.",
           });
@@ -823,24 +823,79 @@ async function talentPageInsights(accessToken, context) {
     } catch {
       // keep base tip
     }
+    push(insights, {
+      id: "talent-dash-filter",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Click any KPI card to drill down — it opens matching people or structure breakdowns.",
+    });
     return insights;
   }
 
-  if (tab === "search") {
+  if (tab === "employees") {
     push(insights, {
-      id: "talent-search-what",
+      id: "talent-emp-what",
       priority: MASCOT_PRIORITY.task,
-      message: tabHelp?.hint || "Filter by skills, certs, and competency to find internal talent.",
+      message: tabHelp?.hint || "Filter by department, role, and promotion readiness, then open a talent profile.",
     });
     push(insights, {
-      id: "talent-search-filters",
+      id: "talent-emp-filters",
       priority: MASCOT_PRIORITY.insight,
-      message: "Combine department + skills (and optional semantic search) for sharper matches.",
+      message: "Combine department + role + promotion bucket to find the right people fast.",
     });
     push(insights, {
-      id: "talent-search-act",
+      id: "talent-emp-profile",
       priority: MASCOT_PRIORITY.tip,
-      message: "Open a profile from results to assign learning or plan development.",
+      message: "Open a profile to score competencies, assign learning, and plan career development.",
+    });
+    return insights;
+  }
+
+  if (tab === "pipeline") {
+    push(insights, {
+      id: "talent-pipe-what",
+      priority: MASCOT_PRIORITY.task,
+      message: tabHelp?.hint || "Track Ready / Almost / Behind readiness and assign target career levels.",
+    });
+    try {
+      if (accessToken) {
+        const metrics = await cached("talent-metrics", () => getTalentMetrics(accessToken)).catch(() => null);
+        const readyCount = metrics?.promotion_readiness_count ?? metrics?.promotion_ready_count;
+        if (readyCount > 0) {
+          push(insights, {
+            id: "talent-pipe-ready",
+            priority: MASCOT_PRIORITY.task,
+            message: `${readyCount} people are promotion-ready — open the assign form to assign target career levels.`,
+          });
+        }
+      }
+    } catch {
+      // keep base tip
+    }
+    push(insights, {
+      id: "talent-pipe-assign",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Use Assign Career Path to set target level and date for each person.",
+    });
+    return insights;
+  }
+
+  if (tab === "profile") {
+    push(insights, {
+      id: "talent-prof-what",
+      priority: MASCOT_PRIORITY.task,
+      message: context?.employeeName
+        ? `You're viewing ${context.employeeName}'s talent profile — review skills, learning, and development plan.`
+        : tabHelp?.hint || "Review skills, learning, career readiness, and development plan for one employee.",
+    });
+    push(insights, {
+      id: "talent-prof-tabs",
+      priority: MASCOT_PRIORITY.insight,
+      message: "Use the sub-tabs for Overview, Skills, Learning, Career, and Development — each has focused data.",
+    });
+    push(insights, {
+      id: "talent-prof-eval",
+      priority: MASCOT_PRIORITY.tip,
+      message: "On the Development tab, score competencies 1–5 and save a development plan with milestones.",
     });
     return insights;
   }

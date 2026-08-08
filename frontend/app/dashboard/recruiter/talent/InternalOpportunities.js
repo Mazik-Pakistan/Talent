@@ -152,17 +152,17 @@ export default function InternalOpportunities({ departmentNames = [], onNavigate
         <form data-partner-coach className={styles.oppForm} onSubmit={handleCreate}>
           <label className={styles.wide}>
             Title
-            <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="e.g. Internal AI Tooling Squad" required />
+            <input data-field-key="title" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="e.g. Internal AI Tooling Squad" required />
           </label>
           <label>
             Type
-            <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
+            <select data-field-key="opportunity_type" value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
               {OPP_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
           </label>
           <label>
             Department
-            <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} required>
+            <select data-field-key="department" value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} required>
               <option value="">Select department</option>
               {departmentNames.map((departmentName) => (
                 <option key={departmentName} value={departmentName}>{departmentName}</option>
@@ -171,19 +171,19 @@ export default function InternalOpportunities({ departmentNames = [], onNavigate
           </label>
           <label className={styles.wide}>
             Description
-            <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="What this opportunity involves…" required />
+            <textarea data-field-key="description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="What this opportunity involves…" required />
           </label>
           <label>
             Required skills (comma-separated)
-            <input value={form.required_skills} onChange={(e) => setForm((f) => ({ ...f, required_skills: e.target.value }))} placeholder="React, Docker" />
+            <input data-field-key="required_skills" value={form.required_skills} onChange={(e) => setForm((f) => ({ ...f, required_skills: e.target.value }))} placeholder="React, Docker" />
           </label>
           <label>
             Location
-            <input value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} placeholder="Remote / Karachi" />
+            <input data-field-key="location" value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} placeholder="Remote / Karachi" />
           </label>
           <label className={styles.wide}>
             Commitment
-            <input value={form.commitment} onChange={(e) => setForm((f) => ({ ...f, commitment: e.target.value }))} placeholder="~5 hrs/week for 6 weeks" />
+            <input data-field-key="commitment" value={form.commitment} onChange={(e) => setForm((f) => ({ ...f, commitment: e.target.value }))} placeholder="~5 hrs/week for 6 weeks" />
           </label>
           <div className={styles.wide}>
             <button type="submit" className={styles.smallBtnPrimary} disabled={saving || departmentNames.length === 0}>

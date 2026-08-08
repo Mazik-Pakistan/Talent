@@ -103,6 +103,12 @@ export const RECRUITER_FIELD_HELP = {
   semantic: "When checked, search uses smarter semantic matching — slower but broader.",
   commitment: "Expected time commitment for the internal opportunity.",
   location: "Where the opportunity is based (office, remote, hybrid).",
+  focus: "Dashboard scope filter: all, ready, almost, behind, high_potential, departments, roles, etc.",
+  promoBucket: "Promotion readiness filter: Ready, Almost, or Behind.",
+  highPotential: "Only show employees flagged as high-potential.",
+  target_level_id: "Career level to assign as the promotion target.",
+  target_date: "Target date for reaching the next career level.",
+  opportunity_type: "Type of internal opportunity: project, secondment, role, or rotation.",
 
   // Competency evaluation (employee talent tab)
   technical: "Rate technical skills from 1 (needs development) to 5 (expert).",
