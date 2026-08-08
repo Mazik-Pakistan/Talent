@@ -1775,6 +1775,7 @@ class LearningService:
                             cta_label="Open Learning",
                             recruiter_note=request.note,
                             eyebrow="Learning",
+                            organization_id=employee.get("organization_id"),
                         )
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Course assignment email failed: %s", exc, exc_info=True)

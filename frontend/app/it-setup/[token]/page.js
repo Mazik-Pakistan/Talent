@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -653,7 +652,7 @@ export default function ItSetupPublicPage() {
   if (state.status === "error") {
     return (
       <Shell narrow>
-        <Image className="it-logo" src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
+        <img className="it-logo" src="/talentai-logo.png" alt="Mazik Global" style={{ maxWidth: 192 }} />
         <div className="it-center">
           <div className="it-icon err" aria-hidden>!</div>
           <p className="it-eyebrow">IT provisioning</p>
@@ -673,7 +672,7 @@ export default function ItSetupPublicPage() {
 
     return (
       <Shell narrow>
-        <Image className="it-logo" src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
+        <img className="it-logo" src="/talentai-logo.png" alt="Mazik Global" style={{ maxWidth: 192 }} />
         <div className="it-center">
           <div className="it-icon ok" aria-hidden>✓</div>
           <p className="it-eyebrow">IT provisioning</p>
@@ -746,7 +745,7 @@ export default function ItSetupPublicPage() {
     const employee = state.data?.employee || {};
     return (
       <Shell narrow>
-        <Image className="it-logo" src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
+        <img className="it-logo" src="/talentai-logo.png" alt="Mazik Global" style={{ maxWidth: 192 }} />
         <div className="it-center">
           <div className="it-icon ok" aria-hidden>✓</div>
           <p className="it-eyebrow">IT provisioning</p>
@@ -797,7 +796,7 @@ export default function ItSetupPublicPage() {
 
   return (
     <Shell>
-      <Image className="it-logo" src="/talentai-logo.png" alt="Mazik Global" width={192} height={52} priority />
+      <img className="it-logo" src="/talentai-logo.png" alt="Mazik Global" style={{ maxWidth: 192 }} />
       <div className="it-center">
         <p className="it-eyebrow">IT provisioning</p>
         <h1 className="it-title">{editing ? "Edit setup" : "Assign email to candidate "}{employee.full_name}</h1>

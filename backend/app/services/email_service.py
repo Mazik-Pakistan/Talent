@@ -79,6 +79,15 @@ class EmailService:
     # ------------------------------------------------------------------ #
     # Premium branded shell - Modern Clean Design
     # ------------------------------------------------------------------ #
+    def _resolve_org_template(self, organization_id, key, subject, body, local_context):
+        """If org has a customized template, render it with placeholders; otherwise return defaults."""
+        if not organization_id:
+            return subject, body
+        from app.services.email_template_service import resolve_template
+        from app.core.config import settings
+        ctx = {**local_context, "company_name": getattr(settings, "SMTP_FROM_NAME", None) or "TalentAI"}
+        return resolve_template(organization_id, key, subject, body, ctx)
+
     def _branded_shell(self, eyebrow: str, title: str, body_html: str, brand_name: str | None = None) -> str:
         logo_src = self.LOGO_SRC
         # Brand overrides apply to the offer letter and recruiter invitation
@@ -271,6 +280,7 @@ class EmailService:
         department: str,
         invite_link: str,
         expires_at: str,
+        organization_id: str | None = None,
     ) -> None:
         subject = "You've Been Invited to Join TalentAI"
         safe_link = _escape_text(invite_link, quote=True)
@@ -312,6 +322,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "candidate_invitation", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("Candidate Invitation", f"Hello, {_escape_text(full_name)} 👋", body)
@@ -331,6 +342,7 @@ class EmailService:
         monthly_salary: float | str,
         invite_link: str,
         expires_at: str,
+        organization_id: str | None = None,
     ) -> None:
         subject = "Your Invitation to Join Mazik Global"
         safe_link = _escape_text(invite_link, quote=True)
@@ -378,6 +390,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "offer_invitation", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("Candidate Invitation", f"Hello, {_escape_text(full_name)} 👋", body, brand_name="Mazik Global")
@@ -452,6 +465,7 @@ class EmailService:
         employee_id: str,
         job_title: str,
         department: str,
+        organization_id: str | None = None,
     ) -> None:
         subject = "Congratulations — Welcome to TalentAI"
         body = f"""
@@ -487,6 +501,7 @@ class EmailService:
   references, policies, and Self Declaration) so HR can finish your onboarding.
 </p>
 """
+        subject, body = self._resolve_org_template(organization_id, "employee_welcome", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("Congratulations", f"Welcome aboard, {escape(full_name)}!", body)
@@ -502,6 +517,7 @@ class EmailService:
         job_title: str,
         department: str,
         start_date: str,
+        organization_id: str | None = None,
     ) -> None:
         subject = f"Your Offer Letter for {job_title} — Mazik Global"
         body = f"""
@@ -528,6 +544,7 @@ class EmailService:
   to review and sign.
 </p>
 """
+        subject, body = self._resolve_org_template(organization_id, "offer_letter", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("Offer Letter", f"You&rsquo;ve been offered a role, {_escape_text(full_name)}!", body, brand_name="Mazik Global")
@@ -544,6 +561,7 @@ class EmailService:
         new_expires_at: str,
         note: str | None = None,
         offer_link: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         """Notify candidate that an expired offer was reopened with a new response deadline."""
         days_label = f"{extra_days} day" if extra_days == 1 else f"{extra_days} days"
@@ -584,6 +602,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "offer_validity_extended", subject, body, locals())
         self._send(
             to_email,
             subject,
@@ -606,6 +625,7 @@ class EmailService:
         candidate_name: str,
         job_title: str,
         note: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         safe_recruiter = _escape_text(recruiter_name or "Recruiter")
         safe_candidate = _escape_text(candidate_name or "Candidate")
@@ -638,6 +658,7 @@ class EmailService:
   Open the candidate pipeline to reply, or edit and resend an updated offer letter.
 </p>
 """
+        subject, body = self._resolve_org_template(organization_id, "offer_clarification_request", subject, body, locals())
         self._send(
             to_email,
             subject,
@@ -664,6 +685,7 @@ class EmailService:
         note: str | None,
         fulfill_link: str,
         created_at,
+        organization_id: str | None = None,
     ) -> None:
         """IT help request for an existing employee (e.g. replacement laptop)."""
         safe_note = _escape_text(note or "")
@@ -732,6 +754,7 @@ class EmailService:
   Open the link to mark this request as fulfilled (add serial numbers or notes as needed).
 </p>
 """
+        subject, body = self._resolve_org_template(organization_id, "it_service_request", subject, body, locals())
         self._send(
             to_email,
             subject,
@@ -746,6 +769,7 @@ class EmailService:
         job_title: str,
         outcome: str = "resolved",
         recruiter_note: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         safe_name = _escape_text(full_name or "Candidate")
         safe_title = _escape_text(job_title or "your offer")
@@ -795,6 +819,7 @@ class EmailService:
   Sign in and open <strong>My Offer Letter</strong> to continue.
 </p>
 """
+        subject, body = self._resolve_org_template(organization_id, "offer_clarification_result", subject, body, locals())
         self._send(
             to_email,
             subject,
@@ -803,23 +828,27 @@ class EmailService:
 
     # Backward-compatible aliases used by older offer flows.
     def send_offer_negotiation_request(self, **kwargs) -> None:
+        organization_id = kwargs.get("organization_id")
         self.send_offer_clarification_request(
             to_email=kwargs.get("to_email"),
             recruiter_name=kwargs.get("recruiter_name") or "Recruiter",
             candidate_name=kwargs.get("candidate_name") or "Candidate",
             job_title=kwargs.get("job_title") or "",
             note=kwargs.get("note"),
+            organization_id=organization_id,
         )
 
     def send_offer_negotiation_result(self, **kwargs) -> None:
         accepted = kwargs.get("accepted")
         outcome = "resolved" if accepted else "closed"
+        organization_id = kwargs.get("organization_id")
         self.send_offer_clarification_result(
             to_email=kwargs.get("to_email"),
             full_name=kwargs.get("full_name") or "Candidate",
             job_title=kwargs.get("job_title") or "",
             outcome=outcome,
             recruiter_note=kwargs.get("recruiter_note"),
+            organization_id=organization_id,
         )
 
     # ------------------------------------------------------------------ #
@@ -833,6 +862,7 @@ class EmailService:
         reason: str,
         note: str | None,
         dashboard_link: str,
+        organization_id: str | None = None,
     ) -> None:
         safe_name = escape(full_name or "Candidate")
         safe_label = escape(document_label)
@@ -882,6 +912,7 @@ class EmailService:
   The replacement will be validated and sent back to your recruiter automatically.
 </p>
 """
+        subject, body = self._resolve_org_template(organization_id, "document_reupload_request", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("Action required", f"Hello, {safe_name}", body)
@@ -898,6 +929,7 @@ class EmailService:
         status_label: str,
         dashboard_link: str,
         note: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         safe_name = escape(full_name or "there")
         safe_label = escape(document_label)
@@ -928,6 +960,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "document_status_update", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("Document update", "Verification update", body)
@@ -946,6 +979,7 @@ class EmailService:
         expires_at: str,
         note: str | None = None,
         is_reminder: bool = False,
+        organization_id: str | None = None,
     ) -> None:
         emp = employee or {}
         name = emp.get("full_name") or "the new hire"
@@ -1029,6 +1063,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "it_provisioning_request", subject, body, locals())
         self._send(
             to_email,
             subject,
@@ -1043,6 +1078,7 @@ class EmailService:
         entries: list[dict],
         expires_at: str,
         note: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         """One consolidated email to IT covering several new hires, each with
         their own secure form link (batch request)."""
@@ -1116,6 +1152,7 @@ class EmailService:
   form is missing details.
 </p>
 """
+        subject, body = self._resolve_org_template(organization_id, "it_provisioning_batch_request", subject, body, locals())
         self._send(
             to_email,
             subject,
@@ -1131,6 +1168,7 @@ class EmailService:
         form_link: str,
         expires_at: str,
         note: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         """One email to IT with a SINGLE bulk form link covering all new hires."""
         safe_note = _escape_text(note or "")
@@ -1207,6 +1245,7 @@ class EmailService:
   The link expires on <strong>{_escape_text(expires_at)}</strong>.
 </p>
 """
+        subject, body = self._resolve_org_template(organization_id, "it_provisioning_batch_form_request", subject, body, locals())
         self._send(
             to_email,
             subject,
@@ -1221,6 +1260,7 @@ class EmailService:
         company_email: str,
         assets_count: int = 0,
         licenses_count: int = 0,
+        organization_id: str | None = None,
     ) -> None:
         safe_name = _escape_text(employee_name or "the candidate")
         subject = f"IT provisioning complete for {employee_name or 'candidate'} — TalentAI"
@@ -1243,6 +1283,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "it_provisioning_complete", subject, body, locals())
         self._send(
             to_email,
             subject,
@@ -1260,6 +1301,7 @@ class EmailService:
         company_email: str,
         assets_count: int = 0,
         licenses_count: int = 0,
+        organization_id: str | None = None,
     ) -> None:
         safe_name = _escape_text(employee_name or "the candidate")
         subject = f"IT provisioning updated for {employee_name or 'candidate'} — TalentAI"
@@ -1282,6 +1324,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "it_provisioning_edited", subject, body, locals())
         self._send(
             to_email,
             subject,
@@ -1327,6 +1370,7 @@ class EmailService:
         to_email: str,
         full_name: str | None = None,
         temp_password: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         subject = "Your employee account is ready — TalentAI"
         body = f"""
@@ -1344,6 +1388,7 @@ class EmailService:
   that single password covers both your personal and company email logins.
 </p>
 """
+        subject, body = self._resolve_org_template(organization_id, "first_time_password", subject, body, locals())
         self._send(
             to_email,
             subject,
@@ -1362,6 +1407,7 @@ class EmailService:
         account_holder_name: str,
         iban: str,
         is_update: bool = False,
+        organization_id: str | None = None,
     ) -> None:
         safe_name = _escape_text(full_name or "Employee")
         headline = "Banking details updated" if is_update else "Banking details added"
@@ -1394,6 +1440,7 @@ class EmailService:
   Sign in and open <strong>My Profile → Banking</strong> to see the full details.
 </p>
 """
+        subject, body = self._resolve_org_template(organization_id, "banking_details_notice", subject, body, locals())
         self._send(
             to_email,
             subject,
@@ -1403,7 +1450,7 @@ class EmailService:
     # ------------------------------------------------------------------ #
     # send_company_email_assigned
     # ------------------------------------------------------------------ #
-    def send_company_email_assigned(self, to_email: str, full_name: str, company_email: str) -> None:
+    def send_company_email_assigned(self, to_email: str, full_name: str, company_email: str, organization_id: str | None = None) -> None:
         subject = "Your company email has been assigned — TalentAI"
         body = f"""
 <p style="margin:0 0 20px;color:#1a1a2e;font-size:15px;line-height:1.7;">
@@ -1426,6 +1473,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "company_email_assigned", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("Company credentials", f"Welcome aboard, {escape(full_name)}", body)
@@ -1441,6 +1489,7 @@ class EmailService:
         asset_name: str,
         asset_type: str,
         serial_number: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         subject = f"Asset assigned: {asset_name} — TalentAI"
         serial_html = (
@@ -1468,6 +1517,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "asset_assigned", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("Company assets", "New asset assigned", body)
@@ -1486,6 +1536,7 @@ class EmailService:
         agenda: str,
         meeting_link: str | None = None,
         is_update: bool = False,
+        organization_id: str | None = None,
     ) -> None:
         subject = (
             "Orientation session updated — TalentAI"
@@ -1529,6 +1580,7 @@ class EmailService:
 </p>
 """
         eyebrow = "Orientation update" if is_update else "Orientation session"
+        subject, body = self._resolve_org_template(organization_id, "orientation_scheduled", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell(eyebrow, "You&rsquo;re invited", body)
@@ -1545,6 +1597,7 @@ class EmailService:
         missing_labels: list[str],
         dashboard_link: str,
         recruiter_note: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         safe_name = escape(full_name or "there")
         safe_id = escape(employee_id or "")
@@ -1591,6 +1644,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "profile_completion_reminder", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("Action required", "Complete your profile", body)
@@ -1606,6 +1660,7 @@ class EmailService:
         missing_labels: list[str],
         dashboard_link: str,
         recruiter_note: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         safe_name = escape(full_name or "there")
         safe_link = escape(dashboard_link, quote=True)
@@ -1651,6 +1706,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "candidate_onboarding_reminder", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("Action required", "Complete your onboarding", body)
@@ -1666,6 +1722,7 @@ class EmailService:
         title: str,
         body_text: str,
         dashboard_url: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         subject = f"Announcement: {title} — TalentAI"
         link_html = ""
@@ -1701,6 +1758,7 @@ class EmailService:
 </table>
 {link_html}
 """
+        subject, body = self._resolve_org_template(organization_id, "announcement", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("Team announcement", escape(title), body)
@@ -1720,6 +1778,7 @@ class EmailService:
         cta_label: str = "Open dashboard",
         recruiter_note: str | None = None,
         eyebrow: str = "Reminder",
+        organization_id: str | None = None,
     ) -> None:
         safe_name = escape(full_name or "there")
         safe_link = escape(cta_link, quote=True)
@@ -1762,6 +1821,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "custom_reminder", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell(eyebrow, title, body)
@@ -1780,6 +1840,7 @@ class EmailService:
         sender_label: str,
         cta_link: str,
         cta_label: str = "Open conversation",
+        organization_id: str | None = None,
     ) -> None:
         safe_name = escape(full_name or "there")
         safe_link = escape(cta_link, quote=True)
@@ -1815,6 +1876,7 @@ class EmailService:
   </tr>
 </table>
 """
+        subject, body = self._resolve_org_template(organization_id, "hr_message", subject, body, locals())
         self._send(
             to_email, subject,
             self._branded_shell("New message", subject_line, body)

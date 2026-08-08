@@ -1,7 +1,5 @@
 "use client";
 
-import Image from "next/image";
-
 /**
  * Shared sidebar logo: compact centered TalentAI wordmark when expanded,
  * Mazik grid icon when collapsed.
@@ -22,12 +20,9 @@ export default function SidebarBrand({
       aria-expanded={!collapsed}
     >
       <div className={markClassName} aria-hidden="true">
-        <Image
+        <img
           src={collapsed ? "/mazikglobal-icon.svg" : "/talentai-logo.png"}
           alt="Mazik Global TalentAI"
-          width={collapsed ? 200 : 555}
-          height={collapsed ? 200 : 236}
-          priority
           style={
             collapsed
               ? {
@@ -48,7 +43,6 @@ export default function SidebarBrand({
                   margin: "0 auto",
                 }
           }
-          sizes={collapsed ? "36px" : "148px"}
         />
       </div>
     </button>

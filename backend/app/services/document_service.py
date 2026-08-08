@@ -819,6 +819,7 @@ class DocumentService:
                         (payload.rejection_reason or "other").replace("_", " "),
                         payload.note,
                         dashboard_link,
+                        organization_id=getattr(current_user, "organization_id", None),
                     )
                 else:
                     await asyncio.to_thread(
@@ -829,6 +830,7 @@ class DocumentService:
                         update["status"].replace("_", " "),
                         dashboard_link,
                         payload.note,
+                        organization_id=getattr(current_user, "organization_id", None),
                     )
                 email_sent = True
             except Exception as exc:
