@@ -303,6 +303,41 @@ async def list_skills(organization_id: str, role_id: str | None = None, role_nam
     elif role_name:
         q["role_name"] = role_name
     docs = await database.org_framework_skills.find(q, {"_id": 0}).to_list(10000)
+
+    try:
+        emp_filter = {"organization_id": organization_id, "status": "active"} if organization_id else {"status": "active"}
+        emp_ids = await database.employees.find(
+            emp_filter, {"_id": 0, "employee_id": 1}
+        ).to_list(length=50000)
+        id_set = [e["employee_id"] for e in emp_ids if e.get("employee_id")]
+        if id_set:
+            pipeline = [
+                {"$match": {"employee_id": {"$in": id_set}}},
+                {"$group": {
+                    "_id": "$skill_name",
+                    "proficiency": {"$first": "$proficiency"},
+                    "employee_count": {"$sum": 1},
+                }},
+                {"$sort": {"_id": 1}},
+            ]
+            results = await database.employee_skills.aggregate(pipeline).to_list(length=10000)
+            existing_names = {d["skill_name"] for d in docs}
+            for r in results:
+                name = r.get("_id") or ""
+                if name and name not in existing_names:
+                    docs.append({
+                        "skill_id": f"EMP-{organization_id}:{name}",
+                        "role_name": "Employee Skills",
+                        "skill_name": name,
+                        "proficiency": r.get("proficiency") or "Intermediate",
+                        "weight": 20,
+                        "source": "employee_skills",
+                        "employee_count": r.get("employee_count", 0),
+                    })
+                    existing_names.add(name)
+    except Exception:
+        pass
+
     return docs
 
 
@@ -412,6 +447,39 @@ async def list_certifications(organization_id: str, role_name: str | None = None
     if role_name:
         q["role_name"] = role_name
     docs = await database.org_framework_certifications.find(q, {"_id": 0}).to_list(5000)
+
+    try:
+        emp_filter = {"organization_id": organization_id, "status": "active"} if organization_id else {"status": "active"}
+        emp_ids = await database.employees.find(
+            emp_filter, {"_id": 0, "employee_id": 1}
+        ).to_list(length=50000)
+        id_set = [e["employee_id"] for e in emp_ids if e.get("employee_id")]
+        if id_set:
+            pipeline = [
+                {"$match": {"employee_id": {"$in": id_set}, "verification_status": "verified"}},
+                {"$group": {
+                    "_id": "$course_title",
+                    "employee_count": {"$sum": 1},
+                }},
+                {"$sort": {"_id": 1}},
+            ]
+            results = await database.learning_certificates.aggregate(pipeline).to_list(length=10000)
+            existing_names = {d["certification_name"] for d in docs}
+            for r in results:
+                name = r.get("_id") or ""
+                if name and name not in existing_names:
+                    docs.append({
+                        "cert_id": f"EMP-{organization_id}:{name}",
+                        "role_name": "Employee Certifications",
+                        "certification_name": name,
+                        "mandatory": False,
+                        "source": "learning_certificates",
+                        "employee_count": r.get("employee_count", 0),
+                    })
+                    existing_names.add(name)
+    except Exception:
+        pass
+
     return docs
 
 

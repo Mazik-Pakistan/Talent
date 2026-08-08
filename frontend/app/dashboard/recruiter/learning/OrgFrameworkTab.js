@@ -829,19 +829,26 @@ function SkillsSection({ skills, roles, loadAll }) {
         </div>
       )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {skills.map((sk) => (
-          <div key={sk.skill_id || `${sk.role_name}-${sk.skill_name}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 12, background: "#fff" }}>
-            <span style={{ fontSize: 12.5, fontWeight: 650, color: "var(--navy)" }}>{sk.skill_name}</span>
-            <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>{sk.role_name}</span>
-            <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{sk.proficiency} · w:{sk.weight}</span>
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(sk)}>
-              <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
-            </button>
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(sk.skill_id || `${sk.organization_id}:${sk.role_name}:${sk.skill_name}`)}>
-              <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-            </button>
-          </div>
-        ))}
+        {skills.map((sk) => {
+          const isEmployeeSkill = sk.source === "employee_skills";
+          return (
+            <div key={sk.skill_id || `${sk.role_name}-${sk.skill_name}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 12, background: isEmployeeSkill ? "#f8fafb" : "#fff" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 650, color: "var(--navy)" }}>{sk.skill_name}</span>
+              <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>{sk.role_name}</span>
+              <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{sk.proficiency}{isEmployeeSkill && sk.employee_count ? ` · ${sk.employee_count} employee${sk.employee_count > 1 ? "s" : ""}` : ` · w:${sk.weight}`}</span>
+              {!isEmployeeSkill && (
+                <>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(sk)}>
+                    <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
+                  </button>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(sk.skill_id || `${sk.organization_id}:${sk.role_name}:${sk.skill_name}`)}>
+                    <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1009,19 +1016,27 @@ function CertsSection({ certifications, roles, loadAll }) {
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
-        {certifications.map((c) => (
-          <div key={c.cert_id || `${c.role_name}-${c.certification_name}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 12, background: "#fff" }}>
-            <span style={{ fontSize: 13, fontWeight: 650, color: "var(--navy)", flex: 1 }}>{c.certification_name}</span>
-            <span className={`${s.statusPill} ${s.orange}`}>{c.role_name}</span>
-            {c.mandatory && <span className={`${s.statusPill} ${s.red}`}>Mandatory</span>}
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(c)}>
-              <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
-            </button>
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(c.cert_id)}>
-              <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-            </button>
-          </div>
-        ))}
+        {certifications.map((c) => {
+          const isEmployeeCert = c.source === "learning_certificates";
+          return (
+            <div key={c.cert_id || `${c.role_name}-${c.certification_name}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 12, background: isEmployeeCert ? "#f8fafb" : "#fff" }}>
+              <span style={{ fontSize: 13, fontWeight: 650, color: "var(--navy)", flex: 1 }}>{c.certification_name}</span>
+              <span className={`${s.statusPill} ${s.orange}`}>{c.role_name}</span>
+              {c.mandatory && <span className={`${s.statusPill} ${s.red}`}>Mandatory</span>}
+              {isEmployeeCert && c.employee_count ? <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{c.employee_count} earned</span> : null}
+              {!isEmployeeCert && (
+                <>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(c)}>
+                    <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
+                  </button>
+                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(c.cert_id)}>
+                    <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
