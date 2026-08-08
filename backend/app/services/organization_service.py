@@ -35,6 +35,7 @@ ORG_MODULE_KEYS = [
     "it",
     "reporting",
     "profile",
+    "support",
 ]
 
 DEFAULT_ORG_MODULES: dict[str, bool] = {key: True for key in ORG_MODULE_KEYS}
@@ -53,6 +54,7 @@ ORG_MODULE_LABELS = {
     "it": "IT & support",
     "reporting": "Activity & reporting",
     "profile": "Profile",
+    "support": "Support tickets",
 }
 
 

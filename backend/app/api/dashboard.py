@@ -87,25 +87,36 @@ async def delete_announcement(announcement_id: str, current_user: RequireRecruit
 
 
 @router.get("/api/recruiters/me")
-async def get_recruiter_me(current_user: RequireRecruiter):
+async def get_recruiter_me(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("profile"))],
+):
     return await service.get_recruiter_profile(current_user)
 
 
 @router.put("/api/recruiters/me")
-async def update_recruiter_me(request: UpdateRecruiterProfileRequest, current_user: RequireRecruiter):
+async def update_recruiter_me(
+    request: UpdateRecruiterProfileRequest,
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("profile"))],
+):
     return await service.update_recruiter_profile(current_user, request)
 
 
 @router.post("/api/recruiters/me/photo")
 async def upload_recruiter_photo(
     current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("profile"))],
     file: UploadFile = File(...),
 ):
     return await service.upload_recruiter_photo(current_user, file)
 
 
 @router.delete("/api/recruiters/me/photo")
-async def remove_recruiter_photo(current_user: RequireRecruiter):
+async def remove_recruiter_photo(
+    current_user: RequireRecruiter,
+    _capability: Annotated[CurrentUser, Depends(require_capabilities("profile"))],
+):
     return await service.remove_recruiter_photo(current_user)
 
 

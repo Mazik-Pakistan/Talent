@@ -59,12 +59,14 @@ const CAPABILITY_LABELS = {
   employees: "Employees",
   talent: "Talent Analytics",
   learning: "Learning",
+  org_config: "Organization Setup",
   assistant: "AI Assistant",
   messages: "Messages",
   announcements: "Announcements",
   it: "IT Support",
   reporting: "Activity & Reporting",
   profile: "Profile",
+  support: "Support Tickets",
 };
 
 const CAPABILITY_ICONS = {
@@ -74,12 +76,14 @@ const CAPABILITY_ICONS = {
   employees: "💼",
   talent: "⭐",
   learning: "📚",
+  org_config: "🏢",
   assistant: "🤖",
   messages: "💬",
   announcements: "📢",
   it: "🖥️",
   reporting: "📈",
   profile: "👤",
+  support: "🎫",
 };
 
 const CAPABILITY_DESCS = {
@@ -89,12 +93,14 @@ const CAPABILITY_DESCS = {
   employees: "Employee directory and profiles",
   talent: "Talent pool analytics",
   learning: "Learning modules and courses",
+  org_config: "Departments, roles, skills, and career tracks",
   assistant: "AI-powered hiring assistant",
   messages: "Internal messaging system",
   announcements: "Platform announcements",
   it: "IT asset provisioning",
   reporting: "Activity and audit logs",
   profile: "Profile management",
+  support: "Support ticket management",
 };
 
 const MODULE_CATEGORIES = [
@@ -142,6 +148,15 @@ const MODULE_CATEGORIES = [
       </svg>
     ),
     keys: ["learning", "announcements", "it"],
+  },
+  {
+    label: "Platform & Support",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="18" height="18">
+        <path d="M21.2 15.9A10 10 0 1 1 8 2.8" /><path d="M22 12A10 10 0 0 1 12 22" /><path d="M8 15.5V9.5l5 3z" />
+      </svg>
+    ),
+    keys: ["org_config", "support"],
   },
 ];
 
