@@ -60,7 +60,7 @@ export const RECRUITER_FIELD_HELP = {
   skills_covered: "Skills this certification develops (comma-separated).",
   estimated_hours: "Rough hours to complete — helps employees plan.",
   difficulty: "Beginner → Expert so people pick the right level.",
-  priority: "How urgent this cert is for the role: critical, immediate, medium, or low.",
+  priority: "How urgent: critical, immediate, medium, or low.",
 
   // Learning — catalog / assign
   type: "Course type filter: learning path, module, or certification.",
@@ -76,6 +76,23 @@ export const RECRUITER_FIELD_HELP = {
   mandatoryOnly: "Show only mandatory assignments in the progress list.",
   statusFilter: "Filter assignments by assigned / in progress / completed.",
   rejectNote: "Explain why you are rejecting this certificate — employee will see the reason.",
+
+  // Learning — managed courses
+  managed_provider: "Provider this course belongs to — appears in every catalog tab and filter.",
+  managed_category: "Course category (e.g. Cloud, Security) — used for filtering the roadmap.",
+  competency: "Primary competency this course develops (e.g. Azure, Python).",
+  duration_minutes: "Approximate course length in minutes — helps employees plan study time.",
+  course_title: "Course name as it appears in the managed catalog.",
+  designation: "Target job title / designation this course is for.",
+
+  // Learning — providers
+  provider_name: "Provider name — shows in every catalog tab, filter, and report.",
+  provider_type: "Manual providers use Excel imports; API providers sync automatically.",
+  import_method: "How courses arrive: Excel upload, API sync, or manual entry.",
+  logo_url: "Optional logo URL displayed next to the provider name in the catalog.",
+
+  // Learning — imports
+  missing_action: "What to do with courses in the file that no longer exist: keep them, archive, or delete.",
 
   // Talent search / opportunities
   skillsInput: "Comma-separated skills to match in talent search.",
@@ -120,7 +137,6 @@ export const RECRUITER_FIELD_HELP = {
   it_request_description: "Extra context for HR/IT — symptoms, urgency, or serial numbers.",
   subject: "Short ticket title that tells support what broke or what you need.",
   category: "Choose the closest issue type so the ticket reaches the right queue.",
-  priority: "Set urgency based on impact and how soon you need help.",
   affected_module: "Which recruiter area, employee area, or system part is affected.",
 
   // IT kits
@@ -389,6 +405,21 @@ export const LEARNING_TAB_HELP = {
     title: "Learning analytics",
     hint: "Completion and certification rates by department — export CSV for leadership.",
     fields: ["department"],
+  },
+  managed: {
+    title: "Managed Learning",
+    hint: "Create, edit, and import courses for your own providers — manage the roadmap hierarchy.",
+    fields: ["managed_provider", "designation", "learning_month", "managed_category", "competency", "duration_minutes", "course_title", "url", "description"],
+  },
+  providers: {
+    title: "Learning providers",
+    hint: "Add any provider (Coursera, Udemy, DataCamp, Skillsoft, internal academy) — zero code changes.",
+    fields: ["provider_name", "provider_type", "import_method", "logo_url", "description", "active"],
+  },
+  imports: {
+    title: "Import courses",
+    hint: "Pick a provider, upload .xlsx or .csv, preview the validation, then confirm the import.",
+    fields: ["provider", "missing_action"],
   },
 };
 

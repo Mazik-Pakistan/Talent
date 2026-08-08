@@ -708,6 +708,68 @@ async function learningPageInsights(accessToken, context) {
     return insights;
   }
 
+  if (tab === "managed") {
+    push(insights, {
+      id: "learn-managed-what",
+      priority: MASCOT_PRIORITY.task,
+      message: tabHelp?.hint || "Create and manage courses for your own providers here.",
+    });
+    push(insights, {
+      id: "learn-managed-form",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Add a course with provider, title, designation, and category — use Import roadmap for bulk uploads.",
+    });
+    push(insights, {
+      id: "learn-managed-hierarchy",
+      priority: MASCOT_PRIORITY.insight,
+      message: "The roadmap hierarchy groups courses by designation → month → category → competency.",
+    });
+    push(insights, {
+      id: "learn-managed-guide",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Need help filling the course form? Tap Guide me through it.",
+    });
+    return insights;
+  }
+
+  if (tab === "providers") {
+    push(insights, {
+      id: "learn-providers-what",
+      priority: MASCOT_PRIORITY.task,
+      message: tabHelp?.hint || "Add any learning provider here — they appear as source tabs in the catalog.",
+    });
+    push(insights, {
+      id: "learn-providers-create",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Create a provider with a name, type (manual or API), and import method — then import courses for it.",
+    });
+    push(insights, {
+      id: "learn-providers-guide",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Need help filling the provider form? Tap Guide me through it.",
+    });
+    return insights;
+  }
+
+  if (tab === "imports") {
+    push(insights, {
+      id: "learn-imports-what",
+      priority: MASCOT_PRIORITY.task,
+      message: tabHelp?.hint || "Select a provider, upload a spreadsheet, preview, then confirm the import.",
+    });
+    push(insights, {
+      id: "learn-imports-steps",
+      priority: MASCOT_PRIORITY.pipeline,
+      message: "Import flow: select provider → upload .xlsx/.csv → review preview → confirm. Invalid rows are flagged before import.",
+    });
+    push(insights, {
+      id: "learn-imports-history",
+      priority: MASCOT_PRIORITY.tip,
+      message: "Import history is at the bottom — you can download reports or roll back any import.",
+    });
+    return insights;
+  }
+
   // Unknown tab — still stay local, never dump the whole module.
   if (tabHelp?.hint) {
     push(insights, {
