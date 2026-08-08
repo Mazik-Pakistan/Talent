@@ -846,6 +846,35 @@ async def list_promotion_rules(organization_id: str) -> list[dict]:
     docs = await database.org_framework_promotion_rules.find(
         _oid_filter(organization_id), {"_id": 0}
     ).sort("role_name", 1).to_list(5000)
+
+    try:
+        level_query = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
+        levels = await database.career_levels.find(
+            level_query, {"_id": 0, "role_title": 1, "min_experience_years": 1,
+                          "manager_approval_required": 1, "required_skills": 1,
+                          "required_certifications": 1}
+        ).to_list(length=10000)
+
+        seen_roles = {d["role_name"] for d in docs}
+        for level in levels:
+            role = (level.get("role_title") or "").strip()
+            if not role or role in seen_roles:
+                continue
+            seen_roles.add(role)
+            skills_req = level.get("required_skills") or []
+            certs_req = level.get("required_certifications") or []
+            docs.append({
+                "role_name": role,
+                "min_experience_months": round((level.get("min_experience_years") or 0) * 12),
+                "required_readiness_pct": 80,
+                "manager_approval_required": bool(level.get("manager_approval_required", False)),
+                "min_skills_completed_pct": 100 if skills_req else 0,
+                "min_certs_completed": len(certs_req),
+                "source": "career_levels",
+            })
+    except Exception:
+        pass
+
     return docs
 
 
@@ -929,7 +958,7 @@ async def get_framework_summary(organization_id: str) -> dict:
     courses_learning = await database.learning_courses.count_documents(learning_query)
     courses = courses_framework + courses_learning
     roadmaps = len(await list_roadmaps(organization_id))
-    promotion_rules = await database.org_framework_promotion_rules.count_documents(_oid_filter(organization_id))
+    promotion_rules = len(await list_promotion_rules(organization_id))
 
     # Employees in this org
     try:

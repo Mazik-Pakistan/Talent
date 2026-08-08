@@ -1195,8 +1195,10 @@ function PromotionSection({ rules, roles, loadAll }) {
           <table className={s.table}>
             <thead><tr><th>Role</th><th>Min Experience</th><th>Readiness %</th><th>Skills %</th><th>Min Certs</th><th>Manager Approval</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
             <tbody>
-              {rules.map((r) => (
-                <tr key={r.role_name}>
+              {rules.map((r) => {
+                const fromCareer = r.source === "career_levels";
+                return (
+                <tr key={r.role_name} style={fromCareer ? { background: "#f8fafb" } : undefined}>
                   <td style={{ fontWeight: 650, color: "var(--navy)" }}>{r.role_name}</td>
                   <td>{r.min_experience_months}mo</td>
                   <td>{r.required_readiness_pct}%</td>
@@ -1204,11 +1206,17 @@ function PromotionSection({ rules, roles, loadAll }) {
                   <td>{r.min_certs_completed}</td>
                   <td>{r.manager_approval_required ? <span className={`${s.statusPill} ${s.green}`}>Required</span> : <span className={`${s.statusPill} ${s.neutral}`}>Not required</span>}</td>
                   <td style={{ textAlign: "right" }}>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => { setForm({ role_name: r.role_name, min_experience_months: r.min_experience_months, required_readiness_pct: r.required_readiness_pct, manager_approval_required: r.manager_approval_required, min_skills_completed_pct: r.min_skills_completed_pct || 100, min_certs_completed: r.min_certs_completed || 0 }); setShowForm(true); }}><Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ color: "var(--red)" }} onClick={() => handleDelete(r.role_name)}><Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
+                    {!fromCareer && (
+                      <>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => { setForm({ role_name: r.role_name, min_experience_months: r.min_experience_months, required_readiness_pct: r.required_readiness_pct, manager_approval_required: r.manager_approval_required, min_skills_completed_pct: r.min_skills_completed_pct || 100, min_certs_completed: r.min_certs_completed || 0 }); setShowForm(true); }}><Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
+                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ color: "var(--red)" }} onClick={() => handleDelete(r.role_name)}><Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
+                      </>
+                    )}
+                    {fromCareer && <span className={`${s.statusPill} ${s.orange}`} style={{ fontSize: 10 }}>Career Level</span>}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
