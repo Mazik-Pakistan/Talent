@@ -1850,18 +1850,19 @@ function ManagedLearningTab() {
   const loadProviderList = useCallback(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return Promise.resolve([]);
-    return Promise.all([
-      getManagedFacets(token).catch(() => ({ providers: [] })),
-      listProviders(token, { include_inactive: false, page_size: 100 }).catch(() => ({ providers: [] })),
-    ]).then(([facetData, providerData]) => {
-      const fromFacets = (facetData?.providers || []).map((item) => item.name ?? item).filter(Boolean);
-      const fromRegistry = (providerData?.providers || []).map((p) => p.name ?? p).filter(Boolean);
-      const merged = Array.from(
-        new Map([...fromFacets, ...fromRegistry].map((n) => [n.toLowerCase(), n])).values()
-      ).sort((a, b) => a.localeCompare(b));
-      setProviders(merged);
-      return merged;
-    });
+    // Single source of truth: the provider registry.
+    // Do NOT merge with getManagedFacets — facets include providers from course docs
+    // which may include deleted providers that haven't been fully cleaned up yet.
+    return listProviders(token, { include_inactive: false, page_size: 100 })
+      .catch(() => ({ providers: [] }))
+      .then((providerData) => {
+        const list = (providerData?.providers || [])
+          .map((p) => p.name ?? p)
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
+        setProviders(list);
+        return list;
+      });
   }, []);
 
   const load = useCallback(() => {
@@ -1903,8 +1904,19 @@ function ManagedLearningTab() {
   }, [q, provider, designation, learningMonth, category, competency, showArchived, sortBy, loadProviderList]);
 
   // Load providers immediately on mount, independent of the course list.
+  // Also re-load whenever a provider is created, updated, or deleted elsewhere.
   useEffect(() => {
     loadProviderList();
+    const onChanged = () => loadProviderList();
+    window.addEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onChanged);
+    const onStorage = (e) => {
+      if (e.key === LEARNING_PROVIDERS_UPDATED_STORAGE_KEY) loadProviderList();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onChanged);
+      window.removeEventListener("storage", onStorage);
+    };
   }, [loadProviderList]);
 
   useEffect(() => {

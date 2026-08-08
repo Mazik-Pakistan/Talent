@@ -222,8 +222,11 @@ class ProviderService:
             "name", 1
         ).skip(skip).limit(page_size).to_list(length=page_size)
         
-        # Enrich with course counts — single aggregation instead of N queries
+        # Enrich with course counts — one aggregation for managed courses,
+        # plus in-memory cache lookups for external API providers.
         course_counts: dict[str, int] = {}
+
+        # Managed / imported courses (stored in MongoDB)
         pipeline = [
             {"$match": {"$or": [{"archived": {"$exists": False}}, {"archived": False}]}},
             {"$group": {"_id": "$provider", "count": {"$sum": 1}}},
@@ -232,6 +235,20 @@ class ProviderService:
             name = (row.get("_id") or "").strip().lower()
             if name:
                 course_counts[name] = row.get("count", 0)
+
+        # External API providers — counts from their in-memory caches (non-blocking).
+        try:
+            from app.services import ms_learn_service as _ms
+            ms_items = await _ms.get_catalog()
+            course_counts["microsoft learn"] = len(ms_items)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from app.services import coursera_service as _cs
+            cs_items = await _cs.get_catalog()
+            course_counts["coursera"] = len(cs_items)
+        except Exception:  # noqa: BLE001
+            pass
 
         enriched = []
         for provider in providers:
