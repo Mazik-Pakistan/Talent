@@ -7,6 +7,7 @@ import { readAuth } from "./AgentChatCore";
 import RecruiterMascot from "@/components/recruiter/RecruiterMascot";
 import CandidateMascot from "@/components/candidate/CandidateMascot";
 import EmployeeMascot from "@/components/employee/EmployeeMascot";
+import SuperAdminMascot from "@/components/super-admin/SuperAdminMascot";
 
 // Routes where floating partners are hidden (auth flows & dedicated Agent pages).
 const PUBLIC_HIDDEN_PREFIXES = [
@@ -52,6 +53,13 @@ export default function AgentChatWidget() {
   if (!auth || hidden) return null;
 
   const role = auth.user?.role;
+
+  if (
+    pathname?.startsWith("/dashboard/super-admin") &&
+    role === "super_admin"
+  ) {
+    return <SuperAdminMascot />;
+  }
 
   if (
     pathname?.startsWith("/dashboard/recruiter") &&
