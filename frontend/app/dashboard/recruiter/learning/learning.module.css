@@ -5,48 +5,63 @@
    and only refines composition, hierarchy, spacing, and interaction states.
 // ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ───────────────────────── Tab navigation ───────────────────────── */
+/* ───────────────────────── Pill tab navigation (fixed 36px) ───────────────────────── */
 
 .tabBar {
   display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 4px;
-  margin-bottom: 28px;
+  margin-bottom: 18px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 6px;
-  box-shadow: var(--shadow-sm);
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(31, 127, 224, 0.35) transparent;
+  background: var(--blue-lighter);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 4px;
 }
-.tabBar::-webkit-scrollbar { display: none; }
+.tabBar::-webkit-scrollbar { height: 4px; }
+.tabBar::-webkit-scrollbar-thumb {
+  background: rgba(31, 127, 224, 0.35);
+  border-radius: 999px;
+}
 .tabBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 12px 18px;
+  gap: 7px;
+  flex: 0 0 auto;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 16px;
+  box-sizing: border-box;
   font-size: 12.5px;
   font-weight: 650;
+  line-height: 1;
   color: var(--text-muted);
   background: transparent;
   border: none;
-  border-radius: 10px;
+  border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
   font-family: inherit;
   transition: color .16s var(--ease), background .16s var(--ease), box-shadow .16s var(--ease), transform .16s var(--ease);
 }
-.tabBtn:hover { color: var(--navy); background: var(--blue-lighter); }
+.tabBtn:hover { color: var(--navy); }
 .tabBtn:active:not(.tabActive) { transform: translateY(1px); }
 .tabBtn:focus-visible { outline: 2px solid var(--blue-strong); outline-offset: 1px; }
-.tabIcon { display: inline-flex; flex-shrink: 0; }
-.tabIcon svg { width: 15px; height: 15px; }
+.tabIcon { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; }
+.tabIcon svg { width: 14px; height: 14px; }
 .tabActive {
   background: linear-gradient(135deg, var(--blue), var(--blue-strong) 60%, var(--navy-2));
   color: #fff;
-  box-shadow: 0 8px 18px -8px rgba(56, 162, 255, 0.7);
+  box-shadow: 0 6px 14px -8px rgba(56, 162, 255, 0.75);
 }
 .tabActive:hover { color: #fff; background: linear-gradient(135deg, var(--blue), var(--blue-strong) 60%, var(--navy-2)); }
 

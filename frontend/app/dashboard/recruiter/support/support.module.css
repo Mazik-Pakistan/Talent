@@ -190,27 +190,49 @@
 
 .tabs {
   display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 4px;
-  border-bottom: 1px solid #e5e7eb;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  background: #e9f4ff;
+  border: 1px solid #d7e4ef;
+  border-radius: 999px;
+  padding: 4px;
 }
+.tabs::-webkit-scrollbar { height: 4px; }
 
 .tab {
-  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 16px;
+  box-sizing: border-box;
   border: none;
   background: transparent;
   color: #64748b;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: all 0.15s;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition: color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
 }
 
+.tab:hover { color: #0f2a4a; }
+
 .tabActive {
-  color: #2563eb;
-  border-bottom-color: #2563eb;
+  background: linear-gradient(135deg, #38a2ff, #1f7fe0 60%, #153d5e);
+  color: #fff;
+  box-shadow: 0 6px 14px -8px rgba(56, 162, 255, 0.75);
 }
+.tabActive:hover { color: #fff; background: linear-gradient(135deg, #38a2ff, #1f7fe0 60%, #153d5e); }
 
 .formField {
   margin-bottom: 16px;

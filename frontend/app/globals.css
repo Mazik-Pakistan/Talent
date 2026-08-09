@@ -359,10 +359,42 @@ button, input { font: inherit; }
 .candidate-reupload-card { border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.08); }
 .candidate-reupload-warning { display: grid; gap: 4px; padding: 10px; border: 1px solid #fdba74; border-radius: 8px; background: #fff7ed; color: #9a3412; font-size: .75rem; line-height: 1.4; }
 
-/* Recruiter dashboard: tabs + pending-review + candidate offer composer */
-.section-tabs { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
-.section-tabs button { border: 1px solid var(--line); background: white; border-radius: 999px; padding: 8px 16px; font-size: .82rem; font-weight: 700; color: var(--muted); cursor: pointer; }
-.section-tabs button.active { background: var(--ink); border-color: var(--ink); color: white; }
+/* Recruiter dashboard: pill tabs + pending-review + candidate offer composer */
+.section-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 18px;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  background: var(--blue-lighter, #e9f4ff);
+  border: 1px solid var(--border-soft, #d7e4ef);
+  border-radius: 999px;
+  padding: 4px;
+}
+.section-tabs button {
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.section-tabs button:hover { color: var(--ink); }
+.section-tabs button.active {
+  background: linear-gradient(135deg, var(--blue), var(--blue-strong) 60%, var(--navy-2));
+  color: white;
+  box-shadow: 0 6px 14px -8px rgba(56, 162, 255, 0.75);
+}
 .candidate-review-card { border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; background: white; display: grid; gap: 12px; margin-bottom: 14px; }
 .candidate-review-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .candidate-review-head h4 { margin: 0; font-size: 1rem; }
