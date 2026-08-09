@@ -1077,5 +1077,476 @@ class TalentService:
             "generated_at": _iso(_now()),
         }
 
+    # ------------------------------------------------------------------ #
+    # Requirements not fulfilled (Talent Progress CIC)
+    # ------------------------------------------------------------------ #
+    _PROBLEM_DOC_STATUSES = {
+        "pending_verification",
+        "reupload_required",
+        "rejected",
+        "mismatch",
+        "pending",
+    }
+
+    _PROFILE_LABELS = {
+        "emergency": "Emergency contact",
+        "employment": "Bank & payroll details",
+        "references": "Professional references",
+        "documents": "Company policy acknowledgements",
+        "nda": "Self Declaration (NDA)",
+    }
+
+    def _requirement_item(
+        self,
+        *,
+        category: str,
+        code: str,
+        label: str,
+        status: str,
+        severity: str,
+        source: str,
+        action_hint: str,
+    ) -> dict:
+        return {
+            "category": category,
+            "code": code,
+            "label": label,
+            "status": status,
+            "severity": severity,
+            "source": source,
+            "actionHint": action_hint,
+        }
+
+    def _profile_missing_keys(self, employee: dict) -> list[str]:
+        onboarding = employee.get("onboarding") or {}
+        keys = ["emergency", "employment", "references", "documents", "nda"]
+        if not bool(employee.get("is_remote")):
+            keys = [k for k in keys if k != "employment"]
+        return [k for k in keys if not onboarding.get(k)]
+
+    async def _build_employee_requirements(
+        self,
+        employee: dict,
+        *,
+        docs_by_owner: dict[str, list[dict]] | None = None,
+        assignment_by_emp: dict[str, dict] | None = None,
+        skill_count_by_user: dict[str, int] | None = None,
+        enroll_count_by_user: dict[str, int] | None = None,
+        cert_count_by_user: dict[str, int] | None = None,
+    ) -> dict:
+        employee_id = employee.get("employee_id") or ""
+        user_id = employee.get("user_id") or ""
+        onboarding = employee.get("onboarding") or {}
+        items: list[dict] = []
+
+        # Post-hire profile
+        for key in self._profile_missing_keys(employee):
+            items.append(
+                self._requirement_item(
+                    category="profile",
+                    code=f"profile_{key}",
+                    label=self._PROFILE_LABELS.get(key, key.replace("_", " ").title()),
+                    status="missing",
+                    severity="high",
+                    source="employee.profile_status",
+                    action_hint="Complete post-hire profile steps on the employee profile page.",
+                )
+            )
+
+        # CV / resume
+        resume_ob = onboarding.get("resume") or {}
+        has_resume_ob = bool(resume_ob.get("file_url") or resume_ob.get("file_name"))
+        owner_docs = (docs_by_owner or {}).get(user_id, [])
+        resume_docs = [d for d in owner_docs if (d.get("doc_type") or "").lower() == "resume"]
+        has_resume_doc = bool(resume_docs)
+        if not has_resume_ob and not has_resume_doc:
+            items.append(
+                self._requirement_item(
+                    category="cv_resume",
+                    code="resume_missing",
+                    label="CV / resume not on file",
+                    status="missing",
+                    severity="high",
+                    source="onboarding.resume|documents",
+                    action_hint="Ask the employee to upload a resume, or attach one in Documents.",
+                )
+            )
+        else:
+            bad_resume = [
+                d
+                for d in resume_docs
+                if (d.get("status") or d.get("verification_status") or "").lower() in self._PROBLEM_DOC_STATUSES
+            ]
+            if bad_resume:
+                items.append(
+                    self._requirement_item(
+                        category="cv_resume",
+                        code="resume_unverified",
+                        label="CV / resume needs verification or reupload",
+                        status=(bad_resume[0].get("status") or bad_resume[0].get("verification_status") or "pending"),
+                        severity="high",
+                        source="documents",
+                        action_hint="Review the resume in Document verification.",
+                    )
+                )
+
+        # Identity / government docs
+        gov = onboarding.get("government_docs") or {}
+        gov_list = gov.get("documents") or []
+        identity_docs = [
+            d
+            for d in owner_docs
+            if (d.get("doc_type") or "").lower()
+            in {"cnic", "national_id", "passport", "government_id", "id_card", "nic"}
+            or (d.get("category") or "").lower() in {"identity", "government"}
+        ]
+        if not gov_list and not identity_docs:
+            items.append(
+                self._requirement_item(
+                    category="identity_docs",
+                    code="identity_missing",
+                    label="Identity / government documents missing",
+                    status="missing",
+                    severity="high",
+                    source="onboarding.government_docs|documents",
+                    action_hint="Collect identity documents and verify them in Documents.",
+                )
+            )
+        else:
+            problem_ids = [
+                d
+                for d in identity_docs
+                if (d.get("status") or d.get("verification_status") or "").lower() in self._PROBLEM_DOC_STATUSES
+            ]
+            if problem_ids:
+                items.append(
+                    self._requirement_item(
+                        category="identity_docs",
+                        code="identity_pending",
+                        label="Identity documents pending verification or reupload",
+                        status="pending_verification",
+                        severity="high",
+                        source="documents",
+                        action_hint="Verify or request reupload in Document review.",
+                    )
+                )
+
+        # Any other problem documents (excluding resume already covered)
+        other_problems = [
+            d
+            for d in owner_docs
+            if (d.get("doc_type") or "").lower() != "resume"
+            and (d.get("status") or d.get("verification_status") or "").lower() in self._PROBLEM_DOC_STATUSES
+            and d not in identity_docs
+        ]
+        if other_problems:
+            items.append(
+                self._requirement_item(
+                    category="identity_docs",
+                    code="docs_attention",
+                    label=f"{len(other_problems)} document(s) need attention",
+                    status="pending_verification",
+                    severity="high",
+                    source="documents",
+                    action_hint="Open Documents for this employee and clear pending/rejected items.",
+                )
+            )
+
+        # Career path
+        assignment = (assignment_by_emp or {}).get(employee_id)
+        if not assignment:
+            items.append(
+                self._requirement_item(
+                    category="career_path",
+                    code="career_path_missing",
+                    label="No career path / promotion target assigned",
+                    status="missing",
+                    severity="medium",
+                    source="employee_career_assignments",
+                    action_hint="Assign a target level from the Promotion Pipeline.",
+                )
+            )
+        else:
+            missing_skills = assignment.get("skills_to_acquire") or assignment.get("missing_skills") or []
+            missing_certs = assignment.get("certifications_to_earn") or assignment.get("missing_certifications") or []
+            open_skills = [
+                s
+                for s in missing_skills
+                if isinstance(s, str)
+                or (isinstance(s, dict) and (s.get("current_status") or s.get("status") or "not_started")
+                    not in {"acquired", "earned", "completed"})
+            ]
+            open_certs = [
+                c
+                for c in missing_certs
+                if isinstance(c, str)
+                or (isinstance(c, dict) and (c.get("status") or "not_started") not in {"earned", "completed"})
+            ]
+            if open_skills:
+                items.append(
+                    self._requirement_item(
+                        category="roadmap_gaps",
+                        code="skills_gap",
+                        label=f"{len(open_skills)} skill gap(s) for promotion target",
+                        status="incomplete",
+                        severity="medium",
+                        source="career_assignment",
+                        action_hint="Review Skills & gaps and assign learning to close them.",
+                    )
+                )
+            if open_certs:
+                items.append(
+                    self._requirement_item(
+                        category="roadmap_gaps",
+                        code="certs_gap",
+                        label=f"{len(open_certs)} certification gap(s) for promotion target",
+                        status="incomplete",
+                        severity="medium",
+                        source="career_assignment",
+                        action_hint="Track certifications on the promotion path checklist.",
+                    )
+                )
+            readiness = assignment.get("readiness_score")
+            if readiness is not None and float(readiness) < 50:
+                items.append(
+                    self._requirement_item(
+                        category="roadmap_gaps",
+                        code="readiness_behind",
+                        label=f"Promotion readiness behind ({round(float(readiness))}%)",
+                        status="behind",
+                        severity="medium",
+                        source="career_assignment",
+                        action_hint="This is path progress — separate from missing CV/docs.",
+                    )
+                )
+
+        # Learning / skill matrix empty
+        skill_n = (skill_count_by_user or {}).get(user_id, 0)
+        enroll_n = (enroll_count_by_user or {}).get(user_id, 0)
+        cert_n = (cert_count_by_user or {}).get(user_id, 0)
+        onboarding_skills = onboarding.get("skills") or {}
+        has_onboarding_skills = bool(
+            onboarding_skills.get("technical_skills")
+            or onboarding_skills.get("soft_skills")
+            or onboarding_skills.get("skills")
+        )
+        if skill_n == 0 and not has_onboarding_skills:
+            items.append(
+                self._requirement_item(
+                    category="learning_empty",
+                    code="skills_not_assessed",
+                    label="Skill matrix not assessed / no skills data yet",
+                    status="empty",
+                    severity="low",
+                    source="employee_skills",
+                    action_hint="Run skill assessment from Learning after a resume is on file.",
+                )
+            )
+        if enroll_n == 0 and cert_n == 0:
+            items.append(
+                self._requirement_item(
+                    category="learning_empty",
+                    code="learning_not_started",
+                    label="No learning enrollments or certificates yet",
+                    status="empty",
+                    severity="low",
+                    source="learning",
+                    action_hint="Assign courses from Learning or the promotion path.",
+                )
+            )
+
+        open_high = len([i for i in items if i["severity"] == "high"])
+        open_total = len(items)
+        by_category: dict[str, int] = {}
+        for i in items:
+            by_category[i["category"]] = by_category.get(i["category"], 0) + 1
+
+        return {
+            "employee_id": employee_id,
+            "full_name": employee.get("full_name") or "—",
+            "job_title": employee.get("job_title") or "—",
+            "department": employee.get("department") or "—",
+            "profile_status": employee.get("profile_status")
+            or ("incomplete" if self._profile_missing_keys(employee) else "complete"),
+            "open_high": open_high,
+            "open_total": open_total,
+            "top_codes": [i["code"] for i in items[:5]],
+            "by_category": by_category,
+            "items": items,
+            "all_met": open_total == 0,
+        }
+
+    async def requirements_status(
+        self,
+        current_user: CurrentUser,
+        *,
+        department: str | None = None,
+        role: str | None = None,
+        employee_id: str | None = None,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> dict:
+        if employee_id:
+            employee = await self._get_employee_by_id(employee_id)
+            await self._assert_recruiter_owns(current_user, employee)
+            user_id = employee.get("user_id") or ""
+            docs = (
+                await database.documents.find({"owner_id": user_id, "is_active": True}).to_list(length=200)
+                if user_id
+                else []
+            )
+            assignment = await database.employee_career_assignments.find_one(
+                {"employee_id": employee_id, "status": "active"}
+            )
+            skill_n = (
+                await database.employee_skills.count_documents({"user_id": user_id}) if user_id else 0
+            )
+            enroll_n = (
+                await database.learning_enrollments.count_documents({"user_id": user_id}) if user_id else 0
+            )
+            cert_n = (
+                await database.learning_certificates.count_documents({"user_id": user_id}) if user_id else 0
+            )
+            detail = await self._build_employee_requirements(
+                employee,
+                docs_by_owner={user_id: docs} if user_id else {},
+                assignment_by_emp={employee_id: assignment} if assignment else {},
+                skill_count_by_user={user_id: skill_n} if user_id else {},
+                enroll_count_by_user={user_id: enroll_n} if user_id else {},
+                cert_count_by_user={user_id: cert_n} if user_id else {},
+            )
+            return {
+                "mode": "employee",
+                "employee": detail,
+                "items": detail["items"],
+                "all_met": detail["all_met"],
+                "open_high": detail["open_high"],
+                "open_total": detail["open_total"],
+                "by_category": detail["by_category"],
+            }
+
+        query: dict[str, Any] = {"status": {"$in": ["active", "inactive", "on_leave"]}}
+        if current_user.role != "super_admin":
+            query["recruiter_id"] = current_user.id
+        if department:
+            query["department"] = department
+
+        employees = await database.employees.find(query).sort("full_name", 1).to_list(length=500)
+        if role:
+            role_key = role.strip().lower()
+            employees = [
+                e for e in employees if (e.get("job_title") or "").strip().lower() == role_key
+            ]
+
+        user_ids = [e.get("user_id") for e in employees if e.get("user_id")]
+        emp_ids = [e.get("employee_id") for e in employees if e.get("employee_id")]
+
+        docs = (
+            await database.documents.find(
+                {"owner_id": {"$in": user_ids}, "is_active": True}
+            ).to_list(length=10000)
+            if user_ids
+            else []
+        )
+        docs_by_owner: dict[str, list[dict]] = {}
+        for d in docs:
+            docs_by_owner.setdefault(d.get("owner_id") or "", []).append(d)
+
+        assignments = (
+            await database.employee_career_assignments.find(
+                {"employee_id": {"$in": emp_ids}, "status": "active"}
+            ).to_list(length=2000)
+            if emp_ids
+            else []
+        )
+        assignment_by_emp = {a.get("employee_id"): a for a in assignments if a.get("employee_id")}
+
+        skill_counts: dict[str, int] = {}
+        enroll_counts: dict[str, int] = {}
+        cert_counts: dict[str, int] = {}
+        if user_ids:
+            async for row in database.employee_skills.aggregate(
+                [{"$match": {"user_id": {"$in": user_ids}}}, {"$group": {"_id": "$user_id", "n": {"$sum": 1}}}]
+            ):
+                skill_counts[row["_id"]] = row["n"]
+            async for row in database.learning_enrollments.aggregate(
+                [{"$match": {"user_id": {"$in": user_ids}}}, {"$group": {"_id": "$user_id", "n": {"$sum": 1}}}]
+            ):
+                enroll_counts[row["_id"]] = row["n"]
+            async for row in database.learning_certificates.aggregate(
+                [{"$match": {"user_id": {"$in": user_ids}}}, {"$group": {"_id": "$user_id", "n": {"$sum": 1}}}]
+            ):
+                cert_counts[row["_id"]] = row["n"]
+
+        rows = []
+        for emp in employees:
+            detail = await self._build_employee_requirements(
+                emp,
+                docs_by_owner=docs_by_owner,
+                assignment_by_emp=assignment_by_emp,
+                skill_count_by_user=skill_counts,
+                enroll_count_by_user=enroll_counts,
+                cert_count_by_user=cert_counts,
+            )
+            rows.append(detail)
+
+        incomplete_rows = [r for r in rows if r["open_total"] > 0]
+        by_category: dict[str, int] = {}
+        for r in incomplete_rows:
+            for cat, n in (r.get("by_category") or {}).items():
+                by_category[cat] = by_category.get(cat, 0) + n
+
+        by_department: dict[str, dict] = {}
+        for r in rows:
+            dept = r.get("department") or "Unassigned"
+            bucket = by_department.setdefault(
+                dept,
+                {
+                    "department": dept,
+                    "employee_count": 0,
+                    "incomplete_count": 0,
+                    "incomplete_high": 0,
+                },
+            )
+            bucket["employee_count"] += 1
+            if r["open_total"] > 0:
+                bucket["incomplete_count"] += 1
+            if r["open_high"] > 0:
+                bucket["incomplete_high"] += 1
+
+        # Prefer people with open high-severity items first
+        incomplete_rows.sort(key=lambda r: (-r["open_high"], -r["open_total"], r["full_name"] or ""))
+        total = len(incomplete_rows)
+        start = max(0, (page - 1) * page_size)
+        page_rows = incomplete_rows[start : start + page_size]
+
+        return {
+            "mode": "scope",
+            "department": department,
+            "role": role,
+            "incomplete_count": total,
+            "incomplete_high_count": len([r for r in incomplete_rows if r["open_high"] > 0]),
+            "employee_count": len(rows),
+            "by_category": by_category,
+            "by_department": sorted(by_department.values(), key=lambda d: d["department"]),
+            "employees": [
+                {
+                    "employee_id": r["employee_id"],
+                    "full_name": r["full_name"],
+                    "job_title": r["job_title"],
+                    "department": r["department"],
+                    "open_high": r["open_high"],
+                    "open_total": r["open_total"],
+                    "top_codes": r["top_codes"],
+                    "by_category": r["by_category"],
+                }
+                for r in page_rows
+            ],
+            "page": page,
+            "page_size": page_size,
+            "pages": max(1, (total + page_size - 1) // page_size) if page_size else 1,
+            "total": total,
+        }
+
 
 talent_service = TalentService()

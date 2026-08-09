@@ -351,6 +351,138 @@
 .progressBadgeGreen { background: var(--green-light); color: var(--green); }
 .progressBadgeOrange { background: var(--orange-light); color: #a57500; }
 .progressBadgeRed { background: var(--red-light); color: var(--red); }
+.progressBadgeMuted { background: #eef2f7; color: var(--text-muted); }
+
+.incompleteChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--orange-light, #fff4e0);
+  color: #a57500;
+}
+
+.skillMatrixList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skillMatrixRow {
+  display: grid;
+  grid-template-columns: minmax(100px, 140px) 1fr 90px;
+  gap: 10px;
+  align-items: center;
+}
+.skillMatrixName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--navy);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skillMatrixTrack {
+  height: 8px;
+  border-radius: 99px;
+  background: #e8eef5;
+  overflow: hidden;
+}
+.skillMatrixFill {
+  height: 100%;
+  background: linear-gradient(90deg, #00a9ce, #0f2a4a);
+  border-radius: 99px;
+}
+.skillMatrixProf {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.reqPanel {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: #fff;
+  margin-bottom: 12px;
+}
+.reqPanelOk {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: linear-gradient(180deg, #f3fdf6 0%, #fff 70%);
+}
+.reqPanelBlocked {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: linear-gradient(180deg, #fffaf0 0%, #fff 70%);
+}
+.reqPanelHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.reqPanelTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy);
+}
+.reqPanelDesc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.reqList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.reqRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.reqRowLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy);
+}
+.reqRowMeta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.reqSeverity {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  align-self: start;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.reqSeverityHigh {
+  background: var(--red-light, #fdecec);
+  color: var(--red);
+}
+.reqSeverityMedium {
+  background: var(--orange-light, #fff4e0);
+  color: #a57500;
+}
+.reqSeverityLow {
+  background: #eef2f7;
+  color: var(--text-muted);
+}
+.reqActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
 .targetDate {
   display: flex;
   align-items: center;

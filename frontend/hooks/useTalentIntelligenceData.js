@@ -11,13 +11,31 @@ import {
   listOrgRoadmaps,
   listOrgPromotionRules,
 } from "@/services/orgFrameworkService";
-import { getTalentMetrics } from "@/services/talentService";
+import { getTalentMetrics, getTalentRequirementsStatus } from "@/services/talentService";
 import {
   getPromotionReadiness,
   getCareerProgressReport,
 } from "@/services/careerService";
 import { getLearningAnalytics } from "@/services/learningService";
 import { onFrameworkInvalidated } from "@/lib/frameworkEvents";
+
+function careerAvgProgress(career) {
+  if (!career) return null;
+  const raw =
+    career.avg_progress_percent ??
+    career.average_progress ??
+    career.avg_progress ??
+    career.avg_readiness_score;
+  if (raw == null || Number.isNaN(Number(raw))) return null;
+  return Number(raw);
+}
+
+function learningCertRate(learn, orgLearning) {
+  if (learn?.certification_rate != null) return learn.certification_rate;
+  // Per-dept cert rate is not in department_comparison — fall back to org rate.
+  if (orgLearning?.certification_rate != null) return orgLearning.certification_rate;
+  return null;
+}
 
 /**
  * Session-cached Talent Intelligence aggregates.
@@ -69,11 +87,13 @@ async function fetchBundle(force = false) {
     getCareerProgressReport(token),
     getLearningAnalytics(token, undefined, { force }),
     getOrgStructureOptions(token),
+    getTalentRequirementsStatus(token, { page_size: 200 }),
   ]).then((results) => {
     const val = (i, fallback) =>
       results[i].status === "fulfilled" ? results[i].value : fallback;
 
     const structureOptions = val(11, null);
+    const requirements = val(12, null);
     let departments = asList(val(1, []));
     let roles = asList(val(2, []));
 
@@ -133,52 +153,68 @@ async function fetchBundle(force = false) {
       return roles.filter((r) => (r.department || "").trim().toLowerCase() === key);
     }
 
-    const departmentCards = departments.map((d) => {
-      const name = typeof d === "string" ? d : d?.name;
-      if (!name) return null;
+    const incompleteByDept = {};
+    for (const row of requirements?.by_department || []) {
+      if (row?.department) incompleteByDept[row.department] = row;
+    }
+    const incompleteByEmployee = {};
+    for (const row of requirements?.employees || []) {
+      if (row?.employee_id) incompleteByEmployee[row.employee_id] = row;
+    }
+
+    function buildCard(name, description, fromMetricsOnly = false) {
       const analysis = deptAnalysis[name];
       const career = careerByDept[name];
       const learn = learningByDept[name];
       const deptRoles = rolesForDepartment(name);
+      const req = incompleteByDept[name];
       return {
         name,
-        description: (typeof d === "string" ? "" : d?.description) || "",
-        employeeCount: analysis?.headcount ?? null,
+        description: description || "",
+        employeeCount: analysis?.headcount ?? req?.employee_count ?? null,
         roleCount: deptRoles.length,
         skillsTracked: analysis?.skills_tracked ?? null,
-        avgProgress: career?.average_progress ?? career?.avg_progress ?? null,
+        avgProgress: careerAvgProgress(career),
+        avgReadiness: career?.avg_readiness_score ?? null,
         onTrack: career?.on_track_count ?? null,
         behind: career?.behind_count ?? null,
         learningCompletion: learn?.completion_rate ?? learn?.learning_completion_rate ?? null,
-        certificationRate: learn?.certification_rate ?? null,
+        certificationRate: learningCertRate(learn, learning),
+        incompleteRequirements: req?.incomplete_count ?? 0,
+        incompleteHigh: req?.incomplete_high ?? 0,
         roles: deptRoles,
+        ...(fromMetricsOnly ? { fromMetricsOnly: true } : {}),
       };
+    }
+
+    const departmentCards = departments.map((d) => {
+      const name = typeof d === "string" ? d : d?.name;
+      if (!name) return null;
+      return buildCard(name, typeof d === "string" ? "" : d?.description);
     }).filter(Boolean);
 
     // Include departments that appear in metrics but not yet in framework (still dynamic, not hardcoded)
     for (const name of Object.keys(deptAnalysis)) {
       if (!departmentCards.some((c) => c.name === name)) {
-        const analysis = deptAnalysis[name];
-        const career = careerByDept[name];
-        const learn = learningByDept[name];
-        departmentCards.push({
-          name,
-          description: "",
-          employeeCount: analysis?.headcount ?? null,
-          roleCount: rolesForDepartment(name).length,
-          skillsTracked: analysis?.skills_tracked ?? null,
-          avgProgress: career?.average_progress ?? career?.avg_progress ?? null,
-          onTrack: career?.on_track_count ?? null,
-          behind: career?.behind_count ?? null,
-          learningCompletion: learn?.completion_rate ?? learn?.learning_completion_rate ?? null,
-          certificationRate: learn?.certification_rate ?? null,
-          roles: rolesForDepartment(name),
-          fromMetricsOnly: true,
-        });
+        departmentCards.push(buildCard(name, "", true));
+      }
+    }
+    for (const name of Object.keys(incompleteByDept)) {
+      if (!departmentCards.some((c) => c.name === name)) {
+        departmentCards.push(buildCard(name, "", true));
       }
     }
 
-    departmentCards.sort((a, b) => a.name.localeCompare(b.name));
+    departmentCards.sort((a, b) => {
+      // Rank: higher avg progress first; then fewer incomplete; then name
+      const ap = a.avgProgress ?? -1;
+      const bp = b.avgProgress ?? -1;
+      if (bp !== ap) return bp - ap;
+      const ai = a.incompleteHigh ?? 0;
+      const bi = b.incompleteHigh ?? 0;
+      if (ai !== bi) return ai - bi;
+      return a.name.localeCompare(b.name);
+    });
 
     cache = {
       summary,
@@ -192,6 +228,8 @@ async function fetchBundle(force = false) {
       promotion,
       careerProgress,
       learning,
+      requirements,
+      incompleteByEmployee,
       departmentCards,
       rolesByDept,
       errors: results

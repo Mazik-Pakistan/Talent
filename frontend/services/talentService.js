@@ -125,6 +125,21 @@ export async function getTalentMetrics(accessToken, department, { force = false 
   return data;
 }
 
+// ─── Requirements not fulfilled (Talent Progress CIC) ─────────────────────────
+
+export async function getTalentRequirementsStatus(accessToken, params = {}) {
+  const { data } = await apiClient.get("/api/talent/requirements-status", {
+    params: {
+      department: params.department || undefined,
+      role: params.role || undefined,
+      employee_id: params.employee_id || undefined,
+      page: params.page || 1,
+      page_size: params.page_size || 50,
+    },
+  });
+  return data;
+}
+
 // ─── Development plan (US-103) ────────────────────────────────────────────────
 
 export async function getDevelopmentPlan(accessToken, employeeId) {

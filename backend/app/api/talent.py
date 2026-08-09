@@ -116,6 +116,26 @@ async def talent_metrics(current_user: RequireRecruiterWithTalent, department: s
     return await talent_service.talent_metrics(current_user, department=department)
 
 
+@router.get("/requirements-status")
+async def requirements_status(
+    current_user: RequireRecruiterWithTalent,
+    department: str | None = None,
+    role: str | None = None,
+    employee_id: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+):
+    """Aggregated requirements-not-fulfilled checklist for Talent Progress CIC."""
+    return await talent_service.requirements_status(
+        current_user,
+        department=department,
+        role=role,
+        employee_id=employee_id,
+        page=page,
+        page_size=page_size,
+    )
+
+
 @router.put("/development-plan/{employee_id}")
 async def edit_development_plan(
     employee_id: str, request: DevelopmentPlanUpdateRequest, current_user: RequireRecruiterWithTalent

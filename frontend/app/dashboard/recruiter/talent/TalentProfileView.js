@@ -5,15 +5,17 @@ import { toast } from "react-toastify";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./talent.module.css";
 import EmployeeTalentPanel from "@/components/recruiter/EmployeeTalentPanel";
+import SkillMatrixBars from "@/components/recruiter/SkillMatrixBars";
 import { getApiErrorMessage, getEmployeeDetail } from "@/services/authService";
 import { getEmployeeCareer } from "@/services/careerService";
 import { getEmployeeLearningProfile } from "@/services/learningService";
-import { getTalentProfile } from "@/services/talentService";
+import { getTalentProfile, getTalentRequirementsStatus } from "@/services/talentService";
 import {
   Award,
   BookOpen,
   ChevronRight,
   CircleCheckBig,
+  ClipboardList,
   Clock,
   Target,
   TrendingUp,
@@ -160,6 +162,7 @@ export default function TalentProfileView({
   const [talent, setTalent] = useState(null);
   const [career, setCareer] = useState(null);
   const [learning, setLearning] = useState(null);
+  const [requirements, setRequirements] = useState(null);
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState("promotion");
 
@@ -172,14 +175,10 @@ export default function TalentProfileView({
       getTalentProfile(token, employeeId),
       getEmployeeCareer(token, employeeId),
       getEmployeeLearningProfile(token, employeeId),
+      getTalentRequirementsStatus(token, { employee_id: employeeId }),
     ])
-      .then(([empRes, talentRes, careerRes, learnRes]) => {
-        console.log("[Profile] employee detail:", empRes.status, empRes.value || empRes.reason);
-        console.log("[Profile] talent:", talentRes.status);
-        console.log("[Profile] career:", careerRes.status);
-        console.log("[Profile] learning:", learnRes.status);
+      .then(([empRes, talentRes, careerRes, learnRes, reqRes]) => {
         if (empRes.status === "fulfilled") {
-          console.log("[Profile] employee keys:", empRes.value ? Object.keys(empRes.value) : "null");
           setEmployee(empRes.value);
         } else {
           toast.error(getApiErrorMessage(empRes.reason, "Could not load employee."));
@@ -187,6 +186,7 @@ export default function TalentProfileView({
         if (talentRes.status === "fulfilled") setTalent(talentRes.value);
         if (careerRes.status === "fulfilled") setCareer(careerRes.value);
         if (learnRes.status === "fulfilled") setLearning(learnRes.value);
+        if (reqRes.status === "fulfilled") setRequirements(reqRes.value);
       })
       .finally(() => setLoading(false));
   }, [employeeId]);
@@ -248,20 +248,92 @@ export default function TalentProfileView({
 
   const readiness = career?.readiness_score ?? career?.assignment?.readiness_score ?? talent?.readiness_score;
   const skillGaps = asArray(talent?.skill_gaps || talent?.gaps || learning?.skill_gaps);
-  const skills = asArray(talent?.skills);
+  const skillMatrixSource = talent?.skills || learning?.skills || learning?.skill_matrix;
+  const skills = asArray(
+    Array.isArray(skillMatrixSource)
+      ? skillMatrixSource
+      : skillMatrixSource?.categories
+        ? skillMatrixSource.categories.flatMap((c) => c.skills || [])
+        : skillMatrixSource?.items || []
+  );
   const certs = asArray(learning?.certifications || talent?.certifications);
   const courses = asArray(learning?.enrollments || learning?.courses);
   const careerGaps = asArray(career?.gaps || career?.skill_gaps || career?.assignment?.gaps);
+  const reqItems = asArray(requirements?.items || requirements?.employee?.items);
+  const reqAllMet = Boolean(requirements?.all_met || requirements?.employee?.all_met);
+  const reqOpenHigh = requirements?.open_high ?? requirements?.employee?.open_high ?? 0;
 
   return (
     <div className={styles.intelStack}>
       <Breadcrumbs crumbs={crumbs} />
 
+      <div className={`${styles.reqPanel} ${reqAllMet || reqItems.length === 0 ? styles.reqPanelOk : styles.reqPanelBlocked}`}>
+        <div className={styles.reqPanelHead}>
+          <div>
+            <div className={styles.reqPanelTitle}>
+              <ClipboardList size={16} aria-hidden="true" style={{ marginRight: 6, verticalAlign: "middle" }} />
+              {reqAllMet || reqItems.length === 0
+                ? "All requirements met"
+                : "Requirements not fulfilled"}
+            </div>
+            <p className={styles.reqPanelDesc}>
+              {reqAllMet || reqItems.length === 0
+                ? "Profile, CV/docs, career path, and learning/skills checks are clear for this employee."
+                : "Blocked / incomplete data is separate from “behind on promotion path.” Fix high-severity items first."}
+            </p>
+          </div>
+          {reqOpenHigh > 0 && (
+            <span className={`${styles.reqSeverity} ${styles.reqSeverityHigh}`}>{reqOpenHigh} high</span>
+          )}
+        </div>
+        {reqItems.length > 0 && (
+          <div className={styles.reqList}>
+            {reqItems.map((item) => (
+              <div key={item.code} className={styles.reqRow}>
+                <div>
+                  <div className={styles.reqRowLabel}>{item.label}</div>
+                  <div className={styles.reqRowMeta}>
+                    {item.category?.replace(/_/g, " ")} · {item.status}
+                    {item.actionHint ? ` — ${item.actionHint}` : ""}
+                  </div>
+                </div>
+                <span
+                  className={`${styles.reqSeverity} ${
+                    item.severity === "high"
+                      ? styles.reqSeverityHigh
+                      : item.severity === "medium"
+                        ? styles.reqSeverityMedium
+                        : styles.reqSeverityLow
+                  }`}
+                >
+                  {item.severity}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className={styles.reqActions}>
+          <button
+            type="button"
+            className={styles.smallBtn}
+            onClick={() => onNavigate({ path: `/dashboard/recruiter/employees/${encodeURIComponent(employeeId)}` })}
+          >
+            Open employee profile / docs
+          </button>
+          <button type="button" className={styles.smallBtn} onClick={() => onNavigate({ view: "pipeline", employee: null })}>
+            Assign career path
+          </button>
+          <button type="button" className={styles.smallBtn} onClick={() => setSection("skills")}>
+            View skill matrix
+          </button>
+        </div>
+      </div>
+
       <div className={styles.subTabBar} role="tablist">
         {[
           { key: "promotion", label: "Promotion path" },
           { key: "overview", label: "Overview" },
-          { key: "skills", label: "Skills & gaps" },
+          { key: "skills", label: "Skills & matrix" },
           { key: "learning", label: "Learning" },
           { key: "career", label: "Career details" },
           { key: "development", label: "Development plan" },
@@ -318,15 +390,19 @@ export default function TalentProfileView({
           return (
             <div className={styles.promoEmpty}>
               <div className={styles.promoEmptyIcon}><Target aria-hidden="true" /></div>
-              <div className={styles.promoEmptyTitle}>No promotion path assigned yet</div>
+              <div className={styles.promoEmptyTitle}>No career path assigned</div>
               <p className={styles.promoEmptyHint}>
-                Assign a career path from the Promotion Pipeline so recruiters can track readiness, skills, courses, and certifications in one view.
+                This is incomplete setup — not “behind on promotion.” Assign a target level from the Promotion Pipeline to track readiness and gaps.
               </p>
               <div className={styles.promoEmptyActions}>
                 <button type="button" className={styles.smallBtnPrimary} onClick={() => onNavigate({ view: "pipeline", employee: null })}>
                   Open Promotion Pipeline
                 </button>
-                <button type="button" className={styles.smallBtn} onClick={() => onNavigate({ view: "organization-config", employee: null })}>
+                <button
+                  type="button"
+                  className={styles.smallBtn}
+                  onClick={() => onNavigate({ path: "/dashboard/recruiter/organization-config" })}
+                >
                   Configure Org Levels
                 </button>
               </div>
@@ -505,28 +581,33 @@ export default function TalentProfileView({
               </div>
             </div>
             <div className={shellStyles.sectionBody}>
+              <p className={styles.inlineNote}>
+                Skills tracked: {skills.length || talent?.skills?.total_skills || "Not assessed"}
+                {" · "}
+                Requirements open: {reqItems.length}
+                {reqOpenHigh ? ` (${reqOpenHigh} high severity)` : ""}
+              </p>
               {(talent?.competency_average || talent?.average_competency) && (
                 <p className={styles.inlineNote}>
                   Competency avg: {talent?.competency_average ?? talent?.average_competency}
-                  {" · "}
-                  Skills tracked: {skills.length || talent?.skill_count || "—"}
                 </p>
               )}
-              {(learning?.overall_progress || learning?.completion_rate || talent?.learning_progress) && (
+              {(learning?.overall_progress || learning?.completion_rate || talent?.learning_progress) != null ? (
                 <p className={styles.inlineNote}>
                   Learning progress: {learning?.overall_progress ?? learning?.completion_rate ?? talent?.learning_progress}%
                 </p>
+              ) : (
+                <p className={styles.inlineNote}>No learning progress data yet — not the same as 0% readiness.</p>
               )}
-              {career?.assignment && (
+              {career?.assignment ? (
                 <p className={styles.inlineNote}>
                   Path: {career.assignment.current_role_title || career.current_role || "—"}
                   {" → "}
                   {career.assignment.target_role_title || career.target_role || "—"}
                   {career.assignment.target_date ? ` · Target ${career.assignment.target_date}` : ""}
                 </p>
-              )}
-              {!talent?.competency_average && !talent?.average_competency && !learning?.overall_progress && !career?.assignment && (
-                <p className={styles.inlineNote}>No overview data available yet.</p>
+              ) : (
+                <p className={styles.inlineNote}>No career path assigned yet.</p>
               )}
             </div>
           </div>
@@ -534,32 +615,59 @@ export default function TalentProfileView({
       )}
 
       {section === "skills" && (
-        <div className={shellStyles.section}>
-          <div className={shellStyles.sectionHead}>
-            <div className={shellStyles.sectionHeadLeft}>
-              <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
-              <div>
-                <div className={shellStyles.sectionTitle}>Skills & gaps</div>
+        <div className={styles.detailPanels}>
+          <div className={shellStyles.section}>
+            <div className={shellStyles.sectionHead}>
+              <div className={shellStyles.sectionHeadLeft}>
+                <span className={`${shellStyles.bar} ${shellStyles.green}`} />
+                <div>
+                  <div className={shellStyles.sectionTitle}>Skill matrix</div>
+                  <p className={shellStyles.sectionDesc}>Proficiency from resume / learning assessment</p>
+                </div>
               </div>
             </div>
-          </div>
-          <div className={shellStyles.sectionBody}>
-            <div className={styles.chipRow}>
-              {skills.map((s, i) => (
-                <span key={`sk-${i}`} className={styles.softChip}>
-                  {typeof s === "string" ? s : s.name || s.skill}
-                </span>
-              ))}
+            <div className={shellStyles.sectionBody}>
+              <SkillMatrixBars
+                skills={skillMatrixSource}
+                emptyMessage="Skill matrix not assessed / no skills data yet. Run assessment from Learning after a resume is on file."
+              />
             </div>
-            {skillGaps.length === 0 ? (
-              <p className={styles.inlineNote} style={{ marginTop: 12 }}>No skill gaps reported.</p>
-            ) : (
-              <ul className={styles.gapList}>
-                {skillGaps.map((g, i) => (
-                  <li key={`gap-${i}`}>{typeof g === "string" ? g : g.skill || g.name || JSON.stringify(g)}</li>
-                ))}
-              </ul>
-            )}
+          </div>
+          <div className={shellStyles.section}>
+            <div className={shellStyles.sectionHead}>
+              <div className={shellStyles.sectionHeadLeft}>
+                <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
+                <div>
+                  <div className={shellStyles.sectionTitle}>Skills & gaps</div>
+                </div>
+              </div>
+            </div>
+            <div className={shellStyles.sectionBody}>
+              {skills.length === 0 ? (
+                <p className={styles.inlineNote}>No skills on file yet.</p>
+              ) : (
+                <div className={styles.chipRow}>
+                  {skills.map((s, i) => (
+                    <span key={`sk-${i}`} className={styles.softChip}>
+                      {typeof s === "string" ? s : s.name || s.skill_name || s.skill}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {skillGaps.length === 0 ? (
+                <p className={styles.inlineNote} style={{ marginTop: 12 }}>
+                  {skills.length === 0
+                    ? "Gaps unavailable until skills are assessed."
+                    : "No skill gaps reported."}
+                </p>
+              ) : (
+                <ul className={styles.gapList}>
+                  {skillGaps.map((g, i) => (
+                    <li key={`gap-${i}`}>{typeof g === "string" ? g : g.skill || g.name || JSON.stringify(g)}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -577,7 +685,12 @@ export default function TalentProfileView({
             </div>
             <div className={shellStyles.sectionBody}>
               {courses.length === 0 ? (
-                <p className={styles.inlineNote}>No learning enrollments loaded.</p>
+                <div className={styles.emptyState}>
+                  <div className={styles.emptyStateTitle}>No learning data yet</div>
+                  <p className={styles.emptyStateHint}>
+                    Not started — assign courses from Learning or the promotion path. This is incomplete setup, not “behind.”
+                  </p>
+                </div>
               ) : (
                 courses.slice(0, 12).map((c, i) => (
                   <div key={c.id || i} className={styles.employeeMiniRow}>
@@ -603,7 +716,7 @@ export default function TalentProfileView({
             </div>
             <div className={shellStyles.sectionBody}>
               {certs.length === 0 ? (
-                <p className={styles.inlineNote}>No certifications on file.</p>
+                <p className={styles.inlineNote}>No certifications on file yet.</p>
               ) : (
                 <div className={styles.chipRow}>
                   {certs.map((c, i) => (
@@ -630,7 +743,12 @@ export default function TalentProfileView({
           </div>
           <div className={shellStyles.sectionBody}>
             {!career?.assignment && !career?.current_role && (
-              <p className={styles.inlineNote}>No career assignment yet. Assign a target level from the Promotion Pipeline.</p>
+              <div className={styles.emptyState}>
+                <div className={styles.emptyStateTitle}>No career path assigned</div>
+                <p className={styles.emptyStateHint}>
+                  Incomplete setup — assign a target level from the Promotion Pipeline. Do not treat this as low readiness.
+                </p>
+              </div>
             )}
             {(career?.assignment || career?.current_role) && (
               <>
