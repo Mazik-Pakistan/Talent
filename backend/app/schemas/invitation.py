@@ -11,6 +11,7 @@ from app.schemas.auth import (
     normalize_pk_mobile,
     validate_cnic_format,
     validate_date_not_future,
+    validate_date_of_birth,
     validate_url_format,
 )
 from app.schemas.date_utils import parse_natural_date
@@ -250,8 +251,8 @@ class OnboardingPersonalInfo(BaseModel):
     @field_validator("date_of_birth")
     @classmethod
     def validate_date_of_birth(cls, value: date) -> date:
-        """Validate date of birth is not in the future."""
-        return validate_date_not_future(value, "date of birth")
+        """Validate date of birth: not in the future and user must be at least 14."""
+        return validate_date_of_birth(value, "Date of birth")
 
     @field_validator("profile_picture")
     @classmethod

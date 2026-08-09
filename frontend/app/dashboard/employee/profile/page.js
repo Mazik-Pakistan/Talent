@@ -25,6 +25,7 @@ import {
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
 import { getEmployeeNavItems, isEmployeeNavActive } from "@/utils/employeeNav";
+import { validateDateOfBirth, getMaxDob } from "@/utils/validation";
 import { publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
 import {
@@ -501,6 +502,11 @@ function EmployeeProfileContent() {
   }
 
   async function savePersonal() {
+    const dobCheck = validateDateOfBirth(personalDraft.date_of_birth, "Date of birth");
+    if (!dobCheck.isValid) {
+      showFormError(dobCheck.error, { date_of_birth: dobCheck.error });
+      return;
+    }
     await persistSection("personal", {
       personal: {
         ...personalDraft,
@@ -812,7 +818,7 @@ function EmployeeProfileContent() {
                       <div className={styles.formGrid}>
                         <Field label="First name" value={personalDraft.first_name} onChange={(e) => setPersonalDraft({ ...personalDraft, first_name: e.target.value })} />
                         <Field label="Last name" value={personalDraft.last_name} onChange={(e) => setPersonalDraft({ ...personalDraft, last_name: e.target.value })} />
-                        <Field label="Date of birth" type="date" value={personalDraft.date_of_birth} onChange={(e) => setPersonalDraft({ ...personalDraft, date_of_birth: e.target.value })} />
+                        <Field label="Date of birth" type="date" max={getMaxDob()} value={personalDraft.date_of_birth} onChange={(e) => setPersonalDraft({ ...personalDraft, date_of_birth: e.target.value })} />
                         <SelectField label="Gender" value={personalDraft.gender} options={["male", "female", "other", "prefer_not_to_say"]} onChange={(e) => setPersonalDraft({ ...personalDraft, gender: e.target.value })} />
                         <Field label="Nationality" value={personalDraft.nationality} onChange={(e) => setPersonalDraft({ ...personalDraft, nationality: e.target.value })} />
                         <SelectField label="Marital status" value={personalDraft.marital_status} options={["single", "married", "divorced", "widowed", "other"]} onChange={(e) => setPersonalDraft({ ...personalDraft, marital_status: e.target.value })} />
@@ -1666,7 +1672,7 @@ function Row({ label, value, wide }) {
   );
 }
 
-function Field({ label, value, onChange, type = "text", wide, error, hint, required }) {
+function Field({ label, value, onChange, type = "text", wide, error, hint, required, max }) {
   return (
     <label
       className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""}`}
@@ -1676,7 +1682,7 @@ function Field({ label, value, onChange, type = "text", wide, error, hint, requi
         {label}
         {required ? <span style={{ color: "#b42318", marginLeft: 4 }}>*</span> : null}
       </span>
-      <input type={type} value={value} onChange={onChange} aria-invalid={!!error} required={required} />
+      <input type={type} value={value} onChange={onChange} aria-invalid={!!error} required={required} max={type === "date" ? max : undefined} />
       {hint && <small>{hint}</small>}
       {error && <em className={styles.fieldErrorText}>{error === true ? "Required" : error}</em>}
     </label>
