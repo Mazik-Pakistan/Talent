@@ -522,25 +522,25 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
                         )}
 
                         <div className="document-actions">
-                          <button type="button" className="secondary-button" onClick={() => handleDownload(doc.id)}>
+                          <button type="button" className="secondary-button doc-action-view" onClick={() => handleDownload(doc.id)}>
                             View / download
                           </button>
                           {doc.doc_type === "cnic" && (
                             <button
                               type="button"
-                              className="secondary-button"
+                              className="secondary-button doc-action-reextract"
                               disabled={actionBusyId === doc.id}
                               onClick={() => handleReextract(doc.id)}
                             >
                               {actionBusyId === doc.id ? "Processing…" : "Re-extract"}
                             </button>
                           )}
-                          <button type="button" className="secondary-button" onClick={() => setReplacementDocId(isReplacing ? null : doc.id)}>
+                          <button type="button" className="secondary-button doc-action-replace" onClick={() => setReplacementDocId(isReplacing ? null : doc.id)}>
                             {isReplacing ? "Cancel" : "Replace"}
                           </button>
                           <button
                             type="button"
-                            className="secondary-button"
+                            className="secondary-button doc-action-delete"
                             disabled={actionBusyId === doc.id}
                             onClick={() => handleDelete(doc.id)}
                           >
