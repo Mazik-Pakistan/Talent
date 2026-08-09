@@ -84,6 +84,19 @@ class ItServiceRequestService:
             raise HTTPException(status_code=404, detail="Employee not found.")
         return emp
 
+    async def _validate_it_email(self, it_email: str, current_user: CurrentUser) -> None:
+        if it_email == current_user.email:
+            raise HTTPException(status_code=400, detail="IT officer email cannot be your own email.")
+        is_recruiter = await database.recruiters.find_one({"email": it_email})
+        if is_recruiter:
+            raise HTTPException(status_code=400, detail="IT officer email cannot belong to a recruiter.")
+        is_candidate = await database.candidates.find_one({"email": it_email})
+        if is_candidate:
+            raise HTTPException(status_code=400, detail="IT officer email cannot belong to a candidate.")
+        is_super_admin = await database.super_admins.find_one({"email": it_email})
+        if is_super_admin:
+            raise HTTPException(status_code=400, detail="IT officer email cannot belong to a super admin.")
+
     async def _get_owned(self, request_id: str, current_user: CurrentUser) -> dict:
         if not request_id:
             raise HTTPException(status_code=404, detail="IT request not found.")
@@ -185,6 +198,7 @@ class ItServiceRequestService:
             await self._send_to_it_doc(
                 doc, str(request.it_manager_email).strip().lower(), request.note, now,
                 organization_id=getattr(current_user, "organization_id", None),
+                current_user=current_user,
             )
         return _out(doc)
 
@@ -234,10 +248,13 @@ class ItServiceRequestService:
         await self._send_to_it_doc(
             doc, str(request.it_manager_email).strip().lower(), request.note, datetime.now(UTC),
             organization_id=getattr(current_user, "organization_id", None),
+            current_user=current_user,
         )
         return _out(doc)
 
-    async def _send_to_it_doc(self, doc: dict, it_email: str, note: str | None, now: datetime, organization_id: str | None = None) -> None:
+    async def _send_to_it_doc(self, doc: dict, it_email: str, note: str | None, now: datetime, organization_id: str | None = None, current_user: CurrentUser | None = None) -> None:
+        if current_user:
+            await self._validate_it_email(it_email, current_user)
         await database.it_service_requests.update_one(
             {"_id": doc["_id"], "status": {"$in": ["draft", "reviewing", "sent"]}},
             {

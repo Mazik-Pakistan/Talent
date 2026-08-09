@@ -109,7 +109,7 @@ class InviteRecruiterRequest(BaseModel):
     is_remote: bool = False
     capabilities: dict[str, bool] | None = None  # overrides defaults
     organization_id: str | None = None  # bind recruiter to an organization (multi-tenant)
-    expires_in_days: int = Field(default=365, ge=1, le=365)
+    expires_in_days: int = Field(default=2, ge=1, le=365)
 
     @field_validator("email")
     @classmethod

@@ -249,7 +249,7 @@ export default function InviteRecruiter({
         </div>
         <div className={s.headerActions}>
           <button type="button" className={s.btnGhost}>Cancel</button>
-          <button type="submit" form="invite-form" className={s.btnPrimary} disabled={inviteSubmitting}>
+          <button type="button" className={s.btnPrimary} disabled={inviteSubmitting} onClick={handleInvite}>
             {inviteSubmitting ? (
               <span className={s.spinnerSmall} />
             ) : (
