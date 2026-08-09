@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -197,9 +196,6 @@ function LoginForm() {
             <Image
               src={LOGO_URL}
               alt="Mazik Global TalentAI"
-              width={164}
-              height={80}
-              priority
               className={styles.asideLogo}
               style={{ height: "auto", objectFit: "contain" }}
             />
