@@ -18,6 +18,7 @@ export default function ProfilePhotoEditor({
   onRemove,
   size = "xl",
   busy = false,
+  variant = "default",
 }) {
   const inputRef = useRef(null);
   const [localError, setLocalError] = useState("");
@@ -64,33 +65,56 @@ export default function ProfilePhotoEditor({
   }
 
   return (
-    <div className={styles.wrap}>
+    <div className={`${styles.wrap} ${variant === "overlay" ? styles.overlayWrap : ""}`}>
       <div className={styles.avatarFrame}>
         <ProfileAvatar src={src} name={name} size={size} />
         {isBusy && <div className={styles.busyOverlay}>Uploading…</div>}
-      </div>
-
-      <div className={styles.actions}>
-        <button
-          type="button"
-          className={styles.primary}
-          disabled={isBusy}
-          onClick={() => inputRef.current?.click()}
-        >
-          {src ? "Change photo" : "Upload photo"}
-        </button>
-        {src && (
-          <button type="button" className={styles.secondary} disabled={isBusy} onClick={handleRemove}>
-            Remove
+        {variant === "overlay" && (
+          <button
+            type="button"
+            className={styles.pencilBtn}
+            disabled={isBusy}
+            onClick={() => inputRef.current?.click()}
+            aria-label={src ? "Change photo" : "Upload photo"}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+              <path d="m15 5 4 4" />
+            </svg>
           </button>
         )}
-        <p className={styles.hint}>PNG, JPG or WEBP · max 5 MB</p>
-        {localError && (
-          <p className={styles.error} role="alert">
-            {localError}
-          </p>
-        )}
       </div>
+
+      {variant === "overlay" ? (
+        src && (
+          <button type="button" className={styles.removeBtn} disabled={isBusy} onClick={handleRemove}>
+            Remove photo
+          </button>
+        )
+      ) : (
+        <div className={styles.actions}>
+          <button
+            type="button"
+            className={styles.primary}
+            disabled={isBusy}
+            onClick={() => inputRef.current?.click()}
+          >
+            {src ? "Change photo" : "Upload photo"}
+          </button>
+          {src && (
+            <button type="button" className={styles.secondary} disabled={isBusy} onClick={handleRemove}>
+              Remove
+            </button>
+          )}
+          <p className={styles.hint}>PNG, JPG or WEBP · max 5 MB</p>
+        </div>
+      )}
+
+      {localError && (
+        <p className={styles.error} role="alert">
+          {localError}
+        </p>
+      )}
 
       <input
         ref={inputRef}

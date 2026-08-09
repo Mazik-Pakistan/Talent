@@ -228,17 +228,17 @@ export default function PromotionPipeline({
         target_date: assignForm.target_date || undefined,
       });
       console.log("[Assign] API result:", result);
-      toast.success("Career path assigned.");
+      toast.success("Career path saved.");
       setShowAssign(false);
       setAssignForm({ employee_id: "", target_level_id: "", target_date: "" });
       bustTalentIntelligenceCache();
       onRefreshIntel?.();
       reload();
     } catch (err) {
-      console.error("[Assign] API error:", err);
       const detail = err.response?.data?.detail;
-      const msg = Array.isArray(detail) ? detail.map(d => d.msg || d.message || JSON.stringify(d)).join(" · ") : (detail || getApiErrorMessage(err, "Could not assign career path."));
-      console.error("[Assign] Error detail:", msg);
+      const msg = Array.isArray(detail)
+        ? detail.map((d) => d.msg || d.message || JSON.stringify(d)).join(" · ")
+        : (detail || getApiErrorMessage(err, "Could not assign career path."));
       toast.error(msg);
     } finally {
       setAssigning(false);

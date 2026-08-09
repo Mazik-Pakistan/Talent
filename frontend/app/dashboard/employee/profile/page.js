@@ -652,31 +652,9 @@ function EmployeeProfileContent() {
             )}
 
             {loading ? null : (
-              <div className={styles.layout}>
-                <nav className={styles.sectionsNav} aria-label="Profile sections">
-                  <div className={styles.sectionsNavLabel}>Sections</div>
-                  <div className={styles.navProgressTrack}>
-                    <div
-                      className={styles.navProgressFill}
-                      style={{ width: `${Math.round((sectionsDoneCount / sectionsMeta.length) * 100)}%` }}
-                    />
-                  </div>
-                  {sectionsMeta.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={`${styles.navBtn} ${activeSectionId === item.id ? styles.navActive : ""}`}
-                      onClick={() => jumpToSection(item.id)}
-                    >
-                      {item.icon}
-                      <span>{item.label}</span>
-                      <span className={`${styles.navDot} ${item.done ? styles.dotDone : ""}`} />
-                    </button>
-                  ))}
-                </nav>
-
-                <div className={styles.stack}>
+              <>
                 <div className={styles.heroCard}>
+                  <div className={styles.heroProfile}>
                   <ProfilePhotoEditor
                     src={photoUrl}
                     name={displayName}
@@ -684,6 +662,7 @@ function EmployeeProfileContent() {
                     onRemove={handlePhotoRemove}
                     busy={photoBusy}
                     size="lg"
+                    variant="overlay"
                   />
                   <div className={styles.heroCopy}>
                     <p className={styles.eyebrow}>Employee profile</p>
@@ -702,7 +681,51 @@ function EmployeeProfileContent() {
                       <span className={styles.chip}>{percentage}% checklist</span>
                     </div>
                   </div>
+                  </div>
+                  <div className={styles.heroDivider} />
+                  <div className={styles.heroCompletion}>
+                    <div className={styles.heroCompletionRing}>
+                      <div className={styles.ring} style={{ "--pct": percentage }}>
+                        <div className={styles.ringInner}>
+                          <span className={styles.ringPct}>{percentage}%</span>
+                          <span className={styles.ringLabel}>complete</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className={styles.heroCompletionDetails}>
+                      <p className={styles.heroCompletionLabel}>Profile completion</p>
+                      <div className={styles.heroCompletionStat}>
+                        <span>Sections done</span>
+                        <strong>{sectionsDoneCount} / {sectionsMeta.length}</strong>
+                      </div>
+                      <div className={styles.heroCompletionStat}>
+                        <span>Status</span>
+                        <strong>{profileComplete ? "Complete" : "In progress"}</strong>
+                      </div>
+                      {sectionsMeta.filter((item) => !item.done).length === 0 ? (
+                        <div className={styles.heroInsight}>
+                          <span className={styles.insightIconOk}><IconCheckSmall /></span>
+                          <span>Every section on your profile is complete — nicely done.</span>
+                        </div>
+                      ) : (
+                        sectionsMeta
+                          .filter((item) => !item.done)
+                          .slice(0, 3)
+                          .map((item) => (
+                            <div key={item.id} className={styles.heroInsight}>
+                              <span className={styles.insightIconWarn}><IconAlert /></span>
+                              <span>
+                                <strong>{item.label}</strong> still needs attention.
+                              </span>
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  </div>
                 </div>
+
+                <div className={styles.layout}>
+                  <div className={styles.stack}>
 
                 <ProfileSection
                   id="sec-employment"
@@ -1363,72 +1386,53 @@ function EmployeeProfileContent() {
                 </ProfileSection>
                 </div>
 
-                <aside className={styles.rightRail}>
-                  <div className={styles.railCard}>
-                    <p className={styles.railTitle}>Profile completion</p>
-                    <div className={styles.ringWrap}>
-                      <div className={styles.ring} style={{ "--pct": percentage }}>
-                        <div className={styles.ringInner}>
-                          <span className={styles.ringPct}>{percentage}%</span>
-                          <span className={styles.ringLabel}>complete</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className={styles.railStat}>
-                      <span>Sections done</span>
-                      <strong>{sectionsDoneCount} / {sectionsMeta.length}</strong>
-                    </div>
-                    <div className={styles.railStat}>
-                      <span>Status</span>
-                      <strong>{profileComplete ? "Complete" : "In progress"}</strong>
-                    </div>
+                <div className={styles.sidebar}>
+                <nav className={styles.sectionsNav} aria-label="Profile sections">
+                  <div className={styles.sectionsNavLabel}>Sections</div>
+                  <div className={styles.navProgressTrack}>
+                    <div
+                      className={styles.navProgressFill}
+                      style={{ width: `${Math.round((sectionsDoneCount / sectionsMeta.length) * 100)}%` }}
+                    />
                   </div>
+                  {sectionsMeta.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`${styles.navBtn} ${activeSectionId === item.id ? styles.navActive : ""}`}
+                      onClick={() => jumpToSection(item.id)}
+                    >
+                      {item.icon}
+                      <span>{item.label}</span>
+                      <span className={`${styles.navDot} ${item.done ? styles.dotDone : ""}`} />
+                    </button>
+                  ))}
+                </nav>
 
-                  <div className={styles.railCard}>
-                    <p className={styles.railTitle}>Insights</p>
-                    {sectionsMeta.filter((item) => !item.done).length === 0 ? (
-                      <div className={styles.insightRow}>
-                        <span className={styles.insightIconOk}><IconCheckSmall /></span>
-                        <span>Every section on your profile is complete — nicely done.</span>
-                      </div>
-                    ) : (
-                      sectionsMeta
-                        .filter((item) => !item.done)
-                        .slice(0, 4)
-                        .map((item) => (
-                          <div key={item.id} className={styles.insightRow}>
-                            <span className={styles.insightIconWarn}><IconAlert /></span>
-                            <span>
-                              <strong>{item.label}</strong> still needs attention to finish your checklist.
-                            </span>
-                          </div>
-                        ))
-                    )}
+                <div className={styles.helpCard}>
+                  <h4>Need a hand?</h4>
+                  <p>
+                    Ask the workday assistant about profile fields, onboarding, or what to fix next.
+                    HR email stays available if you need a person.
+                  </p>
+                  <div className={styles.helpActions}>
+                    <button
+                      type="button"
+                      className={styles.helpBtn}
+                      onClick={() => router.push("/dashboard/employee/ai-assistant")}
+                    >
+                      <IconSpark />
+                      Ask AI Assistant
+                    </button>
+                    <a className={styles.helpSecondary} href="mailto:hr@mazikglobal.com">
+                      <IconPhone />
+                      Email HR
+                    </a>
                   </div>
-
-                  <div className={styles.helpCard}>
-                    <h4>Need a hand?</h4>
-                    <p>
-                      Ask the workday assistant about profile fields, onboarding, or what to fix next.
-                      HR email stays available if you need a person.
-                    </p>
-                    <div className={styles.helpActions}>
-                      <button
-                        type="button"
-                        className={styles.helpBtn}
-                        onClick={() => router.push("/dashboard/employee/ai-assistant")}
-                      >
-                        <IconSpark />
-                        Ask AI Assistant
-                      </button>
-                      <a className={styles.helpSecondary} href="mailto:hr@mazikglobal.com">
-                        <IconPhone />
-                        Email HR
-                      </a>
-                    </div>
-                  </div>
-                </aside>
-              </div>
+                </div>
+                </div>
+                </div>
+              </>
             )}
 
             <div className={dashStyles.footerNote}>Talent by  · Employee Profile</div>

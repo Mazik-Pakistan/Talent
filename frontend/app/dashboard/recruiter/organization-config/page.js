@@ -11,7 +11,7 @@ export default function OrganizationConfigPage() {
         activeKey="organization-config"
         capability="org_config"
         title="Organization Setup"
-        subtitle="Departments, roles, skills, roadmaps, promotion rules, and career tracks"
+        subtitle="Departments, role ladders, learning roadmaps, and promotion readiness rules"
       >
         <OrgFrameworkTab />
       </RecruiterShell>

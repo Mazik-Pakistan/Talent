@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "react-toastify";
 
 import { getApiErrorMessage, getDocumentDownloadUrl, listOwnerDocuments, verifyDocument } from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
@@ -96,7 +97,6 @@ export default function RecruiterDocumentReview({ ownerId }) {
   const [documentVerification, setDocumentVerification] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [feedback, setFeedback] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [actionForm, setActionForm] = useState(null);
   const [actionReason, setActionReason] = useState("blurry_or_unreadable");
@@ -153,26 +153,30 @@ export default function RecruiterDocumentReview({ ownerId }) {
     setActionForm({ documentId, mode });
     setActionReason(mode === "reupload" ? "blurry_or_unreadable" : "information_mismatch");
     setActionNote("");
-    setFeedback("");
   }
 
   async function handleVerify(documentId, status, extra = {}) {
     const accessToken = localStorage.getItem("access_token");
     setBusyId(documentId);
-    setFeedback("");
     try {
       const result = await verifyDocument(documentId, { status, ...extra }, accessToken);
-      setFeedback(
-        status === "reupload_required" && result.email_sent === false
-          ? "Re-upload request created, but the email could not be sent."
-          : result.message || "Document status updated."
-      );
+      if (status === "verified") {
+        toast.success("Document verified.");
+      } else if (status === "reupload_required" && result.email_sent === false) {
+        toast.warn("Re-upload request created, but the email could not be sent.");
+      } else if (status === "reupload_required") {
+        toast.success(result.message || "Re-upload request sent.");
+      } else if (status === "rejected") {
+        toast.success("Document rejected.");
+      } else {
+        toast.success(result.message || "Document status updated.");
+      }
       await load();
       invalidateRecruiterInsightCache();
       setActionForm(null);
       setActionNote("");
     } catch (err) {
-      setFeedback(getApiErrorMessage(err, "Could not update document status."));
+      toast.error(getApiErrorMessage(err, "Could not update document status."));
     } finally {
       setBusyId(null);
     }
@@ -185,9 +189,9 @@ export default function RecruiterDocumentReview({ ownerId }) {
     try {
       const data = await getDocumentDownloadUrl(doc.id, accessToken);
       if (data?.url) window.open(data.url, "_blank", "noopener,noreferrer");
-      else setFeedback("This document is not available for preview right now.");
+      else toast.error("This document is not available for preview right now.");
     } catch (err) {
-      setFeedback(getApiErrorMessage(err, "Could not open this document."));
+      toast.error(getApiErrorMessage(err, "Could not open this document."));
     } finally {
       setOpeningDocId(null);
     }
@@ -199,8 +203,6 @@ export default function RecruiterDocumentReview({ ownerId }) {
 
   return (
     <div className="recruiter-document-review">
-      {feedback && <p className="document-review-feedback">{feedback}</p>}
-
       {hasMismatch && (
         <section className="document-warning-summary" role="alert">
           <strong>Needs review</strong>

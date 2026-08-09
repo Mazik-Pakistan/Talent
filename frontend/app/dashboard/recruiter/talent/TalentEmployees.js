@@ -6,7 +6,7 @@ import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./talent.module.css";
 import ListPager, { paginateLocal } from "./ListPager";
 import { getApiErrorMessage } from "@/services/authService";
-import { searchTalent } from "@/services/talentService";
+import { getTalentRequirementsStatus, searchTalent } from "@/services/talentService";
 import { LayoutGrid, List, Search as SearchIcon, Users } from "lucide-react";
 
 const PROMO_BUCKETS = [
@@ -32,24 +32,56 @@ export default function TalentEmployees({
   departmentNames = [],
   roleNames = [],
   promotion,
+  requirements,
   initialDepartment = "",
+  initialIncompleteOnly = false,
   onNavigate,
 }) {
   const [q, setQ] = useState("");
   const [department, setDepartment] = useState(initialDepartment || "");
   const [role, setRole] = useState("");
   const [highPotential, setHighPotential] = useState(false);
+  const [incompleteOnly, setIncompleteOnly] = useState(Boolean(initialIncompleteOnly));
   const [promoBucket, setPromoBucket] = useState("");
   const [raw, setRaw] = useState(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [layout, setLayout] = useState("list");
+  const [incompleteIds, setIncompleteIds] = useState(() => {
+    const set = new Set();
+    for (const row of requirements?.employees || []) {
+      if (row?.employee_id && row.open_total > 0) set.add(row.employee_id);
+    }
+    return set;
+  });
 
   useEffect(() => {
     if (initialDepartment) setDepartment(initialDepartment);
   }, [initialDepartment]);
 
-  const needsClientFilter = Boolean(role || highPotential || promoBucket);
+  useEffect(() => {
+    setIncompleteOnly(Boolean(initialIncompleteOnly));
+  }, [initialIncompleteOnly]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token || !incompleteOnly) return;
+    getTalentRequirementsStatus(token, {
+      department: department || undefined,
+      role: role || undefined,
+      page_size: 200,
+    })
+      .then((res) => {
+        const set = new Set();
+        for (const row of res?.employees || []) {
+          if (row?.employee_id && row.open_total > 0) set.add(row.employee_id);
+        }
+        setIncompleteIds(set);
+      })
+      .catch(() => {});
+  }, [incompleteOnly, department, role]);
+
+  const needsClientFilter = Boolean(role || highPotential || promoBucket || incompleteOnly);
 
   const runSearch = useCallback((nextPage = 1) => {
     const token = localStorage.getItem("access_token");
@@ -127,6 +159,9 @@ export default function TalentEmployees({
         if (promoIds) {
           employees = employees.filter((e) => promoIds.has(e.employee_id));
         }
+        if (incompleteOnly) {
+          employees = employees.filter((e) => incompleteIds.has(e.employee_id));
+        }
 
         if (needsClientFilter) {
           setRaw({
@@ -149,13 +184,13 @@ export default function TalentEmployees({
       })
       .catch((err) => toast.error(getApiErrorMessage(err, "Search failed.")))
       .finally(() => setLoading(false));
-  }, [q, department, role, highPotential, promoBucket, promotion, needsClientFilter]);
+  }, [q, department, role, highPotential, promoBucket, promotion, needsClientFilter, incompleteOnly, incompleteIds]);
 
   // Debounced search on filters (runs on mount and when filters change).
   useEffect(() => {
     const t = setTimeout(() => runSearch(1), 280);
     return () => clearTimeout(t);
-  }, [q, department, role, highPotential, promoBucket]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [q, department, role, highPotential, promoBucket, incompleteOnly, incompleteIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const readinessFor = (employeeId) => {
     if (!promotion) return null;
@@ -261,6 +296,10 @@ export default function TalentEmployees({
               <input type="checkbox" checked={highPotential} onChange={(e) => setHighPotential(e.target.checked)} />
               High potential
             </label>
+            <label className={styles.checkLabel}>
+              <input type="checkbox" checked={incompleteOnly} onChange={(e) => setIncompleteOnly(e.target.checked)} />
+              Incomplete requirements
+            </label>
             <button type="button" className={styles.smallBtnPrimary} onClick={() => runSearch(1)} disabled={loading}>
               <SearchIcon size={14} aria-hidden="true" /> {loading ? "Searching…" : "Search"}
             </button>
@@ -309,6 +348,7 @@ export default function TalentEmployees({
                       </span>
                       <span className={styles.empCellMetric} role="cell">
                         {promo ? `${promo.readiness_score ?? 0}%` : "—"}
+                        {incompleteIds.has(e.employee_id) ? " · reqs" : ""}
                       </span>
                     </button>
                   );
@@ -342,6 +382,7 @@ export default function TalentEmployees({
                       <div className={styles.resultStats}>
                         Learning {e.learning_progress ?? "—"}%
                         {promo ? ` · Readiness ${promo.readiness_score ?? 0}%` : ""}
+                        {incompleteIds.has(e.employee_id) ? " · Incomplete reqs" : ""}
                         {e.years_experience != null ? ` · ${e.years_experience} yrs` : ""}
                       </div>
                     </div>

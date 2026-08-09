@@ -2710,6 +2710,7 @@ function OnboardingContent() {
                 )}
               </section>
             )}
+            {loading && <RecruiterLoader inline />}
           </div>
         </main>
       </div>

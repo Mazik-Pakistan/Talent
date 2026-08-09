@@ -88,7 +88,9 @@ app.include_router(learning_router)
 app.include_router(talent_router)
 app.include_router(email_templates_router)
 app.include_router(messages_router)
-# app.include_router(career_framework_router)  # retired: use org-framework
+# Org framework owns departments/roles/skills; career-framework still serves
+# promotion paths, levels, assignments, and readiness reports used by Talent.
+app.include_router(career_framework_router)
 app.include_router(org_framework_router)
 app.include_router(agent_router)
 app.include_router(tickets_router)

@@ -142,7 +142,7 @@ export default function InviteRegisterPage() {
       <div className={styles.card}>
         <aside className={styles.aside} aria-label={isRecruiterInvite ? "Recruiter invitation introduction" : "Candidate onboarding introduction"}>
           <div className={styles.asideBrandRow}>
-            <img src={LOGO_URL} alt="Mazik Global" className={styles.asideLogo} style={{ maxWidth: 220 }} />
+            <img src={LOGO_URL} alt="Mazik Global" className={styles.asideLogo} style={{ maxWidth: 192 }} />
           </div>
           <div className={styles.asideContent}>
             <div>

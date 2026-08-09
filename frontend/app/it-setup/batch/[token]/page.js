@@ -261,7 +261,7 @@ export default function ItSetupBatchPage() {
       <div className="it-card">
         <img
           src={LOGO_URL}
-          alt="Mazik Global TalentAI"
+          alt="Company logo"
           className="it-logo"
           style={{ maxWidth: 116 }}
         />

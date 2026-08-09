@@ -27,8 +27,8 @@ function MazikIcon({ style }) {
 }
 
 /**
- * Shared sidebar logo: Cloudinary wordmark when expanded, inline Mazik grid
- * icon when collapsed (no external file dependency).
+ * Shared sidebar logo: compact centered TalentAI wordmark when expanded,
+ * inline Mazik grid icon when collapsed (no external file dependency).
  */
 export default function SidebarBrand({
   collapsed = false,

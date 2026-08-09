@@ -5,48 +5,63 @@
    and only refines composition, hierarchy, spacing, and interaction states.
 // ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ───────────────────────── Tab navigation ───────────────────────── */
+/* ───────────────────────── Pill tab navigation (fixed 36px) ───────────────────────── */
 
 .tabBar {
   display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 4px;
-  margin-bottom: 24px;
+  margin-bottom: 18px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 6px;
-  box-shadow: var(--shadow-sm);
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(31, 127, 224, 0.35) transparent;
+  background: var(--blue-lighter);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 4px;
 }
-.tabBar::-webkit-scrollbar { display: none; }
+.tabBar::-webkit-scrollbar { height: 4px; }
+.tabBar::-webkit-scrollbar-thumb {
+  background: rgba(31, 127, 224, 0.35);
+  border-radius: 999px;
+}
 .tabBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 10px 15px;
+  gap: 7px;
+  flex: 0 0 auto;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 16px;
+  box-sizing: border-box;
   font-size: 12.5px;
   font-weight: 650;
+  line-height: 1;
   color: var(--text-muted);
   background: transparent;
   border: none;
-  border-radius: 10px;
+  border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
   font-family: inherit;
   transition: color .16s var(--ease), background .16s var(--ease), box-shadow .16s var(--ease), transform .16s var(--ease);
 }
-.tabBtn:hover { color: var(--navy); background: var(--blue-lighter); }
+.tabBtn:hover { color: var(--navy); }
 .tabBtn:active:not(.tabActive) { transform: translateY(1px); }
 .tabBtn:focus-visible { outline: 2px solid var(--blue-strong); outline-offset: 1px; }
-.tabIcon { display: inline-flex; flex-shrink: 0; }
-.tabIcon svg { width: 15px; height: 15px; }
+.tabIcon { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; }
+.tabIcon svg { width: 14px; height: 14px; }
 .tabActive {
   background: linear-gradient(135deg, var(--blue), var(--blue-strong) 60%, var(--navy-2));
   color: #fff;
-  box-shadow: 0 8px 18px -8px rgba(56, 162, 255, 0.7);
+  box-shadow: 0 6px 14px -8px rgba(56, 162, 255, 0.75);
 }
 .tabActive:hover { color: #fff; background: linear-gradient(135deg, var(--blue), var(--blue-strong) 60%, var(--navy-2)); }
 
@@ -60,7 +75,7 @@
   background: var(--blue-lighter);
   border: 1px solid var(--border-soft);
   border-radius: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .sourceBtn {
   display: inline-flex;
@@ -156,18 +171,18 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 .toolbarLeft, .toolbarRight { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .filterBar {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 18px;
   align-items: center;
   background: var(--blue-lighter);
-  padding: 12px;
+  padding: 16px;
   border-radius: 12px;
   border: 1px solid var(--border-soft);
 }
@@ -192,7 +207,7 @@
   box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 9px 12px 9px 36px;
+  padding: 10px 12px 10px 36px;
   font-size: 13px;
   color: var(--text);
   background: #fff;
@@ -211,7 +226,7 @@
   box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 9px 12px;
+  padding: 10px 12px;
   font-size: 13px;
   color: var(--text);
   background: #fff;
@@ -230,7 +245,7 @@
   min-height: 38px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 8px 34px 8px 12px;
+  padding: 9px 34px 9px 12px;
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text);
@@ -515,7 +530,7 @@
 .courseGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
+  gap: 22px;
 }
 .courseCard {
   display: flex;
@@ -523,7 +538,7 @@
   gap: 12px;
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 20px;
   box-shadow: var(--shadow-sm);
   transition: transform .2s var(--ease), box-shadow .2s var(--ease), border-color .2s var(--ease);
@@ -737,7 +752,7 @@
 
 .assignPanel {
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   background: #fff;
   padding: 18px 20px 20px;
   box-shadow: var(--shadow-sm);
@@ -816,11 +831,11 @@
 .fieldLabel {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   font-size: 12px;
   font-weight: 700;
   color: var(--navy);
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   min-width: 0;
 }
 .fieldLabel > span {
@@ -834,7 +849,7 @@
   margin-top: 2px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 9px 12px;
+  padding: 10px 12px;
   font-size: 13px;
   font-family: inherit;
   color: var(--text);
@@ -941,7 +956,7 @@
   gap: 10px;
   width: 100%;
   text-align: left;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #fff;
@@ -1033,11 +1048,11 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: #fff;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
   box-shadow: var(--shadow-sm);
   transition: border-color .16s var(--ease), box-shadow .16s var(--ease), transform .16s var(--ease);
@@ -1109,8 +1124,8 @@
 .analyticsGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 22px;
+  gap: 18px;
+  margin-bottom: 24px;
 }
 @media (max-width: 900px) { .analyticsGrid { grid-template-columns: repeat(2, 1fr); } }
 
@@ -1152,8 +1167,8 @@
 .kbForm {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px 14px;
-  margin-bottom: 10px;
+  gap: 16px 18px;
+  margin-bottom: 18px;
 }
 .kbForm .wide { grid-column: 1 / -1; }
 .kbForm .fieldLabel { margin-bottom: 0; }
@@ -1220,13 +1235,13 @@
 .importStats {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 10px;
+  gap: 12px;
 }
 @media (max-width: 900px) { .importStats { grid-template-columns: repeat(2, 1fr); } }
 .importStat {
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   background: #fff;
   text-align: center;
 }
@@ -1873,7 +1888,7 @@
 .providerGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 .providerCard {
   display: flex;
@@ -1882,12 +1897,12 @@
   background: #fff;
   border: 1px solid var(--border-soft);
   border-radius: 14px;
-  padding: 18px;
+  padding: 20px;
   box-shadow: var(--shadow-sm);
   transition: box-shadow .18s var(--ease), border-color .18s var(--ease), transform .18s var(--ease);
 }
 .providerCard:hover { border-color: var(--blue-mid); box-shadow: var(--shadow-md); transform: translateY(-1px); }
-.providerCardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.providerCardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .providerIdentity { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .providerLogo {
   width: 42px;
@@ -2047,4 +2062,17 @@
   border: 1px dashed var(--border);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.6);
+}
+
+@media (max-width: 900px) {
+  .analyticsGrid { grid-template-columns: repeat(2, 1fr); }
+  .importStats { grid-template-columns: repeat(2, 1fr); }
+  .assignGrid { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .courseGrid { grid-template-columns: 1fr; }
+  .providerGrid { grid-template-columns: 1fr; }
+  .kbForm { grid-template-columns: 1fr; }
+  .filterBar { flex-direction: column; align-items: stretch; }
+  .assignSteps { flex-wrap: wrap; }
 }

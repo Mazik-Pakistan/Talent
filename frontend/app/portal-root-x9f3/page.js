@@ -128,7 +128,7 @@ function SuperAdminLoginForm() {
         <aside className={styles.aside} aria-label="Talent platform introduction">
           <div className={styles.asideBrandRow}>
             <img
-              src={LOGO_URL}
+               src={LOGO_URL}
               alt="Mazik Global"
               className={styles.asideLogo}
             />

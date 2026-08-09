@@ -1,0 +1,150 @@
+/* Canonical segmented tab bar — soft track, rounded, fixed 40px tabs, blue active */
+
+.tabBar,
+.tabGroup,
+.tabRow,
+.tabs,
+.subTabBar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  margin-bottom: 18px;
+  padding: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(31, 127, 224, 0.35) transparent;
+  background: var(--blue-lighter, #e9f4ff);
+  border: 1px solid var(--border-soft, #d7e4ef);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.tabBar {
+  width: 100%;
+}
+
+.tabBar::-webkit-scrollbar,
+.tabGroup::-webkit-scrollbar,
+.tabRow::-webkit-scrollbar,
+.tabs::-webkit-scrollbar,
+.subTabBar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.tabBar::-webkit-scrollbar-thumb,
+.tabGroup::-webkit-scrollbar-thumb,
+.tabRow::-webkit-scrollbar-thumb,
+.tabs::-webkit-scrollbar-thumb,
+.subTabBar::-webkit-scrollbar-thumb {
+  background: rgba(31, 127, 224, 0.35);
+  border-radius: 999px;
+}
+
+.tabBarCompact {
+  width: fit-content;
+}
+
+.tabBtn,
+.tab,
+.subTabBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  min-height: 40px;
+  height: 40px;
+  padding: 0 18px;
+  box-sizing: border-box;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1;
+  color: var(--text-muted, #647186);
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  transition:
+    color 0.16s var(--ease, ease),
+    background 0.16s var(--ease, ease),
+    box-shadow 0.16s var(--ease, ease),
+    transform 0.16s var(--ease, ease);
+}
+
+.tabBtn:hover,
+.tab:hover,
+.subTabBtn:hover {
+  color: var(--navy, #0f2a4a);
+}
+
+.tabBtn:active:not(.tabActive):not(.tabBtnActive):not(.active),
+.tab:active:not(.tabActive):not(.active),
+.subTabBtn:active:not(.subTabActive) {
+  transform: translateY(1px);
+}
+
+.tabBtn:focus-visible,
+.tab:focus-visible,
+.subTabBtn:focus-visible {
+  outline: 2px solid var(--blue-strong, #1f7fe0);
+  outline-offset: 1px;
+}
+
+.tabIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.tabIcon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Selected tab — blue pill */
+.tabActive,
+.tabBtnActive,
+.subTabActive,
+.tab.active {
+  background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0) 60%, var(--navy-2, #153d5e));
+  color: #fff;
+  box-shadow: 0 6px 14px -8px rgba(56, 162, 255, 0.75);
+}
+
+.tabActive:hover,
+.tabBtnActive:hover,
+.subTabActive:hover,
+.tab.active:hover {
+  color: #fff;
+  background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0) 60%, var(--navy-2, #153d5e));
+}
+
+.tabCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--blue-strong, #1f7fe0);
+  border-radius: 999px;
+}
+
+.tabActive .tabCount,
+.tabBtnActive .tabCount,
+.tab.active .tabCount {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
