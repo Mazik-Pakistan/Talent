@@ -193,7 +193,7 @@ function LoginForm() {
       <div className={styles.card}>
         <aside className={styles.aside} aria-label="Talent platform introduction">
           <div className={styles.asideBrandRow}>
-            <Image
+            <img
               src={LOGO_URL}
               alt="Mazik Global TalentAI"
               className={styles.asideLogo}
