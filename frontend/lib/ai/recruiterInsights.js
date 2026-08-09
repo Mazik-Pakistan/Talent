@@ -1230,7 +1230,7 @@ function orgConfigInsights(context) {
     push(insights, {
       id: "orgcfg-promo-effect",
       priority: MASCOT_PRIORITY.tip,
-      message: "Promotion rules feed Talent Intelligence readiness — the Ready / Almost / Behind buckets.",
+      message: "Rules apply to employees whose department + job title match that ladder step. Set Promotes to on Role ladders first.",
     });
   }
   return insights;

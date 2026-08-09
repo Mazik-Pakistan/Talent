@@ -202,6 +202,7 @@ function courseBadgeClass(course, fallbackSource) {
 
 function LearningPageContent() {
    const searchParams = useSearchParams();
+   const tabBarRef = useRef(null);
    const [tab, setTab] = useState(() => {
       const t = searchParams.get("tab");
       if (TABS.some((item) => item.key === t)) return t;
@@ -217,6 +218,15 @@ function LearningPageContent() {
       setTab(t);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const list = tabBarRef.current;
+    if (!list) return;
+    const active = list.querySelector('[aria-selected="true"]');
+    if (active && typeof active.scrollIntoView === "function") {
+      active.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+    }
+  }, [tab]);
 
   function handleAssignFromCatalog(course, source) {
     setPendingAssign({ course, source: course?.source || source || "microsoft_learn" });
@@ -250,7 +260,12 @@ function LearningPageContent() {
       title="Learning Management"
       subtitle="Browse courses, assign learning, verify certificates, and track completion"
     >
-      <div className={styles.tabBar} role="tablist" aria-label="Learning management sections">
+      <div
+        ref={tabBarRef}
+        className={styles.tabBar}
+        role="tablist"
+        aria-label="Learning management sections"
+      >
         {TABS.map((t) => {
           const Icon = t.icon;
           return (

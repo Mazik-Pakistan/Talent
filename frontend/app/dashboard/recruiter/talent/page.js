@@ -33,6 +33,7 @@ const VIEWS = [
 
 const FOCUSES = new Set([
   "all",
+  "employees",
   "ready",
   "almost",
   "behind",
@@ -41,6 +42,7 @@ const FOCUSES = new Set([
   "roles",
   "certifications",
   "learning",
+  "incomplete",
 ]);
 
 const LEGACY_TAB_MAP = {
@@ -140,7 +142,12 @@ function RecruiterTalentPageContent() {
       else params.delete("role");
 
       params.delete("panel");
-      if (nextView === "dashboard" && nextFocus && nextFocus !== "all") {
+      // Keep focus on Overview KPIs and Employees incomplete filter.
+      if (
+        (nextView === "dashboard" || nextView === "employees")
+        && nextFocus
+        && nextFocus !== "all"
+      ) {
         params.set("focus", nextFocus);
       } else {
         params.delete("focus");
@@ -175,15 +182,19 @@ function RecruiterTalentPageContent() {
   }, [view]);
 
   const subtitle = useMemo(() => {
-    if (view === "profile") return "Employee talent profile";
-    if (view === "dashboard" && role && department) return `${department} · ${role}`;
-    if (view === "dashboard" && department) return `${department}`;
-    if (view === "dashboard") return "Organization filters and talent KPIs in one place";
+    if (view === "profile") return "Employee talent profile · requirements, skills, path";
+    if (view === "dashboard" && role && department) return `${department} · ${role} · role progress`;
+    if (view === "dashboard" && department) return `${department} · department progress`;
+    if (view === "dashboard") return "Org → department → role → employee progress";
     if (view === "pipeline") return "Promotion readiness and career path assign";
     if (view === "opportunities") return "Internal projects and open roles";
-    if (view === "employees") return "Search and filter talent";
+    if (view === "employees") {
+      return focus === "incomplete"
+        ? "Employees with incomplete requirements"
+        : "Search and filter talent";
+    }
     return "Talent Intelligence Center";
-  }, [view, department, role]);
+  }, [view, department, role, focus]);
 
   return (
     <RecruiterShell
@@ -247,7 +258,9 @@ function RecruiterTalentPageContent() {
           departmentNames={departmentNames}
           roleNames={roleNames}
           promotion={data?.promotion}
+          requirements={data?.requirements}
           initialDepartment={department}
+          initialIncompleteOnly={focus === "incomplete"}
           onNavigate={navigate}
         />
       )}

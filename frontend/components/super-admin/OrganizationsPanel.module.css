@@ -604,59 +604,72 @@
   border-bottom: 1px solid #e5e7eb;
 }
 
-/* ── Tabs ──────────────────────────────────────────────── */
+/* ── Pill tabs (fixed 36px) ─────────────────────────────── */
 .tabs {
   display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 4px;
-  border-bottom: 1px solid #e5e7eb;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
+  max-width: 100%;
   overflow-x: auto;
   scrollbar-width: thin;
+  background: #e9f4ff;
+  border: 1px solid #d7e4ef;
+  border-radius: 999px;
+  padding: 4px;
 }
 
 .tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 16px;
+  box-sizing: border-box;
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  border-radius: 999px;
   color: #64748b;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 200ms ease;
+  flex: 0 0 auto;
+  transition: color 200ms ease, background 200ms ease, box-shadow 200ms ease;
 }
 
 .tab:hover {
-  color: #2563eb;
+  color: #0f2a4a;
 }
 
 .tabActive {
-  color: #2563eb;
-  border-bottom-color: #2563eb;
+  background: linear-gradient(135deg, #38a2ff, #1f7fe0 60%, #153d5e);
+  color: #fff;
+  box-shadow: 0 6px 14px -8px rgba(56, 162, 255, 0.75);
 }
+.tabActive:hover { color: #fff; background: linear-gradient(135deg, #38a2ff, #1f7fe0 60%, #153d5e); }
 
 .tabCount {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 22px;
+  min-width: 18px;
   height: 18px;
   padding: 0 6px;
-  border-radius: 9px;
-  background: #f1f5f9;
-  color: #64748b;
-  font-size: 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  color: #1f7fe0;
+  font-size: 10.5px;
   font-weight: 700;
 }
 
 .tabActive .tabCount {
-  background: #dbeafe;
-  color: #2563eb;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
 }
 
 .tabContent {

@@ -200,38 +200,11 @@ export default function EmailTemplatesPanel() {
 
   const categories = [...new Set(templates.map((t) => t.category))];
 
-  const inputBase = {
-    width: "100%",
-    padding: "11px 14px",
-    fontSize: 14,
-    color: "var(--navy-2)",
-    border: "1.5px solid var(--border)",
-    borderRadius: 12,
-    outline: "none",
-    boxSizing: "border-box",
-    background: "#fff",
-    transition: "border-color 0.15s, box-shadow 0.15s",
-  };
-
-  const toolbarBtn = {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    border: "none",
-    background: "transparent",
-    color: "var(--navy-2)",
-    cursor: "pointer",
-    transition: "background 0.12s, color 0.12s",
-  };
-
   const TOOLBAR = [
     { icon: <Bold style={{ width: 14, height: 14 }} />, cmd: "bold", label: "Bold" },
     { icon: <Italic style={{ width: 14, height: 14 }} />, cmd: "italic", label: "Italic" },
     { icon: <Underline style={{ width: 14, height: 14 }} />, cmd: "underline", label: "Underline" },
-    { icon: <Heading2 style={{ width: 15, height: 15 }} />, cmd: "formatBlock", value: "h2", label: "Heading" },
+    { icon: <Heading2 style={{ width: 15, height: 15 }} />, cmd: "formatBlock", value: "h2", label: "Heading", gapAfter: true },
     { icon: <List style={{ width: 15, height: 15 }} />, cmd: "insertUnorderedList", label: "Bullet list" },
     { icon: <ListOrdered style={{ width: 15, height: 15 }} />, cmd: "insertOrderedList", label: "Numbered list" },
     { icon: <Link2 style={{ width: 14, height: 14 }} />, action: "link", label: "Insert link" },
@@ -239,153 +212,76 @@ export default function EmailTemplatesPanel() {
 
   return (
     <div>
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          marginBottom: 20,
-          padding: "18px 20px",
-          borderRadius: 16,
-          background: "linear-gradient(120deg, rgba(56,162,255,0.10), rgba(24,42,94,0.06))",
-          border: "1px solid rgba(56,162,255,0.18)",
-        }}
-      >
-        <div
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: 12,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "linear-gradient(135deg, var(--blue), var(--blue-strong) 60%, var(--navy-2))",
-            color: "#fff",
-            boxShadow: "0 8px 18px -8px rgba(56,162,255,0.8)",
-            flexShrink: 0,
-          }}
-        >
-          <MailOpen style={{ width: 20, height: 20 }} />
+      <div className={s.sectionHero}>
+        <div className={s.sectionHeroIcon}>
+          <MailOpen aria-hidden="true" />
         </div>
         <div>
-          <h2 style={{ fontSize: 17, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: "0 0 3px" }}>
-            Email Templates
-          </h2>
-          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
+          <h2 className={s.pageTitle}>Email Templates</h2>
+          <p className={s.pageSubtitle} style={{ marginTop: 3 }}>
             Personalize the emails your organization sends. Customizations only apply to your organization.
           </p>
         </div>
       </div>
 
-      {/* ── List ───────────────────────────────────────────────── */}
       {loading ? (
-        <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)", fontSize: 14 }}>Loading templates…</div>
+        <div className={s.loadingState}>Loading templates…</div>
       ) : templates.length === 0 ? (
-        <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)", fontSize: 14 }}>No templates available.</div>
+        <div className={s.emptyState}>
+          <div className={s.emptyIcon}>
+            <Mail aria-hidden="true" />
+          </div>
+          <div className={s.emptyTitle}>No templates available</div>
+          <p className={s.emptyText}>Email templates will appear here once configured for your organization.</p>
+        </div>
       ) : (
         categories.map((cat) => (
-          <div key={cat} style={{ marginBottom: 26 }}>
-            <h3
-              style={{
-                fontSize: 12.5,
-                fontWeight: 700,
-                color: "var(--text-muted)",
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                margin: "0 0 10px",
-              }}
-            >
-              {cat}
-            </h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
+          <div key={cat} className={s.emailCatBlock}>
+            <h3 className={s.emailCatTitle}>{cat}</h3>
+            <div className={s.emailCardGrid}>
               {templates
                 .filter((t) => t.category === cat)
                 .map((tpl) => (
                   <div
                     key={tpl.key}
-                    style={{
-                      background: "#fff",
-                      border: "1px solid var(--border)",
-                      borderRadius: 14,
-                      padding: "14px 16px",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 10,
-                      transition: "box-shadow 0.15s, transform 0.15s, border-color 0.15s",
-                      cursor: "pointer",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.boxShadow = "0 10px 24px -12px rgba(24,42,94,0.25)";
-                      e.currentTarget.style.transform = "translateY(-1px)";
-                      e.currentTarget.style.borderColor = "rgba(56,162,255,0.4)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.boxShadow = "none";
-                      e.currentTarget.style.transform = "none";
-                      e.currentTarget.style.borderColor = "var(--border)";
-                    }}
+                    className={s.emailCard}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => openEditor(tpl)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openEditor(tpl);
+                      }
+                    }}
                   >
-                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
-                        <div
-                          style={{
-                            width: 30,
-                            height: 30,
-                            borderRadius: 9,
-                            flexShrink: 0,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            background: tpl.is_custom
-                              ? "linear-gradient(135deg, rgba(56,162,255,0.18), rgba(24,42,94,0.10))"
-                              : "rgba(24,42,94,0.05)",
-                            color: tpl.is_custom ? "var(--blue-strong)" : "var(--text-muted)",
-                          }}
-                        >
+                    <div className={s.emailCardTop}>
+                      <div className={s.emailCardIdentity}>
+                        <div className={`${s.emailCardIcon} ${tpl.is_custom ? s.emailCardIconCustom : ""}`}>
                           <Mail style={{ width: 15, height: 15 }} />
                         </div>
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: "var(--navy)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {tpl.name}
-                          </div>
-                          <div style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {tpl.description}
-                          </div>
+                          <div className={s.emailCardName}>{tpl.name}</div>
+                          <div className={s.emailCardDesc}>{tpl.description}</div>
                         </div>
                       </div>
                       <TemplateBadge custom={tpl.is_custom} />
                     </div>
 
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: "var(--text-muted)",
-                        background: "rgba(24,42,94,0.03)",
-                        border: "1px solid rgba(24,42,94,0.06)",
-                        borderRadius: 9,
-                        padding: "7px 10px",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                      title={tpl.subject}
-                    >
-                      <span style={{ opacity: 0.75, fontWeight: 600, marginRight: 5 }}>Subject:</span>
+                    <div className={s.emailCardSubject} title={tpl.subject}>
+                      <span className={s.emailCardSubjectLabel}>Subject:</span>
                       {tpl.subject}
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ fontSize: 11.5, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
+                    <div className={s.emailCardFooter}>
+                      <div className={s.emailCardVars}>
                         <Braces style={{ width: 12, height: 12 }} />
                         {tpl.variables?.length || 0} variables
                       </div>
                       <button
                         type="button"
-                        className={`${s.btn} ${s.btnSecondary}`}
+                        className={`${s.btn} ${s.btnSecondary} ${s.btnCompact}`}
                         onClick={(e) => { e.stopPropagation(); openEditor(tpl); }}
-                        style={{ fontSize: 12, padding: "6px 12px", minHeight: 30 }}
                       >
                         <Pencil style={{ width: 12, height: 12, marginRight: 5 }} />
                         {tpl.is_custom ? "Edit" : "Customize"}
@@ -398,67 +294,18 @@ export default function EmailTemplatesPanel() {
         ))
       )}
 
-      {/* ── Editor modal ───────────────────────────────────────── */}
       {editing && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(10,18,38,0.55)",
-            backdropFilter: "blur(3px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-          }}
-          onClick={closeEditor}
-        >
-          <div
-            style={{
-              background: "linear-gradient(180deg, #f7f9fc 0%, #fff 130px)",
-              borderRadius: 20,
-              width: "min(880px, 95vw)",
-              maxHeight: "92vh",
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-              boxShadow: "0 24px 80px rgba(0,0,0,0.28)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal header */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "18px 24px",
-                borderBottom: "1px solid var(--border)",
-                background: "#fff",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 11,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: "linear-gradient(135deg, var(--blue), var(--blue-strong) 60%, var(--navy-2))",
-                    color: "#fff",
-                    flexShrink: 0,
-                  }}
-                >
+        <div className={s.emailModalOverlay} onClick={closeEditor}>
+          <div className={s.emailModal} onClick={(e) => e.stopPropagation()}>
+            <div className={s.emailModalHead}>
+              <div className={s.emailModalHeadLeft}>
+                <div className={s.emailModalIcon}>
                   <Mail style={{ width: 18, height: 18 }} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: 16, fontWeight: 800, color: "var(--navy)", margin: 0, fontFamily: "'Sora', system-ui" }}>
-                    {editing.name}
-                  </h3>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
-                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{editing.category}</span>
+                  <h3 className={s.emailModalTitle}>{editing.name}</h3>
+                  <div className={s.emailModalMeta}>
+                    <span>{editing.category}</span>
                     <span style={{ color: "var(--border)" }}>•</span>
                     <TemplateBadge custom={editing.is_custom} />
                   </div>
@@ -466,17 +313,15 @@ export default function EmailTemplatesPanel() {
               </div>
               <button
                 type="button"
-                className={`${s.btn} ${s.btnGhost}`}
+                className={`${s.btn} ${s.btnGhost} ${s.emailModalClose}`}
                 onClick={closeEditor}
                 aria-label="Close"
-                style={{ width: 32, height: 32, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
               >
                 <X style={{ width: 16, height: 16 }} />
               </button>
             </div>
 
-            {/* Mode tabs */}
-            <div style={{ display: "flex", gap: 4, padding: "12px 24px 0", background: "#fff" }}>
+            <div className={s.emailModeTabs}>
               {[
                 { key: "edit", label: "Content", icon: <Pencil style={{ width: 13, height: 13 }} /> },
                 { key: "preview", label: "Preview", icon: <Eye style={{ width: 13, height: 13 }} /> },
@@ -485,20 +330,7 @@ export default function EmailTemplatesPanel() {
                   key={tab.key}
                   type="button"
                   onClick={() => setMode(tab.key)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "8px 14px",
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    border: "none",
-                    borderBottom: mode === tab.key ? "2px solid var(--blue-strong)" : "2px solid transparent",
-                    background: "transparent",
-                    color: mode === tab.key ? "var(--blue-strong)" : "var(--text-muted)",
-                    cursor: "pointer",
-                    borderRadius: "8px 8px 0 0",
-                  }}
+                  className={`${s.emailModeTab} ${mode === tab.key ? s.emailModeTabActive : ""}`}
                 >
                   {tab.icon}
                   {tab.label}
@@ -506,165 +338,69 @@ export default function EmailTemplatesPanel() {
               ))}
             </div>
 
-            {/* Scrollable body */}
-            <div style={{ padding: "18px 24px 22px", overflowY: "auto" }}>
+            <div className={s.emailModalBody}>
               {mode === "preview" ? (
-                /* ── Preview mode ── */
                 <div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginBottom: 12,
-                      padding: "9px 12px",
-                      borderRadius: 10,
-                      background: "rgba(56,162,255,0.08)",
-                      border: "1px solid rgba(56,162,255,0.2)",
-                      fontSize: 12.5,
-                      color: "var(--blue-strong)",
-                    }}
-                  >
+                  <div className={s.emailPreviewBanner}>
                     <Sparkles style={{ width: 14, height: 14, flexShrink: 0 }} />
                     Live preview with sample values — variables are replaced for visualization only.
                   </div>
 
-                  {/* Email device frame */}
-                  <div
-                    style={{
-                      border: "1px solid var(--border)",
-                      borderRadius: 14,
-                      overflow: "hidden",
-                      background: "#fff",
-                      boxShadow: "0 14px 40px -18px rgba(24,42,94,0.3)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "10px 14px",
-                        background: "#f1f4f9",
-                        borderBottom: "1px solid var(--border)",
-                      }}
-                    >
-                      <div style={{ display: "flex", gap: 5 }}>
-                        <span style={{ width: 10, height: 10, borderRadius: 50, background: "#ff5f57" }} />
-                        <span style={{ width: 10, height: 10, borderRadius: 50, background: "#febc2e" }} />
-                        <span style={{ width: 10, height: 10, borderRadius: 50, background: "#28c840" }} />
+                  <div className={s.emailDevice}>
+                    <div className={s.emailDeviceBar}>
+                      <div className={s.emailDeviceDots}>
+                        <span className={`${s.emailDeviceDot} ${s.emailDeviceDotRed}`} />
+                        <span className={`${s.emailDeviceDot} ${s.emailDeviceDotYellow}`} />
+                        <span className={`${s.emailDeviceDot} ${s.emailDeviceDotGreen}`} />
                       </div>
-                      <div
-                        style={{
-                          flex: 1,
-                          marginLeft: 6,
-                          fontSize: 11.5,
-                          color: "var(--text-muted)",
-                          background: "#fff",
-                          border: "1px solid var(--border)",
-                          borderRadius: 6,
-                          padding: "3px 10px",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
+                      <div className={s.emailDeviceSubject}>
                         {formSubject || "(no subject)"}
                       </div>
                     </div>
                     <div
-                      style={{
-                        minHeight: 220,
-                        padding: "22px 26px",
-                        background: "linear-gradient(180deg, #ffffff, #fafbfd)",
-                      }}
+                      className={s.emailDeviceBody}
                       dangerouslySetInnerHTML={{ __html: fillPreview(formBody, editing.variables) }}
                     />
                   </div>
                 </div>
               ) : (
-                /* ── Edit mode ── */
                 <div>
-                  {/* Subject */}
-                  <label style={{ display: "block", marginBottom: 14 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--navy)", display: "block", marginBottom: 5 }}>
-                      Subject line
-                    </span>
+                  <label className={s.emailFieldLabel}>
+                    <span className={s.emailFieldLabelText}>Subject line</span>
                     <input
                       type="text"
                       value={formSubject}
                       onChange={(e) => setFormSubject(e.target.value)}
                       disabled={busy}
-                      style={{ ...inputBase, fontFamily: "'Sora', system-ui" }}
-                      onFocus={(e) => {
-                        e.currentTarget.style.borderColor = "var(--blue-mid)";
-                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(56,162,255,0.15)";
-                      }}
-                      onBlur={(e) => {
-                        e.currentTarget.style.borderColor = "var(--border)";
-                        e.currentTarget.style.boxShadow = "none";
-                      }}
+                      className={s.emailInput}
                     />
                   </label>
 
-                  {/* Variables */}
                   {editing.variables?.length > 0 && (
-                    <div style={{ marginBottom: 14 }}>
-                      <p
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: "var(--text-muted)",
-                          textTransform: "uppercase",
-                          letterSpacing: 0.6,
-                          margin: "0 0 7px",
-                        }}
-                      >
+                    <div className={s.emailVarsBlock}>
+                      <p className={s.emailVarsHint}>
                         Click a variable to insert at the cursor
                       </p>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      <div className={s.emailVarsWrap}>
                         {editing.variables.map((v) => (
                           <button
                             key={v.name}
                             type="button"
                             onClick={() => insertVariable(v.name)}
                             title={`Insert {{${v.name}}} — ${v.label}`}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 5,
-                              padding: "4px 10px",
-                              fontSize: 11.5,
-                              fontWeight: 600,
-                              borderRadius: 8,
-                              background: "rgba(56,162,255,0.10)",
-                              color: "var(--blue-strong)",
-                              border: "1px solid rgba(56,162,255,0.25)",
-                              cursor: "pointer",
-                              whiteSpace: "nowrap",
-                              transition: "background 0.15s, transform 0.1s",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "rgba(56,162,255,0.20)";
-                              e.currentTarget.style.transform = "translateY(-1px)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "rgba(56,162,255,0.10)";
-                              e.currentTarget.style.transform = "none";
-                            }}
+                            className={s.emailVarChip}
                           >
                             {`{{${v.name}}}`}
-                            <span style={{ fontWeight: 400, opacity: 0.7 }}>{v.label}</span>
+                            <span className={s.emailVarChipLabel}>{v.label}</span>
                           </button>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  {/* Body */}
                   <div style={{ marginBottom: 14 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--navy)", display: "block" }}>
+                    <div className={s.emailBodyHead}>
+                      <span className={s.emailFieldLabelText} style={{ marginBottom: 0 }}>
                         Email content
                       </span>
                       <button
@@ -673,19 +409,7 @@ export default function EmailTemplatesPanel() {
                           if (editorRef.current && !showHtml) setFormBody(editorRef.current.innerHTML);
                           setShowHtml(!showHtml);
                         }}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 5,
-                          fontSize: 11.5,
-                          fontWeight: 600,
-                          padding: "4px 10px",
-                          borderRadius: 8,
-                          border: "1px solid var(--border)",
-                          background: showHtml ? "rgba(56,162,255,0.10)" : "#fff",
-                          color: showHtml ? "var(--blue-strong)" : "var(--text-muted)",
-                          cursor: "pointer",
-                        }}
+                        className={`${s.emailHtmlToggle} ${showHtml ? s.emailHtmlToggleOn : ""}`}
                       >
                         <Code style={{ width: 12, height: 12 }} />
                         {showHtml ? "Rich editor" : "HTML source"}
@@ -693,58 +417,17 @@ export default function EmailTemplatesPanel() {
                     </div>
 
                     {showHtml ? (
-                      /* Raw HTML view */
                       <textarea
                         value={formBody}
                         onChange={(e) => setFormBody(e.target.value)}
                         disabled={busy}
                         rows={14}
-                        style={{
-                          width: "100%",
-                          padding: "12px 14px",
-                          fontFamily: "Consolas, Menlo, monospace",
-                          fontSize: 12.5,
-                          lineHeight: 1.55,
-                          color: "var(--navy-2)",
-                          border: "1.5px solid var(--border)",
-                          borderRadius: 12,
-                          outline: "none",
-                          resize: "vertical",
-                          boxSizing: "border-box",
-                        }}
+                        className={s.emailHtmlArea}
                       />
                     ) : (
-                      /* Rich editor */
-                      <div
-                        style={{
-                          border: "1.5px solid var(--border)",
-                          borderRadius: 12,
-                          overflow: "hidden",
-                          background: "#fff",
-                          transition: "border-color 0.15s, box-shadow 0.15s",
-                        }}
-                        onFocusCapture={(e) => {
-                          e.currentTarget.style.borderColor = "var(--blue-mid)";
-                          e.currentTarget.style.boxShadow = "0 0 0 3px rgba(56,162,255,0.15)";
-                        }}
-                        onBlurCapture={(e) => {
-                          e.currentTarget.style.borderColor = "var(--border)";
-                          e.currentTarget.style.boxShadow = "none";
-                        }}
-                      >
-                        {/* Toolbar */}
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 2,
-                            padding: "6px 8px",
-                            background: "#f6f8fb",
-                            borderBottom: "1px solid var(--border)",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          {TOOLBAR.map((btn, i) => (
+                      <div className={s.emailEditorShell}>
+                        <div className={s.emailToolbar}>
+                          {TOOLBAR.map((btn) => (
                             <button
                               key={btn.label}
                               type="button"
@@ -752,38 +435,19 @@ export default function EmailTemplatesPanel() {
                               aria-label={btn.label}
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => (btn.action === "link" ? insertLink() : exec(btn.cmd, btn.value))}
-                              style={{
-                                ...toolbarBtn,
-                                marginRight: i === 3 ? 8 : 0,
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = "rgba(56,162,255,0.12)";
-                                e.currentTarget.style.color = "var(--blue-strong)";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = "transparent";
-                                e.currentTarget.style.color = "var(--navy-2)";
-                              }}
+                              className={`${s.emailToolbarBtn} ${btn.gapAfter ? s.emailToolbarGap : ""}`}
                             >
                               {btn.icon}
                             </button>
                           ))}
-                          <div style={{ flex: 1 }} />
+                          <div className={s.emailToolbarSpacer} />
                           <button
                             type="button"
                             title="Undo"
                             aria-label="Undo"
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => exec("undo")}
-                            style={toolbarBtn}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "rgba(56,162,255,0.12)";
-                              e.currentTarget.style.color = "var(--blue-strong)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "transparent";
-                              e.currentTarget.style.color = "var(--navy-2)";
-                            }}
+                            className={s.emailToolbarBtn}
                           >
                             <Undo2 style={{ width: 14, height: 14 }} />
                           </button>
@@ -793,76 +457,45 @@ export default function EmailTemplatesPanel() {
                             aria-label="Redo"
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => exec("redo")}
-                            style={toolbarBtn}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "rgba(56,162,255,0.12)";
-                              e.currentTarget.style.color = "var(--blue-strong)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "transparent";
-                              e.currentTarget.style.color = "var(--navy-2)";
-                            }}
+                            className={s.emailToolbarBtn}
                           >
                             <Redo2 style={{ width: 14, height: 14 }} />
                           </button>
                         </div>
 
-                        {/* Editable area */}
                         <div
                           ref={editorRef}
                           contentEditable
                           suppressContentEditableWarning
+                          className={s.emailEditable}
                           onInput={() => {
                             if (editorRef.current) setFormBody(editorRef.current.innerHTML);
                           }}
                           onBlur={() => {
                             if (editorRef.current) setFormBody(editorRef.current.innerHTML);
                           }}
-                          style={{
-                            minHeight: 260,
-                            maxHeight: 320,
-                            overflowY: "auto",
-                            padding: "14px 16px",
-                            fontSize: 14,
-                            lineHeight: 1.6,
-                            color: "var(--navy-2)",
-                            outline: "none",
-                            fontFamily: "'Inter', system-ui, sans-serif",
-                          }}
                         />
                       </div>
                     )}
-                    <div style={{ marginTop: 7, fontSize: 11.5, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 5 }}>
+                    <div className={s.emailBodyHint}>
                       <Braces style={{ width: 12, height: 12 }} />
-                      Variables auto-fill with each recipient's real data when the email is sent.
+                      Variables auto-fill with each recipient&apos;s real data when the email is sent.
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Modal footer */}
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "14px 24px",
-                borderTop: "1px solid var(--border)",
-                background: "#fff",
-              }}
-            >
+            <div className={s.emailModalFooter}>
               <button
                 type="button"
-                className={`${s.btn} ${s.btnGhost}`}
+                className={`${s.btn} ${s.btnGhost} ${editing.is_custom ? "" : s.emailResetDim}`}
                 onClick={handleReset}
                 disabled={busy || !editing.is_custom}
-                style={{ opacity: editing.is_custom ? 1 : 0.4 }}
               >
                 <RotateCcw style={{ width: 13, height: 13, marginRight: 5 }} /> Reset to default
               </button>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className={s.emailModalFooterRight}>
                 <button
                   type="button"
                   className={`${s.btn} ${s.btnSecondary}`}

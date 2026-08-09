@@ -179,8 +179,11 @@ export async function upsertOrgPromotionRule(accessToken, payload) {
   return data;
 }
 
-export async function deleteOrgPromotionRule(accessToken, roleName) {
-  const { data } = await apiClient.delete(`/api/org-framework/promotion-rules/${encodeURIComponent(roleName)}`);
+export async function deleteOrgPromotionRule(accessToken, roleName, department = null) {
+  const { data } = await apiClient.delete(
+    `/api/org-framework/promotion-rules/${encodeURIComponent(roleName)}`,
+    { params: department ? { department } : undefined },
+  );
   return data;
 }
 

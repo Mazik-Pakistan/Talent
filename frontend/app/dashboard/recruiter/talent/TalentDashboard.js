@@ -5,8 +5,13 @@ import { toast } from "react-toastify";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./talent.module.css";
 import { getApiErrorMessage, listEmployees } from "@/services/authService";
-import { getTalentMetrics, searchTalent } from "@/services/talentService";
+import {
+  getTalentMetrics,
+  getTalentRequirementsStatus,
+  searchTalent,
+} from "@/services/talentService";
 import { getPromotionReadiness } from "@/services/careerService";
+import { roleSkillCoverage } from "@/components/recruiter/SkillMatrixBars";
 import {
   AlertTriangle,
   Award,
@@ -14,6 +19,7 @@ import {
   BookOpen,
   Building2,
   ChevronRight,
+  ClipboardList,
   Filter,
   Target,
   TrendingUp,
@@ -23,18 +29,21 @@ import {
 
 const FOCUS_LABELS = {
   all: "People in scope",
+  employees: "Employees in scope",
   ready: "Ready for promotion (80%+)",
   almost: "Almost ready (50–79%)",
-  behind: "Behind (<50%)",
+  behind: "Behind on path (<50%)",
   high_potential: "High potential",
-  departments: "Departments (Organization Framework)",
-  roles: "Roles (Organization Framework)",
+  departments: "Departments",
+  roles: "Roles",
   certifications: "People with certificates",
   learning: "Learning progress",
+  incomplete: "Incomplete requirements (blocked / missing data)",
 };
 
 const INTERACTIVE_FOCUSES = new Set([
   "all",
+  "employees",
   "ready",
   "almost",
   "behind",
@@ -43,7 +52,15 @@ const INTERACTIVE_FOCUSES = new Set([
   "roles",
   "certifications",
   "learning",
+  "incomplete",
 ]);
+
+const SORT_OPTIONS = [
+  { key: "readiness", label: "Readiness" },
+  { key: "progress", label: "Learning progress" },
+  { key: "incomplete", label: "Incomplete requirements" },
+  { key: "name", label: "Name" },
+];
 
 function fmt(n, suffix = "") {
   if (n == null || Number.isNaN(n)) return "—";
@@ -72,6 +89,7 @@ function asPromoPerson(item) {
     job_title: item.current_role || item.job_title || "—",
     department: item.department || "—",
     readiness_score: item.readiness_score,
+    progress_percent: item.progress_percent,
   };
 }
 
@@ -81,9 +99,26 @@ function hasCertificate(employee) {
   return (employee.verified_certifications || employee.certification_count || 0) > 0;
 }
 
+function Breadcrumbs({ crumbs }) {
+  return (
+    <nav className={styles.breadcrumbs} aria-label="Overview breadcrumb">
+      {crumbs.map((c, i) => (
+        <span key={c.key} className={styles.breadcrumbItem}>
+          {i > 0 && <ChevronRight size={14} className={styles.breadcrumbSep} aria-hidden="true" />}
+          {c.onClick ? (
+            <button type="button" className={styles.breadcrumbLink} onClick={c.onClick}>{c.label}</button>
+          ) : (
+            <span className={styles.breadcrumbCurrent}>{c.label}</span>
+          )}
+        </span>
+      ))}
+    </nav>
+  );
+}
+
 /**
- * Overview: filters update KPIs + people from the same scoped lists.
- * Clicking a KPI shows the matching breakdown or people counted on that card.
+ * Hierarchical Talent Progress CIC: Org → Dept → Role → people,
+ * with unified KPIs, ranking, and incomplete-requirements focus.
  */
 export default function TalentDashboard({
   data,
@@ -98,11 +133,12 @@ export default function TalentDashboard({
   const [scopedPromo, setScopedPromo] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [scopeLoading, setScopeLoading] = useState(false);
+  const [scopedReq, setScopedReq] = useState(null);
+  const [sortBy, setSortBy] = useState("readiness");
 
   const cards = data?.departmentCards || [];
-  const learning = data?.learning;
+  const incompleteByEmployee = data?.incompleteByEmployee || {};
 
-  // Filters use Organization Framework only.
   const departmentNames = useMemo(() => {
     const fromFramework = (data?.departments || [])
       .map((d) => (typeof d === "string" ? d : d?.name))
@@ -132,7 +168,7 @@ export default function TalentDashboard({
     setScopeLoading(true);
     try {
       const deptParam = department || undefined;
-      const [metricsRes, promoRes, searchRes, empRes] = await Promise.allSettled([
+      const [metricsRes, promoRes, searchRes, empRes, reqRes] = await Promise.allSettled([
         getTalentMetrics(token, deptParam, { force: true }),
         getPromotionReadiness(token, deptParam || null),
         searchTalent(token, {
@@ -151,6 +187,11 @@ export default function TalentDashboard({
           department: deptParam,
           page_size: 100,
         }),
+        getTalentRequirementsStatus(token, {
+          department: deptParam || undefined,
+          role: role || undefined,
+          page_size: 200,
+        }),
       ]);
 
       if (metricsRes.status === "fulfilled") setScopedMetrics(metricsRes.value);
@@ -159,27 +200,38 @@ export default function TalentDashboard({
       if (promoRes.status === "fulfilled") setScopedPromo(promoRes.value);
       else setScopedPromo(data?.promotion || null);
 
+      if (reqRes.status === "fulfilled") setScopedReq(reqRes.value);
+      else setScopedReq(data?.requirements || null);
+
+      // Prefer directory listing (paginated) so Overview always has people;
+      // merge talent-search hits for richer skill/progress fields.
       let list = [];
-      if (searchRes.status === "fulfilled" && (searchRes.value.employees || []).length) {
-        list = searchRes.value.employees || [];
-      } else if (empRes.status === "fulfilled") {
+      if (empRes.status === "fulfilled") {
         list = empRes.value.employees || [];
         const pages = empRes.value.pages || 1;
-        if (pages > 1) {
-          for (let page = 2; page <= pages; page += 1) {
-            try {
-              const more = await listEmployees(token, {
-                department: deptParam,
-                page,
-                page_size: 100,
-              });
-              list = [...list, ...(more.employees || [])];
-            } catch {
-              break;
-            }
+        for (let page = 2; page <= Math.min(pages, 10); page += 1) {
+          try {
+            const more = await listEmployees(token, {
+              department: deptParam,
+              page,
+              page_size: 100,
+            });
+            list = [...list, ...(more.employees || [])];
+          } catch {
+            break;
           }
         }
       }
+      if (searchRes.status === "fulfilled" && (searchRes.value.employees || []).length) {
+        const byId = new Map(list.map((e) => [e.employee_id, e]));
+        for (const row of searchRes.value.employees) {
+          if (!row?.employee_id) continue;
+          const prev = byId.get(row.employee_id);
+          byId.set(row.employee_id, prev ? { ...prev, ...row } : row);
+        }
+        list = [...byId.values()];
+      }
+      if (department) list = list.filter((e) => matchDept(e, department));
       if (role) list = list.filter((e) => matchRole(e, role));
       setEmployees(list);
     } catch (err) {
@@ -196,6 +248,15 @@ export default function TalentDashboard({
   const metrics = scopedMetrics || data?.metrics;
   const promotion = scopedPromo || data?.promotion;
   const certStats = metrics?.certification_stats || {};
+  const requirements = scopedReq || data?.requirements;
+
+  const incompleteMap = useMemo(() => {
+    const map = { ...incompleteByEmployee };
+    for (const row of requirements?.employees || []) {
+      if (row?.employee_id) map[row.employee_id] = row;
+    }
+    return map;
+  }, [incompleteByEmployee, requirements]);
 
   const promoByBucket = useMemo(() => {
     const filterItem = (item) => {
@@ -234,68 +295,159 @@ export default function TalentDashboard({
     }));
   }, [metrics, department, role]);
 
-  const certifiedPeople = useMemo(
-    () => employees.filter(hasCertificate),
-    [employees]
-  );
+  const certifiedPeople = useMemo(() => employees.filter(hasCertificate), [employees]);
 
   const learningPeople = useMemo(() => {
     return [...employees]
-      .map((e) => ({
-        ...e,
-        learning_progress: e.learning_progress ?? 0,
-      }))
+      .map((e) => ({ ...e, learning_progress: e.learning_progress ?? 0 }))
       .sort((a, b) => (b.learning_progress || 0) - (a.learning_progress || 0));
   }, [employees]);
 
-  const headcount = employees.length;
+  const incompletePeople = useMemo(() => {
+    return employees
+      .map((e) => {
+        const req = incompleteMap[e.employee_id];
+        return req && req.open_total > 0 ? { ...e, ...req } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => (b.open_high || 0) - (a.open_high || 0) || (b.open_total || 0) - (a.open_total || 0));
+  }, [employees, incompleteMap]);
 
-  // Framework structure counts (not unique employee job titles).
-  const deptsInScope = department ? 1 : departmentNames.length;
+  const headcount = employees.length;
+  // Counts must reflect people actually in scope — never invent org-wide structure when a role filter is empty.
+  const deptsInScope = department
+    ? 1
+    : role
+      ? new Set(
+          employees
+            .map((e) => (e.department || "").trim())
+            .filter(Boolean)
+        ).size
+      : departmentNames.length;
   const rolesInScope = role ? 1 : roleOptions.length;
 
-  // % of people in scope who have at least one certificate (not "verified / submitted").
-  const certCoverage = headcount
-    ? round1((100 * certifiedPeople.length) / headcount)
-    : null;
+  const certCoverage = headcount ? round1((100 * certifiedPeople.length) / headcount) : null;
 
-  // Average learning progress across people in scope; fall back to assignment completion rate.
+  // Only average learning for people in the current scope. No org-wide fallback (avoids "15% with 0 people").
   const learningAvg = useMemo(() => {
-    const scored = employees.filter((e) => e.learning_progress != null);
-    if (scored.length > 0) {
-      const sum = scored.reduce((acc, e) => acc + (Number(e.learning_progress) || 0), 0);
-      return round1(sum / scored.length);
+    if (!employees.length) return null;
+    const scored = employees.filter((e) => e.learning_progress != null && !Number.isNaN(Number(e.learning_progress)));
+    if (!scored.length) return null;
+    const sum = scored.reduce((acc, e) => acc + (Number(e.learning_progress) || 0), 0);
+    return round1(sum / scored.length);
+  }, [employees]);
+
+  const incompleteCount = useMemo(() => {
+    if (department || role) {
+      return incompletePeople.length;
     }
-    const rate = metrics?.learning_completion_rate ?? learning?.assignment_completion_rate ?? learning?.completion_rate;
-    return rate == null ? null : round1(rate);
-  }, [employees, metrics, learning]);
+    return requirements?.incomplete_count ?? incompletePeople.length;
+  }, [department, role, incompletePeople, requirements]);
 
-  const departmentBreakdown = useMemo(() => {
-    const names = department ? [department] : departmentNames;
-    return names.map((name) => {
-      const people = employees.filter((e) => matchDept(e, name));
-      const deptRoles = frameworkRoles.filter((r) => matchDept({ department: r.department }, name));
-      return {
-        name,
-        people: people.length,
-        roles: deptRoles.length,
-        roleNames: deptRoles.map((r) => r.name),
-      };
+  const rankedDepartments = useMemo(() => {
+    const list = department ? cards.filter((c) => c.name === department) : [...cards];
+    return list.sort((a, b) => {
+      if (sortBy === "incomplete") {
+        return (b.incompleteHigh ?? 0) - (a.incompleteHigh ?? 0)
+          || (b.incompleteRequirements ?? 0) - (a.incompleteRequirements ?? 0);
+      }
+      if (sortBy === "name") return a.name.localeCompare(b.name);
+      const ap = a.avgProgress ?? a.avgReadiness ?? -1;
+      const bp = b.avgProgress ?? b.avgReadiness ?? -1;
+      return bp - ap;
     });
-  }, [department, departmentNames, employees, frameworkRoles]);
+  }, [cards, department, sortBy]);
 
-  const roleBreakdown = useMemo(() => {
+  const rankedRoles = useMemo(() => {
     const names = role ? [role] : roleOptions;
     return names.map((name) => {
       const people = employees.filter((e) => matchRole(e, name));
       const meta = frameworkRoles.find((r) => r.name === name);
+      let ready = 0;
+      let almost = 0;
+      let behind = 0;
+      let readinessSum = 0;
+      let readinessN = 0;
+      let incomplete = 0;
+      for (const e of people) {
+        const promo = readinessMap.get(e.employee_id);
+        const score = e.readiness_score ?? promo?.readiness_score;
+        if (score != null) {
+          readinessSum += Number(score);
+          readinessN += 1;
+          if (score >= 80) ready += 1;
+          else if (score >= 50) almost += 1;
+          else behind += 1;
+        }
+        const req = incompleteMap[e.employee_id];
+        if (req?.open_high > 0 || req?.open_total > 0) incomplete += 1;
+      }
       return {
         name,
         people: people.length,
         department: meta?.department || department || "—",
+        ready,
+        almost,
+        behind,
+        avgReadiness: readinessN ? round1(readinessSum / readinessN) : null,
+        incomplete,
+        meta,
       };
+    }).sort((a, b) => {
+      if (sortBy === "incomplete") return b.incomplete - a.incomplete;
+      if (sortBy === "name") return a.name.localeCompare(b.name);
+      return (b.avgReadiness ?? -1) - (a.avgReadiness ?? -1);
     });
-  }, [role, roleOptions, employees, frameworkRoles, department]);
+  }, [role, roleOptions, employees, frameworkRoles, department, readinessMap, incompleteMap, sortBy]);
+
+  const roleFrameworkSkills = useMemo(() => {
+    if (!role) return [];
+    const list = data?.skills || [];
+    return list.filter((s) => {
+      const roles = s.roles || s.role_names || [];
+      if (Array.isArray(roles) && roles.length) return roles.includes(role);
+      return s.role === role || (department && s.department === department);
+    });
+  }, [data, role, department]);
+
+  const roleFrameworkCerts = useMemo(() => {
+    if (!role) return [];
+    const list = data?.certifications || [];
+    return list.filter((c) => {
+      const roles = c.roles || c.role_names || [];
+      if (Array.isArray(roles) && roles.length) return roles.includes(role);
+      return c.role === role || (department && c.department === department);
+    });
+  }, [data, role, department]);
+
+  const coverageRows = useMemo(() => {
+    if (!role) return [];
+    const required = roleFrameworkSkills.map((s) => s.name || s.skill_name).filter(Boolean);
+    const holderSkills = employees.map((e) => e.skills || []);
+    return roleSkillCoverage(required, holderSkills);
+  }, [role, roleFrameworkSkills, employees]);
+
+  const sortedEmployees = useMemo(() => {
+    const list = [...employees];
+    list.sort((a, b) => {
+      if (sortBy === "name") {
+        return (a.full_name || "").localeCompare(b.full_name || "");
+      }
+      if (sortBy === "progress") {
+        return (b.learning_progress ?? -1) - (a.learning_progress ?? -1);
+      }
+      if (sortBy === "incomplete") {
+        const ar = incompleteMap[a.employee_id];
+        const br = incompleteMap[b.employee_id];
+        return (br?.open_high ?? 0) - (ar?.open_high ?? 0)
+          || (br?.open_total ?? 0) - (ar?.open_total ?? 0);
+      }
+      const as = a.readiness_score ?? readinessMap.get(a.employee_id)?.readiness_score ?? -1;
+      const bs = b.readiness_score ?? readinessMap.get(b.employee_id)?.readiness_score ?? -1;
+      return bs - as;
+    });
+    return list;
+  }, [employees, sortBy, readinessMap, incompleteMap]);
 
   const visibleEmployees = useMemo(() => {
     if (focus === "ready") return promoByBucket.ready;
@@ -304,11 +456,26 @@ export default function TalentDashboard({
     if (focus === "high_potential") return highPotential;
     if (focus === "certifications") return certifiedPeople;
     if (focus === "learning") return learningPeople;
-    return employees;
-  }, [employees, focus, promoByBucket, highPotential, certifiedPeople, learningPeople]);
+    if (focus === "incomplete") return incompletePeople;
+    // "employees" and default scope list — all people currently in filters
+    return sortedEmployees;
+  }, [
+    sortedEmployees,
+    focus,
+    promoByBucket,
+    highPotential,
+    certifiedPeople,
+    learningPeople,
+    incompletePeople,
+  ]);
 
   const showStructurePanel = focus === "departments" || focus === "roles";
   const showPeoplePanel = !showStructurePanel;
+  const level = role && department ? "role" : department ? "dept" : "org";
+  // Org + focus=all hid the people list before — Employees KPI / drill-down must show it.
+  const peoplePanelVisible =
+    showPeoplePanel
+    && (level !== "org" || focus === "employees" || (focus !== "all" && focus !== "departments" && focus !== "roles"));
 
   const kpis = [
     {
@@ -317,8 +484,9 @@ export default function TalentDashboard({
       value: fmt(headcount),
       icon: Users,
       color: "navy",
-      focus: "all",
+      focus: "employees",
       interactive: true,
+      hint: "Click to list people in this scope",
     },
     {
       key: "departments",
@@ -358,11 +526,21 @@ export default function TalentDashboard({
     },
     {
       key: "behind",
-      label: "Behind",
+      label: "Behind on path",
       value: fmt(promoByBucket.behind.length),
       icon: AlertTriangle,
       color: "red",
       focus: "behind",
+      interactive: true,
+    },
+    {
+      key: "incomplete",
+      label: "Incomplete reqs",
+      value: fmt(incompleteCount),
+      hint: "Missing CV, docs, profile, or path data",
+      icon: ClipboardList,
+      color: "orange",
+      focus: "incomplete",
       interactive: true,
     },
     {
@@ -378,7 +556,9 @@ export default function TalentDashboard({
       key: "certs",
       label: "Certified people",
       value: headcount ? `${fmt(certCoverage, "%")}` : "—",
-      hint: `${certifiedPeople.length} of ${headcount}`,
+      hint: headcount
+        ? `${certifiedPeople.length} of ${headcount} in scope`
+        : "No people in this scope",
       icon: Award,
       color: "cyan",
       focus: "certifications",
@@ -388,9 +568,11 @@ export default function TalentDashboard({
       key: "learning",
       label: "Learning progress",
       value: fmt(learningAvg, "%"),
-      hint: metrics?.learning_completion_rate != null
-        ? `Assignments ${fmt(metrics.learning_completion_rate, "%")} complete`
-        : undefined,
+      hint: !headcount
+        ? "No people in this scope"
+        : learningAvg == null
+          ? "No learning scores for people in scope"
+          : `Avg of ${employees.filter((e) => e.learning_progress != null).length} people in scope`,
       icon: BookOpen,
       color: "blue",
       focus: "learning",
@@ -410,8 +592,19 @@ export default function TalentDashboard({
 
   function onKpiClick(kpi) {
     if (!kpi.interactive || !INTERACTIVE_FOCUSES.has(kpi.focus)) return;
+    // Toggle off only when clicking the same non-default focus again.
     const next = focus === kpi.focus && kpi.focus !== "all" ? "all" : kpi.focus;
     setFilters({ focus: next });
+  }
+
+  function openEmployeeProfile(e) {
+    if (!e?.employee_id) return;
+    onNavigate({
+      view: "profile",
+      employee: e.employee_id,
+      department: e.department || department || null,
+      role: e.job_title || role || null,
+    });
   }
 
   if (bundleLoading && !data) {
@@ -424,19 +617,66 @@ export default function TalentDashboard({
       ? department
       : "All departments";
 
+  const crumbs = [
+    {
+      key: "org",
+      label: "Organization",
+      onClick: department || role
+        ? () => setFilters({ department: null, role: null, focus: "all" })
+        : undefined,
+    },
+    ...(department
+      ? [{
+          key: "dept",
+          label: department,
+          onClick: role
+            ? () => setFilters({ department, role: null, focus: "all" })
+            : undefined,
+        }]
+      : []),
+    ...(role ? [{ key: "role", label: role }] : []),
+  ];
+
+  const activeCard = department
+    ? cards.find((c) => c.name === department)
+    : null;
+
   return (
     <div className={styles.intelStack}>
+      <Breadcrumbs crumbs={crumbs} />
+
       {!hasStructure && cards.length === 0 && (
         <div className={styles.infoCard}>
           <div className={styles.infoCardText}>
             <h3 className={styles.infoCardTitle}>Organization structure not configured</h3>
             <p className={styles.infoCardDesc}>
-              Configure departments and roles in Organization Setup so filters and drill-down stay accurate.
+              Configure departments and roles in Organization Setup so drill-down and KPIs stay accurate.
             </p>
           </div>
           <button type="button" className={styles.modeBtn} onClick={() => onNavigate({ path: "/dashboard/recruiter/organization-config" })}>
             Organization Setup
           </button>
+        </div>
+      )}
+
+      {(department || role) && (
+        <div className={styles.detailHero}>
+          <div>
+            <h2 className={styles.detailTitle}>{role || department}</h2>
+            <p className={styles.detailDesc}>
+              {role
+                ? `${department} · role progress vs people in this job title`
+                : (activeCard?.description || "Department progress — roles, readiness, and incomplete requirements")}
+            </p>
+          </div>
+          <div className={styles.detailStatRow}>
+            <span><Users size={14} aria-hidden="true" /> {fmt(headcount)} people</span>
+            {!role && (
+              <span><Target size={14} aria-hidden="true" /> {fmt(activeCard?.roleCount ?? rolesInScope)} roles</span>
+            )}
+            <span><TrendingUp size={14} aria-hidden="true" /> Progress {fmt(activeCard?.avgProgress, "%")}</span>
+            <span><ClipboardList size={14} aria-hidden="true" /> Incomplete {fmt(incompleteCount)}</span>
+          </div>
         </div>
       )}
 
@@ -446,9 +686,9 @@ export default function TalentDashboard({
             <Filter size={16} />
           </span>
           <div className={styles.scopePanelCopy}>
-            <div className={styles.scopePanelTitle}>Scope</div>
+            <div className={styles.scopePanelTitle}>Scope & ranking</div>
             <p className={styles.scopePanelDesc}>
-              Filter by Organization Framework department and role
+              KPIs only count people in this scope. Incomplete requirements ≠ behind on promotion path.
             </p>
           </div>
           {(department || role || focus !== "all") && (
@@ -509,6 +749,21 @@ export default function TalentDashboard({
             </div>
           </label>
 
+          <label className={styles.scopeField}>
+            <span className={styles.scopeFieldLabel}>Sort</span>
+            <div className={styles.scopeSelectWrap}>
+              <select
+                className={styles.scopeSelect}
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          </label>
+
           <div className={styles.scopeStatus}>
             <span className={styles.scopeStatusLabel}>Viewing</span>
             <span className={styles.scopeStatusValue}>
@@ -517,20 +772,6 @@ export default function TalentDashboard({
             </span>
           </div>
         </div>
-
-        {departmentNames.length === 0 && (
-          <p className={styles.scopeEmptyNote}>
-            No Organization Framework departments yet — add them in{" "}
-            <button
-              type="button"
-              className={styles.scopeInlineLink}
-              onClick={() => onNavigate({ path: "/dashboard/recruiter/organization-config" })}
-            >
-              Organization Setup
-            </button>
-            .
-          </p>
-        )}
       </div>
 
       <div className={styles.metricGrid}>
@@ -561,28 +802,194 @@ export default function TalentDashboard({
         })}
       </div>
 
+      {/* Org: ranked departments */}
+      {level === "org" && focus === "all" && (
+        <div className={shellStyles.section}>
+          <div className={shellStyles.sectionHead}>
+            <div className={shellStyles.sectionHeadLeft}>
+              <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
+              <div>
+                <div className={shellStyles.sectionTitle}>Departments by progress</div>
+                <p className={shellStyles.sectionDesc}>
+                  Click a department to drill into roles and people
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className={shellStyles.sectionBody}>
+            {rankedDepartments.length === 0 ? (
+              <div className={styles.emptyState}>
+                <div className={styles.emptyStateIcon}><Building2 aria-hidden="true" /></div>
+                <div className={styles.emptyStateTitle}>No departments yet</div>
+                <p className={styles.emptyStateHint}>Configure structure in Organization Setup.</p>
+              </div>
+            ) : (
+              <div className={styles.deptCardGrid}>
+                {rankedDepartments.map((d) => (
+                  <button
+                    key={d.name}
+                    type="button"
+                    className={styles.deptCard}
+                    onClick={() => setFilters({ department: d.name, role: null, focus: "all" })}
+                  >
+                    <div className={styles.deptCardTitle}>{d.name}</div>
+                    {d.description ? <p className={styles.deptCardDesc}>{d.description}</p> : null}
+                    <div className={styles.deptCardMeta}>
+                      <span>{fmt(d.employeeCount)} people</span>
+                      <span>{fmt(d.roleCount)} roles</span>
+                      <span>Progress {fmt(d.avgProgress, "%")}</span>
+                      <span>On track {fmt(d.onTrack)}</span>
+                      <span>Behind {fmt(d.behind)}</span>
+                      <span>Learn {fmt(d.learningCompletion, "%")}</span>
+                      {(d.incompleteRequirements > 0 || d.incompleteHigh > 0) && (
+                        <span className={styles.incompleteChip}>
+                          {fmt(d.incompleteRequirements)} incomplete
+                        </span>
+                      )}
+                    </div>
+                    <span className={styles.deptCardCta}>
+                      Open department <ChevronRight size={14} aria-hidden="true" />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Dept: ranked roles */}
+      {level === "dept" && focus === "all" && (
+        <div className={shellStyles.section}>
+          <div className={shellStyles.sectionHead}>
+            <div className={shellStyles.sectionHeadLeft}>
+              <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
+              <div>
+                <div className={shellStyles.sectionTitle}>Roles in {department}</div>
+                <p className={shellStyles.sectionDesc}>Ranked by readiness — open a role for people and skill coverage</p>
+              </div>
+            </div>
+          </div>
+          <div className={shellStyles.sectionBody}>
+            {rankedRoles.length === 0 ? (
+              <div className={styles.emptyState}>
+                <div className={styles.emptyStateTitle}>No roles for this department</div>
+                <p className={styles.emptyStateHint}>Add roles in Organization Setup.</p>
+              </div>
+            ) : (
+              rankedRoles.map((r) => (
+                <button
+                  key={r.name}
+                  type="button"
+                  className={styles.structureRow}
+                  onClick={() => setFilters({ department, role: r.name, focus: "all" })}
+                >
+                  <div className={styles.employeeManageMain}>
+                    <div className={styles.employeeMiniName}>{r.name}</div>
+                    <div className={styles.employeeMiniMeta}>
+                      {r.people} people · avg readiness {fmt(r.avgReadiness, "%")}
+                      {" · "}ready {r.ready} · almost {r.almost} · behind {r.behind}
+                      {r.incomplete > 0 ? ` · ${r.incomplete} incomplete reqs` : ""}
+                    </div>
+                  </div>
+                  <span className={styles.deptCardCta}>
+                    Open role <ChevronRight size={14} aria-hidden="true" />
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Role: skill coverage */}
+      {level === "role" && focus === "all" && (
+        <div className={shellStyles.section}>
+          <div className={shellStyles.sectionHead}>
+            <div className={shellStyles.sectionHeadLeft}>
+              <span className={`${shellStyles.bar} ${shellStyles.green}`} />
+              <div>
+                <div className={shellStyles.sectionTitle}>Role skill coverage</div>
+                <p className={shellStyles.sectionDesc}>
+                  Framework skills for this role vs people currently in the title
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className={shellStyles.sectionBody}>
+            {roleFrameworkSkills.length === 0 && roleFrameworkCerts.length === 0 && (
+              <p className={styles.inlineNote}>
+                No skills or certifications linked to this role in Organization Setup yet.
+              </p>
+            )}
+            {coverageRows.length > 0 && (
+              <div className={styles.skillMatrix}>
+                <div className={styles.skillMatrixGroup}>
+                  <div className={styles.skillMatrixGroupHead}>
+                    <span className={styles.skillMatrixGroupTitle}>Coverage vs role holders</span>
+                    <span className={styles.skillMatrixGroupCount}>{coverageRows.length}</span>
+                  </div>
+                  <div className={styles.skillMatrixList}>
+                    {coverageRows.map((row) => {
+                      const band = row.coverage >= 75
+                        ? "Expert"
+                        : row.coverage >= 50
+                          ? "Advanced"
+                          : row.coverage >= 25
+                            ? "Intermediate"
+                            : "Beginner";
+                      return (
+                        <div key={row.name} className={styles.skillMatrixRow}>
+                          <div className={styles.skillMatrixLabelCol}>
+                            <span className={styles.skillMatrixName} title={row.name}>{row.name}</span>
+                            <span className={styles.skillMatrixMeta}>{row.have} of {row.total} people</span>
+                          </div>
+                          <div className={styles.skillMatrixTrack}>
+                            <div
+                              className={`${styles.skillMatrixFill} ${styles[`skillMatrixFill${band}`] || ""}`}
+                              style={{ width: `${row.coverage}%` }}
+                            />
+                          </div>
+                          <span
+                            className={`${styles.skillMatrixProf} ${
+                              styles[`skillMatrixProf${band}`] || styles.skillMatrixProfBeginner
+                            }`}
+                          >
+                            {row.coverage}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+            {roleFrameworkCerts.length > 0 && (
+              <div className={styles.chipRow} style={{ marginTop: 12 }}>
+                {roleFrameworkCerts.map((c) => (
+                  <span key={c.id || c.name} className={`${styles.softChip} ${styles.softChipAccent}`}>
+                    {c.name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {showStructurePanel && (
         <div className={shellStyles.section}>
           <div className={shellStyles.sectionHead}>
             <div className={shellStyles.sectionHeadLeft}>
               <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
               <div>
-                <div className={shellStyles.sectionTitle}>
-                  {FOCUS_LABELS[focus]}
-                </div>
-                <p className={shellStyles.sectionDesc}>
-                  {scopeLabel} · click a row to filter Overview
-                </p>
+                <div className={shellStyles.sectionTitle}>{FOCUS_LABELS[focus]}</div>
+                <p className={shellStyles.sectionDesc}>{scopeLabel} · click a row to drill down</p>
               </div>
             </div>
           </div>
           <div className={shellStyles.sectionBody}>
-            {focus === "departments" && departmentBreakdown.length === 0 && (
-              <div className={styles.emptyState}>
-                <div className={styles.emptyStateTitle}>No departments in Organization Framework</div>
-              </div>
-            )}
-            {focus === "departments" && departmentBreakdown.map((d) => (
+            {focus === "departments" && rankedDepartments.map((d) => (
               <button
                 key={d.name}
                 type="button"
@@ -592,25 +999,14 @@ export default function TalentDashboard({
                 <div className={styles.employeeManageMain}>
                   <div className={styles.employeeMiniName}>{d.name}</div>
                   <div className={styles.employeeMiniMeta}>
-                    {d.people} people · {d.roles} framework roles
-                    {d.roleNames.length ? ` · ${d.roleNames.slice(0, 4).join(", ")}${d.roleNames.length > 4 ? "…" : ""}` : ""}
+                    {fmt(d.employeeCount)} people · progress {fmt(d.avgProgress, "%")}
+                    {d.incompleteRequirements > 0 ? ` · ${d.incompleteRequirements} incomplete` : ""}
                   </div>
                 </div>
-                <span className={styles.deptCardCta}>
-                  Filter
-                  <ChevronRight size={14} aria-hidden="true" />
-                </span>
+                <ChevronRight size={14} aria-hidden="true" />
               </button>
             ))}
-
-            {focus === "roles" && roleBreakdown.length === 0 && (
-              <div className={styles.emptyState}>
-                <div className={styles.emptyStateTitle}>
-                  {department ? `No roles for ${department} in Organization Framework` : "No roles in Organization Framework"}
-                </div>
-              </div>
-            )}
-            {focus === "roles" && roleBreakdown.map((r) => (
+            {focus === "roles" && rankedRoles.map((r) => (
               <button
                 key={r.name}
                 type="button"
@@ -624,20 +1020,17 @@ export default function TalentDashboard({
                 <div className={styles.employeeManageMain}>
                   <div className={styles.employeeMiniName}>{r.name}</div>
                   <div className={styles.employeeMiniMeta}>
-                    {r.department} · {r.people} people in current scope
+                    {r.department} · {r.people} people · avg {fmt(r.avgReadiness, "%")}
                   </div>
                 </div>
-                <span className={styles.deptCardCta}>
-                  Filter
-                  <ChevronRight size={14} aria-hidden="true" />
-                </span>
+                <ChevronRight size={14} aria-hidden="true" />
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {showPeoplePanel && (
+      {peoplePanelVisible && (
         <div className={shellStyles.section}>
           <div className={shellStyles.sectionHead}>
             <div className={shellStyles.sectionHeadLeft}>
@@ -648,20 +1041,28 @@ export default function TalentDashboard({
                 </div>
                 <p className={shellStyles.sectionDesc}>
                   {scopeLabel} · {visibleEmployees.length} shown
+                  {focus === "incomplete"
+                    ? " · blocked / missing data (not the same as behind on promotion)"
+                    : ""}
+                  {focus === "behind"
+                    ? " · on a career path but readiness under 50%"
+                    : ""}
                   {focus === "certifications" && certStats.total_certificates != null
-                    ? ` · ${fmt(certStats.verified)} verified / ${fmt(certStats.total_certificates)} certificates submitted (${fmt(certStats.certification_rate, "%")} verified)`
+                    ? ` · ${fmt(certStats.verified)} verified / ${fmt(certStats.total_certificates)} submitted`
                     : ""}
-                  {focus === "learning" && metrics?.learning_completion_rate != null
-                    ? ` · assignment completion ${fmt(metrics.learning_completion_rate, "%")}`
-                    : ""}
-                  {focus !== "all" ? " · click the KPI again or Reset to clear" : ""}
                 </p>
               </div>
             </div>
             <button
               type="button"
               className={styles.smallBtn}
-              onClick={() => onNavigate({ view: "employees", department: department || null, role: null, employee: null })}
+              onClick={() => onNavigate({
+                view: "employees",
+                department: department || null,
+                role: null,
+                employee: null,
+                focus: focus === "incomplete" ? "incomplete" : "all",
+              })}
             >
               Full employee list
             </button>
@@ -671,28 +1072,50 @@ export default function TalentDashboard({
             {!scopeLoading && visibleEmployees.length === 0 && (
               <div className={styles.emptyState}>
                 <div className={styles.emptyStateIcon}><BarChart3 aria-hidden="true" /></div>
-                <div className={styles.emptyStateTitle}>No employees in this filter</div>
-                <p className={styles.emptyStateHint}>Clear the role or KPI focus, or pick another department.</p>
+                <div className={styles.emptyStateTitle}>
+                  {focus === "incomplete"
+                    ? "No incomplete requirements in this scope"
+                    : "No employees in this filter"}
+                </div>
+                <p className={styles.emptyStateHint}>
+                  {focus === "incomplete"
+                    ? "Everyone in scope has fulfilled the tracked checklist items — or data is still loading."
+                    : "Clear the role or KPI focus, or pick another department."}
+                </p>
               </div>
             )}
             {!scopeLoading && visibleEmployees.map((e) => {
               const promo = readinessMap.get(e.employee_id);
               const score = e.readiness_score ?? promo?.readiness_score;
               const progress = e.learning_progress;
+              const req = incompleteMap[e.employee_id] || e;
               const certCount = Array.isArray(e.certifications)
                 ? e.certifications.length
                 : (e.verified_certifications || e.certification_count || 0);
               return (
-                <div key={e.employee_id} className={styles.employeeManageRow}>
+                <button
+                  key={e.employee_id}
+                  type="button"
+                  className={`${styles.employeeManageRow} ${styles.employeeManageRowClickable}`}
+                  onClick={() => openEmployeeProfile(e)}
+                >
                   <div className={styles.employeeManageMain}>
                     <div className={styles.employeeMiniName}>{e.full_name}</div>
                     <div className={styles.employeeMiniMeta}>
                       {e.job_title || "—"} · {e.department || "—"} · {e.employee_id}
                       {focus === "certifications" && certCount ? ` · ${certCount} cert${certCount === 1 ? "" : "s"}` : ""}
                       {focus === "learning" && progress != null ? ` · ${fmt(round1(progress), "%")} learning` : ""}
+                      {req?.open_total > 0
+                        ? ` · ${req.open_total} open req${req.open_total === 1 ? "" : "s"}${req.open_high ? ` (${req.open_high} high)` : ""}`
+                        : ""}
                     </div>
                   </div>
                   <div className={styles.employeeManageSide}>
+                    {req?.open_high > 0 && (
+                      <span className={`${styles.progressBadge} ${styles.progressBadgeOrange}`}>
+                        Blocked / incomplete
+                      </span>
+                    )}
                     {score != null && (
                       <span
                         className={`${styles.progressBadge} ${
@@ -706,29 +1129,24 @@ export default function TalentDashboard({
                         {score}% ready
                       </span>
                     )}
-                    {focus === "learning" && progress != null && score == null && (
-                      <span className={`${styles.progressBadge} ${styles.progressBadgeOrange}`}>
-                        {fmt(round1(progress), "%")}
+                    {score == null && !req?.open_total && (
+                      <span className={`${styles.progressBadge} ${styles.progressBadgeMuted}`}>
+                        No path data
                       </span>
                     )}
-                    <button
-                      type="button"
-                      className={styles.smallBtnPrimary}
-                      onClick={() => onNavigate({
-                        view: "profile",
-                        employee: e.employee_id,
-                        department: e.department || department || null,
-                        role: e.job_title || role || null,
-                      })}
-                    >
-                      Manage
-                    </button>
+                    <span className={styles.smallBtnPrimary}>Open profile</span>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
         </div>
+      )}
+
+      {level === "org" && focus === "all" && (
+        <p className={styles.inlineNote}>
+          Tip: click the Employees KPI to list people, other KPIs for ready / behind / incomplete, or open a department card to drill down.
+        </p>
       )}
     </div>
   );

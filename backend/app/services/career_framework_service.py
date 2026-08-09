@@ -428,16 +428,6 @@ class CareerFrameworkService:
             if level_org and level_org != organization_id:
                 raise HTTPException(status_code=404, detail="Target career level not found.")
 
-        # Check if employee already has an active assignment
-        existing = await database.employee_career_assignments.find_one(
-            {"employee_id": employee_id, "status": "active"}
-        )
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Employee already has an active career assignment. Update or complete it first.",
-            )
-
         # Find current level based on employee's job title
         current_level = await self._find_level_by_title(employee.get("job_title"), employee.get("department"), organization_id)
         current_level_number = current_level.get("level_number", 0) if current_level else 0
@@ -487,49 +477,50 @@ class CareerFrameworkService:
         # Calculate initial progress
         progress = self._calculate_progress(assigned_learning_path, skills_to_acquire, certifications_to_earn)
 
-        assignment_doc = {
-            "employee_id": employee_id,
-            "user_id": employee.get("user_id"),
+        path_fields = {
             "employee_name": employee.get("full_name"),
-
-            # Current position
             "current_department": employee.get("department"),
             "current_track_id": target_level.get("track_id"),
             "current_track_name": target_level.get("track_name"),
             "current_level_number": current_level_number,
             "current_role_title": current_role_title,
-
-            # Target position
             "target_level_id": target_level_id,
             "target_level_number": target_level.get("level_number"),
             "target_role_title": target_level.get("role_title"),
             "target_date": target_date.isoformat() if target_date else None,
-
-            # Requirements
             "assigned_learning_path": assigned_learning_path,
             "skills_to_acquire": skills_to_acquire,
             "certifications_to_earn": certifications_to_earn,
-
-            # Progress
             "overall_progress_percent": progress["overall_progress_percent"],
             "readiness_score": progress["readiness_score"],
-
-            # Discussions
-            "discussions": [],
-
-            # Status
             "status": "active",
             "promoted_at": None,
             "promoted_by": None,
-
             "assigned_by": current_user.id,
-            "assigned_at": now,
             "updated_at": now,
             "organization_id": organization_id,
         }
 
-        result = await database.employee_career_assignments.insert_one(assignment_doc)
-        assignment_doc["_id"] = result.inserted_id
+        # Reassign if they already have an active path (Pipeline "Assign" = upsert).
+        existing = await database.employee_career_assignments.find_one(
+            {"employee_id": employee_id, "status": "active"}
+        )
+        if existing:
+            await database.employee_career_assignments.update_one(
+                {"_id": existing["_id"]},
+                {"$set": path_fields},
+            )
+            assignment_doc = await database.employee_career_assignments.find_one({"_id": existing["_id"]})
+        else:
+            assignment_doc = {
+                "employee_id": employee_id,
+                "user_id": employee.get("user_id"),
+                "discussions": [],
+                "assigned_at": now,
+                **path_fields,
+            }
+            result = await database.employee_career_assignments.insert_one(assignment_doc)
+            assignment_doc["_id"] = result.inserted_id
 
         # Also create/update the legacy career goal for backward compatibility
         if employee.get("user_id"):

@@ -22,6 +22,11 @@ def merge_skill_sources(
     """
     by_key: dict[str, dict] = {}
 
+    def _prof_rank(value: str | None) -> int:
+        return {"Beginner": 1, "Intermediate": 2, "Advanced": 3, "Expert": 4}.get(
+            (value or "Beginner").strip().capitalize(), 1
+        )
+
     def upsert(entry: dict) -> None:
         name = (entry.get("skill_name") or "").strip()
         if not name:
@@ -31,24 +36,38 @@ def merge_skill_sources(
         if not existing:
             by_key[key] = entry
             return
-        # Prefer verified / manual / course over inferred; keep higher confidence.
+        # Prefer verified / manual / course over inferred; keep higher proficiency then confidence.
         rank = {"manual": 3, "course": 3, "ai_resume": 2, "resume": 2, "certificate": 2, "inferred": 1}
         e_src = entry.get("source") or "inferred"
         x_src = existing.get("source") or "inferred"
         e_conf = int(entry.get("confidence") or 0)
         x_conf = int(existing.get("confidence") or 0)
-        if rank.get(e_src, 0) > rank.get(x_src, 0) or (
-            rank.get(e_src, 0) == rank.get(x_src, 0) and e_conf > x_conf
-        ):
+        e_prof = _prof_rank(entry.get("proficiency"))
+        x_prof = _prof_rank(existing.get("proficiency"))
+        take_entry = (
+            rank.get(e_src, 0) > rank.get(x_src, 0)
+            or (rank.get(e_src, 0) == rank.get(x_src, 0) and e_prof > x_prof)
+            or (rank.get(e_src, 0) == rank.get(x_src, 0) and e_prof == x_prof and e_conf > x_conf)
+        )
+        if take_entry:
             merged = {**existing, **entry}
-            # Keep id if existing had one
+            # Never downgrade proficiency when merging sources.
+            if x_prof > e_prof:
+                merged["proficiency"] = existing.get("proficiency")
             if existing.get("id") and not entry.get("id"):
                 merged["id"] = existing["id"]
+            if (existing.get("verification_status") == "verified") or (
+                entry.get("verification_status") == "verified"
+            ):
+                merged["verification_status"] = "verified"
             by_key[key] = merged
         else:
-            # Enrich confidence if missing
+            if e_prof > x_prof:
+                existing["proficiency"] = entry.get("proficiency")
             if not existing.get("confidence") and entry.get("confidence"):
                 existing["confidence"] = entry["confidence"]
+            if entry.get("verification_status") == "verified":
+                existing["verification_status"] = "verified"
 
     for s in manual_skills or []:
         upsert(
