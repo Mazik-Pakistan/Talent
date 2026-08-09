@@ -336,7 +336,7 @@ export const RECRUITER_PAGE_SUMMARIES = {
 export const ORG_CONFIG_TAB_HELP = {
   overview: {
     title: "Framework overview",
-    hint: "See departments, roles, roadmap items, and promotion rules at a glance — seed from existing records, import Excel, or start from scratch.",
+    hint: "Excel: Departments → Career Roles → Career Roadmaps → Promotion Rules, plus Catalog Index for Course IDs. Roadmaps can use Course Name (+ Provider) when ID is blank.",
     fields: [],
   },
   departments: {

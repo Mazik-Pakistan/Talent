@@ -119,7 +119,8 @@ export default function OrgFrameworkTab() {
       const report = await validateOrgFrameworkImport(token(), file);
       setImportReport(report);
       if (report.valid) {
-        toast.success(`Validated: ${Object.values(report.counts).reduce((a, b) => a + b, 0)} items.`);
+        const importCounts = Object.entries(report.counts || {}).filter(([k]) => k !== "catalog_index");
+        toast.success(`Validated: ${importCounts.reduce((a, [, b]) => a + b, 0)} items.`);
       } else {
         toast.error(`Validation failed with ${report.errors.length} issue(s).`);
       }
@@ -298,8 +299,8 @@ function EmptyState({ onLoad, onStart, onImport, onSeed, seeding, importReport, 
         <Layers style={{ width: 28, height: 28 }} />
       </div>
       <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: "0 0 8px" }}>Organization Framework Not Configured</h3>
-      <p style={{ fontSize: 13.5, color: "var(--text-muted)", maxWidth: 460, lineHeight: 1.55, margin: "0 0 24px" }}>
-        Set up your organization&apos;s career structure by importing an Excel template or building it manually. Everything you configure here automatically applies to all employees.
+      <p style={{ fontSize: 13.5, color: "var(--text-muted)", maxWidth: 520, lineHeight: 1.55, margin: "0 0 24px" }}>
+        Download the Excel template and fill sheets in order: Departments → Career Roles → Career Roadmaps → Promotion Rules. Use Catalog Index to copy Course IDs, or put Course Name (+ Provider) and leave Course ID blank to resolve on import.
       </p>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onSeed} disabled={seeding}>
@@ -325,7 +326,9 @@ function EmptyState({ onLoad, onStart, onImport, onSeed, seeding, importReport, 
             <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => onApply(null)}>Dismiss</button>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-            {Object.entries(importReport.counts).map(([k, v]) => (
+            {Object.entries(importReport.counts || {})
+              .filter(([k]) => k !== "catalog_index")
+              .map(([k, v]) => (
               <span key={k} style={{ fontSize: 11.5, fontWeight: 700, color: "var(--navy-2)", background: "#fff", border: "1px solid var(--border)", borderRadius: 999, padding: "3px 10px" }}>
                 {k.replace(/_/g, " ")}: {v}
               </span>
@@ -406,7 +409,8 @@ function OverviewSection({ summary, departments, roles, courses, versions, loadA
       const report = await validateOrgFrameworkImport(token(), file);
       setImportReport(report);
       if (report.valid) {
-        toast.success(`Validated: ${Object.values(report.counts).reduce((a, b) => a + b, 0)} items.`);
+        const importCounts = Object.entries(report.counts || {}).filter(([k]) => k !== "catalog_index");
+        toast.success(`Validated: ${importCounts.reduce((a, [, b]) => a + b, 0)} items.`);
       } else {
         toast.error(`Validation failed with ${report.errors.length} issue(s).`);
       }
@@ -470,7 +474,9 @@ function OverviewSection({ summary, departments, roles, courses, versions, loadA
             <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => setImportReport(null)}>Dismiss</button>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-            {Object.entries(importReport.counts).map(([k, v]) => (
+            {Object.entries(importReport.counts || {})
+              .filter(([k]) => k !== "catalog_index")
+              .map(([k, v]) => (
               <span key={k} style={{ fontSize: 11.5, fontWeight: 700, color: "var(--navy-2)", background: "#fff", border: "1px solid var(--border)", borderRadius: 999, padding: "3px 10px" }}>
                 {k.replace(/_/g, " ")}: {v}
               </span>

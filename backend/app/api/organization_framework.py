@@ -400,7 +400,11 @@ async def export_workbook(current_user: RequireRecruiterLearning):
 @router.post("/import/validate")
 async def validate_import(current_user: RequireRecruiterLearning, file: UploadFile = File(...)):
     """Parse an uploaded workbook, validate it, and return a validation report."""
-    from app.services.organization_framework_service import parse_import_workbook, validate_import_data
+    from app.services.organization_framework_service import (
+        parse_import_workbook,
+        resolve_roadmap_catalog_refs,
+        validate_import_data,
+    )
 
     if not (file.filename or "").lower().endswith(".xlsx"):
         raise HTTPException(
@@ -414,7 +418,16 @@ async def validate_import(current_user: RequireRecruiterLearning, file: UploadFi
         data = parse_import_workbook(content)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Could not parse workbook: {e}")
+    resolve_errors = await resolve_roadmap_catalog_refs(_org_id(current_user), data)
     report = validate_import_data(data)
+    if resolve_errors:
+        for issue in resolve_errors:
+            report["errors"].append(
+                f"{issue.get('sheet')} row {issue.get('row')}, column '{issue.get('column')}': "
+                f"{issue.get('reason')}"
+            )
+            report.setdefault("details", []).append(issue)
+        report["valid"] = False
     report["data"] = data
     return report
 
