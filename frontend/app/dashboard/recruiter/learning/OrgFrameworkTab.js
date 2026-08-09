@@ -208,21 +208,21 @@ export default function OrgFrameworkTab() {
           <div className={s.sidebarTitle}>Organization Framework</div>
           <div className={s.sidebarHint}>Manage your organization structure</div>
         </div>
-        <div className={s.deptList}>
+        <div className={s.navList}>
           {SECTIONS.map((sec) => {
             const Icon = sec.icon;
             return (
               <button
                 key={sec.key}
                 type="button"
-                className={`${s.deptItem} ${section === sec.key ? s.deptItemActive : ""}`}
+                className={`${s.navItem} ${section === sec.key ? s.navItemActive : ""}`}
                 onClick={() => setSection(sec.key)}
               >
-                <div className={s.deptItemIcon}>
+                <div className={s.navItemIcon}>
                   <Icon aria-hidden="true" style={{ width: 16, height: 16 }} />
                 </div>
-                <div className={s.deptItemBody}>
-                  <div className={s.deptItemName}>{sec.label}</div>
+                <div className={s.navItemBody}>
+                  <div className={s.navItemName}>{sec.label}</div>
                 </div>
               </button>
             );
@@ -231,10 +231,10 @@ export default function OrgFrameworkTab() {
       </div>
 
       {/* Main content */}
-      <div className={s.content} style={{ padding: 28, overflowY: "auto" }}>
-        <input ref={fileRef} type="file" accept=".xlsx" style={{ display: "none" }} onChange={handleFile} />
+      <div className={s.content}>
+        <input ref={fileRef} type="file" accept=".xlsx" className={s.hiddenInput} onChange={handleFile} />
         {loading ? (
-          <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading framework…</div>
+          <div className={s.loadingState}>Loading framework…</div>
         ) : !hasData && section === "overview" ? (
           <EmptyState
             onLoad={loadAll}
@@ -284,6 +284,64 @@ export default function OrgFrameworkTab() {
    Empty State (no framework yet)
 // ═══════════════════════════════════════════════════════════════════════════════ */
 
+function ImportReportPanel({ importReport, onDismiss, onApply, applying, compact }) {
+  if (!importReport) return null;
+  return (
+    <div
+      className={`${s.importReport} ${importReport.valid ? s.importReportOk : s.importReportBad}`}
+      style={compact ? undefined : { marginTop: 24, maxWidth: 640, width: "100%" }}
+    >
+      <div className={s.importReportHead}>
+        <div className={s.importReportTitle}>
+          {importReport.valid ? (compact ? "✓ Validation passed" : "Validation passed") : "Validation Report"}
+        </div>
+        <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={onDismiss}>Dismiss</button>
+      </div>
+      <div className={s.importReportCounts}>
+        {Object.entries(importReport.counts || {})
+          .filter(([k]) => k !== "catalog_index")
+          .map(([k, v]) => (
+            <span key={k} className={s.importReportCount}>
+              {k.replace(/_/g, " ")}: {v}
+            </span>
+          ))}
+      </div>
+      {importReport.errors.length > 0 && (
+        <div className={s.importReportErrors}>
+          {importReport.errors.map((e, i) => (
+            <div key={i} className={s.importReportError}>• {e}</div>
+          ))}
+        </div>
+      )}
+      {importReport.details?.length > 0 && (
+        <div className={s.importReportDetails}>
+          <div className={s.importReportDetailsLabel}>Exact location</div>
+          {importReport.details.map((d, i) => (
+            <div key={i} className={s.importReportDetailRow}>
+              <span className={s.importReportLoc}>
+                {d.sheet} · row {d.row} · {d.column}
+              </span>
+              <span className={s.importReportReason}>{d.reason}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {importReport.warnings.length > 0 && (
+        <div className={s.importReportWarnings}>
+          {importReport.warnings.map((w, i) => (
+            <div key={i} className={s.importReportWarning}>• {w}</div>
+          ))}
+        </div>
+      )}
+      {importReport.valid && (
+        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onApply} disabled={applying}>
+          <Check aria-hidden="true" /> {applying ? "Applying…" : "Apply Changes"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function EmptyState({ onLoad, onStart, onImport, onSeed, seeding, importReport, applying, onApply }) {
   const token = () => localStorage.getItem("access_token");
   const [exporting, setExporting] = useState(false);
@@ -307,15 +365,15 @@ function EmptyState({ onLoad, onStart, onImport, onSeed, seeding, importReport, 
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "60px 24px", textAlign: "center" }}>
-      <div style={{ width: 64, height: 64, borderRadius: 18, background: "var(--blue-light)", color: "var(--blue-strong)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
-        <Layers style={{ width: 28, height: 28 }} />
+    <div className={s.emptyState}>
+      <div className={`${s.emptyIcon} ${s.emptyIconLarge}`}>
+        <Layers aria-hidden="true" />
       </div>
-      <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: "0 0 8px" }}>Organization Framework Not Configured</h3>
-      <p style={{ fontSize: 13.5, color: "var(--text-muted)", maxWidth: 520, lineHeight: 1.55, margin: "0 0 24px" }}>
+      <h3 className={`${s.emptyTitle} ${s.emptyTitleLarge}`}>Organization Framework Not Configured</h3>
+      <p className={s.emptyText}>
         Download the Excel template and fill sheets in order: Departments → Career Roles → Career Roadmaps → Promotion Rules. Use Catalog Index to copy Course IDs, or put Course Name (+ Provider) and leave Course ID blank to resolve on import.
       </p>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+      <div className={s.emptyActions}>
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onSeed} disabled={seeding}>
           <Zap aria-hidden="true" /> {seeding ? "Building framework…" : "Auto-configure from existing employees"}
         </button>
@@ -330,55 +388,12 @@ function EmptyState({ onLoad, onStart, onImport, onSeed, seeding, importReport, 
         </button>
       </div>
 
-      {importReport && (
-        <div style={{ marginTop: 24, maxWidth: 640, width: "100%", border: `1px solid ${importReport.valid ? "var(--green)" : "var(--red)"}`, borderRadius: 14, padding: 16, background: importReport.valid ? "#f4fcf7" : "#fdf6f6", textAlign: "left" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div style={{ fontSize: 14, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui" }}>
-              {importReport.valid ? "Validation passed" : "Validation Report"}
-            </div>
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => onApply(null)}>Dismiss</button>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-            {Object.entries(importReport.counts || {})
-              .filter(([k]) => k !== "catalog_index")
-              .map(([k, v]) => (
-              <span key={k} style={{ fontSize: 11.5, fontWeight: 700, color: "var(--navy-2)", background: "#fff", border: "1px solid var(--border)", borderRadius: 999, padding: "3px 10px" }}>
-                {k.replace(/_/g, " ")}: {v}
-              </span>
-            ))}
-          </div>
-          {importReport.errors.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              {importReport.errors.map((e, i) => <div key={i} style={{ fontSize: 12.5, color: "var(--red)", marginBottom: 3 }}>• {e}</div>)}
-            </div>
-          )}
-          {importReport.details?.length > 0 && (
-            <div style={{ marginBottom: 8, maxHeight: 220, overflowY: "auto", borderTop: "1px solid rgba(185, 28, 28, 0.15)", paddingTop: 8 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--navy)", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 6 }}>
-                Exact location
-              </div>
-              {importReport.details.map((d, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12.5, marginBottom: 5 }}>
-                  <span style={{ flexShrink: 0, fontFamily: "monospace", fontWeight: 700, color: "var(--red)", background: "#fdecec", borderRadius: 6, padding: "1px 7px" }}>
-                    {d.sheet} · row {d.row} · {d.column}
-                  </span>
-                  <span style={{ color: "var(--navy)" }}>{d.reason}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {importReport.warnings.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              {importReport.warnings.map((w, i) => <div key={i} style={{ fontSize: 12, color: "#a57500", marginBottom: 2 }}>• {w}</div>)}
-            </div>
-          )}
-          {importReport.valid && (
-            <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onApply} disabled={applying}>
-              <Check aria-hidden="true" /> {applying ? "Applying…" : "Apply Changes"}
-            </button>
-          )}
-        </div>
-      )}
+      <ImportReportPanel
+        importReport={importReport}
+        applying={applying}
+        onDismiss={() => onApply(null)}
+        onApply={onApply}
+      />
     </div>
   );
 }
@@ -610,17 +625,17 @@ function OverviewSection({
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
+      <div className={s.pageHeader}>
         <div>
-          <h2 style={{ fontSize: 20, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>
+          <h2 className={s.pageTitle} style={{ fontSize: 20 }}>
             Organization Framework Overview
           </h2>
-          <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--text-muted)", lineHeight: 1.45, maxWidth: 520 }}>
+          <p className={s.pageSubtitle}>
             {deptCount} departments · {roleCount} roles · {employeeCount} employees in org.
             Cards show coverage — click any to jump to that section.
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className={s.pageActions}>
           <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={onSeed} disabled={seeding}>
             <Zap aria-hidden="true" /> {seeding ? "Seeding…" : "Seed from existing records"}
           </button>
@@ -630,64 +645,22 @@ function OverviewSection({
           <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => fileRef.current?.click()} disabled={importing}>
             <Upload aria-hidden="true" /> {importing ? "Importing…" : "Import Excel"}
           </button>
-          <input ref={fileRef} type="file" accept=".xlsx" style={{ display: "none" }} onChange={handleFile} />
+          <input ref={fileRef} type="file" accept=".xlsx" className={s.hiddenInput} onChange={handleFile} />
         </div>
       </div>
 
-      {importReport && (
-        <div style={{ border: `1px solid ${importReport.valid ? "var(--green)" : "var(--red)"}`, borderRadius: 14, padding: 16, marginBottom: 20, background: importReport.valid ? "#f4fcf7" : "#fdf6f6" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div style={{ fontSize: 14, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui" }}>
-              {importReport.valid ? "✓ Validation passed" : "Validation Report"}
-            </div>
-            <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => setImportReport(null)}>Dismiss</button>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-            {Object.entries(importReport.counts || {})
-              .filter(([k]) => k !== "catalog_index")
-              .map(([k, v]) => (
-              <span key={k} style={{ fontSize: 11.5, fontWeight: 700, color: "var(--navy-2)", background: "#fff", border: "1px solid var(--border)", borderRadius: 999, padding: "3px 10px" }}>
-                {k.replace(/_/g, " ")}: {v}
-              </span>
-            ))}
-          </div>
-          {importReport.errors.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              {importReport.errors.map((e, i) => <div key={i} style={{ fontSize: 12.5, color: "var(--red)", marginBottom: 3 }}>• {e}</div>)}
-            </div>
-          )}
-          {importReport.details?.length > 0 && (
-            <div style={{ marginBottom: 8, maxHeight: 220, overflowY: "auto", borderTop: "1px solid rgba(185, 28, 28, 0.15)", paddingTop: 8 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--navy)", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 6 }}>
-                Exact location
-              </div>
-              {importReport.details.map((d, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12.5, marginBottom: 5 }}>
-                  <span style={{ flexShrink: 0, fontFamily: "monospace", fontWeight: 700, color: "var(--red)", background: "#fdecec", borderRadius: 6, padding: "1px 7px" }}>
-                    {d.sheet} · row {d.row} · {d.column}
-                  </span>
-                  <span style={{ color: "var(--navy)" }}>{d.reason}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {importReport.warnings.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              {importReport.warnings.map((w, i) => <div key={i} style={{ fontSize: 12, color: "#a57500", marginBottom: 2 }}>• {w}</div>)}
-            </div>
-          )}
-          {importReport.valid && (
-            <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={handleApply} disabled={applying}>
-              <Check aria-hidden="true" /> {applying ? "Applying…" : "Apply Changes"}
-            </button>
-          )}
-        </div>
-      )}
+      <ImportReportPanel
+        importReport={importReport}
+        applying={applying}
+        compact
+        onDismiss={() => setImportReport(null)}
+        onApply={handleApply}
+      />
 
       <div className={s.setupList}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-          <div style={{ fontSize: 13, fontWeight: 750, color: "var(--navy)" }}>Setup checklist</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{stepsDone}/{setupSteps.length} complete</div>
+        <div className={s.setupListHead}>
+          <div className={s.setupListTitle}>Setup checklist</div>
+          <div className={s.setupListMeta}>{stepsDone}/{setupSteps.length} complete</div>
         </div>
         {setupSteps.map((step) => (
           <button
@@ -708,7 +681,7 @@ function OverviewSection({
         ))}
       </div>
 
-      <div className={s.analyticsGrid} style={{ marginBottom: 24 }}>
+      <div className={`${s.analyticsGrid} ${s.analyticsGridSpaced}`}>
         {cards.map((kpi) => {
           const Icon = kpi.icon;
           return (
@@ -736,7 +709,7 @@ function OverviewSection({
 
       {(rolesWithoutRoadmap.length > 0 || rolesWithoutRules.length > 0 || emptyDepartments.length > 0) && (
         <div className={s.gapPanel}>
-          <div className={s.sectionLabel} style={{ marginBottom: 12 }}>
+          <div className={s.sectionLabel}>
             <AlertCircle aria-hidden="true" /> Needs attention
           </div>
           <div className={s.gapGrid}>
@@ -748,7 +721,7 @@ function OverviewSection({
                 rolesWithoutRoadmap.slice(0, 6).map((r) => (
                   <div key={r.role_id || `${r.department}-${r.name}`} className={s.gapItem}>
                     <span>{r.name}</span>
-                    <span style={{ color: "var(--text-muted)", fontSize: 11.5 }}>{r.department}</span>
+                    <span className={s.gapMeta}>{r.department}</span>
                   </div>
                 ))
               )}
@@ -766,19 +739,19 @@ function OverviewSection({
                 rolesWithoutRules.slice(0, 6).map((r) => (
                   <div key={`rule-${r.role_id || `${r.department}-${r.name}`}`} className={s.gapItem}>
                     <span>{r.name}</span>
-                    <span style={{ color: "var(--text-muted)", fontSize: 11.5 }}>{r.department}</span>
+                    <span className={s.gapMeta}>{r.department}</span>
                   </div>
                 ))
               )}
               {emptyDepartments.length > 0 && (
                 <>
-                  <div className={s.gapColTitle} style={{ marginTop: 14 }}>
+                  <div className={`${s.gapColTitle} ${s.gapColTitleSpaced}`}>
                     Empty departments ({emptyDepartments.length})
                   </div>
                   {emptyDepartments.slice(0, 4).map((d) => (
                     <div key={d.department_id || d.name} className={s.gapItem}>
                       <span>{d.name}</span>
-                      <span style={{ color: "var(--text-muted)", fontSize: 11.5 }}>no roles</span>
+                      <span className={s.gapMeta}>no roles</span>
                     </div>
                   ))}
                 </>
@@ -789,14 +762,14 @@ function OverviewSection({
       )}
 
       {versions.length > 0 && (
-        <div style={{ marginBottom: 8 }}>
+        <div>
           <div className={s.sectionLabel}><Calendar aria-hidden="true" /> Recent imports</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className={s.versionList}>
             {versions.slice(0, 4).map((v) => (
-              <div key={v.version_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 12, background: "#fff" }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "var(--blue-strong)", background: "var(--blue-light)", padding: "3px 8px", borderRadius: 999 }}>{v.version_id}</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--navy)" }}>{v.label}</span>
-                <span style={{ fontSize: 11.5, color: "var(--text-muted)", marginLeft: "auto" }}>{new Date(v.created_at).toLocaleDateString()}</span>
+              <div key={v.version_id} className={s.versionRow}>
+                <span className={s.versionId}>{v.version_id}</span>
+                <span className={s.versionLabel}>{v.label}</span>
+                <span className={s.versionDate}>{new Date(v.created_at).toLocaleDateString()}</span>
               </div>
             ))}
           </div>
@@ -852,42 +825,62 @@ function DepartmentsSection({ departments, loadAll }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>Departments ({departments.length})</h2>
-        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); setEditItem(null); setFormName(""); setFormDesc(""); }}>
-          <Plus aria-hidden="true" /> Add Department
-        </button>
+      <div className={s.pageHeader}>
+        <div>
+          <h2 className={s.pageTitle}>Departments ({departments.length})</h2>
+          <p className={s.pageSubtitle}>Structure your org into departments — roles and roadmaps hang off these units.</p>
+        </div>
+        <div className={s.pageActions}>
+          <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); setEditItem(null); setFormName(""); setFormDesc(""); }}>
+            <Plus aria-hidden="true" /> Add Department
+          </button>
+        </div>
       </div>
       {showForm && (
-        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Department" : "New Department"}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div data-partner-coach className={s.formPanel}>
+          <div className={s.formTitle}>{editItem ? "Edit Department" : "New Department"}</div>
+          <div className={s.formGrid}>
             <label className={s.fieldLabel} style={{ margin: 0 }}>Name<input data-field-key="department_name" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Engineering" /></label>
             <label className={s.fieldLabel} style={{ margin: 0 }}>Description<input data-field-key="description" value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional" /></label>
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <div className={s.formActions}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={editItem ? handleUpdate : handleCreate}>{busy ? "Saving…" : "Save"}</button>
             <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => { setShowForm(false); setEditItem(null); }}>Cancel</button>
           </div>
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
-        {departments.map((d) => (
-          <div key={d.name} style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 16, background: "#fff", display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--blue-light)", color: "var(--blue-strong)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800 }}>{d.name.slice(0, 2).toUpperCase()}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--navy)" }}>{d.name}</div>
-                {d.description && <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{d.description}</div>}
+      {departments.length === 0 && !showForm ? (
+        <div className={s.emptyState}>
+          <div className={s.emptyIcon}>
+            <Building2 aria-hidden="true" />
+          </div>
+          <div className={s.emptyTitle}>No departments yet</div>
+          <p className={s.emptyText}>Add your first org unit to start building role ladders and career roadmaps.</p>
+          <div className={s.emptyActions}>
+            <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); setEditItem(null); setFormName(""); setFormDesc(""); }}>
+              <Plus aria-hidden="true" /> Add Department
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className={s.deptCardGrid}>
+          {departments.map((d) => (
+            <div key={d.name} className={s.deptCard}>
+              <div className={s.deptCardTop}>
+                <div className={s.deptAvatar}>{d.name.slice(0, 2).toUpperCase()}</div>
+                <div className={s.deptCardBody}>
+                  <div className={s.deptCardName}>{d.name}</div>
+                  {d.description && <div className={s.deptCardDesc}>{d.description}</div>}
+                </div>
+              </div>
+              <div className={s.deptCardActions}>
+                <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => startEdit(d)}><Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /> Edit</button>
+                <button type="button" className={`${s.btn} ${s.btnGhost} ${s.btnDanger}`} onClick={() => handleDelete(d.name)}><Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} /> Delete</button>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
-              <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => startEdit(d)}><Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /> Edit</button>
-              <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ color: "var(--red)" }} onClick={() => handleDelete(d.name)}><Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} /> Delete</button>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1168,24 +1161,26 @@ function RolesSection({ roles, departments, loadAll }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 18 }}>
+      <div className={s.pageHeader}>
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>
+          <h2 className={s.pageTitle}>
             Role ladders ({roles.length})
           </h2>
-          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 580, lineHeight: 1.5 }}>
+          <p className={s.pageSubtitle}>
             Pick <strong>Add after</strong> — e.g. after Software Developer — and the next step is filled in for you.
           </p>
         </div>
-        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); resetForm(); }}>
-          <Plus aria-hidden="true" /> Add Role
-        </button>
+        <div className={s.pageActions}>
+          <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); resetForm(); }}>
+            <Plus aria-hidden="true" /> Add Role
+          </button>
+        </div>
       </div>
 
       {showForm && (
-        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Role" : "New Role"}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+        <div data-partner-coach className={s.formPanel}>
+          <div className={s.formTitle}>{editItem ? "Edit Role" : "New Role"}</div>
+          <div className={s.formGrid}>
             <label className={s.fieldLabel} style={{ margin: 0 }}>
               Role Name
               <input data-field-key="role_name" value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="e.g. Junior Developer" />
@@ -1219,7 +1214,7 @@ function RolesSection({ roles, departments, loadAll }) {
                 </option>
               ))}
             </select>
-            <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>
+            <span className={s.formHint}>
               {!form.department
                 ? "Pick a department first"
                 : form.insert_after
@@ -1230,7 +1225,7 @@ function RolesSection({ roles, departments, loadAll }) {
             </span>
           </label>
           {pathPreview && (
-            <div style={{ marginTop: 10, fontSize: 12.5, color: "var(--navy)", fontWeight: 650 }}>
+            <div className={s.formPathPreview}>
               {pathPreview}
             </div>
           )}
@@ -1238,7 +1233,7 @@ function RolesSection({ roles, departments, loadAll }) {
             Description
             <input data-field-key="description" value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Optional" />
           </label>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <div className={s.formActions}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={editItem ? handleUpdate : handleCreate}>{busy ? "Saving…" : "Save"}</button>
             <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => { setShowForm(false); resetForm(); }}>Cancel</button>
           </div>
@@ -1246,11 +1241,22 @@ function RolesSection({ roles, departments, loadAll }) {
       )}
 
       {roles.length === 0 ? (
-        <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-muted)", fontSize: 13.5 }}>
-          No roles yet. Add departments first, then add roles and choose who they come after.
+        <div className={s.emptyState}>
+          <div className={s.emptyIcon}>
+            <Briefcase aria-hidden="true" />
+          </div>
+          <div className={s.emptyTitle}>No roles yet</div>
+          <p className={s.emptyText}>
+            Add departments first, then add roles and choose who they come after to build each ladder.
+          </p>
+          <div className={s.emptyActions}>
+            <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); resetForm(); }}>
+              <Plus aria-hidden="true" /> Add Role
+            </button>
+          </div>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <div className={s.ladderStack}>
           {Object.entries(byDept).map(([dept, deptRoles]) => {
             const views = buildDepartmentLadderViews(deptRoles);
             return (
@@ -1260,7 +1266,7 @@ function RolesSection({ roles, departments, loadAll }) {
                   {dept}
                   <span className={`${s.statusPill} ${s.neutral}`} style={{ fontSize: 10 }}>{deptRoles.length} roles</span>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div className={s.ladderFlows}>
                   {views.map((view, idx) => (
                     <div key={`${dept}-flow-${idx}`} className={s.ladderChain}>
                       {view.layers.map((layer, li) => (
@@ -1270,19 +1276,21 @@ function RolesSection({ roles, departments, loadAll }) {
                             {layer.map((r) => (
                               <div key={r.role_id} className={s.ladderNode}>
                                 <span className={s.ladderName}>{r.name}</span>
-                                <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(r)} title="Edit">
-                                  <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
-                                </button>
-                                <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto", color: "var(--red)" }} onClick={() => handleDelete(r.role_id)} title="Delete">
-                                  <Trash2 aria-hidden="true" style={{ width: 11, height: 11 }} />
-                                </button>
+                                <span className={s.ladderNodeActions}>
+                                  <button type="button" className={`${s.btn} ${s.btnGhost} ${s.btnIconTiny}`} onClick={() => startEdit(r)} title="Edit">
+                                    <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
+                                  </button>
+                                  <button type="button" className={`${s.btn} ${s.btnGhost} ${s.btnIconTiny} ${s.btnDanger}`} onClick={() => handleDelete(r.role_id)} title="Delete">
+                                    <Trash2 aria-hidden="true" style={{ width: 11, height: 11 }} />
+                                  </button>
+                                </span>
                               </div>
                             ))}
                           </div>
                         </div>
                       ))}
                       {view.layers.length === 1 && view.layers[0].length === 1 && !view.layers[0][0].next_role && (
-                        <span style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: 4 }}>standalone — edit and choose Add after</span>
+                        <span className={s.ladderStandalone}>standalone — edit and choose Add after</span>
                       )}
                     </div>
                   ))}
@@ -1440,14 +1448,21 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
 
   if (roles.length === 0) {
     return (
-      <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-muted)" }}>
-        <div style={{ width: 56, height: 56, borderRadius: 16, background: "var(--blue-light)", color: "var(--blue-strong)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
-          <TrendingUp aria-hidden="true" style={{ width: 24, height: 24 }} />
+      <div className={s.emptyState}>
+        <div className={s.emptyIcon}>
+          <TrendingUp aria-hidden="true" />
         </div>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", marginBottom: 8 }}>No roles yet</div>
-        <p style={{ fontSize: 13.5, maxWidth: 460, margin: "0 auto", lineHeight: 1.55 }}>
+        <div className={s.emptyTitle}>No roles yet</div>
+        <p className={s.emptyText}>
           Build a <strong>Role ladder</strong> first (with Promotes to), then set readiness rules here per department.
         </p>
+        {typeof onGoToRoles === "function" && (
+          <div className={s.emptyActions}>
+            <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onGoToRoles}>
+              Open Role ladders
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -1467,17 +1482,17 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
 
   return (
     <div>
-      <div className={s.promoHeader}>
+      <div className={s.pageHeader}>
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>
+          <h2 className={s.pageTitle}>
             Promotion readiness
           </h2>
-          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 560, lineHeight: 1.5 }}>
+          <p className={s.pageSubtitle}>
             Filter by department, then add a rule for each ladder step.
             Employees match by <strong>department + job title</strong>.
           </p>
         </div>
-        <div className={s.promoHeaderActions}>
+        <div className={s.pageActions}>
           <label className={s.promoFilter}>
             <Building2 aria-hidden="true" style={{ width: 14, height: 14, flexShrink: 0 }} />
             <span className={s.promoFilterLabel}>Department</span>
@@ -1512,18 +1527,18 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
           <span className={`${s.statusPill} ${s.neutral}`} style={{ fontSize: 10 }}>
             {rulesInDept}/{promotable.length} rules set
           </span>
-          <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
+          <span className={s.gapMeta}>
             {empTotal} employee{empTotal === 1 ? "" : "s"} matched in {activeDept}
           </span>
         </div>
       )}
 
       {showAddForm && (
-        <div className={s.promoRuleForm} data-partner-coach style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>
+        <div className={`${s.formPanel} ${s.promoRuleFormStandalone}`} data-partner-coach>
+          <div className={s.formTitle}>
             Add promotion rule — {activeDept}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12 }}>
+          <div className={s.formGrid3}>
             <label className={s.fieldLabel} style={{ margin: 0 }}>
               Role (promotes to next)
               <select
@@ -1585,7 +1600,7 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
             />
             Manager approval required
           </label>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <div className={s.formActions}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>
               {busy ? "Saving…" : "Save rule"}
             </button>
@@ -1604,7 +1619,7 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
         <div className={s.promoEmpty}>
           No roles in <strong>{activeDept}</strong> yet. Add roles in <strong>Role ladders</strong> first.
           {typeof onGoToRoles === "function" && (
-            <div style={{ marginTop: 14 }}>
+            <div className={s.promoEmptyAction}>
               <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onGoToRoles}>
                 Open Role ladders
               </button>
@@ -1618,7 +1633,7 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
               These roles exist, but none have a <strong>Promotes to</strong> link yet — so there is nowhere to promote.
               Open <strong>Role ladders</strong>, edit the role, and set the next title (e.g. Software Developer → Senior Software Developer).
               {typeof onGoToRoles === "function" && (
-                <button type="button" className={`${s.btn} ${s.btnPrimary}`} style={{ marginTop: 12 }} onClick={onGoToRoles}>
+                <button type="button" className={`${s.btn} ${s.btnPrimary} ${s.promoHintAction}`} onClick={onGoToRoles}>
                   Fix in Role ladders
                 </button>
               )}
@@ -1636,7 +1651,7 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
                     <div className={s.promoRoleTitle}>
                       {role.name}
                       <span className={s.ladderArrow} aria-hidden="true">→</span>
-                      <span style={{ fontWeight: 600, color: "var(--text-muted)" }}>{role.next_role}</span>
+                      <span className={s.mutedInline}>{role.next_role}</span>
                     </div>
                     <div className={s.promoRoleMeta}>
                       <Users aria-hidden="true" style={{ width: 12, height: 12 }} />
@@ -1650,12 +1665,11 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
                       )}
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <div className={s.promoInlineActions}>
                     {!isEditing && (
                       <button
                         type="button"
-                        className={`${s.btn} ${s.btnSecondary}`}
-                        style={{ fontSize: 12, padding: "6px 10px" }}
+                        className={`${s.btn} ${s.btnSecondary} ${s.btnCompact}`}
                         onClick={() => startEdit(role, existing)}
                       >
                         {existing ? "Edit rule" : "Set rule"}
@@ -1664,8 +1678,7 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
                     {existing && !isEditing && (
                       <button
                         type="button"
-                        className={`${s.btn} ${s.btnGhost}`}
-                        style={{ color: "var(--red)" }}
+                        className={`${s.btn} ${s.btnGhost} ${s.btnDanger}`}
                         onClick={() => handleDelete(role)}
                         title="Remove rule"
                       >
@@ -1687,7 +1700,7 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
 
                 {isEditing && (
                   <div className={s.promoRuleForm}>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+                    <div className={s.formGrid}>
                       <label className={s.fieldLabel} style={{ margin: 0 }}>
                         Min time in role (months)
                         <input
@@ -1708,7 +1721,7 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
                           value={form.required_readiness_pct}
                           onChange={(e) => setField("required_readiness_pct", parseInt(e.target.value) || 0)}
                         />
-                        <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>
+                        <span className={s.formHint}>
                           % of {role.name} Career Roadmap completed
                         </span>
                       </label>
@@ -1722,7 +1735,7 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
                       />
                       Manager approval required
                     </label>
-                    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <div className={s.formActions}>
                       <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>
                         {busy ? "Saving…" : "Save rule"}
                       </button>
@@ -1744,7 +1757,7 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
                   <div>
                     <div className={s.promoRoleTitle}>
                       {role.name}
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-faint)" }}>· no next role</span>
+                      <span className={s.faintInline}>· no next role</span>
                     </div>
                     <div className={s.promoRoleMeta}>
                       <Users aria-hidden="true" style={{ width: 12, height: 12 }} />
@@ -1753,12 +1766,12 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
                         : `${people} employee${people === 1 ? "" : "s"} in this role`}
                       <span className={`${s.statusPill} ${s.neutral}`} style={{ fontSize: 10 }}>Needs Promotes to</span>
                     </div>
-                    <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.45 }}>
+                    <p className={s.pageSubtitle} style={{ marginTop: 8, maxWidth: "none" }}>
                       Add another role in this department (or pick an existing one), then set <strong>Promotes to</strong> on {role.name}.
                     </p>
                   </div>
                   {typeof onGoToRoles === "function" && (
-                    <button type="button" className={`${s.btn} ${s.btnSecondary}`} style={{ fontSize: 12, padding: "6px 10px" }} onClick={onGoToRoles}>
+                    <button type="button" className={`${s.btn} ${s.btnSecondary} ${s.btnCompact}`} onClick={onGoToRoles}>
                       Role ladders
                     </button>
                   )}
@@ -1789,13 +1802,13 @@ function CareerRoadmapsSection({ roles, roadmaps, loadAll }) {
 
   if (roles.length === 0) {
     return (
-      <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-muted)" }}>
-        <div style={{ width: 56, height: 56, borderRadius: 16, background: "var(--blue-light)", color: "var(--blue-strong)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
-          <Route aria-hidden="true" style={{ width: 24, height: 24 }} />
+      <div className={s.emptyState}>
+        <div className={s.emptyIcon}>
+          <Route aria-hidden="true" />
         </div>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", marginBottom: 8 }}>No roles yet</div>
-        <p style={{ fontSize: 13.5, maxWidth: 460, margin: "0 auto", lineHeight: 1.55 }}>
-          Add roles in the <strong>Roles</strong> tab first — then build each role&apos;s learning path from your catalog here.
+        <div className={s.emptyTitle}>No roles yet</div>
+        <p className={s.emptyText}>
+          Add roles in the <strong>Role ladders</strong> tab first — then build each role&apos;s learning path from your catalog here.
         </p>
       </div>
     );
@@ -1803,13 +1816,15 @@ function CareerRoadmapsSection({ roles, roadmaps, loadAll }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>
-          Career Roadmaps ({roles.length} roles)
-        </h2>
-        <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
-          Modules, learning paths, courses, and certifications from your catalogs
-        </span>
+      <div className={s.pageHeader}>
+        <div>
+          <h2 className={s.pageTitle}>
+            Career Roadmaps ({roles.length} roles)
+          </h2>
+          <p className={s.pageSubtitle}>
+            Modules, learning paths, courses, and certifications from your catalogs
+          </p>
+        </div>
       </div>
       {Object.entries(grouped).map(([dept, deptRoles]) => (
         <div key={dept} className={s.deptGroup}>
@@ -1832,20 +1847,20 @@ function CareerRoadmapsSection({ roles, roadmaps, loadAll }) {
 }
 
 function RoleCard({ role, roleCourses, loadAll }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(roleCourses.length > 0);
   const certCount = roleCourses.filter((c) => catalogTypeKey(c) === "certification").length;
 
   return (
     <div className={s.roleCard} data-partner-coach>
       <button type="button" className={s.roleCardHead} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className={s.roleCardHeadMain}>
           <div className={s.roleCardTitle}>{role.name}</div>
           <div className={s.roleCardMeta}>
             {role.department}
             {role.next_role ? ` · Promotes to ${role.next_role}` : ""}
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className={s.roleCardHeadMeta}>
           <span className={`${s.statusPill} ${s.neutral}`}>
             {roleCourses.length} item{roleCourses.length === 1 ? "" : "s"}
             {certCount > 0 ? ` · ${certCount} cert${certCount === 1 ? "" : "s"}` : ""}
@@ -1936,22 +1951,25 @@ function RoleCoursesBlock({ roleName, entries, loadAll }) {
         </button>
       </div>
       {sorted.length === 0 ? (
-        <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>
+        <span className={s.courseEmpty}>
           No catalog items yet — filter by type (module, path, course, cert) and add from your catalogs.
         </span>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className={s.courseList}>
           {sorted.map((r, index) => {
             const fromCareer = r.source === "career_levels";
             const skills = courseSkills(r);
             const certs = courseCerts({ ...r, title: r.course_name || r.title });
             return (
-              <div key={r.roadmap_id || `${r.role_name}-${r.course_name || r.course_id}-${index}`} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: fromCareer ? "#f8fafb" : "#fbfcfe", fontSize: 13 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-faint)", minWidth: 22, paddingTop: 2 }}>{index + 1}.</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 650, color: "var(--navy)" }}>{r.course_name || r.course_id}</div>
+              <div
+                key={r.roadmap_id || `${r.role_name}-${r.course_name || r.course_id}-${index}`}
+                className={`${s.courseRow} ${fromCareer ? s.courseRowDerived : ""}`}
+              >
+                <span className={s.courseOrder}>{index + 1}.</span>
+                <div className={s.courseBody}>
+                  <div className={s.courseTitle}>{r.course_name || r.course_id}</div>
                   {(skills.length > 0 || certs.length > 0) && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5 }}>
+                    <div className={s.courseTags}>
                       {skills.slice(0, 3).map((skill) => (
                         <span key={skill} className={`${s.statusPill} ${s.green}`} style={{ fontSize: 9 }}>{skill}</span>
                       ))}
@@ -1977,12 +1995,12 @@ function RoleCoursesBlock({ roleName, entries, loadAll }) {
                   r.mandatory && <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>Mandatory</span>
                 )}
                 {fromCareer && <span className={`${s.statusPill} ${s.orange}`} style={{ fontSize: 10 }}>Career Level</span>}
-                <div style={{ display: "flex", gap: 2 }}>
+                <div className={s.courseRowActions}>
                   {!fromCareer && (
                     <>
-                      <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === 0} onClick={() => moveEntry(index, -1)} aria-label="Move up">↑</button>
-                      <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === sorted.length - 1} onClick={() => moveEntry(index, 1)} aria-label="Move down">↓</button>
-                      <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(r.roadmap_id)}>
+                      <button type="button" className={`${s.btn} ${s.btnGhost} ${s.btnIconTiny}`} disabled={busy || index === 0} onClick={() => moveEntry(index, -1)} aria-label="Move up">↑</button>
+                      <button type="button" className={`${s.btn} ${s.btnGhost} ${s.btnIconTiny}`} disabled={busy || index === sorted.length - 1} onClick={() => moveEntry(index, 1)} aria-label="Move down">↓</button>
+                      <button type="button" className={`${s.btn} ${s.btnGhost} ${s.btnIconTiny}`} onClick={() => handleDelete(r.roadmap_id)}>
                         <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
                       </button>
                     </>
