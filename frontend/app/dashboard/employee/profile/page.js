@@ -279,7 +279,6 @@ function EmployeeProfileContent() {
         { id: "sec-employment", label: "Employment", icon: <IconBriefcase />, done: sectionComplete.employment },
         { id: "sec-personal", label: "Personal", icon: <IconUser />, done: sectionComplete.personal },
         { id: "sec-education", label: "Education", icon: <IconCap />, done: sectionComplete.education },
-        { id: "sec-skills", label: "Skills & resume", icon: <IconSpark />, done: sectionComplete.skills },
         { id: "sec-emergency", label: "Emergency contact", icon: <IconHeart />, done: sectionComplete.emergency },
       ];
       // Always show banking: remote employees edit it; on-site view recruiter-managed details.
@@ -968,43 +967,6 @@ function EmployeeProfileContent() {
                   ) : (
                     <p className={styles.empty}>No education entries on file.</p>
                   )}
-                </ProfileSection>
-
-                <ProfileSection
-                  id="sec-skills"
-                  icon={<IconSpark />}
-                  complete={sectionComplete.skills}
-                  title="Skills & resume"
-                  subtitle={INTAKE_SUBTITLE}
-                >
-                  <dl className={styles.grid}>
-                    <Row label="Technical skills" value={joinList(skills.technical_skills)} wide />
-                    <Row label="Soft skills" value={joinList(skills.soft_skills)} wide />
-                    <Row label="Languages" value={joinList(skills.languages)} wide />
-                  </dl>
-                  {skills.certifications?.length > 0 && (
-                    <div className={styles.subBlock}>
-                      <h4>Certifications</h4>
-                      {skills.certifications.map((cert, index) => (
-                        <p key={index} className={styles.mutedLine}>
-                          {cert.name}
-                          {cert.expiry_date ? ` · expires ${formatDate(cert.expiry_date)}` : ""}
-                          {cert.document_url ? " · document on file" : ""}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  <div className={styles.subBlock}>
-                    <h4>Resume / CV</h4>
-                    {resume.file_name || resume.file_url ? (
-                      <>
-                        <p className={styles.mutedLine}>{resume.file_name || "Resume on file"}</p>
-                        {resume.summary && <p className={styles.summary}>{resume.summary}</p>}
-                      </>
-                    ) : (
-                      <p className={styles.empty}>No resume on file.</p>
-                    )}
-                  </div>
                 </ProfileSection>
 
                 <ProfileSection
