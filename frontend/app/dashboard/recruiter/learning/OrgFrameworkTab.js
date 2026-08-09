@@ -37,7 +37,9 @@ import {
   Building2,
   Calendar,
   Check,
+  AlertCircle,
   ChevronDown,
+  ChevronRight,
   Clock,
   Compass,
   Download,
@@ -245,7 +247,18 @@ export default function OrgFrameworkTab() {
             onApply={(val) => { if (val === null) setImportReport(null); else handleApply(); }}
           />
         ) : section === "overview" ? (
-          <OverviewSection summary={summary} departments={departments} roles={roles} courses={courses} versions={versions} loadAll={loadAll} onSeed={handleSeed} seeding={seeding} />
+          <OverviewSection
+            summary={summary}
+            departments={departments}
+            roles={roles}
+            roadmaps={roadmaps}
+            promotionRules={promotionRules}
+            versions={versions}
+            loadAll={loadAll}
+            onSeed={handleSeed}
+            seeding={seeding}
+            onNavigate={setSection}
+          />
         ) : section === "departments" ? (
           <DepartmentsSection departments={departments} loadAll={loadAll} />
         ) : section === "roles" ? (
@@ -374,13 +387,110 @@ function EmptyState({ onLoad, onStart, onImport, onSeed, seeding, importReport, 
    Overview Section
 // ═══════════════════════════════════════════════════════════════════════════════ */
 
-function OverviewSection({ summary, departments, roles, courses, versions, loadAll, onSeed, seeding }) {
+function OverviewSection({
+  summary,
+  departments,
+  roles,
+  roadmaps,
+  promotionRules,
+  versions,
+  loadAll,
+  onSeed,
+  seeding,
+  onNavigate,
+}) {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importReport, setImportReport] = useState(null);
   const [applying, setApplying] = useState(false);
   const fileRef = useRef(null);
   const token = () => localStorage.getItem("access_token");
+
+  const deptCount = departments?.length || 0;
+  const roleCount = roles?.length || 0;
+  const roadmapCount = roadmaps?.length || 0;
+  const ruleCount = (promotionRules || []).filter((r) => r?.source !== "career_levels").length;
+  const employeeCount = summary?.employees || 0;
+
+  const roadmapRoleNames = new Set(
+    (roadmaps || []).map((r) => (r.role_name || "").trim().toLowerCase()).filter(Boolean),
+  );
+  const rolesWithRoadmap = (roles || []).filter((r) =>
+    roadmapRoleNames.has((r.name || "").trim().toLowerCase()),
+  );
+  const rolesWithoutRoadmap = (roles || []).filter(
+    (r) => !roadmapRoleNames.has((r.name || "").trim().toLowerCase()),
+  );
+  const learningCoveragePct = roleCount
+    ? Math.round((rolesWithRoadmap.length / roleCount) * 100)
+    : 0;
+
+  const ruleKeys = new Set(
+    (promotionRules || [])
+      .filter((p) => p?.source !== "career_levels")
+      .map((p) => `${(p.department || "").trim().toLowerCase()}::${(p.role_name || "").trim().toLowerCase()}`),
+  );
+  const rolesWithRules = (roles || []).filter((r) => {
+    const dept = (r.department || "").trim().toLowerCase();
+    const name = (r.name || "").trim().toLowerCase();
+    return ruleKeys.has(`${dept}::${name}`) || ruleKeys.has(`::${name}`);
+  });
+  const rolesWithoutRules = (roles || []).filter((r) => {
+    const dept = (r.department || "").trim().toLowerCase();
+    const name = (r.name || "").trim().toLowerCase();
+    return !ruleKeys.has(`${dept}::${name}`) && !ruleKeys.has(`::${name}`);
+  });
+  const promoCoveragePct = roleCount
+    ? Math.round((rolesWithRules.length / roleCount) * 100)
+    : 0;
+
+  const rolesWithNext = (roles || []).filter((r) => (r.next_role || "").trim()).length;
+  const ladderPct = roleCount ? Math.round((rolesWithNext / roleCount) * 100) : 0;
+
+  const deptsWithRoles = new Set((roles || []).map((r) => (r.department || "").trim()).filter(Boolean));
+  const emptyDepartments = (departments || []).filter(
+    (d) => !deptsWithRoles.has((d.name || "").trim()),
+  );
+
+  const setupSteps = [
+    {
+      key: "departments",
+      section: "departments",
+      title: "Departments",
+      done: deptCount > 0,
+      meta: deptCount > 0 ? `${deptCount} department${deptCount === 1 ? "" : "s"}` : "Add your org units first",
+    },
+    {
+      key: "roles",
+      section: "roles",
+      title: "Role ladders",
+      done: roleCount > 0,
+      meta: roleCount > 0
+        ? `${roleCount} roles · ${rolesWithNext} with Promotes to`
+        : "Build career levels per department",
+    },
+    {
+      key: "roadmaps",
+      section: "career-roadmaps",
+      title: "Career Roadmaps",
+      done: rolesWithRoadmap.length > 0,
+      meta: roleCount > 0
+        ? `${rolesWithRoadmap.length}/${roleCount} roles have learning · ${roadmapCount} items`
+        : "Assign courses after roles exist",
+    },
+    {
+      key: "promotion",
+      section: "promotion",
+      title: "Promotion rules",
+      done: ruleCount > 0,
+      meta: roleCount > 0
+        ? `${rolesWithRules.length}/${roleCount} roles have rules`
+        : "Optional readiness thresholds",
+    },
+  ];
+  const stepsDone = setupSteps.filter((step) => step.done).length;
+  const setupPct = Math.round((stepsDone / setupSteps.length) * 100);
+  const nextStep = setupSteps.find((step) => !step.done);
 
   const handleExport = async () => {
     setExporting(true);
@@ -437,20 +547,79 @@ function OverviewSection({ summary, departments, roles, courses, versions, loadA
     }
   };
 
-  const stats = [
-    { label: "Departments", value: summary?.departments || 0, icon: Building2, color: "cyan" },
-    { label: "Roles", value: summary?.roles || 0, icon: Briefcase, color: "green" },
-    { label: "Roadmap items", value: summary?.roadmaps || 0, icon: Route, color: "navy" },
-    { label: "Promotion Rules", value: summary?.promotion_rules || 0, icon: TrendingUp, color: "green" },
-    { label: "Employees", value: summary?.employees || 0, icon: Users, color: "orange" },
+  const cards = [
+    {
+      key: "setup",
+      label: "Setup progress",
+      value: `${setupPct}%`,
+      hint: nextStep ? `Next: ${nextStep.title}` : "Core setup complete",
+      cta: nextStep ? "Continue setup" : "Review departments",
+      icon: Compass,
+      color: "cyan",
+      section: nextStep?.section || "departments",
+      pct: setupPct,
+      warn: setupPct < 100,
+      ok: setupPct === 100,
+    },
+    {
+      key: "learning",
+      label: "Learning coverage",
+      value: roleCount ? `${rolesWithRoadmap.length}/${roleCount}` : "0",
+      hint: roleCount
+        ? `${learningCoveragePct}% of roles have roadmap courses`
+        : "No roles yet",
+      cta: "Open Career Roadmaps",
+      icon: Route,
+      color: "navy",
+      section: "career-roadmaps",
+      pct: learningCoveragePct,
+      warn: roleCount > 0 && learningCoveragePct < 50,
+      ok: roleCount > 0 && learningCoveragePct >= 80,
+    },
+    {
+      key: "ladders",
+      label: "Ladder links",
+      value: roleCount ? `${rolesWithNext}/${roleCount}` : "0",
+      hint: roleCount
+        ? `${ladderPct}% of roles have Promotes to`
+        : "Build role ladders first",
+      cta: "Edit role ladders",
+      icon: Briefcase,
+      color: "green",
+      section: "roles",
+      pct: ladderPct,
+      warn: roleCount > 0 && ladderPct < 40,
+      ok: roleCount > 0 && ladderPct >= 70,
+    },
+    {
+      key: "promo",
+      label: "Promotion coverage",
+      value: roleCount ? `${rolesWithRules.length}/${roleCount}` : "0",
+      hint: ruleCount
+        ? `${promoCoveragePct}% of roles have promotion rules`
+        : "No promotion rules yet",
+      cta: "Open Promotion",
+      icon: TrendingUp,
+      color: "orange",
+      section: "promotion",
+      pct: promoCoveragePct,
+      warn: roleCount > 0 && promoCoveragePct < 30,
+      ok: roleCount > 0 && promoCoveragePct >= 50,
+    },
   ];
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>
-          Organization Framework Overview
-        </h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>
+            Organization Framework Overview
+          </h2>
+          <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--text-muted)", lineHeight: 1.45, maxWidth: 520 }}>
+            {deptCount} departments · {roleCount} roles · {employeeCount} employees in org.
+            Cards show coverage — click any to jump to that section.
+          </p>
+        </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={onSeed} disabled={seeding}>
             <Zap aria-hidden="true" /> {seeding ? "Seeding…" : "Seed from existing records"}
@@ -514,45 +683,120 @@ function OverviewSection({ summary, departments, roles, courses, versions, loadA
           )}
         </div>
       )}
+
+      <div className={s.setupList}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 750, color: "var(--navy)" }}>Setup checklist</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{stepsDone}/{setupSteps.length} complete</div>
+        </div>
+        {setupSteps.map((step) => (
+          <button
+            key={step.key}
+            type="button"
+            className={`${s.setupRow} ${step.done ? s.setupRowDone : ""}`}
+            onClick={() => onNavigate?.(step.section)}
+          >
+            <span className={`${s.setupCheck} ${step.done ? s.setupCheckOn : s.setupCheckOff}`}>
+              {step.done ? <Check aria-hidden="true" style={{ width: 14, height: 14 }} /> : step.key === "departments" ? "1" : step.key === "roles" ? "2" : step.key === "roadmaps" ? "3" : "4"}
+            </span>
+            <span className={s.setupBody}>
+              <span className={s.setupTitle}>{step.title}</span>
+              <span className={s.setupMeta}>{step.meta}</span>
+            </span>
+            <ChevronRight aria-hidden="true" style={{ width: 16, height: 16, color: "var(--text-muted)", flexShrink: 0 }} />
+          </button>
+        ))}
+      </div>
+
       <div className={s.analyticsGrid} style={{ marginBottom: 24 }}>
-        {stats.map((kpi) => {
+        {cards.map((kpi) => {
           const Icon = kpi.icon;
           return (
-            <div key={kpi.label} className={s.kpiCard}>
+            <button
+              key={kpi.key}
+              type="button"
+              className={`${s.kpiCard} ${kpi.warn ? s.kpiCardWarn : ""} ${kpi.ok ? s.kpiCardOk : ""}`}
+              onClick={() => onNavigate?.(kpi.section)}
+            >
               <div className={s.kpiTop}>
                 <span className={`${s.kpiIcon} ${s[kpi.color]}`}><Icon aria-hidden="true" /></span>
+                {kpi.warn ? <AlertCircle aria-hidden="true" style={{ width: 16, height: 16, color: "#a57500" }} /> : null}
               </div>
               <div className={s.kpiValue}>{kpi.value}</div>
               <div className={s.kpiLabel}>{kpi.label}</div>
-            </div>
+              <div className={s.kpiHint}>{kpi.hint}</div>
+              <div className={s.kpiBar} aria-hidden="true">
+                <div className={s.kpiBarFill} style={{ width: `${Math.min(100, kpi.pct || 0)}%` }} />
+              </div>
+              <div className={s.kpiCta}>{kpi.cta} →</div>
+            </button>
           );
         })}
       </div>
 
-      {versions.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div className={s.sectionLabel}><Calendar aria-hidden="true" /> Version History</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {versions.slice(0, 5).map((v) => (
-              <div key={v.version_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 12, background: "#fff" }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "var(--blue-strong)", background: "var(--blue-light)", padding: "3px 8px", borderRadius: 999 }}>{v.version_id}</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--navy)" }}>{v.label}</span>
-                <span style={{ fontSize: 11.5, color: "var(--text-muted)", marginLeft: "auto" }}>{new Date(v.created_at).toLocaleDateString()}</span>
-              </div>
-            ))}
+      {(rolesWithoutRoadmap.length > 0 || rolesWithoutRules.length > 0 || emptyDepartments.length > 0) && (
+        <div className={s.gapPanel}>
+          <div className={s.sectionLabel} style={{ marginBottom: 12 }}>
+            <AlertCircle aria-hidden="true" /> Needs attention
+          </div>
+          <div className={s.gapGrid}>
+            <div>
+              <div className={s.gapColTitle}>Roles without roadmap ({rolesWithoutRoadmap.length})</div>
+              {rolesWithoutRoadmap.length === 0 ? (
+                <div className={s.gapEmpty}>All roles have at least one learning item.</div>
+              ) : (
+                rolesWithoutRoadmap.slice(0, 6).map((r) => (
+                  <div key={r.role_id || `${r.department}-${r.name}`} className={s.gapItem}>
+                    <span>{r.name}</span>
+                    <span style={{ color: "var(--text-muted)", fontSize: 11.5 }}>{r.department}</span>
+                  </div>
+                ))
+              )}
+              {rolesWithoutRoadmap.length > 6 && (
+                <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ marginTop: 6, padding: "4px 8px" }} onClick={() => onNavigate?.("career-roadmaps")}>
+                  View all in Career Roadmaps
+                </button>
+              )}
+            </div>
+            <div>
+              <div className={s.gapColTitle}>Roles without promotion rule ({rolesWithoutRules.length})</div>
+              {rolesWithoutRules.length === 0 ? (
+                <div className={s.gapEmpty}>Every role has a promotion rule.</div>
+              ) : (
+                rolesWithoutRules.slice(0, 6).map((r) => (
+                  <div key={`rule-${r.role_id || `${r.department}-${r.name}`}`} className={s.gapItem}>
+                    <span>{r.name}</span>
+                    <span style={{ color: "var(--text-muted)", fontSize: 11.5 }}>{r.department}</span>
+                  </div>
+                ))
+              )}
+              {emptyDepartments.length > 0 && (
+                <>
+                  <div className={s.gapColTitle} style={{ marginTop: 14 }}>
+                    Empty departments ({emptyDepartments.length})
+                  </div>
+                  {emptyDepartments.slice(0, 4).map((d) => (
+                    <div key={d.department_id || d.name} className={s.gapItem}>
+                      <span>{d.name}</span>
+                      <span style={{ color: "var(--text-muted)", fontSize: 11.5 }}>no roles</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {summary?.recent_updates?.length > 0 && (
-        <div>
-          <div className={s.sectionLabel}><Clock aria-hidden="true" /> Recently Updated</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {summary.recent_updates.map((r, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: "#fbfcfe", fontSize: 13 }}>
-                <span className={`${s.statusPill} ${s.blue}`}>{r.type}</span>
-                <span style={{ fontWeight: 650, color: "var(--navy)" }}>{r.name}</span>
-                {r.updated_at && <span style={{ fontSize: 11.5, color: "var(--text-muted)", marginLeft: "auto" }}>{new Date(r.updated_at).toLocaleDateString()}</span>}
+      {versions.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div className={s.sectionLabel}><Calendar aria-hidden="true" /> Recent imports</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {versions.slice(0, 4).map((v) => (
+              <div key={v.version_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 12, background: "#fff" }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "var(--blue-strong)", background: "var(--blue-light)", padding: "3px 8px", borderRadius: 999 }}>{v.version_id}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--navy)" }}>{v.label}</span>
+                <span style={{ fontSize: 11.5, color: "var(--text-muted)", marginLeft: "auto" }}>{new Date(v.created_at).toLocaleDateString()}</span>
               </div>
             ))}
           </div>
