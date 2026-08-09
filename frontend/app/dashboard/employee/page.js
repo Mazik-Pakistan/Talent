@@ -617,7 +617,7 @@ function EmployeeDashboardContent() {
                     {incompleteTasks.length ? "Continue where AI left off" : "Review my profile"}
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
                   </button>
-                  <button type="button" className={styles.btnGhost} onClick={() => document.getElementById("task-checklist")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                  <button type="button" className={styles.btnGhost} onClick={() => { const el = document.getElementById("task-checklist"); el ? el.scrollIntoView({ behavior: "smooth", block: "start" }) : router.push("/dashboard/employee/complete-profile"); }}>
                     View full checklist
                   </button>
                 </div>
