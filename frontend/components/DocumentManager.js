@@ -12,6 +12,7 @@ import {
   uploadOnboardingFile,
 } from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
+import FileUploadField from "@/components/FileUploadField";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
 import { COPILOT_DOCUMENTS_ASSIST_EVENT, publishGuideContext } from "@/lib/ai/guideContext";
@@ -462,10 +463,10 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
                 ))}
               </select>
             </label>
-            <label className="field">
+            <div className="field">
               <span>File</span>
-              <input ref={fileInputRef} type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-            </label>
+              <FileUploadField ref={fileInputRef} onChange={(event) => setFile(event.target.files?.[0] || null)} />
+            </div>
           </div>
           {uploadMessage && (
             <p className={`form-message ${uploadMessage.type === "error" ? "" : ""}`} style={{ background: uploadMessage.type === "error" ? "#fee9e7" : "#edf8f2", color: uploadMessage.type === "error" ? "#b42318" : "#176b3b" }}>
@@ -550,9 +551,9 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
 
                         {isReplacing && (
                           <div className="document-upload-card compact">
-                            <input
+                            <FileUploadField
                               ref={replacementInputRef}
-                              type="file"
+                              label="Choose replacement"
                               onChange={(event) => setReplacementFile(event.target.files?.[0] || null)}
                             />
                             {replacementMessage && (

@@ -103,7 +103,7 @@ function SuperAdminLoginForm() {
       });
       setLoginFeedback("success");
       if (data.user?.must_change_password) {
-        toast.info("First-time sign-in — set your own password to continue.");
+        toast.info("First-time sign-in. Set your own password to continue.");
         router.push("/set-password");
         return;
       }
@@ -139,7 +139,7 @@ function SuperAdminLoginForm() {
             <div className={styles.rotatingContent}>
               <h2 className={styles.asideHeading}>Platform control, in trusted hands.</h2>
               <p className={styles.asideText}>
-                This console governs every workspace on Talent — access is limited to
+                This console governs every workspace on Talent. Access is limited to
                 verified super administrators only.
               </p>
             </div>

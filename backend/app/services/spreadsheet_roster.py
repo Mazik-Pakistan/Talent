@@ -526,7 +526,7 @@ def row_to_candidate(
         "is_remote": _is_truthy_flag(get("is_remote")),
         "currency": (get("currency") or "PKR").upper(),
         "expires_in_days": 2,
-        "offer_expiry_days": int(offer_exp_raw) if offer_exp_raw.isdigit() else 14,
+        "offer_expiry_days": int(offer_exp_raw) if offer_exp_raw.isdigit() else None,
         "message_to_candidate": get("message_to_candidate") or None,
         "terms": terms,
         "benefits": benefits,

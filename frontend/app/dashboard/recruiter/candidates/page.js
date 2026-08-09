@@ -556,7 +556,9 @@ function RecruiterCandidatesPageContent() {
             label: String(b.label).trim(),
             selected: b.selected !== false,
           })),
-        offer_expiry_days: Math.min(90, Math.max(1, Number(editDraft.offer_expiry_days) || 14)),
+        offer_expiry_days: editDraft.offer_expiry_days
+          ? Math.min(90, Math.max(1, Number(editDraft.offer_expiry_days)))
+          : null,
         terms: editDraft.terms?.trim() || "",
         message_to_candidate: editDraft.message_to_candidate?.trim() || null,
         recruiter_note: (negoNotes[offer.id] || "").trim() || null,
@@ -1785,7 +1787,7 @@ function normalizeDateInput(value) {
 function buildOfferEditDraft(offer) {
   const expiresAt = offer?.expires_at ? new Date(offer.expires_at) : null;
   const sentAt = offer?.sent_at ? new Date(offer.sent_at) : null;
-  let offerExpiryDays = 14;
+  let offerExpiryDays = "";
   if (expiresAt && sentAt && !Number.isNaN(expiresAt.getTime()) && !Number.isNaN(sentAt.getTime())) {
     const days = Math.round((expiresAt.getTime() - sentAt.getTime()) / (1000 * 60 * 60 * 24));
     if (days >= 1 && days <= 90) offerExpiryDays = days;

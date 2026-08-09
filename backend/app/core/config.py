@@ -65,7 +65,9 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
     MAX_DOCUMENT_MB: int = 10
     SIGNED_URL_EXPIRE_SECONDS: int = 3600
-    OFFER_EXPIRE_DAYS: int = 14
+    # Fallback offer response deadline: 48 hours (2 days) after generation
+    # when the recruiter does not configure an expiry.
+    OFFER_EXPIRE_DAYS: int = 2
 
     # IT provisioning (pre-activation): default IT inbox + public form lifetime.
     IT_MANAGER_EMAIL: str = ""

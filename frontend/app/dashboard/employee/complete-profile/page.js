@@ -12,6 +12,7 @@ import {
 import EmployeeShell from "@/components/employee/EmployeeShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import SignaturePad from "@/components/SignaturePad";
+import FileUploadField from "@/components/FileUploadField";
 import AiField, { AiCheckRow } from "@/components/ai-experience/AiField";
 import AiSaveToast from "@/components/ai-experience/AiSaveToast";
 import BankSlipScanner from "@/components/ai-experience/BankSlipScanner";
@@ -1191,10 +1192,8 @@ function OnboardingForm({
                     >
                       Signature file (PNG, JPG, or PDF)
                     </span>
-                    <input
-                      type="file"
+                    <FileUploadField
                       accept="image/png,image/jpeg,image/jpg,application/pdf"
-                      style={{ fontSize: 13 }}
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;

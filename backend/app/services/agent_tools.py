@@ -488,7 +488,7 @@ async def _tool_bulk_invite(user: CurrentUser, args: dict) -> ToolResult:
                 "employment_type": row.get("employment_type") or "Full-time",
                 "currency": (row.get("currency") or "PKR"),
                 "expires_in_days": 2,
-                "offer_expiry_days": int(row.get("offer_expiry_days") or 14),
+                "offer_expiry_days": int(row["offer_expiry_days"]) if str(row.get("offer_expiry_days") or "").strip().isdigit() else None,
                 "message_to_candidate": row.get("message_to_candidate"),
                 "benefits": benefits if isinstance(benefits, list) else [],
                 "missing_fields": missing,

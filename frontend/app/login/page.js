@@ -14,7 +14,7 @@ import MascotStatic from "@/components/MascotStatic";
 const ROTATING_CONTENT = [
   {
   heading: "One platform for your entire hiring workflow.",
-  text: "Post roles, screen candidates, and onboard new hires — all in one connected dashboard.",
+    text: "Post roles, screen candidates, and onboard new hires, all in one connected dashboard.",
   },
   {
     heading: "AI-powered matching for better hires.",
@@ -30,7 +30,7 @@ const ROTATING_CONTENT = [
   },
   {
     heading: "Sign in with either email.",
-    text: "Use your personal or company email — one password covers both. Forgot it? Use the 6-digit code on the sign-in page.",
+    text: "Use your personal or company email. One password covers both. Forgot it? Use the 6-digit code on the sign-in page.",
   },
 ];
 
@@ -169,7 +169,7 @@ function LoginForm() {
        });
        setLoginFeedback("success");
        if (data.user?.must_change_password) {
-         toast.info("First-time sign-in — set your own password to continue.");
+          toast.info("First-time sign-in. Set your own password to continue.");
          router.push("/set-password");
          return;
        }
@@ -224,7 +224,7 @@ function LoginForm() {
         <section className={styles.panel} aria-labelledby="login-heading">
           <div className={styles.intro}>
             <h1 id="login-heading" className={styles.heading}>Sign in to Talent</h1>
-            <p className={styles.subtext}>Use your personal or company email — we&apos;ll take you to your dashboard automatically.</p>
+            <p className={styles.subtext}>Use your personal or company email. We&apos;ll take you to your dashboard automatically.</p>
           </div>
 
           <form className={styles.form} onSubmit={handleSubmit} noValidate>

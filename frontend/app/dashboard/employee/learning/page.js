@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import EmployeeShell from "@/components/employee/EmployeeShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import FileUploadField from "@/components/FileUploadField";
 import dashStyles from "@/app/dashboard/employee/employee-dashboard.module.css";
 import styles from "./learning.module.css";
 import { getApiErrorMessage } from "@/services/authService";
@@ -997,10 +998,12 @@ function MyCoursesTab({ onChange }) {
                       Learning hours
                       <input type="number" min="0" step="0.5" value={uploadForm.learning_hours} onChange={(ev) => setUploadForm((f) => ({ ...f, learning_hours: ev.target.value }))} />
                     </label>
-                    <label>
-                      Certificate file
-                      <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(ev) => setUploadFile(ev.target.files?.[0] || null)} required />
-                    </label>
+                    <FileUploadField
+                      caption="Certificate file"
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      onChange={(ev) => setUploadFile(ev.target.files?.[0] || null)}
+                      required
+                    />
                     <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                       <button type="submit" className={dashStyles.btnPrimary} disabled={uploading}>
                         {uploading ? "Uploading…" : "Submit"}
@@ -1956,10 +1959,12 @@ function CertificatesTab({ onChange }) {
             Learning hours
             <input type="number" min="0" step="0.5" value={form.learning_hours} onChange={(e) => setForm((f) => ({ ...f, learning_hours: e.target.value }))} />
           </label>
-          <label>
-            Certificate file
-            <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] || null)} required />
-          </label>
+          <FileUploadField
+            caption="Certificate file"
+            accept=".pdf,.png,.jpg,.jpeg"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            required
+          />
           <label>
             Public certificate URL (optional)
             <input

@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 import { useSearchParams } from "next/navigation";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import FileUploadField from "@/components/FileUploadField";
 import {
   Archive,
   ArrowRight,
@@ -3052,17 +3053,16 @@ function ImportsTab({ initialProvider = null, onConsumedInitial }) {
                     What to do with existing courses that are missing from this file. Never automatic by default.
                   </div>
                 </label>
-                <label className={`${styles.fieldLabel} ${styles.wide}`}>
+                <div className={`${styles.fieldLabel} ${styles.wide}`}>
                   Spreadsheet
-                  <input
-                    type="file"
+                  <FileUploadField
                     accept=".xlsx,.xls,.csv"
                     onChange={(e) => { setFile(e.target.files?.[0] || null); setPreview(null); }}
                   />
                   <div className={styles.providerFormHint}>
                     Supported: .xlsx, .xls, .csv. Required columns: Course Title, URL, Designation, Learning Month, Category, Competency.
                   </div>
-                </label>
+                </div>
               </div>
               <div className={styles.formActions}>
                 <button type="submit" className={styles.assignCourseBtn} disabled={previewing || !provider || !file}>

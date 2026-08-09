@@ -81,7 +81,7 @@ def candidate_row_to_request(row: dict) -> CreateInvitationRequest:
         currency=(row.get("currency") or "PKR").upper(),
         salary_breakdown=row.get("salary_breakdown") or [],
         benefits=_benefit_items(row),
-        offer_expiry_days=int(row.get("offer_expiry_days") or 14),
+        offer_expiry_days=int(row["offer_expiry_days"]) if str(row.get("offer_expiry_days") or "").strip().isdigit() else None,
         terms=(row.get("terms") or "").strip() or DEFAULT_OFFER_TERMS,
         message_to_candidate=row.get("message_to_candidate"),
     )

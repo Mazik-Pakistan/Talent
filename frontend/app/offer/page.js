@@ -13,6 +13,7 @@ import {
 } from "@/services/authService";
 import { LOGO_URL } from "@/lib/logo";
 import SignaturePad from "@/components/SignaturePad";
+import FileUploadField from "@/components/FileUploadField";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
 import styles from "@/app/styles/auth.module.css";
@@ -909,10 +910,9 @@ function OfferLetterPageContent() {
                         {signatureMethod === "pad" ? (
                           <SignaturePad onChange={setSignatureDataUrl} />
                         ) : (
-                          <label className={styles.offerField}>
+                          <div className={styles.offerField}>
                             <span>Signature file (PNG, JPG, or PDF)</span>
-                            <input
-                              type="file"
+                            <FileUploadField
                               accept="image/png,image/jpeg,application/pdf"
                               onChange={handleSignatureFile}
                               disabled={uploadingSig}
@@ -920,7 +920,7 @@ function OfferLetterPageContent() {
                             {signatureUploadUrl && (
                               <small style={{ color: "#056280" }}>Uploaded - ready to submit.</small>
                             )}
-                          </label>
+                          </div>
                         )}
 
                         <label className={styles.offerCheckbox}>

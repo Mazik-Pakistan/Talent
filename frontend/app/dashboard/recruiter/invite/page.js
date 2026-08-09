@@ -44,7 +44,7 @@ const initialInvite = {
   currency: "PKR",
   message_to_candidate: "",
   terms: DEFAULT_TERMS,
-  offer_expiry_days: 14,
+  offer_expiry_days: "",
 };
 
 // Default optional allowances
@@ -400,7 +400,7 @@ function RecruiterInvitePageInner() {
             label: b.label,
             selected: Boolean(b.selected),
           })),
-          offer_expiry_days: Number(inviteForm.offer_expiry_days) || 14,
+          offer_expiry_days: inviteForm.offer_expiry_days ? Number(inviteForm.offer_expiry_days) : null,
           terms: inviteForm.terms.trim() || DEFAULT_TERMS,
           message_to_candidate:
             inviteForm.message_to_candidate.trim() || null,
@@ -1078,21 +1078,6 @@ function RecruiterInvitePageInner() {
                 }}
               >
                 {inviteMessage}
-              </p>
-            )}
-            {inviteEmailSent === true && (
-              <p
-                className={styles.formMessage}
-                role="status"
-                style={{
-                  marginTop: 8,
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  background: "#e6f7e6",
-                  border: "1px solid #b2d8b2",
-                }}
-              >
-                Offer invitation emailed. You can still copy the link as a backup.
               </p>
             )}
             {inviteEmailSent === false && (

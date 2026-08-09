@@ -105,7 +105,15 @@ class InvitationService:
         )
 
         invite_link = settings.invitation_link(token)
-        expires_display = expires_at.strftime("%B %d, %Y at %H:%M UTC")
+        # The offer-invitation email must advertise the OFFER response deadline
+        # (the recruiter-configured expiry, or the 48h fallback) — not the
+        # registration-link lifetime.
+        offer_expires_at = offer_doc.get("expires_at")
+        expires_display = (
+            offer_expires_at.strftime("%B %d, %Y at %H:%M UTC")
+            if isinstance(offer_expires_at, datetime)
+            else expires_at.strftime("%B %d, %Y at %H:%M UTC")
+        )
         email_sent = False
         email_error = None
         try:
