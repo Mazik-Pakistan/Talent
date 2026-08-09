@@ -65,10 +65,24 @@ def validate_cnic_format(value: str) -> str:
     return raw
 
 
+MIN_DOB_AGE = 14
+
+
 def validate_date_not_future(value: date, field_name: str = "date") -> date:
     """Validate that a date is not in the future."""
     if value > date.today():
         raise ValueError(f"{field_name.title()} cannot be in the future.")
+    return value
+
+
+def validate_date_of_birth(value: date, field_name: str = "Date of birth") -> date:
+    """Validate DOB: must be a valid date, not in the future, and user must be >= MIN_DOB_AGE."""
+    today = date.today()
+    if value > today:
+        raise ValueError(f"{field_name} cannot be in the future.")
+    age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+    if age < MIN_DOB_AGE:
+        raise ValueError(f"You must be at least {MIN_DOB_AGE} years old.")
     return value
 
 

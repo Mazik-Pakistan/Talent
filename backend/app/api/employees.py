@@ -226,8 +226,16 @@ async def get_profile_completion(current_user: RequireEmployee):
 @router.put("/profile-completion")
 async def save_profile_completion(payload: dict, current_user: RequireEmployee):
     from app.schemas.employee_profile import EmployeeProfileSaveRequest
+    from pydantic import ValidationError as PydanticValidationError
 
-    request = EmployeeProfileSaveRequest.model_validate(payload)
+    try:
+        request = EmployeeProfileSaveRequest.model_validate(payload)
+    except PydanticValidationError as exc:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=exc.errors(),
+        )
     return await service.save_profile_completion(current_user, request)
 
 

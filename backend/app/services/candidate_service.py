@@ -736,6 +736,26 @@ class CandidateService:
         if not safe_fields:
             return {"message": "No recognised personal fields to update.", "updated": {}}
 
+        if "date_of_birth" in safe_fields:
+            from datetime import date as date_type
+            from app.schemas.auth import validate_date_of_birth
+
+            raw = safe_fields["date_of_birth"]
+            try:
+                parsed_dob = date_type.fromisoformat(str(raw))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Date of birth must be a valid date (YYYY-MM-DD).",
+                )
+            try:
+                validate_date_of_birth(parsed_dob, "Date of birth")
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=str(exc),
+                )
+
         # Start from whatever is already saved so we merge, not overwrite.
         onboarding = candidate.get("onboarding") or {}
         existing_personal = dict(onboarding.get("personal") or {})

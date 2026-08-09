@@ -25,6 +25,7 @@ import {
 } from "@/services/authService";
 import { moduleAccess } from "@/services/rbac";
 import { getEmployeeNavItems, isEmployeeNavActive } from "@/utils/employeeNav";
+import { validateDateOfBirth, getMaxDob } from "@/utils/validation";
 import { publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
 import {
@@ -279,7 +280,6 @@ function EmployeeProfileContent() {
         { id: "sec-employment", label: "Employment", icon: <IconBriefcase />, done: sectionComplete.employment },
         { id: "sec-personal", label: "Personal", icon: <IconUser />, done: sectionComplete.personal },
         { id: "sec-education", label: "Education", icon: <IconCap />, done: sectionComplete.education },
-        { id: "sec-skills", label: "Skills & resume", icon: <IconSpark />, done: sectionComplete.skills },
         { id: "sec-emergency", label: "Emergency contact", icon: <IconHeart />, done: sectionComplete.emergency },
       ];
       // Always show banking: remote employees edit it; on-site view recruiter-managed details.
@@ -502,6 +502,11 @@ function EmployeeProfileContent() {
   }
 
   async function savePersonal() {
+    const dobCheck = validateDateOfBirth(personalDraft.date_of_birth, "Date of birth");
+    if (!dobCheck.isValid) {
+      showFormError(dobCheck.error, { date_of_birth: dobCheck.error });
+      return;
+    }
     await persistSection("personal", {
       personal: {
         ...personalDraft,
@@ -813,7 +818,7 @@ function EmployeeProfileContent() {
                       <div className={styles.formGrid}>
                         <Field label="First name" value={personalDraft.first_name} onChange={(e) => setPersonalDraft({ ...personalDraft, first_name: e.target.value })} />
                         <Field label="Last name" value={personalDraft.last_name} onChange={(e) => setPersonalDraft({ ...personalDraft, last_name: e.target.value })} />
-                        <Field label="Date of birth" type="date" value={personalDraft.date_of_birth} onChange={(e) => setPersonalDraft({ ...personalDraft, date_of_birth: e.target.value })} />
+                        <Field label="Date of birth" type="date" max={getMaxDob()} value={personalDraft.date_of_birth} onChange={(e) => setPersonalDraft({ ...personalDraft, date_of_birth: e.target.value })} />
                         <SelectField label="Gender" value={personalDraft.gender} options={["male", "female", "other", "prefer_not_to_say"]} onChange={(e) => setPersonalDraft({ ...personalDraft, gender: e.target.value })} />
                         <Field label="Nationality" value={personalDraft.nationality} onChange={(e) => setPersonalDraft({ ...personalDraft, nationality: e.target.value })} />
                         <SelectField label="Marital status" value={personalDraft.marital_status} options={["single", "married", "divorced", "widowed", "other"]} onChange={(e) => setPersonalDraft({ ...personalDraft, marital_status: e.target.value })} />
@@ -968,43 +973,6 @@ function EmployeeProfileContent() {
                   ) : (
                     <p className={styles.empty}>No education entries on file.</p>
                   )}
-                </ProfileSection>
-
-                <ProfileSection
-                  id="sec-skills"
-                  icon={<IconSpark />}
-                  complete={sectionComplete.skills}
-                  title="Skills & resume"
-                  subtitle={INTAKE_SUBTITLE}
-                >
-                  <dl className={styles.grid}>
-                    <Row label="Technical skills" value={joinList(skills.technical_skills)} wide />
-                    <Row label="Soft skills" value={joinList(skills.soft_skills)} wide />
-                    <Row label="Languages" value={joinList(skills.languages)} wide />
-                  </dl>
-                  {skills.certifications?.length > 0 && (
-                    <div className={styles.subBlock}>
-                      <h4>Certifications</h4>
-                      {skills.certifications.map((cert, index) => (
-                        <p key={index} className={styles.mutedLine}>
-                          {cert.name}
-                          {cert.expiry_date ? ` · expires ${formatDate(cert.expiry_date)}` : ""}
-                          {cert.document_url ? " · document on file" : ""}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  <div className={styles.subBlock}>
-                    <h4>Resume / CV</h4>
-                    {resume.file_name || resume.file_url ? (
-                      <>
-                        <p className={styles.mutedLine}>{resume.file_name || "Resume on file"}</p>
-                        {resume.summary && <p className={styles.summary}>{resume.summary}</p>}
-                      </>
-                    ) : (
-                      <p className={styles.empty}>No resume on file.</p>
-                    )}
-                  </div>
                 </ProfileSection>
 
                 <ProfileSection
@@ -1704,7 +1672,7 @@ function Row({ label, value, wide }) {
   );
 }
 
-function Field({ label, value, onChange, type = "text", wide, error, hint, required }) {
+function Field({ label, value, onChange, type = "text", wide, error, hint, required, max }) {
   return (
     <label
       className={`${styles.field} ${wide ? styles.wide : ""} ${error ? styles.fieldError : ""}`}
@@ -1714,7 +1682,7 @@ function Field({ label, value, onChange, type = "text", wide, error, hint, requi
         {label}
         {required ? <span style={{ color: "#b42318", marginLeft: 4 }}>*</span> : null}
       </span>
-      <input type={type} value={value} onChange={onChange} aria-invalid={!!error} required={required} />
+      <input type={type} value={value} onChange={onChange} aria-invalid={!!error} required={required} max={type === "date" ? max : undefined} />
       {hint && <small>{hint}</small>}
       {error && <em className={styles.fieldErrorText}>{error === true ? "Required" : error}</em>}
     </label>

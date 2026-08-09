@@ -123,6 +123,12 @@ function RecruiterSupportPageContent() {
     return () => clearTimeout(timer);
   }, [loadTickets, search]);
 
+  useEffect(() => {
+    if (selectedTicket?.status === "closed" && detailTab === "conversation") {
+      setDetailTab("details");
+    }
+  }, [selectedTicket?.status, detailTab]);
+
   function closePanels() {
     setCreateMode(false);
     setSelectedTicket(null);
@@ -142,7 +148,7 @@ function RecruiterSupportPageContent() {
     if (!accessToken) return;
     setSelectedTicket(ticket);
     setTicketDetail(null);
-    setDetailTab("conversation");
+    setDetailTab(ticket.status === "closed" ? "details" : "conversation");
     setReplyText("");
     setError("");
     try {
@@ -638,9 +644,11 @@ function RecruiterSupportPageContent() {
 
           <div className={support.panelBody}>
             <div className={support.tabs}>
-              <button type="button" className={`${support.tab} ${detailTab === "conversation" ? support.tabActive : ""}`} onClick={() => setDetailTab("conversation")}>
-                Conversation
-              </button>
+              {selectedTicket?.status !== "closed" && (
+                <button type="button" className={`${support.tab} ${detailTab === "conversation" ? support.tabActive : ""}`} onClick={() => setDetailTab("conversation")}>
+                  Conversation
+                </button>
+              )}
               <button type="button" className={`${support.tab} ${detailTab === "details" ? support.tabActive : ""}`} onClick={() => setDetailTab("details")}>
                 Details
               </button>
@@ -650,7 +658,7 @@ function RecruiterSupportPageContent() {
               <div className={support.emptyState}>
                 <div className={support.emptyTitle}>Select a ticket to view details</div>
               </div>
-            ) : detailTab === "conversation" ? (
+            ) : detailTab === "conversation" && selectedTicket?.status !== "closed" ? (
               <>
                 <div className={support.chatMessages}>
                   {conversation.length ? (
@@ -751,9 +759,6 @@ function RecruiterSupportPageContent() {
                 {closing ? "Closing…" : "Close Ticket"}
               </button>
             )}
-            <button type="button" className={support.btnGhost} onClick={closePanels}>
-              Close
-            </button>
            </div>
         </div>
         )}
