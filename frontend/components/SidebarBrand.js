@@ -2,9 +2,9 @@
 
 import { LOGO_URL } from "@/lib/logo";
 
-function MazikIcon() {
+function MazikIcon({ style }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" style={{ display: "block" }}>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" style={style}>
       <rect x="4" y="4" width="92" height="92" rx="6" fill="#4CAF50" />
       <path d="M50 72 C50 72 30 55 35 35 C40 15 62 18 68 30 C74 42 65 55 50 72Z" fill="white" />
       <path d="M50 72 C50 72 70 55 65 35 C60 15 38 18 32 30" fill="none" stroke="white" strokeWidth="3" />
