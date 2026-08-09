@@ -33,6 +33,7 @@ const VIEWS = [
 
 const FOCUSES = new Set([
   "all",
+  "employees",
   "ready",
   "almost",
   "behind",

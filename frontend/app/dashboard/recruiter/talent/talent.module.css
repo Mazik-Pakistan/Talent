@@ -364,49 +364,654 @@
   color: #a57500;
 }
 
+.skillMatrix {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.skillMatrixCompact { gap: 6px; }
+.skillMatrixSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 0 0 2px;
+}
+.skillMatrixSummaryTotal {
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--navy);
+}
+.skillMatrixSummaryChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+.skillMatrixToggle,
+.skillMatrixMoreBtn {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--blue-strong, #1f7fe0);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.skillMatrixToggle:hover,
+.skillMatrixMoreBtn:hover {
+  background: var(--blue-lighter, #eef5fc);
+}
+.skillMatrixMoreBtn {
+  width: auto;
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px 8px;
+  margin-top: 4px;
+  background: #fff;
+}
+.skillMatrixChipCloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0;
+}
+.skillMatrixChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+.skillMatrixChip em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  opacity: 0.75;
+}
+.skillMatrixGroup {
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+.skillMatrixGroupHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+  background: rgba(15, 42, 74, 0.03);
+}
+.skillMatrixGroupTitle {
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--navy);
+  letter-spacing: 0.01em;
+}
+.skillMatrixGroupCount {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 750;
+  background: var(--blue-light, #e8f3ff);
+  color: var(--blue-strong, #1f7fe0);
+}
 .skillMatrixList {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 .skillMatrixRow {
   display: grid;
-  grid-template-columns: minmax(100px, 140px) 1fr 90px;
+  grid-template-columns: minmax(120px, 180px) 1fr 88px;
   gap: 10px;
   align-items: center;
+  padding: 4px 2px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.skillMatrixRow:last-child { border-bottom: none; }
+.skillMatrixLabelCol {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .skillMatrixName {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 700;
   color: var(--navy);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.skillMatrixMeta {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-faint, var(--text-muted));
+  text-transform: capitalize;
+}
 .skillMatrixTrack {
-  height: 8px;
-  border-radius: 99px;
-  background: #e8eef5;
+  position: relative;
+  height: 12px;
+  border-radius: 6px;
+  background: #eef2f7;
+  border: 1px solid rgba(15, 42, 74, 0.06);
   overflow: hidden;
 }
 .skillMatrixFill {
+  position: relative;
+  z-index: 1;
   height: 100%;
-  background: linear-gradient(90deg, #00a9ce, #0f2a4a);
-  border-radius: 99px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0) 70%, var(--navy-2, #0f2a4a));
+  transition: width 0.35s ease;
+}
+.skillMatrixFillBeginner {
+  background: linear-gradient(90deg, #94a3b8, #64748b);
+}
+.skillMatrixFillIntermediate {
+  background: linear-gradient(90deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0));
+}
+.skillMatrixFillAdvanced {
+  background: linear-gradient(90deg, #00a9ce, var(--blue-strong, #1f7fe0));
+}
+.skillMatrixFillExpert {
+  background: linear-gradient(90deg, var(--blue-strong, #1f7fe0), var(--navy, #0f2a4a));
 }
 .skillMatrixProf {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+  padding: 3px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  text-align: center;
+  white-space: nowrap;
+}
+.skillMatrixProfBeginner {
+  background: #eef2f7;
+  color: var(--text-muted, #64748b);
+}
+.skillMatrixProfIntermediate {
+  background: var(--blue-light, #e8f3ff);
+  color: var(--blue-strong, #1f7fe0);
+}
+.skillMatrixProfAdvanced {
+  background: rgba(0, 169, 206, 0.12);
+  color: #087a92;
+}
+.skillMatrixProfExpert {
+  background: rgba(15, 42, 74, 0.1);
+  color: var(--navy);
+}
+.skillMatrixEmpty {
+  padding: 22px 16px;
+  border: 1px dashed var(--border, #e2e8f0);
+  border-radius: 12px;
+  background: #fafcff;
+  text-align: center;
+}
+.skillMatrixEmptyTitle {
+  font-size: 13.5px;
+  font-weight: 750;
+  color: var(--navy);
+  margin-bottom: 4px;
+}
+.skillMatrixEmptyHint {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.reqPanelCompact {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px !important;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--navy);
+}
+.reqPanelCompact svg {
+  color: #1fae7a;
+  flex-shrink: 0;
+}
+
+.pathReqIntro {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.pathReqIntro strong {
+  color: var(--navy);
+  font-weight: 750;
+}
+
+.pathAssignCard {
+  border: 1px solid rgba(31, 127, 224, 0.22);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #f5faff 0%, #fff 70%);
+}
+.pathAssignHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.pathAssignTitle {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--navy);
+}
+.pathAssignDesc {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+.pathAssignGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+@media (max-width: 760px) {
+  .pathAssignGrid { grid-template-columns: 1fr; }
+}
+.pathAssignSkills {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft, #eef2f7);
+}
+.capabilityBlockTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.capabilityDense {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.capabilityKpiStrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 10px;
+  background: #f8fbff;
+}
+.capabilityKpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 88px;
+  padding-right: 12px;
+  border-right: 1px solid var(--border-soft, #e8eef5);
+}
+.capabilityKpi:last-of-type { border-right: none; }
+.capabilityKpiLabel {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.capabilityKpi strong {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--navy);
+  line-height: 1.15;
+}
+.capabilityKpiMeta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.25;
+  max-width: 22ch;
+}
+.capabilityKpiAction {
+  margin-left: auto;
+}
+
+.capabilityMatrixCard {
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 12px;
+  padding: 10px 12px 12px;
+  background: #fff;
+  min-width: 0;
+}
+.capabilityLearnRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .capabilityLearnRow { grid-template-columns: 1fr; }
+}
+.capabilityDenseCard {
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #fff;
+  min-width: 0;
+}
+
+/* Classic skill matrix (proficiency level bars — not course %) */
+.skillMatrixPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skillMatrixToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.skillMatrixToolbarLeft {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.skillMatrixTitle {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--navy);
+}
+.skillMatrixCount {
   font-size: 11px;
   font-weight: 700;
+  color: var(--blue-strong, #1f7fe0);
+  background: var(--blue-light, #e8f3ff);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.skillMatrixScale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.skillMatrixScaleItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 650;
   color: var(--text-muted);
+}
+.skillMatrixScaleItem i {
+  width: 14px;
+  height: 8px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.skillMatrixScaleItem b {
+  color: var(--navy);
+  font-weight: 750;
+}
+.skillMatrixAxis {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) 1fr 88px;
+  gap: 10px;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+.skillMatrixAxisTicks {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  text-align: center;
+}
+.skillMatrixAxisLevel {
   text-align: right;
+}
+.skillMatrixBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 460px;
+  overflow: auto;
+  padding-right: 2px;
+}
+.skillMatrixCatBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.skillMatrixCatLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--blue-strong, #1f7fe0);
+  padding: 4px 0 2px;
+}
+.skillMatrixCatLabel em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 750;
+  color: var(--text-muted);
+  background: #eef2f7;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+.skillMatrixReqMark {
+  margin-left: 6px;
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #a57500;
+  background: #fff4e0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+.skillMatrixTicks {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  pointer-events: none;
+}
+.skillMatrixTicks i {
+  border-right: 1px dashed rgba(15, 42, 74, 0.08);
+}
+.skillMatrixTicks i:last-child { border-right: none; }
+
+.segmentCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.segmentCardTitle {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.segmentTrack {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #eef2f7;
+}
+.segmentEmpty {
+  width: 100%;
+  height: 100%;
+  background: #eef2f7;
+}
+.segmentFill {
+  height: 100%;
+  min-width: 2px;
+  transition: width 0.35s ease;
+}
+.segmentLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.segmentLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.segmentLegendItem i {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  display: inline-block;
+}
+.segmentLegendItem b {
+  color: var(--navy);
+  font-weight: 750;
+}
+
+.capabilitySplitHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.capabilitySplitTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--navy);
+}
+.capabilitySplitMeta {
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--blue-strong, #1f7fe0);
+  background: var(--blue-light, #e8f3ff);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.statusDotGreen { background: #1fae7a; }
+.statusDotOrange { background: #d97706; }
+.statusDotMuted { background: #cbd5e1; }
+
+.capabilityGaps {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft, #eef2f7);
+}
+.capabilityGapsTitle {
+  font-size: 11.5px;
+  font-weight: 750;
+  color: var(--navy);
+  margin-bottom: 6px;
+}
+.capabilityList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 6px;
+}
+.capabilityListRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-soft, #eef2f7);
+  min-height: 0;
+}
+.capabilityListRow:last-child { border-bottom: none; }
+.capabilityListMain {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--navy);
+}
+.capabilityListMain span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.capabilityListMain svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+@media (max-width: 640px) {
+  .skillMatrixRow {
+    grid-template-columns: 1fr auto;
+    gap: 8px 10px;
+  }
+  .skillMatrixTrack {
+    grid-column: 1 / -1;
+    order: 3;
+  }
 }
 
 .reqPanel {
   border: 1px solid var(--border, #e2e8f0);
-  border-radius: 12px;
-  padding: 14px 16px;
+  border-radius: 10px;
+  padding: 10px 12px;
   background: #fff;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .reqPanelOk {
   border-color: rgba(34, 197, 94, 0.35);
@@ -436,13 +1041,13 @@
 .reqList {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 .reqRow {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 8px 12px;
-  padding: 8px 10px;
+  gap: 6px 12px;
+  padding: 5px 8px;
   border-radius: 8px;
   background: #f8fafc;
 }
@@ -1406,6 +2011,22 @@
   flex-wrap: wrap;
 }
 .employeeManageRow:last-child { border-bottom: none; }
+.employeeManageRowClickable {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 10px 8px;
+}
+.employeeManageRowClickable:hover {
+  background: #f5f9ff;
+}
+.employeeManageRowClickable:last-child { border-bottom: 1px solid var(--border-soft); }
 .employeeManageMain { min-width: 0; flex: 1; }
 .employeeManageSide {
   display: flex;
@@ -1547,6 +2168,11 @@
   background: rgba(255, 159, 67, 0.12);
   color: var(--orange);
   border-color: rgba(245, 165, 36, 0.35);
+}
+.softChipOk {
+  background: rgba(31, 174, 122, 0.12);
+  color: #0f8a5f;
+  border-color: rgba(31, 174, 122, 0.3);
 }
 
 .gapList {

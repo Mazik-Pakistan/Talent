@@ -663,6 +663,68 @@ class LearningService:
             }
         )
 
+    _PROF_RANK = {"Beginner": 1, "Intermediate": 2, "Advanced": 3, "Expert": 4}
+
+    def _proficiency_rank(self, value: str | None) -> int:
+        return self._PROF_RANK.get(self._normalize_proficiency(value), 1)
+
+    def _normalize_proficiency(self, value: str | None) -> str:
+        raw = (value or "").strip().lower()
+        if raw in {"beginner", "fundamental", "fundamentals", "intro", "introduction"}:
+            return "Beginner"
+        if raw in {"intermediate", "mid", "medium"}:
+            return "Intermediate"
+        if raw in {"advanced", "proficient"}:
+            return "Advanced"
+        if raw in {"expert", "master"}:
+            return "Expert"
+        titled = (value or "").strip().capitalize()
+        if titled in self._PROF_RANK:
+            return titled
+        return "Intermediate"
+
+    def _proficiency_from_difficulty(self, value: Any) -> str:
+        """Map course difficulty/level labels to a skill proficiency (single ladder)."""
+        if isinstance(value, (list, tuple)):
+            best = "Beginner"
+            for item in value:
+                cand = self._normalize_proficiency(str(item) if item is not None else "")
+                if self._proficiency_rank(cand) > self._proficiency_rank(best):
+                    best = cand
+            return best if value else "Intermediate"
+        return self._normalize_proficiency(str(value) if value is not None else "Intermediate")
+
+    async def _resolve_course_proficiency(
+        self, course_uid: str | None, course_title: str | None = None
+    ) -> str:
+        """Highest difficulty on the catalog course → proficiency used to polish skills."""
+        if not course_uid:
+            return "Intermediate"
+        try:
+            course = await catalog_service.get_course_by_uid(course_uid)
+        except Exception:
+            course = None
+        if not course:
+            return "Intermediate"
+        levels: list[Any] = list(course.get("levels") or [])
+        if course.get("difficulty"):
+            levels.append(course.get("difficulty"))
+        if course.get("level"):
+            levels.append(course.get("level"))
+        if not levels and course_title:
+            # Title hints e.g. "Python Intermediate"
+            title_l = course_title.lower()
+            for token, prof in (
+                ("expert", "Expert"),
+                ("advanced", "Advanced"),
+                ("intermediate", "Intermediate"),
+                ("beginner", "Beginner"),
+                ("fundamentals", "Beginner"),
+            ):
+                if token in title_l:
+                    return prof
+        return self._proficiency_from_difficulty(levels) if levels else "Intermediate"
+
     async def _award_course_outcomes_to_profile(
         self,
         *,
@@ -674,6 +736,7 @@ class LearningService:
         source: str = "course",
         award_certifications: bool = True,
         recruiter_id: str | None = None,
+        proficiency: str | None = None,
     ) -> dict[str, list[str]]:
         """Write Career Roadmap / catalog skills (and optional certs) onto the employee profile."""
         outcomes = await self._collect_outcomes_for_course(
@@ -681,13 +744,16 @@ class LearningService:
             organization_id=organization_id,
             course_title=course_title,
         )
+        skill_prof = self._normalize_proficiency(
+            proficiency or await self._resolve_course_proficiency(course_uid, course_title)
+        )
         for skill_name in outcomes["skills"]:
             await self._upsert_verified_skill(
                 user_id=user_id,
                 employee_id=employee_id,
                 skill_name=skill_name,
                 category="Other",
-                proficiency="Intermediate",
+                proficiency=skill_prof,
                 source=source,
             )
         if award_certifications:
@@ -711,27 +777,43 @@ class LearningService:
     async def _credit_skill_from_completed_course(
         self, current_user: CurrentUser, course_uid: str, enrollment: dict
     ) -> None:
-        """When a learning-path course is finished, add/update the gap skill on the profile."""
+        """When a learning-path course is finished, add/upgrade the gap skill (one row, higher level wins)."""
         goal = await database.learning_career_goals.find_one({"user_id": current_user.id})
         path = (goal or {}).get("ai_path") or {}
         matched_skill = None
+        step_difficulty = None
         for step in path.get("path") or []:
             step_uid = (step.get("course") or {}).get("uid") or step.get("uid")
             if step_uid == course_uid and step.get("kind") != "certification":
                 matched_skill = (step.get("skill") or "").strip()
+                step_difficulty = step.get("difficulty") or (step.get("course") or {}).get("difficulty")
                 break
         if not matched_skill:
             return
         employee = await self._get_employee(current_user)
-        await self._upsert_ai_skill(
+        proficiency = (
+            self._proficiency_from_difficulty(step_difficulty)
+            if step_difficulty
+            else await self._resolve_course_proficiency(course_uid, enrollment.get("course_title"))
+        )
+        # Upgrade in place — never create a second Python/Beginner + Python/Intermediate row.
+        await self._upsert_verified_skill(
             user_id=current_user.id,
             employee_id=employee.get("employee_id"),
             skill_name=matched_skill,
             category="Other",
-            proficiency="Intermediate",
-            years_experience=None,
+            proficiency=proficiency,
+            source="course",
+            verification_status="unverified",
         )
         await learning_cache_service.invalidate_user_ai_caches(current_user.id)
+        try:
+            await self._sync_career_assignment_progress(
+                user_id=current_user.id,
+                employee_id=employee.get("employee_id"),
+            )
+        except Exception:
+            logger.exception("Career path sync failed after course completion for %s", current_user.id)
 
     def _assignment_as_my_course(self, doc: dict) -> dict:
         """Pending recruiter assignment shown in My Learning before the employee starts it."""
@@ -1085,6 +1167,13 @@ class LearningService:
                 cert=cert,
                 verifier=current_user,
             )
+            try:
+                await self._sync_career_assignment_progress(
+                    user_id=cert["user_id"],
+                    employee_id=cert.get("employee_id"),
+                )
+            except Exception:
+                logger.exception("Career path sync failed after certificate verify %s", cert.get("_id"))
             await create_notification(
                 recipient_id=cert["user_id"],
                 recipient_role="employee",
@@ -1120,6 +1209,9 @@ class LearningService:
 
         skill_names: list[str] = []
         roadmap_outcomes: dict[str, list[str]] = {"skills": [], "certifications": []}
+        course_proficiency = await self._resolve_course_proficiency(
+            cert.get("course_uid"), cert.get("course_title")
+        )
         try:
             roadmap_outcomes = await self._award_course_outcomes_to_profile(
                 user_id=cert["user_id"],
@@ -1130,6 +1222,7 @@ class LearningService:
                 source="course",
                 award_certifications=True,
                 recruiter_id=cert.get("recruiter_id") or current_user.id,
+                proficiency=course_proficiency,
             )
             skill_names.extend(roadmap_outcomes.get("skills") or [])
 
@@ -1149,12 +1242,19 @@ class LearningService:
                     name = (skill.get("skill_name") or "").strip()
                     if not name:
                         continue
+                    # Take the higher of AI-suggested proficiency and course difficulty.
+                    ai_prof = self._normalize_proficiency(skill.get("proficiency") or "Intermediate")
+                    proficiency = (
+                        ai_prof
+                        if self._proficiency_rank(ai_prof) >= self._proficiency_rank(course_proficiency)
+                        else course_proficiency
+                    )
                     await self._upsert_verified_skill(
                         user_id=cert["user_id"],
                         employee_id=cert.get("employee_id"),
                         skill_name=name,
                         category=skill.get("category") or "Other",
-                        proficiency=skill.get("proficiency") or "Intermediate",
+                        proficiency=proficiency,
                         source="course",
                     )
                     if name not in skill_names:
@@ -1178,6 +1278,7 @@ class LearningService:
                         "rejection_reason": None,
                         "skills_awarded": skill_names,
                         "certifications_awarded": roadmap_outcomes.get("certifications") or [],
+                        "proficiency_awarded": course_proficiency,
                         "updated_at": now,
                     }
                 },
@@ -1187,6 +1288,17 @@ class LearningService:
                 await database.learning_enrollments.update_one(
                     {"user_id": cert["user_id"], "course_uid": cert["course_uid"]},
                     {"$set": {"status": "completed", "progress_percent": 100, "completed_at": now, "updated_at": now}},
+                )
+
+            try:
+                await self._sync_career_assignment_progress(
+                    user_id=cert["user_id"],
+                    employee_id=cert.get("employee_id"),
+                )
+            except Exception:
+                logger.exception(
+                    "Career path sync failed after certificate verify %s",
+                    cert.get("_id"),
                 )
         except Exception as exc:
             await database.learning_certificates.update_one(
@@ -1660,23 +1772,35 @@ class LearningService:
         category: str,
         proficiency: str,
         source: str,
+        verification_status: str = "verified",
     ) -> None:
+        """Upsert one skill row per name — higher proficiency wins (Beginner→Intermediate upgrades in place)."""
         now = _now()
-        rank = {"Beginner": 1, "Intermediate": 2, "Advanced": 3, "Expert": 4}
+        name = (skill_name or "").strip()
+        if not name:
+            return
+        new_prof = self._normalize_proficiency(proficiency)
         existing = await database.employee_skills.find_one(
-            {"user_id": user_id, "skill_name": {"$regex": f"^{_escape_regex(skill_name)}$", "$options": "i"}}
+            {"user_id": user_id, "skill_name": {"$regex": f"^{_escape_regex(name)}$", "$options": "i"}}
         )
         if existing:
-            current = existing.get("proficiency") or "Beginner"
-            new_prof = proficiency if rank.get(proficiency, 0) >= rank.get(current, 0) else current
+            current = self._normalize_proficiency(existing.get("proficiency") or "Beginner")
+            kept_prof = new_prof if self._proficiency_rank(new_prof) >= self._proficiency_rank(current) else current
+            prev_status = (existing.get("verification_status") or "unverified").lower()
+            kept_status = (
+                "verified"
+                if verification_status == "verified" or prev_status == "verified"
+                else (verification_status or prev_status or "unverified")
+            )
             await database.employee_skills.update_one(
                 {"_id": existing["_id"]},
                 {
                     "$set": {
-                        "proficiency": new_prof,
+                        "skill_name": existing.get("skill_name") or name,
+                        "proficiency": kept_prof,
                         "category": category if category in SKILL_CATEGORIES else existing.get("category") or "Other",
-                        "source": source,
-                        "verification_status": "verified",
+                        "source": source or existing.get("source") or "course",
+                        "verification_status": kept_status,
                         "updated_at": now,
                     }
                 },
@@ -1686,15 +1810,115 @@ class LearningService:
             {
                 "user_id": user_id,
                 "employee_id": employee_id,
-                "skill_name": skill_name,
+                "skill_name": name,
                 "category": category if category in SKILL_CATEGORIES else "Other",
-                "proficiency": proficiency,
+                "proficiency": new_prof,
                 "years_experience": None,
                 "source": source,
-                "verification_status": "verified",
+                "verification_status": verification_status or "verified",
                 "created_at": now,
                 "updated_at": now,
             }
+        )
+
+    async def _sync_career_assignment_progress(
+        self, *, user_id: str, employee_id: str | None = None
+    ) -> None:
+        """Refresh active career-path checklist from enrollments, skills, and verified certs."""
+        eid = employee_id
+        if not eid:
+            emp = await database.employees.find_one({"user_id": user_id, "status": "active"})
+            eid = (emp or {}).get("employee_id")
+        if not eid:
+            return
+        doc = await database.employee_career_assignments.find_one(
+            {"employee_id": eid, "status": "active"}
+        )
+        if not doc:
+            return
+
+        now = _now()
+        path = list(doc.get("assigned_learning_path") or [])
+        enrollments = await database.learning_enrollments.find({"user_id": user_id}).to_list(length=500)
+        enrollment_map = {e.get("course_uid"): e for e in enrollments if e.get("course_uid")}
+        for course in path:
+            uid = course.get("course_uid")
+            enrollment = enrollment_map.get(uid) if uid else None
+            if not enrollment:
+                continue
+            st = (enrollment.get("status") or "").lower()
+            if st == "completed":
+                course["status"] = "completed"
+                course["progress_percent"] = 100
+                course["completed_at"] = _iso(enrollment.get("completed_at") or now)
+            elif st in {"in_progress", "enrolled", "assigned"}:
+                if course.get("status") != "completed":
+                    course["status"] = "in_progress"
+                    course["progress_percent"] = enrollment.get("progress_percent") or 0
+
+        owned = await database.employee_skills.find({"user_id": user_id}).to_list(length=500)
+        owned_map = {
+            (s.get("skill_name") or "").strip().lower(): s
+            for s in owned
+            if (s.get("skill_name") or "").strip()
+        }
+        skills_to_acquire = list(doc.get("skills_to_acquire") or [])
+        for skill in skills_to_acquire:
+            key = (skill.get("skill") or skill.get("name") or "").strip().lower()
+            match = owned_map.get(key)
+            if not match:
+                continue
+            current_prof = self._normalize_proficiency(match.get("proficiency") or "Beginner")
+            target_prof = self._normalize_proficiency(skill.get("target_proficiency") or "Intermediate")
+            skill["current_proficiency"] = current_prof
+            if self._proficiency_rank(current_prof) >= self._proficiency_rank(target_prof):
+                skill["current_status"] = "acquired"
+
+        cert_docs = await database.learning_certificates.find(
+            {"user_id": user_id, "verification_status": "verified"}
+        ).to_list(length=300)
+        cert_titles = {
+            (c.get("course_title") or c.get("title") or "").strip().lower()
+            for c in cert_docs
+            if (c.get("course_title") or c.get("title") or "").strip()
+        }
+        certifications_to_earn = list(doc.get("certifications_to_earn") or [])
+        for cert in certifications_to_earn:
+            name = (cert.get("certification") or cert.get("name") or "").strip().lower()
+            if not name:
+                continue
+            if any(name == t or name in t or t in name for t in cert_titles):
+                cert["status"] = "earned"
+                cert["earned_at"] = cert.get("earned_at") or _iso(now)
+
+        total = 0
+        done = 0
+        for course in path:
+            total += 1
+            if course.get("status") == "completed":
+                done += 1
+        for skill in skills_to_acquire:
+            total += 1
+            if skill.get("current_status") == "acquired":
+                done += 1
+        for cert in certifications_to_earn:
+            total += 1
+            if cert.get("status") == "earned":
+                done += 1
+        score = round(100 * done / total) if total else int(doc.get("readiness_score") or 0)
+
+        await database.employee_career_assignments.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$set": {
+                    "assigned_learning_path": path,
+                    "skills_to_acquire": skills_to_acquire,
+                    "certifications_to_earn": certifications_to_earn,
+                    "overall_progress_percent": score,
+                    "readiness_score": score,
+                    "updated_at": now,
+                }
+            },
         )
 
     # ------------------------------------------------------------------ #

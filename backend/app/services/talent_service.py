@@ -220,17 +220,50 @@ class TalentService:
     # ------------------------------------------------------------------ #
     # US-090 / US-091: Skill matrix (view over existing skills + categories)
     # ------------------------------------------------------------------ #
+    async def _owned_skills_for_matrix(self, employee: dict) -> list[dict]:
+        """Skills the employee has (manual, resume, and course/cert-earned profile skills)."""
+        from app.services import resume_analysis_service
+
+        user_id = employee.get("user_id") or ""
+        # Includes source=course skills written after certificate verify / course completion.
+        manual = await self._employee_skills(user_id) if user_id else []
+        resume_fields = await self._resume_fields_for_user(user_id)
+        onboarding_skills = (employee.get("onboarding") or {}).get("skills") or {}
+        return resume_analysis_service.merge_skill_sources(
+            manual_skills=manual,
+            resume_fields=self._combine_skill_fields(resume_fields, onboarding_skills),
+            certificate_skills=[],
+        )
+
     async def skill_matrix(
         self, employee: dict, *, merged_skills: list[dict] | None = None
     ) -> dict:
         from app.schemas.learning import SKILL_CATEGORIES
 
-        skills = merged_skills if merged_skills is not None else await self._merged_skills_for_employee(employee)
-        by_category: dict[str, list[dict]] = {c: [] for c in SKILL_CATEGORIES}
+        # Prefer owned-skill merge (no course/cert enrollment rows). Callers may still pass
+        # a precomputed list; we still drop enrollment-shaped entries.
+        skills = merged_skills if merged_skills is not None else await self._owned_skills_for_matrix(employee)
+        cleaned: list[dict] = []
         for s in skills:
+            name = (s.get("skill_name") or s.get("name") or s.get("skill") or "").strip()
+            if not name:
+                continue
+            # Skip enrollment-shaped rows that are not real skill profile entries.
+            if s.get("enrollment_id") or s.get("assignment_id"):
+                continue
+            if s.get("course_uid") and not name:
+                continue
+            source = (s.get("source") or "manual").lower()
+            # Keep skills earned from verified courses/certs (source=course) on the matrix.
+            if source in {"enrollment", "assignment"}:
+                continue
+            cleaned.append(s)
+
+        by_category: dict[str, list[dict]] = {c: [] for c in SKILL_CATEGORIES}
+        for s in cleaned:
             entry = {
                 "id": s.get("id"),
-                "skill_name": s.get("skill_name"),
+                "skill_name": s.get("skill_name") or s.get("name") or s.get("skill"),
                 "category": s.get("category") or "Other",
                 "proficiency": s.get("proficiency"),
                 "years_experience": s.get("years_experience"),
@@ -245,8 +278,8 @@ class TalentService:
                 for cat, items in by_category.items()
                 if items or cat in SKILL_CATEGORIES
             ],
-            "total_skills": len(skills),
-            "verified_count": len([s for s in skills if s.get("verification_status") == "verified"]),
+            "total_skills": len(cleaned),
+            "verified_count": len([s for s in cleaned if s.get("verification_status") == "verified"]),
         }
 
     # ------------------------------------------------------------------ #
@@ -349,7 +382,7 @@ class TalentService:
                     "type": "certification",
                     "title": f"Earned certification: {c.get('course_title')}",
                     "detail": c.get("issuing_organization"),
-                    "date": _iso(c.get("created_at")),
+                    "date": _iso(c.get("verified_at") or c.get("created_at")),
                 }
             )
 
@@ -366,16 +399,26 @@ class TalentService:
                 }
             )
 
+        # Include skills earned/upgraded from courses & certs (source often "course").
         skill_events = await database.employee_skills.find(
-            {"user_id": employee.get("user_id"), "source": {"$in": ["ai_resume", "certificate"]}}
-        ).to_list(length=200)
+            {
+                "user_id": employee.get("user_id"),
+                "source": {"$in": ["ai_resume", "certificate", "course", "manual"]},
+            }
+        ).to_list(length=300)
         for s in skill_events:
+            source = (s.get("source") or "manual").lower()
+            if source == "manual" and (s.get("verification_status") or "").lower() != "verified":
+                continue
             events.append(
                 {
                     "type": "skill_improvement",
-                    "title": f"Skill added: {s.get('skill_name')}",
-                    "detail": f"Proficiency: {s.get('proficiency')}" if s.get("proficiency") else None,
-                    "date": _iso(s.get("created_at")),
+                    "title": f"Skill updated: {s.get('skill_name')}",
+                    "detail": (
+                        f"{s.get('proficiency') or 'Beginner'}"
+                        + (f" · via {source}" if source in {"course", "certificate", "ai_resume"} else "")
+                    ),
+                    "date": _iso(s.get("updated_at") or s.get("created_at")),
                 }
             )
 
@@ -978,8 +1021,9 @@ class TalentService:
         emp_id = employee.get("employee_id")
         user_id = employee.get("user_id")
 
-        # Load shared inputs once, then fan out the rest in parallel.
-        merged_skills, certs = await asyncio.gather(
+        # Owned skills for matrix; fuller merge (incl. cert-derived) for role matching only.
+        owned_skills, merged_skills, certs = await asyncio.gather(
+            self._owned_skills_for_matrix(employee),
             self._merged_skills_for_employee(employee),
             self._employee_cert_docs(user_id or ""),
         )
@@ -996,7 +1040,7 @@ class TalentService:
             assignments,
             enrollments,
         ) = await asyncio.gather(
-            self.skill_matrix(employee, merged_skills=merged_skills),
+            self.skill_matrix(employee, merged_skills=owned_skills),
             self.journey_timeline(employee),
             self.achievements(employee),
             self.career_progression(employee, merged_skills=merged_skills, certs=certs),
@@ -1080,12 +1124,12 @@ class TalentService:
     # ------------------------------------------------------------------ #
     # Requirements not fulfilled (Talent Progress CIC)
     # ------------------------------------------------------------------ #
+    # Only actionable verification failures — not generic "pending" / OCR-in-progress.
     _PROBLEM_DOC_STATUSES = {
         "pending_verification",
         "reupload_required",
         "rejected",
         "mismatch",
-        "pending",
     }
 
     _PROFILE_LABELS = {
@@ -1139,19 +1183,21 @@ class TalentService:
         onboarding = employee.get("onboarding") or {}
         items: list[dict] = []
 
-        # Post-hire profile
-        for key in self._profile_missing_keys(employee):
-            items.append(
-                self._requirement_item(
-                    category="profile",
-                    code=f"profile_{key}",
-                    label=self._PROFILE_LABELS.get(key, key.replace("_", " ").title()),
-                    status="missing",
-                    severity="high",
-                    source="employee.profile_status",
-                    action_hint="Complete post-hire profile steps on the employee profile page.",
+        # Post-hire profile — trust explicit complete status (matches Employees UI).
+        profile_status = (employee.get("profile_status") or "").strip().lower()
+        if profile_status != "complete":
+            for key in self._profile_missing_keys(employee):
+                items.append(
+                    self._requirement_item(
+                        category="profile",
+                        code=f"profile_{key}",
+                        label=self._PROFILE_LABELS.get(key, key.replace("_", " ").title()),
+                        status="missing",
+                        severity="high",
+                        source="employee.profile_status",
+                        action_hint="Complete post-hire profile steps on the employee profile page.",
+                    )
                 )
-            )
 
         # CV / resume
         resume_ob = onboarding.get("resume") or {}
@@ -1190,7 +1236,7 @@ class TalentService:
                     )
                 )
 
-        # Identity / government docs
+        # Identity / government docs — only flag true gaps or verification failures.
         gov = onboarding.get("government_docs") or {}
         gov_list = gov.get("documents") or []
         identity_docs = [
@@ -1200,6 +1246,13 @@ class TalentService:
             in {"cnic", "national_id", "passport", "government_id", "id_card", "nic"}
             or (d.get("category") or "").lower() in {"identity", "government"}
         ]
+        identity_ids = {str(d.get("_id") or d.get("id") or id(d)) for d in identity_docs}
+
+        def _doc_problem(d: dict) -> bool:
+            st = (d.get("status") or "").lower()
+            vs = (d.get("verification_status") or "").lower()
+            return st in self._PROBLEM_DOC_STATUSES or vs in self._PROBLEM_DOC_STATUSES
+
         if not gov_list and not identity_docs:
             items.append(
                 self._requirement_item(
@@ -1209,35 +1262,31 @@ class TalentService:
                     status="missing",
                     severity="high",
                     source="onboarding.government_docs|documents",
-                    action_hint="Collect identity documents and verify them in Documents.",
+                    action_hint="Collect identity documents and verify them on the employee Documents tab.",
                 )
             )
         else:
-            problem_ids = [
-                d
-                for d in identity_docs
-                if (d.get("status") or d.get("verification_status") or "").lower() in self._PROBLEM_DOC_STATUSES
-            ]
+            problem_ids = [d for d in identity_docs if _doc_problem(d)]
             if problem_ids:
                 items.append(
                     self._requirement_item(
                         category="identity_docs",
                         code="identity_pending",
-                        label="Identity documents pending verification or reupload",
+                        label="Identity documents need verification or reupload",
                         status="pending_verification",
                         severity="high",
                         source="documents",
-                        action_hint="Verify or request reupload in Document review.",
+                        action_hint="Open the employee Documents tab to verify or request reupload.",
                     )
                 )
 
-        # Any other problem documents (excluding resume already covered)
+        # Other problem documents (exclude resume + identity already covered)
         other_problems = [
             d
             for d in owner_docs
             if (d.get("doc_type") or "").lower() != "resume"
-            and (d.get("status") or d.get("verification_status") or "").lower() in self._PROBLEM_DOC_STATUSES
-            and d not in identity_docs
+            and str(d.get("_id") or d.get("id") or id(d)) not in identity_ids
+            and _doc_problem(d)
         ]
         if other_problems:
             items.append(
@@ -1248,13 +1297,17 @@ class TalentService:
                     status="pending_verification",
                     severity="high",
                     source="documents",
-                    action_hint="Open Documents for this employee and clear pending/rejected items.",
+                    action_hint="Open the employee Documents tab to clear rejected/reupload items.",
                 )
             )
 
-        # Career path
+        # Career path — missing path is incomplete setup; readiness % is NOT a "requirement".
         assignment = (assignment_by_emp or {}).get(employee_id)
-        if not assignment:
+        has_target = bool(
+            assignment
+            and (assignment.get("target_level_id") or assignment.get("target_role_title") or assignment.get("target_role"))
+        )
+        if not has_target:
             items.append(
                 self._requirement_item(
                     category="career_path",
@@ -1267,21 +1320,29 @@ class TalentService:
                 )
             )
         else:
-            missing_skills = assignment.get("skills_to_acquire") or assignment.get("missing_skills") or []
-            missing_certs = assignment.get("certifications_to_earn") or assignment.get("missing_certifications") or []
-            open_skills = [
-                s
-                for s in missing_skills
-                if isinstance(s, str)
-                or (isinstance(s, dict) and (s.get("current_status") or s.get("status") or "not_started")
-                    not in {"acquired", "earned", "completed"})
-            ]
-            open_certs = [
-                c
-                for c in missing_certs
-                if isinstance(c, str)
-                or (isinstance(c, dict) and (c.get("status") or "not_started") not in {"earned", "completed"})
-            ]
+            def _named_open(entries, *, done_statuses):
+                open_items = []
+                for entry in entries or []:
+                    if isinstance(entry, str):
+                        if entry.strip():
+                            open_items.append(entry)
+                        continue
+                    if not isinstance(entry, dict):
+                        continue
+                    label = (entry.get("skill") or entry.get("name") or entry.get("certification") or entry.get("title") or "").strip()
+                    status_val = (entry.get("current_status") or entry.get("status") or "not_started").lower()
+                    if label and status_val not in done_statuses:
+                        open_items.append(label)
+                return open_items
+
+            open_skills = _named_open(
+                assignment.get("skills_to_acquire") or assignment.get("missing_skills") or [],
+                done_statuses={"acquired", "earned", "completed"},
+            )
+            open_certs = _named_open(
+                assignment.get("certifications_to_earn") or assignment.get("missing_certifications") or [],
+                done_statuses={"earned", "completed", "acquired"},
+            )
             if open_skills:
                 items.append(
                     self._requirement_item(
@@ -1291,7 +1352,7 @@ class TalentService:
                         status="incomplete",
                         severity="medium",
                         source="career_assignment",
-                        action_hint="Review Skills & gaps and assign learning to close them.",
+                        action_hint="Review Skills and assign learning to close gaps.",
                     )
                 )
             if open_certs:
@@ -1303,20 +1364,7 @@ class TalentService:
                         status="incomplete",
                         severity="medium",
                         source="career_assignment",
-                        action_hint="Track certifications on the promotion path checklist.",
-                    )
-                )
-            readiness = assignment.get("readiness_score")
-            if readiness is not None and float(readiness) < 50:
-                items.append(
-                    self._requirement_item(
-                        category="roadmap_gaps",
-                        code="readiness_behind",
-                        label=f"Promotion readiness behind ({round(float(readiness))}%)",
-                        status="behind",
-                        severity="medium",
-                        source="career_assignment",
-                        action_hint="This is path progress — separate from missing CV/docs.",
+                        action_hint="Track certifications on the Progress tab.",
                     )
                 )
 

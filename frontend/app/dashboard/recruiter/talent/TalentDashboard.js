@@ -29,6 +29,7 @@ import {
 
 const FOCUS_LABELS = {
   all: "People in scope",
+  employees: "Employees in scope",
   ready: "Ready for promotion (80%+)",
   almost: "Almost ready (50–79%)",
   behind: "Behind on path (<50%)",
@@ -42,6 +43,7 @@ const FOCUS_LABELS = {
 
 const INTERACTIVE_FOCUSES = new Set([
   "all",
+  "employees",
   "ready",
   "almost",
   "behind",
@@ -201,27 +203,35 @@ export default function TalentDashboard({
       if (reqRes.status === "fulfilled") setScopedReq(reqRes.value);
       else setScopedReq(data?.requirements || null);
 
+      // Prefer directory listing (paginated) so Overview always has people;
+      // merge talent-search hits for richer skill/progress fields.
       let list = [];
-      if (searchRes.status === "fulfilled" && (searchRes.value.employees || []).length) {
-        list = searchRes.value.employees || [];
-      } else if (empRes.status === "fulfilled") {
+      if (empRes.status === "fulfilled") {
         list = empRes.value.employees || [];
         const pages = empRes.value.pages || 1;
-        if (pages > 1) {
-          for (let page = 2; page <= pages; page += 1) {
-            try {
-              const more = await listEmployees(token, {
-                department: deptParam,
-                page,
-                page_size: 100,
-              });
-              list = [...list, ...(more.employees || [])];
-            } catch {
-              break;
-            }
+        for (let page = 2; page <= Math.min(pages, 10); page += 1) {
+          try {
+            const more = await listEmployees(token, {
+              department: deptParam,
+              page,
+              page_size: 100,
+            });
+            list = [...list, ...(more.employees || [])];
+          } catch {
+            break;
           }
         }
       }
+      if (searchRes.status === "fulfilled" && (searchRes.value.employees || []).length) {
+        const byId = new Map(list.map((e) => [e.employee_id, e]));
+        for (const row of searchRes.value.employees) {
+          if (!row?.employee_id) continue;
+          const prev = byId.get(row.employee_id);
+          byId.set(row.employee_id, prev ? { ...prev, ...row } : row);
+        }
+        list = [...byId.values()];
+      }
+      if (department) list = list.filter((e) => matchDept(e, department));
       if (role) list = list.filter((e) => matchRole(e, role));
       setEmployees(list);
     } catch (err) {
@@ -447,6 +457,7 @@ export default function TalentDashboard({
     if (focus === "certifications") return certifiedPeople;
     if (focus === "learning") return learningPeople;
     if (focus === "incomplete") return incompletePeople;
+    // "employees" and default scope list — all people currently in filters
     return sortedEmployees;
   }, [
     sortedEmployees,
@@ -461,6 +472,10 @@ export default function TalentDashboard({
   const showStructurePanel = focus === "departments" || focus === "roles";
   const showPeoplePanel = !showStructurePanel;
   const level = role && department ? "role" : department ? "dept" : "org";
+  // Org + focus=all hid the people list before — Employees KPI / drill-down must show it.
+  const peoplePanelVisible =
+    showPeoplePanel
+    && (level !== "org" || focus === "employees" || (focus !== "all" && focus !== "departments" && focus !== "roles"));
 
   const kpis = [
     {
@@ -469,8 +484,9 @@ export default function TalentDashboard({
       value: fmt(headcount),
       icon: Users,
       color: "navy",
-      focus: "all",
+      focus: "employees",
       interactive: true,
+      hint: "Click to list people in this scope",
     },
     {
       key: "departments",
@@ -576,8 +592,19 @@ export default function TalentDashboard({
 
   function onKpiClick(kpi) {
     if (!kpi.interactive || !INTERACTIVE_FOCUSES.has(kpi.focus)) return;
+    // Toggle off only when clicking the same non-default focus again.
     const next = focus === kpi.focus && kpi.focus !== "all" ? "all" : kpi.focus;
     setFilters({ focus: next });
+  }
+
+  function openEmployeeProfile(e) {
+    if (!e?.employee_id) return;
+    onNavigate({
+      view: "profile",
+      employee: e.employee_id,
+      department: e.department || department || null,
+      role: e.job_title || role || null,
+    });
   }
 
   if (bundleLoading && !data) {
@@ -896,16 +923,45 @@ export default function TalentDashboard({
               </p>
             )}
             {coverageRows.length > 0 && (
-              <div className={styles.skillMatrixList}>
-                {coverageRows.map((row) => (
-                  <div key={row.name} className={styles.skillMatrixRow}>
-                    <span className={styles.skillMatrixName} title={row.name}>{row.name}</span>
-                    <div className={styles.skillMatrixTrack}>
-                      <div className={styles.skillMatrixFill} style={{ width: `${row.coverage}%` }} />
-                    </div>
-                    <span className={styles.skillMatrixProf}>{row.have}/{row.total} · {row.coverage}%</span>
+              <div className={styles.skillMatrix}>
+                <div className={styles.skillMatrixGroup}>
+                  <div className={styles.skillMatrixGroupHead}>
+                    <span className={styles.skillMatrixGroupTitle}>Coverage vs role holders</span>
+                    <span className={styles.skillMatrixGroupCount}>{coverageRows.length}</span>
                   </div>
-                ))}
+                  <div className={styles.skillMatrixList}>
+                    {coverageRows.map((row) => {
+                      const band = row.coverage >= 75
+                        ? "Expert"
+                        : row.coverage >= 50
+                          ? "Advanced"
+                          : row.coverage >= 25
+                            ? "Intermediate"
+                            : "Beginner";
+                      return (
+                        <div key={row.name} className={styles.skillMatrixRow}>
+                          <div className={styles.skillMatrixLabelCol}>
+                            <span className={styles.skillMatrixName} title={row.name}>{row.name}</span>
+                            <span className={styles.skillMatrixMeta}>{row.have} of {row.total} people</span>
+                          </div>
+                          <div className={styles.skillMatrixTrack}>
+                            <div
+                              className={`${styles.skillMatrixFill} ${styles[`skillMatrixFill${band}`] || ""}`}
+                              style={{ width: `${row.coverage}%` }}
+                            />
+                          </div>
+                          <span
+                            className={`${styles.skillMatrixProf} ${
+                              styles[`skillMatrixProf${band}`] || styles.skillMatrixProfBeginner
+                            }`}
+                          >
+                            {row.coverage}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
             {roleFrameworkCerts.length > 0 && (
@@ -974,7 +1030,7 @@ export default function TalentDashboard({
         </div>
       )}
 
-      {showPeoplePanel && (level !== "org" || focus !== "all") && (
+      {peoplePanelVisible && (
         <div className={shellStyles.section}>
           <div className={shellStyles.sectionHead}>
             <div className={shellStyles.sectionHeadLeft}>
@@ -1037,7 +1093,12 @@ export default function TalentDashboard({
                 ? e.certifications.length
                 : (e.verified_certifications || e.certification_count || 0);
               return (
-                <div key={e.employee_id} className={styles.employeeManageRow}>
+                <button
+                  key={e.employee_id}
+                  type="button"
+                  className={`${styles.employeeManageRow} ${styles.employeeManageRowClickable}`}
+                  onClick={() => openEmployeeProfile(e)}
+                >
                   <div className={styles.employeeManageMain}>
                     <div className={styles.employeeMiniName}>{e.full_name}</div>
                     <div className={styles.employeeMiniMeta}>
@@ -1073,20 +1134,9 @@ export default function TalentDashboard({
                         No path data
                       </span>
                     )}
-                    <button
-                      type="button"
-                      className={styles.smallBtnPrimary}
-                      onClick={() => onNavigate({
-                        view: "profile",
-                        employee: e.employee_id,
-                        department: e.department || department || null,
-                        role: e.job_title || role || null,
-                      })}
-                    >
-                      Manage
-                    </button>
+                    <span className={styles.smallBtnPrimary}>Open profile</span>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -1095,7 +1145,7 @@ export default function TalentDashboard({
 
       {level === "org" && focus === "all" && (
         <p className={styles.inlineNote}>
-          Tip: click a KPI for ready / behind / incomplete people across the org, or open a department card to drill down.
+          Tip: click the Employees KPI to list people, other KPIs for ready / behind / incomplete, or open a department card to drill down.
         </p>
       )}
     </div>
