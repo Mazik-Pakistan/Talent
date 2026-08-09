@@ -113,7 +113,7 @@ async def _tool_invite_recruiter(user: CurrentUser, args: dict) -> ToolResult:
 
     now = datetime.now(UTC)
     token = token_urlsafe(32)
-    expires_at = now + timedelta(days=365)
+    expires_at = now + timedelta(days=2)
 
     if organization_id:
         org = await get_organization(organization_id)
