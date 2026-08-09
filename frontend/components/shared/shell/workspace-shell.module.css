@@ -12,23 +12,23 @@
   background: var(--blue-light); color: var(--blue-strong);
 }
 
-.announcementMeta { margin-top: 8px !important; font-size: 11px !important; color: var(--text-faint) !important; }
+.announcementMeta { margin-top: 12px !important; font-size: 11px !important; color: var(--text-faint) !important; }
 
-.announcementStack { display: flex; flex-direction: column; gap: 10px; }
+.announcementStack { display: flex; flex-direction: column; gap: 14px; }
 
-.heroRecommendTitle { font-weight: 700; color: var(--navy); margin-bottom: 2px; }
+.heroRecommendTitle { font-weight: 700; color: var(--navy); margin-bottom: 4px; }
 
 .moduleDesc { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
 
-.moduleTitle { font-size: 14.5px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+.moduleTitle { font-size: 14.5px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
 
-.notifHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 4px 8px; }
+.notifHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 4px 10px; }
 
-.notifList { display: grid; gap: 5px; max-height: 360px; overflow-y: auto; }
+.notifList { display: grid; gap: 8px; max-height: 360px; overflow-y: auto; }
 
 .p1 { font-size: 15px; font-weight: 700; letter-spacing: .2px; font-family: 'Sora', system-ui, sans-serif; color: var(--navy); }
 
-.phaseBadge { position: absolute; top: 16px; right: 16px; font-size: 10px; font-weight: 700; letter-spacing: .3px; color: var(--orange); background: var(--orange-light); padding: 4px 9px; border-radius: 20px; }
+.phaseBadge { position: absolute; top: 16px; right: 16px; font-size: 11px; font-weight: 700; letter-spacing: .3px; color: var(--orange); background: var(--orange-light); padding: 4px 10px; border-radius: 20px; }
 
 .root {
   background:
@@ -44,7 +44,7 @@
   max-width: 100vw;
 }
 
-.sectionDesc { font-size: 12.5px; color: var(--text-muted); margin: 2px 0 0 0; }
+.sectionDesc { font-size: 12.5px; color: var(--text-muted); margin: 4px 0 0 0; }
 
-.statusPill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 20px; background: var(--green-light); color: var(--green); }
+.statusPill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; background: var(--green-light); color: var(--green); }
 

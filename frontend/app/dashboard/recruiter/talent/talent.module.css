@@ -65,20 +65,20 @@
 
 .toolbar {
   display: flex;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 12px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
   align-items: center;
 }
 .toolbarRight { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
 
-.filterBar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.filterBar { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; align-items: center; }
 .searchInput {
   flex: 1;
   min-width: 200px;
   border: 1px solid var(--border);
   border-radius: 9px;
-  padding: 9px 12px;
+  padding: 11px 14px;
   font-size: 13px;
   font-family: inherit;
   background: #fff;
@@ -87,7 +87,7 @@
 .filterSelect {
   border: 1px solid var(--border);
   border-radius: 9px;
-  padding: 9px 10px;
+  padding: 11px 12px;
   font-size: 12.5px;
   font-family: inherit;
   background: #fff;
@@ -144,7 +144,7 @@
 .metricGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px;
   margin-bottom: 2px;
 }
 @media (max-width: 1100px) {
@@ -158,7 +158,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 0;
+  padding: 12px 0;
   border-bottom: 1px solid var(--border-soft);
   gap: 10px;
 }
@@ -200,7 +200,7 @@
 
 .empTable {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
   background: #fff;
 }
@@ -210,7 +210,7 @@
   grid-template-columns: minmax(140px, 1.4fr) minmax(120px, 1.1fr) minmax(110px, 1fr) minmax(140px, 1.4fr) 72px 80px;
   gap: 10px;
   align-items: center;
-  padding: 9px 14px;
+  padding: 12px 14px;
 }
 .empTableHead {
   background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
@@ -274,11 +274,11 @@
   .empCellSkills { grid-column: 1 / -1; }
 }
 
-.resultGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.resultGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
 .resultCard {
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 14px;
+  padding: 16px;
   background: var(--card, #fff);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
@@ -291,7 +291,7 @@
 }
 .resultName { font-size: 13.5px; font-weight: 700; color: var(--navy); }
 .resultMeta { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
-.resultTags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.resultTags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .resultTag {
   font-size: 10.5px;
   font-weight: 600;
@@ -303,13 +303,13 @@
 }
 .resultStats { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
 
-.oppForm { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px; }
+.oppForm { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 18px; }
 .oppForm label { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--text-muted); grid-column: span 1; }
 .oppForm label.wide { grid-column: span 2; }
 .oppForm input, .oppForm select, .oppForm textarea {
   border: 1px solid var(--border);
   border-radius: 9px;
-  padding: 9px 10px;
+  padding: 11px 12px;
   font-size: 12.5px;
   font-family: inherit;
   color: var(--text);
@@ -320,8 +320,8 @@
 .oppMgmtCard {
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 14px 16px;
-  margin-bottom: 10px;
+  padding: 16px 18px;
+  margin-bottom: 12px;
   background: var(--card, #fff);
   box-shadow: var(--shadow-sm);
 }
@@ -333,12 +333,12 @@
 .oppStatusOpen { background: var(--green-light); color: var(--green); }
 .oppStatusClosed { background: var(--border-soft); color: var(--text-faint); }
 
-.assignmentList { display: flex; flex-direction: column; gap: 10px; }
+.assignmentList { display: flex; flex-direction: column; gap: 12px; }
 .assignmentRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--card, #fff);
@@ -431,7 +431,7 @@
 .skillMatrixChipCloud {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 6px;
   padding: 0;
 }
 .skillMatrixChip {
@@ -453,7 +453,7 @@
 }
 .skillMatrixGroup {
   border: 1px solid var(--border-soft, var(--border));
-  border-radius: 10px;
+  border-radius: 14px;
   background: #fff;
   overflow: hidden;
 }
@@ -462,7 +462,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border-soft, var(--border));
   background: rgba(15, 42, 74, 0.03);
 }
@@ -494,7 +494,7 @@
   grid-template-columns: minmax(120px, 180px) 1fr 88px;
   gap: 10px;
   align-items: center;
-  padding: 4px 2px;
+  padding: 6px 4px;
   border-bottom: 1px solid #f1f5f9;
 }
 .skillMatrixRow:last-child { border-bottom: none; }
@@ -579,7 +579,7 @@
 .skillMatrixEmpty {
   padding: 22px 16px;
   border: 1px dashed var(--border, #e2e8f0);
-  border-radius: 12px;
+  border-radius: 14px;
   background: #fafcff;
   text-align: center;
 }
@@ -600,7 +600,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px !important;
+  padding: 10px 14px !important;
   margin-bottom: 10px;
   font-size: 12.5px;
   font-weight: 650;
@@ -624,8 +624,8 @@
 
 .pathAssignCard {
   border: 1px solid rgba(31, 127, 224, 0.22);
-  border-radius: 12px;
-  padding: 10px 12px;
+  border-radius: 14px;
+  padding: 12px 14px;
   background: linear-gradient(180deg, #f5faff 0%, #fff 70%);
 }
 .pathAssignHead {
@@ -649,7 +649,7 @@
 .pathAssignGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px 14px;
+  gap: 12px 16px;
 }
 @media (max-width: 760px) {
   .pathAssignGrid { grid-template-columns: 1fr; }
@@ -674,16 +674,16 @@
 .capabilityDense {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .capabilityKpiStrip {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 14px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   border: 1px solid var(--border-soft, var(--border));
-  border-radius: 10px;
+  border-radius: 12px;
   background: #f8fbff;
 }
 .capabilityKpi {
@@ -720,15 +720,15 @@
 
 .capabilityMatrixCard {
   border: 1px solid var(--border-soft, var(--border));
-  border-radius: 12px;
-  padding: 10px 12px 12px;
+  border-radius: 14px;
+  padding: 12px 14px 14px;
   background: #fff;
   min-width: 0;
 }
 .capabilityLearnRow {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 10px;
   align-items: start;
 }
 @media (max-width: 860px) {
@@ -736,8 +736,8 @@
 }
 .capabilityDenseCard {
   border: 1px solid var(--border-soft, var(--border));
-  border-radius: 10px;
-  padding: 8px 10px;
+  border-radius: 14px;
+  padding: 10px 12px;
   background: #fff;
   min-width: 0;
 }
@@ -746,14 +746,14 @@
 .skillMatrixPanel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .skillMatrixToolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 12px;
+  gap: 10px 12px;
 }
 .skillMatrixToolbarLeft {
   display: flex;
@@ -806,7 +806,7 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
-  padding: 0 2px;
+  padding: 0 4px;
 }
 .skillMatrixAxisTicks {
   display: grid;
@@ -986,7 +986,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 3px 0;
+  padding: 6px 0;
   border-bottom: 1px solid var(--border-soft, #eef2f7);
   min-height: 0;
 }
@@ -1023,8 +1023,8 @@
 
 .reqPanel {
   border: 1px solid var(--border, #e2e8f0);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 14px;
+  padding: 12px 14px;
   background: #fff;
   margin-bottom: 8px;
 }
@@ -1056,13 +1056,13 @@
 .reqList {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .reqRow {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 6px 12px;
-  padding: 5px 8px;
+  padding: 6px 10px;
   border-radius: 8px;
   background: #f8fafc;
 }
@@ -1127,7 +1127,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--card, #fff);
@@ -1173,7 +1173,7 @@
 .assignForm {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 .fieldLabel {
   display: flex;
@@ -1187,7 +1187,7 @@
 .fieldLabel select {
   border: 1px solid var(--border);
   border-radius: 9px;
-  padding: 9px 10px;
+  padding: 11px 12px;
   font-size: 12.5px;
   font-family: inherit;
   color: var(--text);
@@ -1304,7 +1304,7 @@
 .managedForm {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 14px;
+  gap: 14px 16px;
 }
 .managedForm .wide { grid-column: 1 / -1; }
 .managedForm .fieldLabel { margin-bottom: 0; }
@@ -1337,7 +1337,7 @@
   max-width: 320px;
   flex: 0 0 auto;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 18px;
   background: #fff;
   box-shadow: var(--shadow-sm);
@@ -1369,7 +1369,7 @@
   text-transform: uppercase;
 }
 .cfLevelBadge svg { width: 11px; height: 11px; }
-.cfLevelActions { display: flex; gap: 4px; }
+.cfLevelActions { display: flex; gap: 8px; }
 .cfLevelActionBtn {
   display: inline-flex;
   align-items: center;
@@ -1411,7 +1411,7 @@
   letter-spacing: .05em;
   text-transform: uppercase;
   color: var(--text-faint);
-  margin: 10px 0 6px;
+  margin: 12px 0 8px;
 }
 .cfSkillChip {
   font-size: 10.5px;
@@ -1489,12 +1489,12 @@
 .tagInputRow input { flex: 2; }
 .tagInputRow select { flex: 1; }
 
-.chipList { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.chipList { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
 .chipListRow {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 11px;
+  padding: 8px 12px;
   border: 1px solid var(--border-soft);
   border-radius: 10px;
   background: var(--blue-lighter);
@@ -1562,7 +1562,7 @@
   line-height: 1.45;
 }
 .deptSearch {
-  padding: 10px 14px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--border-soft);
 }
 .deptSearchWrap { position: relative; display: flex; align-items: center; }
@@ -1571,7 +1571,7 @@
   box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 8px 11px 8px 32px;
+  padding: 10px 12px 10px 34px;
   font-size: 12.5px;
   color: var(--text);
   background: #fff;
@@ -1585,7 +1585,7 @@
 }
 .deptSearchIcon {
   position: absolute;
-  left: 10px;
+  left: 12px;
   width: 14px;
   height: 14px;
   color: var(--text-faint);
@@ -1598,7 +1598,7 @@
   justify-content: space-between;
   gap: 10px;
   width: 100%;
-  padding: 11px 13px;
+  padding: 12px 13px;
   border: none;
   border-left: 3px solid transparent;
   border-radius: 0 10px 10px 0;
@@ -1709,7 +1709,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 18px 12px;
+  padding: 16px 20px 14px;
   border-bottom: 1px solid var(--border-soft);
 }
 .scopePanelIcon {
@@ -1761,8 +1761,8 @@
 .scopePanelBody {
   display: grid;
   grid-template-columns: minmax(180px, 1.1fr) minmax(180px, 1.1fr) minmax(160px, 0.9fr);
-  gap: 14px 16px;
-  padding: 16px 18px 18px;
+  gap: 16px 18px;
+  padding: 18px 20px 20px;
   align-items: end;
 }
 @media (max-width: 900px) {
@@ -1775,7 +1775,7 @@
 .scopeField {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
 }
 .scopeFieldLabel {
@@ -1865,7 +1865,7 @@
 }
 .scopeEmptyNote {
   margin: 0;
-  padding: 0 18px 14px;
+  padding: 0 20px 16px;
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.45;
@@ -1885,7 +1885,7 @@
 .deptCardGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 .deptCard {
   display: flex;
@@ -1944,7 +1944,7 @@
 .filterField {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .filterFieldLabel {
   font-size: 11px;
@@ -2036,7 +2036,7 @@
   color: inherit;
   cursor: pointer;
   border-radius: 8px;
-  padding: 10px 8px;
+  padding: 12px 8px;
 }
 .employeeManageRowClickable:hover {
   background: #f5f9ff;
@@ -2217,7 +2217,7 @@
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  padding: 16px 18px;
+  padding: 20px 22px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: linear-gradient(135deg, var(--blue-lighter), #fff 55%);
@@ -2438,7 +2438,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border-soft);
   background: linear-gradient(180deg, #f8fafc, #fff);
 }
@@ -2459,13 +2459,13 @@
   background: var(--blue-lighter);
   color: var(--navy-2);
 }
-.promoChecklistBody { padding: 8px 10px; }
+.promoChecklistBody { padding: 10px 12px; }
 .promoChecklistRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 9px 6px;
+  padding: 10px 6px;
   border-bottom: 1px solid var(--border-soft);
   font-size: 12.5px;
 }
@@ -2504,7 +2504,7 @@
 .promoContextCard {
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   background: #fff;
   box-shadow: var(--shadow-sm);
 }
@@ -2522,7 +2522,7 @@
   justify-content: space-between;
   font-size: 12.5px;
   color: var(--text-muted);
-  padding: 5px 0;
+  padding: 6px 0;
 }
 .promoContextRow span:last-child {
   font-weight: 700;

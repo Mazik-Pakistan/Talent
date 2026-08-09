@@ -1,7 +1,7 @@
 .checkboxRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 13px;
   color: var(--text);
   cursor: pointer;
@@ -10,7 +10,7 @@
 .capabilityGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
+  gap: 14px;
   margin-bottom: 16px;
 }
 
@@ -50,7 +50,7 @@
 .capabilityChips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   margin-top: 10px;
 }
 
@@ -135,7 +135,7 @@
 .templateBar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 14px;
 }
 
@@ -174,10 +174,10 @@
   align-items: center;
   gap: 10px;
   margin-bottom: 14px;
-  padding: 10px 14px;
+  padding: 12px 16px;
   background: var(--surface-alt, #f8fafc);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 14px;
 }
 
 .bulkBarLabel {
@@ -246,10 +246,10 @@
   align-items: center;
   gap: 10px;
   margin-bottom: 14px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   background: var(--surface, #fff);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 14px;
 }
 
 .searchInput {
@@ -294,8 +294,8 @@
 .recruiterCard {
   background: var(--surface, #fff);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
+  border-radius: 14px;
+  padding: 18px;
   transition: all 0.2s ease;
 }
 
@@ -335,7 +335,7 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .recruiterCardName strong {
@@ -346,7 +346,7 @@
 .recruiterCardEmail {
   font-size: 13px;
   color: var(--text-muted, #6b7280);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   word-break: break-all;
 }
 
@@ -368,7 +368,7 @@
 
 .recruiterCardActions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
 }
 
@@ -418,7 +418,7 @@
 /* ── Modern Organizations UI ─────────────────────────── */
 .modernCard {
   background: white;
-  border-radius: 8px;
+  border-radius: 14px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   margin-bottom: 24px;
   overflow: hidden;
@@ -471,7 +471,7 @@
 .inputGroup {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .inputGroup label {
@@ -512,7 +512,7 @@
   margin: 24px 0;
   padding: 20px;
   background: var(--surface, #f8fafc);
-  border-radius: 8px;
+  border-radius: 14px;
   border: 1px solid var(--border);
 }
 
@@ -533,7 +533,7 @@
 .moduleGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
+  gap: 16px;
 }
 
 .toggleItem {
@@ -542,7 +542,7 @@
   align-items: center;
   padding: 12px 16px;
   background: white;
-  border-radius: 6px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   transition: all 0.2s ease;
 }
@@ -679,7 +679,7 @@ input:checked + .slider:before {
 
 .orgCard {
   background: white;
-  border-radius: 8px;
+  border-radius: 14px;
   border: 1px solid var(--border);
   overflow: hidden;
   transition: all 0.2s ease;
@@ -794,7 +794,7 @@ input:checked + .slider:before {
 
 .moduleActions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 .moduleItem {
@@ -803,7 +803,7 @@ input:checked + .slider:before {
   align-items: center;
   padding: 12px 16px;
   background: white;
-  border-radius: 6px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   margin-bottom: 8px;
 }
@@ -877,7 +877,7 @@ input:checked + .slider:before {
   
   .moduleActions {
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
   }
   
   .orgCardHeader {
@@ -970,7 +970,7 @@ input:checked + .slider:before {
 
 .orgField {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .orgField span {
@@ -1014,10 +1014,10 @@ input:checked + .slider:before {
 
 .orgModuleSection {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding: 16px;
   border: 1px solid #e5e7eb;
-  border-radius: 16px;
+  border-radius: 14px;
   background: #f8fafc;
 }
 
@@ -1030,7 +1030,7 @@ input:checked + .slider:before {
 .orgModuleGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
+  gap: 14px;
 }
 
 .orgModuleToggle {
@@ -1038,7 +1038,7 @@ input:checked + .slider:before {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 11px 12px;
+  padding: 12px 14px;
   border: 1px solid #e5e7eb;
   border-radius: 14px;
   background: #fff;
