@@ -662,6 +662,7 @@ function EmployeeProfileContent() {
                     onRemove={handlePhotoRemove}
                     busy={photoBusy}
                     size="lg"
+                    variant="overlay"
                   />
                   <div className={styles.heroCopy}>
                     <p className={styles.eyebrow}>Employee profile</p>

@@ -325,6 +325,7 @@
 .heroCard {
   display: flex;
   gap: 32px;
+  justify-content: space-between;
   align-items: center;
   background: #fff;
   border: 1px solid var(--border, #e3e9f0);
@@ -369,7 +370,6 @@
   display: flex;
   align-items: center;
   gap: 22px;
-  flex: 1;
   min-width: 0;
 }
 
@@ -387,8 +387,6 @@
   align-items: center;
   gap: 20px;
   flex-shrink: 0;
-  margin-left: auto;
-  padding-left: 32px;
 }
 
 .eyebrow {
@@ -988,8 +986,7 @@
     flex-wrap: wrap;
   }
   .heroCompletion {
-    margin-left: 0;
-    padding-left: 0;
+    justify-content: center;
     padding-top: 20px;
     border-top: 1px solid var(--border, #e3e9f0);
   }
