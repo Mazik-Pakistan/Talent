@@ -166,12 +166,18 @@ async def create_role(organization_id: str, data: dict) -> dict:
     next_role = (data.get("next_role") or "").strip() or None
     if next_role and next_role == name:
         raise ValueError("A role cannot be its own next role.")
+    if next_role:
+        target = await get_role_by_name(organization_id, next_role, department)
+        if not target:
+            raise ValueError(
+                f'Next role "{next_role}" must already exist in department "{department}".'
+            )
     try:
         level_number = int(float(str(data.get("level_number") or 1)))
     except (TypeError, ValueError):
-        raise ValueError("Career level must be a positive whole number.")
+        raise ValueError("Level order must be a positive whole number (1 = most junior).")
     if level_number < 1:
-        raise ValueError("Career level must be a positive whole number.")
+        raise ValueError("Level order must be a positive whole number (1 = most junior).")
     now = _now()
     role_id = f"{organization_id}:{department}:{name}"
     doc = {
@@ -222,16 +228,23 @@ async def update_role(organization_id: str, role_id: str, data: dict) -> dict:
         try:
             level_number = int(float(str(update["level_number"])))
         except (TypeError, ValueError):
-            raise ValueError("Career level must be a positive whole number.")
+            raise ValueError("Level order must be a positive whole number (1 = most junior).")
         if level_number < 1:
-            raise ValueError("Career level must be a positive whole number.")
+            raise ValueError("Level order must be a positive whole number (1 = most junior).")
         update["level_number"] = level_number
 
     next_role = update.get("next_role", role.get("next_role"))
+    if isinstance(next_role, str):
+        next_role = next_role.strip() or None
     if next_role and next_role == new_name:
         raise ValueError("A role cannot be its own next role.")
-    else:
-        update["next_role"] = next_role or None
+    if next_role:
+        target = await get_role_by_name(organization_id, next_role, new_department)
+        if not target:
+            raise ValueError(
+                f'Next role "{next_role}" must already exist in department "{new_department}".'
+            )
+    update["next_role"] = next_role or None
 
     await database.org_framework_roles.update_one(
         {"organization_id": organization_id, "role_id": role_id},
@@ -748,8 +761,19 @@ async def create_roadmap(organization_id: str, data: dict) -> dict:
     if not role:
         raise ValueError(f'Role "{role_name}" does not exist in the organization framework.')
     course = await get_course(organization_id, course_id)
-    if not course:
-        raise ValueError(f'Course "{course_id}" does not exist in the organization framework course catalog.')
+    if course:
+        course_name = (data.get("course_name") or "").strip() or course["name"]
+    else:
+        # Courses may come from the external learning catalog (Microsoft Learn,
+        # Coursera, managed providers). In that case the display name is sent by
+        # the client so the roadmap entry is readable even though the course is
+        # not stored in the organization framework catalog.
+        course_name = (data.get("course_name") or "").strip()
+        if not course_name:
+            raise ValueError(
+                f'Course "{course_id}" is not in the organization framework catalog '
+                "and no course name was provided."
+            )
     existing = await database.org_framework_roadmaps.find_one(
         {"organization_id": organization_id, "role_name": role_name, "course_id": course_id},
         {"_id": 0},
@@ -762,12 +786,32 @@ async def create_roadmap(organization_id: str, data: dict) -> dict:
     ).to_list(10000)
     order = data.get("order") or (len(roadmap_rows) + 1)
     roadmap_id = f"{organization_id}:{role_name}:{course_id}:{now.strftime('%Y%m%d%H%M%S%f')}"
+    catalog_type = (data.get("catalog_type") or data.get("type") or "").strip() or None
+    skills = data.get("skills")
+    if not isinstance(skills, list):
+        skills = []
+    skills = [str(s).strip() for s in skills if str(s).strip()][:12]
+    competency = (data.get("competency") or "").strip() or None
+    if competency and competency not in skills:
+        skills = [competency, *skills][:12]
+    category = (data.get("category") or "").strip() or None
+    certifications = data.get("certifications")
+    if not isinstance(certifications, list):
+        certifications = []
+    certifications = [str(c).strip() for c in certifications if str(c).strip()][:8]
+    if catalog_type and "cert" in catalog_type.lower() and course_name and course_name not in certifications:
+        certifications = [course_name, *certifications][:8]
     doc = {
         "organization_id": organization_id,
         "roadmap_id": roadmap_id,
         "role_name": role_name,
         "course_id": course_id,
-        "course_name": (data.get("course_name") or "").strip() or course["name"],
+        "course_name": course_name,
+        "catalog_type": catalog_type,
+        "category": category,
+        "competency": competency,
+        "skills": skills,
+        "certifications": certifications,
         "mandatory": bool(data.get("mandatory", True)),
         "order": order,
         "prerequisite_course_id": data.get("prerequisite_course_id"),
@@ -845,7 +889,19 @@ async def delete_roadmap(organization_id: str, roadmap_id: str) -> bool:
 async def list_promotion_rules(organization_id: str) -> list[dict]:
     docs = await database.org_framework_promotion_rules.find(
         _oid_filter(organization_id), {"_id": 0}
-    ).sort("role_name", 1).to_list(5000)
+    ).sort([("department", 1), ("role_name", 1)]).to_list(5000)
+
+    # Backfill department on legacy rules that only stored role_name.
+    roles = await list_roles(organization_id)
+    roles_by_name: dict[str, list[dict]] = {}
+    for role in roles:
+        roles_by_name.setdefault(role.get("name") or "", []).append(role)
+    for doc in docs:
+        if doc.get("department"):
+            continue
+        matches = roles_by_name.get(doc.get("role_name") or "") or []
+        if len(matches) == 1:
+            doc["department"] = matches[0].get("department")
 
     try:
         level_query = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
@@ -855,16 +911,17 @@ async def list_promotion_rules(organization_id: str) -> list[dict]:
                           "required_certifications": 1}
         ).to_list(length=10000)
 
-        seen_roles = {d["role_name"] for d in docs}
+        seen = {(d.get("department") or "", d.get("role_name") or "") for d in docs}
         for level in levels:
             role = (level.get("role_title") or "").strip()
-            if not role or role in seen_roles:
+            if not role or ("", role) in seen:
                 continue
-            seen_roles.add(role)
+            seen.add(("", role))
             skills_req = level.get("required_skills") or []
             certs_req = level.get("required_certifications") or []
             docs.append({
                 "role_name": role,
+                "department": None,
                 "min_experience_months": round((level.get("min_experience_years") or 0) * 12),
                 "required_readiness_pct": 80,
                 "manager_approval_required": bool(level.get("manager_approval_required", False)),
@@ -878,20 +935,30 @@ async def list_promotion_rules(organization_id: str) -> list[dict]:
     return docs
 
 
-async def get_promotion_rule(organization_id: str, role_name: str) -> dict | None:
-    return await database.org_framework_promotion_rules.find_one(
-        {"organization_id": organization_id, "role_name": role_name},
-        {"_id": 0},
-    )
+async def get_promotion_rule(
+    organization_id: str, role_name: str, department: str | None = None
+) -> dict | None:
+    q: dict = {"organization_id": organization_id, "role_name": role_name}
+    if department:
+        q["department"] = department
+    return await database.org_framework_promotion_rules.find_one(q, {"_id": 0})
 
 
 async def upsert_promotion_rule(organization_id: str, data: dict) -> dict:
     role_name = (data.get("role_name") or "").strip()
     if not role_name:
         raise ValueError("Role name is required.")
-    role = await get_role_by_name(organization_id, role_name)
+    department = (data.get("department") or "").strip() or None
+    role = await get_role_by_name(organization_id, role_name, department)
     if not role:
-        raise ValueError(f'Role "{role_name}" does not exist in the organization framework.')
+        raise ValueError(
+            f'Role "{role_name}" does not exist'
+            + (f' in department "{department}"' if department else " in the organization framework")
+            + "."
+        )
+    department = (role.get("department") or department or "").strip()
+    if not department:
+        raise ValueError(f'Role "{role_name}" has no department — fix the role ladder first.')
 
     def _percent(value, field: str, default: int) -> int:
         if value is None or value == "":
@@ -918,6 +985,7 @@ async def upsert_promotion_rule(organization_id: str, data: dict) -> dict:
     now = _now()
     doc = {
         "organization_id": organization_id,
+        "department": department,
         "role_name": role_name,
         "min_experience_months": _count(data.get("min_experience_months"), "Minimum experience (months)", 0),
         "required_readiness_pct": _percent(data.get("required_readiness_pct"), "Required readiness %", 80),
@@ -926,18 +994,37 @@ async def upsert_promotion_rule(organization_id: str, data: dict) -> dict:
         "min_certs_completed": _count(data.get("min_certs_completed"), "Minimum certifications completed", 0),
         "updated_at": now,
     }
+    # Upsert on dept+role; also clear any legacy org+role-only duplicate.
+    await database.org_framework_promotion_rules.delete_many(
+        {
+            "organization_id": organization_id,
+            "role_name": role_name,
+            "$or": [
+                {"department": {"$exists": False}},
+                {"department": None},
+                {"department": ""},
+            ],
+        }
+    )
     await database.org_framework_promotion_rules.update_one(
-        {"organization_id": organization_id, "role_name": role_name},
-        {"$set": doc},
+        {
+            "organization_id": organization_id,
+            "department": department,
+            "role_name": role_name,
+        },
+        {"$set": doc, "$setOnInsert": {"created_at": now}},
         upsert=True,
     )
     return doc
 
 
-async def delete_promotion_rule(organization_id: str, role_name: str) -> bool:
-    result = await database.org_framework_promotion_rules.delete_one(
-        {"organization_id": organization_id, "role_name": role_name},
-    )
+async def delete_promotion_rule(
+    organization_id: str, role_name: str, department: str | None = None
+) -> bool:
+    q: dict = {"organization_id": organization_id, "role_name": role_name}
+    if department:
+        q["department"] = department
+    result = await database.org_framework_promotion_rules.delete_many(q)
     return result.deleted_count > 0
 
 
@@ -1248,10 +1335,23 @@ async def build_export_workbook(organization_id: str) -> BytesIO:
         ws.column_dimensions[col].width = width
 
     # Sheet 5: Course Catalog
+    # Includes any roadmap course_ids that come from the external learning
+    # catalog (they are not stored in org_framework_courses) so an exported
+    # workbook can be re-imported without validation errors.
     ws = wb.create_sheet("Course Catalog")
     headers = ["Course ID", "Course Name", "Provider", "Category", "Duration (hours)", "Difficulty", "Provider URL", "Description"]
     _style_sheet_header(ws, headers)
-    _append_rows(ws, [[c["course_id"], c["name"], c.get("provider", ""), c.get("category", ""), c.get("duration_hours") or "", c.get("difficulty", ""), c.get("url") or "", c.get("description", "")] for c in courses])
+    known_course_ids = {c["course_id"] for c in courses}
+    extra_course_rows = [
+        [r["course_id"], r.get("course_name") or r["course_id"], "", "", "", "", "", ""]
+        for r in roadmaps
+        if r["course_id"] not in known_course_ids
+    ]
+    _append_rows(
+        ws,
+        [[c["course_id"], c["name"], c.get("provider", ""), c.get("category", ""), c.get("duration_hours") or "", c.get("difficulty", ""), c.get("url") or "", c.get("description", "")] for c in courses]
+        + extra_course_rows,
+    )
     for col, width in (("A", 14), ("B", 30), ("C", 24), ("D", 18), ("E", 16), ("F", 14), ("G", 30), ("H", 40)):
         ws.column_dimensions[col].width = width
 
@@ -1265,10 +1365,26 @@ async def build_export_workbook(organization_id: str) -> BytesIO:
 
     # Sheet 7: Promotion Rules
     ws = wb.create_sheet("Promotion Rules")
-    headers = ["Role", "Minimum Experience (Months)", "Required Readiness %", "Manager Approval Required", "Minimum Skills Completed %", "Minimum Certifications Completed"]
+    headers = [
+        "Department",
+        "Role",
+        "Minimum Experience (Months)",
+        "Required Readiness %",
+        "Manager Approval Required",
+        "Minimum Skills Completed %",
+        "Minimum Certifications Completed",
+    ]
     _style_sheet_header(ws, headers)
-    _append_rows(ws, [[r["role_name"], r.get("min_experience_months", 0), r.get("required_readiness_pct", 80), "Yes" if r.get("manager_approval_required") else "No", r.get("min_skills_completed_pct", 100), r.get("min_certs_completed", 0)] for r in rules])
-    for col, width in (("A", 30), ("B", 24), ("C", 20), ("D", 24), ("E", 26), ("F", 28)):
+    _append_rows(ws, [[
+        r.get("department") or "",
+        r["role_name"],
+        r.get("min_experience_months", 0),
+        r.get("required_readiness_pct", 80),
+        "Yes" if r.get("manager_approval_required") else "No",
+        r.get("min_skills_completed_pct", 100),
+        r.get("min_certs_completed", 0),
+    ] for r in rules if r.get("source") != "career_levels"])
+    for col, width in (("A", 24), ("B", 30), ("C", 24), ("D", 20), ("E", 24), ("F", 26), ("G", 28)):
         ws.column_dimensions[col].width = width
 
     buf = BytesIO()
@@ -1310,8 +1426,13 @@ SHEET_SCHEMA: dict[str, list[str]] = {
     ],
     "Learning Roadmap": ["Role", "Course ID", "Mandatory", "Recommended Order"],
     "Promotion Rules": [
-        "Role", "Minimum Experience (Months)", "Required Readiness %",
-        "Manager Approval Required", "Minimum Skills Completed %", "Minimum Certifications Completed",
+        "Department",
+        "Role",
+        "Minimum Experience (Months)",
+        "Required Readiness %",
+        "Manager Approval Required",
+        "Minimum Skills Completed %",
+        "Minimum Certifications Completed",
     ],
 }
 
@@ -1471,22 +1592,38 @@ def parse_import_workbook(file_bytes: bytes) -> dict:
         })
     data["roadmaps"] = roadmaps
 
-    # Promotion Rules
+    # Promotion Rules — new: Department|Role|… ; legacy: Role|months|…
     rules = []
     for row_num, row in sheet_rows("Promotion Rules"):
         if not row or not row[0]:
             continue
-        role_name = _clean_str(row[0])
+        second = row[1] if len(row) > 1 else None
+        legacy = False
+        try:
+            if second is not None and str(second).strip() != "":
+                float(str(second))
+                legacy = True
+        except (TypeError, ValueError):
+            legacy = False
+        if legacy:
+            role_name = _clean_str(row[0])
+            department = None
+            base = 1
+        else:
+            department = _clean_str(row[0]) or None
+            role_name = _clean_str(row[1]) if len(row) > 1 else ""
+            base = 2
         if not role_name:
             continue
         rules.append({
             "_row": row_num,
+            "department": department,
             "role_name": role_name,
-            "min_experience_months": _parse_int(row[1], 0) if len(row) > 1 else 0,
-            "required_readiness_pct": _parse_int(row[2], 80) if len(row) > 2 else 80,
-            "manager_approval_required": _parse_bool(row[3]) if len(row) > 3 else True,
-            "min_skills_completed_pct": _parse_int(row[4], 100) if len(row) > 4 else 100,
-            "min_certs_completed": _parse_int(row[5], 0) if len(row) > 5 else 0,
+            "min_experience_months": _parse_int(row[base], 0) if len(row) > base else 0,
+            "required_readiness_pct": _parse_int(row[base + 1], 80) if len(row) > base + 1 else 80,
+            "manager_approval_required": _parse_bool(row[base + 2]) if len(row) > base + 2 else True,
+            "min_skills_completed_pct": _parse_int(row[base + 3], 100) if len(row) > base + 3 else 100,
+            "min_certs_completed": _parse_int(row[base + 4], 0) if len(row) > base + 4 else 0,
         })
     data["promotion_rules"] = rules
 
@@ -1664,16 +1801,28 @@ def validate_import_data(data: dict) -> dict:
 
     # ── Promotion Rules ────────────────────────────────────────────────────────
     rule_keys: set[str] = set()
+    role_dept_keys = {
+        f"{(r.get('department') or '').strip().lower()}::{(r.get('name') or '').strip().lower()}"
+        for r in data["roles"]
+    }
     for p in data["promotion_rules"]:
         if not p["role_name"]:
             _err("Promotion Rules", p.get("_row"), "Role", "Role is required.")
             continue
-        if p["role_name"].lower() in rule_keys:
+        dept = (p.get("department") or "").strip()
+        key = f"{dept.lower()}::{p['role_name'].lower()}"
+        if key in rule_keys:
             _err("Promotion Rules", p.get("_row"), "Role",
-                 f"Duplicate promotion rule for role '{p['role_name']}'.")
+                 f"Duplicate promotion rule for '{p['role_name']}'"
+                 + (f" in {dept}" if dept else "") + ".")
             continue
-        rule_keys.add(p["role_name"].lower())
-        if p["role_name"].lower() not in all_role_names:
+        rule_keys.add(key)
+        if dept:
+            if key not in role_dept_keys:
+                _err("Promotion Rules", p.get("_row"), "Role",
+                     f"Promotion rule references role '{p['role_name']}' in department '{dept}' "
+                     "which is not defined on the Career Roles sheet.")
+        elif p["role_name"].lower() not in all_role_names:
             _err("Promotion Rules", p.get("_row"), "Role",
                  f"Promotion rule references role '{p['role_name']}' which is not defined on the Career Roles sheet.")
 
@@ -1795,10 +1944,21 @@ async def apply_import_data(organization_id: str, data: dict) -> dict:
         if roadmaps:
             await database.org_framework_roadmaps.insert_many(roadmaps)
 
-        promotion_rules = [
-            {**_without_row(p), "organization_id": organization_id, "updated_at": now}
-            for p in data["promotion_rules"]
-        ]
+        roles_by_name: dict[str, list[dict]] = {}
+        for role in data["roles"]:
+            roles_by_name.setdefault((role.get("name") or "").strip().lower(), []).append(role)
+        promotion_rules = []
+        for p in data["promotion_rules"]:
+            row = {**_without_row(p), "organization_id": organization_id, "updated_at": now}
+            dept = (row.get("department") or "").strip()
+            if not dept:
+                matches = roles_by_name.get((row.get("role_name") or "").strip().lower()) or []
+                if len(matches) == 1:
+                    dept = (matches[0].get("department") or "").strip()
+            if not dept:
+                continue
+            row["department"] = dept
+            promotion_rules.append(row)
         if promotion_rules:
             await database.org_framework_promotion_rules.insert_many(promotion_rules)
     except Exception:

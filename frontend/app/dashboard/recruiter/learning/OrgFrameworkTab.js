@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import { getApiErrorMessage } from "@/services/authService";
+import { getApiErrorMessage, listEmployees } from "@/services/authService";
 import {
   getFrameworkSummary,
   listOrgDepartments,
@@ -13,20 +13,10 @@ import {
   createOrgRole,
   updateOrgRole,
   deleteOrgRole,
-  listOrgSkills,
-  createOrgSkill,
-  updateOrgSkill,
-  deleteOrgSkill,
-  listOrgCertifications,
-  createOrgCertification,
-  updateOrgCertification,
-  deleteOrgCertification,
   listOrgCourses,
-  createOrgCourse,
-  updateOrgCourse,
-  deleteOrgCourse,
   listOrgRoadmaps,
   createOrgRoadmap,
+  updateOrgRoadmap,
   reorderOrgRoadmap,
   deleteOrgRoadmap,
   listOrgPromotionRules,
@@ -42,12 +32,12 @@ import {
 import { bustOrgFrameworkCache } from "@/hooks/useOrgFrameworkOptions";
 import { dispatchFrameworkInvalidated } from "@/lib/frameworkEvents";
 import {
-  Award,
   BookOpen,
   Briefcase,
   Building2,
   Calendar,
   Check,
+  ChevronDown,
   Clock,
   Compass,
   Download,
@@ -55,15 +45,15 @@ import {
   Mail,
   Pencil,
   Plus,
-  Target,
+  Route,
   Trash2,
   TrendingUp,
   Upload,
   Users,
   Zap,
 } from "lucide-react";
-import CareerTracksPanel from "../organization-config/CareerTracksPanel";
 import EmailTemplatesPanel from "./EmailTemplatesPanel";
+import CatalogPicker, { CatalogTypeBadge, catalogTypeKey, courseCerts, courseSkills } from "./CatalogPicker";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -74,13 +64,9 @@ import s from "./OrgFrameworkTab.module.css";
 const SECTIONS = [
   { key: "overview", label: "Overview", icon: Compass },
   { key: "departments", label: "Departments", icon: Building2 },
-  { key: "roles", label: "Roles", icon: Briefcase },
-  { key: "skills", label: "Skills", icon: Zap },
-  { key: "courses", label: "Courses", icon: BookOpen },
-  { key: "certifications", label: "Certs", icon: Award },
-  { key: "roadmaps", label: "Roadmaps", icon: Compass },
+  { key: "roles", label: "Role ladders", icon: Briefcase },
+  { key: "career-roadmaps", label: "Career Roadmaps", icon: Route },
   { key: "promotion", label: "Promotion", icon: TrendingUp },
-  { key: "career-tracks", label: "Career tracks", icon: Target },
   { key: "emails", label: "Email Templates", icon: Mail },
 ];
 
@@ -91,8 +77,6 @@ export default function OrgFrameworkTab() {
   const [summary, setSummary] = useState(null);
   const [departments, setDepartments] = useState([]);
   const [roles, setRoles] = useState([]);
-  const [skills, setSkills] = useState([]);
-  const [certifications, setCertifications] = useState([]);
   const [courses, setCourses] = useState([]);
   const [roadmaps, setRoadmaps] = useState([]);
   const [promotionRules, setPromotionRules] = useState([]);
@@ -166,12 +150,10 @@ export default function OrgFrameworkTab() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [sum, depts, rls, sks, certs, crss, rmps, rules, vers] = await Promise.all([
+      const [sum, depts, rls, crss, rmps, rules, vers] = await Promise.all([
         getFrameworkSummary(token()),
         listOrgDepartments(token()),
         listOrgRoles(token()),
-        listOrgSkills(token()),
-        listOrgCertifications(token()),
         listOrgCourses(token()),
         listOrgRoadmaps(token()),
         listOrgPromotionRules(token()),
@@ -180,8 +162,6 @@ export default function OrgFrameworkTab() {
       setSummary(sum);
       setDepartments(depts);
       setRoles(rls);
-      setSkills(sks);
-      setCertifications(certs);
       setCourses(crss);
       setRoadmaps(rmps);
       setPromotionRules(rules);
@@ -198,6 +178,11 @@ export default function OrgFrameworkTab() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Retired tab — redirect if anything still deep-links to it.
+  useEffect(() => {
+    if (section === "career-tracks") setSection("roles");
+  }, [section]);
 
   useEffect(() => {
     const help = ORG_CONFIG_TAB_HELP[section] || {};
@@ -264,18 +249,15 @@ export default function OrgFrameworkTab() {
           <DepartmentsSection departments={departments} loadAll={loadAll} />
         ) : section === "roles" ? (
           <RolesSection roles={roles} departments={departments} loadAll={loadAll} />
-        ) : section === "skills" ? (
-          <SkillsSection skills={skills} roles={roles} loadAll={loadAll} />
-        ) : section === "courses" ? (
-          <CoursesSection courses={courses} loadAll={loadAll} />
-        ) : section === "certifications" ? (
-          <CertsSection certifications={certifications} roles={roles} loadAll={loadAll} />
-        ) : section === "roadmaps" ? (
-          <RoadmapsSection roadmaps={roadmaps} roles={roles} courses={courses} loadAll={loadAll} />
         ) : section === "promotion" ? (
-          <PromotionSection rules={promotionRules} roles={roles} loadAll={loadAll} />
-        ) : section === "career-tracks" ? (
-          <CareerTracksPanel departments={departments} />
+          <PromotionSection
+            rules={promotionRules}
+            roles={roles}
+            loadAll={loadAll}
+            onGoToRoles={() => setSection("roles")}
+          />
+        ) : section === "career-roadmaps" ? (
+          <CareerRoadmapsSection roles={roles} roadmaps={roadmaps} loadAll={loadAll} />
         ) : section === "emails" ? (
           <EmailTemplatesPanel />
         ) : null}
@@ -317,7 +299,7 @@ function EmptyState({ onLoad, onStart, onImport, onSeed, seeding, importReport, 
       </div>
       <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: "0 0 8px" }}>Organization Framework Not Configured</h3>
       <p style={{ fontSize: 13.5, color: "var(--text-muted)", maxWidth: 460, lineHeight: 1.55, margin: "0 0 24px" }}>
-        Set up your organization's career structure by importing an Excel template or building it manually. Everything you configure here automatically applies to all employees.
+        Set up your organization&apos;s career structure by importing an Excel template or building it manually. Everything you configure here automatically applies to all employees.
       </p>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onSeed} disabled={seeding}>
@@ -454,10 +436,7 @@ function OverviewSection({ summary, departments, roles, courses, versions, loadA
   const stats = [
     { label: "Departments", value: summary?.departments || 0, icon: Building2, color: "cyan" },
     { label: "Roles", value: summary?.roles || 0, icon: Briefcase, color: "green" },
-    { label: "Skills Defined", value: summary?.skills || 0, icon: Zap, color: "orange" },
-    { label: "Courses", value: summary?.courses || 0, icon: BookOpen, color: "navy" },
-    { label: "Certifications", value: summary?.certifications || 0, icon: Award, color: "purple" },
-    { label: "Learning Paths", value: summary?.roadmaps || 0, icon: Compass, color: "cyan" },
+    { label: "Roadmap items", value: summary?.roadmaps || 0, icon: Route, color: "navy" },
     { label: "Promotion Rules", value: summary?.promotion_rules || 0, icon: TrendingUp, color: "green" },
     { label: "Employees", value: summary?.employees || 0, icon: Users, color: "orange" },
   ];
@@ -663,6 +642,35 @@ function DepartmentsSection({ departments, loadAll }) {
   );
 }
 
+/** Build promotion ladders within a department: Intern → Junior → … */
+function buildDepartmentLadders(deptRoles) {
+  const byName = new Map(deptRoles.map((r) => [r.name, r]));
+  const pointedTo = new Set(deptRoles.map((r) => r.next_role).filter((n) => n && byName.has(n)));
+  const roots = deptRoles
+    .filter((r) => !pointedTo.has(r.name))
+    .sort((a, b) => (a.level_number || 0) - (b.level_number || 0) || (a.name || "").localeCompare(b.name || ""));
+
+  const chains = [];
+  const seen = new Set();
+  for (const root of roots) {
+    const chain = [];
+    let cur = root;
+    const guard = new Set();
+    while (cur && !guard.has(cur.name)) {
+      guard.add(cur.name);
+      seen.add(cur.name);
+      chain.push(cur);
+      cur = cur.next_role && byName.has(cur.next_role) ? byName.get(cur.next_role) : null;
+    }
+    if (chain.length) chains.push(chain);
+  }
+  const orphans = deptRoles
+    .filter((r) => !seen.has(r.name))
+    .sort((a, b) => (a.level_number || 0) - (b.level_number || 0));
+  for (const orphan of orphans) chains.push([orphan]);
+  return chains;
+}
+
 function RolesSection({ roles, departments, loadAll }) {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -675,16 +683,26 @@ function RolesSection({ roles, departments, loadAll }) {
   const handleCreate = async () => {
     if (!form.name.trim() || !form.department.trim()) return toast.error("Name and department required.");
     setBusy(true);
-    try { await createOrgRole(token(), form); toast.success("Role created."); setShowForm(false); resetForm(); await loadAll(); }
-    catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
+    try {
+      await createOrgRole(token(), { ...form, next_role: form.next_role || null });
+      toast.success("Role created.");
+      setShowForm(false);
+      resetForm();
+      await loadAll();
+    } catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
     finally { setBusy(false); }
   };
 
   const handleUpdate = async () => {
     if (!editItem) return;
     setBusy(true);
-    try { await updateOrgRole(token(), editItem.role_id, form); toast.success("Role updated."); setShowForm(false); resetForm(); await loadAll(); }
-    catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
+    try {
+      await updateOrgRole(token(), editItem.role_id, { ...form, next_role: form.next_role || null });
+      toast.success("Role updated.");
+      setShowForm(false);
+      resetForm();
+      await loadAll();
+    } catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
     finally { setBusy(false); }
   };
 
@@ -695,29 +713,106 @@ function RolesSection({ roles, departments, loadAll }) {
   };
 
   const resetForm = () => { setEditItem(null); setForm({ name: "", department: "", next_role: "", level_number: 1, description: "" }); };
-  const startEdit = (r) => { setEditItem(r); setForm({ name: r.name, department: r.department, next_role: r.next_role || "", level_number: r.level_number || 1, description: r.description || "" }); setShowForm(true); };
+  const startEdit = (r) => {
+    setEditItem(r);
+    setForm({
+      name: r.name,
+      department: r.department,
+      next_role: r.next_role || "",
+      level_number: r.level_number || 1,
+      description: r.description || "",
+    });
+    setShowForm(true);
+  };
 
-  const deptNames = [...new Set([...departments.map((d) => d.name), ...roles.map((r) => r.department)])].sort();
+  const deptNames = [...new Set([...departments.map((d) => d.name), ...roles.map((r) => r.department).filter(Boolean)])].sort();
+  const nextRoleOptions = roles
+    .filter((r) => r.department === form.department && (!editItem || r.role_id !== editItem.role_id) && r.name !== form.name)
+    .sort((a, b) => (a.level_number || 0) - (b.level_number || 0) || a.name.localeCompare(b.name));
+
+  const byDept = {};
+  [...roles]
+    .sort((a, b) => (a.department || "").localeCompare(b.department || "") || (a.level_number || 0) - (b.level_number || 0))
+    .forEach((r) => {
+      const dept = r.department || "Unassigned";
+      if (!byDept[dept]) byDept[dept] = [];
+      byDept[dept].push(r);
+    });
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>Roles ({roles.length})</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 18 }}>
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>
+            Role ladders ({roles.length})
+          </h2>
+          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 560, lineHeight: 1.5 }}>
+            Build the promotion path in each department — e.g. Intern → Junior → Developer → Senior.
+            Level order sorts the ladder; <strong>Promotes to</strong> links each role to the next one.
+          </p>
+        </div>
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); resetForm(); }}>
           <Plus aria-hidden="true" /> Add Role
         </button>
       </div>
+
       {showForm && (
         <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Role" : "New Role"}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role Name<input data-field-key="role_name" value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="e.g. Solution Engineer" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Department<select data-field-key="department" value={form.department} onChange={(e) => setField("department", e.target.value)}><option value="">Select</option>{deptNames.map((d) => <option key={d} value={d}>{d}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Career Level<input data-field-key="level_number" type="number" min="1" value={form.level_number} onChange={(e) => setField("level_number", parseInt(e.target.value) || 1)} /></label>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>
+              Role Name
+              <input data-field-key="role_name" value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="e.g. Junior Developer" />
+            </label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>
+              Department
+              <select
+                data-field-key="department"
+                value={form.department}
+                onChange={(e) => setForm((f) => ({ ...f, department: e.target.value, next_role: "" }))}
+              >
+                <option value="">Select</option>
+                {deptNames.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </label>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12, marginTop: 8 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Next Role<input data-field-key="next_role" value={form.next_role} onChange={(e) => setField("next_role", e.target.value)} placeholder="Promotion target role" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Description<input data-field-key="description" value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Description" /></label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 12, marginTop: 8 }}>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>
+              Level order
+              <input
+                data-field-key="level_number"
+                type="number"
+                min="1"
+                value={form.level_number}
+                onChange={(e) => setField("level_number", parseInt(e.target.value) || 1)}
+              />
+              <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>
+                1 = most junior in this department
+              </span>
+            </label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>
+              Promotes to
+              <select
+                data-field-key="next_role"
+                value={form.next_role}
+                onChange={(e) => setField("next_role", e.target.value)}
+                disabled={!form.department}
+              >
+                <option value="">No next role (top of ladder)</option>
+                {nextRoleOptions.map((r) => (
+                  <option key={r.role_id} value={r.name}>
+                    {r.name} (L{r.level_number || 1})
+                  </option>
+                ))}
+              </select>
+              <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>
+                {!form.department ? "Pick a department first" : nextRoleOptions.length === 0 ? "Add other roles in this department to link them" : "Must be another role in the same department"}
+              </span>
+            </label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>
+              Description
+              <input data-field-key="description" value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Optional" />
+            </label>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={editItem ? handleUpdate : handleCreate}>{busy ? "Saving…" : "Save"}</button>
@@ -725,336 +820,653 @@ function RolesSection({ roles, departments, loadAll }) {
           </div>
         </div>
       )}
-      <div className={s.tableContainer}>
-        <div className={s.tableWrap}>
-          <table className={s.table}>
-            <thead><tr><th>Role</th><th>Department</th><th>Level</th><th>Next Role</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
-            <tbody>
-              {roles.map((r) => (
-                <tr key={r.role_id}>
-                  <td style={{ fontWeight: 650, color: "var(--navy)" }}>{r.name}</td>
-                  <td><span className={`${s.statusPill} ${s.blue}`}>{r.department}</span></td>
-                  <td>L{r.level_number}</td>
-                  <td style={{ color: "var(--text-muted)" }}>{r.next_role || "—"}</td>
-                  <td style={{ textAlign: "right" }}>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => startEdit(r)}><Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ color: "var(--red)" }} onClick={() => handleDelete(r.role_id)}><Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+      {roles.length === 0 ? (
+        <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-muted)", fontSize: 13.5 }}>
+          No roles yet. Add departments first, then create roles and link them with <strong>Promotes to</strong>.
         </div>
-      </div>
-    </div>
-  );
-}
-
-function SkillsSection({ skills, roles, loadAll }) {
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [form, setForm] = useState({ role_name: "", skill_name: "", proficiency: "Intermediate", weight: 20 });
-  const [busy, setBusy] = useState(false);
-  const [formError, setFormError] = useState("");
-  const token = () => localStorage.getItem("access_token");
-  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const roleNames = [...new Set(roles.map((r) => r.name))].sort();
-
-  const validateForm = () => {
-    if (!form.role_name.trim()) return "Role is required.";
-    if (!form.skill_name.trim()) return "Skill name is required.";
-    const weight = Number(form.weight);
-    if (!Number.isInteger(weight) || weight < 1 || weight > 100) return "Weight must be a whole number between 1 and 100.";
-    return "";
-  };
-
-  const handleSave = async () => {
-    const error = validateForm();
-    if (error) return setFormError(error);
-    setBusy(true);
-    setFormError("");
-    try {
-      if (editItem) {
-        await updateOrgSkill(token(), editItem.skill_id, {
-          skill_name: form.skill_name.trim(),
-          proficiency: form.proficiency,
-          weight: Number(form.weight),
-        });
-        toast.success("Skill updated.");
-      } else {
-        await createOrgSkill(token(), { ...form, skill_name: form.skill_name.trim(), weight: Number(form.weight) });
-        toast.success("Skill added.");
-      }
-      setShowForm(false);
-      setEditItem(null);
-      setForm({ role_name: "", skill_name: "", proficiency: "Intermediate", weight: 20 });
-      await loadAll();
-    } catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
-    finally { setBusy(false); }
-  };
-
-  const handleDelete = async (skillId) => {
-    if (!confirm("Delete this skill?")) return;
-    try { await deleteOrgSkill(token(), skillId); toast.success("Deleted."); await loadAll(); }
-    catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
-  };
-
-  const startEdit = (sk) => {
-    setEditItem(sk);
-    setForm({ role_name: sk.role_name, skill_name: sk.skill_name, proficiency: sk.proficiency || "Intermediate", weight: sk.weight || 20 });
-    setShowForm(true);
-    setFormError("");
-  };
-
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>Skills ({skills.length})</h2>
-        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); setEditItem(null); setForm({ role_name: "", skill_name: "", proficiency: "Intermediate", weight: 20 }); setFormError(""); }}><Plus aria-hidden="true" /> Add Skill</button>
-      </div>
-      {showForm && (
-        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Skill" : "New Skill"}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Skill<input data-field-key="skill_name" value={form.skill_name} onChange={(e) => setField("skill_name", e.target.value)} placeholder="e.g. Python" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Proficiency<select data-field-key="proficiency" value={form.proficiency} onChange={(e) => setField("proficiency", e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option></select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Weight<input data-field-key="weight" type="number" min="1" max="100" value={form.weight} onChange={(e) => setField("weight", e.target.value)} /></label>
-          </div>
-          {formError && <div style={{ fontSize: 12.5, color: "var(--red)", marginTop: 8 }}>{formError}</div>}
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>
-            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => { setShowForm(false); setEditItem(null); }}>Cancel</button>
-          </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          {Object.entries(byDept).map(([dept, deptRoles]) => {
+            const ladders = buildDepartmentLadders(deptRoles);
+            return (
+              <div key={dept} className={s.ladderDept}>
+                <div className={s.ladderDeptHead}>
+                  <Building2 aria-hidden="true" style={{ width: 14, height: 14 }} />
+                  {dept}
+                  <span className={`${s.statusPill} ${s.neutral}`} style={{ fontSize: 10 }}>{deptRoles.length} roles</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {ladders.map((chain, idx) => (
+                    <div key={`${dept}-chain-${idx}`} className={s.ladderChain}>
+                      {chain.map((r, i) => (
+                        <div key={r.role_id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          {i > 0 && <span className={s.ladderArrow} aria-hidden="true">→</span>}
+                          <div className={s.ladderNode}>
+                            <span className={s.ladderLevel}>L{r.level_number || 1}</span>
+                            <span className={s.ladderName}>{r.name}</span>
+                            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(r)} title="Edit">
+                              <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
+                            </button>
+                            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto", color: "var(--red)" }} onClick={() => handleDelete(r.role_id)} title="Delete">
+                              <Trash2 aria-hidden="true" style={{ width: 11, height: 11 }} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {chain.length === 1 && !chain[0].next_role && (
+                        <span style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: 4 }}>standalone — set Promotes to</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {skills.map((sk) => {
-          const isEmployeeSkill = sk.source === "employee_skills";
-          return (
-            <div key={sk.skill_id || `${sk.role_name}-${sk.skill_name}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 12, background: isEmployeeSkill ? "#f8fafb" : "#fff" }}>
-              <span style={{ fontSize: 12.5, fontWeight: 650, color: "var(--navy)" }}>{sk.skill_name}</span>
-              <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>{sk.role_name}</span>
-              <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{sk.proficiency}{isEmployeeSkill && sk.employee_count ? ` · ${sk.employee_count} employee${sk.employee_count > 1 ? "s" : ""}` : ` · w:${sk.weight}`}</span>
-              {!isEmployeeSkill && (
-                <>
-                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(sk)}>
-                    <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
-                  </button>
-                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(sk.skill_id || `${sk.organization_id}:${sk.role_name}:${sk.skill_name}`)}>
-                    <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-                  </button>
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
 
-function CoursesSection({ courses, loadAll }) {
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [form, setForm] = useState({ name: "", provider: "", category: "", duration_hours: "", difficulty: "Beginner", url: "", description: "" });
-  const [busy, setBusy] = useState(false);
-  const token = () => localStorage.getItem("access_token");
-  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+function empCountKey(department, roleName) {
+  return `${(department || "").trim().toLowerCase()}::${(roleName || "").trim().toLowerCase()}`;
+}
 
-  const handleSave = async () => {
-    if (!form.name.trim()) return toast.error("Course name required.");
-    setBusy(true);
-    try {
-      if (editItem) { await updateOrgCourse(token(), editItem.course_id, form); toast.success("Updated."); }
-      else { await createOrgCourse(token(), form); toast.success("Created."); }
-      setShowForm(false); resetForm(); await loadAll();
-    } catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
-    finally { setBusy(false); }
-  };
-
-  const handleDelete = async (courseId) => {
-    if (!confirm("Delete this course?")) return;
-    try { await deleteOrgCourse(token(), courseId); toast.success("Deleted."); await loadAll(); }
-    catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
-  };
-
-  const resetForm = () => { setEditItem(null); setForm({ name: "", provider: "", category: "", duration_hours: "", difficulty: "Beginner", url: "", description: "" }); };
-  const startEdit = (c) => { setEditItem(c); setForm({ name: c.name, provider: c.provider || "", category: c.category || "", duration_hours: c.duration_hours || "", difficulty: c.difficulty || "Beginner", url: c.url || "", description: c.description || "" }); setShowForm(true); };
-
+function findRuleForRole(rules, role) {
+  const editable = (rules || []).filter((r) => r.source !== "career_levels");
+  const dept = (role.department || "").trim().toLowerCase();
+  const name = (role.name || "").trim().toLowerCase();
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>Course Catalog ({courses.length})</h2>
-        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); resetForm(); }}><Plus aria-hidden="true" /> Add Course</button>
-      </div>
-      {showForm && (
-        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Course" : "New Course"}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Name<input data-field-key="course_name" value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="Course name" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Provider<input data-field-key="provider" value={form.provider} onChange={(e) => setField("provider", e.target.value)} placeholder="e.g. Microsoft Learn" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Category<input data-field-key="course_category" value={form.category} onChange={(e) => setField("category", e.target.value)} placeholder="e.g. Programming" /></label>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 8 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Duration (hours)<input data-field-key="duration_hours" value={form.duration_hours} onChange={(e) => setField("duration_hours", e.target.value)} placeholder="e.g. 10" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Difficulty<select data-field-key="difficulty" value={form.difficulty} onChange={(e) => setField("difficulty", e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option></select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>URL (optional)<input data-field-key="url" value={form.url} onChange={(e) => setField("url", e.target.value)} placeholder="https://…" /></label>
-          </div>
-          <label className={s.fieldLabel} style={{ margin: "8px 0 0" }}>Description<textarea data-field-key="description" rows={2} value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Course description" style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 10, padding: 8, fontSize: 13, fontFamily: "inherit" }} /></label>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>
-            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => { setShowForm(false); resetForm(); }}>Cancel</button>
-          </div>
-        </div>
-      )}
-      <div className={s.tableContainer}>
-        <div className={s.tableWrap}>
-          <table className={s.table}>
-            <thead><tr><th>Course</th><th>Provider</th><th>Category</th><th>Duration</th><th>Difficulty</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
-            <tbody>
-              {courses.map((c) => (
-                <tr key={c.course_id}>
-                  <td style={{ fontWeight: 650, color: "var(--navy)" }}>{c.name}<div style={{ fontSize: 11, color: "var(--text-muted)" }}>{c.course_id}</div></td>
-                  <td>{c.provider || "—"}</td>
-                  <td><span className={`${s.statusPill} ${s.blue}`}>{c.category || "—"}</span></td>
-                  <td>{c.duration_hours ? `${c.duration_hours}h` : "—"}</td>
-                  <td><span className={`${s.statusPill} ${s.neutral}`}>{c.difficulty}</span></td>
-                  <td style={{ textAlign: "right" }}>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => startEdit(c)}><Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
-                    <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ color: "var(--red)" }} onClick={() => handleDelete(c.course_id)}><Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+    editable.find(
+      (r) =>
+        (r.role_name || "").trim().toLowerCase() === name &&
+        (r.department || "").trim().toLowerCase() === dept
+    ) ||
+    editable.find(
+      (r) =>
+        (r.role_name || "").trim().toLowerCase() === name &&
+        !r.department
+    ) ||
+    null
   );
 }
 
-function CertsSection({ certifications, roles, loadAll }) {
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [form, setForm] = useState({ role_name: "", certification_name: "", mandatory: true, expiration_months: "" });
+function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
+  const [activeDept, setActiveDept] = useState("");
+  const [editingKey, setEditingKey] = useState(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [form, setForm] = useState({
+    department: "",
+    role_name: "",
+    min_experience_months: 12,
+    required_readiness_pct: 80,
+    manager_approval_required: true,
+    min_skills_completed_pct: 100,
+    min_certs_completed: 0,
+  });
   const [busy, setBusy] = useState(false);
-  const [formError, setFormError] = useState("");
+  const [empCounts, setEmpCounts] = useState({});
   const token = () => localStorage.getItem("access_token");
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const roleNames = [...new Set(roles.map((r) => r.name))].sort();
+  const blankForm = (department = "") => ({
+    department,
+    role_name: "",
+    min_experience_months: 12,
+    required_readiness_pct: 80,
+    manager_approval_required: true,
+    min_skills_completed_pct: 100,
+    min_certs_completed: 0,
+  });
 
-  const validateForm = () => {
-    if (!form.role_name.trim()) return "Role is required.";
-    if (!form.certification_name.trim()) return "Certification name is required.";
-    if (form.expiration_months !== "" && form.expiration_months != null) {
-      const months = Number(form.expiration_months);
-      if (!Number.isInteger(months) || months < 1) return "Expiration must be a positive number of months.";
+  const byDept = {};
+  [...roles]
+    .sort(
+      (a, b) =>
+        (a.department || "").localeCompare(b.department || "") ||
+        (a.level_number || 0) - (b.level_number || 0) ||
+        (a.name || "").localeCompare(b.name || "")
+    )
+    .forEach((r) => {
+      const dept = r.department || "Unassigned";
+      if (!byDept[dept]) byDept[dept] = [];
+      byDept[dept].push(r);
+    });
+  const deptNames = Object.keys(byDept);
+
+  useEffect(() => {
+    if (!activeDept && deptNames.length) setActiveDept(deptNames[0]);
+    else if (activeDept && deptNames.length && !deptNames.includes(activeDept)) {
+      setActiveDept(deptNames[0] || "");
     }
-    return "";
+  }, [activeDept, deptNames.join("|")]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await listEmployees(token(), { limit: 2000 });
+        const list = Array.isArray(data) ? data : data?.employees || data?.items || [];
+        const counts = {};
+        for (const emp of list) {
+          const key = empCountKey(emp.department, emp.job_title || emp.current_role);
+          counts[key] = (counts[key] || 0) + 1;
+        }
+        if (!cancelled) setEmpCounts(counts);
+      } catch {
+        if (!cancelled) setEmpCounts({});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [roles.length]);
+
+  const startEdit = (role, existing) => {
+    setShowAddForm(false);
+    setEditingKey(role.role_id);
+    setForm({
+      department: role.department || "",
+      role_name: role.name,
+      min_experience_months: existing?.min_experience_months ?? 12,
+      required_readiness_pct: existing?.required_readiness_pct ?? 80,
+      manager_approval_required: existing?.manager_approval_required ?? true,
+      min_skills_completed_pct: existing?.min_skills_completed_pct ?? 100,
+      min_certs_completed: existing?.min_certs_completed ?? 0,
+    });
+  };
+
+  const startAdd = () => {
+    if (!activeDept) return toast.error("Pick a department first.");
+    setEditingKey(null);
+    setForm(blankForm(activeDept));
+    setShowAddForm(true);
   };
 
   const handleSave = async () => {
-    const error = validateForm();
-    if (error) return setFormError(error);
+    if (!form.role_name.trim() || !form.department.trim()) {
+      return toast.error("Department and role required.");
+    }
     setBusy(true);
-    setFormError("");
-    const payload = {
-      certification_name: form.certification_name.trim(),
-      mandatory: form.mandatory,
-      expiration_months: form.expiration_months === "" ? null : Number(form.expiration_months),
-    };
     try {
-      if (editItem) {
-        await updateOrgCertification(token(), editItem.cert_id, payload);
-        toast.success("Certification updated.");
-      } else {
-        await createOrgCertification(token(), { ...form, certification_name: form.certification_name.trim(), expiration_months: form.expiration_months === "" ? null : Number(form.expiration_months) });
-        toast.success("Added.");
-      }
-      setShowForm(false);
-      setEditItem(null);
-      setForm({ role_name: "", certification_name: "", mandatory: true, expiration_months: "" });
+      await upsertOrgPromotionRule(token(), form);
+      toast.success("Rule saved for this role.");
+      setEditingKey(null);
+      setShowAddForm(false);
       await loadAll();
-    } catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
-    finally { setBusy(false); }
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed."));
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleDelete = async (certId) => {
-    if (!confirm("Delete?")) return;
-    try { await deleteOrgCertification(token(), certId); toast.success("Deleted."); await loadAll(); }
-    catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
+  const handleDelete = async (role) => {
+    if (!confirm(`Remove readiness rule for ${role.name}?`)) return;
+    try {
+      await deleteOrgPromotionRule(token(), role.name, role.department);
+      toast.success("Deleted.");
+      if (editingKey === role.role_id) setEditingKey(null);
+      await loadAll();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed."));
+    }
   };
 
-  const startEdit = (c) => {
-    setEditItem(c);
-    setForm({ role_name: c.role_name, certification_name: c.certification_name, mandatory: !!c.mandatory, expiration_months: c.expiration_months ?? "" });
-    setShowForm(true);
-    setFormError("");
-  };
+  if (roles.length === 0) {
+    return (
+      <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-muted)" }}>
+        <div style={{ width: 56, height: 56, borderRadius: 16, background: "var(--blue-light)", color: "var(--blue-strong)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+          <TrendingUp aria-hidden="true" style={{ width: 24, height: 24 }} />
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", marginBottom: 8 }}>No roles yet</div>
+        <p style={{ fontSize: 13.5, maxWidth: 460, margin: "0 auto", lineHeight: 1.55 }}>
+          Build a <strong>Role ladder</strong> first (with Promotes to), then set readiness rules here per department.
+        </p>
+      </div>
+    );
+  }
+
+  const deptRoles = byDept[activeDept] || [];
+  const promotable = deptRoles.filter((r) => (r.next_role || "").trim());
+  const topOfLadder = deptRoles.filter((r) => !(r.next_role || "").trim());
+  const rulesInDept = promotable.filter((r) => findRuleForRole(rules, r)).length;
+
+  const empTotal = deptRoles.reduce(
+    (n, r) => n + (empCounts[empCountKey(r.department, r.name)] || 0),
+    0
+  );
+
+  const rolesNeedingRules = promotable.filter((r) => !findRuleForRole(rules, r));
+  const addRoleOptions = rolesNeedingRules.length ? rolesNeedingRules : promotable;
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>Certifications ({certifications.length})</h2>
-        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); setEditItem(null); setForm({ role_name: "", certification_name: "", mandatory: true, expiration_months: "" }); setFormError(""); }}><Plus aria-hidden="true" /> Add Certification</button>
+      <div className={s.promoHeader}>
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>
+            Promotion readiness
+          </h2>
+          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 560, lineHeight: 1.5 }}>
+            Filter by department, then add a rule for each ladder step.
+            Employees match by <strong>department + job title</strong>.
+          </p>
+        </div>
+        <div className={s.promoHeaderActions}>
+          <label className={s.promoFilter}>
+            <Building2 aria-hidden="true" style={{ width: 14, height: 14, flexShrink: 0 }} />
+            <span className={s.promoFilterLabel}>Department</span>
+            <select
+              data-field-key="filter_department"
+              value={activeDept}
+              onChange={(e) => {
+                setActiveDept(e.target.value);
+                setEditingKey(null);
+                setShowAddForm(false);
+              }}
+            >
+              {deptNames.map((dept) => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className={`${s.btn} ${s.btnPrimary}`}
+            onClick={startAdd}
+            disabled={!activeDept || promotable.length === 0}
+            title={promotable.length === 0 ? "Set Promotes to on Role ladders first" : "Add a promotion rule"}
+          >
+            <Plus aria-hidden="true" /> Add rule
+          </button>
+        </div>
       </div>
-      {showForm && (
-        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>{editItem ? "Edit Certification" : "New Certification"}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)} disabled={!!editItem}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Certification<input data-field-key="certification_name" value={form.certification_name} onChange={(e) => setField("certification_name", e.target.value)} placeholder="e.g. AZ-900" /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Expiration (months)<input data-field-key="expiration_months" value={form.expiration_months} onChange={(e) => setField("expiration_months", e.target.value)} placeholder="Optional" /></label>
+
+      {activeDept && (
+        <div className={s.promoDeptSummary}>
+          <span className={`${s.statusPill} ${s.neutral}`} style={{ fontSize: 10 }}>
+            {rulesInDept}/{promotable.length} rules set
+          </span>
+          <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
+            {empTotal} employee{empTotal === 1 ? "" : "s"} matched in {activeDept}
+          </span>
+        </div>
+      )}
+
+      {showAddForm && (
+        <div className={s.promoRuleForm} data-partner-coach style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>
+            Add promotion rule — {activeDept}
           </div>
-          <label className={s.cfCheckRow} style={{ marginTop: 8 }}><input data-field-key="mandatory" type="checkbox" checked={form.mandatory} onChange={(e) => setField("mandatory", e.target.checked)} /> Mandatory</label>
-          {formError && <div style={{ fontSize: 12.5, color: "var(--red)", marginTop: 8 }}>{formError}</div>}
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12 }}>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>
+              Role (promotes to next)
+              <select
+                data-field-key="role_name"
+                value={form.role_name}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  const role = promotable.find((r) => r.name === name);
+                  const existing = role ? findRuleForRole(rules, role) : null;
+                  setForm((f) => ({
+                    ...f,
+                    role_name: name,
+                    department: activeDept,
+                    min_experience_months: existing?.min_experience_months ?? 12,
+                    required_readiness_pct: existing?.required_readiness_pct ?? 80,
+                    manager_approval_required: existing?.manager_approval_required ?? true,
+                    min_skills_completed_pct: existing?.min_skills_completed_pct ?? 100,
+                    min_certs_completed: existing?.min_certs_completed ?? 0,
+                  }));
+                }}
+              >
+                <option value="">Select role</option>
+                {addRoleOptions.map((r) => (
+                  <option key={r.role_id} value={r.name}>
+                    {r.name} → {r.next_role}
+                    {findRuleForRole(rules, r) ? " (update)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>
+              Min time in role (months)
+              <input
+                data-field-key="min_experience_months"
+                type="number"
+                min="0"
+                value={form.min_experience_months}
+                onChange={(e) => setField("min_experience_months", parseInt(e.target.value) || 0)}
+              />
+            </label>
+            <label className={s.fieldLabel} style={{ margin: 0 }}>
+              Roadmap readiness %
+              <input
+                data-field-key="required_readiness_pct"
+                type="number"
+                min="0"
+                max="100"
+                value={form.required_readiness_pct}
+                onChange={(e) => setField("required_readiness_pct", parseInt(e.target.value) || 0)}
+              />
+            </label>
+          </div>
+          <label className={s.cfCheckRow} style={{ marginTop: 12 }}>
+            <input
+              data-field-key="manager_approval_required"
+              type="checkbox"
+              checked={form.manager_approval_required}
+              onChange={(e) => setField("manager_approval_required", e.target.checked)}
+            />
+            Manager approval required
+          </label>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>
-            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => { setShowForm(false); setEditItem(null); }}>Cancel</button>
+            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>
+              {busy ? "Saving…" : "Save rule"}
+            </button>
+            <button
+              type="button"
+              className={`${s.btn} ${s.btnSecondary}`}
+              onClick={() => { setShowAddForm(false); setForm(blankForm(activeDept)); }}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
-        {certifications.map((c) => {
-          const isEmployeeCert = c.source === "learning_certificates";
-          return (
-            <div key={c.cert_id || `${c.role_name}-${c.certification_name}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 12, background: isEmployeeCert ? "#f8fafb" : "#fff" }}>
-              <span style={{ fontSize: 13, fontWeight: 650, color: "var(--navy)", flex: 1 }}>{c.certification_name}</span>
-              <span className={`${s.statusPill} ${s.orange}`}>{c.role_name}</span>
-              {c.mandatory && <span className={`${s.statusPill} ${s.red}`}>Mandatory</span>}
-              {isEmployeeCert && c.employee_count ? <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{c.employee_count} earned</span> : null}
-              {!isEmployeeCert && (
-                <>
-                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(c)}>
-                    <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
-                  </button>
-                  <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(c.cert_id)}>
-                    <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-                  </button>
-                </>
+
+      {deptRoles.length === 0 ? (
+        <div className={s.promoEmpty}>
+          No roles in <strong>{activeDept}</strong> yet. Add roles in <strong>Role ladders</strong> first.
+          {typeof onGoToRoles === "function" && (
+            <div style={{ marginTop: 14 }}>
+              <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onGoToRoles}>
+                Open Role ladders
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className={s.promoRoleList}>
+          {promotable.length === 0 && (
+            <div className={s.promoHint}>
+              These roles exist, but none have a <strong>Promotes to</strong> link yet — so there is nowhere to promote.
+              Open <strong>Role ladders</strong>, edit the role, and set the next title (e.g. Software Developer → Senior Software Developer).
+              {typeof onGoToRoles === "function" && (
+                <button type="button" className={`${s.btn} ${s.btnPrimary}`} style={{ marginTop: 12 }} onClick={onGoToRoles}>
+                  Fix in Role ladders
+                </button>
               )}
             </div>
-          );
-        })}
-      </div>
+          )}
+
+          {promotable.map((role) => {
+            const existing = findRuleForRole(rules, role);
+            const people = empCounts[empCountKey(role.department, role.name)] || 0;
+            const isEditing = editingKey === role.role_id;
+            return (
+              <div key={role.role_id} className={s.promoRoleCard} data-partner-coach={isEditing ? true : undefined}>
+                <div className={s.promoRoleHead}>
+                  <div>
+                    <div className={s.promoRoleTitle}>
+                      <span className={s.ladderLevel}>L{role.level_number || 1}</span>
+                      {role.name}
+                      <span className={s.ladderArrow} aria-hidden="true">→</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-muted)" }}>{role.next_role}</span>
+                    </div>
+                    <div className={s.promoRoleMeta}>
+                      <Users aria-hidden="true" style={{ width: 12, height: 12 }} />
+                      {people === 0
+                        ? "No employees with this title yet"
+                        : `${people} employee${people === 1 ? "" : "s"} in this role`}
+                      {existing ? (
+                        <span className={`${s.statusPill} ${s.green}`} style={{ fontSize: 10 }}>Rule set</span>
+                      ) : (
+                        <span className={`${s.statusPill} ${s.neutral}`} style={{ fontSize: 10 }}>No rule</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    {!isEditing && (
+                      <button
+                        type="button"
+                        className={`${s.btn} ${s.btnSecondary}`}
+                        style={{ fontSize: 12, padding: "6px 10px" }}
+                        onClick={() => startEdit(role, existing)}
+                      >
+                        {existing ? "Edit rule" : "Set rule"}
+                      </button>
+                    )}
+                    {existing && !isEditing && (
+                      <button
+                        type="button"
+                        className={`${s.btn} ${s.btnGhost}`}
+                        style={{ color: "var(--red)" }}
+                        onClick={() => handleDelete(role)}
+                        title="Remove rule"
+                      >
+                        <Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {!isEditing && existing && (
+                  <div className={s.promoRuleSummary}>
+                    <span><Clock aria-hidden="true" style={{ width: 12, height: 12 }} /> {existing.min_experience_months} mo in role</span>
+                    <span><Route aria-hidden="true" style={{ width: 12, height: 12 }} /> {existing.required_readiness_pct}% roadmap</span>
+                    <span>
+                      {existing.manager_approval_required ? "Manager approval required" : "No manager approval"}
+                    </span>
+                  </div>
+                )}
+
+                {isEditing && (
+                  <div className={s.promoRuleForm}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+                      <label className={s.fieldLabel} style={{ margin: 0 }}>
+                        Min time in role (months)
+                        <input
+                          data-field-key="min_experience_months"
+                          type="number"
+                          min="0"
+                          value={form.min_experience_months}
+                          onChange={(e) => setField("min_experience_months", parseInt(e.target.value) || 0)}
+                        />
+                      </label>
+                      <label className={s.fieldLabel} style={{ margin: 0 }}>
+                        Roadmap readiness %
+                        <input
+                          data-field-key="required_readiness_pct"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={form.required_readiness_pct}
+                          onChange={(e) => setField("required_readiness_pct", parseInt(e.target.value) || 0)}
+                        />
+                        <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>
+                          % of {role.name} Career Roadmap completed
+                        </span>
+                      </label>
+                    </div>
+                    <label className={s.cfCheckRow} style={{ marginTop: 12 }}>
+                      <input
+                        data-field-key="manager_approval_required"
+                        type="checkbox"
+                        checked={form.manager_approval_required}
+                        onChange={(e) => setField("manager_approval_required", e.target.checked)}
+                      />
+                      Manager approval required
+                    </label>
+                    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                      <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>
+                        {busy ? "Saving…" : "Save rule"}
+                      </button>
+                      <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => setEditingKey(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {topOfLadder.map((role) => {
+            const people = empCounts[empCountKey(role.department, role.name)] || 0;
+            return (
+              <div key={role.role_id} className={`${s.promoRoleCard} ${s.promoRoleBlocked}`}>
+                <div className={s.promoRoleHead}>
+                  <div>
+                    <div className={s.promoRoleTitle}>
+                      <span className={s.ladderLevel}>L{role.level_number || 1}</span>
+                      {role.name}
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-faint)" }}>· no next role</span>
+                    </div>
+                    <div className={s.promoRoleMeta}>
+                      <Users aria-hidden="true" style={{ width: 12, height: 12 }} />
+                      {people === 0
+                        ? "No employees with this title yet"
+                        : `${people} employee${people === 1 ? "" : "s"} in this role`}
+                      <span className={`${s.statusPill} ${s.neutral}`} style={{ fontSize: 10 }}>Needs Promotes to</span>
+                    </div>
+                    <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.45 }}>
+                      Add another role in this department (or pick an existing one), then set <strong>Promotes to</strong> on {role.name}.
+                    </p>
+                  </div>
+                  {typeof onGoToRoles === "function" && (
+                    <button type="button" className={`${s.btn} ${s.btnSecondary}`} style={{ fontSize: 12, padding: "6px 10px" }} onClick={onGoToRoles}>
+                      Role ladders
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-function RoadmapsSection({ roadmaps, roles, courses, loadAll }) {
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ role_name: "", course_id: "", mandatory: true });
+function CareerRoadmapsSection({ roles, roadmaps, loadAll }) {
+  const grouped = {};
+  [...roles]
+    .sort(
+      (a, b) =>
+        (a.department || "").localeCompare(b.department || "") ||
+        (a.level_number || 0) - (b.level_number || 0) ||
+        (a.name || "").localeCompare(b.name || "")
+    )
+    .forEach((r) => {
+      const dept = r.department || "Unassigned";
+      if (!grouped[dept]) grouped[dept] = [];
+      grouped[dept].push(r);
+    });
+
+  if (roles.length === 0) {
+    return (
+      <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-muted)" }}>
+        <div style={{ width: 56, height: 56, borderRadius: 16, background: "var(--blue-light)", color: "var(--blue-strong)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+          <Route aria-hidden="true" style={{ width: 24, height: 24 }} />
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", marginBottom: 8 }}>No roles yet</div>
+        <p style={{ fontSize: 13.5, maxWidth: 460, margin: "0 auto", lineHeight: 1.55 }}>
+          Add roles in the <strong>Roles</strong> tab first — then build each role&apos;s learning path from your catalog here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>
+          Career Roadmaps ({roles.length} roles)
+        </h2>
+        <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
+          Modules, learning paths, courses, and certifications from your catalogs
+        </span>
+      </div>
+      {Object.entries(grouped).map(([dept, deptRoles]) => (
+        <div key={dept} className={s.deptGroup}>
+          <div className={s.deptGroupTitle}>
+            <span>{dept}</span>
+            <span>{deptRoles.length} role{deptRoles.length > 1 ? "s" : ""}</span>
+          </div>
+          {deptRoles.map((role) => (
+            <RoleCard
+              key={role.role_id}
+              role={role}
+              roleCourses={roadmaps.filter((r) => r.role_name === role.name)}
+              loadAll={loadAll}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RoleCard({ role, roleCourses, loadAll }) {
+  const [open, setOpen] = useState(true);
+  const certCount = roleCourses.filter((c) => catalogTypeKey(c) === "certification").length;
+
+  return (
+    <div className={s.roleCard} data-partner-coach>
+      <button type="button" className={s.roleCardHead} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className={s.roleCardTitle}>{role.name}</div>
+          <div className={s.roleCardMeta}>
+            {role.department}
+            {role.level_number ? ` · Level ${role.level_number}` : ""}
+            {role.next_role ? ` · Next: ${role.next_role}` : ""}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className={`${s.statusPill} ${s.neutral}`}>
+            {roleCourses.length} item{roleCourses.length === 1 ? "" : "s"}
+            {certCount > 0 ? ` · ${certCount} cert${certCount === 1 ? "" : "s"}` : ""}
+          </span>
+          <ChevronDown aria-hidden="true" style={{ width: 16, height: 16, color: "var(--text-muted)", transform: open ? "none" : "rotate(-90deg)", transition: "transform .15s var(--ease)" }} />
+        </div>
+      </button>
+      {open && (
+        <div>
+          <RoleCoursesBlock roleName={role.name} entries={roleCourses} loadAll={loadAll} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RoleCoursesBlock({ roleName, entries, loadAll }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const token = () => localStorage.getItem("access_token");
-  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const roleNames = [...new Set(roles.map((r) => r.name))].sort();
 
-  const handleCreate = async () => {
-    if (!form.role_name.trim() || !form.course_id.trim()) return toast.error("Role and course required.");
+  const sorted = [...entries].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+  const handleCreate = async (course) => {
+    if (!course || !course.uid) return;
     setBusy(true);
-    try { await createOrgRoadmap(token(), { ...form, course_name: courses.find((c) => c.course_id === form.course_id)?.name || form.course_id }); toast.success("Added."); setShowForm(false); setForm({ role_name: "", course_id: "", mandatory: true }); await loadAll(); }
-    catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
+    try {
+      await createOrgRoadmap(token(), {
+        role_name: roleName,
+        course_id: course.uid,
+        course_name: course.title,
+        catalog_type: course.type || null,
+        category: course.category || null,
+        competency: course.competency || null,
+        skills: courseSkills(course),
+        certifications: courseCerts(course),
+        mandatory: true,
+      });
+      toast.success(
+        catalogTypeKey(course) === "certification"
+          ? `"${course.title}" added (certification).`
+          : `"${course.title}" added to roadmap.`
+      );
+      await loadAll();
+    } catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
     finally { setBusy(false); }
   };
 
@@ -1064,163 +1476,108 @@ function RoadmapsSection({ roadmaps, roles, courses, loadAll }) {
     catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
   };
 
-  const handleReorder = async (roleName, orderedIds) => {
+  const handleToggleMandatory = async (entry) => {
+    if (!entry?.roadmap_id || busy) return;
+    setBusy(true);
+    try {
+      await updateOrgRoadmap(token(), entry.roadmap_id, { mandatory: !entry.mandatory });
+      toast.success(entry.mandatory ? "Marked optional." : "Marked mandatory.");
+      await loadAll();
+    } catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
+    finally { setBusy(false); }
+  };
+
+  const handleReorder = async (orderedIds) => {
     setBusy(true);
     try { await reorderOrgRoadmap(token(), roleName, orderedIds); toast.success("Order updated."); await loadAll(); }
     catch (err) { toast.error(getApiErrorMessage(err, "Reorder failed.")); }
     finally { setBusy(false); }
   };
 
-  const moveEntry = async (roleName, entries, index, direction) => {
+  const moveEntry = async (index, direction) => {
     const target = index + direction;
-    if (target < 0 || target >= entries.length) return;
-    const next = [...entries];
+    if (target < 0 || target >= sorted.length) return;
+    const next = [...sorted];
     const [item] = next.splice(index, 1);
     next.splice(target, 0, item);
-    await handleReorder(roleName, next.map((e) => e.roadmap_id));
+    await handleReorder(next.map((e) => e.roadmap_id));
   };
 
-  const groupedByRole = {};
-  roadmaps.forEach((r) => { if (!groupedByRole[r.role_name]) groupedByRole[r.role_name] = []; groupedByRole[r.role_name].push(r); });
-
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>Learning Roadmaps ({roadmaps.length} entries)</h2>
-        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => setShowForm(true)}><Plus aria-hidden="true" /> Add to Roadmap</button>
+    <div className={s.roleBlock}>
+      <div className={s.roleBlockHead}>
+        <div className={s.roleBlockLabel}><BookOpen aria-hidden="true" /> Learning path (in order)</div>
+        <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => setPickerOpen(true)}>
+          <Plus aria-hidden="true" style={{ width: 12, height: 12 }} /> Add from catalog
+        </button>
       </div>
-      {showForm && (
-        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>Add Course to Roadmap</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 12, alignItems: "end" }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Course<select data-field-key="course_id" value={form.course_id} onChange={(e) => setField("course_id", e.target.value)}><option value="">Select</option>{courses.map((c) => <option key={c.course_id} value={c.course_id}>{c.name}</option>)}</select></label>
-            <label className={s.cfCheckRow}><input data-field-key="mandatory" type="checkbox" checked={form.mandatory} onChange={(e) => setField("mandatory", e.target.checked)} /> Mandatory</label>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleCreate}>{busy ? "Saving…" : "Save"}</button>
-            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => setShowForm(false)}>Cancel</button>
-          </div>
-        </div>
-      )}
-      {Object.entries(groupedByRole).map(([roleName, entries]) => {
-        const sorted = [...entries].sort((a, b) => (a.order || 0) - (b.order || 0));
-        return (
-          <div key={roleName} style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 14, fontWeight: 750, color: "var(--navy)", fontFamily: "'Sora', system-ui", marginBottom: 8 }}>{roleName}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {sorted.map((r, index) => {
-                const fromCareer = r.source === "career_levels";
-                return (
-                <div key={r.roadmap_id || `${r.role_name}-${r.course_name || r.course_id}-${index}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: fromCareer ? "#f8fafb" : "#fbfcfe", fontSize: 13 }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-faint)", minWidth: 22 }}>{index + 1}.</span>
-                  <span style={{ fontWeight: 650, color: "var(--navy)", flex: 1 }}>{r.course_name || r.course_id}</span>
-                  {r.mandatory && <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>Mandatory</span>}
-                  {fromCareer && <span className={`${s.statusPill} ${s.orange}`} style={{ fontSize: 10 }}>Career Level</span>}
-                  <div style={{ display: "flex", gap: 2 }}>
-                    {!fromCareer && (
-                      <>
-                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === 0} onClick={() => moveEntry(roleName, sorted, index, -1)} aria-label="Move up">
-                          ↑
-                        </button>
-                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === sorted.length - 1} onClick={() => moveEntry(roleName, sorted, index, 1)} aria-label="Move down">
-                          ↓
-                        </button>
-                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(r.roadmap_id)}>
-                          <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
-                        </button>
-                      </>
-                    )}
-                  </div>
+      {sorted.length === 0 ? (
+        <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>
+          No catalog items yet — filter by type (module, path, course, cert) and add from your catalogs.
+        </span>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {sorted.map((r, index) => {
+            const fromCareer = r.source === "career_levels";
+            const skills = courseSkills(r);
+            const certs = courseCerts({ ...r, title: r.course_name || r.title });
+            return (
+              <div key={r.roadmap_id || `${r.role_name}-${r.course_name || r.course_id}-${index}`} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 12px", border: "1px solid var(--border-soft)", borderRadius: 10, background: fromCareer ? "#f8fafb" : "#fbfcfe", fontSize: 13 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-faint)", minWidth: 22, paddingTop: 2 }}>{index + 1}.</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 650, color: "var(--navy)" }}>{r.course_name || r.course_id}</div>
+                  {(skills.length > 0 || certs.length > 0) && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5 }}>
+                      {skills.slice(0, 3).map((skill) => (
+                        <span key={skill} className={`${s.statusPill} ${s.green}`} style={{ fontSize: 9 }}>{skill}</span>
+                      ))}
+                      {certs.slice(0, 2).map((cert) => (
+                        <span key={cert} className={`${s.statusPill} ${s.orange}`} style={{ fontSize: 9 }}>{cert}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function PromotionSection({ rules, roles, loadAll }) {
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ role_name: "", min_experience_months: 12, required_readiness_pct: 80, manager_approval_required: true, min_skills_completed_pct: 100, min_certs_completed: 0 });
-  const [busy, setBusy] = useState(false);
-  const token = () => localStorage.getItem("access_token");
-  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const roleNames = [...new Set(roles.map((r) => r.name))].sort();
-
-  const handleSave = async () => {
-    if (!form.role_name.trim()) return toast.error("Role required.");
-    setBusy(true);
-    try { await upsertOrgPromotionRule(token(), form); toast.success("Saved."); setShowForm(false); await loadAll(); }
-    catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
-    finally { setBusy(false); }
-  };
-
-  const handleDelete = async (roleName) => {
-    if (!confirm("Delete promotion rule?")) return;
-    try { await deleteOrgPromotionRule(token(), roleName); toast.success("Deleted."); await loadAll(); }
-    catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
-  };
-
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>Promotion Rules ({rules.length})</h2>
-        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => setShowForm(true)}><Plus aria-hidden="true" /> Add Rule</button>
-      </div>
-      {showForm && (
-        <div data-partner-coach style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 18, marginBottom: 18, background: "#fafcfe" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy)", marginBottom: 12 }}>Promotion Rule</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Role<select data-field-key="role_name" value={form.role_name} onChange={(e) => setField("role_name", e.target.value)}><option value="">Select</option>{roleNames.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Experience (months)<input data-field-key="min_experience_months" type="number" min="0" value={form.min_experience_months} onChange={(e) => setField("min_experience_months", parseInt(e.target.value) || 0)} /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Required Readiness %<input data-field-key="required_readiness_pct" type="number" min="0" max="100" value={form.required_readiness_pct} onChange={(e) => setField("required_readiness_pct", parseInt(e.target.value) || 0)} /></label>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 8 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Skills %<input data-field-key="min_skills_completed_pct" type="number" min="0" max="100" value={form.min_skills_completed_pct} onChange={(e) => setField("min_skills_completed_pct", parseInt(e.target.value) || 0)} /></label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>Min Certs Completed<input data-field-key="min_certs_completed" type="number" min="0" value={form.min_certs_completed} onChange={(e) => setField("min_certs_completed", parseInt(e.target.value) || 0)} /></label>
-            <label className={s.cfCheckRow} style={{ marginTop: 22 }}><input data-field-key="manager_approval_required" type="checkbox" checked={form.manager_approval_required} onChange={(e) => setField("manager_approval_required", e.target.checked)} /> Manager Approval Required</label>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={handleSave}>{busy ? "Saving…" : "Save"}</button>
-            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => setShowForm(false)}>Cancel</button>
-          </div>
+                <CatalogTypeBadge item={r} />
+                {!fromCareer ? (
+                  <button
+                    type="button"
+                    className={`${s.statusPill} ${r.mandatory ? s.blue : s.neutral}`}
+                    style={{ fontSize: 10, cursor: busy ? "wait" : "pointer", border: "none" }}
+                    disabled={busy}
+                    onClick={() => handleToggleMandatory(r)}
+                    title={r.mandatory ? "Click to make optional" : "Click to make mandatory"}
+                  >
+                    {r.mandatory ? "Mandatory" : "Optional"}
+                  </button>
+                ) : (
+                  r.mandatory && <span className={`${s.statusPill} ${s.blue}`} style={{ fontSize: 10 }}>Mandatory</span>
+                )}
+                {fromCareer && <span className={`${s.statusPill} ${s.orange}`} style={{ fontSize: 10 }}>Career Level</span>}
+                <div style={{ display: "flex", gap: 2 }}>
+                  {!fromCareer && (
+                    <>
+                      <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === 0} onClick={() => moveEntry(index, -1)} aria-label="Move up">↑</button>
+                      <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} disabled={busy || index === sorted.length - 1} onClick={() => moveEntry(index, 1)} aria-label="Move down">↓</button>
+                      <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => handleDelete(r.roadmap_id)}>
+                        <Trash2 aria-hidden="true" style={{ width: 11, height: 11, color: "var(--red)" }} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
-      <div className={s.tableContainer}>
-        <div className={s.tableWrap}>
-          <table className={s.table}>
-            <thead><tr><th>Role</th><th>Min Experience</th><th>Readiness %</th><th>Skills %</th><th>Min Certs</th><th>Manager Approval</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
-            <tbody>
-              {rules.map((r) => {
-                const fromCareer = r.source === "career_levels";
-                return (
-                <tr key={r.role_name} style={fromCareer ? { background: "#f8fafb" } : undefined}>
-                  <td style={{ fontWeight: 650, color: "var(--navy)" }}>{r.role_name}</td>
-                  <td>{r.min_experience_months}mo</td>
-                  <td>{r.required_readiness_pct}%</td>
-                  <td>{r.min_skills_completed_pct}%</td>
-                  <td>{r.min_certs_completed}</td>
-                  <td>{r.manager_approval_required ? <span className={`${s.statusPill} ${s.green}`}>Required</span> : <span className={`${s.statusPill} ${s.neutral}`}>Not required</span>}</td>
-                  <td style={{ textAlign: "right" }}>
-                    {!fromCareer && (
-                      <>
-                        <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => { setForm({ role_name: r.role_name, min_experience_months: r.min_experience_months, required_readiness_pct: r.required_readiness_pct, manager_approval_required: r.manager_approval_required, min_skills_completed_pct: r.min_skills_completed_pct || 100, min_certs_completed: r.min_certs_completed || 0 }); setShowForm(true); }}><Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
-                        <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ color: "var(--red)" }} onClick={() => handleDelete(r.role_name)}><Trash2 aria-hidden="true" style={{ width: 12, height: 12 }} /></button>
-                      </>
-                    )}
-                    {fromCareer && <span className={`${s.statusPill} ${s.orange}`} style={{ fontSize: 10 }}>Career Level</span>}
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {pickerOpen && (
+        <CatalogPicker
+          title={`Add to roadmap — ${roleName}`}
+          onClose={() => setPickerOpen(false)}
+          isAdded={(c) => sorted.some((e) => e.course_id === c.uid)}
+          pickLabel="Add"
+          onPick={handleCreate}
+        />
+      )}
     </div>
   );
 }

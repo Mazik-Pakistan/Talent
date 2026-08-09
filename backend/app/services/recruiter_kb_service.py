@@ -272,6 +272,8 @@ class RecruiterKnowledgeBaseService:
                     "roles": [],
                     "products": doc.get("skills_covered") or [],
                     "subjects": doc.get("skills_covered") or [],
+                    "skills_covered": doc.get("skills_covered") or [],
+                    "certifications": [doc.get("title")] if doc.get("title") else [],
                     "provider": doc.get("provider"),
                     "estimated_hours": hours,
                     "priority": doc.get("priority"),

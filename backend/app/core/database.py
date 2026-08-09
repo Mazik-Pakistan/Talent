@@ -346,7 +346,15 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.org_framework_courses, [("organization_id", 1), ("course_id", 1)], unique=True)
     await _ensure_index(database.org_framework_roadmaps, [("organization_id", 1), ("roadmap_id", 1)], unique=True)
     await _ensure_index(database.org_framework_roadmaps, [("organization_id", 1), ("role_name", 1), ("course_id", 1)])
-    await _ensure_index(database.org_framework_promotion_rules, [("organization_id", 1), ("role_name", 1)], unique=True)
+    # Promotion rules are scoped per department + role (same title may exist in multiple depts).
+    promo_indexes = await _index_names(database.org_framework_promotion_rules)
+    if "organization_id_1_role_name_1" in promo_indexes:
+        await _drop_index_quiet(database.org_framework_promotion_rules, "organization_id_1_role_name_1")
+    await _ensure_index(
+        database.org_framework_promotion_rules,
+        [("organization_id", 1), ("department", 1), ("role_name", 1)],
+        unique=True,
+    )
     await _ensure_index(database.org_framework_versions, [("organization_id", 1), ("created_at", -1)])
 
     # Organization-scoped email templates

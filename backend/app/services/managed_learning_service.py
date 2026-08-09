@@ -268,6 +268,18 @@ def _course_uid(doc: dict) -> str:
 
 
 def _public_course(doc: dict) -> dict:
+    competency = (doc.get("competency") or "").strip()
+    category = (doc.get("category") or "").strip()
+    tags = [t for t in (doc.get("tags") or []) if t]
+    # Expose competency/category/tags in the shared catalog fields so the
+    # learning API can derive skills the same way for every managed provider
+    # (LinkedIn Learning, Skillsoft, Company Academy, …).
+    subjects = []
+    if competency:
+        subjects.append(competency)
+    for tag in tags:
+        if tag not in subjects:
+            subjects.append(tag)
     return {
         "uid": _course_uid(doc),
         "type": "course",
@@ -275,8 +287,8 @@ def _public_course(doc: dict) -> dict:
         "provider": doc.get("provider") or "Managed Learning",
         "designation": doc.get("designation") or "",
         "learning_month": doc.get("learning_month") or "",
-        "category": doc.get("category") or "",
-        "competency": doc.get("competency") or "",
+        "category": category,
+        "competency": competency,
         "title": doc.get("title") or "",
         "summary": doc.get("description") or "",
         "url": doc.get("url") or "",
@@ -287,6 +299,9 @@ def _public_course(doc: dict) -> dict:
         "source_kind": doc.get("source_kind") or "manual",
         "hierarchy_path": doc.get("hierarchy_path") or [],
         "hierarchy_key": doc.get("hierarchy_key"),
+        "tags": tags,
+        "subjects": subjects,
+        "skills_covered": subjects,
         "last_modified": _iso(doc.get("updated_at") or doc.get("created_at")),
     }
 

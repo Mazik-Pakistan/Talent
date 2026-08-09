@@ -150,19 +150,82 @@ class LearningService:
         return titles
 
     def _public_course(self, item: dict) -> dict:
+        """Normalize any catalog provider into a shared public course shape.
+
+        Skills / certifications are derived from whatever metadata that provider
+        actually stores — same logic for Microsoft Learn, Coursera, managed
+        providers (LinkedIn Learning, Skillsoft, Company Academy, …), and the
+        recruiter knowledge base. We never invent outcomes that are not present
+        in the catalog item.
+        """
+        competency = (item.get("competency") or "").strip() or None
+        category = (item.get("category") or "").strip() or None
+        subjects = [s for s in (item.get("subjects") or []) if s]
+        products = [p for p in (item.get("products") or []) if p]
+
+        skills: list[str] = []
+
+        def _push(value) -> None:
+            if value is None:
+                return
+            if isinstance(value, (list, tuple, set)):
+                for entry in value:
+                    _push(entry)
+                return
+            text = str(value).strip()
+            if text and text not in skills:
+                skills.append(text)
+
+        # Provider-agnostic skill fields (order = preference).
+        _push(item.get("skills"))
+        _push(item.get("skills_covered"))
+        _push(item.get("tags"))
+        _push(competency)
+        _push(subjects)
+        _push(products)
+        # Topic-level fallback when a provider only has category metadata.
+        if not skills:
+            _push(category)
+
+        course_type = str(item.get("type") or "").lower()
+        certifications: list[str] = []
+
+        def _push_cert(value) -> None:
+            if value is None:
+                return
+            if isinstance(value, (list, tuple, set)):
+                for entry in value:
+                    _push_cert(entry)
+                return
+            text = str(value).strip()
+            if text and text not in certifications:
+                certifications.append(text)
+
+        _push_cert(item.get("certifications"))
+        _push_cert(item.get("required_certifications"))
+        if item.get("certification_type") and item.get("title"):
+            _push_cert(item.get("title"))
+        if "cert" in course_type and item.get("title"):
+            _push_cert(item.get("title"))
+
         return {
             "uid": item.get("uid"),
             "type": item.get("type"),
             "source": item.get("source", "microsoft_learn"),
-            "category": item.get("category"),
+            "provider": item.get("provider"),
+            "category": category,
+            "competency": competency,
+            "designation": item.get("designation"),
             "title": item.get("title"),
             "summary": item.get("summary"),
             "url": item.get("url"),
             "duration_minutes": item.get("duration_minutes"),
             "levels": item.get("levels"),
             "roles": item.get("roles"),
-            "products": item.get("products"),
-            "subjects": item.get("subjects"),
+            "products": products,
+            "subjects": subjects,
+            "skills": skills[:12],
+            "certifications": certifications[:8],
             "icon_url": item.get("icon_url"),
             "last_modified": item.get("last_modified"),
             "ai_recommended": bool(item.get("_ai_recommended")),
@@ -501,11 +564,149 @@ class LearningService:
                     )
                 except Exception:
                     pass
-            # Credit the mapped career-path skill so readiness can improve on re-analyze
+            # Credit AI career-path skill (gap analysis). Roadmap skills/certs
+            # are awarded only after recruiter verifies the uploaded certificate.
             await self._credit_skill_from_completed_course(current_user, uid, enrollment)
 
         updated = await database.learning_enrollments.find_one({"_id": enrollment["_id"]})
         return {"enrollment": self._public_enrollment(updated)}
+
+    async def _collect_outcomes_for_course(
+        self,
+        *,
+        course_uid: str | None,
+        organization_id: str | None = None,
+        course_title: str | None = None,
+    ) -> dict[str, list[str]]:
+        """Skills / certifications attached to a catalog item via Career Roadmaps or catalog metadata."""
+        skills: list[str] = []
+        certifications: list[str] = []
+
+        def _push(bucket: list[str], value) -> None:
+            if value is None:
+                return
+            if isinstance(value, (list, tuple, set)):
+                for entry in value:
+                    _push(bucket, entry)
+                return
+            text = str(value).strip()
+            if text and text not in bucket:
+                bucket.append(text)
+
+        if course_uid:
+            roadmap_q: dict[str, Any] = {"course_id": course_uid}
+            if organization_id:
+                roadmap_q["organization_id"] = organization_id
+            roadmap_rows = await database.org_framework_roadmaps.find(roadmap_q).to_list(length=50)
+            for row in roadmap_rows:
+                _push(skills, row.get("skills"))
+                _push(skills, row.get("competency"))
+                _push(certifications, row.get("certifications"))
+                catalog_type = str(row.get("catalog_type") or "").lower()
+                name = (row.get("course_name") or course_title or "").strip()
+                if "cert" in catalog_type and name:
+                    _push(certifications, name)
+
+            item = await catalog_service.get_course_by_uid(course_uid)
+            if item:
+                public = self._public_course(item)
+                _push(skills, public.get("skills"))
+                _push(certifications, public.get("certifications"))
+
+        return {"skills": skills[:12], "certifications": certifications[:8]}
+
+    async def _upsert_profile_certification(
+        self,
+        *,
+        user_id: str,
+        employee_id: str | None,
+        organization_id: str | None,
+        recruiter_id: str | None,
+        title: str,
+        course_uid: str | None,
+        source: str = "org_roadmap",
+    ) -> None:
+        """Ensure a verified certification appears on the employee profile."""
+        title = (title or "").strip()
+        if not title:
+            return
+        existing = await database.learning_certificates.find_one(
+            {
+                "user_id": user_id,
+                "course_title": {"$regex": f"^{_escape_regex(title)}$", "$options": "i"},
+                "verification_status": "verified",
+            }
+        )
+        if existing:
+            return
+        now = _now()
+        await database.learning_certificates.insert_one(
+            {
+                "user_id": user_id,
+                "employee_id": employee_id,
+                "organization_id": organization_id,
+                "recruiter_id": recruiter_id,
+                "course_uid": course_uid,
+                "course_title": title,
+                "file_name": None,
+                "file_url": None,
+                "source_url": None,
+                "learning_hours": None,
+                "completion_date": now.date().isoformat(),
+                "verification_status": "verified",
+                "verified_by": "Career Roadmap",
+                "verified_at": now,
+                "skills_awarded": [],
+                "source": source,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
+    async def _award_course_outcomes_to_profile(
+        self,
+        *,
+        user_id: str,
+        employee_id: str | None,
+        organization_id: str | None,
+        course_uid: str | None,
+        course_title: str | None = None,
+        source: str = "course",
+        award_certifications: bool = True,
+        recruiter_id: str | None = None,
+    ) -> dict[str, list[str]]:
+        """Write Career Roadmap / catalog skills (and optional certs) onto the employee profile."""
+        outcomes = await self._collect_outcomes_for_course(
+            course_uid=course_uid,
+            organization_id=organization_id,
+            course_title=course_title,
+        )
+        for skill_name in outcomes["skills"]:
+            await self._upsert_verified_skill(
+                user_id=user_id,
+                employee_id=employee_id,
+                skill_name=skill_name,
+                category="Other",
+                proficiency="Intermediate",
+                source=source,
+            )
+        if award_certifications:
+            for cert_title in outcomes["certifications"]:
+                # Skip duplicating the certificate the employee just uploaded/verified.
+                if course_title and cert_title.strip().lower() == course_title.strip().lower():
+                    continue
+                await self._upsert_profile_certification(
+                    user_id=user_id,
+                    employee_id=employee_id,
+                    organization_id=organization_id,
+                    recruiter_id=recruiter_id,
+                    title=cert_title,
+                    course_uid=course_uid,
+                    source="org_roadmap",
+                )
+        if outcomes["skills"] or (award_certifications and outcomes["certifications"]):
+            await self._invalidate_ai_caches(user_id)
+        return outcomes
 
     async def _credit_skill_from_completed_course(
         self, current_user: CurrentUser, course_uid: str, enrollment: dict
@@ -880,6 +1081,10 @@ class LearningService:
                     }
                 },
             )
+            await self._award_verified_certificate_outcomes(
+                cert=cert,
+                verifier=current_user,
+            )
             await create_notification(
                 recipient_id=cert["user_id"],
                 recipient_role="employee",
@@ -898,30 +1103,68 @@ class LearningService:
             updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
             return {"certificate": self._public_certificate(updated)}
 
+        # 1) Always award Career Roadmap / catalog skills + cert labels first
+        #    (these are the chips on the roadmap — e.g. Accountability).
+        # 2) Best-effort AI extraction from the certificate file as extra skills.
+        # Verification succeeds even if AI extraction fails.
+        employee = None
+        if cert.get("employee_id"):
+            employee = await database.employees.find_one({"employee_id": cert["employee_id"]})
+        if not employee and cert.get("user_id"):
+            employee = await database.employees.find_one({"user_id": cert["user_id"]})
+        org_id = (
+            (employee or {}).get("organization_id")
+            or cert.get("organization_id")
+            or current_user.organization_id
+        )
+
+        skill_names: list[str] = []
+        roadmap_outcomes: dict[str, list[str]] = {"skills": [], "certifications": []}
         try:
+            roadmap_outcomes = await self._award_course_outcomes_to_profile(
+                user_id=cert["user_id"],
+                employee_id=cert.get("employee_id"),
+                organization_id=org_id,
+                course_uid=cert.get("course_uid"),
+                course_title=cert.get("course_title"),
+                source="course",
+                award_certifications=True,
+                recruiter_id=cert.get("recruiter_id") or current_user.id,
+            )
+            skill_names.extend(roadmap_outcomes.get("skills") or [])
+
             course_summary = None
             if cert.get("course_uid"):
                 course = await catalog_service.get_course_by_uid(cert["course_uid"])
                 course_summary = (course or {}).get("summary")
 
-            cert_text = await self._extract_certificate_text(cert)
-            skills = await learning_ai_service.extract_skills_from_certificate(
-                course_title=cert["course_title"],
-                certificate_text=cert_text,
-                course_summary=course_summary,
-            )
-
-            skill_names = []
-            for skill in skills:
-                await self._upsert_verified_skill(
-                    user_id=cert["user_id"],
-                    employee_id=cert.get("employee_id"),
-                    skill_name=skill["skill_name"],
-                    category=skill.get("category") or "Other",
-                    proficiency=skill.get("proficiency") or "Intermediate",
-                    source="course",
+            try:
+                cert_text = await self._extract_certificate_text(cert)
+                skills = await learning_ai_service.extract_skills_from_certificate(
+                    course_title=cert["course_title"],
+                    certificate_text=cert_text,
+                    course_summary=course_summary,
                 )
-                skill_names.append(skill["skill_name"])
+                for skill in skills:
+                    name = (skill.get("skill_name") or "").strip()
+                    if not name:
+                        continue
+                    await self._upsert_verified_skill(
+                        user_id=cert["user_id"],
+                        employee_id=cert.get("employee_id"),
+                        skill_name=name,
+                        category=skill.get("category") or "Other",
+                        proficiency=skill.get("proficiency") or "Intermediate",
+                        source="course",
+                    )
+                    if name not in skill_names:
+                        skill_names.append(name)
+            except Exception as ai_exc:
+                logger.warning(
+                    "AI skill extraction failed for certificate %s (roadmap skills still awarded): %s",
+                    cert.get("_id"),
+                    ai_exc,
+                )
 
             await self._invalidate_ai_caches(cert["user_id"])
 
@@ -934,6 +1177,7 @@ class LearningService:
                         "verified_at": now,
                         "rejection_reason": None,
                         "skills_awarded": skill_names,
+                        "certifications_awarded": roadmap_outcomes.get("certifications") or [],
                         "updated_at": now,
                     }
                 },
@@ -977,6 +1221,31 @@ class LearningService:
             pass
         updated = await database.learning_certificates.find_one({"_id": cert["_id"]})
         return {"certificate": self._public_certificate(updated)}
+
+    async def _award_verified_certificate_outcomes(
+        self, *, cert: dict, verifier: CurrentUser
+    ) -> dict[str, list[str]]:
+        """After recruiter approval, write roadmap/catalog skills (+ extra cert labels) to the profile."""
+        employee = None
+        if cert.get("employee_id"):
+            employee = await database.employees.find_one({"employee_id": cert["employee_id"]})
+        if not employee and cert.get("user_id"):
+            employee = await database.employees.find_one({"user_id": cert["user_id"]})
+        org_id = (
+            (employee or {}).get("organization_id")
+            or cert.get("organization_id")
+            or verifier.organization_id
+        )
+        return await self._award_course_outcomes_to_profile(
+            user_id=cert["user_id"],
+            employee_id=cert.get("employee_id"),
+            organization_id=org_id,
+            course_uid=cert.get("course_uid"),
+            course_title=cert.get("course_title"),
+            source="course",
+            award_certifications=True,
+            recruiter_id=cert.get("recruiter_id") or verifier.id,
+        )
 
     async def delete_certificate(self, current_user: CurrentUser, certificate_id: str) -> dict:
         if not ObjectId.is_valid(certificate_id):
@@ -1098,8 +1367,43 @@ class LearningService:
         })
 
         if org_role:
-            skill_docs = await database.org_framework_skills.find({"role_name": target_role}).to_list(length=100)
-            cert_docs = await database.org_framework_certifications.find({"role_name": target_role}).to_list(length=100)
+            # Career Roadmaps are the single source of truth: one ordered list of
+            # catalog items (modules, paths, and certifications). Cert-type items
+            # stay in required_courses — readiness already treats verified
+            # certificates as completion for those entries.
+            org_id = org_role.get("organization_id")
+            roadmap_q: dict = {"role_name": org_role.get("name") or target_role}
+            if org_id:
+                roadmap_q["organization_id"] = org_id
+            roadmap_docs = await database.org_framework_roadmaps.find(roadmap_q).sort(
+                "order", 1
+            ).to_list(length=200)
+            required_courses = []
+            for course in roadmap_docs:
+                required_courses.append({
+                    "course_uid": course.get("course_id"),
+                    "course_title": course.get("course_name") or course.get("course_id"),
+                    "source": "org_framework",
+                    "mandatory": course.get("mandatory", True),
+                    "order": course.get("order"),
+                    "catalog_type": course.get("catalog_type"),
+                })
+            if required_courses:
+                return {
+                    "target_role": target_role,
+                    "department": org_role.get("department"),
+                    "required_courses": required_courses,
+                    "required_skills": [],
+                    "required_certifications": [],
+                    "source": "org_framework",
+                }
+            # Legacy fallback: older frameworks stored skills/certs separately.
+            skill_docs = await database.org_framework_skills.find(
+                {"organization_id": org_id, "role_name": target_role} if org_id else {"role_name": target_role}
+            ).to_list(length=100)
+            cert_docs = await database.org_framework_certifications.find(
+                {"organization_id": org_id, "role_name": target_role} if org_id else {"role_name": target_role}
+            ).to_list(length=100)
             required_skills = [s.get("skill_name") for s in skill_docs if s.get("skill_name")]
             required_certifications = [c.get("certification_name") for c in cert_docs if c.get("certification_name")]
             return {

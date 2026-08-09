@@ -162,8 +162,8 @@ export const RECRUITER_FIELD_HELP = {
   course_category: "Course category (e.g. Programming) — used to filter the catalog.",
   duration_hours: "Rough hours to complete this course — helps employees plan.",
   url: "Optional link to the course page or syllabus.",
-  level_number: "Career level of the role (1 = most junior) — used by promotion rules and career tracks.",
-  next_role: "The role this one promotes into — powers career tracks and the promotion pipeline.",
+  level_number: "Order in the department ladder — 1 is most junior (Intern), then 2, 3…",
+  next_role: "The next role on this ladder (same department) — e.g. Junior promotes to Developer.",
   skill_name: "Skill name (e.g. Python) — unique per role.",
   proficiency: "Expected skill level for the role: Beginner → Expert.",
   weight: "How much this skill matters (1–100) — drives skill-gap scoring.",
@@ -173,11 +173,11 @@ export const RECRUITER_FIELD_HELP = {
   track_name: "Name of the career progression track.",
   track_id: "Pick the career track this level belongs to.",
   role_title: "Role title at this career level.",
-  min_experience_months: "Minimum months in-role before promotion is considered.",
-  required_readiness_pct: "Readiness score % needed before the employee is flagged Ready.",
+  min_experience_months: "Minimum months in the current role before promotion is considered.",
+  required_readiness_pct: "How much of the role's Career Roadmap must be done (verified courses/certs).",
   manager_approval_required: "Whether the reporting manager must approve this promotion.",
-  min_skills_completed_pct: "Minimum % of the role's skills that must be completed.",
-  min_certs_completed: "Minimum certifications completed before promotion.",
+  min_skills_completed_pct: "Legacy field — roadmap readiness % is the primary gate now.",
+  min_certs_completed: "Legacy field — certs on the Career Roadmap count toward readiness.",
 
   // Recruiter profile
   phone: "Your contact number for teammates and escalation.",
@@ -241,7 +241,7 @@ export const RECRUITER_PAGE_HELP = {
   it: "Track IT officers, new-hire provisioning, and post-activation support tickets.",
   support: "Create support tickets, filter existing ones, and reply until the issue is resolved.",
   "organization-config":
-    "Set up departments, roles, skills, roadmaps, and promotion rules — the single source of truth every module reads from.",
+    "Set up departments, roles, career roadmaps, and promotion rules — the single source of truth every module reads from.",
 };
 
 /** Match `/it` without also matching `/invite` (substring) or treating kits as hub. */
@@ -328,7 +328,7 @@ export const RECRUITER_PAGE_SUMMARIES = {
   },
   "organization-config": {
     title: "Organization Setup",
-    what: "Configure departments, roles, skills, courses, certs, roadmaps, promotion rules, and career tracks.",
+    what: "Configure departments, role ladders (Intern → Senior), career roadmaps, and promotion readiness rules.",
     why: "This framework is the single source of truth every hiring, learning, and talent tool reads from.",
   },
 };
@@ -336,7 +336,7 @@ export const RECRUITER_PAGE_SUMMARIES = {
 export const ORG_CONFIG_TAB_HELP = {
   overview: {
     title: "Framework overview",
-    hint: "See departments, roles, skills, courses, certs, roadmaps, and promotion rules at a glance — seed from existing records, import Excel, or start from scratch.",
+    hint: "See departments, roles, roadmap items, and promotion rules at a glance — seed from existing records, import Excel, or start from scratch.",
     fields: [],
   },
   departments: {
@@ -345,39 +345,19 @@ export const ORG_CONFIG_TAB_HELP = {
     fields: ["department_name", "description"],
   },
   roles: {
-    title: "Roles",
-    hint: "Add a role with its department and career level. Next Role sets the promotion target used by career tracks.",
+    title: "Role ladders",
+    hint: "Build Intern → Junior → Senior paths per department. Level order sorts the ladder; Promotes to links each role to the next.",
     fields: ["role_name", "department", "level_number", "next_role", "description"],
   },
-  skills: {
-    title: "Skills",
-    hint: "Define skills per role with proficiency and weight — these drive talent search and skill-gap analysis.",
-    fields: ["role_name", "skill_name", "proficiency", "weight"],
-  },
-  courses: {
-    title: "Courses",
-    hint: "Add internal courses with provider, category, duration, and difficulty so they appear in the Recruiter KB catalog.",
-    fields: ["course_name", "provider", "course_category", "duration_hours", "difficulty", "url", "description"],
-  },
-  certifications: {
-    title: "Certifications",
-    hint: "Require certifications per role and set expiration — mandatory certs surface in employee learning tracking.",
-    fields: ["role_name", "certification_name", "mandatory", "expiration_months"],
-  },
-  roadmaps: {
-    title: "Learning roadmaps",
-    hint: "Build role-based learning paths by adding courses in order — they appear as managed learning in the catalog.",
-    fields: ["role_name", "course_id", "mandatory"],
+  "career-roadmaps": {
+    title: "Career roadmaps",
+    hint: "For each role, pick ordered catalog items — modules, learning paths, courses, and certifications. Use the type filter in the picker; each item keeps its type badge on the path.",
+    fields: ["course_id", "mandatory"],
   },
   promotion: {
-    title: "Promotion rules",
-    hint: "Set experience, readiness, skills, and cert thresholds per role so Talent Intelligence flags who is Ready / Almost / Behind.",
-    fields: ["role_name", "min_experience_months", "required_readiness_pct", "manager_approval_required", "min_skills_completed_pct", "min_certs_completed"],
-  },
-  "career-tracks": {
-    title: "Career tracks",
-    hint: "Design career progression tracks and levels that link roles and promotion targets.",
-    fields: ["track_name", "department", "track_id", "level_number", "role_title"],
+    title: "Promotion readiness",
+    hint: "Use the department filter, then set time-in-role and roadmap % for each ladder step. Employees match by department + job title.",
+    fields: ["filter_department", "min_experience_months", "required_readiness_pct", "manager_approval_required"],
   },
   emails: {
     title: "Email templates",

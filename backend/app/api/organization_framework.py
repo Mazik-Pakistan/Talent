@@ -348,9 +348,13 @@ async def upsert_promotion_rule(request: dict, current_user: RequireRecruiterLea
 
 
 @router.delete("/promotion-rules/{role_name}")
-async def delete_promotion_rule(role_name: str, current_user: RequireRecruiterLearningWrite):
+async def delete_promotion_rule(
+    role_name: str,
+    current_user: RequireRecruiterLearningWrite,
+    department: str | None = None,
+):
     from app.services.organization_framework_service import delete_promotion_rule
-    ok = await delete_promotion_rule(_org_id(current_user), role_name)
+    ok = await delete_promotion_rule(_org_id(current_user), role_name, department)
     if not ok:
         raise HTTPException(status_code=404, detail="Promotion rule not found.")
     return {"deleted": True}

@@ -259,3 +259,282 @@
   cursor: pointer;
 }
 .cfCheckRow input { accent-color: var(--blue); width: 15px; height: 15px; }
+
+/* Sidebar groups */
+.deptGroupLabel {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 14px 12px 4px;
+}
+
+/* Career Roadmaps — per-role hub */
+.deptGroup { margin-bottom: 28px; }
+.deptGroupTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--navy);
+  font-family: 'Sora', system-ui, sans-serif;
+}
+.deptGroupTitle span:last-child {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--text-muted);
+  font-family: inherit;
+}
+
+.roleCard {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+  margin-bottom: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px -14px rgba(21, 61, 94, 0.2);
+}
+.roleCardHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 14px 18px;
+  background: linear-gradient(180deg, #f7f9fc 0%, #fff 100%);
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background .15s var(--ease);
+}
+.roleCardHead:hover { background: #f1f5fa; }
+.roleCardTitle { font-size: 15px; font-weight: 800; color: var(--navy); font-family: 'Sora', system-ui, sans-serif; }
+.roleCardMeta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.roleBlock { padding: 14px 18px; border-bottom: 1px solid var(--border-soft); }
+.roleBlock:last-child { border-bottom: none; }
+.roleBlockHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.roleBlockLabel {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.roleBlockLabel svg { width: 14px; height: 14px; }
+
+.chipWrap { display: flex; flex-wrap: wrap; gap: 8px; }
+.chipItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  font-size: 12.5px;
+}
+.chipItem.derived { background: #f8fafb; }
+
+.ladderDept {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: #fff;
+}
+.ladderDeptHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 750;
+  color: var(--navy);
+  margin-bottom: 12px;
+}
+.ladderChain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--border-soft);
+}
+.ladderArrow {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-faint);
+  margin: 0 2px;
+}
+.ladderNode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+}
+.ladderLevel {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--blue-strong);
+  background: var(--blue-light);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.ladderName {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--navy);
+}
+
+.promoHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.promoHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.promoFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f8fafc;
+  color: var(--navy);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.promoFilterLabel {
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.promoFilter select {
+  min-width: 180px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #fff;
+  font: inherit;
+  font-weight: 600;
+  color: var(--navy);
+}
+.promoDeptSummary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.promoEmpty {
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: #fafcfe;
+}
+.promoHint {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #f0e0c0;
+  background: #fffbeb;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.promoRoleBlocked {
+  opacity: 0.95;
+  background: #fafbfc;
+  border-style: dashed;
+}
+.promoRoleList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.promoRoleCard {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 14px;
+  background: #f8fafc;
+}
+.promoRoleHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.promoRoleTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 750;
+  color: var(--navy);
+}
+.promoRoleMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.promoRuleSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.promoRuleSummary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.promoRuleForm {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+}
