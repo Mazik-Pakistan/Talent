@@ -188,6 +188,10 @@ export default function InviteRecruiter({
   setInviteCaps,
   inviteSubmitting,
   handleInvite,
+  feedback,
+  onClearFeedback,
+  errors = {},
+  onClearError,
   organizations,
   templates,
   activeTemplate,
@@ -230,13 +234,14 @@ export default function InviteRecruiter({
 
   const handleOrgChange = useCallback(
     (e) => {
+      onClearFeedback?.();
       const organization_id = e.target.value;
       setInviteForm((prev) => ({ ...prev, organization_id }));
       const orgMods = orgPurchasedModules(organizations, organization_id);
       setInviteCaps((prev) => clampCapsToOrg(prev, orgMods));
       setActiveTemplate("");
     },
-    [organizations, setInviteForm, setInviteCaps, setActiveTemplate]
+    [organizations, setInviteForm, setInviteCaps, setActiveTemplate, onClearFeedback]
   );
 
   return (
@@ -262,6 +267,28 @@ export default function InviteRecruiter({
         </div>
       </div>
 
+      {/* Inline invitation result — always visible in the page flow, cannot be
+          clipped by overlay/z-index or missed by the user. */}
+      {feedback && (
+        <div
+          className={`${s.feedbackBanner} ${feedback.type === "success" ? s.feedbackBannerSuccess : feedback.type === "warning" ? s.feedbackBannerWarning : s.feedbackBannerError}`}
+          role={feedback.type === "error" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          <span className={s.feedbackIcon}>
+            {feedback.type === "success" ? "✓" : feedback.type === "warning" ? "!" : "✕"}
+          </span>
+          <span className={s.feedbackText}>{feedback.message}</span>
+          {onClearFeedback && (
+            <button type="button" className={s.feedbackDismiss} onClick={onClearFeedback} aria-label="Dismiss message">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Two-column layout */}
       <div className={s.twoCol}>
         {/* Left column */}
@@ -286,15 +313,17 @@ export default function InviteRecruiter({
                     <label className={s.fieldLabel}>Full Name <span className={s.required}>*</span></label>
                     <div className={s.inputWrap}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16" className={s.inputIcon}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                      <input type="text" className={s.input} placeholder="John Smith" value={inviteForm.full_name || ""} onChange={(e) => setInviteForm({ ...inviteForm, full_name: e.target.value })} required />
+                      <input type="text" className={`${s.input} ${errors.full_name ? s.inputError : ""}`} placeholder="John Smith" value={inviteForm.full_name || ""} aria-invalid={Boolean(errors.full_name)} onChange={(e) => { onClearFeedback?.(); onClearError?.("full_name"); setInviteForm({ ...inviteForm, full_name: e.target.value }); }} required />
                     </div>
+                    {errors.full_name && <small className={s.fieldError} role="alert">{errors.full_name}</small>}
                   </div>
                   <div className={s.fieldGroup}>
                     <label className={s.fieldLabel}>Email Address <span className={s.required}>*</span></label>
                     <div className={s.inputWrap}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16" className={s.inputIcon}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><path d="M22 6l-10 7L2 6" /></svg>
-                      <input type="email" className={s.input} placeholder="john@company.com" value={inviteForm.email || ""} onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })} required />
+                      <input type="email" className={`${s.input} ${errors.email ? s.inputError : ""}`} placeholder="john@company.com" value={inviteForm.email || ""} aria-invalid={Boolean(errors.email)} onChange={(e) => { onClearFeedback?.(); onClearError?.("email"); setInviteForm({ ...inviteForm, email: e.target.value }); }} required />
                     </div>
+                    {errors.email && <small className={s.fieldError} role="alert">{errors.email}</small>}
                   </div>
                 </div>
                 <div className={s.fieldGrid2}>
@@ -302,15 +331,17 @@ export default function InviteRecruiter({
                     <label className={s.fieldLabel}>Job Title <span className={s.required}>*</span></label>
                     <div className={s.inputWrap}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16" className={s.inputIcon}><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg>
-                      <input type="text" className={s.input} placeholder="Senior Recruiter" value={inviteForm.job_title || ""} onChange={(e) => setInviteForm({ ...inviteForm, job_title: e.target.value })} required />
+                      <input type="text" className={`${s.input} ${errors.job_title ? s.inputError : ""}`} placeholder="Senior Recruiter" value={inviteForm.job_title || ""} aria-invalid={Boolean(errors.job_title)} onChange={(e) => { onClearFeedback?.(); onClearError?.("job_title"); setInviteForm({ ...inviteForm, job_title: e.target.value }); }} required />
                     </div>
+                    {errors.job_title && <small className={s.fieldError} role="alert">{errors.job_title}</small>}
                   </div>
                   <div className={s.fieldGroup}>
                     <label className={s.fieldLabel}>Department <span className={s.required}>*</span></label>
                     <div className={s.inputWrap}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16" className={s.inputIcon}><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></svg>
-                      <input type="text" className={s.input} placeholder="Human Resources" value={inviteForm.department || ""} onChange={(e) => setInviteForm({ ...inviteForm, department: e.target.value })} required />
+                      <input type="text" className={`${s.input} ${errors.department ? s.inputError : ""}`} placeholder="Human Resources" value={inviteForm.department || ""} aria-invalid={Boolean(errors.department)} onChange={(e) => { onClearFeedback?.(); onClearError?.("department"); setInviteForm({ ...inviteForm, department: e.target.value }); }} required />
                     </div>
+                    {errors.department && <small className={s.fieldError} role="alert">{errors.department}</small>}
                   </div>
                 </div>
                 <div className={s.fieldGrid2}>
@@ -318,20 +349,22 @@ export default function InviteRecruiter({
                     <label className={s.fieldLabel}>Office Location</label>
                     <div className={s.inputWrap}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16" className={s.inputIcon}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
-                      <input type="text" className={s.input} placeholder="New York, NY" value={inviteForm.office_location || ""} onChange={(e) => setInviteForm({ ...inviteForm, office_location: e.target.value })} />
+                      <input type="text" className={`${s.input} ${errors.office_location ? s.inputError : ""}`} placeholder="New York, NY" value={inviteForm.office_location || ""} aria-invalid={Boolean(errors.office_location)} onChange={(e) => { onClearFeedback?.(); onClearError?.("office_location"); setInviteForm({ ...inviteForm, office_location: e.target.value }); }} />
                     </div>
+                    {errors.office_location && <small className={s.fieldError} role="alert">{errors.office_location}</small>}
                   </div>
                   <div className={s.fieldGroup}>
                     <label className={s.fieldLabel}>Organization</label>
                     <div className={s.inputWrap}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16" className={s.inputIcon}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M9 22V12h6v10" /></svg>
-                      <select className={s.input} value={inviteForm.organization_id || ""} onChange={handleOrgChange}>
+                      <select className={`${s.input} ${errors.organization_id ? s.inputError : ""}`} value={inviteForm.organization_id || ""} aria-invalid={Boolean(errors.organization_id)} onChange={(e) => { onClearError?.("organization_id"); handleOrgChange(e); }}>
                         <option value="">Auto (default)</option>
                         {organizations.map((org) => (
                           <option key={org.id} value={org.id}>{org.name}</option>
                         ))}
                       </select>
                     </div>
+                    {errors.organization_id && <small className={s.fieldError} role="alert">{errors.organization_id}</small>}
                   </div>
                 </div>
                 <div className={s.switchRow}>
@@ -340,7 +373,7 @@ export default function InviteRecruiter({
                     <span className={s.switchHint}>Recruiter works fully remote</span>
                   </div>
                   <label className={s.switch}>
-                    <input type="checkbox" checked={Boolean(inviteForm.is_remote)} onChange={(e) => setInviteForm({ ...inviteForm, is_remote: e.target.checked })} />
+                    <input type="checkbox" checked={Boolean(inviteForm.is_remote)} onChange={(e) => { onClearFeedback?.(); setInviteForm({ ...inviteForm, is_remote: e.target.checked }); }} />
                     <span className={s.switchTrack}><span className={s.switchThumb} /></span>
                   </label>
                 </div>
@@ -420,7 +453,7 @@ export default function InviteRecruiter({
                         const orgAllows = orgModules[key] !== false;
                         const isEnabled = Boolean(inviteCaps[key]);
                         return (
-                          <button key={`${key}-${keyIndex}`} type="button" disabled={!orgAllows} className={`${s.permTile} ${isEnabled ? s.permTileOn : ""} ${!orgAllows ? s.permTileDisabled : ""}`} onClick={() => setInviteCaps((prev) => ({ ...prev, [key]: !prev[key] }))}>
+                          <button key={`${key}-${keyIndex}`} type="button" disabled={!orgAllows} className={`${s.permTile} ${isEnabled ? s.permTileOn : ""} ${!orgAllows ? s.permTileDisabled : ""}`}                             onClick={() => { onClearFeedback?.(); setInviteCaps((prev) => ({ ...prev, [key]: !prev[key] })); }}>
                             <span className={s.permTileIcon}>{CAPABILITY_ICONS[key]}</span>
                             <span className={s.permTileBody}>
                               <span className={s.permTileLabel}>{CAPABILITY_LABELS[key]}</span>

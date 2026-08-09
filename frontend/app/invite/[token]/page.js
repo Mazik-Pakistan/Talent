@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { candidateRegister, getApiErrorMessage, getInvitation, recruiterRegister } from "@/services/authService";
 import { LOGO_URL } from "@/lib/logo";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
+import PasswordToggle from "@/components/PasswordToggle";
 import {
   formatPkMobileInput,
   isValidPkMobile,
@@ -46,7 +47,6 @@ export default function InviteRegisterPage() {
   const [inviteState, setInviteState] = useState({ status: "loading", invitation: null, message: "" });
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
-  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formMessage, setFormMessage] = useState("");
   const [isRecruiterInvite, setIsRecruiterInvite] = useState(false);
@@ -214,8 +214,6 @@ export default function InviteRegisterPage() {
                 value={form.password} 
                 error={errors.password} 
                 onChange={updateField} 
-                showPassword={showPassword} 
-                onToggle={() => setShowPassword((visible) => !visible)} 
                 autoComplete="new-password" 
               />
               <PasswordField 
@@ -224,8 +222,6 @@ export default function InviteRegisterPage() {
                 value={form.confirm_password} 
                 error={errors.confirm_password} 
                 onChange={updateField} 
-                showPassword={showPassword} 
-                onToggle={() => setShowPassword((visible) => !visible)} 
                 autoComplete="new-password" 
               />
             </div>
@@ -274,7 +270,8 @@ function FormField({ label, name, type = "text", value, error, hint, onChange, a
   );
 }
 
-function PasswordField({ label, name, value, error, onChange, showPassword, onToggle, autoComplete }) {
+function PasswordField({ label, name, value, error, onChange, autoComplete }) {
+  const [visible, setVisible] = useState(false);
   return (
     <label className={`${styles.field} ${styles.animField}`}>
       <span>{label}</span>
@@ -298,19 +295,16 @@ function PasswordField({ label, name, value, error, onChange, showPassword, onTo
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${name}-error` : undefined}
           name={name}
-          type={showPassword ? "text" : "password"}
+          type={visible ? "text" : "password"}
           value={value}
           onChange={onChange}
           autoComplete={autoComplete}
         />
-        <button 
-          type="button" 
-          className={styles.toggleButton} 
-          onClick={onToggle} 
-          aria-label={`${showPassword ? "Hide" : "Show"} password`}
-        >
-          {showPassword ? "Hide" : "Show"}
-        </button>
+        <PasswordToggle
+          visible={visible}
+          onToggle={() => setVisible((v) => !v)}
+          className={styles.toggleButton}
+        />
       </div>
       {error && <small className={styles.fieldError} id={`${name}-error`}>⚠ {error}</small>}
     </label>

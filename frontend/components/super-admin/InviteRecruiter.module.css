@@ -1,5 +1,73 @@
 /* ── Enterprise SaaS Invite Recruiter ─────────────────────── */
 
+/* Inline invitation result banner — rendered in normal page flow so it is
+   always visible (cannot be clipped by overflow or hidden behind z-index). */
+.feedbackBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.feedbackBannerSuccess {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+.feedbackBannerError {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+.feedbackBannerWarning {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+.feedbackIcon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: currentColor;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+.feedbackText {
+  flex: 1;
+  min-width: 0;
+}
+.feedbackDismiss {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.65;
+  cursor: pointer;
+}
+.feedbackDismiss:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
 .page {
   background: #f8fafc;
   min-height: 100%;
@@ -203,6 +271,20 @@
 .input:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.inputError,
+.inputError:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
+
+.fieldError {
+  margin-top: -2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #dc2626;
+  line-height: 1.4;
 }
 
 select.input {

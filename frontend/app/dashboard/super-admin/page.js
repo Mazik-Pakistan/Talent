@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import SuperAdminShell from "@/components/super-admin/SuperAdminShell";
+import PasswordToggle from "@/components/PasswordToggle";
 import InviteRecruiter from "@/components/super-admin/InviteRecruiter";
 import OrganizationsPanel from "@/components/super-admin/OrganizationsPanel";
 import RecruitersPanel from "@/components/super-admin/RecruitersPanel";
@@ -137,6 +138,46 @@ function clampCapsToOrg(caps, orgModules) {
   }, {});
 }
 
+/** Fields on the invite form that can hold a per-field validation error. */
+const INVITE_FIELD_KEYS = [
+  "full_name",
+  "email",
+  "job_title",
+  "department",
+  "office_location",
+  "organization_id",
+  "is_remote",
+  "capabilities",
+];
+
+/**
+ * Parse a backend 422 detail array into per-field errors. Errors that cannot be
+ * mapped to a known form field are returned as a single general message.
+ */
+function parseInviteFieldErrors(error) {
+  const fieldErrors = {};
+  let general = null;
+  const detail = error?.response?.data?.detail;
+  if (Array.isArray(detail)) {
+    for (const item of detail) {
+      const raw = item?.msg || item?.message;
+      if (!raw) continue;
+      const loc = item?.loc || [];
+      const field = typeof loc[loc.length - 1] === "string" ? loc[loc.length - 1] : null;
+      const message = String(raw)
+        .replace(/^Value error,\s*/i, "")
+        .replace(/^Assertion failed,\s*/i, "")
+        .trim();
+      if (field && INVITE_FIELD_KEYS.includes(field)) {
+        fieldErrors[field] = message;
+      } else {
+        general = general || message;
+      }
+    }
+  }
+  return { fieldErrors, general };
+}
+
 const emptyEditForm = { job_title: "", department: "", office_location: "", status: "active" };
 
 export default function SuperAdminDashboardPage() {
@@ -146,12 +187,15 @@ export default function SuperAdminDashboardPage() {
   const [form, setForm] = useState(initialForm);
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showBootstrapPasswords, setShowBootstrapPasswords] = useState({});
   const [activeTab, setActiveTab] = useState("overview");
   const [recruiters, setRecruiters] = useState([]);
   const [recruitersLoading, setRecruitersLoading] = useState(false);
   const [inviteForm, setInviteForm] = useState(initialInviteForm);
   const [inviteCaps, setInviteCaps] = useState(() => allCapabilityFlags({}, true));
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [inviteFeedback, setInviteFeedback] = useState(null);
+  const [inviteErrors, setInviteErrors] = useState({});
   const [templates, setTemplates] = useState({});
   const [activeTemplate, setActiveTemplate] = useState("standard_recruiter");
   const [bulkSelected, setBulkSelected] = useState([]);
@@ -367,7 +411,10 @@ export default function SuperAdminDashboardPage() {
 
   async function handleInvite(event) {
     event.preventDefault();
+    if (inviteSubmitting) return;
     setInviteSubmitting(true);
+    setInviteFeedback(null);
+    setInviteErrors({});
     try {
       const accessToken = localStorage.getItem("access_token");
       const orgModules = orgPurchasedModules(organizations, inviteForm.organization_id);
@@ -382,12 +429,35 @@ export default function SuperAdminDashboardPage() {
         organization_id: inviteForm.organization_id || undefined,
         capabilities,
       };
-      await inviteRecruiter(invitePayload, accessToken);
-      toast.success("Invitation sent successfully!");
+      const result = await inviteRecruiter(invitePayload, accessToken);
+      if (result?.email_sent === false) {
+        const warnMessage =
+          result?.message || "Invitation created, but the email could not be delivered. Please retry sending.";
+        setInviteFeedback({ type: "warning", message: warnMessage });
+        toast.warn(warnMessage, { toastId: "super-admin-invite-email-warn" });
+      } else {
+        const successMessage = result?.message || "Recruiter invitation sent successfully.";
+        setInviteFeedback({ type: "success", message: successMessage });
+        toast.success(successMessage, { toastId: "super-admin-invite-success" });
+      }
       setInviteForm(initialInviteForm);
       loadRecruiters();
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to send invitation."));
+      const { fieldErrors, general } = parseInviteFieldErrors(error);
+      setInviteErrors(fieldErrors);
+      if (general) {
+        const generalMessage = general || getApiErrorMessage(error, "Failed to send recruiter invitation. Please try again.");
+        setInviteFeedback({ type: "error", message: generalMessage });
+        toast.error(generalMessage, { toastId: "super-admin-invite-error" });
+      } else if (Object.keys(fieldErrors).length > 0) {
+        // Field-level validation errors are shown inline under each field —
+        // no page-wide banner or toast for them.
+        setInviteFeedback(null);
+      } else {
+        const errorMessage = getApiErrorMessage(error, "Failed to send recruiter invitation. Please try again.");
+        setInviteFeedback({ type: "error", message: errorMessage });
+        toast.error(errorMessage, { toastId: "super-admin-invite-error" });
+      }
     } finally {
       setInviteSubmitting(false);
     }
@@ -576,12 +646,46 @@ export default function SuperAdminDashboardPage() {
                 {["full_name", "email", "phone", "password", "confirm_password"].map((field) => (
                   <label key={field} className={styles.field} style={{ marginBottom: 12 }}>
                     <span>{field.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} *</span>
-                    <input
-                      type={field.includes("password") ? "password" : field === "email" ? "email" : "text"}
-                      value={form[field] ?? ""}
-                      onChange={(e) => setForm({ ...form, [field]: e.target.value })}
-                      required
-                    />
+                    {field.includes("password") ? (
+                      <span style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                        <input
+                          type={showBootstrapPasswords[field] ? "text" : "password"}
+                          value={form[field] ?? ""}
+                          onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+                          required
+                          style={{ paddingRight: 40 }}
+                        />
+                        <PasswordToggle
+                          visible={Boolean(showBootstrapPasswords[field])}
+                          onToggle={() =>
+                            setShowBootstrapPasswords((current) => ({ ...current, [field]: !current[field] }))
+                          }
+                          style={{
+                            position: "absolute",
+                            right: 4,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: 32,
+                            height: 32,
+                            border: 0,
+                            borderRadius: 6,
+                            background: "transparent",
+                            color: "#2d6cdf",
+                            cursor: "pointer",
+                          }}
+                        />
+                      </span>
+                    ) : (
+                      <input
+                        type={field === "email" ? "email" : "text"}
+                        value={form[field] ?? ""}
+                        onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+                        required
+                      />
+                    )}
                   </label>
                 ))}
                 {message && <p className={styles.formMessage}>{message}</p>}
@@ -705,6 +809,17 @@ export default function SuperAdminDashboardPage() {
           setInviteCaps={setInviteCaps}
           inviteSubmitting={inviteSubmitting}
           handleInvite={handleInvite}
+          feedback={inviteFeedback}
+          onClearFeedback={() => setInviteFeedback(null)}
+          errors={inviteErrors}
+          onClearError={(field) =>
+            setInviteErrors((current) => {
+              if (!current[field]) return current;
+              const next = { ...current };
+              delete next[field];
+              return next;
+            })
+          }
           organizations={organizations}
           templates={templates}
           activeTemplate={activeTemplate}

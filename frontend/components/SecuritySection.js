@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { changePassword, getApiErrorMessage } from "@/services/authService";
+import PasswordToggle from "@/components/PasswordToggle";
 
 /**
  * Security > Change Password section for authenticated users (employee,
@@ -15,6 +16,9 @@ export default function SecuritySection() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -78,13 +82,34 @@ export default function SecuritySection() {
     width: "100%",
     border: "1px solid #bed0dc",
     borderRadius: 8,
-    padding: "10px 12px",
+    padding: "10px 40px 10px 12px",
     font: "inherit",
     background: "#fff",
     outline: "none",
     boxSizing: "border-box",
   };
   const inputFocus = { borderColor: "#38a2ff", boxShadow: "0 0 0 3px rgb(56 162 255 / .16)" };
+  const control = {
+    position: "relative",
+    display: "flex",
+    alignItems: "center",
+  };
+  const toggleStyle = {
+    position: "absolute",
+    right: 4,
+    top: "50%",
+    transform: "translateY(-50%)",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 32,
+    height: 32,
+    border: 0,
+    borderRadius: 6,
+    background: "transparent",
+    color: "#2d6cdf",
+    cursor: "pointer",
+  };
 
   return (
     <div style={{ maxWidth: 460 }}>
@@ -96,47 +121,56 @@ export default function SecuritySection() {
       <form onSubmit={handleSubmit} noValidate>
         <label style={field}>
           <span>Current password</span>
-          <input
-            type="password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            autoComplete="current-password"
-            placeholder="Your current password"
-            style={input}
-            onFocus={(e) => Object.assign(e.target.style, inputFocus)}
-            onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
-            required
-          />
+          <div style={control}>
+            <input
+              type={showCurrent ? "text" : "password"}
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              autoComplete="current-password"
+              placeholder="Your current password"
+              style={input}
+              onFocus={(e) => Object.assign(e.target.style, inputFocus)}
+              onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
+              required
+            />
+            <PasswordToggle visible={showCurrent} onToggle={() => setShowCurrent((v) => !v)} style={toggleStyle} />
+          </div>
         </label>
 
         <label style={field}>
           <span>New password</span>
-          <input
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            autoComplete="new-password"
-            placeholder="At least 8 characters"
-            style={input}
-            onFocus={(e) => Object.assign(e.target.style, inputFocus)}
-            onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
-            required
-          />
+          <div style={control}>
+            <input
+              type={showNew ? "text" : "password"}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              placeholder="At least 8 characters"
+              style={input}
+              onFocus={(e) => Object.assign(e.target.style, inputFocus)}
+              onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
+              required
+            />
+            <PasswordToggle visible={showNew} onToggle={() => setShowNew((v) => !v)} style={toggleStyle} />
+          </div>
         </label>
 
         <label style={field}>
           <span>Confirm new password</span>
-          <input
-            type="password"
-            value={confirmNewPassword}
-            onChange={(e) => setConfirmNewPassword(e.target.value)}
-            autoComplete="new-password"
-            placeholder="Re-enter the new password"
-            style={input}
-            onFocus={(e) => Object.assign(e.target.style, inputFocus)}
-            onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
-            required
-          />
+          <div style={control}>
+            <input
+              type={showConfirm ? "text" : "password"}
+              value={confirmNewPassword}
+              onChange={(e) => setConfirmNewPassword(e.target.value)}
+              autoComplete="new-password"
+              placeholder="Re-enter the new password"
+              style={input}
+              onFocus={(e) => Object.assign(e.target.style, inputFocus)}
+              onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
+              required
+            />
+            <PasswordToggle visible={showConfirm} onToggle={() => setShowConfirm((v) => !v)} style={toggleStyle} />
+          </div>
         </label>
 
         {message && (

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import AuthAside, { RECOVERY_SLIDES } from "@/components/auth/AuthAside";
 import { changePassword, clearLocalSession, getApiErrorMessage, patchLocalUser } from "@/services/authService";
+import PasswordToggle from "@/components/PasswordToggle";
 import { ROLE_HOME } from "@/services/rbac";
 import styles from "@/app/styles/auth.module.css";
 
@@ -16,7 +17,9 @@ export default function SetPasswordPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -129,47 +132,59 @@ export default function SetPasswordPage() {
               <span className={styles.passwordControl}>
                 <input
                   className={styles.input}
-                  type={showPassword ? "text" : "password"}
+                  type={showCurrent ? "text" : "password"}
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   autoComplete="current-password"
                   placeholder="The password IT sent you"
                   required
                 />
-                <button
-                  type="button"
+                <PasswordToggle
+                  visible={showCurrent}
+                  onToggle={() => setShowCurrent((v) => !v)}
                   className={styles.toggleButton}
-                  onClick={() => setShowPassword((v) => !v)}
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </button>
+                />
               </span>
             </label>
 
             <label className={styles.field}>
               <span>New password <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
-              <input
-                className={styles.input}
-                type={showPassword ? "text" : "password"}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                autoComplete="new-password"
-                placeholder="8+ chars with A–Z, a–z, 0–9 and a symbol"
-                required
-              />
+              <span className={styles.passwordControl}>
+                <input
+                  className={styles.input}
+                  type={showNew ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  placeholder="8+ chars with A–Z, a–z, 0–9 and a symbol"
+                  required
+                />
+                <PasswordToggle
+                  visible={showNew}
+                  onToggle={() => setShowNew((v) => !v)}
+                  className={styles.toggleButton}
+                />
+              </span>
             </label>
 
             <label className={styles.field}>
               <span>Confirm new password <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
-              <input
-                className={styles.input}
-                type={showPassword ? "text" : "password"}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                autoComplete="new-password"
-                placeholder="Re-enter the new password"
-                required
-              />
+              <span className={styles.passwordControl}>
+                <input
+                  className={styles.input}
+                  type={showConfirm ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                  placeholder="Re-enter the new password"
+                  required
+                />
+                <PasswordToggle
+                  visible={showConfirm}
+                  onToggle={() => setShowConfirm((v) => !v)}
+                  className={styles.toggleButton}
+                />
+              </span>
             </label>
 
             {error && <p className={`${styles.formMessage} ${styles.formMessageError}`} role="alert">{error}</p>}

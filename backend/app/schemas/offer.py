@@ -221,3 +221,11 @@ class NegotiationRespondRequest(BaseModel):
         elif self.revised_salary_breakdown:
             self.revised_allowances = list(self.revised_salary_breakdown)
         return self
+
+    @model_validator(mode="after")
+    def _require_response_note(self) -> NegotiationRespondRequest:
+        """A clarification response must include a reply to the candidate —
+        empty or whitespace-only responses are rejected server-side."""
+        if not self.recruiter_note or not self.recruiter_note.strip():
+            raise ValueError("Please enter a clarification response before sending.")
+        return self
