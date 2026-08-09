@@ -13,6 +13,7 @@ export default function OcrScanOverlay({
   subtitle = "Extracting fields",
   previewUrl,
   fileName,
+  mimeType = "",
   scanning,
   stage,
   fieldDefs = [],
@@ -22,6 +23,7 @@ export default function OcrScanOverlay({
   confidence = {},
   progress = 0,
   error = null,
+  processing = null,
 }) {
   if (!open) return null;
 
@@ -50,6 +52,7 @@ export default function OcrScanOverlay({
           subtitle={subtitle}
           previewUrl={previewUrl}
           fileName={fileName}
+          mimeType={mimeType}
           scanning={scanning}
           stage={stage}
           fieldDefs={fieldDefs}
@@ -61,6 +64,7 @@ export default function OcrScanOverlay({
           error={error}
           note={note}
           emptyHint={emptyHint}
+          processing={processing}
         />
       </div>
     </div>

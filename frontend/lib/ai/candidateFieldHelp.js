@@ -24,6 +24,11 @@ export const CANDIDATE_FIELD_HELP = {
   company: "Employer or organization name.",
   agree: "Confirm you have read and accept the offer terms before signing.",
   signature: "Sign in the box with your full legal name as on the offer.",
+
+  // Security / Password Change
+  current_password: "Your current password — used to verify the change.",
+  new_password: "8+ characters with uppercase, lowercase, number, and special character.",
+  confirm_new_password: "Re-enter the new password — must match exactly.",
 };
 
 export const CANDIDATE_PAGE_SUMMARIES = {
@@ -100,6 +105,16 @@ export function candidateFieldHelpFor(field) {
 
 export function candidatePageSummaryFor(pathname, context = null) {
   if (!pathname) return null;
+
+  // Security section within the candidate dashboard
+  if (pathname.includes("/dashboard/candidate") && context?.section === "security") {
+    return {
+      key: "security",
+      title: "Change password",
+      what: "Update your password to keep your account secure. Fill the current, new, and confirm fields.",
+      why: "A strong, unique password protects your account and hiring records.",
+    };
+  }
 
   if (pathname.includes("/onboarding")) {
     const isProfile = typeof window !== "undefined" && /(?:\?|&)edit=true\b/.test(window.location.search);

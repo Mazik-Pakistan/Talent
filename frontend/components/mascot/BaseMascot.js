@@ -46,8 +46,14 @@ function readStoredPanelOpen(roleLabel) {
 
 function isCoachableFormField(field) {
   if (!field || !["INPUT", "SELECT", "TEXTAREA"].includes(field.tagName)) return false;
-  // File uploads (OCR), buttons, and secrets must not start live guidance.
-  if (["hidden", "submit", "button", "file", "password", "reset", "image"].includes(field.type)) {
+  // Allow password fields in explicitly-tagged coach forms (SecuritySection)
+  const isPartnerCoachForm = field.closest?.("[data-partner-coach]");
+  const hasFieldKey = field.hasAttribute?.("data-field-key");
+  if (field.type === "password" && !isPartnerCoachForm && !hasFieldKey) {
+    return false;
+  }
+  // File uploads (OCR), buttons, and secrets (non-coach) must not start live guidance.
+  if (["hidden", "submit", "button", "file", "reset", "image"].includes(field.type)) {
     return false;
   }
   return true;

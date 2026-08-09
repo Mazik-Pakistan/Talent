@@ -42,7 +42,11 @@ function labelTextFromElement(labelEl, field) {
 export function isCoachableField(field) {
   if (!field || field.disabled || field.readOnly) return false;
   if (field.offsetParent === null) return false;
-  if (["hidden", "submit", "button", "file", "password"].includes(field.type)) return false;
+  // Allow password fields in explicitly-tagged coach forms (SecuritySection)
+  const isPartnerCoachForm = field.closest("[data-partner-coach]");
+  const hasFieldKey = field.hasAttribute("data-field-key");
+  if (field.type === "password" && !isPartnerCoachForm && !hasFieldKey) return false;
+  if (["hidden", "submit", "button", "file"].includes(field.type)) return false;
   if (field.closest("[data-mascot-command]")) return false;
   return true;
 }
@@ -166,6 +170,17 @@ function formHasUnsetRequired(form) {
     .some((field) => field.required && !isFieldFilled(field));
 }
 
+/** A form is "in view" when any part of it overlaps the viewport. */
+function formInViewport(form) {
+  if (typeof window === "undefined" || !form) return true;
+  try {
+    const rect = form.getBoundingClientRect();
+    return rect.bottom > 0 && rect.top < window.innerHeight;
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Collect steps from ONE primary form so Invite and Learning don't blend into one checklist.
  */
@@ -176,7 +191,11 @@ export function collectFormSteps(root = typeof document !== "undefined" ? docume
 
   const marked = forms.filter((form) => form.hasAttribute("data-partner-coach"));
   const pool = marked.length ? marked : forms;
-  const form = pool.find(formHasUnsetRequired) || pool[0];
+  // Prefer the form the user is currently looking at (e.g. Security section when
+  // scrolled into view), falling back to all forms when nothing is in view.
+  const inView = pool.filter(formInViewport);
+  const candidates = inView.length ? inView : pool;
+  const form = candidates.find(formHasUnsetRequired) || candidates[0];
   if (!form) return [];
 
   const steps = [];

@@ -13,6 +13,9 @@ import {
 } from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
 import FileUploadField from "@/components/FileUploadField";
+import DocumentProcessingOverlay from "@/components/ai-experience/DocumentProcessingOverlay";
+import useDocumentProcessing from "@/hooks/useDocumentProcessing";
+import { normalizeDocumentType } from "@/lib/ai/documentProcessing";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
 import { COPILOT_DOCUMENTS_ASSIST_EVENT, publishGuideContext } from "@/lib/ai/guideContext";
@@ -109,6 +112,9 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
   const [replacementMessage, setReplacementMessage] = useState(null);
   const fileInputRef = useRef(null);
   const replacementInputRef = useRef(null);
+  const processing = useDocumentProcessing();
+  const retryJobRef = useRef(null);
+  const successCloseRef = useRef(null);
 
   const loadDocuments = useCallback(() => {
     const accessToken = localStorage.getItem("access_token");
@@ -162,6 +168,58 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     invalidateInsightCache();
     invalidateCandidateInsightCache();
   }
+
+  function derivePurpose(docType) {
+    if (docType === "resume") return "resume";
+    if (docType === "transcript") return "education_cert";
+    if (docType === "cnic" || docType === "passport") return "government_doc";
+    return null;
+  }
+
+  /** Only doc types the backend actually extracts get extraction messaging. */
+  function processingDocumentType(docType) {
+    const normalized = String(docType || "").toLowerCase();
+    if (["cnic", "passport", "resume", "transcript"].includes(normalized)) {
+      return normalizeDocumentType(normalized);
+    }
+    return "saving";
+  }
+
+  /** Closes the success overlay shortly after a completed upload. */
+  function scheduleProcessingClose(ms = 1400) {
+    if (successCloseRef.current) window.clearTimeout(successCloseRef.current);
+    successCloseRef.current = window.setTimeout(() => {
+      successCloseRef.current = null;
+      processing.cancel();
+    }, ms);
+  }
+
+  /** Re-runs the last attempt with the same file when "Try Again" is chosen. */
+  function handleProcessingRetry() {
+    const job = retryJobRef.current;
+    if (!job) return;
+    if (job.kind === "upload") {
+      void performUpload({ file: job.file, category: job.category, docType: job.docType, purpose: job.purpose });
+    } else if (job.kind === "replacement") {
+      void performReplacement({ doc: job.doc, file: job.file });
+    }
+  }
+
+  /** Dismisses the overlay so the candidate can choose a different file. */
+  function handleProcessingUploadAnother() {
+    if (successCloseRef.current) {
+      window.clearTimeout(successCloseRef.current);
+      successCloseRef.current = null;
+    }
+    processing.cancel();
+  }
+
+  useEffect(
+    () => () => {
+      if (successCloseRef.current) window.clearTimeout(successCloseRef.current);
+    },
+    []
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -225,13 +283,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     return "other";
   }
 
-  async function handleUpload(e) {
-    e.preventDefault();
-    if (!file) {
-      setUploadMessage({ type: "error", text: "Choose a file to upload." });
-      return;
-    }
-
+  async function performUpload({ file, category, docType, purpose }) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
 
@@ -239,18 +291,9 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     formData.append("file", file);
     formData.append("category", category);
     formData.append("doc_type", docType);
-
-    // Derive purpose for onboarding-aware doc types.
-    let purpose = null;
-    if (docType === "resume") {
-      purpose = "resume";
-    } else if (docType === "transcript") {
-      purpose = "education_cert";
-    } else if (docType === "cnic" || docType === "passport") {
-      purpose = "government_doc";
-    }
     if (purpose) formData.append("purpose", purpose);
 
+    processing.begin({ documentType: processingDocumentType(docType), fileName: file.name });
     setUploading(true);
     setUploadMessage(null);
     try {
@@ -260,8 +303,12 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       const data = await uploader(formData, accessToken);
       const ocr = (data?.document?.ocr_result) || (data?.ocr_result);
       if (ocr?.status === "rejected_type") {
-        setUploadMessage({ type: "error", text: ocr.rejection_message || "The document type was rejected." });
+        const message = ocr.rejection_message || "The document type was rejected.";
+        processing.fail(message);
+        setUploadMessage({ type: "error", text: message });
       } else {
+        processing.succeed();
+        scheduleProcessingClose();
         setUploadMessage({ type: "success", text: "Document uploaded — it is visible here for review and download." });
       }
       setFile(null);
@@ -271,10 +318,23 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       refreshPartnerInsights();
       onChanged?.();
     } catch (err) {
-      setUploadMessage({ type: "error", text: getApiErrorMessage(err, "Upload failed. Please try again.") });
+      const message = getApiErrorMessage(err, "Upload failed. Please try again.");
+      processing.fail(message);
+      setUploadMessage({ type: "error", text: message });
     } finally {
       setUploading(false);
     }
+  }
+
+  async function handleUpload(e) {
+    e.preventDefault();
+    if (!file) {
+      setUploadMessage({ type: "error", text: "Choose a file to upload." });
+      return;
+    }
+    const purpose = derivePurpose(docType);
+    retryJobRef.current = { kind: "upload", file, category, docType, purpose };
+    await performUpload({ file, category, docType, purpose });
   }
 
   async function handleDownload(documentId) {
@@ -320,54 +380,55 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     }
   }
 
-  async function handleReplacement(doc) {
-    if (!replacementFile) {
-      setReplacementMessage({ type: "error", text: "Choose a replacement file first." });
-      return;
-    }
+  async function performReplacement({ doc, file }) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
 
     const replacedDocType = doc.doc_type || "other";
+    const category = doc.category || inferCategory(replacedDocType);
+    const purpose = derivePurpose(replacedDocType);
+
     const formData = new FormData();
-    formData.append("file", replacementFile);
-    formData.append("category", doc.category || inferCategory(replacedDocType));
+    formData.append("file", file);
+    formData.append("category", category);
     formData.append("doc_type", replacedDocType);
-
     // Derive purpose so the replacement also syncs employee.onboarding.
-    let replacePurpose = null;
-    if (replacedDocType === "resume") {
-      replacePurpose = "resume";
-    } else if (replacedDocType === "transcript") {
-      replacePurpose = "education_cert";
-    } else if (replacedDocType === "cnic" || replacedDocType === "passport") {
-      replacePurpose = "government_doc";
-    }
-    if (replacePurpose) formData.append("purpose", replacePurpose);
+    if (purpose) formData.append("purpose", purpose);
 
+    processing.begin({ documentType: processingDocumentType(replacedDocType), fileName: file.name });
     setReplacementUploadingId(doc.id);
     setReplacementMessage(null);
     try {
-      const uploader = replacePurpose ? uploadOnboardingFile : uploadDocument;
+      const uploader = purpose ? uploadOnboardingFile : uploadDocument;
       await uploader(formData, accessToken);
       setReplacementDocId(null);
       setReplacementFile(null);
       if (replacementInputRef.current) replacementInputRef.current.value = "";
       setReplacementMessage({ type: "success", text: "Replacement uploaded successfully." });
+      processing.succeed();
+      scheduleProcessingClose();
       loadDocuments();
       refreshPartnerInsights();
       onChanged?.();
     } catch (err) {
-      setReplacementMessage({ type: "error", text: getApiErrorMessage(err, "Replacement upload failed.") });
+      const message = getApiErrorMessage(err, "Replacement upload failed.");
+      processing.fail(message);
+      setReplacementMessage({ type: "error", text: message });
     } finally {
       setReplacementUploadingId(null);
     }
   }
 
-  const isCnicUploadBusy = uploading && docType === "cnic";
-  const isCnicReplacementBusy = Boolean(replacementUploadingId) && documents.some(
-    (doc) => doc.id === replacementUploadingId && doc.doc_type === "cnic"
-  );
+  function handleReplacement(doc) {
+    if (!replacementFile) {
+      setReplacementMessage({ type: "error", text: "Choose a replacement file first." });
+      return;
+    }
+    retryJobRef.current = { kind: "replacement", doc, file: replacementFile };
+    void performReplacement({ doc, file: replacementFile });
+  }
+
+  const processingOpen = processing.state.status !== "idle";
 
   if (loading) {
     return null;
@@ -379,41 +440,42 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
 
   return (
     <div className="document-manager-shell">
-      {(isCnicUploadBusy || isCnicReplacementBusy) && (
-        <div className="document-upload-overlay" role="status" aria-live="polite" data-mascot-busy>
-          <div className="document-upload-overlay-card">
-            <strong>Scanning CNIC with OCR…</strong>
-            <p>We are extracting identity fields from your national ID. This may take a few seconds.</p>
-          </div>
-        </div>
-      )}
-
-      <div className="document-manager-summary">
-        <div>
-          <div className="document-manager-eyebrow">Document centre</div>
-          <h3>{compact ? "Your documents" : "Manage documents"}</h3>
-          <p>Browse by category, download files, and upload a replacement whenever something needs to be updated.</p>
-        </div>
-        <button type="button" className="primary-button" onClick={() => setShowUploader((value) => !value)}>
-          {showUploader ? "Hide uploader" : "Upload document"}
-        </button>
-      </div>
+      <DocumentProcessingOverlay
+        open={processingOpen}
+        {...processing.state}
+        onRetry={handleProcessingRetry}
+        onUploadAnother={handleProcessingUploadAnother}
+      />
 
       <div className="document-manager-toolbar">
-        <div className="document-filter-group" role="tablist" aria-label="Document categories">
-          {CATEGORY_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`document-filter-pill ${activeCategory === option.value ? "active" : ""}`}
-              onClick={() => setActiveCategory(option.value)}
-            >
-              {option.label}
-              {option.value !== "all" ? ` (${categoryCount[option.value] || 0})` : ` (${totalCount})`}
-            </button>
-          ))}
+        <div className="document-manager-pills-row">
+          <div className="document-filter-group" role="tablist" aria-label="Document categories">
+            {CATEGORY_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`document-filter-pill ${activeCategory === option.value ? "active" : ""}`}
+                onClick={() => setActiveCategory(option.value)}
+              >
+                {option.label}
+                {option.value !== "all" ? ` (${categoryCount[option.value] || 0})` : ` (${totalCount})`}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="primary-button document-upload-toggle"
+            onClick={() => setShowUploader((value) => !value)}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            {showUploader ? "Hide uploader" : "Upload document"}
+          </button>
         </div>
-        <div className="document-toolbar-controls">
+        <div className="document-manager-controls-row">
           <div className="document-filter-group" role="tablist" aria-label="Document status">
             {STATUS_FILTER_OPTIONS.map((option) => (
               <button
@@ -481,8 +543,33 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
 
       {!documents.length ? (
         <div className="document-empty-state">
+          <div className="document-empty-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="12" y1="18" x2="12" y2="12" />
+              <polyline points="9 15 12 12 15 15" />
+            </svg>
+          </div>
           <div className="document-empty-title">No documents yet</div>
           <p>Upload an identity document, academic transcript, or any supporting file to start building your document centre.</p>
+          <button
+            type="button"
+            className="primary-button document-empty-action"
+            onClick={() => {
+              setShowUploader(true);
+              window.setTimeout(() => {
+                document.querySelector(".document-upload-card")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+              }, 80);
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            Upload your first document
+          </button>
         </div>
       ) : (
         <div className="document-category-stack">

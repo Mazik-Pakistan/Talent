@@ -29,6 +29,8 @@ import OcrScanOverlay, {
   EDUCATION_OCR_FIELDS,
   RESUME_OCR_FIELDS,
 } from "@/components/ai-experience/OcrScanOverlay";
+import useDocumentProcessing from "@/hooks/useDocumentProcessing";
+import { normalizeDocumentType } from "@/lib/ai/documentProcessing";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
 import { validateDateOfBirth, getMaxDob } from "@/utils/validation";
 import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
@@ -243,6 +245,8 @@ function OnboardingContent() {
   const [ocrSession, setOcrSession] = useState(null);
   const ocrFillAbortRef = useRef(null);
   const ocrPreviewUrlRef = useRef(null);
+  const processing = useDocumentProcessing();
+  const retryJobRef = useRef(null);
 
   const steps = useMemo(() => (isEditMode ? STEPS.filter((s) => s.id !== "submit") : STEPS), [isEditMode]);
 
@@ -447,8 +451,19 @@ function OnboardingContent() {
 
   function startOcrSession({ file, purpose, index = 0 }) {
     clearOcrPreview();
+    const fileName = file?.name || "Document";
+    const mimeType =
+      file?.type ||
+      (/\.pdf$/i.test(fileName) ? "application/pdf" : "");
+    // Images and PDFs both get a local blob preview so Resume/Transcript scan
+    // the same way CNIC image scans do (left pane is never an empty filename).
+    const canPreview =
+      Boolean(file) &&
+      (mimeType.startsWith("image/") ||
+        mimeType === "application/pdf" ||
+        /\.pdf$/i.test(fileName));
     let previewUrl = null;
-    if (file?.type?.startsWith("image/")) {
+    if (canPreview) {
       previewUrl = URL.createObjectURL(file);
       ocrPreviewUrlRef.current = previewUrl;
     }
@@ -471,7 +486,8 @@ function OnboardingContent() {
     setOcrSession({
       purpose,
       index,
-      fileName: file?.name || "Document",
+      fileName,
+      mimeType,
       previewUrl,
       docLabel,
       fieldDefs,
@@ -495,6 +511,20 @@ function OnboardingContent() {
       setOcrSession(null);
       clearOcrPreview();
     }, delayMs);
+  }
+
+  /** Re-runs the last failed upload with the same file when "Try Again" is chosen. */
+  function handleProcessingRetry() {
+    const job = retryJobRef.current;
+    if (!job) return;
+    const { file, purpose, index } = job;
+    void runFileUpload(file, purpose, index);
+  }
+
+  /** Closes the failure overlay so the candidate can pick a different file. */
+  function handleProcessingUploadAnother() {
+    endOcrSession({ delayMs: 0 });
+    processing.cancel();
   }
 
   function ocrFillHandlers(signal, totalFields = 0) {
@@ -706,6 +736,7 @@ function OnboardingContent() {
     setOcrTypingKey(null);
     patchOcrSession({ progress: 1, typingKey: null, scanning: false, stage: "Done" });
     void savePersonalDraft(nextPersonal, nextGovDocs);
+    processing.cancel();
     endOcrSession();
   }
 
@@ -1072,6 +1103,7 @@ function OnboardingContent() {
     if (!signal.aborted) {
       setOcrTypingKey(null);
       patchOcrSession({ progress: 1, typingKey: null, scanning: false, stage: "Done" });
+      processing.cancel();
       endOcrSession();
     }
   }
@@ -1367,6 +1399,8 @@ function OnboardingContent() {
 
     if (willScan || softOcr) {
       startOcrSession({ file, purpose, index });
+      retryJobRef.current = { file, purpose, index };
+      processing.begin({ documentType: normalizeDocumentType(purpose), fileName: file.name });
     }
 
     setUploading(true);
@@ -1409,8 +1443,8 @@ function OnboardingContent() {
         setMessage(err);
         setExtractionPreview(ocr);
         showToast("error", err);
+        processing.fail(err);
         patchOcrSession({ scanning: false, error: err, progress: 1 });
-        endOcrSession({ delayMs: 1600 });
         return;
       }
 
@@ -1419,6 +1453,9 @@ function OnboardingContent() {
       } else if (purpose === "government_doc") {
         const fileMeta = { file_name: data.file_name, file_url: data.file_url, doc_type: "cnic" };
         if (willAutofillCnic) {
+          processing.succeed();
+          // Let the success animation register before the form-fill phase begins.
+          await new Promise((resolve) => setTimeout(resolve, 900));
           void applyCnicOcrFill(ocr, index, fileMeta);
           setExtractionPreview(ocr);
           setMessage(
@@ -1438,12 +1475,14 @@ function OnboardingContent() {
           setScanPulse(false);
           setMessage(ocr?.rejection_message || "Could not extract text — please fill the fields manually.");
           if (ocr) setExtractionPreview(ocr);
+          processing.fail(
+            ocr?.rejection_message || "Could not extract text — please fill the fields manually."
+          );
           patchOcrSession({
             scanning: false,
             error: ocr?.rejection_message || "Could not extract text — please fill the fields manually.",
             progress: 1,
           });
-          endOcrSession({ delayMs: 1400 });
         }
         if (data.document_verification) setDocumentVerification(data.document_verification);
         return;
@@ -1469,15 +1508,31 @@ function OnboardingContent() {
       }
 
       if (ocr && ocr.status === "completed" && ocr.accepted !== false) {
+        processing.succeed();
+        // Let the success animation register before the form-fill phase begins.
+        await new Promise((resolve) => setTimeout(resolve, 900));
         void autoFillFromOCR(ocr, purpose, index);
         setExtractionPreview(ocr);
         setMessage("File uploaded and fields updated where available.");
         showToast("success", "Document uploaded.");
       } else if (ocr && softOcr) {
+        processing.succeed();
+        // Hold the shared success activity (same as CNIC) before form-fill or close.
+        await new Promise((resolve) => setTimeout(resolve, 900));
         if (ocr.fields && Object.keys(ocr.fields).length) {
-          void autoFillFromOCR({ ...ocr, accepted: true, status: "completed", category: ocr.category || "academic_transcript" }, purpose, index);
+          void autoFillFromOCR(
+            {
+              ...ocr,
+              accepted: true,
+              status: "completed",
+              category: ocr.category || "academic_transcript",
+            },
+            purpose,
+            index
+          );
         } else {
-          endOcrSession({ delayMs: 500 });
+          processing.cancel();
+          endOcrSession({ delayMs: 400 });
         }
         const failHint =
           ocr.rejection_message ||
@@ -1492,10 +1547,20 @@ function OnboardingContent() {
       } else if (ocr) {
         setExtractionPreview(ocr);
         setMessage(ocr.rejection_message || "File uploaded. Fill fields manually if needed.");
-        if (willScan || softOcr) endOcrSession({ delayMs: 500 });
+        processing.succeed();
+        if (willScan || softOcr) {
+          await new Promise((resolve) => setTimeout(resolve, 900));
+          processing.cancel();
+          endOcrSession({ delayMs: 400 });
+        }
       } else {
         setMessage("Document uploaded and saved.");
-        if (willScan || softOcr) endOcrSession({ delayMs: 400 });
+        processing.succeed();
+        if (willScan || softOcr) {
+          await new Promise((resolve) => setTimeout(resolve, 900));
+          processing.cancel();
+          endOcrSession({ delayMs: 400 });
+        }
       }
     } catch (error) {
       setScanPulse(false);
@@ -1503,8 +1568,8 @@ function OnboardingContent() {
       setMessage(err);
       showToast("error", err);
       if (willScan || softOcr) {
+        processing.fail(err);
         patchOcrSession({ scanning: false, error: err, progress: 1 });
-        endOcrSession({ delayMs: 1400 });
       }
     } finally {
       setUploading(false);
@@ -2720,10 +2785,22 @@ function OnboardingContent() {
       {ocrSession ? (
         <OcrScanOverlay
           open
-          title={ocrSession.scanning ? "Reading your document" : "Filling your form"}
-          subtitle={`${ocrSession.docLabel} · ${ocrSession.stage || "extracting fields"}`}
+          title={
+            processing.state.status === "success" && ocrSession.scanning
+              ? "Document analyzed"
+              : ocrSession.scanning
+                ? "Reading your document"
+                : "Filling your form"
+          }
+          subtitle={
+            ocrSession.scanning &&
+            (processing.state.status === "processing" || processing.state.status === "success")
+              ? ocrSession.docLabel
+              : `${ocrSession.docLabel} · ${ocrSession.stage || "extracting fields"}`
+          }
           previewUrl={ocrSession.previewUrl}
           fileName={ocrSession.fileName}
+          mimeType={ocrSession.mimeType}
           scanning={ocrSession.scanning}
           stage={ocrSession.stage}
           fieldDefs={ocrSession.fieldDefs}
@@ -2733,6 +2810,16 @@ function OnboardingContent() {
           confidence={ocrSession.confidence}
           progress={ocrSession.progress}
           error={ocrSession.error}
+          processing={{
+            documentType: processing.state.documentType,
+            fileName: processing.state.fileName || ocrSession.fileName,
+            status: processing.state.status,
+            activities: processing.state.activities,
+            activityIndex: processing.state.activityIndex,
+            error: processing.state.error,
+            onRetry: handleProcessingRetry,
+            onUploadAnother: handleProcessingUploadAnother,
+          }}
         />
       ) : null}
 
