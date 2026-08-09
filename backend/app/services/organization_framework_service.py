@@ -152,6 +152,80 @@ async def get_role_by_name(organization_id: str, name: str, department: str | No
     return await database.org_framework_roles.find_one(q, {"_id": 0})
 
 
+async def _assert_no_role_cycle(
+    organization_id: str,
+    department: str,
+    role_name: str,
+    next_role: str | None,
+    *,
+    old_name: str | None = None,
+) -> None:
+    """Walk Promotes-to links with the proposed edge; reject loops."""
+    if not next_role:
+        return
+    roles = await list_roles(organization_id, department)
+    links: dict[str, str | None] = {}
+    for r in roles:
+        links[r["name"]] = (r.get("next_role") or None)
+    # Drop old name when renaming, then apply the proposed edge.
+    if old_name and old_name != role_name and old_name in links:
+        del links[old_name]
+        for k, v in list(links.items()):
+            if v == old_name:
+                links[k] = role_name
+    links[role_name] = next_role
+    cursor: str | None = next_role
+    guard: set[str] = set()
+    while cursor:
+        if cursor == role_name:
+            raise ValueError(
+                f'Promotes to "{next_role}" would create a loop back to "{role_name}".'
+            )
+        if cursor in guard:
+            break
+        guard.add(cursor)
+        cursor = links.get(cursor)
+
+
+async def recompute_department_level_numbers(organization_id: str, department: str) -> None:
+    """Set L1 = entry roles (nothing promotes into them), then +1 along Promotes to."""
+    roles = await list_roles(organization_id, department)
+    if not roles:
+        return
+    by_name = {r["name"]: r for r in roles}
+    parents: dict[str, list[str]] = {}
+    for r in roles:
+        nxt = (r.get("next_role") or "").strip()
+        if nxt and nxt in by_name:
+            parents.setdefault(nxt, []).append(r["name"])
+
+    levels: dict[str, int] = {}
+
+    def depth(name: str, stack: set[str]) -> int:
+        if name in levels:
+            return levels[name]
+        if name in stack:
+            return 1
+        stack.add(name)
+        preds = parents.get(name) or []
+        value = 1 if not preds else 1 + max(depth(p, stack) for p in preds)
+        stack.discard(name)
+        levels[name] = value
+        return value
+
+    for r in roles:
+        depth(r["name"], set())
+
+    now = _now()
+    for r in roles:
+        new_level = levels.get(r["name"], 1)
+        if int(r.get("level_number") or 0) != new_level:
+            await database.org_framework_roles.update_one(
+                {"organization_id": organization_id, "role_id": r["role_id"]},
+                {"$set": {"level_number": new_level, "updated_at": now}},
+            )
+
+
 async def create_role(organization_id: str, data: dict) -> dict:
     name = (data.get("name") or "").strip()
     department = (data.get("department") or "").strip()
@@ -172,12 +246,9 @@ async def create_role(organization_id: str, data: dict) -> dict:
             raise ValueError(
                 f'Next role "{next_role}" must already exist in department "{department}".'
             )
-    try:
-        level_number = int(float(str(data.get("level_number") or 1)))
-    except (TypeError, ValueError):
-        raise ValueError("Level order must be a positive whole number (1 = most junior).")
-    if level_number < 1:
-        raise ValueError("Level order must be a positive whole number (1 = most junior).")
+        await _assert_no_role_cycle(organization_id, department, name, next_role)
+    # Level is derived from the ladder after insert; seed with 1.
+    level_number = 1
     now = _now()
     role_id = f"{organization_id}:{department}:{name}"
     doc = {
@@ -192,7 +263,9 @@ async def create_role(organization_id: str, data: dict) -> dict:
         "updated_at": now,
     }
     await database.org_framework_roles.insert_one(doc)
-    return {k: v for k, v in doc.items() if k != "_id"}
+    await recompute_department_level_numbers(organization_id, department)
+    refreshed = await get_role(organization_id, role_id)
+    return refreshed or {k: v for k, v in doc.items() if k != "_id"}
 
 
 async def update_role(organization_id: str, role_id: str, data: dict) -> dict:
@@ -224,14 +297,8 @@ async def update_role(organization_id: str, role_id: str, data: dict) -> dict:
         if dup and dup.get("role_id") != role_id:
             raise ValueError(f'Role "{new_name}" already exists in department "{new_department}".')
 
-    if "level_number" in update:
-        try:
-            level_number = int(float(str(update["level_number"])))
-        except (TypeError, ValueError):
-            raise ValueError("Level order must be a positive whole number (1 = most junior).")
-        if level_number < 1:
-            raise ValueError("Level order must be a positive whole number (1 = most junior).")
-        update["level_number"] = level_number
+    # Level numbers are always recomputed from Promotes-to links.
+    update.pop("level_number", None)
 
     next_role = update.get("next_role", role.get("next_role"))
     if isinstance(next_role, str):
@@ -244,7 +311,16 @@ async def update_role(organization_id: str, role_id: str, data: dict) -> dict:
             raise ValueError(
                 f'Next role "{next_role}" must already exist in department "{new_department}".'
             )
+        await _assert_no_role_cycle(
+            organization_id,
+            new_department,
+            new_name,
+            next_role,
+            old_name=role["name"],
+        )
     update["next_role"] = next_role or None
+
+    old_department = role["department"]
 
     await database.org_framework_roles.update_one(
         {"organization_id": organization_id, "role_id": role_id},
@@ -277,6 +353,10 @@ async def update_role(organization_id: str, role_id: str, data: dict) -> dict:
             {"$set": {"role_id": f"{organization_id}:{update['department']}:{new_name}"}},
         )
         role_id = f"{organization_id}:{update['department']}:{new_name}"
+
+    await recompute_department_level_numbers(organization_id, new_department)
+    if old_department != new_department:
+        await recompute_department_level_numbers(organization_id, old_department)
     return await get_role(organization_id, role_id)
 
 
@@ -284,6 +364,12 @@ async def delete_role(organization_id: str, role_id: str) -> bool:
     role = await get_role(organization_id, role_id)
     if not role:
         return False
+    department = role.get("department")
+    # Clear Promotes-to links that pointed at this role so the ladder reconnects cleanly.
+    await database.org_framework_roles.update_many(
+        {"organization_id": organization_id, "next_role": role["name"]},
+        {"$set": {"next_role": None, "updated_at": _now()}},
+    )
     # Remove dependents that reference the role so no orphans remain.
     await database.org_framework_skills.delete_many(
         {"organization_id": organization_id, "role_name": role["name"]},
@@ -300,6 +386,8 @@ async def delete_role(organization_id: str, role_id: str) -> bool:
     result = await database.org_framework_roles.delete_one(
         {"organization_id": organization_id, "role_id": role_id},
     )
+    if result.deleted_count > 0 and department:
+        await recompute_department_level_numbers(organization_id, department)
     return result.deleted_count > 0
 
 

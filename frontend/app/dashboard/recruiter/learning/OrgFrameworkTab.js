@@ -642,50 +642,205 @@ function DepartmentsSection({ departments, loadAll }) {
   );
 }
 
-/** Build promotion ladders within a department: Intern → Junior → … */
-function buildDepartmentLadders(deptRoles) {
+/** Auto level: L1 = entry roles, then +1 along Promotes to (handles merges). */
+function computeAutoLevels(deptRoles) {
   const byName = new Map(deptRoles.map((r) => [r.name, r]));
-  const pointedTo = new Set(deptRoles.map((r) => r.next_role).filter((n) => n && byName.has(n)));
-  const roots = deptRoles
-    .filter((r) => !pointedTo.has(r.name))
-    .sort((a, b) => (a.level_number || 0) - (b.level_number || 0) || (a.name || "").localeCompare(b.name || ""));
-
-  const chains = [];
-  const seen = new Set();
-  for (const root of roots) {
-    const chain = [];
-    let cur = root;
-    const guard = new Set();
-    while (cur && !guard.has(cur.name)) {
-      guard.add(cur.name);
-      seen.add(cur.name);
-      chain.push(cur);
-      cur = cur.next_role && byName.has(cur.next_role) ? byName.get(cur.next_role) : null;
+  const parents = {};
+  for (const r of deptRoles) {
+    const nxt = (r.next_role || "").trim();
+    if (nxt && byName.has(nxt)) {
+      if (!parents[nxt]) parents[nxt] = [];
+      parents[nxt].push(r.name);
     }
-    if (chain.length) chains.push(chain);
   }
-  const orphans = deptRoles
-    .filter((r) => !seen.has(r.name))
-    .sort((a, b) => (a.level_number || 0) - (b.level_number || 0));
-  for (const orphan of orphans) chains.push([orphan]);
-  return chains;
+  const levels = new Map();
+  const depth = (name, stack = new Set()) => {
+    if (levels.has(name)) return levels.get(name);
+    if (stack.has(name)) return 1;
+    stack.add(name);
+    const preds = parents[name] || [];
+    const value = preds.length ? 1 + Math.max(...preds.map((p) => depth(p, stack))) : 1;
+    stack.delete(name);
+    levels.set(name, value);
+    return value;
+  };
+  for (const r of deptRoles) depth(r.name);
+  return levels;
+}
+
+/**
+ * One connected ladder per component, layered by level so multiple roles
+ * promoting into the same next role share one flow (no duplicate chains).
+ */
+function buildDepartmentLadderViews(deptRoles) {
+  const byName = new Map(deptRoles.map((r) => [r.name, r]));
+  const undirected = new Map(deptRoles.map((r) => [r.name, new Set()]));
+  for (const r of deptRoles) {
+    const nxt = (r.next_role || "").trim();
+    if (nxt && byName.has(nxt)) {
+      undirected.get(r.name).add(nxt);
+      undirected.get(nxt).add(r.name);
+    }
+  }
+
+  const visited = new Set();
+  const components = [];
+  for (const r of deptRoles) {
+    if (visited.has(r.name)) continue;
+    const queue = [r.name];
+    const names = [];
+    visited.add(r.name);
+    while (queue.length) {
+      const cur = queue.shift();
+      names.push(cur);
+      for (const n of undirected.get(cur) || []) {
+        if (!visited.has(n)) {
+          visited.add(n);
+          queue.push(n);
+        }
+      }
+    }
+    components.push(names.map((n) => byName.get(n)).filter(Boolean));
+  }
+
+  const autoLevels = computeAutoLevels(deptRoles);
+  return components
+    .map((comp) => {
+      const maxL = Math.max(0, ...comp.map((r) => autoLevels.get(r.name) || 1));
+      const layers = [];
+      for (let L = 1; L <= maxL; L++) {
+        const layer = comp
+          .filter((r) => (autoLevels.get(r.name) || 1) === L)
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        if (layer.length) layers.push(layer);
+      }
+      return { layers, autoLevels };
+    })
+    .sort((a, b) => {
+      const aName = a.layers[0]?.[0]?.name || "";
+      const bName = b.layers[0]?.[0]?.name || "";
+      return aName.localeCompare(bName);
+    });
 }
 
 function RolesSection({ roles, departments, loadAll }) {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);
-  const [form, setForm] = useState({ name: "", department: "", next_role: "", level_number: 1, description: "" });
+  const [form, setForm] = useState({ name: "", department: "", insert_after: "", description: "" });
   const [busy, setBusy] = useState(false);
   const token = () => localStorage.getItem("access_token");
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
+  const peerInDept = (department, excludeRoleId, excludeName) =>
+    roles.filter(
+      (r) =>
+        r.department === department &&
+        (!excludeRoleId || r.role_id !== excludeRoleId) &&
+        (!excludeName || r.name !== excludeName)
+    );
+
+  /** Preview / resolve next step when inserting after a role. */
+  const resolveInsert = (department, insertAfter, selfName, selfCurrentNext) => {
+    if (!insertAfter) {
+      return { nextRole: selfCurrentNext || null, label: null };
+    }
+    const pred = roles.find((r) => r.department === department && r.name === insertAfter);
+    if (!pred) return { nextRole: null, label: null };
+    // If predecessor already points at this role, keep the existing next.
+    const nextRole =
+      pred.next_role && pred.next_role !== selfName ? pred.next_role : selfCurrentNext || null;
+    const mid = selfName || "this role";
+    const parts = [insertAfter, mid];
+    if (nextRole) parts.push(nextRole);
+    return { nextRole, label: parts.join(" → ") };
+  };
+
+  /**
+   * Place `roleName` immediately after `insertAfter` (or unlink if empty).
+   * Reconnects the old predecessor around the moved role so the ladder stays one chain.
+   */
+  const applyInsertPosition = async ({
+    roleId,
+    roleName,
+    department,
+    insertAfter,
+    previousName,
+    previousNext,
+  }) => {
+    const bridgeNext = previousNext || null;
+    // Anyone who pointed at this role (except the new predecessor) now points at what this role used to promote to.
+    const oldPointers = peerInDept(department).filter(
+      (r) =>
+        (r.next_role === previousName || r.next_role === roleName) &&
+        r.name !== insertAfter &&
+        r.role_id !== roleId
+    );
+    for (const p of oldPointers) {
+      await updateOrgRole(token(), p.role_id, { next_role: bridgeNext });
+    }
+
+    if (!insertAfter) {
+      await updateOrgRole(token(), roleId, {
+        name: roleName,
+        department,
+        next_role: bridgeNext,
+        description: form.description,
+      });
+      return;
+    }
+
+    const pred = roles.find((r) => r.department === department && r.name === insertAfter);
+    if (!pred) {
+      await updateOrgRole(token(), roleId, {
+        name: roleName,
+        department,
+        next_role: bridgeNext,
+        description: form.description,
+      });
+      return;
+    }
+    const inherited =
+      pred.next_role && pred.next_role !== previousName && pred.next_role !== roleName
+        ? pred.next_role
+        : bridgeNext;
+
+    await updateOrgRole(token(), roleId, {
+      name: roleName,
+      department,
+      next_role: inherited,
+      description: form.description,
+    });
+    if (pred.next_role !== roleName) {
+      await updateOrgRole(token(), pred.role_id, { next_role: roleName });
+    }
+  };
+
   const handleCreate = async () => {
     if (!form.name.trim() || !form.department.trim()) return toast.error("Name and department required.");
+    if (form.insert_after && form.insert_after === form.name.trim()) {
+      return toast.error("A role cannot come after itself.");
+    }
     setBusy(true);
     try {
-      await createOrgRole(token(), { ...form, next_role: form.next_role || null });
-      toast.success("Role created.");
+      const { nextRole } = resolveInsert(form.department, form.insert_after, form.name.trim(), null);
+      const created = await createOrgRole(token(), {
+        name: form.name.trim(),
+        department: form.department,
+        next_role: nextRole,
+        description: form.description,
+      });
+      if (form.insert_after) {
+        const pred = roles.find((r) => r.department === form.department && r.name === form.insert_after);
+        if (pred) await updateOrgRole(token(), pred.role_id, { next_role: form.name.trim() });
+      }
+      toast.success(
+        form.insert_after
+          ? `Added after ${form.insert_after}.`
+          : created?.name
+            ? "Role created."
+            : "Role created."
+      );
       setShowForm(false);
       resetForm();
       await loadAll();
@@ -695,9 +850,19 @@ function RolesSection({ roles, departments, loadAll }) {
 
   const handleUpdate = async () => {
     if (!editItem) return;
+    if (form.insert_after && form.insert_after === form.name.trim()) {
+      return toast.error("A role cannot come after itself.");
+    }
     setBusy(true);
     try {
-      await updateOrgRole(token(), editItem.role_id, { ...form, next_role: form.next_role || null });
+      await applyInsertPosition({
+        roleId: editItem.role_id,
+        roleName: form.name.trim(),
+        department: form.department,
+        insertAfter: form.insert_after || "",
+        previousName: editItem.name,
+        previousNext: editItem.next_role || null,
+      });
       toast.success("Role updated.");
       setShowForm(false);
       resetForm();
@@ -712,23 +877,35 @@ function RolesSection({ roles, departments, loadAll }) {
     catch (err) { toast.error(getApiErrorMessage(err, "Failed.")); }
   };
 
-  const resetForm = () => { setEditItem(null); setForm({ name: "", department: "", next_role: "", level_number: 1, description: "" }); };
+  const resetForm = () => {
+    setEditItem(null);
+    setForm({ name: "", department: "", insert_after: "", description: "" });
+  };
   const startEdit = (r) => {
+    const predecessor = roles.find(
+      (x) => x.department === r.department && x.next_role === r.name && x.role_id !== r.role_id
+    );
     setEditItem(r);
     setForm({
       name: r.name,
       department: r.department,
-      next_role: r.next_role || "",
-      level_number: r.level_number || 1,
+      insert_after: predecessor?.name || "",
       description: r.description || "",
     });
     setShowForm(true);
   };
 
   const deptNames = [...new Set([...departments.map((d) => d.name), ...roles.map((r) => r.department).filter(Boolean)])].sort();
-  const nextRoleOptions = roles
-    .filter((r) => r.department === form.department && (!editItem || r.role_id !== editItem.role_id) && r.name !== form.name)
-    .sort((a, b) => (a.level_number || 0) - (b.level_number || 0) || a.name.localeCompare(b.name));
+  const insertOptions = peerInDept(form.department, editItem?.role_id, form.name.trim() || null).sort(
+    (a, b) => (a.level_number || 0) - (b.level_number || 0) || a.name.localeCompare(b.name)
+  );
+
+  const { nextRole: previewNext, label: pathPreview } = resolveInsert(
+    form.department,
+    form.insert_after,
+    form.name.trim() || "…",
+    editItem?.next_role || null
+  );
 
   const byDept = {};
   [...roles]
@@ -746,9 +923,8 @@ function RolesSection({ roles, departments, loadAll }) {
           <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--navy)", fontFamily: "'Sora', system-ui", margin: 0 }}>
             Role ladders ({roles.length})
           </h2>
-          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 560, lineHeight: 1.5 }}>
-            Build the promotion path in each department — e.g. Intern → Junior → Developer → Senior.
-            Level order sorts the ladder; <strong>Promotes to</strong> links each role to the next one.
+          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 580, lineHeight: 1.5 }}>
+            Pick <strong>Add after</strong> — e.g. after Software Developer — and the next step is filled in for you.
           </p>
         </div>
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => { setShowForm(true); resetForm(); }}>
@@ -769,51 +945,49 @@ function RolesSection({ roles, departments, loadAll }) {
               <select
                 data-field-key="department"
                 value={form.department}
-                onChange={(e) => setForm((f) => ({ ...f, department: e.target.value, next_role: "" }))}
+                onChange={(e) => setForm((f) => ({ ...f, department: e.target.value, insert_after: "" }))}
               >
                 <option value="">Select</option>
                 {deptNames.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </label>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 12, marginTop: 8 }}>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>
-              Level order
-              <input
-                data-field-key="level_number"
-                type="number"
-                min="1"
-                value={form.level_number}
-                onChange={(e) => setField("level_number", parseInt(e.target.value) || 1)}
-              />
-              <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>
-                1 = most junior in this department
-              </span>
-            </label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>
-              Promotes to
-              <select
-                data-field-key="next_role"
-                value={form.next_role}
-                onChange={(e) => setField("next_role", e.target.value)}
-                disabled={!form.department}
-              >
-                <option value="">No next role (top of ladder)</option>
-                {nextRoleOptions.map((r) => (
-                  <option key={r.role_id} value={r.name}>
-                    {r.name} (L{r.level_number || 1})
-                  </option>
-                ))}
-              </select>
-              <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>
-                {!form.department ? "Pick a department first" : nextRoleOptions.length === 0 ? "Add other roles in this department to link them" : "Must be another role in the same department"}
-              </span>
-            </label>
-            <label className={s.fieldLabel} style={{ margin: 0 }}>
-              Description
-              <input data-field-key="description" value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Optional" />
-            </label>
-          </div>
+          <label className={s.fieldLabel} style={{ marginTop: 10, display: "block" }}>
+            Add after
+            <select
+              data-field-key="insert_after"
+              value={form.insert_after}
+              onChange={(e) => setField("insert_after", e.target.value)}
+              disabled={!form.department}
+            >
+              <option value="">Start of a new path (not after another role)</option>
+              {insertOptions.map((r) => (
+                <option key={r.role_id} value={r.name}>
+                  {r.next_role
+                    ? `After ${r.name}  →  inserts before ${r.next_role}`
+                    : `After ${r.name}  →  becomes the next step`}
+                </option>
+              ))}
+            </select>
+            <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>
+              {!form.department
+                ? "Pick a department first"
+                : form.insert_after
+                  ? previewNext
+                    ? `Result: ${form.insert_after} → ${form.name.trim() || "…"} → ${previewNext}`
+                    : `Result: ${form.insert_after} → ${form.name.trim() || "…"} (end of path)`
+                  : "Leave empty to start a separate path"}
+            </span>
+          </label>
+          {pathPreview && (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: "var(--navy)", fontWeight: 650 }}>
+              {pathPreview}
+            </div>
+          )}
+          <label className={s.fieldLabel} style={{ marginTop: 10, display: "block" }}>
+            Description
+            <input data-field-key="description" value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Optional" />
+          </label>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={editItem ? handleUpdate : handleCreate}>{busy ? "Saving…" : "Save"}</button>
             <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => { setShowForm(false); resetForm(); }}>Cancel</button>
@@ -823,12 +997,12 @@ function RolesSection({ roles, departments, loadAll }) {
 
       {roles.length === 0 ? (
         <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-muted)", fontSize: 13.5 }}>
-          No roles yet. Add departments first, then create roles and link them with <strong>Promotes to</strong>.
+          No roles yet. Add departments first, then add roles and choose who they come after.
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           {Object.entries(byDept).map(([dept, deptRoles]) => {
-            const ladders = buildDepartmentLadders(deptRoles);
+            const views = buildDepartmentLadderViews(deptRoles);
             return (
               <div key={dept} className={s.ladderDept}>
                 <div className={s.ladderDeptHead}>
@@ -837,25 +1011,28 @@ function RolesSection({ roles, departments, loadAll }) {
                   <span className={`${s.statusPill} ${s.neutral}`} style={{ fontSize: 10 }}>{deptRoles.length} roles</span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {ladders.map((chain, idx) => (
-                    <div key={`${dept}-chain-${idx}`} className={s.ladderChain}>
-                      {chain.map((r, i) => (
-                        <div key={r.role_id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          {i > 0 && <span className={s.ladderArrow} aria-hidden="true">→</span>}
-                          <div className={s.ladderNode}>
-                            <span className={s.ladderLevel}>L{r.level_number || 1}</span>
-                            <span className={s.ladderName}>{r.name}</span>
-                            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(r)} title="Edit">
-                              <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
-                            </button>
-                            <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto", color: "var(--red)" }} onClick={() => handleDelete(r.role_id)} title="Delete">
-                              <Trash2 aria-hidden="true" style={{ width: 11, height: 11 }} />
-                            </button>
+                  {views.map((view, idx) => (
+                    <div key={`${dept}-flow-${idx}`} className={s.ladderChain}>
+                      {view.layers.map((layer, li) => (
+                        <div key={`${dept}-L${li}`} className={s.ladderLayerWrap}>
+                          {li > 0 && <span className={s.ladderArrow} aria-hidden="true">→</span>}
+                          <div className={s.ladderLayer}>
+                            {layer.map((r) => (
+                              <div key={r.role_id} className={s.ladderNode}>
+                                <span className={s.ladderName}>{r.name}</span>
+                                <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto" }} onClick={() => startEdit(r)} title="Edit">
+                                  <Pencil aria-hidden="true" style={{ width: 11, height: 11 }} />
+                                </button>
+                                <button type="button" className={`${s.btn} ${s.btnGhost}`} style={{ padding: 2, minHeight: "auto", color: "var(--red)" }} onClick={() => handleDelete(r.role_id)} title="Delete">
+                                  <Trash2 aria-hidden="true" style={{ width: 11, height: 11 }} />
+                                </button>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       ))}
-                      {chain.length === 1 && !chain[0].next_role && (
-                        <span style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: 4 }}>standalone — set Promotes to</span>
+                      {view.layers.length === 1 && view.layers[0].length === 1 && !view.layers[0][0].next_role && (
+                        <span style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: 4 }}>standalone — edit and choose Add after</span>
                       )}
                     </div>
                   ))}
@@ -1207,7 +1384,6 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
                 <div className={s.promoRoleHead}>
                   <div>
                     <div className={s.promoRoleTitle}>
-                      <span className={s.ladderLevel}>L{role.level_number || 1}</span>
                       {role.name}
                       <span className={s.ladderArrow} aria-hidden="true">→</span>
                       <span style={{ fontWeight: 600, color: "var(--text-muted)" }}>{role.next_role}</span>
@@ -1317,7 +1493,6 @@ function PromotionSection({ rules, roles, loadAll, onGoToRoles }) {
                 <div className={s.promoRoleHead}>
                   <div>
                     <div className={s.promoRoleTitle}>
-                      <span className={s.ladderLevel}>L{role.level_number || 1}</span>
                       {role.name}
                       <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-faint)" }}>· no next role</span>
                     </div>
@@ -1417,8 +1592,7 @@ function RoleCard({ role, roleCourses, loadAll }) {
           <div className={s.roleCardTitle}>{role.name}</div>
           <div className={s.roleCardMeta}>
             {role.department}
-            {role.level_number ? ` · Level ${role.level_number}` : ""}
-            {role.next_role ? ` · Next: ${role.next_role}` : ""}
+            {role.next_role ? ` · Promotes to ${role.next_role}` : ""}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

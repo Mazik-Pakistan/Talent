@@ -346,8 +346,8 @@ export const ORG_CONFIG_TAB_HELP = {
   },
   roles: {
     title: "Role ladders",
-    hint: "Build Intern → Junior → Senior paths per department. Level order sorts the ladder; Promotes to links each role to the next.",
-    fields: ["role_name", "department", "level_number", "next_role", "description"],
+    hint: "Set Promotes to an existing role to join its ladder. The path is the order — no separate level numbers to manage.",
+    fields: ["role_name", "department", "next_role", "description"],
   },
   "career-roadmaps": {
     title: "Career roadmaps",
