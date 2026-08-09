@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str
     MAIL_USE_TLS: bool = True
     MAIL_USE_SSL: bool = False
+    EMAIL_LOGO_URL: str = ""
 
     FRONTEND_URL: str
     BACKEND_URL: str

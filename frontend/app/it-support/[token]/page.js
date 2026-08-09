@@ -9,6 +9,7 @@ import {
   getApiErrorMessage,
   getItServiceRequestPublic,
 } from "@/services/authService";
+import { LOGO_URL } from "@/lib/logo";
 
 const SHARED_STYLES = `
   .it-shell {
@@ -155,7 +156,7 @@ export default function ItSupportPublicPage() {
     <div className="it-shell">
       <div className="it-card">
         <img
-          src="/assets/logo-placeholder.png"
+          src={LOGO_URL}
           alt="Company logo"
           className="it-logo"
           style={{ maxWidth: 116 }}

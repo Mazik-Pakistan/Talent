@@ -30,9 +30,12 @@ def unique_emails(*emails) -> list[str]:
 
 class EmailService:
     # ============================================================
-    #  Logo loaded from Cloudinary CDN
+    #  Logo loaded from Cloudinary CDN (override via EMAIL_LOGO_URL)
     # ============================================================
-    LOGO_SRC = "https://res.cloudinary.com/nujzpfgy/image/upload/v1785235669/logo_g6pe1a.png"
+    LOGO_SRC = (
+        getattr(settings, "EMAIL_LOGO_URL", None)
+        or "https://res.cloudinary.com/nujzpfgy/image/upload/v1785235669/logo_g6pe1a.png"
+    )
 
     def _build_message(self, to_email: str, subject: str, html_body: str) -> MIMEMultipart:
         msg = MIMEMultipart("alternative")

@@ -7,6 +7,7 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 import { forgotPassword, getApiErrorMessage } from "@/services/authService";
+import { LOGO_URL } from "@/lib/logo";
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic"; 
 
@@ -52,7 +53,7 @@ export default function ForgotPasswordPage() {
       <div className={styles.card}>
         <aside className={styles.aside} aria-label="Password recovery introduction">
           <div className={styles.asideBrandRow}>
-            <img src="/talentai-logo.png" alt="Mazik Global" className={styles.asideLogo} />
+            <img src={LOGO_URL} alt="Mazik Global" className={styles.asideLogo} />
           </div>
           <div className={styles.asideContent}>
             <div className={styles.rotatingContent}>

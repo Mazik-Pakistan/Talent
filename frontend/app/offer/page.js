@@ -11,6 +11,7 @@ import {
   signOffer,
   uploadOfferSignature,
 } from "@/services/authService";
+import { LOGO_URL } from "@/lib/logo";
 import SignaturePad from "@/components/SignaturePad";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
@@ -475,7 +476,7 @@ function OfferLetterPageContent() {
 <body>
   <div class="letterhead">
     <div class="logo">
-      <img src="/talentai-logo.png" alt="Mazik Global" />
+      <img src={LOGO_URL} alt="Mazik Global" />
     </div>
     <div class="company-info">
       <strong>${companyName}</strong><br>
@@ -604,7 +605,7 @@ function OfferLetterPageContent() {
       <div className={styles.offerCard}>
         <header className={styles.offerPageHeader}>
           <div className={styles.offerBrandRow}>
-            <img src="/talentai-logo.png" alt="Mazik Global" style={{ maxWidth: 160 }} />
+            <img src={LOGO_URL} alt="Mazik Global" style={{ maxWidth: 160 }} />
           </div>
           <div className={styles.offerHeaderActions}>
             {offer && (

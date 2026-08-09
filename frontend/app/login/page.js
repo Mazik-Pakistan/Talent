@@ -8,6 +8,7 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 import { getApiErrorMessage, login, persistLoginSession } from "@/services/authService";
+import { LOGO_URL } from "@/lib/logo";
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic";
 
@@ -194,7 +195,7 @@ function LoginForm() {
         <aside className={styles.aside} aria-label="Talent platform introduction">
           <div className={styles.asideBrandRow}>
             <Image
-              src="/talentai-logo.png"
+              src={LOGO_URL}
               alt="Mazik Global TalentAI"
               width={164}
               height={80}

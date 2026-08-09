@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage, verifyOtp, resendOtp, persistLoginSession } from "@/services/authService";
+import { LOGO_URL } from "@/lib/logo";
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic";
 
@@ -118,7 +119,7 @@ export default function VerifyEmailPage() {
       <div className={styles.card}>
         <aside className={styles.aside} aria-label="Email verification introduction">
           <div className={styles.asideBrandRow}>
-            <img src="/talentai-logo.png" alt="Mazik Global" className={styles.asideLogo} />
+            <img src={LOGO_URL} alt="Mazik Global" className={styles.asideLogo} />
           </div>
           <div className={styles.asideContent}>
             <div>

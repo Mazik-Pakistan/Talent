@@ -18,6 +18,23 @@ const PUBLIC_PATHS = new Set([
   "/favicon.ico",
 ]);
 
+const PUBLIC_EXTENSIONS = new Set([
+  ".png",
+  ".svg",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".ico",
+  ".css",
+  ".js",
+  ".json",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".eot",
+]);
+
 function isPublicPath(pathname) {
   if (PUBLIC_PATHS.has(pathname)) {
     return true;
@@ -26,6 +43,10 @@ function isPublicPath(pathname) {
     if (prefix !== "/_next" && prefix !== "/favicon.ico" && pathname.startsWith(`${prefix}/`)) {
       return true;
     }
+  }
+  const ext = pathname.toLowerCase().split("?").shift().split("#").shift();
+  if (ext && PUBLIC_EXTENSIONS.has("." + ext.split(".").pop())) {
+    return true;
   }
   return false;
 }

@@ -11,6 +11,7 @@ import {
   resetItProvisioningPasswordPublic,
   submitItProvisioningPublic,
 } from "@/services/authService";
+import { LOGO_URL } from "@/lib/logo";
 
 const ASSET_TYPES = [
   { value: "laptop", label: "Laptop" },
@@ -652,7 +653,7 @@ export default function ItSetupPublicPage() {
   if (state.status === "error") {
     return (
       <Shell narrow>
-        <img className="it-logo" src="/talentai-logo.png" alt="Mazik Global" style={{ maxWidth: 192 }} />
+        <img className="it-logo" src={LOGO_URL} alt="Mazik Global" style={{ maxWidth: 192 }} />
         <div className="it-center">
           <div className="it-icon err" aria-hidden>!</div>
           <p className="it-eyebrow">IT provisioning</p>
@@ -672,7 +673,7 @@ export default function ItSetupPublicPage() {
 
     return (
       <Shell narrow>
-        <img className="it-logo" src="/talentai-logo.png" alt="Mazik Global" style={{ maxWidth: 192 }} />
+        <img className="it-logo" src={LOGO_URL} alt="Mazik Global" style={{ maxWidth: 192 }} />
         <div className="it-center">
           <div className="it-icon ok" aria-hidden>✓</div>
           <p className="it-eyebrow">IT provisioning</p>
@@ -745,7 +746,7 @@ export default function ItSetupPublicPage() {
     const employee = state.data?.employee || {};
     return (
       <Shell narrow>
-        <img className="it-logo" src="/talentai-logo.png" alt="Mazik Global" style={{ maxWidth: 192 }} />
+        <img className="it-logo" src={LOGO_URL} alt="Mazik Global" style={{ maxWidth: 192 }} />
         <div className="it-center">
           <div className="it-icon ok" aria-hidden>✓</div>
           <p className="it-eyebrow">IT provisioning</p>
@@ -796,7 +797,7 @@ export default function ItSetupPublicPage() {
 
   return (
     <Shell>
-      <img className="it-logo" src="/talentai-logo.png" alt="Mazik Global" style={{ maxWidth: 192 }} />
+      <img className="it-logo" src={LOGO_URL} alt="Mazik Global" style={{ maxWidth: 192 }} />
       <div className="it-center">
         <p className="it-eyebrow">IT provisioning</p>
         <h1 className="it-title">{editing ? "Edit setup" : "Assign email to candidate "}{employee.full_name}</h1>

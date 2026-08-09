@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { LOGO_URL } from "@/lib/logo";
 import styles from "@/app/styles/auth.module.css";
 
 export default function RegisterPage() {
@@ -11,7 +12,7 @@ export default function RegisterPage() {
         <aside className={styles.aside} aria-label="Account creation by invitation">
           <div className={styles.asideBrandRow}>
             <img
-              src="/talentai-logo.png"
+              src={LOGO_URL}
               alt="Mazik Global"
               className={styles.asideLogo}
             />
