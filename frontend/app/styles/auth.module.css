@@ -66,7 +66,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: clamp(30px, 4vw, 46px);
+  padding: clamp(34px, 4vw, 48px);
   overflow: hidden;
   color: var(--navy);
   background: linear-gradient(140deg, var(--card), var(--blue-lighter) 58%, var(--blue-light));
@@ -123,7 +123,7 @@
 }
 
 .recruitmentVisual { position: relative; min-height: 166px; margin: 2px 0 0; }
-.talentBoard { position: absolute; left: 8px; bottom: 0; width: min(275px, 78%); height: 142px; padding: 15px 12px; border: 1px solid var(--blue-mid); border-radius: 11px; background: color-mix(in srgb, var(--card) 85%, var(--blue-light)); box-shadow: 0 18px 30px color-mix(in srgb, var(--navy) 14%, transparent); }
+.talentBoard { position: absolute; left: 8px; bottom: 0; width: min(275px, 78%); height: 142px; padding: 17px 14px; border: 1px solid var(--blue-mid); border-radius: 12px; background: color-mix(in srgb, var(--card) 85%, var(--blue-light)); box-shadow: 0 18px 30px color-mix(in srgb, var(--navy) 14%, transparent); }
 .talentBoard::before { content: ""; display: block; width: 35px; height: 6px; margin-bottom: 11px; border-radius: 999px; background: var(--blue); box-shadow: 44px 0 0 var(--border), 54px 0 0 var(--border); }
 .candidateRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
 .candidate { height: 91px; padding: 8px 5px; text-align: center; border: 1px solid var(--border); border-radius: 7px; background: var(--card); }
@@ -135,7 +135,7 @@
 .matchCard { right: 12px; bottom: 0; width: 86px; height: 42px; border-radius: 7px; color: var(--green, var(--blue-strong)); font-size: 11px; font-weight: 800; }
 .matchCard::after { content: "AI match 95%"; }
 
-.featureGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 14px 12px; border: 1px solid var(--blue-mid); border-radius: 10px; background: color-mix(in srgb, var(--card) 55%, var(--blue-light)); }
+.featureGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 16px 14px; border: 1px solid var(--blue-mid); border-radius: 12px; background: color-mix(in srgb, var(--card) 55%, var(--blue-light)); }
 .featureCard { min-width: 0; color: var(--navy-2); font-size: 9px; line-height: 1.45; }
 .featureCard strong { display: block; margin-bottom: 4px; color: var(--navy); font-size: 11px; }
 .featureCard strong::before { content: "✦"; margin-right: 4px; color: var(--blue-strong); }
@@ -144,13 +144,13 @@
   display: flex; 
   flex-direction: column; 
   justify-content: center; 
-  padding: clamp(28px, 3.5vw, 42px);
+  padding: clamp(32px, 3.5vw, 44px);
   background: color-mix(in srgb, var(--card) 96%, var(--blue-lighter)); 
   overflow-y: auto; 
 }
 
 .intro { 
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   animation: fadeSlide .45s .12s both; 
 }
 
@@ -170,13 +170,14 @@
   line-height: 1.6; 
 }
 
-.form { display: flex; flex-direction: column; gap: 14px; }
-.formRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.form { display: flex; flex-direction: column; gap: 16px; }
+.formRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .animField { animation: fadeSlide .45s var(--ease) both; }
 
-.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .field > span:first-child, .rolePicker legend { 
   padding: 0; 
+  margin-bottom: 4px;
   color: var(--navy); 
   font-size: 13px;
   font-weight: 700; 
@@ -217,7 +218,7 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 .input[aria-invalid="false"]:not(:placeholder-shown) { border-color: var(--blue-strong); }
 
 .hint { margin-top: -1px; color: var(--text-muted); font-size: 9px; }
-.fieldError { margin: 0; padding: 4px 7px; border-radius: 5px; color: var(--auth-error, var(--blue-strong)); background: var(--blue-light); font-size: 10px; line-height: 1.35; }
+.fieldError { margin: 4px 0 0; padding: 4px 7px; border-radius: 5px; color: var(--auth-error, var(--blue-strong)); background: var(--blue-light); font-size: 10px; line-height: 1.35; }
 
 .passwordControl { position: relative; display: flex; align-items: center; }
 .passwordControl .input { padding-right: 42px; }
@@ -242,7 +243,7 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 .reqCheck { display: inline-grid; place-items: center; width: 11px; height: 11px; border: 1px solid var(--text-faint); border-radius: 50%; color: var(--card); font-size: 7px; }
 .reqMet { color: var(--blue-strong); }.reqMet .reqCheck { border-color: var(--blue-strong); background: var(--blue-strong); }
 
-.strengthTrack { height: 4px; overflow: hidden; border-radius: 99px; background: var(--border); }
+.strengthTrack { margin: 4px 0 0; height: 4px; overflow: hidden; border-radius: 99px; background: var(--border); }
 .strengthFill { height: 100%; border-radius: inherit; transition: width .35s var(--ease); }
 .strengthLabel { font-size: 9px; font-weight: 700; }
 .strengthWeak { color: #dc2626; }
@@ -313,9 +314,9 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 .roleOption { 
   position: relative; 
   min-height: 64px;
-  padding: 12px 28px 11px 14px;
+  padding: 12px 28px 11px 16px;
   border: 1px solid var(--border); 
-  border-radius: 8px; 
+  border-radius: 10px; 
   background: var(--card); 
   cursor: pointer; 
   transition: .2s var(--ease); 
@@ -341,10 +342,11 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   align-items: center; 
   justify-content: center; 
   min-height: 48px;
+  padding: 10px 18px;
   gap: 10px; 
   overflow: hidden; 
   border: 0; 
-  border-radius: 8px; 
+  border-radius: 10px; 
   color: var(--card); 
   background: linear-gradient(100deg, var(--blue-strong), var(--blue)); 
   box-shadow: 0 12px 22px color-mix(in srgb, var(--blue-strong) 31%, transparent); 
@@ -363,8 +365,8 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 .footer { 
   display: flex; 
   justify-content: center; 
-  gap: 8px; 
-  margin: 20px 0 0; 
+  gap: 10px; 
+  margin: 24px 0 0; 
   color: var(--text-muted); 
   font-size: 13px;
 }
@@ -402,7 +404,7 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   .card { grid-template-columns: 1fr; max-width: 620px; }
   .aside { min-height: 390px; }
   .asideContent { justify-content: flex-start; }
-  .panel { padding: 34px; }
+  .panel { padding: 38px; }
   .recruitmentVisual { max-width: 380px; }
   .featureGrid { max-width: 440px; }
 }
@@ -410,13 +412,13 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 @media (max-width: 560px) { 
   .shell { display: block; padding: 0; }
   .card { min-height: 100vh; border: 0; border-radius: 0; }
-  .aside { min-height: 355px; padding: 28px 23px; }
+  .aside { min-height: 355px; padding: 30px 25px; }
   .asideLogo { width: 148px; }
   .asideHeading { font-size: 27px; }
-  .panel { padding: 31px 23px; }
+  .panel { padding: 34px 26px; }
   .formRow, .roleGrid { grid-template-columns: 1fr; }
   .recruitmentVisual { min-height: 145px; }
-  .featureGrid { gap: 4px; padding: 11px 8px; }
+  .featureGrid { gap: 6px; padding: 13px 10px; }
   .featureCard { font-size: 8px; }
   .featureCard strong { font-size: 10px; }
 }
@@ -538,7 +540,7 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   flex-direction: column;
   align-items: center;
   width: 100%;
-  gap: 1.25rem;
+  gap: 1.5rem;
 }
 
 .verifyEmailText {
@@ -576,10 +578,11 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 }
 
 .otpLabel {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--navy);
   text-align: center;
+  margin-bottom: 4px;
 }
 
 .otpRow {
@@ -670,12 +673,12 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 
 /* Form message styles */
 .formMessage {
-  padding: 0.65rem 1rem;
+  padding: 0.75rem 1.25rem;
   border-radius: 8px;
   font-size: 12px;
   text-align: center;
   width: 100%;
-  margin: 0.25rem 0;
+  margin: 4px 0 0.25rem;
 }
 
 .formMessageSuccess {
@@ -695,10 +698,10 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.6rem 1.8rem;
+  padding: 10px 18px;
   min-height: 42px;
   border: 1.5px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--card);
   color: var(--blue-strong);
   font-size: 13px;
@@ -769,7 +772,7 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   background: var(--card);
   border-radius: 24px;
   box-shadow: 0 30px 80px color-mix(in srgb, var(--navy) 43%, transparent), var(--shadow);
-  padding: clamp(30px, 4vw, 48px);
+  padding: clamp(32px, 4vw, 50px);
   animation: cardIn .65s var(--ease) both;
   scrollbar-width: thin;
   scrollbar-color: var(--blue-mid) transparent;
@@ -870,7 +873,7 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   min-height: 40px;
   gap: 9px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   color: var(--card);
   background: linear-gradient(100deg, var(--blue-strong), var(--blue));
   box-shadow: 0 12px 22px color-mix(in srgb, var(--blue-strong) 31%, transparent);
@@ -894,10 +897,10 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.4rem 1.2rem;
+  padding: 0.5rem 1.2rem;
   min-height: 36px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--card);
   color: var(--blue-strong);
   font-size: 12px;
@@ -940,7 +943,7 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 
 .offerLetterHead {
   text-align: center;
-  padding: 28px 24px 24px;
+  padding: 32px 28px 28px;
   margin-bottom: 24px;
   background: linear-gradient(135deg, var(--blue-lighter), var(--blue-light));
   border-radius: 12px;
@@ -961,7 +964,7 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   font-size: clamp(24px, 2.5vw, 32px);
   font-weight: 700;
   color: var(--navy);
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   letter-spacing: -0.5px;
 }
 
@@ -973,9 +976,9 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 
 .offerMessageBox {
   margin-top: 16px;
-  padding: 14px 18px;
+  padding: 16px 20px;
   background: var(--card);
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid var(--blue);
   color: var(--navy);
   font-style: italic;
@@ -992,23 +995,24 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 .offerForm {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .offerField {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .offerField > span {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--navy);
+  margin-bottom: 4px;
 }
 
 .offerInput {
   width: 100%;
-  height: 40px;
+  height: 42px;
   border: 1px solid var(--border);
   border-radius: 7px;
   padding: 0 12px;
@@ -1069,12 +1073,12 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 }
 
 .offerFormMessage {
-  padding: 0.65rem 1rem;
+  padding: 0.75rem 1.25rem;
   border-radius: 8px;
   font-size: 12px;
   text-align: center;
   width: 100%;
-  margin: 0;
+  margin: 4px 0 0;
 }
 .offerFormMessageError {
   background: #fde8e8;
@@ -1136,8 +1140,8 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
 .offerTermsText {
   white-space: pre-line;
   background: var(--blue-lighter);
-  padding: 16px 18px;
-  border-radius: 8px;
+  padding: 18px 20px;
+  border-radius: 12px;
   font-size: 13px;
   line-height: 1.7;
   color: var(--text);

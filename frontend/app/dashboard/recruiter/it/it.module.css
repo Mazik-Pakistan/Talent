@@ -62,7 +62,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 16px 18px;
+  padding: 18px 18px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: linear-gradient(180deg, #fff 0%, #fbfcfe 100%);
@@ -91,7 +91,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 10px;
+  gap: 14px;
   margin-bottom: 14px;
 }
 .filterField {
@@ -156,7 +156,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 18px;
+  padding: 18px 18px;
   border-bottom: 1px solid var(--border-soft);
   gap: 12px;
   flex-wrap: wrap;
@@ -186,7 +186,7 @@
 /* Officer cards */
 .officerCard {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: #fff;
   transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
   overflow: hidden;
@@ -198,7 +198,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 18px 18px;
   cursor: pointer;
   transition: background .12s var(--ease);
 }
@@ -229,7 +229,7 @@
 }
 
 .officerBody {
-  padding: 0 16px 16px;
+  padding: 0 18px 18px;
   border-top: 1px solid var(--border-soft);
 }
 
@@ -318,7 +318,7 @@
 .requestCards { display: grid; gap: 10px; }
 .requestCard {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: #fff;
   transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
   overflow: hidden;
@@ -330,7 +330,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 18px 18px;
   cursor: pointer;
 }
 .requestHead:hover { background: var(--blue-lighter); }
@@ -348,7 +348,7 @@
 }
 
 .requestBody {
-  padding: 0 16px 14px;
+  padding: 0 18px 18px;
   border-top: 1px solid var(--border-soft);
 }
 
