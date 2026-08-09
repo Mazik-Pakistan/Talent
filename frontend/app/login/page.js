@@ -106,6 +106,7 @@ function LoginForm() {
 
   function handleEmailChange(value) {
     setEmail(value);
+    setLoginFeedback(value ? "typing" : "idle");
     if (touched.email) {
       setErrors((current) => ({ ...current, ...validateForm({ email: value, password }) }));
     }
@@ -232,13 +233,13 @@ function LoginForm() {
               <span className={styles.inputShell}>
                 <FieldIcon type="email" />
                 <input
-                  className={styles.input}
+                  className={`${styles.input} ${loginFeedback === "error" ? styles.passwordInvalid : loginFeedback === "success" ? styles.passwordSuccess : ""}`}
                   type="email"
                   name="email"
                   value={email}
                   onChange={(e) => handleEmailChange(e.target.value)}
                   onBlur={() => handleBlur("email")}
-                  aria-invalid={Boolean(touched.email && errors.email)}
+                  aria-invalid={Boolean((touched.email && errors.email) || loginFeedback === "error")}
                   aria-describedby={touched.email && errors.email ? "email-error" : undefined}
                   autoComplete="email"
                   placeholder="you@company.com"
