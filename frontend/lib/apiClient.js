@@ -79,7 +79,14 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config;
     const status = error.response?.status;
 
-    if (status === 401 && !originalRequest._retry) {
+    // A 401 from the login endpoint means invalid credentials, not an expired
+    // session — reject it so the login form can render the server error
+    // instead of attempting a token refresh and hard-redirecting.
+    const isLoginRequest =
+      typeof originalRequest?.url === "string" &&
+      originalRequest.url.split("?")[0].endsWith("/api/auth/login");
+
+    if (status === 401 && !isLoginRequest && !originalRequest._retry) {
       if (isRefreshing) {
         try {
           await doRefresh();
