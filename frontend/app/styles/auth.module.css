@@ -88,10 +88,11 @@
   z-index: 1; 
   display: flex; 
   align-items: center; 
+  justify-content: flex-start;
   min-height: 44px;
   margin-bottom: 32px;
 }
-.asideLogo { width: 164px; height: auto; object-fit: contain; }
+.asideLogo { width: 220px; height: auto; object-fit: contain; }
 .asideContent { 
   position: relative; 
   z-index: 1; 

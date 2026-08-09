@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -8,6 +7,7 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 import { getApiErrorMessage, login, persistLoginSession } from "@/services/authService";
+import { LOGO_URL } from "@/lib/logo";
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic";
 
@@ -193,12 +193,9 @@ function LoginForm() {
       <div className={styles.card}>
         <aside className={styles.aside} aria-label="Talent platform introduction">
           <div className={styles.asideBrandRow}>
-            <Image
-              src="/talentai-logo.png"
+            <img
+              src={LOGO_URL}
               alt="Mazik Global TalentAI"
-              width={164}
-              height={80}
-              priority
               className={styles.asideLogo}
               style={{ height: "auto", objectFit: "contain" }}
             />

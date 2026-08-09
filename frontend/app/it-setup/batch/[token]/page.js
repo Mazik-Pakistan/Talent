@@ -9,6 +9,7 @@ import {
   getItProvisioningBatchPublic,
   submitItProvisioningBatchPublic,
 } from "@/services/authService";
+import { LOGO_URL } from "@/lib/logo";
 
 const ASSET_TYPES = [
   { value: "laptop", label: "Laptop" },
@@ -259,8 +260,8 @@ export default function ItSetupBatchPage() {
     <div className="it-shell">
       <div className="it-card">
         <img
-          src="/assets/logo-placeholder.png"
-          alt="Company logo"
+          src={LOGO_URL}
+          alt="Mazik Global TalentAI"
           className="it-logo"
           style={{ maxWidth: 116 }}
         />

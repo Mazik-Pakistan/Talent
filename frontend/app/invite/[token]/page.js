@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { candidateRegister, getApiErrorMessage, getInvitation, recruiterRegister } from "@/services/authService";
+import { LOGO_URL } from "@/lib/logo";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import {
   formatPkMobileInput,
@@ -123,7 +124,7 @@ export default function InviteRegisterPage() {
     return (
       <main className="verification-shell">
         <section className="verification-card" aria-labelledby="invite-error-heading">
-          <img src="/talentai-logo.png" alt="Mazik Global" style={{ maxWidth: 192 }} />
+          <img src={LOGO_URL} alt="Mazik Global" style={{ maxWidth: 192 }} />
           <div className="verification-icon error" aria-hidden="true">!</div>
           <p className="eyebrow">Invitation</p>
           <h1 id="invite-error-heading">Invitation unavailable</h1>
@@ -141,7 +142,7 @@ export default function InviteRegisterPage() {
       <div className={styles.card}>
         <aside className={styles.aside} aria-label={isRecruiterInvite ? "Recruiter invitation introduction" : "Candidate onboarding introduction"}>
           <div className={styles.asideBrandRow}>
-            <img src="/talentai-logo.png" alt="Mazik Global" className={styles.asideLogo} style={{ maxWidth: 192 }} />
+            <img src={LOGO_URL} alt="Mazik Global" className={styles.asideLogo} style={{ maxWidth: 220 }} />
           </div>
           <div className={styles.asideContent}>
             <div>

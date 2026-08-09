@@ -3,6 +3,7 @@
 import { cloneElement, useEffect, useState } from "react";
 
 import styles from "@/app/styles/auth.module.css";
+import { LOGO_URL } from "@/lib/logo";
 import MascotStatic from "@/components/MascotStatic";
 
 const ICONS = {
@@ -258,7 +259,7 @@ export default function AuthAside({ slides, ariaLabel = "Talent platform introdu
 
       <div className={styles.asideBrand} style={{ marginBottom: "32px" }}>
         <img
-          src="/talentai-logo.png"
+          src={LOGO_URL}
           alt="Mazik Global"
           style={{ width: "140px", height: "auto" }}
         />
