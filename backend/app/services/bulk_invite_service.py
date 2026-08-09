@@ -93,7 +93,7 @@ def candidate_row_to_request(row: dict) -> CreateInvitationRequest:
         office_location=row.get("office_location"),
         is_remote=bool(row.get("is_remote")),
         start_date=start_date,
-        expires_in_days=365,
+        expires_in_days=2,
         offer=offer,
     )
 

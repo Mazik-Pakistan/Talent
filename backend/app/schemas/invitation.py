@@ -29,7 +29,7 @@ class CreateInvitationRequest(BaseModel):
     # Remote employees enter banking themselves; on-site banking is recruiter-managed.
     is_remote: bool = False
     start_date: date | None = None
-    expires_in_days: int = Field(default=365, ge=1, le=365)
+    expires_in_days: int = Field(default=2, ge=1, le=365)
     # When present, invitation email includes the offer letter (new primary flow).
     offer: OfferTermsPayload | None = None
 
