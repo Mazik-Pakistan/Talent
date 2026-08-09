@@ -2,6 +2,79 @@
  * Frontend validation utilities that match backend validation patterns.
  */
 
+const MIN_DOB_AGE = 14;
+
+/**
+ * Return the latest valid DOB string (YYYY-MM-DD) for date input `max` attribute.
+ * The user must be at least MIN_DOB_AGE years old.
+ * @returns {string} YYYY-MM-DD representing today minus MIN_DOB_AGE years
+ */
+export function getMaxDob() {
+  const now = new Date();
+  let year = now.getFullYear() - MIN_DOB_AGE;
+  let month = now.getMonth();
+  let day = now.getDate();
+
+  const candidate = new Date(year, month, day);
+  if (candidate.getDate() !== day) {
+    day = new Date(year, month + 1, 0).getDate();
+  }
+  const mm = String(month + 1).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
+}
+
+/**
+ * Validate date of birth: must exist, be valid, not be in the future, and user must be >= MIN_DOB_AGE.
+ * Uses date-only parsing to avoid timezone shift issues.
+ * @param {string} dateString - Date string in YYYY-MM-DD format
+ * @param {string} fieldName - Name of the field for error message
+ * @returns {{isValid: boolean, error: string|null}}
+ */
+export function validateDateOfBirth(dateString, fieldName = "Date of birth") {
+  if (!dateString) {
+    return { isValid: false, error: `${fieldName} is required.` };
+  }
+
+  const parts = String(dateString).split("-");
+  if (parts.length !== 3) {
+    return { isValid: false, error: `Invalid ${fieldName.toLowerCase()} format.` };
+  }
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+  const parsed = new Date(year, month, day);
+
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month ||
+    parsed.getDate() !== day ||
+    isNaN(parsed.getTime())
+  ) {
+    return { isValid: false, error: `Invalid ${fieldName.toLowerCase()}.` };
+  }
+
+  const now = new Date();
+  const todayYear = now.getFullYear();
+  const todayMonth = now.getMonth();
+  const todayDay = now.getDate();
+
+  if (year > todayYear || (year === todayYear && month > todayMonth) || (year === todayYear && month === todayMonth && day > todayDay)) {
+    return { isValid: false, error: `${fieldName} cannot be in the future.` };
+  }
+
+  let age = todayYear - year;
+  if (todayMonth < month || (todayMonth === month && todayDay < day)) {
+    age--;
+  }
+
+  if (age < MIN_DOB_AGE) {
+    return { isValid: false, error: `You must be at least ${MIN_DOB_AGE} years old.` };
+  }
+
+  return { isValid: true, error: null };
+}
+
 // CNIC format: XXXXX-XXXXXXX-X (with or without hyphens)
 export const CNIC_REGEX = /^\d{5}-?\d{7}-?\d{1}$/;
 
@@ -57,6 +130,7 @@ export function validateCNIC(value) {
 
 /**
  * Validate date is not in the future.
+ * NOTE: For Date of Birth fields, use validateDateOfBirth instead which also enforces minimum age.
  * @param {string} dateString - Date string in YYYY-MM-DD format
  * @param {string} fieldName - Name of the field for error message
  * @returns {{isValid: boolean, error: string|null}}

@@ -324,6 +324,12 @@ export default function SupportTicketsPanel({ onNavigateToRecruiters = () => {} 
     return () => window.removeEventListener("keydown", onKey);
   }, [panelOpen]);
 
+  useEffect(() => {
+    if (selectedTicket?.status === "closed" && activeTab === "conversation") {
+      setActiveTab("overview");
+    }
+  }, [selectedTicket?.status, activeTab]);
+
   const loadDetail = useCallback(async (ticketId) => {
     const token = getAccessToken();
     if (!token) return;
@@ -369,7 +375,7 @@ export default function SupportTicketsPanel({ onNavigateToRecruiters = () => {} 
 
   function openTicket(ticket) {
     setSelectedTicket(ticket);
-    setActiveTab("conversation");
+    setActiveTab(ticket.status === "closed" ? "overview" : "conversation");
     setDetail(null);
     setActivity(null);
     setAudit(null);
@@ -894,6 +900,7 @@ export default function SupportTicketsPanel({ onNavigateToRecruiters = () => {} 
   function renderConversation() {
     const ticket = selectedTicket;
     const replies = detail?.replies || [];
+    const isClosed = ticket?.status === "closed";
     return (
       <div className={s.conversation}>
         <div className={s.chatMessages}>
@@ -916,40 +923,24 @@ export default function SupportTicketsPanel({ onNavigateToRecruiters = () => {} 
             </div>
           ))}
         </div>
-        <div className={s.conversationActions}>
-          <button
-            type="button"
-            className={`${s.btnSmall} ${s.btnSmallGreen}`}
-            onClick={handleResolve}
-            disabled={actionBusy || ticket?.status === "resolved"}
-          >
-            Resolve
-          </button>
-          <button
-            type="button"
-            className={`${s.btnSmall} ${s.btnSmallGrey}`}
-            onClick={handleClose}
-            disabled={actionBusy || ticket?.status === "closed"}
-          >
-            Close
-          </button>
-        </div>
-        <div className={s.replyArea}>
-          <textarea
-            className={s.replyInput}
-            rows={2}
-            placeholder="Write a reply… (Ctrl+Enter to send)"
-            value={replyText}
-            onChange={(e) => setReplyText(e.target.value)}
-            onKeyDown={handleReplyKeyDown}
-            disabled={replying}
-            aria-label="Admin reply"
-          />
-          <button type="button" className={s.sendBtn} onClick={handleSendReply} disabled={replying || !replyText.trim()}>
-            {ICONS.send}
-            {replying ? "Sending…" : "Send"}
-          </button>
-        </div>
+        {!isClosed && (
+          <div className={s.replyArea}>
+            <textarea
+              className={s.replyInput}
+              rows={2}
+              placeholder="Write a reply… (Ctrl+Enter to send)"
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              onKeyDown={handleReplyKeyDown}
+              disabled={replying}
+              aria-label="Admin reply"
+            />
+            <button type="button" className={s.sendBtn} onClick={handleSendReply} disabled={replying || !replyText.trim()}>
+              {ICONS.send}
+              {replying ? "Sending…" : "Send"}
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -1296,14 +1287,16 @@ export default function SupportTicketsPanel({ onNavigateToRecruiters = () => {} 
             <div className={s.actionBar}>{renderActionBar()}</div>
             {actionError && <div className={s.actionError}>{actionError}</div>}
             <div className={s.tabs} role="tablist">
-              <button
-                type="button"
-                role="tab"
-                className={`${s.tab} ${activeTab === "conversation" ? s.tabActive : ""}`}
-                onClick={() => setActiveTab("conversation")}
-              >
-                Conversation
-              </button>
+              {selectedTicket?.status !== "closed" && (
+                <button
+                  type="button"
+                  role="tab"
+                  className={`${s.tab} ${activeTab === "conversation" ? s.tabActive : ""}`}
+                  onClick={() => setActiveTab("conversation")}
+                >
+                  Conversation
+                </button>
+              )}
               <button
                 type="button"
                 role="tab"

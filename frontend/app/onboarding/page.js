@@ -30,6 +30,7 @@ import OcrScanOverlay, {
   RESUME_OCR_FIELDS,
 } from "@/components/ai-experience/OcrScanOverlay";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
+import { validateDateOfBirth, getMaxDob } from "@/utils/validation";
 import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import styles from "./onboarding.module.css";
 
@@ -1564,7 +1565,7 @@ function OnboardingContent() {
       }
       
       // Validate date of birth
-      const dobValidation = validateDateNotFuture(personal.date_of_birth, "Date of birth");
+      const dobValidation = validateDateOfBirth(personal.date_of_birth, "Date of birth");
       if (!dobValidation.isValid) errors.date_of_birth = dobValidation.error;
       
       // Validate CNIC format
@@ -2121,6 +2122,7 @@ function OnboardingContent() {
                                 label="Date of birth"
                                 type="date"
                                 required
+                                max={getMaxDob()}
                                 value={personal.date_of_birth}
                                 error={fieldErrors.date_of_birth}
                                 onChange={(e) => {
@@ -2903,7 +2905,7 @@ function FileUploadField({ styles, label, accept, disabled, onChange, onRemove, 
   );
 }
 
-function Field({ label, name, value, onChange, type = "text", wide, styles, error, hint, required, fillAnim, fillDelay, ocrKey, ocrTyping }) {
+function Field({ label, name, value, onChange, type = "text", wide, styles, error, hint, required, fillAnim, fillDelay, ocrKey, ocrTyping, max }) {
   const safeValue = value ?? "";
   return (
     <label
@@ -2913,7 +2915,7 @@ function Field({ label, name, value, onChange, type = "text", wide, styles, erro
       data-ocr-key={ocrKey || undefined}
     >
       <span>{label}{required && <span style={{ color: "red", marginLeft: 4 }}>*</span>}</span>
-      <input name={name} type={type} value={safeValue} onChange={onChange} aria-invalid={!!error} aria-busy={ocrTyping || undefined} />
+      <input name={name} type={type} value={safeValue} onChange={onChange} aria-invalid={!!error} aria-busy={ocrTyping || undefined} max={type === "date" ? max : undefined} />
       {error && <em className={styles.fieldErrorText}>Required</em>}
       {!error && hint ? <small>{hint}</small> : null}
     </label>
