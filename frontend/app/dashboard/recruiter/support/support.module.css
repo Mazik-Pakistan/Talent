@@ -47,7 +47,7 @@
 
 .tableWrap {
   background: #fff;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid #e5e7eb;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   overflow: hidden;
@@ -140,7 +140,7 @@
 
 .createForm {
   background: #fff;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid #e5e7eb;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   display: flex;
@@ -149,7 +149,7 @@
 }
 
 .createFormHeader {
-  padding: 20px 24px;
+  padding: 20px 20px;
   border-bottom: 1px solid #e5e7eb;
   display: flex;
   justify-content: space-between;
@@ -159,7 +159,7 @@
 }
 
 .panelHeader {
-  padding: 20px 24px;
+  padding: 20px 20px;
   border-bottom: 1px solid #e5e7eb;
   display: flex;
   justify-content: space-between;
@@ -175,13 +175,13 @@
 }
 
 .panelBody {
-  padding: 24px;
+  padding: 20px;
   overflow-y: auto;
   flex: 1;
 }
 
 .panelFooter {
-  padding: 16px 24px;
+  padding: 16px 20px;
   border-top: 1px solid #e5e7eb;
   display: flex;
   gap: 10px;
@@ -339,12 +339,12 @@
 .replyArea {
   display: flex;
   gap: 8px;
-  padding: 16px 24px;
+  padding: 16px 20px;
   border-top: 1px solid #e5e7eb;
   position: sticky;
   bottom: 0;
   background: #fff;
-  margin: 0 -24px -24px;
+  margin: 0 -20px -20px;
 }
 
 .replyInput {

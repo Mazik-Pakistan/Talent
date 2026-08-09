@@ -1,4 +1,4 @@
-/* Canonical pill tab bar — soft track, fully rounded, fixed 36px tabs, blue active */
+/* Canonical segmented tab bar — soft track, rounded, fixed 40px tabs, blue active */
 
 .tabBar,
 .tabGroup,
@@ -8,7 +8,7 @@
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   width: fit-content;
   max-width: 100%;
   min-width: 0;
@@ -21,7 +21,7 @@
   scrollbar-color: rgba(31, 127, 224, 0.35) transparent;
   background: var(--blue-lighter, #e9f4ff);
   border: 1px solid var(--border-soft, #d7e4ef);
-  border-radius: 999px;
+  border-radius: 10px;
   box-shadow: none;
 }
 
@@ -58,9 +58,9 @@
   justify-content: center;
   gap: 7px;
   flex: 0 0 auto;
-  min-height: 36px;
-  height: 36px;
-  padding: 0 16px;
+  min-height: 40px;
+  height: 40px;
+  padding: 0 18px;
   box-sizing: border-box;
   font-size: 12.5px;
   font-weight: 650;
@@ -68,7 +68,7 @@
   color: var(--text-muted, #647186);
   background: transparent;
   border: none;
-  border-radius: 999px;
+  border-radius: 10px;
   cursor: pointer;
   white-space: nowrap;
   font-family: inherit;
