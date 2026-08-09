@@ -184,6 +184,7 @@ function RecruiterProfilePageContent() {
                 onUpload={handlePhotoUpload}
                 onRemove={handlePhotoRemove}
                 busy={photoBusy}
+                variant="overlay"
               />
               <div>
                 <h2 className={styles.profileName}>{profile?.full_name}</h2>

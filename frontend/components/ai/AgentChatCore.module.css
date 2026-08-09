@@ -28,9 +28,9 @@
 .canvasHeader {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 16px 16px;
-  background: linear-gradient(135deg, #0b1631 0%, #12224a 48%, #2f6bff 130%);
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #38a2ff 0%, #1f7fe0 60%, #153d5e 100%);
   color: #fff;
 }
 
@@ -145,10 +145,10 @@
 .canvasBody {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   background:
     radial-gradient(520px 220px at 100% 0%, rgba(47, 107, 255, 0.05), transparent 60%),
     var(--ai-surface-sunken, #f3f6fd);
@@ -157,8 +157,8 @@
 }
 
 .canvasBody {
-  padding: 10px 12px;
-  gap: 8px;
+  padding: 12px 14px;
+  gap: 10px;
   min-height: 0;
 }
 
@@ -166,38 +166,38 @@
   margin: auto 0;
   text-align: center;
   color: var(--ai-muted, #5a6a8c);
-  padding: 12px;
+  padding: 24px 16px;
   animation: msgIn 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .canvasBody .emptyState {
-  padding: 20px 12px;
+  padding: 28px 16px;
 }
 
 .emptyState strong {
   display: block;
   color: var(--ai-navy-2, #12224a);
-  font-size: 0.95rem;
-  margin-bottom: 6px;
+  font-size: 0.98rem;
+  margin-bottom: 8px;
   font-family: "Sora", system-ui, sans-serif;
 }
 
 .canvasBody .emptyState strong {
-  font-size: 1.05rem;
+  font-size: 1.08rem;
 }
 
 .emptyState p {
-  font-size: 0.83rem;
-  line-height: 1.5;
+  font-size: 0.85rem;
+  line-height: 1.55;
   margin: 0 auto;
   max-width: 480px;
 }
 
 .starterGrid {
   display: grid;
-  gap: 8px;
-  margin-top: 14px;
-  max-width: 420px;
+  gap: 10px;
+  margin-top: 18px;
+  max-width: 440px;
   margin-left: auto;
   margin-right: auto;
 }
@@ -206,9 +206,9 @@
   border: 1px solid var(--ai-line, #dfe6f5);
   border-radius: 12px;
   background: #fff;
-  padding: 11px 13px;
+  padding: 12px 16px;
   color: var(--ai-navy-2, #12224a);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 600;
   text-align: left;
   cursor: pointer;
@@ -226,6 +226,7 @@
   display: flex;
   width: 100%;
   animation: msgIn 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  margin-bottom: 4px;
 }
 
 @keyframes msgIn {
@@ -249,19 +250,20 @@
 
 .bubble {
   max-width: 84%;
-  padding: 10px 13px;
-  border-radius: 14px;
-  font-size: 0.86rem;
-  line-height: 1.5;
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 0.88rem;
+  line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .canvasBody .bubble {
   max-width: 78%;
-  font-size: 0.86rem;
-  line-height: 1.45;
-  padding: 8px 12px;
+  font-size: 0.87rem;
+  line-height: 1.5;
+  padding: 10px 14px;
+  border-radius: 14px;
 }
 
 .bubbleUser {
@@ -342,12 +344,12 @@
 }
 
 .uploadHint {
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px dashed var(--ai-line, #dfe6f5);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
@@ -356,8 +358,8 @@
   border-radius: 8px;
   background: #eef3ff;
   color: var(--ai-blue, #2f6bff);
-  padding: 7px 12px;
-  font-size: 0.78rem;
+  padding: 8px 14px;
+  font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
 }
@@ -377,14 +379,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-radius: 12px;
   background: #fff6e5;
   border: 1px solid #f0d38a;
   color: #7a5a10;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 600;
 }
 
@@ -393,8 +395,8 @@
   border-radius: 8px;
   background: #fff;
   color: #7a5a10;
-  padding: 6px 12px;
-  font-size: 0.78rem;
+  padding: 7px 14px;
+  font-size: 0.8rem;
   font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
@@ -407,26 +409,26 @@
 /* ── attachment cards (documents / candidates / employees) ───────────── */
 
 .attachmentWrap {
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px dashed var(--ai-line, #dfe6f5);
 }
 
 .attachmentEmpty {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   color: var(--ai-muted, #5a6a8c);
 }
 
 .docGrid,
 .peopleGrid {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .docCard {
   border: 1px solid var(--ai-line, #dfe6f5);
-  border-radius: 10px;
-  padding: 8px 10px;
+  border-radius: 12px;
+  padding: 10px 12px;
   background: #f7f9ff;
 }
 
@@ -529,8 +531,8 @@
   border-radius: 8px;
   background: #eef9f1;
   color: #1a7a3e;
-  padding: 6px 11px;
-  font-size: 0.76rem;
+  padding: 7px 13px;
+  font-size: 0.78rem;
   font-weight: 800;
   cursor: pointer;
 }
@@ -545,8 +547,8 @@
   border-radius: 8px;
   background: #fff8e8;
   color: #916000;
-  padding: 6px 11px;
-  font-size: 0.76rem;
+  padding: 7px 13px;
+  font-size: 0.78rem;
   font-weight: 800;
   cursor: pointer;
 }
@@ -561,8 +563,8 @@
   border-radius: 8px;
   background: #fdecea;
   color: #b42318;
-  padding: 6px 11px;
-  font-size: 0.76rem;
+  padding: 7px 13px;
+  font-size: 0.78rem;
   font-weight: 800;
   cursor: pointer;
 }
@@ -601,11 +603,11 @@
 .personCard {
   border: 1px solid var(--ai-line, #dfe6f5);
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: #f7f9ff;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
@@ -626,13 +628,13 @@
 .suggestions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 16px 10px;
+  gap: 8px;
+  padding: 0 20px 12px;
   background: var(--ai-surface-sunken, #f3f6fd);
 }
 
 .canvasBody + .suggestions {
-  padding: 0 16px 10px;
+  padding: 0 16px 12px;
   flex-shrink: 0;
 }
 
@@ -641,8 +643,8 @@
   border-radius: 999px;
   background: #fff;
   color: var(--ai-blue, #2f6bff);
-  padding: 6px 12px;
-  font-size: 0.76rem;
+  padding: 7px 14px;
+  font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
   transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
@@ -656,11 +658,11 @@
 
 .progressList {
   list-style: none;
-  margin: 8px 0 0;
-  padding: 8px 10px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
   display: grid;
-  gap: 6px;
-  border-radius: 10px;
+  gap: 8px;
+  border-radius: 12px;
   background: rgba(15, 23, 42, 0.04);
   border: 1px solid rgba(15, 23, 42, 0.06);
   white-space: normal;
@@ -695,17 +697,17 @@
 .bubbleActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px -13px -10px;
-  padding: 10px 13px;
+  gap: 8px;
+  margin: 10px -16px -12px;
+  padding: 12px 16px;
   border-top: 1px solid var(--ai-line, #dfe6f5);
   background: var(--ai-surface-sunken, #f3f6fd);
   white-space: normal;
 }
 
 .canvasBody .bubbleActions {
-  margin: 8px -12px -8px;
-  padding: 9px 12px;
+  margin: 8px -14px -10px;
+  padding: 10px 14px;
 }
 
 .bubbleActionChip {
@@ -726,8 +728,8 @@
 }
 
 .confirmGate {
-  margin-top: 10px;
-  padding: 10px 12px;
+  margin-top: 12px;
+  padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid rgba(180, 83, 9, 0.28);
   background: #fff8ef;
@@ -749,8 +751,8 @@
 .confirmApprove,
 .confirmCancel {
   border-radius: 999px;
-  padding: 7px 14px;
-  font-size: 0.78rem;
+  padding: 8px 16px;
+  font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
   border: 1px solid transparent;
@@ -776,8 +778,8 @@
 .footer {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  padding: 12px;
+  gap: 10px;
+  padding: 14px 16px;
   border-top: 1px solid var(--ai-line, #dfe6f5);
   background: #fff;
 }
@@ -791,21 +793,21 @@
   flex: 1;
   resize: none;
   max-height: 96px;
-  min-height: 40px;
+  min-height: 42px;
   border: 1px solid var(--ai-line, #dfe6f5);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 12px;
+  padding: 11px 14px;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.86rem;
   color: var(--ai-text, #101a33);
   outline: 0;
   background: #fff;
 }
 
 .canvasRoot .textarea {
-  min-height: 40px;
-  font-size: 0.86rem;
-  border-radius: 10px;
+  min-height: 42px;
+  font-size: 0.87rem;
+  border-radius: 12px;
 }
 
 .textarea:focus {
@@ -816,11 +818,11 @@
 .sendButton {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   flex: none;
   border: 0;
-  border-radius: 10px;
+  border-radius: 12px;
   background: linear-gradient(135deg, #38a2ff, #1b4fd8);
   color: #fff;
   cursor: pointer;
@@ -842,11 +844,11 @@
 .attachButton {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   flex: none;
   border: 1px solid var(--ai-line, #dfe6f5);
-  border-radius: 10px;
+  border-radius: 12px;
   background: #fff;
   color: var(--ai-blue, #2f6bff);
   cursor: pointer;

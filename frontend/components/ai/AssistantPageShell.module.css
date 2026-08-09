@@ -7,11 +7,11 @@
 
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   /* Pull into shell padding so chat fills the viewport like a normal assistant */
-  margin: -6px -10px -24px;
+  margin: -6px -10px -12px;
   height: calc(100vh - 92px);
-  min-height: 420px;
+  min-height: 380px;
   max-height: calc(100vh - 92px);
   animation: assistantPageIn 320ms var(--assistant-ease) both;
 }
@@ -33,10 +33,10 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 12px;
-  padding: 8px 12px;
+  gap: 8px 14px;
+  padding: 8px 14px;
   border: 1px solid rgba(47, 107, 255, 0.14);
-  border-radius: 12px;
+  border-radius: 14px;
   background:
     linear-gradient(135deg, rgba(47, 107, 255, 0.08), rgba(255, 255, 255, 0.95) 55%);
   box-shadow: 0 1px 2px rgba(16, 26, 51, 0.04);
@@ -96,7 +96,7 @@
   margin: 0;
   color: var(--assistant-navy);
   font-family: "Sora", system-ui, sans-serif;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
@@ -106,19 +106,19 @@
 .highlights {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   justify-content: flex-end;
   flex: 1 1 auto;
   min-width: 0;
 }
 
 .highlightPill {
-  padding: 5px 10px;
+  padding: 6px 12px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid rgba(47, 107, 255, 0.16);
   color: var(--assistant-navy);
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
@@ -148,7 +148,7 @@
   display: flex;
   flex-direction: column;
   border: 1px solid rgba(47, 107, 255, 0.14);
-  border-radius: 14px;
+  border-radius: 16px;
   background: #fff;
   box-shadow: var(--assistant-shadow);
   overflow: hidden;
