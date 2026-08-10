@@ -626,12 +626,26 @@ function RecruiterEmployeesPageContent() {
                 size={40}
                 style={{ marginBottom: 12, color: "var(--text-faint)" }}
               />
-              <div style={{ fontWeight: 650, color: "var(--navy)", fontSize: 14 }}>
-                No employees found
-              </div>
-              <div style={{ marginTop: 4 }}>
-                Try adjusting your filters or search query.
-              </div>
+              {total === 0 && !filters.q && !filters.department && !filters.job_title && !filters.employee_id ? (
+                <>
+                  <div style={{ fontWeight: 650, color: "var(--navy)", fontSize: 14 }}>
+                    No employees assigned to you yet
+                  </div>
+                  <div style={{ marginTop: 4, maxWidth: 360 }}>
+                    Employees created from candidates you invite will appear here.
+                    Use the Invite page to start onboarding new team members.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontWeight: 650, color: "var(--navy)", fontSize: 14 }}>
+                    No employees found
+                  </div>
+                  <div style={{ marginTop: 4 }}>
+                    Try adjusting your filters or search query.
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

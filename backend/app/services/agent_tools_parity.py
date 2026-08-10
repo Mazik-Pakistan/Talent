@@ -1325,7 +1325,7 @@ async def _tool_send_it_provisioning(user: CurrentUser, args: dict) -> ToolResul
         return ToolResult(ok=False, error=err)
     who = (person or {}).get("full_name") or (person or {}).get("email") or offer_id
     try:
-        existing = await it_provisioning_service.get_for_offer(offer_id)
+        existing = await it_provisioning_service.get_for_offer(offer_id, user)
         if existing and existing.get("status") in ("submitted", "applied"):
             return ToolResult(
                 ok=False,
@@ -1374,7 +1374,7 @@ async def _tool_remind_it_provisioning(user: CurrentUser, args: dict) -> ToolRes
         return ToolResult(ok=False, error=err)
     who = (person or {}).get("full_name") or (person or {}).get("email") or offer_id
     try:
-        existing = await it_provisioning_service.get_for_offer(offer_id)
+        existing = await it_provisioning_service.get_for_offer(offer_id, user)
         if not existing:
             return ToolResult(
                 ok=False,

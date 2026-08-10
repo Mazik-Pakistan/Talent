@@ -109,12 +109,8 @@ class EmployeeService:
     def _assert_org_or_owner(current_user: CurrentUser, record: dict, detail: str = "Not allowed.") -> None:
         if current_user.role == "super_admin":
             return
-        record_org = record.get("organization_id")
-        if record_org and current_user.organization_id:
-            if record_org != current_user.organization_id:
-                raise HTTPException(status_code=403, detail=detail)
-        elif record.get("recruiter_id") != current_user.id:
-            raise HTTPException(status_code=403, detail=detail)
+        if record.get("recruiter_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only view employees assigned to you.")
 
     async def list_pending_review(self, current_user: CurrentUser) -> dict:
         """Candidates who signed and submitted docs — ready for IT (formerly pending offer)."""

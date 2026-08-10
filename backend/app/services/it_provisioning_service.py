@@ -1157,16 +1157,19 @@ class ItProvisioningService:
         except Exception:
             return False
 
-    async def get_for_offer(self, offer_id: str) -> dict | None:
+    async def get_for_offer(self, offer_id: str, current_user: CurrentUser | None = None) -> dict | None:
+        base_filter: dict = {"offer_id": str(offer_id), "status": {"$in": ["pending", "submitted", "applied"]}}
+        if current_user and current_user.role != "super_admin":
+            base_filter["recruiter_id"] = current_user.id
         doc = await database.it_provisioning_requests.find_one(
-            {"offer_id": str(offer_id), "status": {"$in": ["pending", "submitted", "applied"]}},
+            base_filter,
             sort=[("created_at", -1)],
         )
         if not doc:
             return None
         return self._public_status(doc)
 
-    async def get_for_candidate(self, candidate_id: str) -> dict | None:
+    async def get_for_candidate(self, candidate_id: str, current_user: CurrentUser) -> dict | None:
         """Recruiter-facing provisioning history for one candidate (for the candidate profile)."""
         query_or = [{"candidate_id": candidate_id}]
         candidate = await self._find_candidate(candidate_id)
@@ -1176,9 +1179,12 @@ class ItProvisioningService:
                 query_or.append({"candidate_id": alt})
             if candidate.get("email"):
                 query_or.append({"candidate_email": candidate["email"].lower()})
+        base_filter: dict = {"$or": query_or, "status": {"$in": ["pending", "submitted", "applied"]}}
+        if current_user.role != "super_admin":
+            base_filter["recruiter_id"] = current_user.id
         docs = (
             await database.it_provisioning_requests.find(
-                {"$or": query_or, "status": {"$in": ["pending", "submitted", "applied"]}},
+                base_filter,
                 sort=[("created_at", -1)],
             )
             .to_list(length=10)
@@ -1424,11 +1430,7 @@ class ItProvisioningService:
     def _assert_recruiter_owns_offer(current_user: CurrentUser, offer: dict) -> None:
         if current_user.role == "super_admin":
             return
-        record_org = offer.get("organization_id")
-        if record_org and current_user.organization_id:
-            if record_org != current_user.organization_id:
-                raise HTTPException(status_code=403, detail="Not authorized for this offer.")
-        elif offer.get("recruiter_id") != current_user.id:
+        if offer.get("recruiter_id") != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized for this offer.")
 
 

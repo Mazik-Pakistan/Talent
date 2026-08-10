@@ -1078,11 +1078,7 @@ class OfferService:
     def _assert_recruiter_can_access(current_user: CurrentUser, record: dict, detail: str = "Not authorized.") -> None:
         if current_user.role == "super_admin":
             return
-        record_org = record.get("organization_id")
-        if record_org and current_user.organization_id:
-            if record_org != current_user.organization_id:
-                raise HTTPException(status_code=403, detail=detail)
-        elif record.get("recruiter_id") != current_user.id:
+        if record.get("recruiter_id") != current_user.id:
             raise HTTPException(status_code=403, detail=detail)
 
     def _assert_owner(self, current_user: CurrentUser, offer: dict) -> None:
