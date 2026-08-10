@@ -218,16 +218,63 @@
 /* ---------- Bulk IT toolbar ---------- */
 .bulkToolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 12px;
-  align-items: flex-end;
   margin-bottom: 16px;
   padding: 14px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: linear-gradient(180deg, #fbfcfe 0%, #fff 100%);
 }
-.bulkField { margin: 0; min-width: 220px; flex: 1; }
+.bulkActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bulkCount {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+.bulkSettings {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+.bulkField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-muted);
+  min-width: 160px;
+  max-width: 240px;
+  margin: 0;
+}
+.bulkField select,
+.bulkField input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--text);
+  background: #fff;
+  font-family: inherit;
+  outline: none;
+  transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+}
+.bulkField select:focus,
+.bulkField input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(56, 162, 255, 0.1);
+}
+.bulkField input::placeholder { color: var(--text-faint); }
 .bulkCheck {
   display: inline-flex;
   align-items: center;
@@ -235,7 +282,6 @@
   font-size: 13px;
   font-weight: 550;
   color: var(--text-muted);
-  padding-bottom: 8px;
   cursor: pointer;
 }
 .bulkCheck input {
@@ -243,11 +289,10 @@
   height: 15px;
   accent-color: var(--blue);
 }
-.bulkActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+.bulkHint {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding-bottom: 8px;
 }
 
 /* ---------- Empty state ---------- */
