@@ -9,6 +9,7 @@ import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { createInvitation, getApiErrorMessage, lookupPersonHistory } from "@/services/authService";
 import { listOrgDepartments, listOrgRoles } from "@/services/orgFrameworkService";
 import BulkInvitePanel from "@/components/recruiter/BulkInvitePanel";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -77,7 +78,7 @@ function unformatNumber(formatted) {
 }
 
 // ------------------ FormattedNumberInput component ------------------
-const FormattedNumberInput = ({ value, onChange, placeholder, style, className }) => {
+const FormattedNumberInput = ({ value, onChange, placeholder, style, className, "aria-invalid": ariaInvalid }) => {
   const inputRef = useRef(null);
   const [formatted, setFormatted] = useState(formatNumberWithCommas(value));
 
@@ -116,6 +117,7 @@ const FormattedNumberInput = ({ value, onChange, placeholder, style, className }
       placeholder={placeholder}
       style={style}
       className={className}
+      aria-invalid={ariaInvalid}
     />
   );
 };
@@ -208,6 +210,7 @@ function RecruiterInvitePageInner() {
   const [inviteEmailSent, setInviteEmailSent] = useState(null);
   const [inviteEmailError, setInviteEmailError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [personHistory, setPersonHistory] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [inviteMode, setInviteMode] = useState("single"); // single | bulk
@@ -261,6 +264,11 @@ function RecruiterInvitePageInner() {
 
   function handleDepartmentChange(e) {
     const department = e.target.value;
+    setFieldErrors((current) =>
+      current.department || current.job_title
+        ? { ...current, department: undefined, job_title: undefined }
+        : current
+    );
     setInviteForm((current) => {
       const designationStillValid =
         Boolean(department) &&
@@ -335,10 +343,24 @@ function RecruiterInvitePageInner() {
     return () => clearRecruiterContext();
   }, [personHistory]);
 
+  function clearFieldError(key) {
+    setFieldErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
   function updateInviteField(event) {
     const { name, value } = event.target;
     setInviteForm((current) => ({ ...current, [name]: value }));
     setInviteMessage("");
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
   }
 
   function updateAllowance(index, field, value) {
@@ -380,18 +402,22 @@ function RecruiterInvitePageInner() {
 
   async function handleCreateInvite(event) {
     event.preventDefault();
+    setFieldErrors({});
     setInviteMessage("");
     setInviteEmailSent(null);
     setInviteEmailError("");
 
-    if (
-      !inviteForm.reporting_manager.trim() ||
-      !inviteForm.start_date ||
-      !inviteForm.monthly_salary
-    ) {
-      setInviteMessage(
-        "Reporting manager, start date, and monthly salary are required for the offer."
-      );
+    const errors = {
+      full_name: !inviteForm.full_name.trim() ? "Full name is required." : undefined,
+      email: !inviteForm.email.trim() ? "Email is required." : !/^\S+@\S+\.\S+$/.test(inviteForm.email.trim()) ? "Enter a valid email address." : undefined,
+      department: !inviteForm.department ? "Department is required." : undefined,
+      job_title: !inviteForm.job_title ? "Designation is required." : undefined,
+      reporting_manager: !inviteForm.reporting_manager.trim() ? "Reporting manager is required." : undefined,
+      start_date: !inviteForm.start_date ? "Start date is required." : undefined,
+      monthly_salary: !inviteForm.monthly_salary ? "Monthly salary is required." : undefined,
+    };
+    if (Object.values(errors).some(Boolean)) {
+      setFieldErrors(errors);
       return;
     }
 
@@ -427,7 +453,7 @@ function RecruiterInvitePageInner() {
           start_date: inviteForm.start_date,
           monthly_salary: Number(inviteForm.monthly_salary),
           currency: inviteForm.currency,
-          allowances: payloadAllowances,   // NEW field name
+          allowances: payloadAllowances,
           benefits: benefits.map((b) => ({
             id: b.id,
             label: b.label,
@@ -589,7 +615,10 @@ function RecruiterInvitePageInner() {
                     onChange={updateInviteField}
                     required
                     placeholder="As per CNIC"
+                    aria-invalid={Boolean(fieldErrors.full_name)}
+                    style={fieldErrors.full_name ? INPUT_ERROR_STYLE : undefined}
                   />
+                  {fieldErrors.full_name && <FieldError>{fieldErrors.full_name}</FieldError>}
                 </label>
                 <label className={styles.field}>
                   <span>Email <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
@@ -600,7 +629,10 @@ function RecruiterInvitePageInner() {
                     onChange={updateInviteField}
                     required
                     placeholder="candidate@example.com"
+                    aria-invalid={Boolean(fieldErrors.email)}
+                    style={fieldErrors.email ? INPUT_ERROR_STYLE : undefined}
                   />
+                  {fieldErrors.email && <FieldError>{fieldErrors.email}</FieldError>}
                 </label>
                 <label className={styles.field}>
                   <span>Offer expires (days)</span>
@@ -705,8 +737,13 @@ function RecruiterInvitePageInner() {
                   <select
                     name="department"
                     value={inviteForm.department}
-                    onChange={handleDepartmentChange}
+                    onChange={(e) => {
+                      updateInviteField(e);
+                      setInviteForm((current) => ({ ...current, job_title: "" }));
+                    }}
                     required
+                    aria-invalid={Boolean(fieldErrors.department)}
+                    style={fieldErrors.department ? INPUT_ERROR_STYLE : undefined}
                   >
                     <option value="">Select department</option>
                     {departmentOptions.map((d) => (
@@ -715,6 +752,7 @@ function RecruiterInvitePageInner() {
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.department && <FieldError>{fieldErrors.department}</FieldError>}
                 </label>
                 <label className={styles.field}>
                   <span>Designation <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
@@ -724,6 +762,8 @@ function RecruiterInvitePageInner() {
                     onChange={updateInviteField}
                     disabled={!inviteForm.department}
                     required
+                    aria-invalid={Boolean(fieldErrors.job_title)}
+                    style={fieldErrors.job_title ? INPUT_ERROR_STYLE : undefined}
                   >
                     <option value="">
                       {inviteForm.department ? "Select designation" : "Select department first"}
@@ -734,6 +774,7 @@ function RecruiterInvitePageInner() {
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.job_title && <FieldError>{fieldErrors.job_title}</FieldError>}
                 </label>
                 <label className={styles.field}>
                   <span>Employment type</span>
@@ -786,7 +827,10 @@ function RecruiterInvitePageInner() {
                     onChange={updateInviteField}
                     required
                     placeholder="Full name"
+                    aria-invalid={Boolean(fieldErrors.reporting_manager)}
+                    style={fieldErrors.reporting_manager ? INPUT_ERROR_STYLE : undefined}
                   />
+                  {fieldErrors.reporting_manager && <FieldError>{fieldErrors.reporting_manager}</FieldError>}
                 </label>
                 <label className={styles.field}>
                   <span>Start date <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
@@ -796,7 +840,10 @@ function RecruiterInvitePageInner() {
                     value={inviteForm.start_date}
                     onChange={updateInviteField}
                     required
+                    aria-invalid={Boolean(fieldErrors.start_date)}
+                    style={fieldErrors.start_date ? INPUT_ERROR_STYLE : undefined}
                   />
+                  {fieldErrors.start_date && <FieldError>{fieldErrors.start_date}</FieldError>}
                 </label>
               </div>
             </div>
@@ -826,15 +873,18 @@ function RecruiterInvitePageInner() {
                   <span>Monthly salary (gross) <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
                   <FormattedNumberInput
                     value={inviteForm.monthly_salary}
-                    onChange={(raw) =>
+                    onChange={(raw) => {
                       setInviteForm((prev) => ({
                         ...prev,
                         monthly_salary: raw,
-                      }))
-                    }
+                      }));
+                      clearFieldError("monthly_salary");
+                    }}
                     placeholder="e.g. 100,000"
                     style={{ width: "100%" }}
+                    aria-invalid={Boolean(fieldErrors.monthly_salary)}
                   />
+                  {fieldErrors.monthly_salary && <FieldError>{fieldErrors.monthly_salary}</FieldError>}
                 </label>
               </div>
 

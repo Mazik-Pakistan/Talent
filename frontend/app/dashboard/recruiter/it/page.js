@@ -18,18 +18,9 @@ import {
   sendItServiceRequest,
 } from "@/services/authService";
 import { parseFieldErrors } from "@/lib/apiFieldErrors";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
 import { Settings, Wrench, ChevronDown, ChevronUp, Users, Search as SearchIcon } from "lucide-react";
 import s from "./it.module.css";
-
-const inputErrorStyle = { borderColor: "#dc2626" };
-const fieldErrorStyle = {
-  display: "block",
-  marginTop: 4,
-  fontSize: 12,
-  fontWeight: 600,
-  color: "#dc2626",
-  lineHeight: 1.4,
-};
 
 const STATUS_LABELS = {
   draft: "Waiting for HR",
@@ -716,7 +707,7 @@ function RecruiterItHubPageContent() {
                 name="employee_id"
                 value={form.employee_id}
                 aria-invalid={Boolean(fieldErrors.employee_id)}
-                style={fieldErrors.employee_id ? inputErrorStyle : undefined}
+                style={fieldErrors.employee_id ? INPUT_ERROR_STYLE : undefined}
                 onChange={(e) => {
                   setFieldErrors((f) => (f.employee_id ? { ...f, employee_id: undefined } : f));
                   setForm((f) => ({ ...f, employee_id: e.target.value }));
@@ -729,7 +720,7 @@ function RecruiterItHubPageContent() {
                   </option>
                 ))}
               </select>
-              {fieldErrors.employee_id && <small style={fieldErrorStyle} role="alert">{fieldErrors.employee_id}</small>}
+              {fieldErrors.employee_id && <FieldError>{fieldErrors.employee_id}</FieldError>}
             </label>
             <label className={styles.field}>
               <span className={styles.label}>Type</span>
@@ -738,7 +729,7 @@ function RecruiterItHubPageContent() {
                 name="request_type"
                 value={form.request_type}
                 aria-invalid={Boolean(fieldErrors.request_type)}
-                style={fieldErrors.request_type ? inputErrorStyle : undefined}
+                style={fieldErrors.request_type ? INPUT_ERROR_STYLE : undefined}
                 onChange={(e) => {
                   setFieldErrors((f) => (f.request_type ? { ...f, request_type: undefined } : f));
                   setForm((f) => ({ ...f, request_type: e.target.value }));
@@ -750,7 +741,7 @@ function RecruiterItHubPageContent() {
                   </option>
                 ))}
               </select>
-              {fieldErrors.request_type && <small style={fieldErrorStyle} role="alert">{fieldErrors.request_type}</small>}
+              {fieldErrors.request_type && <FieldError>{fieldErrors.request_type}</FieldError>}
             </label>
             <label className={styles.field}>
               <span className={styles.label}>What&apos;s needed</span>
@@ -759,14 +750,14 @@ function RecruiterItHubPageContent() {
                 name="it_request_title"
                 value={form.title}
                 aria-invalid={Boolean(fieldErrors.title)}
-                style={fieldErrors.title ? inputErrorStyle : undefined}
+                style={fieldErrors.title ? INPUT_ERROR_STYLE : undefined}
                 onChange={(e) => {
                   setFieldErrors((f) => (f.title ? { ...f, title: undefined } : f));
                   setForm((f) => ({ ...f, title: e.target.value }));
                 }}
                 placeholder="e.g. New laptop — current one is not working"
               />
-              {fieldErrors.title && <small style={fieldErrorStyle} role="alert">{fieldErrors.title}</small>}
+              {fieldErrors.title && <FieldError>{fieldErrors.title}</FieldError>}
             </label>
             <label className={styles.field}>
               <span className={styles.label}>Details (optional)</span>
@@ -776,14 +767,14 @@ function RecruiterItHubPageContent() {
                 rows={3}
                 value={form.description}
                 aria-invalid={Boolean(fieldErrors.description)}
-                style={fieldErrors.description ? inputErrorStyle : undefined}
+                style={fieldErrors.description ? INPUT_ERROR_STYLE : undefined}
                 onChange={(e) => {
                   setFieldErrors((f) => (f.description ? { ...f, description: undefined } : f));
                   setForm((f) => ({ ...f, description: e.target.value }));
                 }}
                 placeholder="What's wrong and what does IT need to know?"
               />
-              {fieldErrors.description && <small style={fieldErrorStyle} role="alert">{fieldErrors.description}</small>}
+              {fieldErrors.description && <FieldError>{fieldErrors.description}</FieldError>}
             </label>
             <label className={styles.field}>
               <span className={styles.label}>IT officer email (optional — leave blank to save as draft)</span>
@@ -793,14 +784,14 @@ function RecruiterItHubPageContent() {
                 type="email"
                 value={form.it_manager_email}
                 aria-invalid={Boolean(fieldErrors.it_manager_email)}
-                style={fieldErrors.it_manager_email ? inputErrorStyle : undefined}
+                style={fieldErrors.it_manager_email ? INPUT_ERROR_STYLE : undefined}
                 onChange={(e) => {
                   setFieldErrors((f) => (f.it_manager_email ? { ...f, it_manager_email: undefined } : f));
                   setForm((f) => ({ ...f, it_manager_email: e.target.value }));
                 }}
                 placeholder="it.support@company.com"
               />
-              {fieldErrors.it_manager_email && <small style={fieldErrorStyle} role="alert">{fieldErrors.it_manager_email}</small>}
+              {fieldErrors.it_manager_email && <FieldError>{fieldErrors.it_manager_email}</FieldError>}
             </label>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
               <button type="button" className={styles.secondaryButton} onClick={() => setShowCreate(false)}>
@@ -840,14 +831,14 @@ function RecruiterItHubPageContent() {
                 type="email"
                 value={sendItEmail}
                 aria-invalid={Boolean(sendErrors.it_manager_email)}
-                style={sendErrors.it_manager_email ? inputErrorStyle : undefined}
+                style={sendErrors.it_manager_email ? INPUT_ERROR_STYLE : undefined}
                 onChange={(e) => {
                   setSendErrors((f) => (f.it_manager_email ? { ...f, it_manager_email: undefined } : f));
                   setSendItEmail(e.target.value);
                 }}
                 placeholder="it.support@company.com"
               />
-              {sendErrors.it_manager_email && <small style={fieldErrorStyle} role="alert">{sendErrors.it_manager_email}</small>}
+              {sendErrors.it_manager_email && <FieldError>{sendErrors.it_manager_email}</FieldError>}
             </label>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
               <button type="button" className={styles.secondaryButton} onClick={() => setSendTarget(null)}>

@@ -578,7 +578,7 @@ function CandidateDashboardContent() {
                       className={styles.btnPrimary}
                       onClick={() => router.push("/offer?from=candidate-dashboard")}
                     >
-                      {offer?.extended_at ? "Review updated offer →" : "Review &amp; Sign Offer Letter →"}
+                      {offer?.extended_at ? "Review updated offer →" : "Review & Sign Offer Letter →"}
                     </button>
                   ) : (
                     <button

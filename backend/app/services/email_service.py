@@ -459,55 +459,77 @@ class EmailService:
         )
 
     # ------------------------------------------------------------------ #
-    # send_employee_welcome
+    # send_employee_activation
     # ------------------------------------------------------------------ #
-    def send_employee_welcome(
+    def send_employee_activation(
         self,
         to_email: str,
         full_name: str,
         employee_id: str,
         job_title: str,
         department: str,
+        company_email: str | None = None,
+        temp_password: str | None = None,
         organization_id: str | None = None,
     ) -> None:
-        subject = "Congratulations — Welcome to TalentAI"
+        safe_name = escape(full_name or "there")
+        subject = "Congratulations — Your Employee Account Has Been Activated"
         body = f"""
 <p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
-  Your onboarding has been approved and you are now an official employee
-  at Mazik Global Pakistan.
+  Congratulations, {safe_name}! Your employee account has been successfully activated.
+  You can now access the TalentAI employee portal.
+</p>
+<p style="margin:0 0 20px;color:#1a1a2e;font-size:14px;">
+  <strong>Company:</strong> Mazik Global Pakistan<br/>
+  <strong>Role:</strong> {escape(job_title)} &nbsp;·&nbsp; {escape(department)}
 </p>
 <table cellpadding="0" cellspacing="0" border="0" width="100%"
        style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;
               margin:0 0 24px;">
   <tr>
-    <td style="padding:24px;">
+    <td style="padding:20px 22px;">
       <p style="margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;
-                text-transform:uppercase;letter-spacing:1.2px;">
-        Your Employee ID
-      </p>
-      <p style="margin:0 0 12px;color:#0D5C91;font-size:32px;font-weight:700;
-                letter-spacing:4px;line-height:1.1;">
+                text-transform:uppercase;letter-spacing:1.2px;">Your Employee ID</p>
+      <p style="margin:0 0 14px;color:#0D5C91;font-size:20px;font-weight:800;letter-spacing:1px;">
         {escape(employee_id)}
       </p>
-      <p style="margin:0;color:#1a1a2e;font-size:14px;font-weight:600;">
-        {escape(job_title)}&ensp;&middot;&ensp;{escape(department)}
+      <p style="margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Login Email</p>
+      <p style="margin:0 0 14px;color:#1a1a2e;font-size:16px;font-weight:700;word-break:break-all;">
+        {escape((to_email or '').strip())}
+      </p>
+"""
+        if company_email:
+            body += f"""
+      <p style="margin:0 0 14px;color:#1a1a2e;font-size:16px;font-weight:700;word-break:break-all;">
+        {escape(company_email)}
+      </p>
+"""
+        body += f"""
+      <p style="margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Temporary Password</p>
+      <p style="margin:0;font-size:20px;font-weight:800;color:#1e3a5f;font-family:Consolas,Menlo,monospace;">
+        {escape(temp_password or '')}
       </p>
     </td>
   </tr>
 </table>
 <p style="margin:0 0 12px;color:#1a1a2e;font-size:15px;line-height:1.7;">
-  Sign in to TalentAI and choose the <strong>Employee</strong> role to open
-  your employee dashboard.
+  <strong>How to Sign In:</strong><br/>
+  1. Go to <a href="{settings.frontend_base_url}/login" style="color:#0D5C91;">{settings.frontend_base_url}/login</a><br/>
+  2. Use your personal or company email<br/>
+  3. Enter the temporary password above<br/>
+  4. You'll be prompted to create your own password on first sign-in
 </p>
-<p style="margin:0;color:#1a1a2e;font-size:15px;line-height:1.7;">
-  Please complete your post-hire profile (emergency contact, banking,
-  references, policies, and Self Declaration) so HR can finish your onboarding.
+<p style="margin:0;color:#8a9bb0;font-size:13px;line-height:1.6;">
+  After setting your own password, that single password will cover both your personal
+  and company email logins.
 </p>
 """
-        subject, body = self._resolve_org_template(organization_id, "employee_welcome", subject, body, locals())
+        subject, body = self._resolve_org_template(organization_id, "employee_activation", subject, body, locals())
         self._send(
             to_email, subject,
-            self._branded_shell("Congratulations", f"Welcome aboard, {escape(full_name)}!", body)
+            self._branded_shell("Congratulations", "Your Employee Account Is Ready", body)
         )
 
     # ------------------------------------------------------------------ #

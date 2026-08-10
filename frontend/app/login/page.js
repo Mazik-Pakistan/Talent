@@ -2,15 +2,19 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 import { getApiErrorMessage, login, persistLoginSession } from "@/services/authService";
 import { LOGO_URL } from "@/lib/logo";
 import PasswordToggle from "@/components/PasswordToggle";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
+import { EMAIL_REGEX, PASSWORD_REGEX, PASSWORD_HINT_TEXT } from "@/utils/validation";
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic";
+
+const PASSWORD_HINT = PASSWORD_HINT_TEXT;
 
 const ROTATING_CONTENT = [
   {
@@ -35,8 +39,6 @@ const ROTATING_CONTENT = [
   },
 ];
 
-const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
-
 function validateForm(values) {
   const errors = {};
 
@@ -48,8 +50,8 @@ function validateForm(values) {
 
   if (!values.password) {
     errors.password = "Password is required.";
-  } else if (values.password.length < 8) {
-    errors.password = "Password must be at least 8 characters.";
+  } else if (!PASSWORD_REGEX.test(values.password)) {
+    errors.password = PASSWORD_HINT;
   }
 
   return errors;
@@ -62,6 +64,7 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const cardRef = useRef(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -70,7 +73,9 @@ function LoginForm() {
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [loginFeedback, setLoginFeedback] = useState("idle");
-  
+  // "none" | "email" | "password" — drives the mascot's attentive/privacy states
+  const [focusedField, setFocusedField] = useState("none");
+
   // Auto-rotation state
   const [contentIndex, setContentIndex] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -103,6 +108,11 @@ function LoginForm() {
   function handleBlur(field) {
     setTouched((current) => ({ ...current, [field]: true }));
     setErrors(validateForm({ email, password }));
+    setFocusedField((current) => (current === field ? "none" : current));
+  }
+
+  function handleFocus(field) {
+    setFocusedField(field);
   }
 
   function handleEmailChange(value) {
@@ -129,7 +139,6 @@ function LoginForm() {
      setErrors(validationErrors);
      if (Object.keys(validationErrors).length) {
        setLoginFeedback("error");
-       toast.error("Please fix the errors below and try again.");
        return;
      }
 
@@ -178,7 +187,6 @@ function LoginForm() {
        router.push(data.redirect_to);
      } catch (error) {
        const message = getApiErrorMessage(error, "Login failed. Please check your credentials.");
-       setErrors((current) => ({ ...current, password: message }));
        setLoginFeedback("error");
        toast.error(message);
      } finally {
@@ -187,12 +195,14 @@ function LoginForm() {
    }
 
   const mascotMood = loginFeedback === "success" ? "green" : loginFeedback === "error" ? "red" : password ? "yellow" : "neutral";
+  const mascotAuthStatus =
+    loginFeedback === "checking" ? "checking" : loginFeedback === "success" ? "success" : loginFeedback === "error" ? "error" : "idle";
 
   return (
     <main className={styles.shell}>
       <ToastContainer position="top-right" autoClose={4000} theme="colored" newestOnTop />
 
-      <div className={styles.card}>
+      <div className={styles.card} ref={cardRef}>
         <aside className={styles.aside} aria-label="Talent platform introduction">
           <div className={styles.asideBrandRow}>
             <img
@@ -217,7 +227,10 @@ function LoginForm() {
           <div className={styles.mascotContainer}>
             <MascotStatic
               mood={mascotMood}
-              message={loginFeedback === "success" ? "Welcome back! 🎉" : undefined}
+              fieldFocus={focusedField}
+              passwordVisible={showPassword}
+              authStatus={mascotAuthStatus}
+              cardRef={cardRef}
             />
           </div>
         </aside>
@@ -234,21 +247,23 @@ function LoginForm() {
               <span className={styles.inputShell}>
                 <FieldIcon type="email" />
                 <input
-                  className={`${styles.input} ${loginFeedback === "error" ? styles.passwordInvalid : loginFeedback === "success" ? styles.passwordSuccess : ""}`}
+                  className={`${styles.input} ${loginFeedback === "success" ? styles.passwordSuccess : ""}`}
                   type="email"
                   name="email"
                   value={email}
                   onChange={(e) => handleEmailChange(e.target.value)}
+                  onFocus={() => handleFocus("email")}
                   onBlur={() => handleBlur("email")}
                   aria-invalid={Boolean((touched.email && errors.email) || loginFeedback === "error")}
                   aria-describedby={touched.email && errors.email ? "email-error" : undefined}
                   autoComplete="email"
                   placeholder="you@company.com"
                   required
+                  style={(touched.email && errors.email) || loginFeedback === "error" ? INPUT_ERROR_STYLE : undefined}
                 />
               </span>
               {touched.email && errors.email && (
-                <small className={styles.fieldError} id="email-error">⚠ {errors.email}</small>
+                <FieldError id="email-error">{errors.email}</FieldError>
               )}
             </label>
 
@@ -257,17 +272,19 @@ function LoginForm() {
               <span className={styles.inputShell}>
                 <FieldIcon type="password" />
                 <input
-                  className={`${styles.input} ${loginFeedback === "error" ? styles.passwordInvalid : loginFeedback === "success" ? styles.passwordSuccess : ""}`}
+                  className={`${styles.input} ${loginFeedback === "success" ? styles.passwordSuccess : ""}`}
                   type={showPassword ? "text" : "password"}
                   name="password"
                   value={password}
                   onChange={(e) => handlePasswordChange(e.target.value)}
+                  onFocus={() => handleFocus("password")}
                   onBlur={() => handleBlur("password")}
                   aria-invalid={loginFeedback === "error"}
                   aria-describedby={touched.password && errors.password ? "password-error" : undefined}
                   autoComplete="current-password"
                   placeholder="••••••••"
                   required
+                  style={(touched.password && errors.password) || loginFeedback === "error" ? INPUT_ERROR_STYLE : undefined}
                 />
                 <PasswordToggle
                   visible={showPassword}
@@ -276,7 +293,7 @@ function LoginForm() {
                 />
               </span>
               {touched.password && errors.password && (
-                <small className={styles.fieldError} id="password-error">⚠ {errors.password}</small>
+                <FieldError id="password-error">{errors.password}</FieldError>
               )}
             </label>
 

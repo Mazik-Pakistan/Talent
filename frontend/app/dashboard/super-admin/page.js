@@ -31,9 +31,14 @@ import {
   updateRecruiter,
   updateRecruiterCapabilities,
 } from "@/services/authService";
+import { parseFieldErrors } from "@/lib/apiFieldErrors";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
+import { PASSWORD_REGEX, PASSWORD_HINT_TEXT, EMAIL_REGEX, validateTextField } from "@/utils/validation";
 import { can } from "@/services/rbac";
 import { clearSuperAdminContext, publishSuperAdminContext } from "@/lib/ai/superAdminContext";
 import { SUPER_ADMIN_TAB_HELP } from "@/lib/ai/superAdminFieldHelp";
+
+const PASSWORD_HINT = PASSWORD_HINT_TEXT;
 
 const SparkleIcon = (props) => (
   <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -150,34 +155,6 @@ const INVITE_FIELD_KEYS = [
   "capabilities",
 ];
 
-/**
- * Parse a backend 422 detail array into per-field errors. Errors that cannot be
- * mapped to a known form field are returned as a single general message.
- */
-function parseInviteFieldErrors(error) {
-  const fieldErrors = {};
-  let general = null;
-  const detail = error?.response?.data?.detail;
-  if (Array.isArray(detail)) {
-    for (const item of detail) {
-      const raw = item?.msg || item?.message;
-      if (!raw) continue;
-      const loc = item?.loc || [];
-      const field = typeof loc[loc.length - 1] === "string" ? loc[loc.length - 1] : null;
-      const message = String(raw)
-        .replace(/^Value error,\s*/i, "")
-        .replace(/^Assertion failed,\s*/i, "")
-        .trim();
-      if (field && INVITE_FIELD_KEYS.includes(field)) {
-        fieldErrors[field] = message;
-      } else {
-        general = general || message;
-      }
-    }
-  }
-  return { fieldErrors, general };
-}
-
 const emptyEditForm = { job_title: "", department: "", office_location: "", status: "active" };
 
 export default function SuperAdminDashboardPage() {
@@ -215,6 +192,9 @@ export default function SuperAdminDashboardPage() {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyEditForm);
   const [editSaving, setEditSaving] = useState(false);
+  const [editErrors, setEditErrors] = useState({});
+  const [bootstrapErrors, setBootstrapErrors] = useState({});
+  const [orgFieldErrors, setOrgFieldErrors] = useState({});
   
   // New state for improved UI
   const [selectedRecruiterId, setSelectedRecruiterId] = useState(null);
@@ -301,6 +281,15 @@ export default function SuperAdminDashboardPage() {
 
   async function handleOrgSubmit(event) {
     event.preventDefault();
+    setOrgFieldErrors({});
+    const errors = {
+      name: !orgForm.name.trim() ? "Organization name is required." : undefined,
+      contact_email: orgForm.contact_email.trim() && !EMAIL_REGEX.test(orgForm.contact_email.trim()) ? "Enter a valid email address." : undefined,
+    };
+    if (Object.values(errors).some(Boolean)) {
+      setOrgFieldErrors(errors);
+      return;
+    }
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setOrgSaving(true);
@@ -320,6 +309,7 @@ export default function SuperAdminDashboardPage() {
       }
       setOrgFormOpen(false);
       setEditOrgId(null);
+      setOrgFieldErrors({});
       loadOrganizations();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not save organization."));
@@ -394,7 +384,15 @@ export default function SuperAdminDashboardPage() {
 
   async function handleBootstrap(event) {
     event.preventDefault();
+    setBootstrapErrors({});
     setMessage("");
+
+    const errors = validateBootstrap();
+    if (Object.keys(errors).length > 0) {
+      setBootstrapErrors(errors);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const data = await bootstrapSuperAdmin({ ...form, full_name: form.full_name.trim(), email: form.email.trim(), phone: form.phone.trim() });
@@ -407,6 +405,32 @@ export default function SuperAdminDashboardPage() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  function validateBootstrap() {
+    const errors = {};
+    const name = (form.full_name || "").trim();
+    const email = (form.email || "").trim();
+    const phone = (form.phone || "").trim();
+    const password = form.password || "";
+    const confirm = form.confirm_password || "";
+
+    if (!name) errors.full_name = "Full name is required.";
+    else if (!validateTextField(name, 2, 120).isValid) errors.full_name = "Full name must be at least 2 characters.";
+
+    if (!email) errors.email = "Email is required.";
+    else if (!EMAIL_REGEX.test(email)) errors.email = "Please enter a valid email address.";
+
+    if (!phone) errors.phone = "Phone is required.";
+    else if (!validateTextField(phone, 7, 20).isValid) errors.phone = "Please enter a valid phone number.";
+
+    if (!password) errors.password = "Password is required.";
+    else if (!PASSWORD_REGEX.test(password)) errors.password = PASSWORD_HINT;
+
+    if (!confirm) errors.confirm_password = "Please confirm your password.";
+    else if (password && confirm !== password) errors.confirm_password = "Passwords do not match.";
+
+    return errors;
   }
 
   async function handleInvite(event) {
@@ -443,15 +467,13 @@ export default function SuperAdminDashboardPage() {
       setInviteForm(initialInviteForm);
       loadRecruiters();
     } catch (error) {
-      const { fieldErrors, general } = parseInviteFieldErrors(error);
+      const { fieldErrors, general } = parseFieldErrors(error, INVITE_FIELD_KEYS);
       setInviteErrors(fieldErrors);
       if (general) {
         const generalMessage = general || getApiErrorMessage(error, "Failed to send recruiter invitation. Please try again.");
         setInviteFeedback({ type: "error", message: generalMessage });
         toast.error(generalMessage, { toastId: "super-admin-invite-error" });
       } else if (Object.keys(fieldErrors).length > 0) {
-        // Field-level validation errors are shown inline under each field —
-        // no page-wide banner or toast for them.
         setInviteFeedback(null);
       } else {
         const errorMessage = getApiErrorMessage(error, "Failed to send recruiter invitation. Please try again.");
@@ -524,6 +546,14 @@ export default function SuperAdminDashboardPage() {
   async function saveEdit(recruiterId) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
+    const errors = {
+      job_title: !editForm.job_title?.trim() ? "Job title is required." : undefined,
+      department: !editForm.department?.trim() ? "Department is required." : undefined,
+    };
+    if (Object.values(errors).some(Boolean)) {
+      setEditErrors(errors);
+      return;
+    }
     setEditSaving(true);
     try {
       const recruiter = recruiters.find((r) => r.id === recruiterId);
@@ -532,6 +562,7 @@ export default function SuperAdminDashboardPage() {
       await updateRecruiter(recruiterId, payload, accessToken);
       toast.success("Recruiter updated.");
       setEditingId(null);
+      setEditErrors({});
       loadRecruiters();
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to update recruiter."));
@@ -651,9 +682,20 @@ export default function SuperAdminDashboardPage() {
                         <input
                           type={showBootstrapPasswords[field] ? "text" : "password"}
                           value={form[field] ?? ""}
-                          onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+                          onChange={(e) => {
+                            setForm({ ...form, [field]: e.target.value });
+                            setBootstrapErrors((current) => {
+                              const next = { ...current };
+                              delete next[field];
+                              return next;
+                            });
+                          }}
                           required
-                          style={{ paddingRight: 40 }}
+                          style={{
+                            paddingRight: 40,
+                            ...(bootstrapErrors[field] ? INPUT_ERROR_STYLE : {}),
+                          }}
+                          aria-invalid={Boolean(bootstrapErrors[field])}
                         />
                         <PasswordToggle
                           visible={Boolean(showBootstrapPasswords[field])}
@@ -682,13 +724,23 @@ export default function SuperAdminDashboardPage() {
                       <input
                         type={field === "email" ? "email" : "text"}
                         value={form[field] ?? ""}
-                        onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+                        onChange={(e) => {
+                          setForm({ ...form, [field]: e.target.value });
+                          setBootstrapErrors((current) => {
+                            const next = { ...current };
+                            delete next[field];
+                            return next;
+                          });
+                        }}
                         required
+                        style={bootstrapErrors[field] ? INPUT_ERROR_STYLE : undefined}
+                        aria-invalid={Boolean(bootstrapErrors[field])}
                       />
                     )}
+                    {bootstrapErrors[field] && <FieldError id={`bootstrap-${field}-error`}>{bootstrapErrors[field]}</FieldError>}
                   </label>
                 ))}
-                {message && <p className={styles.formMessage}>{message}</p>}
+                {message && <p className={styles.formMessage} role="alert">{message}</p>}
                 <button type="submit" disabled={isSubmitting} className={styles.primaryButton}>
                   {isSubmitting ? "Creating..." : "Create super admin"}
                 </button>
@@ -853,6 +905,8 @@ export default function SuperAdminDashboardPage() {
           saveEdit={saveEdit}
           cancelEdit={cancelEdit}
           editSaving={editSaving}
+          editErrors={editErrors}
+          onClearEditError={(key) => setEditErrors((current) => { const next = { ...current }; delete next[key]; return next; })}
           toggleCapability={toggleCapability}
           quickDeleteRecruiter={quickDeleteRecruiter}
           onTabChange={setActiveTab}
@@ -913,11 +967,14 @@ export default function SuperAdminDashboardPage() {
                   type="text"
                   data-field-key="organization_name"
                   value={orgForm.name}
-                  onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
+                  onChange={(e) => { setOrgForm({ ...orgForm, name: e.target.value }); setOrgFieldErrors((current) => { const next = { ...current }; delete next.name; return next; }); }}
                   placeholder="Acme Corporation"
                   required
                   disabled={orgSaving}
+                  aria-invalid={Boolean(orgFieldErrors.name)}
+                  style={orgFieldErrors.name ? INPUT_ERROR_STYLE : undefined}
                 />
+                {orgFieldErrors.name && <FieldError>{orgFieldErrors.name}</FieldError>}
               </label>
               <label className={local.orgField}>
                 <span>Contact Email</span>
@@ -925,10 +982,13 @@ export default function SuperAdminDashboardPage() {
                   type="email"
                   data-field-key="contact_email"
                   value={orgForm.contact_email}
-                  onChange={(e) => setOrgForm({ ...orgForm, contact_email: e.target.value })}
+                  onChange={(e) => { setOrgForm({ ...orgForm, contact_email: e.target.value }); setOrgFieldErrors((current) => { const next = { ...current }; delete next.contact_email; return next; }); }}
                   placeholder="hr@company.com"
                   disabled={orgSaving}
+                  aria-invalid={Boolean(orgFieldErrors.contact_email)}
+                  style={orgFieldErrors.contact_email ? INPUT_ERROR_STYLE : undefined}
                 />
+                {orgFieldErrors.contact_email && <FieldError>{orgFieldErrors.contact_email}</FieldError>}
               </label>
               <label className={local.orgField}>
                 <span>Description</span>
