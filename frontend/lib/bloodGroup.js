@@ -33,22 +33,11 @@ export function formatBloodGroupDisplay(value, { pendingSuffix = " — needs upd
 }
 
 /**
- * Confirm before accepting a real blood type. N/A needs no confirm.
- * Returns the value to keep (next if confirmed / N/A, otherwise previous).
+ * True when selecting a real blood type that differs from the current value.
+ * Callers should show an in-app confirm dialog (not window.confirm).
  */
-export function confirmBloodGroupSelection(next, previous) {
+export function needsBloodGroupConfirmation(next, previous) {
   const normalizedNext = normalizeBloodGroup(next);
   const normalizedPrev = normalizeBloodGroup(previous);
-
-  if (isBloodGroupPending(normalizedNext) || normalizedNext === normalizedPrev) {
-    return normalizedNext;
-  }
-
-  const ok =
-    typeof window !== "undefined" &&
-    window.confirm(
-      `Blood group is used in emergencies. Confirm you are selecting ${normalizedNext}.\n\nOnly continue if you are sure this is correct.`
-    );
-
-  return ok ? normalizedNext : normalizedPrev;
+  return !isBloodGroupPending(normalizedNext) && normalizedNext !== normalizedPrev;
 }

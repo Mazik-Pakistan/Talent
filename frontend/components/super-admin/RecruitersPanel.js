@@ -114,11 +114,6 @@ const ICONS = {
       <path d="M10 11v6M14 11v6" />
     </svg>
   ),
-  chevron: (
-    <svg {...svgProps}>
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  ),
 };
 
 function formatDate(value) {
@@ -172,7 +167,6 @@ export default function RecruitersPanel({
   quickDeleteRecruiter = () => {},
   onTabChange = () => {},
 }) {
-  const [expandedId, setExpandedId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const headerCheckRef = useRef(null);
 
@@ -238,10 +232,6 @@ export default function RecruitersPanel({
     window.setTimeout(() => window.location.reload(), 350);
   }
 
-  function handleRowClick(id) {
-    setExpandedId((current) => (current === id ? null : id));
-  }
-
   function clearFilters() {
     setSearchTerm("");
     setStatusFilter("");
@@ -269,8 +259,7 @@ export default function RecruitersPanel({
     return <span className={`${s.statusBadge} ${tone}`}>{label}</span>;
   }
 
-  function renderExpanded(recruiter) {
-    const isEditing = editingId === recruiter.id;
+  function renderEditPanel(recruiter) {
     const hasOrg = Boolean(recruiter.organization_id);
     const orgModules = hasOrg
       ? organizations.find((o) => o.id === recruiter.organization_id)?.modules || {}
@@ -278,122 +267,79 @@ export default function RecruitersPanel({
     const visibleCaps = CAPABILITY_KEYS.filter((key) => !hasOrg || orgModules[key] !== false);
 
     return (
-      <div>
-        <div className={s.expandedHeader}>
-          <span className={s.avatar}>{initials(recruiter.full_name)}</span>
-          <div className={s.expandedSummary}>
-            <div className={s.expandedName}>{recruiter.full_name || "Unnamed recruiter"}</div>
-            <div className={s.expandedMeta}>{recruiter.email || "No email on file"}</div>
-          </div>
-          <div className={s.expandedMetaGroup}>
-            <span className={s.expandedMetaLabel}>Status</span>
-            {renderStatusBadge(recruiter.status)}
-          </div>
-          <div className={s.expandedMetaGroup}>
-            <span className={s.expandedMetaLabel}>Organization</span>
-            <span className={s.expandedMeta}>{orgName(recruiter)}</span>
-          </div>
-          <div className={s.expandedMetaGroup}>
-            <span className={s.expandedMetaLabel}>Invited</span>
-            <span className={s.expandedMeta}>{formatDate(recruiter.created_at)}</span>
-          </div>
-          <div className={s.expandedMetaGroup}>
-            <span className={s.expandedMetaLabel}>Expires</span>
-            <span className={s.expandedMeta}>{formatDate(recruiter.expires_at)}</span>
-          </div>
+      <div className={s.expandedContent}>
+        <div className={s.editGrid}>
+          <label className={s.editField}>
+            <span className={s.editLabel}>Job Title</span>
+            <input
+              type="text"
+              className={s.editInput}
+              value={editForm?.job_title || ""}
+              onChange={(e) => setEditForm({ ...(editForm || {}), job_title: e.target.value })}
+              aria-label="Job title"
+            />
+          </label>
+          <label className={s.editField}>
+            <span className={s.editLabel}>Department</span>
+            <input
+              type="text"
+              className={s.editInput}
+              value={editForm?.department || ""}
+              onChange={(e) => setEditForm({ ...(editForm || {}), department: e.target.value })}
+              aria-label="Department"
+            />
+          </label>
+          <label className={s.editField}>
+            <span className={s.editLabel}>Office Location</span>
+            <input
+              type="text"
+              className={s.editInput}
+              value={editForm?.office_location || ""}
+              onChange={(e) => setEditForm({ ...(editForm || {}), office_location: e.target.value })}
+              aria-label="Office location"
+            />
+          </label>
+          <label className={s.editField}>
+            <span className={s.editLabel}>Status</span>
+            {recruiter.recruiter_id ? (
+              <select
+                className={s.editInput}
+                value={editForm?.status || "active"}
+                onChange={(e) => setEditForm({ ...(editForm || {}), status: e.target.value })}
+                aria-label="Recruiter status"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            ) : (
+              <select
+                className={s.editInput}
+                value="pending"
+                disabled
+                aria-label="Recruiter status"
+              >
+                <option value="pending">Pending</option>
+              </select>
+            )}
+          </label>
         </div>
 
         <div className={s.expandedActions}>
-          {isEditing ? (
-            <div className={s.editActions}>
-              <button
-                type="button"
-                className={s.btnPrimary}
-                disabled={editSaving}
-                onClick={() => saveEdit(recruiter.id)}
-              >
-                {editSaving ? <span className={s.spinnerSmall} /> : null}
-                {editSaving ? "Saving…" : "Save Changes"}
-              </button>
-              <button type="button" className={s.btnGhost} onClick={cancelEdit}>
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <>
-              <button type="button" className={s.btnGhost} onClick={() => startEdit(recruiter)}>
-                {ICONS.edit}
-                Edit
-              </button>
-              <button
-                type="button"
-                className={s.btnDanger}
-                onClick={() => quickDeleteRecruiter(recruiter.id, recruiter.full_name)}
-              >
-                {ICONS.trash}
-                Delete
-              </button>
-            </>
-          )}
-        </div>
-
-        {isEditing && (
-          <div className={s.editGrid}>
-            <label className={s.editField}>
-              <span className={s.editLabel}>Job Title</span>
-              <input
-                type="text"
-                className={s.editInput}
-                value={editForm?.job_title || ""}
-                onChange={(e) => setEditForm({ ...(editForm || {}), job_title: e.target.value })}
-                aria-label="Job title"
-              />
-            </label>
-            <label className={s.editField}>
-              <span className={s.editLabel}>Department</span>
-              <input
-                type="text"
-                className={s.editInput}
-                value={editForm?.department || ""}
-                onChange={(e) => setEditForm({ ...(editForm || {}), department: e.target.value })}
-                aria-label="Department"
-              />
-            </label>
-            <label className={s.editField}>
-              <span className={s.editLabel}>Office Location</span>
-              <input
-                type="text"
-                className={s.editInput}
-                value={editForm?.office_location || ""}
-                onChange={(e) => setEditForm({ ...(editForm || {}), office_location: e.target.value })}
-                aria-label="Office location"
-              />
-            </label>
-            <label className={s.editField}>
-              <span className={s.editLabel}>Status</span>
-              {recruiter.recruiter_id ? (
-                <select
-                  className={s.editInput}
-                  value={editForm?.status || "active"}
-                  onChange={(e) => setEditForm({ ...(editForm || {}), status: e.target.value })}
-                  aria-label="Recruiter status"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              ) : (
-                <select
-                  className={s.editInput}
-                  value="pending"
-                  disabled
-                  aria-label="Recruiter status"
-                >
-                  <option value="pending">Pending</option>
-                </select>
-              )}
-            </label>
+          <div className={s.editActions}>
+            <button
+              type="button"
+              className={s.btnPrimary}
+              disabled={editSaving}
+              onClick={() => saveEdit(recruiter.id)}
+            >
+              {editSaving ? <span className={s.spinnerSmall} /> : null}
+              {editSaving ? "Saving…" : "Save Changes"}
+            </button>
+            <button type="button" className={s.btnGhost} onClick={cancelEdit}>
+              Cancel
+            </button>
           </div>
-        )}
+        </div>
 
         <div className={s.capsSection}>
           <h4 className={s.capsTitle}>Module Capabilities</h4>
@@ -453,15 +399,13 @@ export default function RecruitersPanel({
           </thead>
           <tbody>
             {filtered.map((recruiter) => {
-              const expanded = expandedId === recruiter.id;
               const capCount = countCapabilities(recruiter);
               const capTotal = CAPABILITY_KEYS.length;
               const pct = Math.round((capCount / capTotal) * 100);
               return (
                 <Fragment key={recruiter.id}>
                   <tr
-                    className={`${s.tr} ${expanded ? s.trExpanded : ""}`}
-                    onClick={() => handleRowClick(recruiter.id)}
+                    className={`${s.tr} ${editingId === recruiter.id ? s.trExpanded : ""}`}
                   >
                     <td className={s.td} onClick={(e) => e.stopPropagation()}>
                       <input
@@ -508,7 +452,7 @@ export default function RecruitersPanel({
                         </div>
                       </div>
                     </td>
-                    <td className={`${s.td} ${s.actionsCell}`}>
+                    <td className={`${s.td} ${s.actionsCell}`} onClick={(e) => e.stopPropagation()}>
                       <div className={s.actions}>
                         <button
                           type="button"
@@ -516,7 +460,6 @@ export default function RecruitersPanel({
                           title="Edit recruiter"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setExpandedId(recruiter.id);
                             startEdit(recruiter);
                           }}
                         >
@@ -533,14 +476,13 @@ export default function RecruitersPanel({
                         >
                           {ICONS.trash}
                         </button>
-                        <span className={`${s.chevron} ${expanded ? s.chevronOpen : ""}`}>{ICONS.chevron}</span>
                       </div>
                     </td>
                   </tr>
-                  {expanded && (
+                  {editingId === recruiter.id && (
                     <tr className={s.expandedRow}>
                       <td colSpan={10} className={s.expandedCell}>
-                        {renderExpanded(recruiter)}
+                        {renderEditPanel(recruiter)}
                       </td>
                     </tr>
                   )}

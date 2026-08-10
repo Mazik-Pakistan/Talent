@@ -213,6 +213,7 @@ CAPABILITY_TEMPLATES: dict[str, dict[str, bool]] = {
         "it": True,
         "reporting": True,
         "profile": True,
+        "support": True,
     },
     "hiring_only": {
         "overview": True,
