@@ -20,12 +20,36 @@ from app.services.people_history import (
 
 
 class InvitationService:
+    async def _validate_department_designation(self, request: CreateInvitationRequest, org_id: str | None) -> None:
+        """Reject invitations whose designation does not belong to the selected
+        department. The Organization Framework is the source of truth for the
+        department -> role relationship; when the department is not defined in
+        the framework (legacy/free-text) the combination is accepted as-is."""
+        if not org_id or not request.department or not request.job_title:
+            return
+        from app.services.organization_framework_service import get_role_by_name, list_departments
+
+        departments = await list_departments(org_id)
+        if not any(d.get("name") == request.department for d in departments):
+            return
+        role = await get_role_by_name(org_id, request.job_title, request.department)
+        if role is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    f"Designation '{request.job_title}' does not belong to "
+                    f"department '{request.department}'."
+                ),
+            )
+
     async def create_invitation(self, request: CreateInvitationRequest, actor: CurrentUser) -> dict:
         if request.offer is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="An offer letter is required when inviting a candidate. Include salary, start date, benefits, and reporting manager.",
             )
+
+        await self._validate_department_designation(request, getattr(actor, "organization_id", None))
 
         email = request.email.lower().strip()
         existing_candidate = await find_active_candidate(email)

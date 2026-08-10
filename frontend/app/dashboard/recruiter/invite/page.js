@@ -228,7 +228,13 @@ function RecruiterInvitePageInner() {
         ]);
         if (cancelled) return;
         setFrameworkDepartments((depts || []).map((d) => d.name).filter(Boolean));
-        setFrameworkRoles([...new Set((roles || []).map((r) => r.name))].sort());
+        // Keep the department -> role relationship from the Organization Framework
+        // so designations can be filtered by the selected department.
+        setFrameworkRoles(
+          (roles || [])
+            .filter((r) => r && r.name)
+            .map((r) => ({ name: r.name, department: r.department }))
+        );
       } catch {
         setFrameworkDepartments([]);
         setFrameworkRoles([]);
@@ -240,7 +246,34 @@ function RecruiterInvitePageInner() {
   }, []);
 
   const departmentOptions = frameworkDepartments || [];
-  const designationOptions = frameworkRoles || [];
+
+  // Only designations belonging to the selected department are offered.
+  const designationOptions = useMemo(() => {
+    if (!inviteForm.department) return [];
+    return [
+      ...new Set(
+        (frameworkRoles || [])
+          .filter((r) => r.department === inviteForm.department)
+          .map((r) => r.name)
+      ),
+    ].sort();
+  }, [frameworkRoles, inviteForm.department]);
+
+  function handleDepartmentChange(e) {
+    const department = e.target.value;
+    setInviteForm((current) => {
+      const designationStillValid =
+        Boolean(department) &&
+        (frameworkRoles || []).some(
+          (r) => r.department === department && r.name === current.job_title
+        );
+      return {
+        ...current,
+        department,
+        job_title: designationStillValid ? current.job_title : "",
+      };
+    });
+  }
 
   const allowancesTotal = useMemo(
     () => allowances.reduce((sum, row) => sum + (Number(row.amount) || 0), 0),
@@ -668,15 +701,15 @@ function RecruiterInvitePageInner() {
               </div>
               <div className={styles.formGrid}>
                 <label className={styles.field}>
-                  <span>Designation <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
+                  <span>Department <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
                   <select
-                    name="job_title"
-                    value={inviteForm.job_title}
-                    onChange={updateInviteField}
+                    name="department"
+                    value={inviteForm.department}
+                    onChange={handleDepartmentChange}
                     required
                   >
-                    <option value="">Select designation</option>
-                    {designationOptions.map((d) => (
+                    <option value="">Select department</option>
+                    {departmentOptions.map((d) => (
                       <option key={d} value={d}>
                         {d}
                       </option>
@@ -684,15 +717,18 @@ function RecruiterInvitePageInner() {
                   </select>
                 </label>
                 <label className={styles.field}>
-                  <span>Department <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
+                  <span>Designation <span style={{ color: "#b42318", marginLeft: 4 }}>*</span></span>
                   <select
-                    name="department"
-                    value={inviteForm.department}
+                    name="job_title"
+                    value={inviteForm.job_title}
                     onChange={updateInviteField}
+                    disabled={!inviteForm.department}
                     required
                   >
-                    <option value="">Select department</option>
-                    {departmentOptions.map((d) => (
+                    <option value="">
+                      {inviteForm.department ? "Select designation" : "Select department first"}
+                    </option>
+                    {designationOptions.map((d) => (
                       <option key={d} value={d}>
                         {d}
                       </option>

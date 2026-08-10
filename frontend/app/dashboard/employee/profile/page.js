@@ -1407,7 +1407,7 @@ function EmployeeProfileContent() {
                       Ask AI Assistant
                     </button>
                     <a className={styles.helpSecondary} href="mailto:hr@mazikglobal.com">
-                      <IconPhone />
+                      <IconMail />
                       Email HR
                     </a>
                   </div>
@@ -1668,10 +1668,11 @@ function IconAlert() {
   );
 }
 
-function IconPhone() {
+function IconMail() {
   return (
     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 17.5c-4.7 0-8.5-3.8-8.5-8.5.4-.4 1.4-1.3 2-1.9.5-.5.5-1 .2-1.5L7 3.6c-.3-.5-1-.7-1.5-.3-1 .7-2.4 2-2.9 3.6C1.7 11.7 6.3 20 14.1 21.4c1.6.3 3.4-.8 4.2-1.7.4-.5.2-1.2-.3-1.5l-1.9-1.7c-.5-.3-1-.3-1.5.2-.6.6-1.5 1.6-1.9 2Z" />
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="M22 6l-10 7L2 6" />
     </svg>
   );
 }
