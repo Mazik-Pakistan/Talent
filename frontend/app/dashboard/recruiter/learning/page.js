@@ -367,6 +367,10 @@ function CatalogTab({ onAssignCourse }) {
           if (!initializedProvidersRef.current && providerList.length) {
             return `provider:${providerList[0]}`;
           }
+          const merged = [...providerSources, ...STATIC_CATALOG_SOURCES];
+          if (!merged.some((s) => s.key === current)) {
+            return merged[0]?.key || current;
+          }
           return current;
         });
         initializedProvidersRef.current = true;
