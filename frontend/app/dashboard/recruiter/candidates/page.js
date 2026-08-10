@@ -84,6 +84,7 @@ function RecruiterCandidatesPageContent() {
   const [bulkItEmail, setBulkItEmail] = useState("");
   const [bulkItMode, setBulkItMode] = useState("individual");
   const [bulkItBusy, setBulkItBusy] = useState(false);
+  const [bulkEmailError, setBulkEmailError] = useState(false);
 
   useEffect(() => {
     const nego = negotiations.length;
@@ -222,6 +223,10 @@ function RecruiterCandidatesPageContent() {
   async function handleBulkSendIt(offerIds) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken || !offerIds.length) return;
+    if (!bulkItEmail.trim()) {
+      setBulkEmailError(true);
+      setTimeout(() => setBulkEmailError(false), 3000);
+    }
     setBulkItBusy(true);
     setConversionMessage("");
     try {
@@ -304,6 +309,10 @@ function RecruiterCandidatesPageContent() {
   async function handleSendIt(candidate) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
+    if (!bulkItEmail.trim()) {
+      setBulkEmailError(true);
+      setTimeout(() => setBulkEmailError(false), 3000);
+    }
     const shared = bulkItEmail.trim();
     setItBusyOfferId(candidate.offer_id);
     setConversionMessage("");
@@ -1079,8 +1088,12 @@ function RecruiterCandidatesPageContent() {
                           <input
                             type="email"
                             value={bulkItEmail}
-                            onChange={(e) => setBulkItEmail(e.target.value)}
+                            onChange={(e) => {
+                              setBulkItEmail(e.target.value);
+                              if (bulkEmailError) setBulkEmailError(false);
+                            }}
                             placeholder="Leave blank for default"
+                            className={bulkEmailError ? s.fieldError : ""}
                           />
                         </label>
                         <label className={s.bulkField}>
@@ -1094,8 +1107,8 @@ function RecruiterCandidatesPageContent() {
                             <option value="batch_form">Batch form for IT</option>
                           </select>
                         </label>
-                        <span className={s.bulkHint}>
-                          Leave blank to use the configured default IT manager email.
+                        <span className={`${s.bulkHint} ${bulkEmailError ? s.hintError : ""}`}>
+                          {bulkEmailError ? "Please enter an IT manager email." : "Leave blank to use the configured default IT manager email."}
                         </span>
                       </div>
                     </div>
