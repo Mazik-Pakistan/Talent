@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
 import RequireAccess from "@/components/RequireAccess";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import Toast from "@/components/Toast";
 import ProfilePhotoEditor from "@/components/ProfilePhotoEditor";
 import ProfileAvatar from "@/components/ProfileAvatar";
@@ -37,9 +38,9 @@ import {
 import {
   BLOOD_GROUP_HINT,
   BLOOD_GROUP_OPTIONS,
-  confirmBloodGroupSelection,
   formatBloodGroupDisplay,
   isBloodGroupPending,
+  needsBloodGroupConfirmation,
   normalizeBloodGroup,
 } from "@/lib/bloodGroup";
 import dashStyles from "../employee-dashboard.module.css";
@@ -141,6 +142,8 @@ function EmployeeProfileContent() {
   const [employment, setEmployment] = useState(emptyEmployment);
   const [references, setReferences] = useState([{ ...emptyReference }, { ...emptyReference }]);
   const [personalDraft, setPersonalDraft] = useState(emptyPersonal);
+  const [bloodGroupConfirm, setBloodGroupConfirm] = useState(null);
+  const [bloodGroupSelectKey, setBloodGroupSelectKey] = useState(0);
   const [educationDrafts, setEducationDrafts] = useState([]);
 
   useEffect(() => {
@@ -592,6 +595,24 @@ function EmployeeProfileContent() {
     <div className={dashStyles.root} data-app-shell>
       <Toast toast={toast} onDismiss={() => setToast(null)} />
 
+      <ConfirmDialog
+        open={!!bloodGroupConfirm}
+        title="Confirm blood group"
+        highlight={bloodGroupConfirm?.value}
+        message="Blood group is used in medical emergencies. Only continue if you are sure this selection is correct."
+        confirmLabel="Yes, set blood group"
+        cancelLabel="Keep current"
+        onConfirm={() => {
+          if (!bloodGroupConfirm) return;
+          setPersonalDraft((prev) => ({ ...prev, blood_group: bloodGroupConfirm.value }));
+          setBloodGroupConfirm(null);
+        }}
+        onCancel={() => {
+          setBloodGroupConfirm(null);
+          setBloodGroupSelectKey((key) => key + 1);
+        }}
+      />
+
       <div className={dashStyles.app}>
         <aside className={`${dashStyles.sidebar} ${sidebarCollapsed ? dashStyles.collapsed : ""}`}>
           <SidebarBrand
@@ -837,14 +858,22 @@ function EmployeeProfileContent() {
                         <Field label="Nationality" value={personalDraft.nationality} onChange={(e) => setPersonalDraft({ ...personalDraft, nationality: e.target.value })} />
                         <SelectField label="Marital status" value={personalDraft.marital_status} options={["single", "married", "divorced", "widowed", "other"]} onChange={(e) => setPersonalDraft({ ...personalDraft, marital_status: e.target.value })} />
                         <SelectField
+                          key={`blood-group-${bloodGroupSelectKey}`}
                           label="Blood group"
                           value={normalizeBloodGroup(personalDraft.blood_group)}
                           options={BLOOD_GROUP_OPTIONS}
                           formatOption={(option) => option}
                           hint={BLOOD_GROUP_HINT}
                           onChange={(e) => {
-                            const next = confirmBloodGroupSelection(e.target.value, personalDraft.blood_group);
-                            setPersonalDraft({ ...personalDraft, blood_group: next });
+                            const next = normalizeBloodGroup(e.target.value);
+                            if (!needsBloodGroupConfirmation(next, personalDraft.blood_group)) {
+                              setPersonalDraft({ ...personalDraft, blood_group: next });
+                              return;
+                            }
+                            setBloodGroupConfirm({
+                              value: next,
+                              previous: normalizeBloodGroup(personalDraft.blood_group),
+                            });
                           }}
                         />
                         <Field label="National ID" value={personalDraft.national_id} onChange={(e) => setPersonalDraft({ ...personalDraft, national_id: e.target.value })} />

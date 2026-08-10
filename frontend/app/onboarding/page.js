@@ -2942,7 +2942,8 @@ function OnboardingContent() {
       <ConfirmDialog
         open={!!bloodGroupPending}
         title="Confirm blood group"
-        message={`You selected blood group ${bloodGroupPending?.value}. Blood group information is critical for medical emergencies — are you sure this is correct?`}
+        highlight={bloodGroupPending?.value}
+        message="Blood group is used in medical emergencies. Only continue if you are sure this selection is correct."
         confirmLabel="Yes, set blood group"
         cancelLabel="Keep current"
         onConfirm={() => {
