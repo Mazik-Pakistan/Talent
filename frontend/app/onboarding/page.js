@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "react-toastify";
 
 import UniversityAutocomplete from "@/components/onboarding/UniversityAutocomplete";
 import {
@@ -14,7 +15,6 @@ import {
   uploadOnboardingFile,
 } from "@/services/authService";
 import { can, ROLE_HOME } from "@/services/rbac";
-import Toast from "@/components/Toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
@@ -237,7 +237,6 @@ function OnboardingContent() {
   const [autoFilledKeys, setAutoFilledKeys] = useState([]);
   const [ocrTypingKey, setOcrTypingKey] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
-  const [toast, setToast] = useState(null);
   const [pendingReplace, setPendingReplace] = useState(null);
   const [bloodGroupPending, setBloodGroupPending] = useState(null);
   const [scanPulse, setScanPulse] = useState(false);
@@ -1174,14 +1173,8 @@ function OnboardingContent() {
     return false;
   }
 
-  function showToast(type, messageText) {
-    setToast({ id: Date.now(), type, message: messageText });
-  }
-
   function showFormError(messageText, errors = {}) {
     setFieldErrors(errors);
-    setMessage(messageText);
-    showToast("error", messageText);
     window.requestAnimationFrame(() => {
       const firstError = document.querySelector("[data-field-error='true']");
       if (firstError) {
@@ -1234,11 +1227,11 @@ function OnboardingContent() {
       (doc) => doc.file_url && doc.document_number && doc.document_number !== "pending"
     );
     if (!docsReady || !nextPersonal.first_name || !nextPersonal.national_id) {
-      showToast("info", "NIC details filled. Complete the remaining fields, then Save & continue.");
+      toast.info("NIC details filled. Complete the remaining fields, then Save & continue.");
       return;
     }
     if (isPersonalIncomplete(nextPersonal)) {
-      showToast("info", "NIC details filled. Add your address fields, then Save & continue.");
+      toast.info("NIC details filled. Add your address fields, then Save & continue.");
       return;
     }
     try {
@@ -1264,12 +1257,9 @@ function OnboardingContent() {
       if (!isPersonalIncomplete(nextPersonal)) {
         localStorage.removeItem(draftStorageKey());
       }
-      showToast("success", "NIC details saved. Finish any remaining fields, then continue.");
+      toast.success("NIC details saved. Finish any remaining fields, then continue.");
     } catch (err) {
-      showToast(
-        "info",
-        getApiErrorMessage(err, "Details filled from NIC. Click Save & continue when the form is complete.")
-      );
+      toast.error(getApiErrorMessage(err, "Details filled from NIC. Click Save & continue when the form is complete."));
     }
   }
 
@@ -1310,7 +1300,7 @@ function OnboardingContent() {
       hydrateForms(data.onboarding);
       invalidateCandidateInsightCache();
       setMessage(data.message);
-      showToast("success", data.message || "Saved successfully.");
+      toast.success(data.message || "Saved successfully.");
       // Dismiss personal-step OCR banner before advancing (Save & continue → Education).
       setExtractionPreview(null);
       setAutoFilledKeys([]);
@@ -1327,7 +1317,7 @@ function OnboardingContent() {
     } catch (error) {
       const err = getApiErrorMessage(error, "Could not save this step.");
       setMessage(err);
-      showToast("error", err);
+      toast.error(err);
     } finally {
       setSaving(false);
     }
@@ -1394,11 +1384,11 @@ function OnboardingContent() {
       }
       setExtractionPreview(null);
       setMessage("Document removed. You can upload a new file.");
-      showToast("success", "Document removed.");
+      toast.success("Document removed.");
     } catch (error) {
       const err = getApiErrorMessage(error, "Could not remove document.");
       setMessage(err);
-      showToast("error", err);
+      toast.error(err);
     } finally {
       setUploading(false);
       setUploadPhase("");
@@ -1463,7 +1453,7 @@ function OnboardingContent() {
         const err = ocr.rejection_message || data.message || "Document type rejected.";
         setMessage(err);
         setExtractionPreview(ocr);
-        showToast("error", err);
+        toast.error(err);
         processing.fail(err);
         patchOcrSession({ scanning: false, error: err, progress: 1 });
         return;
@@ -1475,14 +1465,13 @@ function OnboardingContent() {
         const fileMeta = { file_name: data.file_name, file_url: data.file_url, doc_type: "cnic" };
         if (willAutofillCnic) {
           processing.succeed();
-          // Let the success animation register before the form-fill phase begins.
           await new Promise((resolve) => setTimeout(resolve, 900));
           void applyCnicOcrFill(ocr, index, fileMeta);
           setExtractionPreview(ocr);
           setMessage(
             "National ID scanned successfully — fields were pre-filled and saved. Review and finish the remaining fields."
           );
-          showToast("success", "NIC scanned and details filled.");
+          toast.success("NIC scanned and details filled.");
         } else if (isOcrMode) {
           setGovDocs((current) => {
             const next = [...current];
@@ -1541,12 +1530,11 @@ function OnboardingContent() {
 
       if (ocr && ocr.status === "completed" && ocr.accepted !== false) {
         processing.succeed();
-        // Let the success animation register before the form-fill phase begins.
         await new Promise((resolve) => setTimeout(resolve, 900));
         void autoFillFromOCR(ocr, purpose, index);
         setExtractionPreview(ocr);
         setMessage("File uploaded and fields updated where available.");
-        showToast("success", "Document uploaded.");
+        toast.success("Document uploaded.");
       } else if (ocr && softOcr) {
         processing.succeed();
         // Hold the shared success activity (same as CNIC) before form-fill or close.
@@ -1574,7 +1562,7 @@ function OnboardingContent() {
         if (wrongType) {
           setExtractionPreview(null);
           setMessage(`Document saved for recruiter review. ${failHint}`);
-          showToast("info", failHint);
+          toast.info(failHint);
         } else {
           setExtractionPreview(ocr.status === "completed" ? ocr : null);
           setMessage(
@@ -1582,10 +1570,11 @@ function OnboardingContent() {
               ? "Document saved and details extracted where possible."
               : `Document saved. ${failHint}`
           );
-          showToast(
-            ocr.status === "completed" ? "success" : "info",
-            ocr.status === "completed" ? "Document uploaded and scanned." : failHint
-          );
+          if (ocr.status === "completed") {
+            toast.success("Document uploaded and scanned.");
+          } else {
+            toast.info(failHint);
+          }
         }
       } else if (ocr) {
         setExtractionPreview(ocr);
@@ -1609,7 +1598,7 @@ function OnboardingContent() {
       setScanPulse(false);
       const err = getApiErrorMessage(error, "Upload failed.");
       setMessage(err);
-      showToast("error", err);
+      toast.error(err);
       if (willScan || softOcr) {
         processing.fail(err);
         patchOcrSession({ scanning: false, error: err, progress: 1 });
@@ -2954,7 +2943,6 @@ function OnboardingContent() {
         }}
       />
 
-      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   );
 }

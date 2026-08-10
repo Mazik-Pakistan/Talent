@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "react-toastify";
 
 import {
   getApiErrorMessage,
@@ -14,7 +15,6 @@ import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import SignaturePad from "@/components/SignaturePad";
 import FileUploadField from "@/components/FileUploadField";
 import AiField, { AiCheckRow } from "@/components/ai-experience/AiField";
-import AiSaveToast from "@/components/ai-experience/AiSaveToast";
 import BankSlipScanner from "@/components/ai-experience/BankSlipScanner";
 import { IconCheck, IconScan, IconSparkle } from "@/components/ai-experience/icons";
 import { useAutoSave } from "@/lib/ai/useAutoSave";
@@ -90,7 +90,6 @@ function CompleteProfileContent() {
   const [employee, setEmployee] = useState(null);
   const [progress, setProgress] = useState(null);
   const [step, setStep] = useState("emergency");
-  const [notice, setNotice] = useState(null);
   const [recruiterNudge, setRecruiterNudge] = useState(null);
   const [showScanner, setShowScanner] = useState(false);
   const [ocrFillMeta, setOcrFillMeta] = useState({ fields: {}, activeField: null });
@@ -197,16 +196,9 @@ function CompleteProfileContent() {
     [hydrate]
   );
 
-  const pushNotice = useCallback((next) => setNotice(next), []);
-
   useEffect(() => {
     return registerPageAssist(null);
   }, []);
-
-  const showToast = useCallback(
-    (tone, message) => pushNotice({ tone, message, duration: tone === "error" ? 5200 : 3200 }),
-    [pushNotice]
-  );
 
   const load = useCallback(
     async (accessToken) => {
@@ -227,12 +219,12 @@ function CompleteProfileContent() {
           // ignore
         }
       } catch (error) {
-        showToast("error", getApiErrorMessage(error, "Unable to load your profile."));
+        toast.error(getApiErrorMessage(error, "Unable to load your profile."));
       } finally {
         setLoading(false);
       }
     },
-    [hydrate, showToast]
+    [hydrate]
   );
 
   useEffect(() => {
@@ -392,7 +384,6 @@ function CompleteProfileContent() {
     const { errors, message } = check();
     if (!Object.values(errors).some(Boolean)) return true;
     setFieldErrors(errors);
-    showToast("error", message);
     window.requestAnimationFrame(() => {
       document.querySelector("[data-field-error='true']")?.scrollIntoView({
         behavior: "smooth",
@@ -476,11 +467,11 @@ function CompleteProfileContent() {
     buildPayload: () => buildSectionPayload(step),
     save: async (payload) => {
       const result = await persistPayload(payload, { silent: true, advance: false });
-      pushNotice(
-        result.ok
-          ? { tone: "success", message: "Progress saved automatically" }
-          : { tone: "error", message: result.message, duration: 5200 }
-      );
+      if (result.ok) {
+        toast.success("Progress saved automatically");
+      } else {
+        toast.error(result.message, { autoClose: 5200 });
+      }
     },
   });
 
@@ -581,7 +572,7 @@ function CompleteProfileContent() {
         }
         return next;
       });
-      showToast("success", "Bank details filled from your document — review and save when ready.");
+      toast.success("Bank details filled from your document — review and save when ready.");
     })();
   }
 
@@ -591,7 +582,11 @@ function CompleteProfileContent() {
     event.preventDefault();
     if (step !== "submit" && !validateSection(step)) return;
     const result = await persistPayload(buildSectionPayload(step));
-    showToast(result.ok ? "success" : "error", result.ok ? result.message || "Progress saved." : result.message);
+    if (result.ok) {
+      toast.success(result.message || "Progress saved.");
+    } else {
+      toast.error(result.message);
+    }
   }
 
   if (loading) return null;
@@ -670,8 +665,7 @@ function CompleteProfileContent() {
         </>
       )}
 
-      <AiSaveToast notice={notice} />
-    </>
+      </>
   );
 }
 

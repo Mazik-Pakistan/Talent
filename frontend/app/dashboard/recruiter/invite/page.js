@@ -9,6 +9,7 @@ import styles from "@/components/recruiter/recruiter-shell.module.css";
 import { createInvitation, getApiErrorMessage, lookupPersonHistory } from "@/services/authService";
 import { listOrgDepartments, listOrgRoles } from "@/services/orgFrameworkService";
 import BulkInvitePanel from "@/components/recruiter/BulkInvitePanel";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -208,6 +209,7 @@ function RecruiterInvitePageInner() {
   const [inviteEmailSent, setInviteEmailSent] = useState(null);
   const [inviteEmailError, setInviteEmailError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [personHistory, setPersonHistory] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [inviteMode, setInviteMode] = useState("single"); // single | bulk
@@ -261,6 +263,11 @@ function RecruiterInvitePageInner() {
 
   function handleDepartmentChange(e) {
     const department = e.target.value;
+    setFieldErrors((current) =>
+      current.department || current.job_title
+        ? { ...current, department: undefined, job_title: undefined }
+        : current
+    );
     setInviteForm((current) => {
       const designationStillValid =
         Boolean(department) &&

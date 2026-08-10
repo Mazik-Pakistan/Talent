@@ -87,6 +87,10 @@ export const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
 // Password validation pattern (matches backend)
 export const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$/;
 
+// Shared password hint text
+export const PASSWORD_HINT_TEXT =
+  "Use 8+ characters with uppercase, lowercase, number, special character, and no spaces.";
+
 /**
  * Validate Pakistani CNIC/NIC format (XXXXX-XXXXXXX-X).
  * @param {string} value - CNIC value to validate

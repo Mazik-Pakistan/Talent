@@ -2,30 +2,39 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
-import { toast, ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import { useState } from "react";
+import { toast } from "react-toastify";
 
 import { forgotPassword, getApiErrorMessage } from "@/services/authService";
 import { LOGO_URL } from "@/lib/logo";
+import FieldError from "@/lib/formFeedback";
 import styles from "@/app/styles/auth.module.css";
-import MascotStatic from "@/components/MascotStatic"; 
+import MascotStatic from "@/components/MascotStatic";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  function validate() {
+    const errors = {};
+    if (!email.trim()) {
+      errors.email = "Please enter your email address.";
+    } else if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      errors.email = "Please enter a valid email address.";
+    }
+    return errors;
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
-    setError("");
     setMessage("");
-    if (!email) {
-      setError("Please enter your email address.");
-      return;
-    }
+
+    const validationErrors = validate();
+    setFieldErrors(validationErrors);
+    if (Object.keys(validationErrors).length > 0) return;
 
     setIsSubmitting(true);
     try {
@@ -39,7 +48,7 @@ export default function ForgotPasswordPage() {
         // this screen instead of proceeding to the reset-code page.
         toast.error("No account exists with this email address.");
       } else {
-        setError(getApiErrorMessage(err, "Something went wrong. Please try again."));
+        toast.error(getApiErrorMessage(err, "Something went wrong. Please try again."));
       }
     } finally {
       setIsSubmitting(false);
@@ -48,8 +57,6 @@ export default function ForgotPasswordPage() {
 
   return (
     <main className={styles.shell}>
-      <ToastContainer position="top-right" autoClose={4000} theme="colored" newestOnTop />
-
       <div className={styles.card}>
         <aside className={styles.aside} aria-label="Password recovery introduction">
           <div className={styles.asideBrandRow}>
@@ -64,7 +71,7 @@ export default function ForgotPasswordPage() {
           </div>
           <div className={styles.mascotContainer}>
             <MascotStatic
-              mood={message ? "green" : error ? "red" : "neutral"}
+              mood={message ? "green" : Object.keys(fieldErrors).length ? "red" : "neutral"}
               message={message ? "Code sent — hooray! ✨" : undefined}
             />
           </div>
@@ -82,10 +89,23 @@ export default function ForgotPasswordPage() {
               <span>Company email</span>
               <span className={styles.inputShell}>
                 <MailIcon />
-                <input className={styles.input} type="email" name="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="you@company.com" required />
+                <input
+                  className={styles.input}
+                  type="email"
+                  name="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setFieldErrors((current) => (current.email ? { ...current, email: undefined } : current));
+                  }}
+                  autoComplete="email"
+                  placeholder="you@company.com"
+                  aria-invalid={Boolean(fieldErrors.email)}
+                  required
+                />
               </span>
+              {fieldErrors.email && <FieldError>{fieldErrors.email}</FieldError>}
             </label>
-            {error && <p className={styles.fieldError} role="alert">{error}</p>}
             {message && <p className={styles.fieldError} role="status">{message}</p>}
             <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
               {isSubmitting && <span className={styles.spinner} />}

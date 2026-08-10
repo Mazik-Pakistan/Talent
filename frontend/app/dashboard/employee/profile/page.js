@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
-import Toast from "@/components/Toast";
 import ProfilePhotoEditor from "@/components/ProfilePhotoEditor";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
@@ -129,7 +129,6 @@ function EmployeeProfileContent() {
   const [progress, setProgress] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [toast, setToast] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [editingSection, setEditingSection] = useState(null);
@@ -337,13 +336,8 @@ function EmployeeProfileContent() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function showToast(type, messageText) {
-    setToast({ id: Date.now(), type, message: messageText });
-  }
-
   function showFormError(messageText, errors = {}) {
     setFieldErrors(errors);
-    showToast("error", messageText);
   }
 
   function clearFieldError(key) {
@@ -373,10 +367,10 @@ function EmployeeProfileContent() {
         full_name: data.employee?.full_name,
       });
       window.dispatchEvent(new Event("talent-user-updated"));
-      showToast("success", "Profile photo updated.");
+      toast.success("Profile photo updated.");
     } catch (error) {
       const message = getApiErrorMessage(error, "Could not upload photo.");
-      showToast("error", message);
+      toast.error(message);
       throw new Error(message);
     } finally {
       setPhotoBusy(false);
@@ -392,10 +386,10 @@ function EmployeeProfileContent() {
       setEmployee(data.employee);
       patchLocalUser({ profile_picture: null });
       window.dispatchEvent(new Event("talent-user-updated"));
-      showToast("success", "Profile photo removed.");
+      toast.success("Profile photo removed.");
     } catch (error) {
       const message = getApiErrorMessage(error, "Could not remove photo.");
-      showToast("error", message);
+      toast.error(message);
       throw new Error(message);
     } finally {
       setPhotoBusy(false);
@@ -431,9 +425,9 @@ function EmployeeProfileContent() {
       hydrateEditable(data.onboarding);
       setEditingSection(null);
       invalidateInsightCache();
-      showToast("success", data.message || "Profile saved.");
+      toast.success(data.message || "Profile saved.");
     } catch (error) {
-      showToast("error", getApiErrorMessage(error, "Could not save this section."));
+      toast.error(getApiErrorMessage(error, "Could not save this section."));
     } finally {
       setSaving(false);
     }
@@ -590,7 +584,6 @@ function EmployeeProfileContent() {
 
   return (
     <div className={dashStyles.root} data-app-shell>
-      <Toast toast={toast} onDismiss={() => setToast(null)} />
 
       <div className={dashStyles.app}>
         <aside className={`${dashStyles.sidebar} ${sidebarCollapsed ? dashStyles.collapsed : ""}`}>

@@ -16,10 +16,12 @@ import {
   updateRecruiterProfile,
   uploadRecruiterPhoto,
 } from "@/services/authService";
+import { validateTextField } from "@/utils/validation";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
 } from "@/lib/ai/recruiterContext";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
 
 export default function RecruiterProfilePage() {
   return (
@@ -44,6 +46,7 @@ function RecruiterProfilePageContent() {
     job_title: "",
     office_location: "",
   });
+  const [fieldErrors, setFieldErrors] = useState({});
 
   useEffect(() => {
     publishRecruiterContext({
@@ -126,6 +129,15 @@ function RecruiterProfilePageContent() {
 
   async function handleSave(event) {
     event.preventDefault();
+    setFieldErrors({});
+    const errors = {
+      full_name: !validateTextField(form.full_name, 2, 120).isValid ? "Full name is required." : undefined,
+      phone: form.phone && !validateTextField(form.phone, 7, 20).isValid ? "Enter a valid phone number." : undefined,
+    };
+    if (Object.values(errors).some(Boolean)) {
+      setFieldErrors(errors);
+      return;
+    }
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) {
       toast.error("Your session expired. Please sign in again.");
@@ -270,10 +282,20 @@ function RecruiterProfilePageContent() {
                   <input
                     name="full_name"
                     value={form.full_name}
-                    onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                    onChange={(e) => {
+                      setForm({ ...form, full_name: e.target.value });
+                      setFieldErrors((current) => {
+                        const next = { ...current };
+                        delete next.full_name;
+                        return next;
+                      });
+                    }}
                     required
                     minLength={2}
+                    aria-invalid={Boolean(fieldErrors.full_name)}
+                    style={fieldErrors.full_name ? INPUT_ERROR_STYLE : undefined}
                   />
+                  {fieldErrors.full_name && <FieldError>{fieldErrors.full_name}</FieldError>}
                 </label>
                 <label className={styles.field}>
                   <span>Email</span>
@@ -284,9 +306,19 @@ function RecruiterProfilePageContent() {
                   <input
                     name="phone"
                     value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    onChange={(e) => {
+                      setForm({ ...form, phone: e.target.value });
+                      setFieldErrors((current) => {
+                        const next = { ...current };
+                        delete next.phone;
+                        return next;
+                      });
+                    }}
                     placeholder="03XX-XXXXXXX"
+                    aria-invalid={Boolean(fieldErrors.phone)}
+                    style={fieldErrors.phone ? INPUT_ERROR_STYLE : undefined}
                   />
+                  {fieldErrors.phone && <FieldError>{fieldErrors.phone}</FieldError>}
                 </label>
                 <label className={styles.field}>
                   <span>Job title</span>
