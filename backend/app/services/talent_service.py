@@ -105,8 +105,6 @@ class TalentService:
         if current_user.role == "super_admin":
             return
         rid = self._recruiter_id(employee)
-        if rid is None:
-            return
         if rid != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this employee.")
 

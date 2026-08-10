@@ -412,11 +412,7 @@ class MessageService:
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
         if user.role != "super_admin":
-            record_org = employee.get("organization_id")
-            if record_org and user.organization_id:
-                if record_org != user.organization_id:
-                    raise HTTPException(status_code=403, detail="Employee is not assigned to you.")
-            elif employee.get("recruiter_id") and employee.get("recruiter_id") != user.id:
+            if employee.get("recruiter_id") != user.id:
                 raise HTTPException(status_code=403, detail="Employee is not assigned to you.")
 
         employee_user_id = employee.get("user_id")

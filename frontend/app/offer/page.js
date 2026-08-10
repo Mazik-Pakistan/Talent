@@ -52,6 +52,29 @@ function OfferLetterPageContent() {
   const negotiation = offer?.negotiation || {};
   const clarificationPending = negotiation.status === "pending";
   const clarificationResolved = ["resolved", "closed"].includes(negotiation.status);
+  // After edit-and-resend, older v2 docs may lack negotiation.status but still have history notes.
+  const clarificationHistoryNote = useMemo(() => {
+    const history = offer?.negotiation_history || [];
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const entry = history[i];
+      const action = String(entry?.action || "");
+      if (
+        ["edited_and_resent", "reissued_offer", "resolved", "closed"].includes(action) &&
+        String(entry?.note || "").trim()
+      ) {
+        return String(entry.note).trim();
+      }
+    }
+    return "";
+  }, [offer?.negotiation_history]);
+  const clarificationReply =
+    String(negotiation.recruiter_note || "").trim() ||
+    String(negotiation.decision_summary || "").trim() ||
+    clarificationHistoryNote;
+  const showClarificationResponse =
+    Boolean(clarificationReply) &&
+    (clarificationResolved || Boolean(clarificationHistoryNote) || offer?.version > 1) &&
+    ["sent", "viewed", "expired"].includes(offer?.status || "");
   const canRequestClarification =
     offer &&
     ["sent", "viewed"].includes(offer.status) &&
@@ -676,18 +699,21 @@ function OfferLetterPageContent() {
                   Clarification pending — your recruiter has been notified by email and in-app. Signing is paused until they respond.
                 </p>
               )}
-              {clarificationResolved && ["sent", "viewed", "expired"].includes(offer.status) && (
-                <p className={`${styles.offerFormMessage} ${styles.offerFormMessageWarning}`}>
-                  Clarification response received.
-                  {negotiation.recruiter_note ? (
-                    <>
-                      <br />
-                      {negotiation.recruiter_note}
-                    </>
+              {showClarificationResponse && (
+                <div className={`${styles.offerFormMessage} ${styles.offerFormMessageWarning}`}>
+                  <strong>
+                    {offer.version > 1
+                      ? `Updated offer (v${offer.version}) — clarification response`
+                      : "Clarification response received"}
+                  </strong>
+                  {negotiation.note ? (
+                    <p style={{ margin: "8px 0 0", opacity: 0.9 }}>
+                      <em>Your question:</em> {negotiation.note}
+                    </p>
                   ) : null}
-                  <br />
-                  You can continue with this offer.
-                </p>
+                  <p style={{ margin: "8px 0 0" }}>{clarificationReply}</p>
+                  <p style={{ margin: "8px 0 0" }}>You can continue with this offer.</p>
+                </div>
               )}
               {offer.extended_at && ["sent", "viewed"].includes(offer.status) && (
                 <p className={`${styles.offerFormMessage} ${styles.offerFormMessageWarning}`}>

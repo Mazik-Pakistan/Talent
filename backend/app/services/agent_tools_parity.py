@@ -1325,7 +1325,7 @@ async def _tool_send_it_provisioning(user: CurrentUser, args: dict) -> ToolResul
         return ToolResult(ok=False, error=err)
     who = (person or {}).get("full_name") or (person or {}).get("email") or offer_id
     try:
-        existing = await it_provisioning_service.get_for_offer(offer_id)
+        existing = await it_provisioning_service.get_for_offer(offer_id, user)
         if existing and existing.get("status") in ("submitted", "applied"):
             return ToolResult(
                 ok=False,
@@ -1374,7 +1374,7 @@ async def _tool_remind_it_provisioning(user: CurrentUser, args: dict) -> ToolRes
         return ToolResult(ok=False, error=err)
     who = (person or {}).get("full_name") or (person or {}).get("email") or offer_id
     try:
-        existing = await it_provisioning_service.get_for_offer(offer_id)
+        existing = await it_provisioning_service.get_for_offer(offer_id, user)
         if not existing:
             return ToolResult(
                 ok=False,
@@ -2873,9 +2873,9 @@ CANDIDATE_PARITY_TOOLS: list[Tool] = [
             "marital_status, blood_group, father_name, alternate_phone, current_address, "
             "permanent_address, same_as_current, city, state, postal_code, country). "
             "Use this whenever the candidate tells you individual facts about themselves — "
-            "it merges only the supplied fields and never requires a government ID or signed "
-            "offer to be present first. Use save_step only when ALL required fields for a "
-            "complete step are available."
+            "it merges only the supplied fields. Requires a signed offer letter first; "
+            "if unsigned, tell them to sign before updating profile fields. "
+            "Use save_step only when ALL required fields for a complete step are available."
         ),
         parameters={
             "first_name": "string, optional",

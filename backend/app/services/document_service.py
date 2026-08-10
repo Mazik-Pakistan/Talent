@@ -35,6 +35,22 @@ DOCUMENT_LABELS = {
     "resume": "Resume/CV",
 }
 
+_REUPLOAD_NOTIF_TYPES = ("document_reupload_required", "document_reupload_reminder")
+
+
+async def _clear_reupload_notifications(owner_id: str, *, related_ids: list[str] | None = None) -> None:
+    """Mark stale re-upload alerts read once the document is replaced or verified."""
+    if not owner_id:
+        return
+    query: dict = {
+        "recipient_id": str(owner_id),
+        "type": {"$in": list(_REUPLOAD_NOTIF_TYPES)},
+        "read": False,
+    }
+    if related_ids:
+        query["related_id"] = {"$in": [str(rid) for rid in related_ids if rid]}
+    await database.notifications.update_many(query, {"$set": {"read": True}})
+
 
 def _should_run_ocr(*, doc_type: str, purpose: str | None = None) -> bool:
     """Run OCR/LLM extraction for identity, resume, and education docs.
@@ -172,6 +188,10 @@ class DocumentService:
         doc_type: str,
         purpose: str | None = None,
     ) -> dict:
+        from app.services.offer_service import offer_service
+
+        await offer_service.require_signed_offer_for_candidate(current_user)
+
         original = file.filename or "upload.bin"
         ext = Path(original).suffix.lower()
         allowed = _extensions_for(category, doc_type)
@@ -563,6 +583,21 @@ class DocumentService:
 
         # Notify when the uploaded file remains active (completed OCR or soft-kept education/resume).
         should_notify = bool(doc.get("is_active", True))
+        # Drop stale "re-upload required" alerts once a usable replacement is on file.
+        if should_notify and doc.get("status") not in ("reupload_required", "rejected"):
+            related = [str(doc["_id"])]
+            if previous:
+                related.append(str(previous["_id"]))
+            await _clear_reupload_notifications(current_user.id, related_ids=related)
+            still_needs = await database.documents.count_documents(
+                {
+                    "owner_id": current_user.id,
+                    "is_active": True,
+                    "status": {"$in": ["reupload_required", "rejected"]},
+                }
+            )
+            if still_needs == 0:
+                await _clear_reupload_notifications(current_user.id)
         await self._notify_recruiter_owner(
             current_user,
             doc_type,
@@ -678,6 +713,14 @@ class DocumentService:
 
     async def list_for_owner(self, current_user: CurrentUser, owner_id: str) -> dict:
         self._assert_recruiter(current_user)
+        if current_user.role == "recruiter" and owner_id:
+            owner = await database.candidates.find_one(
+                {"$or": [{"user_id": owner_id}, {"email": owner_id}]}
+            ) or await database.employees.find_one(
+                {"$or": [{"user_id": owner_id}, {"email": owner_id}]}
+            )
+            if owner and owner.get("recruiter_id") != current_user.id:
+                raise HTTPException(status_code=403, detail="You can only view documents for employees/candidates assigned to you.")
         docs = (
             await database.documents.find({"owner_id": owner_id, "is_active": True})
             .sort("uploaded_at", -1)
@@ -738,6 +781,14 @@ class DocumentService:
     async def verify(self, current_user: CurrentUser, document_id: str, payload) -> dict:
         self._assert_recruiter(current_user)
         doc = await self._find(document_id)
+        if current_user.role != "super_admin" and doc.get("owner_id"):
+            owner = await database.candidates.find_one(
+                {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
+            ) or await database.employees.find_one(
+                {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
+            )
+            if owner and owner.get("recruiter_id") != current_user.id:
+                raise HTTPException(status_code=403, detail="You can only verify documents for employees/candidates assigned to you.")
         if payload.status not in ("verified", "rejected", "reupload_required", "mismatch"):
             raise HTTPException(status_code=400, detail="Invalid verification status.")
         if payload.status in ("rejected", "reupload_required") and not payload.rejection_reason:
@@ -770,12 +821,29 @@ class DocumentService:
             update["mismatch_approved_by"] = current_user.id
             update["mismatch_approved_at"] = now
             update["mismatch_approval_note"] = payload.note
+            update["reupload_request_status"] = "fulfilled"
 
         await database.documents.update_one({"_id": doc["_id"]}, {"$set": update})
 
         # Update profile-level verification only when every active OCR document
         # for this owner is verified — never batch-verify siblings.
         if approve_despite or payload.status == "verified":
+            related_ids = [str(doc["_id"])]
+            prev = doc.get("previous_version_id")
+            if prev:
+                related_ids.append(str(prev))
+            await _clear_reupload_notifications(doc["owner_id"], related_ids=related_ids)
+            still_needs = await database.documents.count_documents(
+                {
+                    "owner_id": doc["owner_id"],
+                    "is_active": True,
+                    "status": {"$in": ["reupload_required", "rejected"]},
+                    "_id": {"$ne": doc["_id"]},
+                }
+            )
+            if still_needs == 0:
+                await _clear_reupload_notifications(doc["owner_id"])
+
             remaining_unverified = await database.documents.count_documents(
                 {
                     "owner_id": doc["owner_id"],
@@ -903,8 +971,20 @@ class DocumentService:
 
     async def reextract(self, current_user: CurrentUser, document_id: str) -> dict:
         """Re-run extraction on the stored file while retaining the original audit copy."""
+        from app.services.offer_service import offer_service
+
+        await offer_service.require_signed_offer_for_candidate(current_user)
+
         doc = await self._find(document_id)
         self._assert_document_access(current_user, doc)
+        if current_user.role == "recruiter" and doc.get("owner_id"):
+            owner = await database.candidates.find_one(
+                {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
+            ) or await database.employees.find_one(
+                {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
+            )
+            if owner and owner.get("recruiter_id") != current_user.id:
+                raise HTTPException(status_code=403, detail="You can only re-extract documents for employees/candidates assigned to you.")
         if doc.get("deleted_at"):
             raise HTTPException(status_code=404, detail="Document has been deleted.")
 
@@ -1038,6 +1118,10 @@ class DocumentService:
 
     async def delete(self, current_user: CurrentUser, document_id: str) -> dict:
         """Soft-delete metadata, remove stored bytes, and rerun consistency checks."""
+        from app.services.offer_service import offer_service
+
+        await offer_service.require_signed_offer_for_candidate(current_user)
+
         doc = await self._find(document_id)
         if current_user.role != "super_admin" and doc.get("owner_id") != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized to delete this document.")
@@ -1135,6 +1219,14 @@ class DocumentService:
         doc = await self._find(document_id)
         if current_user.role not in ("recruiter", "super_admin") and doc["owner_id"] != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized to view this document.")
+        if current_user.role == "recruiter" and doc.get("owner_id"):
+            owner = await database.candidates.find_one(
+                {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
+            ) or await database.employees.find_one(
+                {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
+            )
+            if owner and owner.get("recruiter_id") != current_user.id:
+                raise HTTPException(status_code=403, detail="You can only view documents for employees/candidates assigned to you.")
         url = await storage_service.get_signed_url(doc)
         await database.audit_logs.insert_one(
             {

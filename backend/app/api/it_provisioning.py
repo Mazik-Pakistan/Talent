@@ -83,7 +83,7 @@ async def submit_it_provisioning_batch_public(token: str, request: ItProvisionin
 @router.get("/candidate/{candidate_id}")
 async def get_it_provisioning_for_candidate(candidate_id: str, current_user: RequireRecruiterWithIT):
     """Recruiter: provisioning history for one candidate (officer, status, submitted details)."""
-    return await it_provisioning_service.get_for_candidate(candidate_id)
+    return await it_provisioning_service.get_for_candidate(candidate_id, current_user)
 
 
 @router.get("/{token}")

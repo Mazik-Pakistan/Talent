@@ -1171,11 +1171,17 @@ function EmployeeProfilePageContent({ params }) {
   if (loading) return null;
 
   if (error || !employee) {
+    const isAccessDenied = error?.toLowerCase?.().includes("assigned to you") || error?.toLowerCase?.().includes("not allowed");
     return (
       <RecruiterShell activeKey="employees" capability="employees" title="Employee Profile" subtitle="Profile Error">
         <div className={styles.section}>
           <div className={styles.sectionBody}>
             <div className={styles.formMessage} role="alert">{error || "Employee not found."}</div>
+            {isAccessDenied && (
+              <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 8 }}>
+                This employee belongs to another recruiter. You can only manage employees that you have invited and converted.
+              </p>
+            )}
             <button type="button" className={styles.secondaryButton} onClick={() => router.back()} style={{ marginTop: "16px" }}>
               &larr; Back to Directory
             </button>

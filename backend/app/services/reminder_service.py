@@ -84,11 +84,7 @@ class ReminderService:
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found.")
         if current_user.role != "super_admin":
-            record_org = candidate.get("organization_id")
-            if record_org and current_user.organization_id:
-                if record_org != current_user.organization_id:
-                    raise HTTPException(status_code=403, detail="Not allowed.")
-            elif candidate.get("recruiter_id") != current_user.id:
+            if candidate.get("recruiter_id") != current_user.id:
                 raise HTTPException(status_code=403, detail="Not allowed.")
 
         note_text = (note or "").strip() or None

@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import ProfileAvatar from "@/components/ProfileAvatar";
@@ -13,17 +12,67 @@ import {
   clearLocalSession,
   getApiErrorMessage,
   getCandidateDashboard,
-  getNotifications,
   getMyOffer,
+  listMyDocuments,
   logout,
-  markNotificationsRead,
 } from "@/services/authService";
+import { useNotificationsCenter } from "@/hooks/useNotificationsCenter";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
 import styles from "./candidate-dashboard.module.css";
 
 const DASHBOARD_REFRESH_MS = 60000;
 const COLLAPSE_KEY = "candidate_sidebar_collapsed";
+const REUPLOAD_NOTIF_TYPES = new Set(["document_reupload_required", "document_reupload_reminder"]);
+
+const DOC_TYPE_LABELS = {
+  cnic: "National ID (CNIC/NIC)",
+  passport: "Passport",
+  transcript: "Academic Transcript",
+  degree: "Academic Transcript",
+  resume: "Resume/CV",
+};
+
+function documentNeedsReupload(doc) {
+  if (!doc || doc.is_active === false) return false;
+  const status = String(doc.status || doc.verification_status || "").toLowerCase();
+  if (status === "verified") return false;
+  if (status === "reupload_required" || status === "rejected") return true;
+  return String(doc.reupload_request_status || "").toLowerCase() === "pending";
+}
+
+function documentLabel(doc) {
+  const key = String(doc?.doc_type || "").toLowerCase();
+  return DOC_TYPE_LABELS[key] || (key ? key.replace(/_/g, " ") : "Document");
+}
+
+function bannerFromDocument(doc) {
+  const label = documentLabel(doc);
+  const status = String(doc.status || doc.verification_status || "").toLowerCase();
+  const reason = (
+    doc.reupload_request_reason ||
+    doc.rejection_reason ||
+    ""
+  )
+    .toString()
+    .replace(/_/g, " ")
+    .trim();
+  const note = (doc.reupload_request_note || doc.rejection_note || "").toString().trim();
+  const isRejected = status === "rejected";
+  const title = isRejected ? `Document rejected: ${label}` : `Re-upload required: ${label}`;
+  let message = isRejected
+    ? `Your recruiter rejected your ${label}.`
+    : `Your recruiter requested a new ${label}.`;
+  if (reason) message += ` Reason: ${reason}.`;
+  if (note) message += ` Note: ${note}`;
+  return {
+    id: `doc-${doc.id}`,
+    title,
+    message,
+    link: "/documents",
+    documentId: doc.id,
+  };
+}
 
 const SparkleIcon = (props) => (
   <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -58,16 +107,31 @@ function CandidateDashboardContent() {
   const [user, setUser] = useState(null);
   const [dashboard, setDashboard] = useState(null);
   const [offer, setOffer] = useState(null);
-  const [notifications, setNotifications] = useState([]);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const lastUnreadRef = useRef(null);
+
+  const {
+    notifOpen,
+    setNotifOpen,
+    notifications,
+    unreadCount: unreadNotifications,
+    markOneRead,
+    markAllRead,
+    notifBusy,
+    refresh: refreshNotifications,
+  } = useNotificationsCenter({
+    toastIdPrefix: "candidate-dashboard-notif",
+    broadcastOnRefresh: true,
+    broadcastOnMarkOne: true,
+    broadcastOnMarkAll: true,
+  });
+
+  const [documents, setDocuments] = useState([]);
+  const [documentsReady, setDocumentsReady] = useState(false);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -130,25 +194,19 @@ function CandidateDashboardContent() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     try {
-      const [data, offerData, notificationData] = await Promise.all([
+      const [data, offerData] = await Promise.all([
         getCandidateDashboard(accessToken),
         getMyOffer(accessToken).catch(() => null),
-        getNotifications(accessToken).catch(() => ({ notifications: [], unread_count: 0 })),
+        listMyDocuments(accessToken)
+          .then((payload) => {
+            setDocuments(payload?.documents || []);
+            setDocumentsReady(true);
+            return payload;
+          })
+          .catch(() => null),
       ]);
-      const nextUnread = notificationData?.unread_count || 0;
-      const nextList = notificationData?.notifications || [];
-      if (
-        lastUnreadRef.current != null &&
-        nextUnread > lastUnreadRef.current &&
-        nextList[0]
-      ) {
-        toast.info(nextList[0].title || "New notification");
-      }
-      lastUnreadRef.current = nextUnread;
       setDashboard(data);
       setOffer(offerData?.offer || null);
-      setNotifications(nextList);
-      setUnreadNotifications(nextUnread);
       setLoadError("");
     } catch (error) {
       setLoadError(getApiErrorMessage(error, "Could not load your dashboard."));
@@ -172,31 +230,98 @@ function CandidateDashboardContent() {
   }
 
   async function handleNotification(notification) {
-    const accessToken = localStorage.getItem("access_token");
-    if (accessToken && !notification.read) {
-      try {
-        await markNotificationsRead({ ids: [notification.id], all: false }, accessToken);
-        setNotifications((current) =>
-          current.map((item) => (item.id === notification.id ? { ...item, read: true } : item))
-        );
-        setUnreadNotifications((current) => Math.max(0, current - 1));
-      } catch {
-        // Navigation remains available if read-state persistence is temporarily unavailable.
-      }
-    }
+    if (!notification.read) await markOneRead(notification.id);
     setNotifOpen(false);
     if (notification.link) router.push(notification.link);
   }
 
   const profile = dashboard?.profile;
   const progress = dashboard?.progress;
-  const tasks = useMemo(() => dashboard?.tasks || [], [dashboard]);
-  const announcements = useMemo(() => dashboard?.announcements || [], [dashboard]);
-  const pendingReuploadNotifications = useMemo(
-    () => notifications.filter((notification) => notification.type === "document_reupload_required" && !notification.read),
-    [notifications]
+  const offerSigned = Boolean(
+    dashboard?.offer_signed || (offer && ["signed", "approved"].includes(offer.status))
   );
-  const pct = progress?.percentage ?? 0;
+  const offerLocked = !offerSigned;
+  const tasks = useMemo(() => (offerLocked ? [] : dashboard?.tasks || []), [dashboard, offerLocked]);
+  const announcements = useMemo(() => dashboard?.announcements || [], [dashboard]);
+  const docsNeedingAction = useMemo(
+    () => documents.filter(documentNeedsReupload),
+    [documents]
+  );
+  const docsNeedReupload = docsNeedingAction.length > 0;
+
+  // Overview banners follow live document status (reupload / rejected), not unread alone.
+  const documentActionBanners = useMemo(() => {
+    if (documentsReady) {
+      if (!docsNeedReupload) return [];
+      return docsNeedingAction.map((doc) => {
+        const fromDoc = bannerFromDocument(doc);
+        const matchingNotif = notifications.find((n) => {
+          if (!REUPLOAD_NOTIF_TYPES.has(String(n.type || ""))) return false;
+          if (n.related_id && String(n.related_id) === String(doc.id)) return true;
+          const title = String(n.title || "");
+          return title.includes(documentLabel(doc));
+        });
+        if (matchingNotif) {
+          return {
+            ...fromDoc,
+            id: matchingNotif.id || fromDoc.id,
+            title: matchingNotif.title || fromDoc.title,
+            message: matchingNotif.message || fromDoc.message,
+            link: matchingNotif.link || fromDoc.link,
+          };
+        }
+        return fromDoc;
+      });
+    }
+    // Docs not loaded yet — fall back to unread reupload notifications.
+    const seen = new Set();
+    return notifications
+      .filter((notification) => {
+        if (!REUPLOAD_NOTIF_TYPES.has(String(notification.type || ""))) return false;
+        if (notification.read) return false;
+        const key = notification.link || notification.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((n) => ({
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        link: n.link || "/documents",
+      }));
+  }, [documentsReady, docsNeedReupload, docsNeedingAction, notifications]);
+
+  // Clear bell unread for re-upload alerts once no document still needs a replacement.
+  useEffect(() => {
+    if (!documentsReady || docsNeedReupload) return;
+    const stale = notifications.filter(
+      (n) => REUPLOAD_NOTIF_TYPES.has(String(n.type || "")) && !n.read
+    );
+    if (stale.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const n of stale) {
+        if (cancelled) return;
+        await markOneRead(n.id);
+      }
+      if (!cancelled) await refreshNotifications(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [documentsReady, docsNeedReupload, notifications, markOneRead, refreshNotifications]);
+
+  /** Navigate to upload — do not mark-read while action is still outstanding. */
+  function handleReuploadBanner(banner) {
+    setNotifOpen(false);
+    if (offerLocked) {
+      router.push("/offer?from=candidate-dashboard");
+      return;
+    }
+    router.push(banner.link || "/documents");
+  }
+  const pct = offerLocked ? 0 : progress?.percentage ?? 0;
   const completedCount = tasks.filter((t) => t.completed).length;
   const remainingTasks = tasks.filter((t) => !t.completed && t.available);
   const nextTask = remainingTasks[0] || tasks.find((t) => !t.completed) || null;
@@ -288,7 +413,7 @@ function CandidateDashboardContent() {
 
         {/* Main */}
         <main className={styles.main}>
-          <div className={styles.topbar}>
+          <div className={styles.topbar} id="profile-section">
             <div>
               <div className={styles.topbarTitle}>Candidate Dashboard</div>
               <div className={styles.topbarSub}>
@@ -342,13 +467,23 @@ function CandidateDashboardContent() {
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" />
                   </svg>
-                  {(unreadNotifications > 0 || announcements.length > 0) && <span className={styles.dot} />}
+                  {unreadNotifications > 0 && <span className={styles.dot} />}
                 </div>
                 {notifOpen && (
                   <div className={styles.notifPanel}>
                     <div className={styles.notifHeading}>
                       <strong>Notifications</strong>
-                      {unreadNotifications > 0 && <span>{unreadNotifications} unread</span>}
+                      {unreadNotifications > 0 ? (
+                        <button
+                          type="button"
+                          className={styles.btnGhost}
+                          style={{ padding: "2px 8px", fontSize: 11, minHeight: 0 }}
+                          disabled={notifBusy}
+                          onClick={() => markAllRead()}
+                        >
+                          Mark all read
+                        </button>
+                      ) : null}
                     </div>
                     <div className={styles.notifList}>
                       {notifications.length ? (
@@ -361,6 +496,11 @@ function CandidateDashboardContent() {
                           >
                             <strong>{notification.title}</strong>
                             <span>{notification.message}</span>
+                            {String(notification.type || "").includes("offer") ? (
+                              <em style={{ display: "block", marginTop: 4, fontSize: 11, color: "#0D5C91" }}>
+                                Open offer letter
+                              </em>
+                            ) : null}
                           </button>
                         ))
                       ) : (
@@ -373,10 +513,10 @@ function CandidateDashboardContent() {
 
               <div
                 className={styles.iconBtn}
-                title="Edit profile"
+                title="My profile"
                 role="button"
                 tabIndex={0}
-                onClick={() => router.push("/onboarding?edit=true")}
+                onClick={() => router.push("/dashboard/candidate/profile")}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
@@ -388,18 +528,21 @@ function CandidateDashboardContent() {
           <div className={`${styles.content} ${styles.pageEnter}`}>
             {loadError && <div className={styles.loadError} role="alert">{loadError}</div>}
 
-            {pendingReuploadNotifications.map((notification) => (
+            {documentActionBanners.map((banner) => (
               <button
-                key={notification.id}
+                key={banner.id}
                 type="button"
                 className={styles.documentActionBanner}
-                onClick={() => handleNotification(notification)}
+                onClick={() => handleReuploadBanner(banner)}
               >
                 <span>
-                  <strong>{notification.title}</strong>
-                  {notification.message}
+                  <strong>{banner.title}</strong>
+                  {banner.message}
+                  {offerLocked
+                    ? " Sign your offer letter first — then you can upload a replacement."
+                    : null}
                 </span>
-                <b>Upload replacement →</b>
+                <b>{offerLocked ? "Review offer →" : "Upload replacement →"}</b>
               </button>
             ))}
 
@@ -409,46 +552,65 @@ function CandidateDashboardContent() {
                 <div className={styles.heroEyebrow}>Candidate onboarding</div>
                 <h1>{greeting}, {firstName}</h1>
                 <p className={styles.heroSub}>
-                  You&apos;re <b>{pct}% ready</b> for Day 1.
-                  {remainingTasks.length > 0
-                    ? ` ${remainingTasks.length} step${remainingTasks.length === 1 ? "" : "s"} left in your onboarding.`
-                    : " Your checklist looks clear."}
+                  {offerLocked
+                    ? "Onboarding is locked until you sign your offer letter."
+                    : <>
+                        You&apos;re <b>{pct}% ready</b> for Day 1.
+                        {remainingTasks.length > 0
+                          ? ` ${remainingTasks.length} step${remainingTasks.length === 1 ? "" : "s"} left in your onboarding.`
+                          : " Your checklist looks clear."}
+                      </>}
                 </p>
                 <div className={styles.heroChips}>
                   {profile?.start_date && <span className={styles.chip}>Joins {formatDate(profile.start_date)}</span>}
-                  {offer?.status === "signed" && <span className={`${styles.chip} ${styles.complete}`}>✓ Offer signed</span>}
-                  <span className={`${styles.chip} ${pct === 100 ? styles.complete : styles.incomplete}`}>
-                    {pct === 100 ? "✓ Onboarding complete" : "Onboarding in progress"}
-                  </span>
+                  {offerSigned && <span className={`${styles.chip} ${styles.complete}`}>✓ Offer signed</span>}
+                  {offerLocked && <span className={`${styles.chip} ${styles.incomplete}`}>Offer signing required</span>}
+                  {!offerLocked && (
+                    <span className={`${styles.chip} ${pct === 100 ? styles.complete : styles.incomplete}`}>
+                      {pct === 100 ? "✓ Onboarding complete" : "Onboarding in progress"}
+                    </span>
+                  )}
                 </div>
                 <div className={styles.heroActions}>
-                  <button
-                    type="button"
-                    className={styles.btnPrimary}
-                    onClick={() => {
-                      if (nextTask?.available) {
-                        router.push(`/onboarding?step=${nextTask.action_step || ""}`);
-                      } else {
-                        router.push("/onboarding");
-                      }
-                    }}
-                  >
-                    Continue onboarding →
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.btnGhost}
-                    onClick={() => document.getElementById("tasks-section")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                  >
-                    View full checklist
-                  </button>
-                  {offer && ["signed", "approved"].includes(offer.status) && (
+                  {offerLocked ? (
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      onClick={() => router.push("/offer?from=candidate-dashboard")}
+                    >
+                      Review &amp; Sign Offer Letter →
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      onClick={() => {
+                        if (nextTask?.available) {
+                          router.push(`/onboarding?step=${nextTask.action_step || ""}`);
+                        } else {
+                          router.push("/onboarding");
+                        }
+                      }}
+                    >
+                      Continue onboarding →
+                    </button>
+                  )}
+                  {!offerLocked && (
+                    <button
+                      type="button"
+                      className={styles.btnGhost}
+                      onClick={() => document.getElementById("tasks-section")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                    >
+                      View full checklist
+                    </button>
+                  )}
+                  {offer && (
                     <button type="button" className={styles.btnGhost} onClick={() => router.push("/offer?from=candidate-dashboard")}>
-                      View Offer Letter
+                      {offerSigned ? "View Offer Letter" : "Open offer letter"}
                     </button>
                   )}
                 </div>
-                {nextTask ? (
+                {!offerLocked && nextTask ? (
                   <div className={styles.heroRecommend}>
                     <SparkleIcon />
                     <div>
@@ -464,14 +626,16 @@ function CandidateDashboardContent() {
               </div>
             </div>
 
-            {offer && !["signed", "approved", "declined", "expired"].includes(offer.status) && (
+            {(offerLocked || (offer && !["signed", "approved", "declined", "expired"].includes(offer.status))) && (
               <div className={styles.banner}>
                 <div className={styles.bannerCopy}>
                   <h3>
-                    {offer.extended_at ? "Your offer letter was extended" : "Sign your offer letter first"}
+                    {offer?.extended_at
+                      ? "Your offer letter was extended"
+                      : "Action Required — Sign Offer Letter"}
                   </h3>
                   <p>
-                    {offer.extended_at
+                    {offer?.extended_at
                       ? `Validity was extended${
                           offer.expires_at
                             ? ` through ${new Date(offer.expires_at).toLocaleDateString(undefined, {
@@ -481,11 +645,11 @@ function CandidateDashboardContent() {
                               })}`
                             : ""
                         }. Review the updated letter and sign when ready.`
-                      : "Review compensation and benefits from Mazik Global Pakistan. Accept, negotiate once, or decline. Document upload unlocks after you sign."}
+                      : "Your onboarding activities are currently locked. Review and sign your offer letter to unlock document submission and the remaining onboarding steps."}
                   </p>
                 </div>
                 <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer?from=candidate-dashboard")}>
-                  {offer.extended_at ? "Review updated offer" : "Review and sign offer"}
+                  {offer?.extended_at ? "Review updated offer" : "Review & Sign Offer Letter"}
                 </button>
               </div>
             )}
@@ -493,8 +657,8 @@ function CandidateDashboardContent() {
             {!offer && (
               <div className={styles.banner}>
                 <div className={styles.bannerCopy}>
-                  <h3>Open your offer letter</h3>
-                  <p>Your invitation includes an offer from Mazik Global Pakistan. Sign it before uploading documents.</p>
+                  <h3>Action Required — Open Offer Letter</h3>
+                  <p>Your invitation includes an offer from Mazik Global Pakistan. Sign it before uploading documents or starting onboarding.</p>
                 </div>
                 <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer")}>
                   Open offer letter
@@ -552,7 +716,11 @@ function CandidateDashboardContent() {
                       <div className={`${styles.bar} ${styles.cyan}`} />
                       <div>
                         <div className={styles.sectionTitle}>Onboarding tasks</div>
-                        <div className={styles.sectionDesc}>Steps to complete before your start date.</div>
+                        <div className={styles.sectionDesc}>
+                          {offerLocked
+                            ? "Locked until you sign your offer letter."
+                            : "Steps to complete before your start date."}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -580,7 +748,21 @@ function CandidateDashboardContent() {
                       ))}
                       {!loading && tasks.length === 0 && (
                         <div className={styles.emptyState}>
-                          <p className={styles.emptySub} style={{ margin: 0 }}>No tasks yet.</p>
+                          <p className={styles.emptySub} style={{ margin: 0 }}>
+                            {offerLocked
+                              ? "Sign your offer letter to unlock onboarding tasks."
+                              : "No tasks yet."}
+                          </p>
+                          {offerLocked ? (
+                            <button
+                              type="button"
+                              className={styles.btnPrimary}
+                              style={{ marginTop: 12 }}
+                              onClick={() => router.push("/offer?from=candidate-dashboard")}
+                            >
+                              Review Offer Letter
+                            </button>
+                          ) : null}
                         </div>
                       )}
                     </ul>
@@ -594,20 +776,30 @@ function CandidateDashboardContent() {
                       <div className={`${styles.bar} ${styles.orange}`} />
                       <div>
                         <div className={styles.sectionTitle}>My documents</div>
-                        <div className={styles.sectionDesc}>Upload, organize, and download your files in the document centre.</div>
+                        <div className={styles.sectionDesc}>
+                          {offerLocked
+                            ? "Document centre unlocks after you sign your offer letter."
+                            : "Upload, organize, and download your files in the document centre."}
+                        </div>
                       </div>
                     </div>
                   </div>
                   <div className={styles.sectionBody}>
                     <div className={styles.banner} style={{ margin: 0 }}>
                       <div className={styles.bannerCopy}>
-                        <h3>Document centre</h3>
+                        <h3>{offerLocked ? "Documents locked" : "Document centre"}</h3>
                         <p>
-                          Manage identity, education, and employment documents with category filters, search, and secure downloads.
+                          {offerLocked
+                            ? "Sign your offer letter first. Document upload and verification unlock after signing."
+                            : "Manage identity, education, and employment documents with category filters, search, and secure downloads."}
                         </p>
                       </div>
-                      <button type="button" className={styles.btnPrimary} onClick={() => router.push("/documents")}>
-                        Open documents
+                      <button
+                        type="button"
+                        className={styles.btnPrimary}
+                        onClick={() => router.push(offerLocked ? "/offer?from=candidate-dashboard" : "/documents")}
+                      >
+                        {offerLocked ? "Review Offer Letter" : "Open documents"}
                       </button>
                     </div>
                   </div>

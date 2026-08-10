@@ -108,11 +108,7 @@ class ItServiceRequestService:
         if not doc:
             raise HTTPException(status_code=404, detail="IT request not found.")
         if current_user.role != "super_admin":
-            record_org = doc.get("organization_id")
-            if record_org and current_user.organization_id:
-                if record_org != current_user.organization_id:
-                    raise HTTPException(status_code=404, detail="IT request not found.")
-            elif str(doc.get("recruiter_id")) != str(current_user.id):
+            if str(doc.get("recruiter_id")) != str(current_user.id):
                 raise HTTPException(status_code=404, detail="IT request not found.")
         return doc
 
@@ -177,6 +173,9 @@ class ItServiceRequestService:
 
     async def create_for_employee(self, current_user: CurrentUser, request: ItServiceRequestCreate) -> dict:
         emp = await self._find_employee(request.employee_id)
+        if current_user.role != "super_admin":
+            if emp.get("recruiter_id") != current_user.id:
+                raise HTTPException(status_code=403, detail="You can only create IT requests for employees assigned to you.")
         now = datetime.now(UTC)
         doc = {
             "token": token_urlsafe(32),

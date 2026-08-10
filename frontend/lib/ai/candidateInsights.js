@@ -86,7 +86,7 @@ function candidatePageKey(pathname) {
 async function loadCandidateSnapshot(accessToken) {
   if (!accessToken) return null;
 
-  return cached("candidate-snapshot", async () => {
+  return cached(`candidate-snapshot:${accessToken}`, async () => {
     const [dashboard, offerData, docsData, profileData, notifData, learningData] = await Promise.all([
       getCandidateDashboard(accessToken).catch(() => null),
       getMyOffer(accessToken).catch(() => null),

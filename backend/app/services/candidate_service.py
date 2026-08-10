@@ -335,11 +335,10 @@ class CandidateService:
         from app.services.offer_service import offer_service
 
         candidate_id_early = candidate.get("user_id") or str(candidate["_id"])
-        if not await offer_service.has_signed_offer(candidate_id_early, candidate.get("email")):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Sign your offer letter before uploading documents and completing your profile.",
-            )
+        await offer_service.require_signed_offer(
+            candidate_id_early,
+            candidate.get("email"),
+        )
 
         # ✅ MODIFIED: Only block if already submitted AND trying to resubmit
         if onboarding.get("status") == "submitted" and request.step == "submit":
@@ -480,14 +479,10 @@ class CandidateService:
         candidate = await self._require_active_candidate(current_user)
         from app.services.offer_service import offer_service
 
-        if not await offer_service.has_signed_offer(
+        await offer_service.require_signed_offer(
             candidate.get("user_id") or str(candidate["_id"]),
             candidate.get("email"),
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Sign your offer letter before uploading documents.",
-            )
+        )
         onboarding = candidate.get("onboarding") or {}
         now = datetime.now(UTC)
 
@@ -721,14 +716,20 @@ class CandidateService:
 
         This is intentionally a *merge* — it touches only the keys in ``fields``
         and leaves every other ``onboarding.personal`` field untouched.  It does
-        NOT run the full step-save validation pipeline (which requires a signed
-        offer and a government ID doc to be present), so the candidate can tell
-        the assistant their name or gender before they have uploaded their CNIC.
+        NOT run the full step-save validation pipeline (which requires a
+        government ID doc to be present), so the assistant can fill isolated
+        facts once the offer is signed.
 
         Only keys in ``_PERSONAL_SCALAR_FIELDS`` are accepted; unknown keys are
         silently dropped so the LLM cannot accidentally overwrite sensitive data.
         """
         candidate = await self._require_active_candidate(current_user)
+        from app.services.offer_service import offer_service
+
+        await offer_service.require_signed_offer(
+            candidate.get("user_id") or str(candidate["_id"]),
+            candidate.get("email"),
+        )
         safe_fields = {
             k: v for k, v in fields.items()
             if k in self._PERSONAL_SCALAR_FIELDS and v not in (None, "")
@@ -905,6 +906,38 @@ class CandidateService:
             .to_list(length=3)
         )
 
+        from app.services.offer_service import offer_service
+
+        candidate_uid = candidate.get("user_id") or str(candidate.get("_id") or "")
+        offer_signed = await offer_service.has_signed_offer(candidate_uid, candidate.get("email"))
+        offer_doc = await database.offer_letters.find_one(
+            {
+                "$or": [
+                    {"candidate_id": candidate_uid},
+                    {"candidate_email": candidate.get("email")},
+                ],
+                "status": {"$nin": ["withdrawn"]},
+            },
+            sort=[("version", -1), ("created_at", -1)],
+        )
+        offer_summary = None
+        if offer_doc:
+            offer_summary = {
+                "id": str(offer_doc.get("_id", "")),
+                "status": offer_doc.get("status"),
+                "job_title": offer_doc.get("job_title"),
+                "version": offer_doc.get("version") or 1,
+                "signed_at": offer_doc.get("signed_at").isoformat()
+                if hasattr(offer_doc.get("signed_at"), "isoformat")
+                else offer_doc.get("signed_at"),
+                "expires_at": offer_doc.get("expires_at").isoformat()
+                if hasattr(offer_doc.get("expires_at"), "isoformat")
+                else offer_doc.get("expires_at"),
+                "extended_at": offer_doc.get("extended_at").isoformat()
+                if hasattr(offer_doc.get("extended_at"), "isoformat")
+                else offer_doc.get("extended_at"),
+            }
+
         return {
             "profile": {
                 "full_name": candidate.get("full_name"),
@@ -917,8 +950,10 @@ class CandidateService:
                 "recruiter": recruiter_contact,
                 "conversion_status": candidate.get("conversion_status", "pending"),
             },
+            "offer_signed": offer_signed,
+            "offer": offer_summary,
             "progress": self._progress_payload(candidate),
-            "tasks": self._task_list(onboarding),
+            "tasks": self._task_list(onboarding) if offer_signed else [],
             "announcements": [
                 {
                     "id": str(a["_id"]),

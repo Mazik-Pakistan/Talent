@@ -82,9 +82,9 @@ function RecruiterCandidatesPageContent() {
   const [historicalLoading, setHistoricalLoading] = useState(false);
   const [selectedItOfferIds, setSelectedItOfferIds] = useState([]);
   const [bulkItEmail, setBulkItEmail] = useState("");
-  const [bulkItBatch, setBulkItBatch] = useState(false);
-  const [bulkItForm, setBulkItForm] = useState(false);
+  const [bulkItMode, setBulkItMode] = useState("individual");
   const [bulkItBusy, setBulkItBusy] = useState(false);
+  const [bulkEmailError, setBulkEmailError] = useState(false);
 
   useEffect(() => {
     const nego = negotiations.length;
@@ -223,10 +223,16 @@ function RecruiterCandidatesPageContent() {
   async function handleBulkSendIt(offerIds) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken || !offerIds.length) return;
+    if (!bulkItEmail.trim()) {
+      setBulkEmailError(true);
+      setTimeout(() => setBulkEmailError(false), 3000);
+    }
     setBulkItBusy(true);
     setConversionMessage("");
     try {
-      const payload = { offer_ids: offerIds, batch_email: bulkItBatch, batch_form: bulkItForm };
+      const payload = { offer_ids: offerIds };
+      if (bulkItMode === "batch_email") payload.batch_email = true;
+      if (bulkItMode === "batch_form") payload.batch_form = true;
       const shared = bulkItEmail.trim();
       if (shared) payload.it_manager_email = shared;
       const data = await bulkSendItProvisioning(payload, accessToken);
@@ -303,12 +309,16 @@ function RecruiterCandidatesPageContent() {
   async function handleSendIt(candidate) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
-    const draft = (itEmailDrafts[candidate.offer_id] || "").trim();
+    if (!bulkItEmail.trim()) {
+      setBulkEmailError(true);
+      setTimeout(() => setBulkEmailError(false), 3000);
+    }
+    const shared = bulkItEmail.trim();
     setItBusyOfferId(candidate.offer_id);
     setConversionMessage("");
     try {
       const payload = { offer_id: candidate.offer_id };
-      if (draft) payload.it_manager_email = draft;
+      if (shared) payload.it_manager_email = shared;
       const data = await sendItProvisioning(payload, accessToken);
       setConversionMessage(data.message);
       if (data.email_sent) {
@@ -521,6 +531,13 @@ function RecruiterCandidatesPageContent() {
   async function handleEditAndResend(offer) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken || !editDraft) return;
+    const responseNote = (negoNotes[offer.id] || "").trim();
+    if (!responseNote) {
+      toast.error("Please enter a clarification response before sending.", {
+        toastId: `clarification-note-required-edit-${offer.id}`,
+      });
+      return;
+    }
     if (!editDraft.job_title?.trim() || !editDraft.department?.trim() || !editDraft.reporting_manager?.trim()) {
       toast.error("Job title, department, and reporting manager are required.");
       return;
@@ -568,9 +585,10 @@ function RecruiterCandidatesPageContent() {
           : null,
         terms: editDraft.terms?.trim() || "",
         message_to_candidate: editDraft.message_to_candidate?.trim() || null,
-        recruiter_note: (negoNotes[offer.id] || "").trim() || null,
+        recruiter_note: responseNote,
         decision_summary:
           (counterTerms[offer.id]?.decision_summary || "").trim() ||
+          responseNote ||
           "Offer letter updated after clarification and resent.",
       };
       const data = await editAndResendOffer(offer.id, payload, accessToken);
@@ -990,8 +1008,7 @@ function RecruiterCandidatesPageContent() {
               <div>
                 <div className={s.sectionTitle}>Ready for IT & activation</div>
                 <div className={s.sectionDesc}>
-                  Signed offers — send IT provisioning after documents are complete, then activate.
-                  Select multiple people to bulk-email IT in one click.
+                  Select candidates, optionally set an IT manager email, and send provisioning requests.
                 </div>
               </div>
             </div>
@@ -1000,97 +1017,108 @@ function RecruiterCandidatesPageContent() {
                 <>
                   {itActionableCandidates.length ? (
                     <div className={s.bulkToolbar}>
-                      <label className={`${styles.field} ${s.bulkField}`}>
-                        <span>Shared IT manager email (optional)</span>
-                        <input
-                          type="email"
-                          value={bulkItEmail}
-                          onChange={(e) => setBulkItEmail(e.target.value)}
-                          placeholder="Uses server default if blank"
-                        />
-                      </label>
-                      <label className={s.bulkCheck}>
-                        <input
-                          type="checkbox"
-                          checked={bulkItBatch}
-                          onChange={(e) => setBulkItBatch(e.target.checked)}
-                        />
-                        One batch email
-                      </label>
-                      <label className={s.bulkCheck}>
-                        <input
-                          type="checkbox"
-                          checked={bulkItForm}
-                          onChange={(e) => setBulkItForm(e.target.checked)}
-                        />
-                        Bulk form for IT (they do all in one form)
-                      </label>
-                      <label className={s.bulkCheck}>
-                        <input
-                          type="checkbox"
-                          checked={
-                            selectedItOfferIds.length > 0 &&
-                            selectedItOfferIds.length === itActionableCandidates.length
-                          }
-                          onChange={(e) => selectAllItActionable(e.target.checked)}
-                        />
-                        Select all ({selectedItOfferIds.length})
-                      </label>
-                      <button
-                        type="button"
-                        className={styles.primaryButton}
-                        disabled={
-                          bulkItBusy ||
-                          !selectedItOfferIds.some((id) =>
-                            itNotSentCandidates.some((c) => c.offer_id === id)
-                          )
-                        }
-                        onClick={() =>
-                          handleBulkSendIt(
-                            selectedItOfferIds.filter((id) =>
+                      <div className={s.bulkActions}>
+                        <label className={s.bulkCheck}>
+                          <input
+                            type="checkbox"
+                            checked={
+                              selectedItOfferIds.length > 0 &&
+                              selectedItOfferIds.length === itActionableCandidates.length
+                            }
+                            onChange={(e) => selectAllItActionable(e.target.checked)}
+                          />
+                          Select all
+                        </label>
+                        <span className={s.bulkCount}>
+                          {selectedItOfferIds.length > 0
+                            ? `${selectedItOfferIds.length} of ${itActionableCandidates.length} selected`
+                            : `${itActionableCandidates.length} ready`}
+                        </span>
+                        <button
+                          type="button"
+                          className={styles.primaryButton}
+                          disabled={
+                            bulkItBusy ||
+                            !selectedItOfferIds.some((id) =>
                               itNotSentCandidates.some((c) => c.offer_id === id)
                             )
-                          )
-                        }
-                      >
-                        {bulkItBusy ? "Sending…" : "Send IT for selected"}
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.secondaryButton}
-                        disabled={
-                          bulkItBusy ||
-                          !selectedItOfferIds.some((id) =>
-                            itPendingCandidates.some((c) => c.offer_id === id)
-                          )
-                        }
-                        onClick={() =>
-                          handleBulkRemindIt(
-                            selectedItOfferIds.filter((id) =>
+                          }
+                          onClick={() =>
+                            handleBulkSendIt(
+                              selectedItOfferIds.filter((id) =>
+                                itNotSentCandidates.some((c) => c.offer_id === id)
+                              )
+                            )
+                          }
+                        >
+                          {bulkItBusy ? "Sending…" : "Send IT Email"}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.secondaryButton}
+                          disabled={
+                            bulkItBusy ||
+                            !selectedItOfferIds.some((id) =>
                               itPendingCandidates.some((c) => c.offer_id === id)
                             )
-                          )
-                        }
-                      >
-                        Follow up selected
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.primaryButton}
-                        disabled={bulkItBusy || itNotSentCandidates.length === 0}
-                        onClick={() => {
-                          const count = itNotSentCandidates.length;
-                          if (
-                            window.confirm(
-                              `Email IT to provision ${count} candidate${count === 1 ? "" : "s"}?`
-                            )
-                          ) {
-                            handleBulkSendIt(itNotSentCandidates.map((c) => c.offer_id));
                           }
-                        }}
-                      >
-                        Send IT to all pending
-                      </button>
+                          onClick={() =>
+                            handleBulkRemindIt(
+                              selectedItOfferIds.filter((id) =>
+                                itPendingCandidates.some((c) => c.offer_id === id)
+                              )
+                            )
+                          }
+                        >
+                          Follow up
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.secondaryButton}
+                          disabled={bulkItBusy || itNotSentCandidates.length === 0}
+                          onClick={() => {
+                            const count = itNotSentCandidates.length;
+                            if (
+                              window.confirm(
+                                `Email IT to provision ${count} candidate${count === 1 ? "" : "s"}?`
+                              )
+                            ) {
+                              handleBulkSendIt(itNotSentCandidates.map((c) => c.offer_id));
+                            }
+                          }}
+                        >
+                          Send to all pending
+                        </button>
+                      </div>
+                      <div className={s.bulkSettings}>
+                        <label className={s.bulkField}>
+                          <span>IT manager email</span>
+                          <input
+                            type="email"
+                            value={bulkItEmail}
+                            onChange={(e) => {
+                              setBulkItEmail(e.target.value);
+                              if (bulkEmailError) setBulkEmailError(false);
+                            }}
+                            placeholder="Leave blank for default"
+                            className={bulkEmailError ? s.fieldError : ""}
+                          />
+                        </label>
+                        <label className={s.bulkField}>
+                          <span>Delivery mode</span>
+                          <select
+                            value={bulkItMode}
+                            onChange={(e) => setBulkItMode(e.target.value)}
+                          >
+                            <option value="individual">Individual emails</option>
+                            <option value="batch_email">Single batch email</option>
+                            <option value="batch_form">Batch form for IT</option>
+                          </select>
+                        </label>
+                        <span className={`${s.bulkHint} ${bulkEmailError ? s.hintError : ""}`}>
+                          {bulkEmailError ? "Please enter an IT manager email." : "Leave blank to use the configured default IT manager email."}
+                        </span>
+                      </div>
                     </div>
                   ) : null}
                   <div className={s.cardList}>
@@ -1147,22 +1175,6 @@ function RecruiterCandidatesPageContent() {
                                     <span className={`${s.pill} ${s.pillRed}`}>Offer expired</span>
                                   ) : null}
                                 </div>
-                                {!itComplete && (
-                                  <label className={`${styles.field} ${s.bulkField}`} style={{ marginTop: 10, maxWidth: 320 }}>
-                                    <span>IT manager email</span>
-                                    <input
-                                      type="email"
-                                      value={itEmailDrafts[candidate.offer_id] ?? (it?.it_manager_email || "")}
-                                      onChange={(event) =>
-                                        setItEmailDrafts((current) => ({
-                                          ...current,
-                                          [candidate.offer_id]: event.target.value,
-                                        }))
-                                      }
-                                      placeholder="it@company.com"
-                                    />
-                                  </label>
-                                )}
                               </div>
                             </div>
                             <div className={s.candidateActions}>

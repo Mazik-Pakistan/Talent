@@ -291,6 +291,43 @@ button, input { font: inherit; }
 .document-upload-overlay-card { width: min(100%, 420px); padding: 22px 26px; border-radius: 14px; background: #fff; box-shadow: 0 18px 48px rgba(15, 42, 74, .18); text-align: center; }
 .document-upload-overlay-card strong { display: block; color: var(--ink); font-size: 1rem; margin-bottom: 8px; }
 .document-upload-overlay-card p { margin: 0; color: var(--muted); font-size: .86rem; line-height: 1.5; }
+.document-upload-status,
+.document-replace-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #cfe0ef;
+  border-radius: 12px;
+  background: #f4f9fd;
+  color: var(--ink);
+}
+.document-upload-status { margin-bottom: 12px; }
+.document-upload-status strong,
+.document-replace-progress strong {
+  display: block;
+  font-size: .9rem;
+  margin-bottom: 2px;
+}
+.document-upload-status p,
+.document-replace-progress p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .8rem;
+  word-break: break-word;
+}
+.document-upload-status-spinner {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid #b7d3ea;
+  border-top-color: var(--blue);
+  animation: document-upload-spin .7s linear infinite;
+}
+@keyframes document-upload-spin {
+  to { transform: rotate(360deg); }
+}
 @media (max-width: 760px) {
   .document-manager-pills-row { flex-direction: column; align-items: stretch; }
   .document-manager-pills-row .document-filter-group { justify-content: center; }
@@ -309,9 +346,68 @@ button, input { font: inherit; }
 .document-search:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgb(56 162 255 / .16); }
 .document-upload-card { display: grid; gap: 14px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: #fbfdfe; }
 .document-upload-card.compact { padding: 12px; }
-.document-upload-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.document-upload-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.document-upload-fields .field span {
+  font-size: .74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+}
+.document-upload-fields select {
+  width: 100%;
+  border: 1px solid #bed0dc;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: white;
+  min-height: 42px;
+}
+.document-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed #c5d7e6;
+  border-radius: 12px;
+  background: #fff;
+}
+.document-upload-chooser {
+  width: auto !important;
+  flex: 0 0 auto;
+}
+.document-upload-filename {
+  flex: 1 1 140px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: .84rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.document-upload-filename.muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+.document-upload-save {
+  width: auto !important;
+  min-width: 104px;
+  margin-left: auto;
+  padding: 10px 18px;
+  white-space: nowrap;
+}
+.document-upload-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; align-items: end; }
 .document-upload-row .field span { font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .document-upload-row select, .document-upload-row input[type="file"] { width: 100%; border: 1px solid #bed0dc; border-radius: 10px; padding: 10px 12px; background: white; }
+@media (max-width: 760px) {
+  .document-upload-fields { grid-template-columns: 1fr; }
+  .document-upload-save { margin-left: 0; width: 100% !important; }
+}
 .document-category-stack { display: grid; gap: 16px; }
 .document-category-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: white; box-shadow: 0 12px 30px rgba(18,58,99,.04); }
 .document-category-head { display: flex; align-items: center; justify-content: space-between; }

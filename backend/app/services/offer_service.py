@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 ACTIVE_OFFER_STATUSES = ("sent", "viewed", "signed")
 MAX_NEGOTIATION_ROUNDS = 3
+OFFER_SIGN_REQUIRED_DETAIL = "Offer signing is required before onboarding can begin."
 
 
 def _iso(value):
@@ -232,7 +233,51 @@ class OfferService:
                 {"_id": offer["_id"]}, {"$set": {"status": "viewed", "viewed_at": datetime.now(UTC)}}
             )
             offer["status"] = "viewed"
+        # Older edit-and-resend versions reset negotiation to empty; recover the
+        # clarification reply from the withdrawn parent so the candidate still sees it.
+        offer = await self._hydrate_clarification_from_parent(offer)
         return {"offer": self._public(offer)}
+
+    async def _hydrate_clarification_from_parent(self, offer: dict) -> dict:
+        negotiation = offer.get("negotiation") or {}
+        has_reply = bool(
+            (negotiation.get("recruiter_note") or "").strip()
+            or (negotiation.get("decision_summary") or "").strip()
+        )
+        if negotiation.get("status") in ("resolved", "closed", "pending") and has_reply:
+            return offer
+        parent_id = offer.get("parent_offer_id")
+        if not parent_id:
+            return offer
+        try:
+            parent = await database.offer_letters.find_one({"_id": ObjectId(parent_id)})
+        except Exception:
+            parent = None
+        if not parent:
+            return offer
+        parent_neg = parent.get("negotiation") or {}
+        parent_reply = (parent_neg.get("recruiter_note") or "").strip() or (
+            parent_neg.get("decision_summary") or ""
+        ).strip()
+        if not parent_reply and not parent_neg.get("note"):
+            return offer
+        merged = {
+            **self._empty_negotiation_state(),
+            **{k: v for k, v in negotiation.items() if v not in (None, "", [], "none")},
+            "status": negotiation.get("status")
+            if negotiation.get("status") in ("resolved", "closed", "pending")
+            else (parent_neg.get("status") if parent_neg.get("status") in ("resolved", "closed") else "resolved"),
+            "note": negotiation.get("note") or parent_neg.get("note"),
+            "requested_at": negotiation.get("requested_at") or parent_neg.get("requested_at"),
+            "requested_changes": negotiation.get("requested_changes")
+            or parent_neg.get("requested_changes")
+            or [],
+            "responded_at": negotiation.get("responded_at") or parent_neg.get("responded_at"),
+            "recruiter_note": (negotiation.get("recruiter_note") or "").strip() or parent_neg.get("recruiter_note"),
+            "decision_summary": (negotiation.get("decision_summary") or "").strip()
+            or parent_neg.get("decision_summary"),
+        }
+        return {**offer, "negotiation": merged}
 
     async def has_signed_offer(self, user_id: str, email: str | None = None) -> bool:
         query: dict = {"status": "signed", "$or": [{"candidate_id": user_id}]}
@@ -240,6 +285,23 @@ class OfferService:
             query["$or"].append({"candidate_email": email})
         doc = await database.offer_letters.find_one(query)
         return bool(doc)
+
+    async def require_signed_offer(
+        self,
+        user_id: str,
+        email: str | None = None,
+        *,
+        detail: str = OFFER_SIGN_REQUIRED_DETAIL,
+    ) -> None:
+        """Hard gate: candidates must have a signed offer before onboarding mutations."""
+        if not await self.has_signed_offer(user_id, email):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
+    async def require_signed_offer_for_candidate(self, current_user: CurrentUser) -> None:
+        """No-op for non-candidates; raises 403 when a candidate has not signed."""
+        if getattr(current_user, "role", None) != "candidate":
+            return
+        await self.require_signed_offer(current_user.id, current_user.email)
 
     async def list_for_candidate(self, current_user: CurrentUser, candidate_id: str) -> dict:
         if current_user.role not in ("recruiter", "super_admin"):
@@ -287,7 +349,10 @@ class OfferService:
         offer = await self._find(offer_id)
         self._assert_owner(current_user, offer)
         if offer["status"] not in ("sent", "viewed"):
-            raise HTTPException(status_code=409, detail=f"This offer cannot be signed (status: {offer['status']}).")
+            raise HTTPException(
+                status_code=409,
+                detail="This offer can only be signed while it is still open. Open your offer letter to check its current status.",
+            )
 
         negotiation = offer.get("negotiation") or {}
         if negotiation.get("status") == "pending":
@@ -660,7 +725,7 @@ class OfferService:
         if offer.get("status") not in ("sent", "viewed", "expired"):
             raise HTTPException(
                 status_code=409,
-                detail=f"This offer cannot be edited (status: {offer.get('status')}).",
+                detail="This offer cannot be edited in its current state. Create a new invitation instead if needed.",
             )
 
         now = datetime.now(UTC)
@@ -739,13 +804,50 @@ class OfferService:
             parent_offer_id=str(offer["_id"]),
             expiry_days=expiry_days,
         )
+        # Carry clarification context onto the new version so the candidate still
+        # sees their question and the recruiter reply on the active (vN) letter.
+        # Without this, get_mine returns empty negotiation and the UI hides the response.
+        recruiter_reply = (request.recruiter_note or "").strip() or negotiation.get("recruiter_note")
+        v_next["negotiation"] = {
+            **self._empty_negotiation_state(),
+            "status": "resolved",
+            "note": negotiation.get("note"),
+            "requested_at": negotiation.get("requested_at"),
+            "requested_changes": list(negotiation.get("requested_changes") or []),
+            "proposed_salary": negotiation.get("proposed_salary"),
+            "proposed_start_date": negotiation.get("proposed_start_date"),
+            "proposed_allowances": list(negotiation.get("proposed_allowances") or []),
+            "proposed_salary_breakdown": list(
+                negotiation.get("proposed_salary_breakdown") or negotiation.get("proposed_allowances") or []
+            ),
+            "proposed_benefits": list(negotiation.get("proposed_benefits") or []),
+            "responded_at": now,
+            "recruiter_note": recruiter_reply or decision_summary,
+            "decision_summary": decision_summary,
+        }
+
         prior_history = list(offer.get("negotiation_history") or [])
+        prior_history.append(
+            self._history_entry(
+                actor_role="recruiter",
+                action="edited_and_resent",
+                when=now,
+                note=recruiter_reply or decision_summary,
+                snapshot={
+                    "decision_summary": decision_summary,
+                    "job_title": request.job_title,
+                    "monthly_salary": request.monthly_salary,
+                    "start_date": request.start_date,
+                    "version": next_version,
+                },
+            )
+        )
         prior_history.append(
             self._history_entry(
                 actor_role="system",
                 action="reissued_offer",
                 when=now,
-                note=decision_summary,
+                note=recruiter_reply or decision_summary,
                 snapshot={"version": next_version},
             )
         )
@@ -838,7 +940,7 @@ class OfferService:
         if not is_signed_offer:
             raise HTTPException(
                 status_code=409,
-                detail=f"Offer must be signed by the candidate before activation (status: {offer['status']}).",
+                detail="The candidate must sign this offer before it can be activated.",
             )
 
         expires_at = offer.get("expires_at")
@@ -890,7 +992,7 @@ class OfferService:
         if offer.get("status") not in ("sent", "viewed", "expired"):
             raise HTTPException(
                 status_code=409,
-                detail=f"This offer cannot have its validity extended (status: {offer.get('status')}).",
+                detail="This offer’s validity cannot be extended in its current state.",
             )
 
         expires_at = offer.get("expires_at")
@@ -1078,11 +1180,7 @@ class OfferService:
     def _assert_recruiter_can_access(current_user: CurrentUser, record: dict, detail: str = "Not authorized.") -> None:
         if current_user.role == "super_admin":
             return
-        record_org = record.get("organization_id")
-        if record_org and current_user.organization_id:
-            if record_org != current_user.organization_id:
-                raise HTTPException(status_code=403, detail=detail)
-        elif record.get("recruiter_id") != current_user.id:
+        if record.get("recruiter_id") != current_user.id:
             raise HTTPException(status_code=403, detail=detail)
 
     def _assert_owner(self, current_user: CurrentUser, offer: dict) -> None:
