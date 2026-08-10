@@ -192,7 +192,9 @@ export default function SuperAdminDashboardPage() {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyEditForm);
   const [editSaving, setEditSaving] = useState(false);
+  const [editErrors, setEditErrors] = useState({});
   const [bootstrapErrors, setBootstrapErrors] = useState({});
+  const [orgFieldErrors, setOrgFieldErrors] = useState({});
   
   // New state for improved UI
   const [selectedRecruiterId, setSelectedRecruiterId] = useState(null);
@@ -279,6 +281,15 @@ export default function SuperAdminDashboardPage() {
 
   async function handleOrgSubmit(event) {
     event.preventDefault();
+    setOrgFieldErrors({});
+    const errors = {
+      name: !orgForm.name.trim() ? "Organization name is required." : undefined,
+      contact_email: orgForm.contact_email.trim() && !EMAIL_REGEX.test(orgForm.contact_email.trim()) ? "Enter a valid email address." : undefined,
+    };
+    if (Object.values(errors).some(Boolean)) {
+      setOrgFieldErrors(errors);
+      return;
+    }
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setOrgSaving(true);
@@ -298,6 +309,7 @@ export default function SuperAdminDashboardPage() {
       }
       setOrgFormOpen(false);
       setEditOrgId(null);
+      setOrgFieldErrors({});
       loadOrganizations();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not save organization."));
@@ -534,6 +546,14 @@ export default function SuperAdminDashboardPage() {
   async function saveEdit(recruiterId) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
+    const errors = {
+      job_title: !editForm.job_title?.trim() ? "Job title is required." : undefined,
+      department: !editForm.department?.trim() ? "Department is required." : undefined,
+    };
+    if (Object.values(errors).some(Boolean)) {
+      setEditErrors(errors);
+      return;
+    }
     setEditSaving(true);
     try {
       const recruiter = recruiters.find((r) => r.id === recruiterId);
@@ -542,6 +562,7 @@ export default function SuperAdminDashboardPage() {
       await updateRecruiter(recruiterId, payload, accessToken);
       toast.success("Recruiter updated.");
       setEditingId(null);
+      setEditErrors({});
       loadRecruiters();
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to update recruiter."));
@@ -884,6 +905,8 @@ export default function SuperAdminDashboardPage() {
           saveEdit={saveEdit}
           cancelEdit={cancelEdit}
           editSaving={editSaving}
+          editErrors={editErrors}
+          onClearEditError={(key) => setEditErrors((current) => { const next = { ...current }; delete next[key]; return next; })}
           toggleCapability={toggleCapability}
           quickDeleteRecruiter={quickDeleteRecruiter}
           onTabChange={setActiveTab}
@@ -944,11 +967,14 @@ export default function SuperAdminDashboardPage() {
                   type="text"
                   data-field-key="organization_name"
                   value={orgForm.name}
-                  onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
+                  onChange={(e) => { setOrgForm({ ...orgForm, name: e.target.value }); setOrgFieldErrors((current) => { const next = { ...current }; delete next.name; return next; }); }}
                   placeholder="Acme Corporation"
                   required
                   disabled={orgSaving}
+                  aria-invalid={Boolean(orgFieldErrors.name)}
+                  style={orgFieldErrors.name ? INPUT_ERROR_STYLE : undefined}
                 />
+                {orgFieldErrors.name && <FieldError>{orgFieldErrors.name}</FieldError>}
               </label>
               <label className={local.orgField}>
                 <span>Contact Email</span>
@@ -956,10 +982,13 @@ export default function SuperAdminDashboardPage() {
                   type="email"
                   data-field-key="contact_email"
                   value={orgForm.contact_email}
-                  onChange={(e) => setOrgForm({ ...orgForm, contact_email: e.target.value })}
+                  onChange={(e) => { setOrgForm({ ...orgForm, contact_email: e.target.value }); setOrgFieldErrors((current) => { const next = { ...current }; delete next.contact_email; return next; }); }}
                   placeholder="hr@company.com"
                   disabled={orgSaving}
+                  aria-invalid={Boolean(orgFieldErrors.contact_email)}
+                  style={orgFieldErrors.contact_email ? INPUT_ERROR_STYLE : undefined}
                 />
+                {orgFieldErrors.contact_email && <FieldError>{orgFieldErrors.contact_email}</FieldError>}
               </label>
               <label className={local.orgField}>
                 <span>Description</span>

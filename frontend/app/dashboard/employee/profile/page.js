@@ -513,11 +513,26 @@ function EmployeeProfileContent() {
   }
 
   async function savePersonal() {
-    const dobCheck = validateDateOfBirth(personalDraft.date_of_birth, "Date of birth");
-    if (!dobCheck.isValid) {
-      showFormError(dobCheck.error, { date_of_birth: dobCheck.error });
+    const errors = {
+      first_name: !personalDraft.first_name?.trim() ? "First name is required." : undefined,
+      last_name: !personalDraft.last_name?.trim() ? "Last name is required." : undefined,
+      date_of_birth: !personalDraft.date_of_birth ? "Date of birth is required." : undefined,
+      gender: !personalDraft.gender ? "Gender is required." : undefined,
+      nationality: !personalDraft.nationality?.trim() ? "Nationality is required." : undefined,
+      national_id: !personalDraft.national_id?.trim() ? "National ID is required." : undefined,
+      current_address: !personalDraft.current_address?.trim() ? "Current address is required." : undefined,
+    };
+    const hasErrors = Object.values(errors).some(Boolean);
+    if (hasErrors) {
+      setFieldErrors(errors);
       return;
     }
+    const dobCheck = validateDateOfBirth(personalDraft.date_of_birth, "Date of birth");
+    if (!dobCheck.isValid) {
+      setFieldErrors({ ...errors, date_of_birth: dobCheck.error });
+      return;
+    }
+    setFieldErrors({});
     await persistSection("personal", {
       personal: {
         ...personalDraft,
@@ -532,6 +547,18 @@ function EmployeeProfileContent() {
   }
 
   async function saveEducation() {
+    const errors = {};
+    educationDrafts.forEach((entry, index) => {
+      if (!entry.institution?.trim()) errors[`edu_${index}_institution`] = "Institution is required.";
+      if (!entry.degree?.trim()) errors[`edu_${index}_degree`] = "Degree is required.";
+      if (!entry.field_of_study?.trim()) errors[`edu_${index}_field_of_study`] = "Field of study is required.";
+      if (!entry.year_completed?.trim()) errors[`edu_${index}_year_completed`] = "Year completed is required.";
+    });
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
     await persistSection("education", {
       education: {
         entries: educationDrafts.map((entry) => ({
@@ -827,12 +854,12 @@ function EmployeeProfileContent() {
                   editForm={
                     <div className={styles.editForm} data-partner-coach>
                       <div className={styles.formGrid}>
-                        <Field label="First name" value={personalDraft.first_name} onChange={(e) => setPersonalDraft({ ...personalDraft, first_name: e.target.value })} />
-                        <Field label="Last name" value={personalDraft.last_name} onChange={(e) => setPersonalDraft({ ...personalDraft, last_name: e.target.value })} />
-                        <Field label="Date of birth" type="date" max={getMaxDob()} value={personalDraft.date_of_birth} onChange={(e) => setPersonalDraft({ ...personalDraft, date_of_birth: e.target.value })} />
-                        <SelectField label="Gender" value={personalDraft.gender} options={["male", "female", "other", "prefer_not_to_say"]} onChange={(e) => setPersonalDraft({ ...personalDraft, gender: e.target.value })} />
-                        <Field label="Nationality" value={personalDraft.nationality} onChange={(e) => setPersonalDraft({ ...personalDraft, nationality: e.target.value })} />
-                        <SelectField label="Marital status" value={personalDraft.marital_status} options={["single", "married", "divorced", "widowed", "other"]} onChange={(e) => setPersonalDraft({ ...personalDraft, marital_status: e.target.value })} />
+                        <Field label="First name" value={personalDraft.first_name} error={fieldErrors.first_name} onChange={(e) => { setPersonalDraft({ ...personalDraft, first_name: e.target.value }); clearFieldError("first_name"); }} required />
+                        <Field label="Last name" value={personalDraft.last_name} error={fieldErrors.last_name} onChange={(e) => { setPersonalDraft({ ...personalDraft, last_name: e.target.value }); clearFieldError("last_name"); }} required />
+                        <Field label="Date of birth" type="date" max={getMaxDob()} value={personalDraft.date_of_birth} error={fieldErrors.date_of_birth} onChange={(e) => { setPersonalDraft({ ...personalDraft, date_of_birth: e.target.value }); clearFieldError("date_of_birth"); }} required />
+                        <SelectField label="Gender" value={personalDraft.gender} options={["male", "female", "other", "prefer_not_to_say"]} onChange={(e) => { setPersonalDraft({ ...personalDraft, gender: e.target.value }); clearFieldError("gender"); }} required error={fieldErrors.gender} />
+                        <Field label="Nationality" value={personalDraft.nationality} error={fieldErrors.nationality} onChange={(e) => { setPersonalDraft({ ...personalDraft, nationality: e.target.value }); clearFieldError("nationality"); }} required />
+                        <SelectField label="Marital status" value={personalDraft.marital_status} options={["single", "married", "divorced", "widowed", "other"]} onChange={(e) => { setPersonalDraft({ ...personalDraft, marital_status: e.target.value }); clearFieldError("marital_status"); }} error={fieldErrors.marital_status} />
                         <SelectField
                           key={`blood-group-${bloodGroupSelectKey}`}
                           label="Blood group"
@@ -852,16 +879,16 @@ function EmployeeProfileContent() {
                             });
                           }}
                         />
-                        <Field label="National ID" value={personalDraft.national_id} onChange={(e) => setPersonalDraft({ ...personalDraft, national_id: e.target.value })} />
+                        <Field label="National ID" value={personalDraft.national_id} error={fieldErrors.national_id} onChange={(e) => { setPersonalDraft({ ...personalDraft, national_id: e.target.value }); clearFieldError("national_id"); }} required />
                         <Field label="Father's name" value={personalDraft.father_name || ""} onChange={(e) => setPersonalDraft({ ...personalDraft, father_name: e.target.value })} />
                         <Field label="Alternate contact" value={formatPkMobileInput(personalDraft.alternate_phone)} hint={PK_MOBILE_HINT} onChange={(e) => setPersonalDraft({ ...personalDraft, alternate_phone: formatPkMobileInput(e.target.value) })} />
                         <Field label="ID issue date" type="date" value={personalDraft.id_issue_date || ""} onChange={(e) => setPersonalDraft({ ...personalDraft, id_issue_date: e.target.value })} />
                         <Field label="ID expiry date" type="date" value={personalDraft.id_expiry_date || ""} onChange={(e) => setPersonalDraft({ ...personalDraft, id_expiry_date: e.target.value })} />
-                        <Field label="City" value={personalDraft.city} onChange={(e) => setPersonalDraft({ ...personalDraft, city: e.target.value })} />
-                        <Field label="State / province" value={personalDraft.state} onChange={(e) => setPersonalDraft({ ...personalDraft, state: e.target.value })} />
-                        <Field label="Postal code" value={personalDraft.postal_code} onChange={(e) => setPersonalDraft({ ...personalDraft, postal_code: e.target.value })} />
-                        <Field label="Country" value={personalDraft.country} onChange={(e) => setPersonalDraft({ ...personalDraft, country: e.target.value })} />
-                        <Field wide label="Current address" value={personalDraft.current_address} onChange={(e) => setPersonalDraft({ ...personalDraft, current_address: e.target.value })} />
+                        <Field label="City" value={personalDraft.city} error={fieldErrors.city} onChange={(e) => { setPersonalDraft({ ...personalDraft, city: e.target.value }); clearFieldError("city"); }} required />
+                        <Field label="State / province" value={personalDraft.state} error={fieldErrors.state} onChange={(e) => { setPersonalDraft({ ...personalDraft, state: e.target.value }); clearFieldError("state"); }} required />
+                        <Field label="Postal code" value={personalDraft.postal_code} error={fieldErrors.postal_code} onChange={(e) => { setPersonalDraft({ ...personalDraft, postal_code: e.target.value }); clearFieldError("postal_code"); }} required />
+                        <Field label="Country" value={personalDraft.country} error={fieldErrors.country} onChange={(e) => { setPersonalDraft({ ...personalDraft, country: e.target.value }); clearFieldError("country"); }} required />
+                        <Field wide label="Current address" value={personalDraft.current_address} error={fieldErrors.current_address} onChange={(e) => { setPersonalDraft({ ...personalDraft, current_address: e.target.value }); clearFieldError("current_address"); }} required />
                         <Field wide label="Permanent address" value={personalDraft.permanent_address} onChange={(e) => setPersonalDraft({ ...personalDraft, permanent_address: e.target.value })} />
                       </div>
                       <div className={styles.editActions}>
@@ -955,11 +982,11 @@ function EmployeeProfileContent() {
                         <div key={index} className={styles.eduCard}>
                           <strong>Education {index + 1}</strong>
                           <div className={styles.formGrid}>
-                            <Field label="Institution" value={entry.institution} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, institution: e.target.value } : item))} />
+                            <Field label="Institution" value={entry.institution} error={fieldErrors[`edu_${index}_institution`]} onChange={(e) => { setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, institution: e.target.value } : item)); clearFieldError(`edu_${index}_institution`); }} required />
                             <Field label="Board / university" value={entry.board_university || ""} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, board_university: e.target.value } : item))} />
-                            <Field label="Degree" value={entry.degree} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, degree: e.target.value } : item))} />
-                            <Field label="Field of study" value={entry.field_of_study} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, field_of_study: e.target.value } : item))} />
-                            <Field label="Year completed" value={entry.year_completed} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, year_completed: e.target.value } : item))} />
+                            <Field label="Degree" value={entry.degree} error={fieldErrors[`edu_${index}_degree`]} onChange={(e) => { setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, degree: e.target.value } : item)); clearFieldError(`edu_${index}_degree`); }} required />
+                            <Field label="Field of study" value={entry.field_of_study} error={fieldErrors[`edu_${index}_field_of_study`]} onChange={(e) => { setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, field_of_study: e.target.value } : item)); clearFieldError(`edu_${index}_field_of_study`); }} required />
+                            <Field label="Year completed" value={entry.year_completed} error={fieldErrors[`edu_${index}_year_completed`]} onChange={(e) => { setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, year_completed: e.target.value } : item)); clearFieldError(`edu_${index}_year_completed`); }} required />
                             <Field label="CGPA / percentage" value={entry.cgpa_or_percentage || ""} onChange={(e) => setEducationDrafts((items) => items.map((item, i) => i === index ? { ...item, cgpa_or_percentage: e.target.value } : item))} />
                           </div>
                         </div>
@@ -1709,11 +1736,14 @@ function Field({ label, value, onChange, type = "text", wide, error, hint, requi
   );
 }
 
-function SelectField({ label, value, options, onChange, hint, formatOption }) {
+function SelectField({ label, value, options, onChange, hint, formatOption, required, error }) {
   return (
-    <label className={styles.field}>
-      <span>{label}</span>
-      <select value={value} onChange={onChange}>
+    <label className={`${styles.field} ${error ? styles.fieldError : ""}`} data-field-error={error ? "true" : undefined}>
+      <span>
+        {label}
+        {required ? <span style={{ color: "#b42318", marginLeft: 4 }}>*</span> : null}
+      </span>
+      <select value={value} onChange={onChange} aria-invalid={!!error} required={required}>
         {options.map((option) => (
           <option key={option} value={option}>
             {formatOption ? formatOption(option) : titleCase(option)}
@@ -1721,6 +1751,7 @@ function SelectField({ label, value, options, onChange, hint, formatOption }) {
         ))}
       </select>
       {hint ? <small>{hint}</small> : null}
+      {error && <em className={styles.fieldErrorText}>{error === true ? "Required" : error}</em>}
     </label>
   );
 }
