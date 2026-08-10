@@ -2453,7 +2453,7 @@ async function handleDelete(course) {
               <div className={shellStyles.sectionHeadLeft}>
                 <span className={`${shellStyles.bar} ${shellStyles.navy}`} />
                 <div>
-                  <div className={shellStyles.sectionTitle}>Roadmap hierarchy</div>
+                   <div className={shellStyles.sectionTitle}>Strategic Roadmap</div>
                   <p className={shellStyles.sectionDesc}>Designation â†’ Month â†’ Category â†’ Competency</p>
                 </div>
               </div>
