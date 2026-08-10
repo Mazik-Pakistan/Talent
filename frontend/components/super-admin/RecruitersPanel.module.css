@@ -387,7 +387,7 @@
 }
 
 .tr {
-  cursor: pointer;
+  cursor: default;
   transition: background-color 200ms ease;
 }
 
@@ -640,24 +640,6 @@
   color: #dc2626;
 }
 
-.chevron {
-  display: inline-flex;
-  align-items: center;
-  color: #94a3b8;
-  margin-left: 2px;
-  transition: transform 200ms ease;
-}
-
-.chevron svg {
-  width: 15px;
-  height: 15px;
-}
-
-.chevronOpen {
-  transform: rotate(180deg);
-  color: #2563eb;
-}
-
 /* ── Expanded detail panel ───────────────────────────── */
 .expandedRow {
   background: #fafbfc;
@@ -667,54 +649,6 @@
   padding: 20px 24px;
   background: #fafbfc;
   border-top: 1px solid #f1f5f9;
-}
-
-.expandedHeader {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.expandedHeader .avatar {
-  width: 44px;
-  height: 44px;
-  font-size: 16px;
-}
-
-.expandedSummary {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
-.expandedName {
-  font-size: 15px;
-  font-weight: 700;
-  color: #111827;
-}
-
-.expandedMeta {
-  font-size: 12px;
-  color: #64748b;
-  white-space: nowrap;
-}
-
-.expandedMetaGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 110px;
-}
-
-.expandedMetaLabel {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #94a3b8;
 }
 
 .expandedActions {
