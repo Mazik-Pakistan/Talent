@@ -662,6 +662,16 @@ class EmployeeService:
         await try_transaction(_persist)
         temp_password = temp_password_container[0]
 
+        try:
+            from app.services.career_framework_service import career_framework_service
+
+            await career_framework_service.ensure_org_career_assignment(
+                employee_doc,
+                assigned_by=current_user.id,
+            )
+        except Exception as exc:
+            logger.warning("Auto career assignment from org setup failed: %s", exc, exc_info=True)
+
         if company_email:
             # Notify the new employee that their company email is live.
             try:
@@ -1149,6 +1159,18 @@ class EmployeeService:
             emp_updates["status"] = data["to_status"]
         if len(emp_updates) > 1:
             await database.employees.update_one({"_id": employee["_id"]}, {"$set": emp_updates})
+
+        if data.get("to_title") or data.get("to_department"):
+            try:
+                from app.services.career_framework_service import career_framework_service
+
+                refreshed = {**employee, **emp_updates}
+                await career_framework_service.ensure_org_career_assignment(
+                    refreshed,
+                    assigned_by=current_user.id,
+                )
+            except Exception as exc:
+                logger.warning("Career path refresh after title change failed: %s", exc, exc_info=True)
 
         await database.audit_logs.insert_one(
             {

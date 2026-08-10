@@ -83,6 +83,7 @@ async def find_courses_for_keywords(
         keywords,
         per_keyword=per_keyword,
         limit=limit,
+        sources=sources,
         use_ai=use_ai,
     )
 

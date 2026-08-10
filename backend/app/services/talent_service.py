@@ -290,15 +290,26 @@ class TalentService:
         merged_skills: list[dict] | None = None,
         certs: list[dict] | None = None,
     ) -> dict:
-        recruiter_id = self._recruiter_id(employee)
-        roles = await recruiter_kb_service.get_roles_for_matching(recruiter_id)
-        if not roles:
-            return {"current_title": employee.get("job_title"), "ladder": [], "message": "No org roles configured yet."}
-
         skills = merged_skills if merged_skills is not None else await self._merged_skills_for_employee(employee)
         skill_names = [s.get("skill_name") for s in skills if s.get("skill_name")]
         cert_docs = certs if certs is not None else await self._employee_cert_docs(employee.get("user_id") or "")
         cert_titles = [c.get("course_title") for c in cert_docs if c.get("course_title")]
+
+        # Prefer Organization Setup role ladders (same source as My Career).
+        org_ladder = await self._org_framework_career_ladder(employee, skill_names, cert_titles)
+        if org_ladder and org_ladder.get("ladder"):
+            return org_ladder
+
+        recruiter_id = self._recruiter_id(employee)
+        roles = await recruiter_kb_service.get_roles_for_matching(recruiter_id)
+        if not roles:
+            return {
+                "current_title": employee.get("job_title"),
+                "current_department": employee.get("department"),
+                "ladder": [],
+                "message": "No role ladder found for your department yet. Ask your recruiter to add your job title under Organization Setup → Role ladders.",
+                "source": "none",
+            }
 
         current_rank = _seniority_rank(employee.get("job_title"))
 
@@ -331,6 +342,142 @@ class TalentService:
             "current_department": employee.get("department"),
             "ladder": ladder,
             "next_step": next((r for r in ladder if r["is_next_step"]), None),
+            "source": "knowledge_base",
+        }
+
+    async def _org_framework_career_ladder(
+        self,
+        employee: dict,
+        skill_names: list[str],
+        cert_titles: list[str],
+    ) -> dict | None:
+        """Build a progression ladder from Organization Setup roles in the employee's dept."""
+        org_id = employee.get("organization_id")
+        if not org_id:
+            return None
+
+        roles = await database.org_framework_roles.find({"organization_id": org_id}).to_list(length=200)
+        if not roles:
+            return None
+
+        department = (employee.get("department") or "").strip()
+        if department:
+            dept_roles = [
+                r
+                for r in roles
+                if (r.get("department") or "").strip().lower() == department.lower()
+            ]
+            if dept_roles:
+                roles = dept_roles
+
+        if not roles:
+            return None
+
+        roles_sorted = sorted(roles, key=lambda r: (int(r.get("level_number") or 0), (r.get("name") or "").lower()))
+        job_title = (employee.get("job_title") or "").strip().lower()
+        current_role = next(
+            (r for r in roles_sorted if (r.get("name") or "").strip().lower() == job_title),
+            None,
+        )
+        next_role_name = ((current_role or {}).get("next_role") or "").strip().lower() or None
+
+        # Pull readiness from active career assignment (same source as Promotion checklist).
+        assignment = None
+        if employee.get("employee_id"):
+            assignment = await database.employee_career_assignments.find_one(
+                {"employee_id": employee["employee_id"], "status": "active"}
+            )
+        # Refresh from verified certs / skills so ladder % matches the checklist ring.
+        if assignment and employee.get("user_id"):
+            try:
+                from app.services.learning_service import learning_service as _learning
+
+                await _learning._sync_career_assignment_progress(
+                    user_id=employee["user_id"],
+                    employee_id=employee.get("employee_id"),
+                )
+                assignment = await database.employee_career_assignments.find_one(
+                    {"_id": assignment["_id"]}
+                ) or assignment
+            except Exception:
+                pass
+
+        assignment_readiness = (assignment or {}).get("overall_progress_percent")
+        if assignment_readiness is None:
+            assignment_readiness = (assignment or {}).get("readiness_score")
+        try:
+            assignment_readiness = (
+                int(round(float(assignment_readiness)))
+                if assignment_readiness is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            assignment_readiness = None
+        assignment_target = ((assignment or {}).get("target_role_title") or "").strip().lower()
+
+        ladder = []
+        for role in roles_sorted:
+            name = (role.get("name") or "").strip()
+            if not name:
+                continue
+            skill_docs = await database.org_framework_skills.find(
+                {"organization_id": org_id, "role_name": name}
+            ).to_list(length=100)
+            cert_docs = await database.org_framework_certifications.find(
+                {"organization_id": org_id, "role_name": name}
+            ).to_list(length=100)
+            required_skills = [s.get("skill_name") for s in skill_docs if s.get("skill_name")]
+            required_certs = [c.get("certification_name") for c in cert_docs if c.get("certification_name")]
+            role_def = {
+                "title": name,
+                "required_skills": required_skills,
+                "required_certifications": required_certs,
+            }
+            match = role_matching_service.match_employee_to_role(
+                employee_skills=skill_names,
+                employee_certifications=cert_titles,
+                role=role_def,
+            )
+            name_l = name.lower()
+            is_current = name_l == job_title
+            is_next = bool(next_role_name and name_l == next_role_name) or (
+                bool(assignment_target) and name_l == assignment_target and not is_current
+            )
+            # Prefer career-path checklist progress over raw skill-name matching
+            # (org skills tables are often empty → match returns 0% while checklist is 43%).
+            progress = match["readiness_score"]
+            if is_current:
+                # Already in this role — show full readiness for the current rung.
+                progress = 100
+            elif is_next and assignment_readiness is not None:
+                progress = assignment_readiness
+
+            ladder.append(
+                {
+                    "title": name,
+                    "description": role.get("description"),
+                    "seniority_rank": int(role.get("level_number") or 0),
+                    "is_current": is_current,
+                    "is_next_step": is_next,
+                    "required_skills": required_skills,
+                    "required_certifications": required_certs,
+                    "missing_skills": match["missing_skills"],
+                    "missing_certifications": match["missing_certifications"],
+                    "progress_percentage": progress,
+                    "skill_match_percent": match["skill_match_percent"],
+                    "certification_match_percent": match["certification_match_percent"],
+                }
+            )
+
+        if not ladder:
+            return None
+
+        return {
+            "current_title": employee.get("job_title"),
+            "current_department": employee.get("department"),
+            "ladder": ladder,
+            "next_step": next((r for r in ladder if r["is_next_step"]), None),
+            "source": "org_framework",
         }
 
     # ------------------------------------------------------------------ #
@@ -1314,7 +1461,7 @@ class TalentService:
                     status="missing",
                     severity="medium",
                     source="employee_career_assignments",
-                    action_hint="Assign a target level from the Promotion Pipeline.",
+                    action_hint="Add this job title to Organization Setup → Role ladders, or assign a target from the Promotion Pipeline.",
                 )
             )
         else:
@@ -1444,6 +1591,17 @@ class TalentService:
             assignment = await database.employee_career_assignments.find_one(
                 {"employee_id": employee_id, "status": "active"}
             )
+            if not assignment:
+                try:
+                    from app.services.career_framework_service import career_framework_service
+
+                    ensured = await career_framework_service.ensure_org_career_assignment(employee)
+                    if ensured:
+                        assignment = await database.employee_career_assignments.find_one(
+                            {"employee_id": employee_id, "status": "active"}
+                        )
+                except Exception:
+                    pass
             skill_n = (
                 await database.employee_skills.count_documents({"user_id": user_id}) if user_id else 0
             )

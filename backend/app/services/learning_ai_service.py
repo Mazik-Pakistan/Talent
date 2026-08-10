@@ -49,6 +49,7 @@ async def rank_recommended_courses(
     skill_gaps: list[dict] | None = None,
     candidates: list[dict],
     top_n: int = 8,
+    proficiency_targets: list[dict] | None = None,
 ) -> list[dict]:
     """US-074: Gemini ranks/selects from a real candidate pool.
 
@@ -64,24 +65,40 @@ async def rank_recommended_courses(
         )
     gaps_block = "\n".join(gap_lines) if gap_lines else "None explicitly listed"
 
-    prompt = f"""You are an AI learning coach for an internal talent platform.
+    level_lines = []
+    for item in proficiency_targets or []:
+        level_lines.append(
+            f"- {item.get('skill')}: currently {item.get('current')} → aim for {item.get('target')}"
+        )
+    level_block = "\n".join(level_lines) if level_lines else "Use current skills list"
+
+    prompt = f"""You are an AI learning coach for an internal employee talent platform.
+Pick courses that fit THIS employee's real role and skills — not random popular courses.
+
 Employee profile:
 - Designation / job title: {job_title or "Unknown"}
 - Department: {department or "Unknown"}
 - Current skills: {", ".join(current_skills) or "None recorded"}
-- Career goal: {career_goal or "Not specified"}
-- Known skill gaps (prioritize critical/immediate first):
+- Next role / career goal: {career_goal or "Not specified"}
+- Skills to level up (raise proficiency after completing a course + verified cert):
+{level_block}
+- Roadmap / promotion skill gaps:
 {gaps_block}
 
-Below is a JSON-lines list of REAL Microsoft Learn courses (one per line) that are
-available right now. You must choose ONLY from this list — never invent a course.
+Below is a JSON-lines list of REAL catalog courses. Choose ONLY from this list — never invent a course.
 
 {_candidate_brief(candidates)}
 
-Select and rank the best {top_n} courses for this employee's designation, department,
-skill gaps, and career goal. Prefer courses that close critical/immediate gaps first.
+Select and rank the best {top_n} courses. Priority order:
+1) Courses that raise proficiency on technical/role skills they already have (match level-up targets).
+2) Courses clearly aligned with their job title / next role / department stack (e.g. full stack, APIs, cloud).
+3) Courses that close listed roadmap skill gaps.
+Mix providers when possible (Microsoft Learn, Coursera, LinkedIn Learning / managed, etc.).
+Avoid flooding the list with soft-skill-only courses when the employee is in a technical role — at most 2 soft-skill picks unless gaps are only soft skills.
+
+Each reason must mention the skill or role it serves and proficiency growth when relevant.
 Return JSON only, no markdown:
-{{"recommendations": [{{"uid": "<uid from the list above, exact match>", "reason": "<one short sentence, specific to this employee>", "priority": "<critical|immediate|medium|low>"}}]}}
+{{"recommendations": [{{"uid": "<uid from the list above, exact match>", "reason": "<one short sentence>", "priority": "<critical|immediate|medium|low>"}}]}}
 """
     result = await _call_llm_json(prompt)
     if not result or "recommendations" not in result:
@@ -171,18 +188,46 @@ async def build_skill_matrix(
     resume_fields: dict,
     resume_text: str | None,
     existing_skills: list[dict],
+    target_role: str | None = None,
+    promotion_skills: list[str] | None = None,
+    promotion_certs: list[str] | None = None,
 ) -> dict | None:
-    """Gemini skill matrix from designation + department + resume OCR."""
+    """Gemini skill matrix from designation + resume; prefer next-role readiness when set."""
     tech = resume_fields.get("technical_skills") or resume_fields.get("skills") or []
     soft = resume_fields.get("soft_skills") or []
     summary = resume_fields.get("professional_summary") or ""
     experience = resume_fields.get("experience") or resume_fields.get("work_experience") or []
+    next_role = (target_role or "").strip()
+    promo_skills = [s for s in (promotion_skills or []) if str(s).strip()][:40]
+    promo_certs = [c for c in (promotion_certs or []) if str(c).strip()][:20]
 
-    prompt = f"""You are a skills-assessment AI for an internal talent platform.
-Assess this employee against their CURRENT designation and department using the resume.
+    if next_role and next_role.lower() != (job_title or "").strip().lower():
+        focus_block = f"""
+Primary goal: readiness for the NEXT role (promotion), not only the current designation.
+Current designation: {job_title or "Unknown"}
+Target / next role: {next_role}
+Department: {department or "Unknown"}
+Skills required on the career roadmap (prioritize gaps against these): {json.dumps(promo_skills)[:900]}
+Certifications on the career roadmap: {json.dumps(promo_certs)[:500]}
 
+role_fit_percentage = how ready they are for "{next_role}" (0-100).
+gaps = skills/certs still needed for that promotion, ordered by priority.
+summary = 2-3 sentences for the employee about what to focus on for the next role.
+"""
+        fit_label = f"readiness for next role ({next_role})"
+    else:
+        focus_block = f"""
+Assess against their CURRENT designation.
 Designation: {job_title or "Unknown"}
 Department: {department or "Unknown"}
+role_fit_percentage = how ready they are for the current designation (0-100).
+"""
+        fit_label = "readiness for current designation"
+
+    prompt = f"""You are a skills-assessment AI for an internal employee talent platform.
+Write for the employee (encouraging, actionable), not a recruiter screening memo.
+
+{focus_block}
 Resume technical skills (OCR): {json.dumps(tech)[:600]}
 Resume soft skills (OCR): {json.dumps(soft)[:400]}
 Professional summary: {(summary or "")[:600]}
@@ -190,7 +235,7 @@ Experience snippets: {json.dumps(experience)[:800]}
 Resume text excerpt: {(resume_text or "")[:2500]}
 Already recorded skills: {json.dumps(existing_skills)[:800]}
 
-Produce a skill matrix for the CURRENT role. Return JSON only:
+Produce a skill matrix. Return JSON only:
 {{
   "skills": [
     {{
@@ -202,14 +247,16 @@ Produce a skill matrix for the CURRENT role. Return JSON only:
       "source_hint": "<resume|inferred>"
     }}
   ],
-  "role_fit_percentage": <0-100 how ready they are for current designation>,
+  "role_fit_percentage": <0-100 {fit_label}>,
   "strengths": ["<2-5 strengths>"],
   "gaps": [
-    {{"skill": "<skill>", "priority": "<critical|immediate|medium|low>", "reason": "<why>"}}
+    {{"skill": "<skill or certification>", "priority": "<critical|immediate|medium|low>", "reason": "<why it matters for growth>"}}
   ],
-  "summary": "<2-3 sentences>"
+  "summary": "<2-3 sentences for the employee>"
 }}
-Include 8-18 skills. Prefer skills evidenced in the resume; mark inferred carefully.
+Proficiency rules: Beginner = exposed / learning; Intermediate = can deliver with guidance;
+Advanced = independent production work; Expert = leads others. Do not mark every resume skill Intermediate —
+vary levels based on evidence (years, depth, leadership). Prefer 8-18 skills evidenced in the resume.
 """
     result = await _call_llm_json(prompt, timeout=60.0)
     if not result:
@@ -262,6 +309,8 @@ Include 8-18 skills. Prefer skills evidenced in the resume; mark inferred carefu
         "strengths": [str(s) for s in (result.get("strengths") or [])][:5],
         "gaps": gaps[:8],
         "summary": str(result.get("summary") or ""),
+        "assessment_target_role": next_role or job_title,
+        "assessment_mode": "next_role" if next_role and next_role.lower() != (job_title or "").strip().lower() else "current_role",
     }
 
 
