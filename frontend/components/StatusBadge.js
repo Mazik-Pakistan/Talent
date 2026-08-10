@@ -1,5 +1,5 @@
-export default function StatusBadge({ status }) {
+export default function StatusBadge({ status, label }) {
   if (!status) return null;
-  const label = status.replace(/_/g, " ");
-  return <span className={`status-badge ${status}`}>{label}</span>;
+  const text = label || String(status).replace(/_/g, " ");
+  return <span className={`status-badge ${status}`}>{text}</span>;
 }

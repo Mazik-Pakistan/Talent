@@ -13,9 +13,6 @@ import {
 } from "@/services/authService";
 import StatusBadge from "@/components/StatusBadge";
 import FileUploadField from "@/components/FileUploadField";
-import DocumentProcessingOverlay from "@/components/ai-experience/DocumentProcessingOverlay";
-import useDocumentProcessing from "@/hooks/useDocumentProcessing";
-import { normalizeDocumentType } from "@/lib/ai/documentProcessing";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
 import { invalidateCandidateInsightCache } from "@/lib/ai/candidateInsights";
 import { COPILOT_DOCUMENTS_ASSIST_EVENT, publishGuideContext } from "@/lib/ai/guideContext";
@@ -69,7 +66,7 @@ const STATUS_FILTER_OPTIONS = [
   { value: "all", label: "All statuses" },
   { value: "pending", label: "Pending review" },
   { value: "verified", label: "Verified" },
-  { value: "rejected", label: "Rejected" },
+  { value: "rejected", label: "Needs re-upload" },
 ];
 
 const STATUS_GROUPS = {
@@ -78,9 +75,25 @@ const STATUS_GROUPS = {
   rejected: new Set(["rejected", "reupload_required", "declined", "expired", "mismatch"]),
 };
 
+const STATUS_DISPLAY = {
+  pending_verification: "Pending review",
+  pending: "Pending review",
+  processing: "Pending review",
+  uploaded: "Pending review",
+  verified: "Verified",
+  rejected: "Rejected",
+  reupload_required: "Re-upload required",
+  mismatch: "Needs attention",
+};
+
 function matchesStatusFilter(status, filter) {
   if (filter === "all") return true;
   return STATUS_GROUPS[filter]?.has(status) ?? false;
+}
+
+function displayStatusLabel(status) {
+  const key = String(status || "").toLowerCase();
+  return STATUS_DISPLAY[key] || (status ? String(status).replace(/_/g, " ") : "Pending review");
 }
 
 const CATEGORY_LABELS = {
@@ -91,6 +104,10 @@ const CATEGORY_LABELS = {
   legal: "Legal",
   other: "Other",
 };
+
+function isIdentityDocType(docType) {
+  return docType === "cnic" || docType === "passport";
+}
 
 export default function DocumentManager({ styles, onChanged, compact = false }) {
   const [documents, setDocuments] = useState([]);
@@ -104,6 +121,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
   const [docType, setDocType] = useState("cnic");
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadMessage, setUploadMessage] = useState(null);
   const [actionBusyId, setActionBusyId] = useState(null);
   const [replacementDocId, setReplacementDocId] = useState(null);
@@ -112,9 +130,6 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
   const [replacementMessage, setReplacementMessage] = useState(null);
   const fileInputRef = useRef(null);
   const replacementInputRef = useRef(null);
-  const processing = useDocumentProcessing();
-  const retryJobRef = useRef(null);
-  const successCloseRef = useRef(null);
 
   const loadDocuments = useCallback(() => {
     const accessToken = localStorage.getItem("access_token");
@@ -133,7 +148,6 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
             return null;
           }
         })();
-        // Short status hint only — full tip text comes from insights (avoid Tip 1 == Tip 2).
         const shortHint = classified.problem.length
           ? `${classified.problem.length} document${classified.problem.length === 1 ? "" : "s"} need attention on this page.`
           : classified.pending.length
@@ -175,51 +189,6 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     if (docType === "cnic" || docType === "passport") return "government_doc";
     return null;
   }
-
-  /** Only doc types the backend actually extracts get extraction messaging. */
-  function processingDocumentType(docType) {
-    const normalized = String(docType || "").toLowerCase();
-    if (["cnic", "passport", "resume", "transcript"].includes(normalized)) {
-      return normalizeDocumentType(normalized);
-    }
-    return "saving";
-  }
-
-  /** Closes the success overlay shortly after a completed upload. */
-  function scheduleProcessingClose(ms = 1400) {
-    if (successCloseRef.current) window.clearTimeout(successCloseRef.current);
-    successCloseRef.current = window.setTimeout(() => {
-      successCloseRef.current = null;
-      processing.cancel();
-    }, ms);
-  }
-
-  /** Re-runs the last attempt with the same file when "Try Again" is chosen. */
-  function handleProcessingRetry() {
-    const job = retryJobRef.current;
-    if (!job) return;
-    if (job.kind === "upload") {
-      void performUpload({ file: job.file, category: job.category, docType: job.docType, purpose: job.purpose });
-    } else if (job.kind === "replacement") {
-      void performReplacement({ doc: job.doc, file: job.file });
-    }
-  }
-
-  /** Dismisses the overlay so the candidate can choose a different file. */
-  function handleProcessingUploadAnother() {
-    if (successCloseRef.current) {
-      window.clearTimeout(successCloseRef.current);
-      successCloseRef.current = null;
-    }
-    processing.cancel();
-  }
-
-  useEffect(
-    () => () => {
-      if (successCloseRef.current) window.clearTimeout(successCloseRef.current);
-    },
-    []
-  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -276,6 +245,15 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     [documents]
   );
 
+  const pendingCount = useMemo(
+    () => documents.filter((doc) => STATUS_GROUPS.pending.has(String(doc.status || "").toLowerCase())).length,
+    [documents]
+  );
+  const verifiedCount = useMemo(
+    () => documents.filter((doc) => STATUS_GROUPS.verified.has(String(doc.status || "").toLowerCase())).length,
+    [documents]
+  );
+
   function inferCategory(docType) {
     if (docType === "cnic" || docType === "passport") return "identity";
     if (docType === "transcript") return "education";
@@ -283,46 +261,63 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     return "other";
   }
 
+  function docTypeLabel(type) {
+    return DOC_TYPE_LABELS[type] || String(type || "Document").replace(/_/g, " ");
+  }
+
   async function performUpload({ file, category, docType, purpose }) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
 
+    const typeLabel = docTypeLabel(docType);
     const formData = new FormData();
     formData.append("file", file);
     formData.append("category", category);
     formData.append("doc_type", docType);
     if (purpose) formData.append("purpose", purpose);
 
-    processing.begin({ documentType: processingDocumentType(docType), fileName: file.name });
     setUploading(true);
+    setUploadProgress({ typeLabel, fileName: file.name });
     setUploadMessage(null);
     try {
-      // For onboarding-purpose types use the purpose-aware endpoint so
-      // employee.onboarding is kept in sync via attach_uploaded_file.
+      // Purpose-aware endpoint keeps onboarding slots in sync for candidates/employees.
       const uploader = purpose ? uploadOnboardingFile : uploadDocument;
       const data = await uploader(formData, accessToken);
-      const ocr = (data?.document?.ocr_result) || (data?.ocr_result);
-      if (ocr?.status === "rejected_type") {
-        const message = ocr.rejection_message || "The document type was rejected.";
-        processing.fail(message);
+      const ocr = data?.document?.ocr_result || data?.ocr_result;
+      const savedDoc = data?.document;
+      const identityHardReject =
+        isIdentityDocType(docType) &&
+        (ocr?.accepted === false ||
+          ocr?.status === "rejected_type" ||
+          ocr?.status === "failed" ||
+          savedDoc?.is_active === false);
+
+      if (identityHardReject) {
+        const message =
+          ocr?.rejection_message ||
+          "This does not look like a valid National ID. Please upload a clearer CNIC or Passport.";
         setUploadMessage({ type: "error", text: message });
       } else {
-        processing.succeed();
-        scheduleProcessingClose();
-        setUploadMessage({ type: "success", text: "Document uploaded — it is visible here for review and download." });
+        setUploadMessage({
+          type: "success",
+          text: `${typeLabel} uploaded — status: Pending review until a recruiter verifies it.`,
+        });
+        setFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        setActiveCategory("all");
+        setActiveStatus("all");
       }
-      setFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      setActiveCategory("all");
       loadDocuments();
       refreshPartnerInsights();
       onChanged?.();
     } catch (err) {
-      const message = getApiErrorMessage(err, "Upload failed. Please try again.");
-      processing.fail(message);
-      setUploadMessage({ type: "error", text: message });
+      setUploadMessage({
+        type: "error",
+        text: getApiErrorMessage(err, `Could not upload ${typeLabel}. Please try again.`),
+      });
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -333,7 +328,6 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       return;
     }
     const purpose = derivePurpose(docType);
-    retryJobRef.current = { kind: "upload", file, category, docType, purpose };
     await performUpload({ file, category, docType, purpose });
   }
 
@@ -385,6 +379,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     if (!accessToken) return;
 
     const replacedDocType = doc.doc_type || "other";
+    const typeLabel = docTypeLabel(replacedDocType);
     const category = doc.category || inferCategory(replacedDocType);
     const purpose = derivePurpose(replacedDocType);
 
@@ -392,30 +387,47 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     formData.append("file", file);
     formData.append("category", category);
     formData.append("doc_type", replacedDocType);
-    // Derive purpose so the replacement also syncs employee.onboarding.
     if (purpose) formData.append("purpose", purpose);
 
-    processing.begin({ documentType: processingDocumentType(replacedDocType), fileName: file.name });
     setReplacementUploadingId(doc.id);
     setReplacementMessage(null);
+    setUploadProgress({ typeLabel, fileName: file.name, replacing: true });
     try {
       const uploader = purpose ? uploadOnboardingFile : uploadDocument;
-      await uploader(formData, accessToken);
-      setReplacementDocId(null);
-      setReplacementFile(null);
-      if (replacementInputRef.current) replacementInputRef.current.value = "";
-      setReplacementMessage({ type: "success", text: "Replacement uploaded successfully." });
-      processing.succeed();
-      scheduleProcessingClose();
+      const data = await uploader(formData, accessToken);
+      const ocr = data?.document?.ocr_result || data?.ocr_result;
+      const identityHardReject =
+        isIdentityDocType(replacedDocType) &&
+        (ocr?.accepted === false ||
+          ocr?.status === "rejected_type" ||
+          ocr?.status === "failed" ||
+          data?.document?.is_active === false);
+
+      if (identityHardReject) {
+        setReplacementMessage({
+          type: "error",
+          text: ocr?.rejection_message || "This does not look like a valid National ID. Try another file.",
+        });
+      } else {
+        setReplacementDocId(null);
+        setReplacementFile(null);
+        if (replacementInputRef.current) replacementInputRef.current.value = "";
+        setReplacementMessage({
+          type: "success",
+          text: `${typeLabel} replaced — awaiting recruiter verification.`,
+        });
+      }
       loadDocuments();
       refreshPartnerInsights();
       onChanged?.();
     } catch (err) {
-      const message = getApiErrorMessage(err, "Replacement upload failed.");
-      processing.fail(message);
-      setReplacementMessage({ type: "error", text: message });
+      setReplacementMessage({
+        type: "error",
+        text: getApiErrorMessage(err, "Replacement upload failed."),
+      });
     } finally {
       setReplacementUploadingId(null);
+      setUploadProgress(null);
     }
   }
 
@@ -424,11 +436,8 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       setReplacementMessage({ type: "error", text: "Choose a replacement file first." });
       return;
     }
-    retryJobRef.current = { kind: "replacement", doc, file: replacementFile };
     void performReplacement({ doc, file: replacementFile });
   }
-
-  const processingOpen = processing.state.status !== "idle";
 
   if (loading) {
     return null;
@@ -438,14 +447,28 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     return <p className="form-message" style={{ background: "#fee9e7", color: "#b42318" }}>{error}</p>;
   }
 
+  const selectedTypeLabel = docTypeLabel(docType);
+
   return (
     <div className="document-manager-shell">
-      <DocumentProcessingOverlay
-        open={processingOpen}
-        {...processing.state}
-        onRetry={handleProcessingRetry}
-        onUploadAnother={handleProcessingUploadAnother}
-      />
+      {uploadProgress ? (
+        <div className="document-upload-overlay" role="status" aria-live="polite" data-mascot-busy>
+          <div className="document-upload-overlay-card">
+            <strong>
+              {uploadProgress.replacing ? "Replacing" : "Uploading"} {uploadProgress.typeLabel}
+            </strong>
+            <p>
+              Saving <em>{uploadProgress.fileName}</em> to your document centre. This may take a moment.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="document-manager-summary-strip" aria-live="polite">
+        <span>{totalCount} file{totalCount === 1 ? "" : "s"}</span>
+        <span>{pendingCount} pending review</span>
+        <span>{verifiedCount} verified</span>
+      </div>
 
       <div className="document-manager-toolbar">
         <div className="document-manager-pills-row">
@@ -499,6 +522,13 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
 
       {showUploader && (
         <form className="document-upload-card" onSubmit={handleUpload}>
+          <div className="document-upload-intro">
+            <strong>Upload a document</strong>
+            <p>
+              Choose the type, attach the file, then save. New uploads show as <em>Pending review</em> until a
+              recruiter verifies them.
+            </p>
+          </div>
           <div className="document-upload-row">
             <label className="field">
               <span>Category</span>
@@ -530,13 +560,26 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
               <FileUploadField ref={fileInputRef} onChange={(event) => setFile(event.target.files?.[0] || null)} />
             </div>
           </div>
+          {file ? (
+            <div className="document-upload-selected">
+              Uploading as <strong>{selectedTypeLabel}</strong>
+              <span aria-hidden="true"> · </span>
+              <span>{file.name}</span>
+            </div>
+          ) : null}
           {uploadMessage && (
-            <p className={`form-message ${uploadMessage.type === "error" ? "" : ""}`} style={{ background: uploadMessage.type === "error" ? "#fee9e7" : "#edf8f2", color: uploadMessage.type === "error" ? "#b42318" : "#176b3b" }}>
+            <p
+              className="form-message"
+              style={{
+                background: uploadMessage.type === "error" ? "#fee9e7" : "#edf8f2",
+                color: uploadMessage.type === "error" ? "#b42318" : "#176b3b",
+              }}
+            >
               {uploadMessage.text}
             </p>
           )}
-          <button type="submit" className="primary-button" disabled={uploading}>
-            {uploading ? (docType === "cnic" ? "Uploading & scanning…" : "Uploading…") : "Save document"}
+          <button type="submit" className="primary-button" disabled={uploading || !file}>
+            {uploading ? `Uploading ${selectedTypeLabel}…` : `Save ${selectedTypeLabel}`}
           </button>
         </form>
       )}
@@ -552,7 +595,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
             </svg>
           </div>
           <div className="document-empty-title">No documents yet</div>
-          <p>Upload an identity document, academic transcript, or any supporting file to start building your document centre.</p>
+          <p>Upload an identity document, academic transcript, or supporting file. Recruiters verify each file from their review queue.</p>
           <button
             type="button"
             className="primary-button document-empty-action"
@@ -588,22 +631,27 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
                   {docs.map((doc) => {
                     const categoryValue = doc.category || inferCategory(doc.doc_type);
                     const isReplacing = replacementDocId === doc.id;
+                    const typeLabel = docTypeLabel(doc.doc_type);
                     return (
                       <article key={doc.id} className="document-card">
                         <div className="document-card-head">
                           <div>
-                            <div className="document-card-title">{doc.file_name || DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type}</div>
+                            <div className="document-card-title">{typeLabel}</div>
                             <div className="document-card-subtitle">
-                              {DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type} · {CATEGORY_LABELS[categoryValue] || categoryValue}
+                              {doc.file_name || "Uploaded file"} · {CATEGORY_LABELS[categoryValue] || categoryValue}
                             </div>
                           </div>
-                          <StatusBadge status={doc.status} />
+                          <StatusBadge status={doc.status} label={displayStatusLabel(doc.status)} />
                         </div>
 
                         <div className="document-card-meta">
                           <span>Version {doc.version || 1}</span>
                           {doc.uploaded_at ? <span>{new Date(doc.uploaded_at).toLocaleDateString()}</span> : null}
                         </div>
+
+                        {STATUS_GROUPS.pending.has(String(doc.status || "").toLowerCase()) ? (
+                          <div className="document-card-note">Awaiting recruiter verification</div>
+                        ) : null}
 
                         {doc.rejection_reason && (
                           <div className="document-card-warning">{doc.rejection_reason.replace(/_/g, " ")}</div>
@@ -638,20 +686,40 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
 
                         {isReplacing && (
                           <div className="document-upload-card compact">
+                            <p className="document-replace-hint">
+                              Replace <strong>{typeLabel}</strong>
+                              {doc.file_name ? ` (${doc.file_name})` : ""}. The new file stays pending until verified.
+                            </p>
                             <FileUploadField
                               ref={replacementInputRef}
                               label="Choose replacement"
                               onChange={(event) => setReplacementFile(event.target.files?.[0] || null)}
                             />
+                            {replacementFile ? (
+                              <div className="document-upload-selected">
+                                Selected: <strong>{replacementFile.name}</strong>
+                              </div>
+                            ) : null}
                             {replacementMessage && (
-                              <p className="form-message" style={{ background: replacementMessage.type === "error" ? "#fee9e7" : "#edf8f2", color: replacementMessage.type === "error" ? "#b42318" : "#176b3b" }}>
+                              <p
+                                className="form-message"
+                                style={{
+                                  background: replacementMessage.type === "error" ? "#fee9e7" : "#edf8f2",
+                                  color: replacementMessage.type === "error" ? "#b42318" : "#176b3b",
+                                }}
+                              >
                                 {replacementMessage.text}
                               </p>
                             )}
-                            <button type="button" className="primary-button" disabled={replacementUploadingId === doc.id} onClick={() => handleReplacement(doc)}>
+                            <button
+                              type="button"
+                              className="primary-button"
+                              disabled={replacementUploadingId === doc.id || !replacementFile}
+                              onClick={() => handleReplacement(doc)}
+                            >
                               {replacementUploadingId === doc.id
-                                ? (doc.doc_type === "cnic" ? "Uploading & scanning…" : "Uploading…")
-                                : "Upload replacement"}
+                                ? `Uploading ${typeLabel}…`
+                                : `Upload replacement ${typeLabel}`}
                             </button>
                           </div>
                         )}
