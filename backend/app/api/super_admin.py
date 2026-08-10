@@ -882,9 +882,6 @@ async def delete_recruiter(recruiter_id: str, current_user: RequireSuperAdmin):
         await database.it_provisioning_requests.delete_many({"recruiter_id": user_id})
         await database.it_service_requests.delete_many({"recruiter_id": user_id})
         await database.hr_threads.delete_many({"recruiter_id": user_id})
-        await database.recruiter_kb_roles.delete_many({"recruiter_id": user_id})
-        await database.recruiter_kb_certifications.delete_many({"recruiter_id": user_id})
-        await database.recruiter_kb_meta.delete_many({"recruiter_id": user_id})
 
         deleted_items.append("recruiter_data")
 

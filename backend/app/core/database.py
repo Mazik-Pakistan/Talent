@@ -292,11 +292,6 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.learning_recruiter_profile_cache, "user_id", unique=True)
     await _ensure_index(database.employees, [("job_title", 1), ("status", 1)])
 
-    # Recruiter Learning Knowledge Base
-    await _ensure_index(database.recruiter_kb_roles, [("recruiter_id", 1), ("title", 1)])
-    await _ensure_index(database.recruiter_kb_certifications, [("recruiter_id", 1), ("title", 1)])
-    await _ensure_index(database.recruiter_kb_meta, "recruiter_id", unique=True)
-
     # Legacy AI Coach collections kept for historical data only (router removed).
     await _ensure_index(database.kb_chunks, [("namespace", 1), ("role_scope", 1)])
     await _ensure_index(database.kb_chunks, [("namespace", 1), ("owner_id", 1), ("title", 1)])

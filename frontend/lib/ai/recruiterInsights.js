@@ -554,30 +554,6 @@ async function learningPageInsights(accessToken, context) {
     return insights;
   }
 
-  if (tab === "knowledge") {
-    push(insights, {
-      id: "learn-kb-what",
-      priority: MASCOT_PRIORITY.task,
-      message: tabHelp?.hint || "Add org roles and certifications for accurate matching.",
-    });
-    push(insights, {
-      id: "learn-kb-roles",
-      priority: MASCOT_PRIORITY.insight,
-      message: "Add a role with title, skills, and certs — this powers career matching and recommendations.",
-    });
-    push(insights, {
-      id: "learn-kb-certs",
-      priority: MASCOT_PRIORITY.insight,
-      message: "Add certifications/courses below so they appear in your Recruiter KB catalog.",
-    });
-    push(insights, {
-      id: "learn-kb-guide",
-      priority: MASCOT_PRIORITY.tip,
-      message: "Need help filling the Add role form? Tap Guide me through it.",
-    });
-    return insights;
-  }
-
   if (tab === "assign") {
     push(insights, {
       id: "learn-assign-what",

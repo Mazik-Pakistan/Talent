@@ -15,7 +15,6 @@ from typing import Any
 from app.core.database import database
 from app.services import coursera_service, ms_learn_service
 from app.services.managed_learning_service import MANAGED_SOURCE, managed_learning_service
-from app.services.recruiter_kb_service import recruiter_kb_service
 
 
 class DynamicCatalogService:
@@ -38,7 +37,6 @@ class DynamicCatalogService:
             "microsoft_learn": "microsoft_learn",
             "microsoft": "microsoft_learn", 
             "coursera": "coursera",
-            "recruiter_kb": "recruiter_kb",
         }
         
         # Dynamic managed providers
@@ -59,8 +57,6 @@ class DynamicCatalogService:
             return MANAGED_SOURCE
         if uid.startswith("coursera:"):
             return "coursera"
-        if uid.startswith("recruiter_kb:"):
-            return "recruiter_kb"
         return "microsoft_learn"
     
     async def get_course_by_uid(self, uid: str) -> dict | None:
@@ -71,17 +67,6 @@ class DynamicCatalogService:
             return await managed_learning_service.get_course_by_uid(uid)
         elif src == "coursera":
             return await coursera_service.get_course_by_uid(uid)
-        elif src == "recruiter_kb":
-            from bson import ObjectId
-            
-            cert_id = uid.split(":", 1)[1]
-            if not ObjectId.is_valid(cert_id):
-                return None
-            doc = await database.recruiter_kb_certifications.find_one({"_id": ObjectId(cert_id)})
-            if not doc:
-                return None
-            courses = await recruiter_kb_service.list_as_catalog_courses(doc.get("recruiter_id"))
-            return next((c for c in courses if c["uid"] == uid), None)
         else:
             return await ms_learn_service.get_course_by_uid(uid)
     
@@ -144,22 +129,6 @@ class DynamicCatalogService:
             return await coursera_service.search_catalog(
                 q=q, category=category, page=page, page_size=page_size
             )
-        elif source == "recruiter_kb":
-            courses = await recruiter_kb_service.list_as_catalog_courses()
-            if q:
-                from app.services.search_taxonomy import search_and_rank_items_async
-                courses = await search_and_rank_items_async(courses, q)
-            if course_type:
-                courses = [c for c in courses if c.get("type") == course_type]
-            total = len(courses)
-            start = (page - 1) * page_size
-            return {
-                "courses": courses[start : start + page_size],
-                "total": total,
-                "page": page,
-                "page_size": page_size,
-                "pages": max(1, (total + page_size - 1) // page_size) if total else 1,
-            }
         else:
             # Default to Microsoft Learn
             return await ms_learn_service.search_catalog(
@@ -276,12 +245,10 @@ class DynamicCatalogService:
             )
             search_ms = "microsoft_learn" in search_set
             search_coursera = "coursera" in search_set
-            search_kb = "recruiter_kb" in search_set
         else:
             search_managed = not provider_filter or provider_filter in {"managed_learning", MANAGED_SOURCE}
             search_ms = not provider_filter or provider_filter == "microsoft_learn"
             search_coursera = not provider_filter or provider_filter == "coursera"
-            search_kb = not provider_filter or provider_filter == "recruiter_kb"
         
         # Search managed learning courses
         if search_managed:
@@ -314,16 +281,6 @@ class DynamicCatalogService:
             results += await coursera_service.find_courses_for_keywords(
                 keywords, per_keyword=max(2, per_keyword // 2), limit=limit
             )
-        
-        # Search Knowledge Base
-        if search_kb:
-            kb = await recruiter_kb_service.list_as_catalog_courses()
-            lowered = [k.lower() for k in keywords if k]
-            
-            for course in kb:
-                hay = f"{course.get('title') or ''} {' '.join(course.get('products') or [])}".lower()
-                if any(k in hay for k in lowered):
-                    results.append(course)
         
         # Deduplicate and limit results
         seen: dict[str, dict] = {}

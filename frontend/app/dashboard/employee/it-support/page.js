@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 import EmployeeShell from "@/components/employee/EmployeeShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import dashStyles from "@/app/dashboard/employee/employee-dashboard.module.css";
+import styles from "@/components/recruiter/recruiter-shell.module.css";
 import {
   closeMyItServiceRequest,
   createMyItServiceRequest,
@@ -416,18 +417,8 @@ export default function EmployeeItSupportPage() {
               type="button"
               disabled={submitting}
               onClick={handleCreate}
-              style={{
-                width: "100%",
-                border: "none",
-                borderRadius: 10,
-                padding: "13px 18px",
-                background: "linear-gradient(135deg, #1e3a5f 0%, #2d6cdf 100%)",
-                color: "#fff",
-                fontSize: 15,
-                fontWeight: 700,
-                cursor: submitting ? "not-allowed" : "pointer",
-                opacity: submitting ? 0.7 : 1,
-              }}
+              className={`${styles.primaryButton} ${styles.primaryButtonLg}`}
+              style={{ marginTop: 20 }}
             >
               {submitting ? "Submitting…" : "Send request to HR"}
             </button>

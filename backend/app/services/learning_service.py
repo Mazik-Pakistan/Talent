@@ -47,7 +47,6 @@ from app.services import (
 )
 from app.services.managed_learning_service import MANAGED_SOURCE, managed_learning_service
 from app.services.dashboard_service import create_notification
-from app.services.recruiter_kb_service import recruiter_kb_service
 
 AI_RECOMMENDATIONS_TTL_HOURS = 24
 
@@ -156,7 +155,7 @@ class LearningService:
         Skills / certifications are derived from whatever metadata that provider
         actually stores — same logic for Microsoft Learn, Coursera, managed
         providers (LinkedIn Learning, Skillsoft, Company Academy, …), and the
-        recruiter knowledge base. We never invent outcomes that are not present
+        organization framework. We never invent outcomes that are not present
         in the catalog item.
         """
         competency = (item.get("competency") or "").strip() or None
@@ -316,39 +315,6 @@ class LearningService:
             # (e.g. a deep link straight into the catalog tab).
             coursera_service.start_post_login_course_loading()
 
-        if source == "recruiter_kb":
-            employee = None
-            try:
-                employee = await self._get_employee(current_user)
-            except HTTPException:
-                employee = None
-            recruiter_id = None
-            if current_user.role in ("recruiter", "super_admin"):
-                recruiter_id = current_user.id if current_user.role == "recruiter" else None
-            elif employee:
-                recruiter_id = self._employee_recruiter_id(employee)
-            kb_courses = await recruiter_kb_service.list_as_catalog_courses(recruiter_id)
-            if q and q.strip():
-                from app.services.search_taxonomy import search_and_rank_items_async
-
-                kb_courses = await search_and_rank_items_async(kb_courses, q.strip())
-            if course_type:
-                kb_courses = [c for c in kb_courses if c.get("type") == course_type]
-            total = len(kb_courses)
-            start = (page - 1) * page_size
-            page_items = kb_courses[start : start + page_size]
-            uids = [c["uid"] for c in page_items]
-            status_map = await self._status_map(current_user.id, uids)
-            courses = []
-            for item in page_items:
-                public = self._public_course(item)
-                public["provider"] = item.get("provider")
-                public["estimated_hours"] = item.get("estimated_hours")
-                public.update(status_map.get(item["uid"], {"enrolled": False, "bookmarked": False, "assigned": False}))
-                courses.append(public)
-            pages = max(1, (total + page_size - 1) // page_size) if total else 1
-            return {"courses": courses, "total": total, "page": page, "page_size": page_size, "pages": pages}
-
         # AI-recommendation-first ordering: for a default browse (no active
         # search text), surface courses the cached recommendation engine
         # already identified as top-fit for this employee before everything
@@ -447,13 +413,6 @@ class LearningService:
 
     async def get_course_detail(self, current_user: CurrentUser, uid: str) -> dict:
         item = await catalog_service.get_course_by_uid(uid)
-        if not item and uid.startswith("recruiter_kb:"):
-            cert_id = uid.split(":", 1)[1]
-            if ObjectId.is_valid(cert_id):
-                doc = await database.recruiter_kb_certifications.find_one({"_id": ObjectId(cert_id)})
-                if doc:
-                    courses = await recruiter_kb_service.list_as_catalog_courses(doc.get("recruiter_id"))
-                    item = next((c for c in courses if c["uid"] == uid), None)
         if not item:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found in the catalog.")
         public = self._public_course(item)
@@ -1951,20 +1910,6 @@ class LearningService:
                 "source": "org_framework",
             }
 
-        # Last fallback: Knowledge Base roles
-        kb_role = await recruiter_kb_service.find_role_by_title(target_role, self._employee_recruiter_id(employee))
-        if kb_role:
-            required_skills = kb_role.get("required_skills") or []
-            required_certifications = kb_role.get("required_certifications") or []
-            return {
-                "target_role": target_role,
-                "department": None,
-                "required_courses": [],
-                "required_skills": required_skills,
-                "required_certifications": required_certifications,
-                "source": "knowledge_base",
-            }
-
         return {
             "target_role": target_role,
             "department": department,
@@ -2543,64 +2488,42 @@ class LearningService:
         current_skills = await self._current_skill_names(current_user.id, resume_fields)
         employee_certs = await self._employee_cert_titles(current_user.id)
 
-        role_def = await recruiter_kb_service.find_role_by_title(resolved_role, recruiter_id)
+        # No recruiter KB roles anymore — skill gaps are AI-analyzed and
+        # cached by input hashes below.
         analysis: dict | None = None
 
-        if role_def:
-            analysis = role_matching_service.deterministic_skill_gap(
-                current_skills=current_skills,
-                target_role=resolved_role,
-                role_def=role_def,
-            )
-            # Cert matching with employee certs
-            cert_match = role_matching_service.match_employee_to_role(
-                employee_skills=current_skills,
-                employee_certifications=employee_certs,
-                role=role_def,
-            )
-            analysis["missing_certifications"] = cert_match["missing_certifications"]
-            analysis["certification_match_percent"] = cert_match["certification_match_percent"]
-            analysis["skill_match_percent"] = cert_match["skill_match_percent"]
-            analysis["readiness_percentage"] = int(round(cert_match["readiness_score"]))
-            analysis["learning_priority"] = cert_match["learning_priority"]
-            analysis["summary"] = (
-                f"You match {analysis.get('skill_match_percent', 0)}% of required skills "
-                f"and {analysis.get('certification_match_percent', 0)}% of certifications "
-                f"for {resolved_role}. Priority: {analysis.get('learning_priority')}."
-            )
+        # Fall back to AI gap analysis (cached by hashes)
+        ai = await learning_ai_service.analyze_skill_gap(
+            job_title=employee.get("job_title"),
+            department=employee.get("department"),
+            target_role=resolved_role,
+            current_skills=current_skills,
+            professional_summary=resume_fields.get("professional_summary"),
+        )
+        if not ai:
+            analysis = {
+                "target_role": resolved_role,
+                "current_skills": current_skills,
+                "missing_skills": [],
+                "skill_gaps": [],
+                "matched_skills": [],
+                "readiness_percentage": None,
+                "summary": "AI analysis is temporarily unavailable. Please try again shortly.",
+                "recommended_courses": [],
+                "missing_certifications": [],
+            }
         else:
-            # No KB role — fall back to AI gap analysis (cached by hashes)
-            ai = await learning_ai_service.analyze_skill_gap(
-                job_title=employee.get("job_title"),
-                department=employee.get("department"),
-                target_role=resolved_role,
-                current_skills=current_skills,
-                professional_summary=resume_fields.get("professional_summary"),
-            )
-            if not ai:
-                analysis = {
-                    "target_role": resolved_role,
-                    "current_skills": current_skills,
-                    "missing_skills": [],
-                    "skill_gaps": [],
-                    "matched_skills": [],
-                    "readiness_percentage": None,
-                    "summary": "AI analysis is temporarily unavailable. Please try again shortly.",
-                    "recommended_courses": [],
-                    "missing_certifications": [],
-                }
-            else:
-                analysis = {
-                    "target_role": resolved_role,
-                    "current_skills": current_skills,
-                    "missing_skills": [m["skill"] for m in ai["missing_skills"]],
-                    "skill_gaps": ai["missing_skills"],
-                    "matched_skills": ai["matched_skills"],
-                    "readiness_percentage": ai["readiness_percentage"],
-                    "summary": ai["summary"],
-                    "missing_certifications": [],
-                    "deterministic": False,
-                }
+            analysis = {
+                "target_role": resolved_role,
+                "current_skills": current_skills,
+                "missing_skills": [m["skill"] for m in ai["missing_skills"]],
+                "skill_gaps": ai["missing_skills"],
+                "matched_skills": ai["matched_skills"],
+                "readiness_percentage": ai["readiness_percentage"],
+                "summary": ai["summary"],
+                "missing_certifications": [],
+                "deterministic": False,
+            }
 
         missing_objs = analysis.get("skill_gaps") or []
         priority_order = {"critical": 0, "immediate": 1, "medium": 2, "low": 3}
@@ -2612,9 +2535,6 @@ class LearningService:
             candidates = await catalog_service.find_courses_for_keywords(
                 missing_names, per_keyword=3, limit=len(missing_names) * 3
             )
-            # Include recruiter KB certs in candidates
-            kb_courses = await recruiter_kb_service.list_as_catalog_courses(recruiter_id)
-            candidates = candidates + kb_courses
             for gap in missing_objs or [{"skill": n, "priority": "medium", "reason": ""} for n in missing_names]:
                 skill = gap["skill"] if isinstance(gap, dict) else gap
                 priority = gap.get("priority", "medium") if isinstance(gap, dict) else "medium"
@@ -2654,7 +2574,7 @@ class LearningService:
             "skill_match_percent": analysis.get("skill_match_percent"),
             "certification_match_percent": analysis.get("certification_match_percent"),
             "learning_priority": analysis.get("learning_priority"),
-            "source": "knowledge_base" if role_def else "ai",
+            "source": "ai",
             "cached": False,
             "lastAnalyzedAt": _now().isoformat(),
             **{k: hashes[k] for k in hashes},
@@ -2779,25 +2699,6 @@ class LearningService:
 
         keywords = list(gap.get("missing_skills") or []) + [goal["target_role"]]
         catalog_courses = await catalog_service.find_courses_for_keywords(keywords, per_keyword=4, limit=40)
-        kb_certs = []
-        role_def = await recruiter_kb_service.find_role_by_title(goal["target_role"], recruiter_id)
-        if role_def:
-            kb_certs = role_def.get("certifications") or []
-        else:
-            all_kb = await recruiter_kb_service.list_as_catalog_courses(recruiter_id)
-            kb_certs = [
-                {
-                    "title": c.get("title"),
-                    "provider": c.get("provider"),
-                    "official_url": c.get("url"),
-                    "estimated_hours": c.get("estimated_hours"),
-                    "difficulty": (c.get("levels") or [None])[0],
-                    "description": c.get("summary"),
-                    "skills_covered": c.get("products") or [],
-                    "id": c.get("uid"),
-                }
-                for c in all_kb
-            ]
 
         existing_certs = await self._employee_cert_titles(current_user.id)
         enrollments = await database.learning_enrollments.find(
@@ -2810,7 +2711,6 @@ class LearningService:
             missing_skills=gap.get("missing_skills") or [],
             missing_certifications=gap.get("missing_certifications") or [],
             catalog_courses=catalog_courses,
-            kb_certifications=kb_certs,
             existing_certifications=existing_certs,
             completed_uids=completed_uids,
         )
@@ -2963,24 +2863,15 @@ class LearningService:
         return payload
 
     async def get_role_matches(self, current_user: CurrentUser, *, refresh: bool = False) -> dict:
-        """Compare employee profile against all recruiter KB roles (deterministic)."""
+        """Career matching now comes from Organization Setup role ladders.
+
+        The recruiter Knowledge Base was removed, so this endpoint returns an
+        empty match list. It is kept for API compatibility only.
+        """
         employee = await self._get_employee(current_user)
         recruiter_id = self._employee_recruiter_id(employee)
         hashes = await learning_cache_service.compute_input_hashes(current_user.id, recruiter_id)
-        if not refresh:
-            cached = await learning_cache_service.get_cached_role_matches(current_user.id, hashes)
-            if cached:
-                return cached
-
-        resume_fields = await self._get_resume_fields(current_user.id)
-        skills = await self._current_skill_names(current_user.id, resume_fields)
-        certs = await self._employee_cert_titles(current_user.id)
-        roles = await recruiter_kb_service.get_roles_for_matching(recruiter_id)
-        matches = role_matching_service.match_employee_to_roles(
-            employee_skills=skills,
-            employee_certifications=certs,
-            roles=roles,
-        )
+        matches: list[dict] = []
         await learning_cache_service.store_role_matches(current_user.id, matches, hashes)
         return {
             "roles": matches,
@@ -3358,7 +3249,6 @@ class LearningService:
             "coursera": "Coursera",
             "managed_learning": "LinkedIn Learning",
             "org_framework": "Career Roadmap",
-            "recruiter_kb": "Knowledge Base",
             "linkedin": "LinkedIn Learning",
             "linkedin_learning": "LinkedIn Learning",
         }
@@ -3832,15 +3722,6 @@ class LearningService:
 
             skill_gaps = (assessment or {}).get("gaps") or []
 
-            # Deterministic role matches from recruiter KB
-            kb_roles = await recruiter_kb_service.get_roles_for_matching(recruiter_id)
-            emp_certs = [c.get("course_title") for c in certs_earned if c.get("course_title")]
-            role_matches = role_matching_service.match_employee_to_roles(
-                employee_skills=current_skills,
-                employee_certifications=emp_certs,
-                roles=kb_roles,
-            )
-
             # Cache recruiter AI extras (recs + promotion) on the assessment doc side-car
             profile_cache = await database.learning_recruiter_profile_cache.find_one({"user_id": user_id})
             cache_ok = (
@@ -3867,12 +3748,10 @@ class LearningService:
                     use_ai=False,
                     # Skip Coursera on tab open — cold fetch of ~20k courses blocks the UI.
                     # Refresh AI includes Coursera again.
-                    sources=("microsoft_learn", "recruiter_kb")
+                    sources=("microsoft_learn",)
                     if not refresh_ai
                     else catalog_service.SOURCES,
                 )
-                kb_courses = await recruiter_kb_service.list_as_catalog_courses(recruiter_id)
-                candidates = candidates + kb_courses
                 existing_uids = {
                     a["course_uid"] for a in assignments if a.get("course_uid")
                 } | {e["course_uid"] for e in enrollments if e.get("course_uid")}
@@ -3940,7 +3819,7 @@ class LearningService:
                         "promotion_ready": False,
                         "readiness_score": 0,
                         "recommended_next_title": target_role,
-                        "reasons": ["No matching org role yet — configure roles in Knowledge Base."],
+                        "reasons": ["No matching org role yet — configure roles in Organization Setup → Role ladders."],
                         "recommended_actions": [],
                         "timeline": None,
                         "summary": "Open Refresh AI after org roles are configured for a fuller readiness score.",

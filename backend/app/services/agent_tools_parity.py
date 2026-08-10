@@ -43,7 +43,6 @@ from app.services.learning_service import learning_service
 from app.services.managed_learning_service import managed_learning_service
 from app.services.message_service import message_service
 from app.services.offer_service import offer_service
-from app.services.recruiter_kb_service import recruiter_kb_service
 from app.services.talent_service import talent_service
 from app.services.ticket_service import ticket_service
 from app.schemas.date_utils import parse_natural_date
@@ -585,78 +584,27 @@ async def _tool_employee_learning_profile(user: CurrentUser, args: dict) -> Tool
 
 
 async def _tool_kb_list_roles(user: CurrentUser, args: dict) -> ToolResult:
-    try:
-        return ToolResult(ok=True, data=await recruiter_kb_service.list_roles(user))
-    except Exception as exc:  # noqa: BLE001
-        return _err(exc)
+    return ToolResult(ok=False, error="The recruiter Knowledge Base has been removed. Use Organization Setup → Role ladders and Career Roadmap instead.")
 
 
 async def _tool_kb_create_role(user: CurrentUser, args: dict) -> ToolResult:
-    try:
-        result = await recruiter_kb_service.create_role(
-            user,
-            {
-                "title": args.get("title") or args.get("name"),
-                "department": args.get("department"),
-                "description": args.get("description"),
-                "required_skills": args.get("required_skills") or [],
-            },
-        )
-        return ToolResult(ok=True, data=result)
-    except Exception as exc:  # noqa: BLE001
-        return _err(exc)
+    return ToolResult(ok=False, error="The recruiter Knowledge Base has been removed. Use Organization Setup → Role ladders and Career Roadmap instead.")
 
 
 async def _tool_kb_delete_role(user: CurrentUser, args: dict) -> ToolResult:
-    role_id = (args.get("role_id") or args.get("id") or "").strip()
-    if not role_id:
-        return ToolResult(ok=False, error="role_id is required.")
-    if not args.get("confirm"):
-        return confirm_gate("kb_delete_role", {"role_id": role_id}, f"Delete KB role {role_id}?")
-    try:
-        return ToolResult(ok=True, data=await recruiter_kb_service.delete_role(user, role_id))
-    except Exception as exc:  # noqa: BLE001
-        return _err(exc)
+    return ToolResult(ok=False, error="The recruiter Knowledge Base has been removed. Use Organization Setup → Role ladders and Career Roadmap instead.")
 
 
 async def _tool_kb_list_certs(user: CurrentUser, args: dict) -> ToolResult:
-    try:
-        return ToolResult(ok=True, data=await recruiter_kb_service.list_certifications(user))
-    except Exception as exc:  # noqa: BLE001
-        return _err(exc)
+    return ToolResult(ok=False, error="The recruiter Knowledge Base has been removed. Use Organization Setup → Career Roadmap and the managed course catalog instead.")
 
 
 async def _tool_kb_create_cert(user: CurrentUser, args: dict) -> ToolResult:
-    try:
-        result = await recruiter_kb_service.create_certification(
-            user,
-            {
-                "title": args.get("title"),
-                "provider": args.get("provider"),
-                "url": args.get("url"),
-                "official_url": args.get("url"),
-                "skills_covered": args.get("skills") or args.get("skills_covered") or [],
-                "estimated_hours": args.get("hours") or args.get("estimated_hours"),
-                "difficulty": args.get("difficulty"),
-                "priority": args.get("priority"),
-                "description": args.get("description"),
-            },
-        )
-        return ToolResult(ok=True, data=result)
-    except Exception as exc:  # noqa: BLE001
-        return _err(exc)
+    return ToolResult(ok=False, error="The recruiter Knowledge Base has been removed. Use Organization Setup → Career Roadmap and the managed course catalog instead.")
 
 
 async def _tool_kb_delete_cert(user: CurrentUser, args: dict) -> ToolResult:
-    cert_id = (args.get("cert_id") or args.get("id") or "").strip()
-    if not cert_id:
-        return ToolResult(ok=False, error="cert_id is required.")
-    if not args.get("confirm"):
-        return confirm_gate("kb_delete_certification", {"cert_id": cert_id}, f"Delete KB certification {cert_id}?")
-    try:
-        return ToolResult(ok=True, data=await recruiter_kb_service.delete_certification(user, cert_id))
-    except Exception as exc:  # noqa: BLE001
-        return _err(exc)
+    return ToolResult(ok=False, error="The recruiter Knowledge Base has been removed. Use Organization Setup → Career Roadmap and the managed course catalog instead.")
 
 
 # Employee learning
@@ -2281,10 +2229,10 @@ RECRUITER_PARITY_TOOLS: list[Tool] = [
     # Learning
     Tool(
         name="browse_learning_catalog",
-        description="Search/browse the learning catalog (microsoft_learn, coursera, or recruiter_kb).",
+        description="Search/browse the learning catalog (microsoft_learn, coursera, or managed providers).",
         parameters={
             "q": "optional search",
-            "source": "microsoft_learn|coursera|recruiter_kb",
+            "source": "microsoft_learn|coursera",
             "type": "optional",
             "level": "optional",
             "role": "optional",
@@ -2349,51 +2297,43 @@ RECRUITER_PARITY_TOOLS: list[Tool] = [
     ),
     Tool(
         name="kb_list_roles",
-        description="List recruiter knowledge-base roles.",
+        description="Removed — recruiter Knowledge Base no longer exists. Role ladders now live in Organization Setup.",
         parameters={},
         handler=_tool_kb_list_roles,
         roles=("recruiter", "super_admin"),
     ),
     Tool(
         name="kb_create_role",
-        description="Add a role to the learning knowledge base.",
-        parameters={"title": "required", "department": "optional", "description": "optional", "required_skills": "optional"},
+        description="Removed — recruiter Knowledge Base no longer exists. Use Organization Setup → Role ladders.",
+        parameters={},
         handler=_tool_kb_create_role,
         roles=("recruiter", "super_admin"),
     ),
     Tool(
         name="kb_delete_role",
-        description="Delete a KB role. Requires confirm=true.",
-        parameters={"role_id": "required", "confirm": "boolean"},
+        description="Removed — recruiter Knowledge Base no longer exists.",
+        parameters={},
         handler=_tool_kb_delete_role,
         roles=("recruiter", "super_admin"),
     ),
     Tool(
         name="kb_list_certifications",
-        description="List recruiter knowledge-base certifications.",
+        description="Removed — recruiter Knowledge Base no longer exists. Use the managed course catalog instead.",
         parameters={},
         handler=_tool_kb_list_certs,
         roles=("recruiter", "super_admin"),
     ),
     Tool(
         name="kb_create_certification",
-        description="Add a certification to the learning knowledge base.",
-        parameters={
-            "title": "required",
-            "provider": "optional",
-            "url": "optional",
-            "skills": "optional",
-            "hours": "optional",
-            "difficulty": "optional",
-            "description": "optional",
-        },
+        description="Removed — recruiter Knowledge Base no longer exists. Use the managed course catalog instead.",
+        parameters={},
         handler=_tool_kb_create_cert,
         roles=("recruiter", "super_admin"),
     ),
     Tool(
         name="kb_delete_certification",
-        description="Delete a KB certification. Requires confirm=true.",
-        parameters={"cert_id": "required", "confirm": "boolean"},
+        description="Removed — recruiter Knowledge Base no longer exists.",
+        parameters={},
         handler=_tool_kb_delete_cert,
         roles=("recruiter", "super_admin"),
     ),
@@ -2970,7 +2910,7 @@ EMPLOYEE_PARITY_TOOLS: list[Tool] = [
         description="Search/browse learning catalog for the employee.",
         parameters={
             "q": "optional",
-            "source": "microsoft_learn|coursera|recruiter_kb",
+            "source": "microsoft_learn|coursera",
             "type": "optional",
             "level": "optional",
             "bookmarked_only": "bool",
@@ -3198,7 +3138,7 @@ EMPLOYEE_PARITY_TOOLS: list[Tool] = [
     Tool(
         name="get_role_matches",
         description=(
-            "Compare the employee's skills and certifications against recruiter knowledge-base roles "
+            "Compare the employee's skills and certifications against Organization Setup role ladders "
             "to see which roles they match and by how much. Optionally refresh=true to bypass cache."
         ),
         parameters={"refresh": "boolean, optional — force fresh calculation"},
