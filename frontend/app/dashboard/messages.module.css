@@ -133,13 +133,15 @@
 
 .bubbleMine {
   align-self: flex-end;
-  background: var(--navy, #0c2a41);
+  background: linear-gradient(100deg, var(--blue-strong), var(--blue));
   color: #fff;
   border-color: transparent;
 }
 
 .bubbleTheirs {
   align-self: flex-start;
+  background: linear-gradient(100deg, var(--blue-strong), var(--blue));
+  color: #fff;
 }
 
 .bubbleMeta {
@@ -213,6 +215,10 @@
 .primaryBtn {
   background: var(--navy, #0c2a41);
   color: #fff;
+}
+
+.newBtn {
+  background: linear-gradient(100deg, var(--blue-strong), var(--blue));
 }
 
 .primaryBtn:disabled {

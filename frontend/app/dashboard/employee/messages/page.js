@@ -164,7 +164,7 @@ function EmployeeMessagesInner() {
             </div>
             <button
               type="button"
-              className={styles.primaryBtn}
+              className={`${styles.primaryBtn} ${styles.newBtn}`}
               onClick={() => {
                 setComposing(true);
                 setSelectedId("");
@@ -225,7 +225,7 @@ function EmployeeMessagesInner() {
                 <button type="button" className={styles.ghostBtn} onClick={() => setComposing(false)}>
                   Cancel
                 </button>
-                <button type="submit" className={styles.primaryBtn} disabled={sending || !body.trim()}>
+                <button type="submit" className={`${styles.primaryBtn} ${styles.newBtn}`} disabled={sending || !body.trim()}>
                   {sending ? "Sending…" : "Send"}
                 </button>
               </div>
@@ -273,7 +273,7 @@ function EmployeeMessagesInner() {
                   />
                   {error ? <p className={styles.error}>{error}</p> : null}
                   <div className={styles.composeRow}>
-                    <button type="submit" className={styles.primaryBtn} disabled={sending || !body.trim()}>
+                    <button type="submit" className={`${styles.primaryBtn} ${styles.newBtn}`} disabled={sending || !body.trim()}>
                       {sending ? "Sending…" : "Reply"}
                     </button>
                   </div>
