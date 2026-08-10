@@ -567,8 +567,8 @@ export default function TalentProfileView({
             <div className={styles.promoEmptyIcon}><Target aria-hidden="true" /></div>
             <div className={styles.promoEmptyTitle}>No career path assigned</div>
             <p className={styles.promoEmptyHint}>
-              Assign a promotion target in Pipeline to track readiness, skills, courses, and certifications here.
-              This is setup — not “behind on path.”
+              Paths are assigned automatically when this job title exists in Organization Setup → Role ladders.
+              If this role is missing there, add it — or set a promotion target in Pipeline.
             </p>
             <div className={styles.promoEmptyActions}>
               <button type="button" className={styles.smallBtnPrimary} onClick={() => onNavigate({ view: "pipeline", employee: null })}>

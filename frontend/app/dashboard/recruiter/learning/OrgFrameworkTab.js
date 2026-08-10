@@ -1892,6 +1892,7 @@ function RoleCoursesBlock({ roleName, entries, loadAll }) {
         role_name: roleName,
         course_id: course.uid,
         course_name: course.title,
+        course_url: course.url || course.course_url || null,
         catalog_type: course.type || null,
         category: course.category || null,
         competency: course.competency || null,
