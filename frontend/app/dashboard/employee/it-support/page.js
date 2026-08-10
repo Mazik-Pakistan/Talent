@@ -13,16 +13,7 @@ import {
   listMyItServiceRequests,
 } from "@/services/authService";
 import { parseFieldErrors } from "@/lib/apiFieldErrors";
-
-const inputErrorStyle = { borderColor: "#dc2626" };
-const fieldErrorStyle = {
-  display: "block",
-  marginTop: 4,
-  fontSize: 12,
-  fontWeight: 600,
-  color: "#dc2626",
-  lineHeight: 1.4,
-};
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
 
 const TYPE_LABELS = {
   new_asset: "New asset",
@@ -353,7 +344,7 @@ export default function EmployeeItSupportPage() {
                   What do you need?
                 </span>
                 <select
-                  style={{ ...inputStyle, ...(fieldErrors.request_type ? inputErrorStyle : null) }}
+                  style={{ ...inputStyle, ...(fieldErrors.request_type ? INPUT_ERROR_STYLE : null) }}
                   name="request_type"
                   value={form.request_type}
                   onChange={(e) => {
@@ -367,7 +358,7 @@ export default function EmployeeItSupportPage() {
                     </option>
                   ))}
                 </select>
-                {fieldErrors.request_type && <small style={fieldErrorStyle} role="alert">{fieldErrors.request_type}</small>}
+                {fieldErrors.request_type && <FieldError>{fieldErrors.request_type}</FieldError>}
               </label>
               <label style={{ display: "block" }}>
                 <span
@@ -382,7 +373,7 @@ export default function EmployeeItSupportPage() {
                   Short title
                 </span>
                 <input
-                  style={{ ...inputStyle, ...(fieldErrors.title ? inputErrorStyle : null) }}
+                  style={{ ...inputStyle, ...(fieldErrors.title ? INPUT_ERROR_STYLE : null) }}
                   name="it_request_title"
                   value={form.title}
                   aria-invalid={Boolean(fieldErrors.title)}
@@ -392,7 +383,7 @@ export default function EmployeeItSupportPage() {
                   }}
                   placeholder="e.g. Laptop not turning on, need replacement"
                 />
-                {fieldErrors.title && <small style={fieldErrorStyle} role="alert">{fieldErrors.title}</small>}
+                {fieldErrors.title && <FieldError>{fieldErrors.title}</FieldError>}
               </label>
             </div>
             <label style={{ display: "block", marginBottom: 14 }}>
@@ -408,7 +399,7 @@ export default function EmployeeItSupportPage() {
                 Details (optional)
               </span>
               <textarea
-                style={{ ...inputStyle, resize: "vertical", ...(fieldErrors.description ? inputErrorStyle : null) }}
+                style={{ ...inputStyle, resize: "vertical", ...(fieldErrors.description ? INPUT_ERROR_STYLE : null) }}
                 name="it_request_description"
                 rows={3}
                 value={form.description}
@@ -419,7 +410,7 @@ export default function EmployeeItSupportPage() {
                 }}
                 placeholder="What's wrong and what should IT know?"
               />
-              {fieldErrors.description && <small style={fieldErrorStyle} role="alert">{fieldErrors.description}</small>}
+              {fieldErrors.description && <FieldError>{fieldErrors.description}</FieldError>}
             </label>
             <button
               type="button"

@@ -4,10 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 
+import { parseFieldErrors } from "@/lib/apiFieldErrors";
+import { PASSWORD_REGEX, PASSWORD_HINT_TEXT } from "@/utils/validation";
 import PasswordToggle from "@/components/PasswordToggle";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
 import { changePassword, clearLocalSession, getApiErrorMessage } from "@/services/authService";
 
-const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$/;
+const PASSWORD_HINT = PASSWORD_HINT_TEXT ||
+  "At least 8 characters with an uppercase letter, a lowercase letter, a number, and a special character.";
 
 export default function SecuritySection() {
   const router = useRouter();
@@ -18,28 +22,40 @@ export default function SecuritySection() {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
+
+  function validate() {
+    const errors = {};
+    if (!currentPassword) {
+      errors.current_password = "Current password is required.";
+    }
+    if (!newPassword) {
+      errors.new_password = "New password is required.";
+    } else if (!PASSWORD_REGEX.test(newPassword)) {
+      errors.new_password = PASSWORD_HINT;
+    } else if (newPassword === currentPassword) {
+      errors.new_password = "New password must be different from the current one.";
+    }
+    if (!confirmNewPassword) {
+      errors.confirm_new_password = "Please confirm your new password.";
+    } else if (newPassword && confirmNewPassword !== newPassword) {
+      errors.confirm_new_password = "New password confirmation does not match.";
+    }
+    return errors;
+  }
+
+  function clearFieldError(field) {
+    setFieldErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
-    setMessage("");
     setError("");
 
-    if (!currentPassword || !newPassword || !confirmNewPassword) {
-      setError("All fields are required.");
-      return;
-    }
-    if (newPassword !== confirmNewPassword) {
-      setError("New password confirmation does not match.");
-      return;
-    }
-    if (!PASSWORD_PATTERN.test(newPassword)) {
-      setError(
-        "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character."
-      );
-      return;
-    }
+    const validationErrors = validate();
+    setFieldErrors(validationErrors);
+    if (Object.keys(validationErrors).length > 0) return;
 
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) {
@@ -63,7 +79,24 @@ export default function SecuritySection() {
         router.push("/login?reason=password_changed");
       }, 1500);
     } catch (err) {
-      setError(getApiErrorMessage(err, "Could not update your password."));
+      const status = err?.response?.status;
+      if (status === 400 || status === 422) {
+        const { fieldErrors, general } = parseFieldErrors(err, [
+          "current_password",
+          "new_password",
+          "confirm_new_password",
+        ]);
+        if (Object.keys(fieldErrors).length > 0) {
+          setFieldErrors((current) => ({ ...current, ...fieldErrors }));
+        }
+        if (general) {
+          toast.error(general);
+        } else if (Object.keys(fieldErrors).length === 0) {
+          setError(getApiErrorMessage(err, "Could not update your password."));
+        }
+      } else {
+        setError(getApiErrorMessage(err, "Could not update your password."));
+      }
     } finally {
       setBusy(false);
     }
@@ -130,15 +163,28 @@ export default function SecuritySection() {
               name="current_password"
               data-field-key="current_password"
               value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
+              onChange={(e) => {
+                setCurrentPassword(e.target.value);
+                clearFieldError("current_password");
+              }}
               autoComplete="current-password"
               placeholder="Enter your current password"
-              style={input}
+              aria-invalid={Boolean(fieldErrors.current_password)}
+              style={{
+                ...input,
+                ...(fieldErrors.current_password ? INPUT_ERROR_STYLE : {}),
+              }}
               onFocus={(e) => Object.assign(e.target.style, inputFocus)}
-              onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
+              onBlur={(e) =>
+                Object.assign(e.target.style, {
+                  borderColor: fieldErrors.current_password ? "#dc2626" : "#bed0dc",
+                  boxShadow: "none",
+                })
+              }
             />
             <PasswordToggle visible={showCurrent} onToggle={() => setShowCurrent((v) => !v)} style={toggleStyle} />
           </div>
+          {fieldErrors.current_password && <FieldError>{fieldErrors.current_password}</FieldError>}
         </label>
 
         <label style={field}>
@@ -149,15 +195,31 @@ export default function SecuritySection() {
               name="new_password"
               data-field-key="new_password"
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              onChange={(e) => {
+                setNewPassword(e.target.value);
+                clearFieldError("new_password");
+                if (fieldErrors.confirm_new_password) {
+                  setFieldErrors((current) => ({ ...current, confirm_new_password: undefined }));
+                }
+              }}
               autoComplete="new-password"
               placeholder="At least 8 characters"
-              style={input}
+              aria-invalid={Boolean(fieldErrors.new_password)}
+              style={{
+                ...input,
+                ...(fieldErrors.new_password ? INPUT_ERROR_STYLE : {}),
+              }}
               onFocus={(e) => Object.assign(e.target.style, inputFocus)}
-              onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
+              onBlur={(e) =>
+                Object.assign(e.target.style, {
+                  borderColor: fieldErrors.new_password ? "#dc2626" : "#bed0dc",
+                  boxShadow: "none",
+                })
+              }
             />
             <PasswordToggle visible={showNew} onToggle={() => setShowNew((v) => !v)} style={toggleStyle} />
           </div>
+          {fieldErrors.new_password && <FieldError>{fieldErrors.new_password}</FieldError>}
         </label>
 
         <label style={field}>
@@ -168,33 +230,30 @@ export default function SecuritySection() {
               name="confirm_new_password"
               data-field-key="confirm_new_password"
               value={confirmNewPassword}
-              onChange={(e) => setConfirmNewPassword(e.target.value)}
+              onChange={(e) => {
+                setConfirmNewPassword(e.target.value);
+                clearFieldError("confirm_new_password");
+              }}
               autoComplete="new-password"
               placeholder="Re-enter your new password"
-              style={input}
+              aria-invalid={Boolean(fieldErrors.confirm_new_password)}
+              style={{
+                ...input,
+                ...(fieldErrors.confirm_new_password ? INPUT_ERROR_STYLE : {}),
+              }}
               onFocus={(e) => Object.assign(e.target.style, inputFocus)}
-              onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
+              onBlur={(e) =>
+                Object.assign(e.target.style, {
+                  borderColor: fieldErrors.confirm_new_password ? "#dc2626" : "#bed0dc",
+                  boxShadow: "none",
+                })
+              }
             />
             <PasswordToggle visible={showConfirm} onToggle={() => setShowConfirm((v) => !v)} style={toggleStyle} />
           </div>
+          {fieldErrors.confirm_new_password && <FieldError>{fieldErrors.confirm_new_password}</FieldError>}
         </label>
 
-        {message && (
-          <p
-            role="status"
-            style={{
-              margin: "0 0 12px",
-              padding: "10px 12px",
-              borderRadius: 10,
-              background: "#ecfdf5",
-              border: "1px solid #a7f3d0",
-              color: "#065f46",
-              fontSize: 13,
-            }}
-          >
-            {message}
-          </p>
-        )}
         {error && (
           <p
             role="alert"

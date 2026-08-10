@@ -6,7 +6,7 @@ import s from "./InviteRecruiter.module.css";
 
 const ROLE_TEMPLATES = {
   standard_recruiter: {
-    label: "Standard Recruiter",
+    label: "Super Recruiter",
     desc: "Full recruitment and employee management access",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="28" height="28">

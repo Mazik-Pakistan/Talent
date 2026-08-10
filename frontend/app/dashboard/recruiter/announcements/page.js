@@ -15,6 +15,8 @@ import {
   listEmployees,
   updateAnnouncement,
 } from "@/services/authService";
+import { validateTextField } from "@/utils/validation";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -48,6 +50,7 @@ function RecruiterAnnouncementsPageContent() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState(EMPTY_FORM);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [editingId, setEditingId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [employees, setEmployees] = useState([]);
@@ -114,6 +117,15 @@ function RecruiterAnnouncementsPageContent() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    setFieldErrors({});
+    const errors = {
+      title: !validateTextField(form.title, 3, 150).isValid ? "Title must be at least 3 characters." : undefined,
+      body: !validateTextField(form.body, 3, 4000).isValid ? "Message must be at least 3 characters." : undefined,
+    };
+    if (Object.values(errors).some(Boolean)) {
+      setFieldErrors(errors);
+      return;
+    }
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
     setSaving(true);
@@ -208,25 +220,45 @@ function RecruiterAnnouncementsPageContent() {
               <span>Title</span>
               <input
                 value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, title: e.target.value });
+                  setFieldErrors((current) => {
+                    const next = { ...current };
+                    delete next.title;
+                    return next;
+                  });
+                }}
                 required
                 minLength={3}
                 maxLength={150}
+                aria-invalid={Boolean(fieldErrors.title)}
+                style={fieldErrors.title ? INPUT_ERROR_STYLE : undefined}
                 placeholder="e.g. Orientation schedule update"
               />
+              {fieldErrors.title && <FieldError>{fieldErrors.title}</FieldError>}
             </label>
             <label className={styles.field}>
               <span>Message</span>
               <textarea
                 rows={5}
                 value={form.body}
-                onChange={(e) => setForm({ ...form, body: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, body: e.target.value });
+                  setFieldErrors((current) => {
+                    const next = { ...current };
+                    delete next.body;
+                    return next;
+                  });
+                }}
                 required
                 minLength={3}
                 maxLength={4000}
                 className={styles.textarea}
+                aria-invalid={Boolean(fieldErrors.body)}
+                style={fieldErrors.body ? INPUT_ERROR_STYLE : undefined}
                 placeholder="Write a clear update for your audience…"
               />
+              {fieldErrors.body && <FieldError>{fieldErrors.body}</FieldError>}
             </label>
             <div className={styles.announceOptions}>
               <label className={styles.field}>

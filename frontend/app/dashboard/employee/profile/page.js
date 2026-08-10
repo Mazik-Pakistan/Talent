@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
 import Toast from "@/components/Toast";
@@ -37,9 +38,9 @@ import {
 import {
   BLOOD_GROUP_HINT,
   BLOOD_GROUP_OPTIONS,
-  confirmBloodGroupSelection,
   formatBloodGroupDisplay,
   isBloodGroupPending,
+  needsBloodGroupConfirmation,
   normalizeBloodGroup,
 } from "@/lib/bloodGroup";
 import dashStyles from "../employee-dashboard.module.css";
@@ -129,7 +130,6 @@ function EmployeeProfileContent() {
   const [progress, setProgress] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [toast, setToast] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [editingSection, setEditingSection] = useState(null);
@@ -141,6 +141,8 @@ function EmployeeProfileContent() {
   const [employment, setEmployment] = useState(emptyEmployment);
   const [references, setReferences] = useState([{ ...emptyReference }, { ...emptyReference }]);
   const [personalDraft, setPersonalDraft] = useState(emptyPersonal);
+  const [bloodGroupConfirm, setBloodGroupConfirm] = useState(null);
+  const [bloodGroupSelectKey, setBloodGroupSelectKey] = useState(0);
   const [educationDrafts, setEducationDrafts] = useState([]);
 
   useEffect(() => {
@@ -337,13 +339,8 @@ function EmployeeProfileContent() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function showToast(type, messageText) {
-    setToast({ id: Date.now(), type, message: messageText });
-  }
-
   function showFormError(messageText, errors = {}) {
     setFieldErrors(errors);
-    showToast("error", messageText);
   }
 
   function clearFieldError(key) {
@@ -373,10 +370,10 @@ function EmployeeProfileContent() {
         full_name: data.employee?.full_name,
       });
       window.dispatchEvent(new Event("talent-user-updated"));
-      showToast("success", "Profile photo updated.");
+      toast.success("Profile photo updated.");
     } catch (error) {
       const message = getApiErrorMessage(error, "Could not upload photo.");
-      showToast("error", message);
+      toast.error(message);
       throw new Error(message);
     } finally {
       setPhotoBusy(false);
@@ -392,10 +389,10 @@ function EmployeeProfileContent() {
       setEmployee(data.employee);
       patchLocalUser({ profile_picture: null });
       window.dispatchEvent(new Event("talent-user-updated"));
-      showToast("success", "Profile photo removed.");
+      toast.success("Profile photo removed.");
     } catch (error) {
       const message = getApiErrorMessage(error, "Could not remove photo.");
-      showToast("error", message);
+      toast.error(message);
       throw new Error(message);
     } finally {
       setPhotoBusy(false);
@@ -431,9 +428,9 @@ function EmployeeProfileContent() {
       hydrateEditable(data.onboarding);
       setEditingSection(null);
       invalidateInsightCache();
-      showToast("success", data.message || "Profile saved.");
+      toast.success(data.message || "Profile saved.");
     } catch (error) {
-      showToast("error", getApiErrorMessage(error, "Could not save this section."));
+      toast.error(getApiErrorMessage(error, "Could not save this section."));
     } finally {
       setSaving(false);
     }
@@ -837,14 +834,22 @@ function EmployeeProfileContent() {
                         <Field label="Nationality" value={personalDraft.nationality} onChange={(e) => setPersonalDraft({ ...personalDraft, nationality: e.target.value })} />
                         <SelectField label="Marital status" value={personalDraft.marital_status} options={["single", "married", "divorced", "widowed", "other"]} onChange={(e) => setPersonalDraft({ ...personalDraft, marital_status: e.target.value })} />
                         <SelectField
+                          key={`blood-group-${bloodGroupSelectKey}`}
                           label="Blood group"
                           value={normalizeBloodGroup(personalDraft.blood_group)}
                           options={BLOOD_GROUP_OPTIONS}
                           formatOption={(option) => option}
                           hint={BLOOD_GROUP_HINT}
                           onChange={(e) => {
-                            const next = confirmBloodGroupSelection(e.target.value, personalDraft.blood_group);
-                            setPersonalDraft({ ...personalDraft, blood_group: next });
+                            const next = normalizeBloodGroup(e.target.value);
+                            if (!needsBloodGroupConfirmation(next, personalDraft.blood_group)) {
+                              setPersonalDraft({ ...personalDraft, blood_group: next });
+                              return;
+                            }
+                            setBloodGroupConfirm({
+                              value: next,
+                              previous: normalizeBloodGroup(personalDraft.blood_group),
+                            });
                           }}
                         />
                         <Field label="National ID" value={personalDraft.national_id} onChange={(e) => setPersonalDraft({ ...personalDraft, national_id: e.target.value })} />

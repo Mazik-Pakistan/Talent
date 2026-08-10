@@ -472,13 +472,6 @@ class EmailService:
         temp_password: str | None = None,
         organization_id: str | None = None,
     ) -> None:
-        """Combined employee activation email:
-        - Congratulations / welcome message
-        - Account activation confirmation
-        - Employee login email (personal + company if provisioned)
-        - Password / temporary password
-        - Login URL/instructions
-        """
         safe_name = escape(full_name or "there")
         subject = "Congratulations — Your Employee Account Has Been Activated"
         body = f"""
@@ -536,7 +529,7 @@ class EmailService:
         subject, body = self._resolve_org_template(organization_id, "employee_activation", subject, body, locals())
         self._send(
             to_email, subject,
-            self._branded_shell("Congratulations", f"Your Employee Account Is Ready", body)
+            self._branded_shell("Congratulations", "Your Employee Account Is Ready", body)
         )
 
     # ------------------------------------------------------------------ #

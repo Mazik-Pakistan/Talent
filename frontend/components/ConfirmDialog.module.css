@@ -1,28 +1,97 @@
+@keyframes confirmFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes confirmPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .overlay {
   position: fixed;
   inset: 0;
   z-index: 1100;
-  background: rgba(15, 42, 74, 0.45);
-  backdrop-filter: blur(4px);
+  background: rgba(12, 28, 48, 0.52);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  animation: confirmFadeIn 0.18s ease-out both;
 }
 
 .card {
   width: min(420px, 100%);
   background: #fff;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 20px 50px rgba(15, 42, 74, 0.25);
+  border-radius: 18px;
+  padding: 28px 24px 22px;
+  box-shadow:
+    0 24px 60px rgba(12, 28, 48, 0.28),
+    0 0 0 1px rgba(15, 42, 74, 0.06);
+  text-align: center;
+  animation: confirmPopIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 14px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+}
+
+.icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.iconInfo {
+  background: rgba(56, 162, 255, 0.12);
+  color: #1f7fe0;
+}
+
+.iconDanger {
+  background: rgba(180, 35, 24, 0.1);
+  color: #b42318;
 }
 
 .card h3 {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   font-size: 18px;
   color: #0f2a4a;
   font-family: "Sora", system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.highlight {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  margin: 0 auto 14px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f4f8fc, #eaf2fa);
+  border: 1px solid #d5e4f4;
+  color: #0f2a4a;
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
 }
 
 .card p {
@@ -34,7 +103,7 @@
 
 .actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 10px;
   flex-wrap: wrap;
 }
@@ -42,17 +111,22 @@
 .cancel,
 .confirm,
 .danger {
-  border-radius: 9px;
-  padding: 10px 18px;
+  border-radius: 10px;
+  padding: 11px 18px;
   font-size: 13.5px;
   font-weight: 700;
   cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
 .cancel {
   background: #fff;
   border: 1px solid #dfe9f6;
   color: #0c2a41;
+}
+
+.cancel:hover {
+  background: #f7fafc;
 }
 
 .confirm {
@@ -62,8 +136,24 @@
   box-shadow: 0 12px 24px -12px rgba(56, 162, 255, 0.85);
 }
 
+.confirm:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px -12px rgba(56, 162, 255, 0.95);
+}
+
 .danger {
   background: #b42318;
   border: none;
   color: #fff;
+}
+
+.danger:hover {
+  background: #912018;
+}
+
+.cancel:focus-visible,
+.confirm:focus-visible,
+.danger:focus-visible {
+  outline: 2px solid #38a2ff;
+  outline-offset: 2px;
 }

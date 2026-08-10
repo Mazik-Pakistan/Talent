@@ -7,10 +7,13 @@ import { useEffect, useState } from "react";
 import AuthAside, { RECOVERY_SLIDES } from "@/components/auth/AuthAside";
 import { changePassword, clearLocalSession, getApiErrorMessage, patchLocalUser } from "@/services/authService";
 import PasswordToggle from "@/components/PasswordToggle";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
+import { parseFieldErrors } from "@/lib/apiFieldErrors";
+import { EMAIL_REGEX, PASSWORD_REGEX, PASSWORD_HINT_TEXT } from "@/utils/validation";
 import { ROLE_HOME } from "@/services/rbac";
 import styles from "@/app/styles/auth.module.css";
 
-const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$/;
+const PASSWORD_HINT = PASSWORD_HINT_TEXT;
 
 export default function SetPasswordPage() {
   const router = useRouter();
@@ -22,6 +25,7 @@ export default function SetPasswordPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
 
   function sessionUser() {
@@ -43,19 +47,27 @@ export default function SetPasswordPage() {
   }, [router]);
 
   function validate() {
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      return "All fields are required.";
+    const errors = {};
+    if (!currentPassword) {
+      errors.current_password = "First-time password is required.";
     }
-    if (newPassword !== confirmPassword) {
-      return "New password confirmation does not match.";
+    if (!newPassword) {
+      errors.new_password = "New password is required.";
+    } else if (!PASSWORD_REGEX.test(newPassword)) {
+      errors.new_password = PASSWORD_HINT;
+    } else if (newPassword === currentPassword) {
+      errors.new_password = "New password must be different from the current one.";
     }
-    if (!PASSWORD_REGEX.test(newPassword)) {
-      return "Use 8+ characters with uppercase, lowercase, number, special character, and no spaces.";
+    if (!confirmPassword) {
+      errors.confirm_password = "Please confirm your new password.";
+    } else if (newPassword && confirmPassword !== newPassword) {
+      errors.confirm_password = "Passwords do not match.";
     }
-    if (newPassword === currentPassword) {
-      return "New password must be different from the current one.";
-    }
-    return null;
+    return errors;
+  }
+
+  function clearFieldError(field) {
+    setFieldErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
   }
 
   async function handleSubmit(event) {
@@ -63,11 +75,9 @@ export default function SetPasswordPage() {
     setError("");
     setMessage("");
 
-    const validationError = validate();
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
+    const validationErrors = validate();
+    setFieldErrors(validationErrors);
+    if (Object.keys(validationErrors).length > 0) return;
 
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) {
@@ -96,7 +106,21 @@ export default function SetPasswordPage() {
         router.replace("/login?reason=session_expired");
         return;
       }
-      setError(getApiErrorMessage(err, "Could not update your password."));
+      if (status === 400 || status === 422) {
+        const { fieldErrors, general } = parseFieldErrors(err, [
+          "current_password",
+          "new_password",
+          "confirm_password",
+        ]);
+        if (Object.keys(fieldErrors).length > 0) setFieldErrors(fieldErrors);
+        if (general) {
+          setError(general);
+        } else if (Object.keys(fieldErrors).length === 0) {
+          setError(getApiErrorMessage(err, "Could not update your password."));
+        }
+      } else {
+        setError(getApiErrorMessage(err, "Could not update your password."));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -108,7 +132,7 @@ export default function SetPasswordPage() {
         <AuthAside
           slides={RECOVERY_SLIDES}
           ariaLabel="Set your password"
-          mascotMood={message ? "green" : error ? "red" : "neutral"}
+          mascotMood={message ? "green" : Object.keys(fieldErrors).length ? "red" : error ? "red" : "neutral"}
           mascotMessage={message ? "Password saved — welcome! 🎉" : undefined}
         />
 
@@ -134,9 +158,13 @@ export default function SetPasswordPage() {
                   className={styles.input}
                   type={showCurrent ? "text" : "password"}
                   value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  onChange={(e) => {
+                    setCurrentPassword(e.target.value);
+                    clearFieldError("current_password");
+                  }}
                   autoComplete="current-password"
                   placeholder="The password IT sent you"
+                  aria-invalid={Boolean(fieldErrors.current_password)}
                   required
                 />
                 <PasswordToggle
@@ -145,6 +173,7 @@ export default function SetPasswordPage() {
                   className={styles.toggleButton}
                 />
               </span>
+              {fieldErrors.current_password && <FieldError>{fieldErrors.current_password}</FieldError>}
             </label>
 
             <label className={styles.field}>
@@ -154,9 +183,16 @@ export default function SetPasswordPage() {
                   className={styles.input}
                   type={showNew ? "text" : "password"}
                   value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    clearFieldError("new_password");
+                    if (fieldErrors.confirm_password) {
+                      setFieldErrors((current) => ({ ...current, confirm_password: undefined }));
+                    }
+                  }}
                   autoComplete="new-password"
                   placeholder="8+ chars with A–Z, a–z, 0–9 and a symbol"
+                  aria-invalid={Boolean(fieldErrors.new_password)}
                   required
                 />
                 <PasswordToggle
@@ -165,6 +201,7 @@ export default function SetPasswordPage() {
                   className={styles.toggleButton}
                 />
               </span>
+              {fieldErrors.new_password && <FieldError>{fieldErrors.new_password}</FieldError>}
             </label>
 
             <label className={styles.field}>
@@ -174,9 +211,13 @@ export default function SetPasswordPage() {
                   className={styles.input}
                   type={showConfirm ? "text" : "password"}
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    clearFieldError("confirm_password");
+                  }}
                   autoComplete="new-password"
                   placeholder="Re-enter the new password"
+                  aria-invalid={Boolean(fieldErrors.confirm_password)}
                   required
                 />
                 <PasswordToggle
@@ -185,6 +226,7 @@ export default function SetPasswordPage() {
                   className={styles.toggleButton}
                 />
               </span>
+              {fieldErrors.confirm_password && <FieldError>{fieldErrors.confirm_password}</FieldError>}
             </label>
 
             {error && <p className={`${styles.formMessage} ${styles.formMessageError}`} role="alert">{error}</p>}

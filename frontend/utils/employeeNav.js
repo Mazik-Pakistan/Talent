@@ -59,9 +59,9 @@ export const EMPLOYEE_NAV_ICONS = {
 };
 
 /**
- * Employee sidebar items. Onboarding stays visible after completion so
- * employees can reopen their completed onboarding record. Recruiter-employees
- * (can_switch_to_recruiter) skip the onboarding item entirely.
+ * Employee sidebar items. Onboarding is only shown while the profile is
+ * incomplete — after 100% completion, edits go through Profile. Recruiter-
+ * employees (can_switch_to_recruiter) skip the onboarding item entirely.
  */
 export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
   const allItems = [
@@ -78,7 +78,6 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
       module: "onboarding",
       href: "/dashboard/employee/complete-profile",
       icon: EMPLOYEE_NAV_ICONS.onboarding,
-      badge: profileComplete ? "Completed" : null,
     },
     {
       key: "documents",
@@ -138,7 +137,9 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
     },
   ];
   return allItems.filter((item) => {
-    if (item.key === "onboarding" && user?.can_switch_to_recruiter) return false;
+    if (item.key === "onboarding" && (profileComplete || user?.can_switch_to_recruiter)) {
+      return false;
+    }
     return true;
   });
 }

@@ -663,8 +663,7 @@ class EmployeeService:
         temp_password = temp_password_container[0]
 
         if company_email:
-            # Notify the new employee that their company email is live and
-            # that their employee account credentials are ready.
+            # Notify the new employee that their company email is live.
             try:
                 await self._notify_employee(
                     employee_doc,
@@ -725,7 +724,6 @@ class EmployeeService:
 
         return {
             "message": "Candidate converted to employee successfully.",
-            "email_sent": email_sent,
             "employee": self._public_employee(employee_doc),
             "redirect_hint": "Ask the new hire to sign in with the Employee role.",
         }

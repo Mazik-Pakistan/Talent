@@ -578,7 +578,7 @@ function CandidateDashboardContent() {
                       className={styles.btnPrimary}
                       onClick={() => router.push("/offer?from=candidate-dashboard")}
                     >
-                      Review &amp; Sign Offer Letter →
+                      {offer?.extended_at ? "Review updated offer →" : "Review & Sign Offer Letter →"}
                     </button>
                   ) : (
                     <button
@@ -604,12 +604,23 @@ function CandidateDashboardContent() {
                       View full checklist
                     </button>
                   )}
-                  {offer && (
+                  {offerSigned && (
                     <button type="button" className={styles.btnGhost} onClick={() => router.push("/offer?from=candidate-dashboard")}>
-                      {offerSigned ? "View Offer Letter" : "Open offer letter"}
+                      View Offer Letter
                     </button>
                   )}
                 </div>
+                {offerLocked && offer?.extended_at ? (
+                  <div className={styles.heroRecommend}>
+                    <SparkleIcon />
+                    <div>
+                      <div className={styles.heroRecommendTitle}>Offer validity extended</div>
+                      {offer.expires_at
+                        ? <>Valid through <b>{formatDate(offer.expires_at)}</b> — review the updated letter and sign when ready.</>
+                        : "Review the updated letter and sign when ready."}
+                    </div>
+                  </div>
+                ) : null}
                 {!offerLocked && nextTask ? (
                   <div className={styles.heroRecommend}>
                     <SparkleIcon />
@@ -625,46 +636,6 @@ function CandidateDashboardContent() {
                 <div className={styles.ringLabel}>Onboarding<br />progress</div>
               </div>
             </div>
-
-            {(offerLocked || (offer && !["signed", "approved", "declined", "expired"].includes(offer.status))) && (
-              <div className={styles.banner}>
-                <div className={styles.bannerCopy}>
-                  <h3>
-                    {offer?.extended_at
-                      ? "Your offer letter was extended"
-                      : "Action Required — Sign Offer Letter"}
-                  </h3>
-                  <p>
-                    {offer?.extended_at
-                      ? `Validity was extended${
-                          offer.expires_at
-                            ? ` through ${new Date(offer.expires_at).toLocaleDateString(undefined, {
-                                year: "numeric",
-                                month: "short",
-                                day: "numeric",
-                              })}`
-                            : ""
-                        }. Review the updated letter and sign when ready.`
-                      : "Your onboarding activities are currently locked. Review and sign your offer letter to unlock document submission and the remaining onboarding steps."}
-                  </p>
-                </div>
-                <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer?from=candidate-dashboard")}>
-                  {offer?.extended_at ? "Review updated offer" : "Review & Sign Offer Letter"}
-                </button>
-              </div>
-            )}
-
-            {!offer && (
-              <div className={styles.banner}>
-                <div className={styles.bannerCopy}>
-                  <h3>Action Required — Open Offer Letter</h3>
-                  <p>Your invitation includes an offer from Mazik Global Pakistan. Sign it before uploading documents or starting onboarding.</p>
-                </div>
-                <button type="button" className={styles.btnPrimary} onClick={() => router.push("/offer")}>
-                  Open offer letter
-                </button>
-              </div>
-            )}
 
             {/* Stats */}
             <div className={styles.stats}>

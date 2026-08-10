@@ -8,10 +8,13 @@ import "react-toastify/dist/ReactToastify.css";
 import { getApiErrorMessage, login, persistLoginSession } from "@/services/authService";
 import { LOGO_URL } from "@/lib/logo";
 import PasswordToggle from "@/components/PasswordToggle";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
+import { EMAIL_REGEX, PASSWORD_REGEX, PASSWORD_HINT_TEXT } from "@/utils/validation";
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic";
 
-const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
+const PASSWORD_HINT = PASSWORD_HINT_TEXT;
+
 
 function validateForm(values) {
   const errors = {};
@@ -24,8 +27,8 @@ function validateForm(values) {
 
   if (!values.password) {
     errors.password = "Password is required.";
-  } else if (values.password.length < 8) {
-    errors.password = "Password must be at least 8 characters.";
+  } else if (!PASSWORD_REGEX.test(values.password)) {
+    errors.password = PASSWORD_HINT;
   }
 
   return errors;
@@ -175,7 +178,7 @@ function SuperAdminLoginForm() {
               <span className={styles.inputShell}>
                 <FieldIcon type="email" />
                 <input
-                  className={`${styles.input} ${loginFeedback === "error" ? styles.passwordInvalid : loginFeedback === "success" ? styles.passwordSuccess : ""}`}
+                  className={`${styles.input} ${loginFeedback === "success" ? styles.passwordSuccess : ""}`}
                   type="email"
                   name="email"
                   value={email}
@@ -186,10 +189,11 @@ function SuperAdminLoginForm() {
                   autoComplete="email"
                   placeholder="admin@company.com"
                   required
+                  style={(touched.email && errors.email) || loginFeedback === "error" ? INPUT_ERROR_STYLE : undefined}
                 />
               </span>
               {touched.email && errors.email && (
-                <small className={styles.fieldError} id="email-error">⚠ {errors.email}</small>
+                <FieldError id="email-error">{errors.email}</FieldError>
               )}
             </label>
 
@@ -198,7 +202,7 @@ function SuperAdminLoginForm() {
               <span className={styles.inputShell}>
                 <FieldIcon type="password" />
                 <input
-                  className={`${styles.input} ${loginFeedback === "error" ? styles.passwordInvalid : loginFeedback === "success" ? styles.passwordSuccess : ""}`}
+                  className={`${styles.input} ${loginFeedback === "success" ? styles.passwordSuccess : ""}`}
                   type={showPassword ? "text" : "password"}
                   name="password"
                   value={password}
@@ -209,6 +213,7 @@ function SuperAdminLoginForm() {
                   autoComplete="current-password"
                   placeholder="••••••••"
                   required
+                  style={(touched.password && errors.password) || loginFeedback === "error" ? INPUT_ERROR_STYLE : undefined}
                 />
                 <PasswordToggle
                   visible={showPassword}
@@ -217,7 +222,7 @@ function SuperAdminLoginForm() {
                 />
               </span>
               {touched.password && errors.password && (
-                <small className={styles.fieldError} id="password-error">⚠ {errors.password}</small>
+                <FieldError id="password-error">{errors.password}</FieldError>
               )}
             </label>
 

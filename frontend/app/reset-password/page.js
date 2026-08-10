@@ -7,7 +7,11 @@ import { useEffect, useRef, useState } from "react";
 import AuthAside, { RECOVERY_SLIDES } from "@/components/auth/AuthAside";
 import { getApiErrorMessage, resetPassword } from "@/services/authService";
 import PasswordToggle from "@/components/PasswordToggle";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
+import { EMAIL_REGEX, PASSWORD_REGEX, PASSWORD_HINT_TEXT } from "@/utils/validation";
 import styles from "@/app/styles/auth.module.css";
+
+const PASSWORD_HINT = PASSWORD_HINT_TEXT;
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -19,6 +23,7 @@ export default function ResetPasswordPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
   const inputRefs = useRef([]);
 
@@ -32,6 +37,9 @@ export default function ResetPasswordPage() {
     const updated = [...otp];
     updated[index] = digit;
     setOtp(updated);
+    if (fieldErrors.otp) {
+      setFieldErrors((current) => ({ ...current, otp: undefined }));
+    }
     if (digit && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
@@ -49,8 +57,39 @@ export default function ResetPasswordPage() {
     const updated = [...otp];
     for (let i = 0; i < pasted.length; i++) updated[i] = pasted[i];
     setOtp(updated);
+    if (fieldErrors.otp) {
+      setFieldErrors((current) => ({ ...current, otp: undefined }));
+    }
     const lastIdx = Math.min(pasted.length, 5);
     inputRefs.current[lastIdx]?.focus();
+  }
+
+  function validate() {
+    const errors = {};
+    if (!email.trim()) {
+      errors.email = "Please enter your email address.";
+    } else if (!EMAIL_REGEX.test(email.trim())) {
+      errors.email = "Please enter a valid email address.";
+    }
+    const code = otp.join("");
+    if (code.length !== 6) {
+      errors.otp = "Please enter the full 6-digit reset code.";
+    }
+    if (!password) {
+      errors.password = "New password is required.";
+    } else if (!PASSWORD_REGEX.test(password)) {
+      errors.password = PASSWORD_HINT;
+    }
+    if (!confirmPassword) {
+      errors.confirm_password = "Please confirm your new password.";
+    } else if (password && confirmPassword !== password) {
+      errors.confirm_password = "Passwords do not match.";
+    }
+    return errors;
+  }
+
+  function clearFieldError(field) {
+    setFieldErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
   }
 
   async function handleSubmit(event) {
@@ -58,30 +97,15 @@ export default function ResetPasswordPage() {
     setError("");
     setMessage("");
 
-    const code = otp.join("");
-
-    if (!email) {
-      setError("Please enter your email address.");
-      return;
-    }
-    if (code.length !== 6) {
-      setError("Please enter the full 6-digit reset code.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$/.test(password)) {
-      setError("Use 8+ characters with uppercase, lowercase, number, special character, and no spaces.");
-      return;
-    }
+    const validationErrors = validate();
+    setFieldErrors(validationErrors);
+    if (Object.keys(validationErrors).length > 0) return;
 
     setIsSubmitting(true);
     try {
       const data = await resetPassword({
         email: email.trim(),
-        otp: code,
+        otp: otp.join(""),
         password,
         confirm_password: confirmPassword,
       });
@@ -102,7 +126,7 @@ export default function ResetPasswordPage() {
         <AuthAside
           slides={RECOVERY_SLIDES}
           ariaLabel="Password reset help"
-          mascotMood={message ? "green" : error ? "red" : "neutral"}
+          mascotMood={message ? "green" : Object.keys(fieldErrors).length ? "red" : error ? "red" : "neutral"}
           mascotMessage={message ? "Password reset — yay! 🎉" : undefined}
         />
 
@@ -125,10 +149,16 @@ export default function ResetPasswordPage() {
                 type="email"
                 name="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  clearFieldError("email");
+                }}
                 autoComplete="email"
+                aria-invalid={Boolean(fieldErrors.email)}
+                style={fieldErrors.email ? INPUT_ERROR_STYLE : undefined}
                 required
               />
+              {fieldErrors.email && <FieldError>{fieldErrors.email}</FieldError>}
             </label>
 
             <div className={styles.otpField}>
@@ -141,6 +171,7 @@ export default function ResetPasswordPage() {
                       inputRefs.current[index] = el;
                     }}
                     className={`${styles.otpInput} ${digit ? styles.otpInputFilled : ""}`}
+                    style={fieldErrors.otp ? INPUT_ERROR_STYLE : undefined}
                     type="text"
                     inputMode="numeric"
                     maxLength={1}
@@ -148,9 +179,15 @@ export default function ResetPasswordPage() {
                     onChange={(e) => handleOtpChange(index, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(index, e)}
                     aria-label={`Reset code digit ${index + 1}`}
+                    aria-invalid={Boolean(fieldErrors.otp)}
                   />
                 ))}
               </div>
+              {fieldErrors.otp && (
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <FieldError>{fieldErrors.otp}</FieldError>
+                </div>
+              )}
             </div>
 
             <label className={styles.field}>
@@ -160,8 +197,16 @@ export default function ResetPasswordPage() {
                   className={styles.input}
                   type={showNew ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    clearFieldError("password");
+                    if (fieldErrors.confirm_password) {
+                      setFieldErrors((current) => ({ ...current, confirm_password: undefined }));
+                    }
+                  }}
                   autoComplete="new-password"
+                  aria-invalid={Boolean(fieldErrors.password)}
+                  style={fieldErrors.password ? INPUT_ERROR_STYLE : undefined}
                   required
                 />
                 <PasswordToggle
@@ -170,6 +215,7 @@ export default function ResetPasswordPage() {
                   className={styles.toggleButton}
                 />
               </span>
+              {fieldErrors.password && <FieldError>{fieldErrors.password}</FieldError>}
             </label>
 
             <label className={styles.field}>
@@ -179,8 +225,13 @@ export default function ResetPasswordPage() {
                   className={styles.input}
                   type={showConfirm ? "text" : "password"}
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    clearFieldError("confirm_password");
+                  }}
                   autoComplete="new-password"
+                  aria-invalid={Boolean(fieldErrors.confirm_password)}
+                  style={fieldErrors.confirm_password ? INPUT_ERROR_STYLE : undefined}
                   required
                 />
                 <PasswordToggle
@@ -189,6 +240,7 @@ export default function ResetPasswordPage() {
                   className={styles.toggleButton}
                 />
               </span>
+              {fieldErrors.confirm_password && <FieldError>{fieldErrors.confirm_password}</FieldError>}
             </label>
 
             {error && <p className={`${styles.formMessage} ${styles.formMessageError}`} role="alert">{error}</p>}
