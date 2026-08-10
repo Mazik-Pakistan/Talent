@@ -340,7 +340,7 @@ function RecruiterMessagesInner() {
                   />
                   {error ? <p className={styles.error}>{error}</p> : null}
                   <div className={styles.composeRow}>
-                    <button type="submit" className={styles.primaryBtn} disabled={sending || !body.trim()}>
+                    <button type="submit" className={`${styles.primaryBtn} ${styles.newBtn}`} disabled={sending || !body.trim()}>
                       {sending ? "Sending…" : "Reply"}
                     </button>
                   </div>
