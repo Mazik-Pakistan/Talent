@@ -355,7 +355,7 @@ function CatalogTab({ onAssignCourse }) {
           type: "managed",
           providerName: prov,
         }));
-        setDynamicSources([...providerSources, ...STATIC_CATALOG_SOURCES]);
+        setDynamicSources([...STATIC_CATALOG_SOURCES, ...providerSources]);
         setSource((current) => {
           if (current.startsWith("provider:")) {
             const currentProvider = current.split(":")[1];
@@ -364,10 +364,7 @@ function CatalogTab({ onAssignCourse }) {
             }
             return current;
           }
-          if (!initializedProvidersRef.current && providerList.length) {
-            return `provider:${providerList[0]}`;
-          }
-          const merged = [...providerSources, ...STATIC_CATALOG_SOURCES];
+          const merged = [...STATIC_CATALOG_SOURCES, ...providerSources];
           if (!merged.some((s) => s.key === current)) {
             return merged[0]?.key || current;
           }
