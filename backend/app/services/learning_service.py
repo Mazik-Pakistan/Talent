@@ -1108,11 +1108,7 @@ class LearningService:
         if not cert:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
         if current_user.role != "super_admin":
-            record_org = cert.get("organization_id")
-            if record_org and current_user.organization_id:
-                if record_org != current_user.organization_id:
-                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
-            elif str(cert.get("recruiter_id") or "") != str(current_user.id):
+            if str(cert.get("recruiter_id") or "") != str(current_user.id):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
 
         now = _now()
