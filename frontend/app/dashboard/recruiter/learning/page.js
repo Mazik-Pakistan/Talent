@@ -44,6 +44,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 
 export const dynamic = "force-dynamic";
 
@@ -1471,6 +1472,54 @@ function AssignmentsTab() {
   const [loading, setLoading] = useState(true);
   const [remindingId, setRemindingId] = useState(null);
 
+  function exportProgress() {
+    const headers = [
+      "Employee ID",
+      "Employee Name",
+      "Department",
+      "Job Title",
+      "Course Title",
+      "Course Type",
+      "Status",
+      "Progress",
+      "Mandatory",
+      "Due Date",
+      "Assigned Date",
+    ];
+    const rows = assignments.map((a) => {
+      const status = (a.status || "").toLowerCase();
+      let progress = status;
+      if (status === "completed") progress = "100%";
+      else if (status === "in_progress") progress = "In Progress";
+      else if (status === "assigned") progress = "Not Started";
+      return {
+        "Employee ID": a.employee_id || "",
+        "Employee Name": a.employee_name || "",
+        Department: a.department || "",
+        "Job Title": a.job_title || "",
+        "Course Title": a.course_title || "",
+        "Course Type": a.course_type || "",
+        Status: (a.status || "").replace(/_/g, " "),
+        Progress: progress,
+        Mandatory: a.mandatory ? "Yes" : "No",
+        "Due Date": a.due_date || "",
+        "Assigned Date": a.created_at || "",
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows, { header: headers, skipHeader: false });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Learning Progress");
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `learning-progress-${Date.now()}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success("Learning progress exported.");
+  }
+
   const load = useCallback((force = false) => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
@@ -1522,6 +1571,9 @@ function AssignmentsTab() {
         </div>
         <div className={styles.toolbar}>
           <div className={styles.toolbarLeft}>
+            <button type="button" className={styles.modeBtn} onClick={exportProgress}>
+              <Download aria-hidden="true" /> Export Excel
+            </button>
             <label className={styles.checkPill}>
               <input type="checkbox" checked={mandatoryOnly} onChange={(e) => setMandatoryOnly(e.target.checked)} />
               <Milestone aria-hidden="true" />
