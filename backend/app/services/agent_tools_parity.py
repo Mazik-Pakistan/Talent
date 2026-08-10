@@ -2873,9 +2873,9 @@ CANDIDATE_PARITY_TOOLS: list[Tool] = [
             "marital_status, blood_group, father_name, alternate_phone, current_address, "
             "permanent_address, same_as_current, city, state, postal_code, country). "
             "Use this whenever the candidate tells you individual facts about themselves — "
-            "it merges only the supplied fields and never requires a government ID or signed "
-            "offer to be present first. Use save_step only when ALL required fields for a "
-            "complete step are available."
+            "it merges only the supplied fields. Requires a signed offer letter first; "
+            "if unsigned, tell them to sign before updating profile fields. "
+            "Use save_step only when ALL required fields for a complete step are available."
         ),
         parameters={
             "first_name": "string, optional",

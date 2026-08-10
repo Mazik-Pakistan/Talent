@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "react-toastify";
 
 import {
   deleteDocument,
@@ -107,6 +108,19 @@ const CATEGORY_LABELS = {
 
 function isIdentityDocType(docType) {
   return docType === "cnic" || docType === "passport";
+}
+
+function docTypeLabel(type, categoryHint = null) {
+  if (categoryHint && DOC_TYPE_OPTIONS_BY_CATEGORY[categoryHint]) {
+    const match = DOC_TYPE_OPTIONS_BY_CATEGORY[categoryHint].find((option) => option.value === type);
+    if (match) return match.label;
+  }
+  // Prefer a specific category option when several categories share doc_type "other".
+  for (const options of Object.values(DOC_TYPE_OPTIONS_BY_CATEGORY)) {
+    const match = options.find((option) => option.value === type && option.value !== "other");
+    if (match && type === match.value && type !== "other") return match.label;
+  }
+  return DOC_TYPE_LABELS[type] || String(type || "Document").replace(/_/g, " ");
 }
 
 export default function DocumentManager({ styles, onChanged, compact = false }) {
@@ -223,7 +237,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       const query = searchQuery.trim().toLowerCase();
       const matchesSearch =
         !query ||
-        [doc.file_name, DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type, CATEGORY_LABELS[categoryValue] || categoryValue]
+        [doc.file_name, docTypeLabel(doc.doc_type, categoryValue), CATEGORY_LABELS[categoryValue] || categoryValue]
           .join(" ")
           .toLowerCase()
           .includes(query);
@@ -261,15 +275,11 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     return "other";
   }
 
-  function docTypeLabel(type) {
-    return DOC_TYPE_LABELS[type] || String(type || "Document").replace(/_/g, " ");
-  }
-
   async function performUpload({ file, category, docType, purpose }) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
 
-    const typeLabel = docTypeLabel(docType);
+    const typeLabel = docTypeLabel(docType, category);
     const formData = new FormData();
     formData.append("file", file);
     formData.append("category", category);
@@ -297,13 +307,16 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
           ocr?.rejection_message ||
           "This does not look like a valid National ID. Please upload a clearer CNIC or Passport.";
         setUploadMessage({ type: "error", text: message });
+        toast.error(message);
       } else {
         setUploadMessage({
           type: "success",
-          text: `${typeLabel} uploaded — status: Pending review until a recruiter verifies it.`,
+          text: `Document uploaded — ${typeLabel} is pending review until a recruiter verifies it.`,
         });
+        toast.success("Document uploaded.");
         setFile(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
+        setShowUploader(false);
         setActiveCategory("all");
         setActiveStatus("all");
       }
@@ -311,10 +324,9 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       refreshPartnerInsights();
       onChanged?.();
     } catch (err) {
-      setUploadMessage({
-        type: "error",
-        text: getApiErrorMessage(err, `Could not upload ${typeLabel}. Please try again.`),
-      });
+      const uploadError = getApiErrorMessage(err, `Could not upload ${typeLabel}. Please try again.`);
+      setUploadMessage({ type: "error", text: uploadError });
+      toast.error(uploadError);
     } finally {
       setUploading(false);
       setUploadProgress(null);
@@ -337,8 +349,9 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     try {
       const data = await getDocumentDownloadUrl(documentId, accessToken);
       if (data?.url) window.open(data.url, "_blank", "noopener,noreferrer");
+      else toast.error("Could not prepare the document download. Please try again.");
     } catch {
-      // Ignore download errors; the user still sees the document metadata.
+      toast.error("Could not download the document. Please try again.");
     }
   }
 
@@ -350,8 +363,9 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       await reextractDocument(documentId, accessToken);
       loadDocuments();
       refreshPartnerInsights();
+      toast.success("Document re-extracted successfully.");
     } catch (err) {
-      setError(getApiErrorMessage(err, "Could not re-extract the document."));
+      toast.error(getApiErrorMessage(err, "Could not re-extract the document."));
     } finally {
       setActionBusyId(null);
     }
@@ -367,8 +381,9 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
       loadDocuments();
       refreshPartnerInsights();
       onChanged?.();
+      toast.success("Document deleted.");
     } catch (err) {
-      setError(getApiErrorMessage(err, "Could not delete the document."));
+      toast.error(getApiErrorMessage(err, "Could not delete the document."));
     } finally {
       setActionBusyId(null);
     }
@@ -379,7 +394,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     if (!accessToken) return;
 
     const replacedDocType = doc.doc_type || "other";
-    const typeLabel = docTypeLabel(replacedDocType);
+    const typeLabel = docTypeLabel(replacedDocType, category);
     const category = doc.category || inferCategory(replacedDocType);
     const purpose = derivePurpose(replacedDocType);
 
@@ -404,10 +419,10 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
           data?.document?.is_active === false);
 
       if (identityHardReject) {
-        setReplacementMessage({
-          type: "error",
-          text: ocr?.rejection_message || "This does not look like a valid National ID. Try another file.",
-        });
+        const rejectMessage =
+          ocr?.rejection_message || "This does not look like a valid National ID. Try another file.";
+        setReplacementMessage({ type: "error", text: rejectMessage });
+        toast.error(rejectMessage);
       } else {
         setReplacementDocId(null);
         setReplacementFile(null);
@@ -416,15 +431,15 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
           type: "success",
           text: `${typeLabel} replaced — awaiting recruiter verification.`,
         });
+        toast.success(`${typeLabel} replaced successfully.`);
       }
       loadDocuments();
       refreshPartnerInsights();
       onChanged?.();
     } catch (err) {
-      setReplacementMessage({
-        type: "error",
-        text: getApiErrorMessage(err, "Replacement upload failed."),
-      });
+      const replaceError = getApiErrorMessage(err, "Replacement upload failed.");
+      setReplacementMessage({ type: "error", text: replaceError });
+      toast.error(replaceError);
     } finally {
       setReplacementUploadingId(null);
       setUploadProgress(null);
@@ -447,19 +462,18 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
     return <p className="form-message" style={{ background: "#fee9e7", color: "#b42318" }}>{error}</p>;
   }
 
-  const selectedTypeLabel = docTypeLabel(docType);
-
   return (
-    <div className="document-manager-shell">
-      {uploadProgress ? (
-        <div className="document-upload-overlay" role="status" aria-live="polite" data-mascot-busy>
-          <div className="document-upload-overlay-card">
-            <strong>
-              {uploadProgress.replacing ? "Replacing" : "Uploading"} {uploadProgress.typeLabel}
-            </strong>
-            <p>
-              Saving <em>{uploadProgress.fileName}</em> to your document centre. This may take a moment.
-            </p>
+    <div
+      className="document-manager-shell"
+      data-mascot-busy={uploadProgress ? "true" : undefined}
+      aria-busy={Boolean(uploadProgress)}
+    >
+      {uploadProgress && !uploadProgress.replacing ? (
+        <div className="document-upload-status" role="status" aria-live="polite">
+          <span className="document-upload-status-spinner" aria-hidden="true" />
+          <div>
+            <strong>Uploading {uploadProgress.typeLabel}</strong>
+            <p>{uploadProgress.fileName}</p>
           </div>
         </div>
       ) : null}
@@ -488,7 +502,13 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
           <button
             type="button"
             className="primary-button document-upload-toggle"
-            onClick={() => setShowUploader((value) => !value)}
+            onClick={() => {
+              setShowUploader((value) => {
+                const next = !value;
+                if (next) setUploadMessage(null);
+                return next;
+              });
+            }}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -520,24 +540,38 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
         </div>
       </div>
 
+      {!showUploader && uploadMessage ? (
+        <p
+          className="form-message"
+          role="status"
+          style={{
+            background: uploadMessage.type === "error" ? "#fee9e7" : "#edf8f2",
+            color: uploadMessage.type === "error" ? "#b42318" : "#176b3b",
+          }}
+        >
+          {uploadMessage.text}
+        </p>
+      ) : null}
+
       {showUploader && (
         <form className="document-upload-card" onSubmit={handleUpload}>
           <div className="document-upload-intro">
             <strong>Upload a document</strong>
-            <p>
-              Choose the type, attach the file, then save. New uploads show as <em>Pending review</em> until a
-              recruiter verifies them.
-            </p>
+            <p>Pick a category and type, choose a file, then upload. New files stay pending until a recruiter verifies them.</p>
           </div>
-          <div className="document-upload-row">
+
+          <div className="document-upload-fields">
             <label className="field">
               <span>Category</span>
-              <select value={category} onChange={(event) => {
-                const nextCategory = event.target.value;
-                setCategory(nextCategory);
-                const options = DOC_TYPE_OPTIONS_BY_CATEGORY[nextCategory] || DOC_TYPE_OPTIONS_BY_CATEGORY.other;
-                setDocType(options[0]?.value || "other");
-              }}>
+              <select
+                value={category}
+                onChange={(event) => {
+                  const nextCategory = event.target.value;
+                  setCategory(nextCategory);
+                  const options = DOC_TYPE_OPTIONS_BY_CATEGORY[nextCategory] || DOC_TYPE_OPTIONS_BY_CATEGORY.other;
+                  setDocType(options[0]?.value || "other");
+                }}
+              >
                 {CATEGORY_OPTIONS.filter((option) => option.value !== "all").map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -555,18 +589,33 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
                 ))}
               </select>
             </label>
-            <div className="field">
-              <span>File</span>
-              <FileUploadField ref={fileInputRef} onChange={(event) => setFile(event.target.files?.[0] || null)} />
-            </div>
           </div>
-          {file ? (
-            <div className="document-upload-selected">
-              Uploading as <strong>{selectedTypeLabel}</strong>
-              <span aria-hidden="true"> · </span>
-              <span>{file.name}</span>
-            </div>
-          ) : null}
+
+          <div className="document-upload-actions">
+            <FileUploadField
+              ref={fileInputRef}
+              className="document-upload-chooser"
+              selected={Boolean(file)}
+              label="Choose file"
+              replaceLabel="Change file"
+              onChange={(event) => setFile(event.target.files?.[0] || null)}
+            />
+            {file ? (
+              <span className="document-upload-filename" title={file.name}>
+                {file.name}
+              </span>
+            ) : (
+              <span className="document-upload-filename muted">No file selected</span>
+            )}
+            <button
+              type="submit"
+              className="primary-button document-upload-save"
+              disabled={uploading || !file}
+            >
+              {uploading ? "Uploading…" : "Upload"}
+            </button>
+          </div>
+
           {uploadMessage && (
             <p
               className="form-message"
@@ -578,9 +627,6 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
               {uploadMessage.text}
             </p>
           )}
-          <button type="submit" className="primary-button" disabled={uploading || !file}>
-            {uploading ? `Uploading ${selectedTypeLabel}…` : `Save ${selectedTypeLabel}`}
-          </button>
         </form>
       )}
 
@@ -631,7 +677,7 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
                   {docs.map((doc) => {
                     const categoryValue = doc.category || inferCategory(doc.doc_type);
                     const isReplacing = replacementDocId === doc.id;
-                    const typeLabel = docTypeLabel(doc.doc_type);
+                    const typeLabel = docTypeLabel(doc.doc_type, categoryValue);
                     return (
                       <article key={doc.id} className="document-card">
                         <div className="document-card-head">
@@ -686,41 +732,51 @@ export default function DocumentManager({ styles, onChanged, compact = false }) 
 
                         {isReplacing && (
                           <div className="document-upload-card compact">
-                            <p className="document-replace-hint">
-                              Replace <strong>{typeLabel}</strong>
-                              {doc.file_name ? ` (${doc.file_name})` : ""}. The new file stays pending until verified.
-                            </p>
-                            <FileUploadField
-                              ref={replacementInputRef}
-                              label="Choose replacement"
-                              onChange={(event) => setReplacementFile(event.target.files?.[0] || null)}
-                            />
-                            {replacementFile ? (
-                              <div className="document-upload-selected">
-                                Selected: <strong>{replacementFile.name}</strong>
+                            {replacementUploadingId === doc.id ? (
+                              <div className="document-replace-progress" role="status" aria-live="polite">
+                                <span className="document-upload-status-spinner" aria-hidden="true" />
+                                <div>
+                                  <strong>Uploading replacement…</strong>
+                                  <p>{replacementFile?.name || "Saving file"}</p>
+                                </div>
                               </div>
-                            ) : null}
-                            {replacementMessage && (
-                              <p
-                                className="form-message"
-                                style={{
-                                  background: replacementMessage.type === "error" ? "#fee9e7" : "#edf8f2",
-                                  color: replacementMessage.type === "error" ? "#b42318" : "#176b3b",
-                                }}
-                              >
-                                {replacementMessage.text}
-                              </p>
+                            ) : (
+                              <>
+                                <p className="document-replace-hint">
+                                  Replace <strong>{typeLabel}</strong>
+                                  {doc.file_name ? ` (${doc.file_name})` : ""}. The new file stays pending until verified.
+                                </p>
+                                <FileUploadField
+                                  ref={replacementInputRef}
+                                  label="Choose replacement"
+                                  onChange={(event) => setReplacementFile(event.target.files?.[0] || null)}
+                                />
+                                {replacementFile ? (
+                                  <div className="document-upload-selected">
+                                    Selected: <strong>{replacementFile.name}</strong>
+                                  </div>
+                                ) : null}
+                                {replacementMessage && (
+                                  <p
+                                    className="form-message"
+                                    style={{
+                                      background: replacementMessage.type === "error" ? "#fee9e7" : "#edf8f2",
+                                      color: replacementMessage.type === "error" ? "#b42318" : "#176b3b",
+                                    }}
+                                  >
+                                    {replacementMessage.text}
+                                  </p>
+                                )}
+                                <button
+                                  type="button"
+                                  className="primary-button"
+                                  disabled={!replacementFile}
+                                  onClick={() => handleReplacement(doc)}
+                                >
+                                  Upload replacement {typeLabel}
+                                </button>
+                              </>
                             )}
-                            <button
-                              type="button"
-                              className="primary-button"
-                              disabled={replacementUploadingId === doc.id || !replacementFile}
-                              onClick={() => handleReplacement(doc)}
-                            >
-                              {replacementUploadingId === doc.id
-                                ? `Uploading ${typeLabel}…`
-                                : `Upload replacement ${typeLabel}`}
-                            </button>
                           </div>
                         )}
                       </article>

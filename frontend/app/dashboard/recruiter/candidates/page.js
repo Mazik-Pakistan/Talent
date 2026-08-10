@@ -521,6 +521,13 @@ function RecruiterCandidatesPageContent() {
   async function handleEditAndResend(offer) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken || !editDraft) return;
+    const responseNote = (negoNotes[offer.id] || "").trim();
+    if (!responseNote) {
+      toast.error("Please enter a clarification response before sending.", {
+        toastId: `clarification-note-required-edit-${offer.id}`,
+      });
+      return;
+    }
     if (!editDraft.job_title?.trim() || !editDraft.department?.trim() || !editDraft.reporting_manager?.trim()) {
       toast.error("Job title, department, and reporting manager are required.");
       return;
@@ -568,9 +575,10 @@ function RecruiterCandidatesPageContent() {
           : null,
         terms: editDraft.terms?.trim() || "",
         message_to_candidate: editDraft.message_to_candidate?.trim() || null,
-        recruiter_note: (negoNotes[offer.id] || "").trim() || null,
+        recruiter_note: responseNote,
         decision_summary:
           (counterTerms[offer.id]?.decision_summary || "").trim() ||
+          responseNote ||
           "Offer letter updated after clarification and resent.",
       };
       const data = await editAndResendOffer(offer.id, payload, accessToken);

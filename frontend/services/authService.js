@@ -101,6 +101,13 @@ export function clearLocalSession() {
   localStorage.removeItem("remember_me");
   document.cookie = "access_token=; path=/; max-age=0";
   document.cookie = "refresh_token=; path=/; max-age=0";
+  // Drop per-role mascot memory so a different user signing in on this
+  // browser never sees the previous account's AI/mascot state.
+  if (typeof window !== "undefined" && window.sessionStorage) {
+    Object.keys(sessionStorage)
+      .filter((key) => key.includes("_mascot_"))
+      .forEach((key) => sessionStorage.removeItem(key));
+  }
 }
 
 /**
