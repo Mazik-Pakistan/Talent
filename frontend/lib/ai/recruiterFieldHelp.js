@@ -182,6 +182,11 @@ export const RECRUITER_FIELD_HELP = {
   // Recruiter profile
   phone: "Your contact number for teammates and escalation.",
   // full_name / job_title / department / office_location reused above
+
+  // Security / Password Change
+  current_password: "Your existing password — used to verify the change.",
+  new_password: "8+ characters with uppercase, lowercase, number, and special character.",
+  confirm_new_password: "Re-enter the new password — must match the field above.",
 };
 
 /** Label / placeholder fragments → same tips (for fields without clean name=). */
@@ -596,6 +601,16 @@ export function recruiterPageSummaryFor(pathname, context = null) {
       };
     }
     return { key: "organization-config", ...RECRUITER_PAGE_SUMMARIES["organization-config"] };
+  }
+
+  // Security / Change password section within the recruiter profile
+  if (pathname.includes("/profile") && context?.section === "security") {
+    return {
+      key: "profile-security",
+      title: "Change password",
+      what: "Update your password to keep your account secure. Fill the current, new, and confirm fields.",
+      why: RECRUITER_PAGE_SUMMARIES.profile?.why || "A strong password keeps your account safe.",
+    };
   }
 
   const ordered = Object.entries(RECRUITER_PAGE_SUMMARIES).sort((a, b) => b[0].length - a[0].length);

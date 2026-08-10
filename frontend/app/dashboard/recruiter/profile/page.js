@@ -54,6 +54,38 @@ function RecruiterProfilePageContent() {
     return () => clearRecruiterContext();
   }, []);
 
+  // Track when Security section becomes visible
+  useEffect(() => {
+    if (loading) return;
+    const securitySection = document.getElementById("security-section");
+    if (!securitySection) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            publishRecruiterContext({
+              section: "security",
+              tab: "security-section",
+              hint: "Change your password to keep your account secure.",
+              fields: ["current_password", "new_password", "confirm_new_password"],
+            });
+          } else {
+            publishRecruiterContext({
+              section: "recruiter_profile",
+              hint: "Update your name, contact, designation, department, and office. Focus each field for a tip.",
+              fields: ["full_name", "phone", "job_title", "department", "office_location"],
+            });
+          }
+        });
+      },
+      { rootMargin: "-96px 0px -50% 0px", threshold: 0.1 }
+    );
+
+    observer.observe(securitySection);
+    return () => observer.disconnect();
+  }, [loading]);
+
   const syncLocalUser = useCallback((nextProfile) => {
     patchLocalUser({
       full_name: nextProfile.full_name,
@@ -298,7 +330,7 @@ function RecruiterProfilePageContent() {
             </div>
           </div>
 
-          <div className={styles.section}>
+          <div className={styles.section} id="security-section">
             <div className={styles.sectionHead}>
               <div className={styles.sectionHeadLeft}>
                 <div className={`${styles.bar} ${styles.green}`} />

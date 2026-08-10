@@ -95,6 +95,37 @@ function CandidateDashboardContent() {
     return () => clearCandidateContext();
   }, []);
 
+  // Track when Security section becomes visible
+  useEffect(() => {
+    const securitySection = document.getElementById("security-section");
+    if (!securitySection) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            publishCandidateContext({
+              pathname: "/dashboard/candidate",
+              section: "security",
+              hint: "Change your password to keep your account secure.",
+              fields: ["current_password", "new_password", "confirm_new_password"],
+            });
+          } else {
+            publishCandidateContext({
+              pathname: "/dashboard/candidate",
+              section: "dashboard",
+              hint: "Your home base — check onboarding, documents, and offer status from here.",
+            });
+          }
+        });
+      },
+      { rootMargin: "-96px 0px -50% 0px", threshold: 0.1 }
+    );
+
+    observer.observe(securitySection);
+    return () => observer.disconnect();
+  }, []);
+
   const loadDashboard = useCallback(async () => {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;

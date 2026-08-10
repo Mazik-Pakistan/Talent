@@ -111,6 +111,15 @@ export function employeePageSummaryFor(pathname, context = null) {
   }
   if (pathname.includes("/profile")) {
     const section = context?.section;
+    // Security / Change password section
+    if (section === "security") {
+      return {
+        key: "profile-security",
+        title: "Change password",
+        what: "Update your password to keep your account secure. Fill the current, new, and confirm fields.",
+        why: EMPLOYEE_PAGE_SUMMARIES.profile.why,
+      };
+    }
     if (section && HOVER_HELP[section]) {
       return {
         key: `profile-${section}`,

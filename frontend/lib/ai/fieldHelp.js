@@ -43,8 +43,13 @@ export const FIELD_HELP = {
 
   // IT support
   request_type: "What kind of help — replacement hardware, new asset, license, access, or other.",
-  it_request_title: "Short title HR and IT will see — e.g. “Laptop not turning on”.",
+  it_request_title: "Short title HR and IT will see — e.g. 'Laptop not turning on'.",
   it_request_description: "Optional details: symptoms, urgency, or anything IT should know.",
+
+  // Security / Password Change
+  current_password: "Enter your current password so we can verify it's really you.",
+  new_password: "At least 8 characters with an uppercase letter, lowercase letter, number, and special character.",
+  confirm_new_password: "Re-enter the new password — it must match the field above.",
 };
 
 export const HOVER_HELP = {

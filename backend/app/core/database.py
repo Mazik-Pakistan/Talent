@@ -4,6 +4,24 @@ from supabase import Client, create_client
 
 from app.core.config import settings
 
+
+def _prefer_public_dns_for_mongodb() -> None:
+    """mongodb+srv needs SRV DNS. Home routers often time out; use public resolvers instead."""
+    if not str(settings.MONGODB_URI).startswith("mongodb+srv://"):
+        return
+    try:
+        import dns.resolver
+
+        resolver = dns.resolver.Resolver(configure=False)
+        resolver.nameservers = ["8.8.8.8", "1.1.1.1"]
+        resolver.lifetime = 8.0
+        dns.resolver.default_resolver = resolver
+    except Exception:
+        return
+
+
+_prefer_public_dns_for_mongodb()
+
 mongo_client = AsyncIOMotorClient(settings.MONGODB_URI)
 database: AsyncIOMotorDatabase = mongo_client[settings.DATABASE_NAME]
 

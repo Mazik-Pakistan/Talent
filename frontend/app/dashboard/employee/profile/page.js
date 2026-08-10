@@ -169,6 +169,20 @@ function EmployeeProfileContent() {
     });
   }, [editingSection]);
 
+  // Publish Security section context when visible
+  useEffect(() => {
+    if (activeSectionId === "sec-security") {
+      publishGuideContext({
+        pathname: "/dashboard/employee/profile",
+        section: "security",
+        label: "Security",
+        tab: "sec-security",
+        hint: "Change your password to keep your account secure.",
+        fields: ["current_password", "new_password", "confirm_new_password"],
+      });
+    }
+  }, [activeSectionId]);
+
   // Page-scoped Copilot assist — guidance only (no auto-fill). Mascot highlights fields.
   useEffect(() => {
     return registerPageAssist(null);
