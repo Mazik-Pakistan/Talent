@@ -67,10 +67,6 @@ import {
   commitManagedImport,
   createManagedCourse,
   browseCatalog,
-  createKbCertification,
-  createKbRole,
-  deleteKbCertification,
-  deleteKbRole,
   deleteManagedCourse,
   getCatalogFacets,
   getCatalogSources,
@@ -79,8 +75,6 @@ import {
   getLearningAnalytics,
   listManagedCourses,
   listAssignments,
-  listKbCertifications,
-  listKbRoles,
   listPendingCertificates,
   bulkManagedCourseAction,
   previewManagedImport,
@@ -107,7 +101,6 @@ const TABS = [
   { key: "managed", label: "Managed Learning", icon: BookOpen },
   { key: "providers", label: "Providers", icon: Building2 },
   { key: "imports", label: "Import Courses", icon: Upload },
-  { key: "knowledge", label: "Knowledge Base", icon: Library },
   { key: "assign", label: "Assign Courses", icon: UserCheck },
   { key: "assignments", label: "Track Progress", icon: ListChecks },
   { key: "certificates", label: "Verify Certificates", icon: BadgeCheck },
@@ -292,7 +285,6 @@ function LearningPageContent() {
        {tab === "managed" && <ManagedLearningTab />}
        {tab === "providers" && <ProvidersTab onImportProvider={(p) => { setPendingImportProvider(p); setTab("imports"); }} />}
        {tab === "imports" && <ImportsTab initialProvider={pendingImportProvider} onConsumedInitial={clearPendingImportProvider} />}
-       {tab === "knowledge" && <KnowledgeBaseTab />}
        {tab === "assign" && (
          <AssignTab
            initialCourse={pendingAssign?.course || null}
@@ -684,285 +676,6 @@ function CatalogTab({ onAssignCourse }) {
         )}
       </div>
     </div>
-  );
-}
-
-function KnowledgeBaseTab() {
-  const [roles, setRoles] = useState([]);
-  const [certs, setCerts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [roleForm, setRoleForm] = useState({ title: "", description: "", required_skills: "", required_certifications: "" });
-  const [certForm, setCertForm] = useState({
-    title: "",
-    provider: "",
-    official_url: "",
-    description: "",
-    skills_covered: "",
-    estimated_hours: "",
-    difficulty: "Intermediate",
-    priority: "medium",
-  });
-  const [saving, setSaving] = useState(false);
-
-  const load = useCallback(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    setLoading(true);
-    Promise.all([listKbRoles(token), listKbCertifications(token)])
-      .then(([roleData, certData]) => {
-        setRoles(roleData.roles || []);
-        setCerts(certData.certifications || []);
-      })
-      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load knowledge base.")))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function handleCreateRole(e) {
-    e.preventDefault();
-    const token = localStorage.getItem("access_token");
-    setSaving(true);
-    try {
-      await createKbRole(token, {
-        title: roleForm.title.trim(),
-        description: roleForm.description.trim(),
-        required_skills: roleForm.required_skills.split(",").map((s) => s.trim()).filter(Boolean),
-        required_certifications: roleForm.required_certifications.split(",").map((s) => s.trim()).filter(Boolean),
-      });
-      setRoleForm({ title: "", description: "", required_skills: "", required_certifications: "" });
-      toast.success("Role added to knowledge base.");
-      dispatchFrameworkInvalidated();
-      load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not create role."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleCreateCert(e) {
-    e.preventDefault();
-    const token = localStorage.getItem("access_token");
-    setSaving(true);
-    try {
-      await createKbCertification(token, {
-        title: certForm.title.trim(),
-        provider: certForm.provider.trim(),
-        official_url: certForm.official_url.trim(),
-        description: certForm.description.trim(),
-        skills_covered: certForm.skills_covered.split(",").map((s) => s.trim()).filter(Boolean),
-        estimated_hours: certForm.estimated_hours ? Number(certForm.estimated_hours) : null,
-        difficulty: certForm.difficulty,
-        priority: certForm.priority,
-      });
-      setCertForm({
-        title: "",
-        provider: "",
-        official_url: "",
-        description: "",
-        skills_covered: "",
-        estimated_hours: "",
-        difficulty: "Intermediate",
-        priority: "medium",
-      });
-      toast.success("Certification added — it will appear in the course catalog.");
-      dispatchFrameworkInvalidated();
-      load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not create certification."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <>
-      <div className={shellStyles.section}>
-        <div className={shellStyles.sectionHead}>
-          <div className={shellStyles.sectionHeadLeft}>
-            <span className={`${shellStyles.bar} ${shellStyles.navy}`} />
-            <div>
-              <div className={shellStyles.sectionTitle}>Organization roles</div>
-              <p className={shellStyles.sectionDesc}>Required skills &amp; certifications drive employee career matching</p>
-            </div>
-          </div>
-        </div>
-        <div className={shellStyles.sectionBody}>
-          <form data-partner-coach className={styles.kbForm} onSubmit={handleCreateRole}>
-            <label className={styles.fieldLabel}>
-              Role title
-              <input placeholder="e.g. Architect" value={roleForm.title} onChange={(e) => setRoleForm((f) => ({ ...f, title: e.target.value }))} required />
-            </label>
-            <label className={styles.fieldLabel}>
-              Required skills
-              <input placeholder="Comma-separated, e.g. Python, Azure" value={roleForm.required_skills} onChange={(e) => setRoleForm((f) => ({ ...f, required_skills: e.target.value }))} />
-            </label>
-            <label className={styles.fieldLabel}>
-              Required certifications
-              <input placeholder="Comma-separated, e.g. AZ-305" value={roleForm.required_certifications} onChange={(e) => setRoleForm((f) => ({ ...f, required_certifications: e.target.value }))} />
-            </label>
-            <label className={styles.fieldLabel}>
-              Description
-              <input placeholder="What does this role require?" value={roleForm.description} onChange={(e) => setRoleForm((f) => ({ ...f, description: e.target.value }))} />
-            </label>
-            <div className={styles.formActions}>
-              <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                <Plus aria-hidden="true" /> {saving ? "Adding…" : "Add role"}
-              </button>
-            </div>
-          </form>
-          {!loading && roles.length === 0 && (
-            <div className={styles.emptyState}>
-              <div className={styles.emptyStateIcon}><Library aria-hidden="true" /></div>
-              <div className={styles.emptyStateTitle}>No roles defined yet</div>
-              <p className={styles.emptyStateHint}>Add your first organization role to power employee career matching.</p>
-            </div>
-          )}
-          <div className={styles.courseGrid}>
-            {roles.map((r) => (
-              <div key={r.id} className={styles.courseCard}>
-                <div className={styles.courseCardHead}>
-                  <span className={`${styles.sourceBadge} ${styles.sourceBadgeRecruiter}`}>Role</span>
-                </div>
-                <div className={styles.courseTitle}>{r.title}</div>
-                <div className={styles.courseMeta}>
-                  <span className={styles.metaChip}><Milestone aria-hidden="true" />{(r.required_skills || []).length} skills</span>
-                  <span className={styles.metaChip}><BadgeCheck aria-hidden="true" />{(r.required_certifications || []).length} certs</span>
-                </div>
-                <p className={styles.courseSummary}>{(r.description || "").slice(0, 160)}</p>
-                <div className={styles.courseActions}>
-                  <button
-                    type="button"
-                    className={styles.smallBtn}
-                    onClick={async () => {
-                      const token = localStorage.getItem("access_token");
-                      try {
-                        await deleteKbRole(token, r.id);
-                        toast.success("Role removed.");
-                        dispatchFrameworkInvalidated();
-                        load();
-                      } catch (err) {
-                        toast.error(getApiErrorMessage(err, "Could not delete role."));
-                      }
-                    }}
-                  >
-                    <Trash2 aria-hidden="true" /> Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className={shellStyles.section}>
-        <div className={shellStyles.sectionHead}>
-          <div className={shellStyles.sectionHeadLeft}>
-            <span className={`${shellStyles.bar} ${shellStyles.green}`} />
-            <div>
-              <div className={shellStyles.sectionTitle}>Certifications &amp; courses</div>
-              <p className={shellStyles.sectionDesc}>Shown in the employee catalog as a managed-learning course</p>
-            </div>
-          </div>
-        </div>
-        <div className={shellStyles.sectionBody}>
-          <form data-partner-coach className={styles.kbForm} onSubmit={handleCreateCert}>
-            <label className={styles.fieldLabel}>
-              Title
-              <input placeholder="e.g. AZ-305" value={certForm.title} onChange={(e) => setCertForm((f) => ({ ...f, title: e.target.value }))} required />
-            </label>
-            <label className={styles.fieldLabel}>
-              Provider
-              <input placeholder="e.g. Microsoft" value={certForm.provider} onChange={(e) => setCertForm((f) => ({ ...f, provider: e.target.value }))} />
-            </label>
-            <label className={styles.fieldLabel}>
-              Official URL
-              <input placeholder="https://learn.microsoft.com/…" value={certForm.official_url} onChange={(e) => setCertForm((f) => ({ ...f, official_url: e.target.value }))} />
-            </label>
-            <label className={styles.fieldLabel}>
-              Skills covered
-              <input placeholder="Comma-separated, e.g. Kubernetes, Networking" value={certForm.skills_covered} onChange={(e) => setCertForm((f) => ({ ...f, skills_covered: e.target.value }))} />
-            </label>
-            <label className={styles.fieldLabel}>
-              Estimated hours
-              <input type="number" min="0" placeholder="e.g. 12" value={certForm.estimated_hours} onChange={(e) => setCertForm((f) => ({ ...f, estimated_hours: e.target.value }))} />
-            </label>
-            <div className={styles.splitRow}>
-              <label className={styles.fieldLabel}>
-                Difficulty
-                <select value={certForm.difficulty} onChange={(e) => setCertForm((f) => ({ ...f, difficulty: e.target.value }))}>
-                  {["Beginner", "Intermediate", "Advanced", "Expert"].map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </label>
-              <label className={styles.fieldLabel}>
-                Priority
-                <select value={certForm.priority} onChange={(e) => setCertForm((f) => ({ ...f, priority: e.target.value }))}>
-                  {["critical", "immediate", "medium", "low"].map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </label>
-            </div>
-            <label className={`${styles.fieldLabel} ${styles.wide}`}>
-              Description
-              <input placeholder="What does this certification cover?" value={certForm.description} onChange={(e) => setCertForm((f) => ({ ...f, description: e.target.value }))} />
-            </label>
-            <div className={styles.formActions}>
-              <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                <Plus aria-hidden="true" /> {saving ? "Adding…" : "Add certification"}
-              </button>
-            </div>
-          </form>
-          {!loading && certs.length === 0 && (
-            <div className={styles.emptyState}>
-              <div className={styles.emptyStateIcon}><BadgeCheck aria-hidden="true" /></div>
-              <div className={styles.emptyStateTitle}>No certifications yet</div>
-              <p className={styles.emptyStateHint}>Add certifications above and they will appear in the employee course catalog.</p>
-            </div>
-          )}
-          <div className={styles.courseGrid}>
-            {certs.map((c) => (
-              <div key={c.id} className={styles.courseCard}>
-                <div className={styles.courseCardHead}>
-                  <span className={`${styles.sourceBadge} ${styles.sourceBadgeCoursera}`}>Certification</span>
-                </div>
-                <div className={styles.courseTitle}>{c.title}</div>
-                <div className={styles.courseMeta}>
-                  {c.provider ? <span className={styles.metaChip}><Building2 aria-hidden="true" />{c.provider}</span> : null}
-                  <span className={styles.metaChip}>{c.difficulty}</span>
-                  {c.estimated_hours ? <span className={styles.metaChip}><Clock aria-hidden="true" />{c.estimated_hours}h</span> : null}
-                  <span className={styles.metaChip}>{c.priority}</span>
-                </div>
-                <p className={styles.courseSummary}>{(c.description || "").slice(0, 140)}</p>
-                <div className={styles.courseActions}>
-                  {c.official_url && (
-                    <a href={c.official_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
-                      <Globe aria-hidden="true" /> Official link
-                    </a>
-                  )}
-                  <button
-                    type="button"
-                    className={styles.smallBtn}
-                    onClick={async () => {
-                      const token = localStorage.getItem("access_token");
-                      try {
-                        await deleteKbCertification(token, c.id);
-                        toast.success("Certification removed.");
-                        dispatchFrameworkInvalidated();
-                        load();
-                      } catch (err) {
-                        toast.error(getApiErrorMessage(err, "Could not delete certification."));
-                      }
-                    }}
-                  >
-                    <Trash2 aria-hidden="true" /> Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </>
   );
 }
 

@@ -47,7 +47,7 @@ async def browse_catalog(
     level: str | None = None,
     product: str | None = None,
     type: str | None = Query(default=None, alias="type"),
-    source: str = Query(default="microsoft_learn", description="'microsoft_learn', 'coursera', or 'recruiter_kb'"),
+    source: str = Query(default="microsoft_learn", description="'microsoft_learn' or 'coursera'"),
     category: str | None = Query(default=None, description="Soft-skill category (source=coursera only)"),
     provider: str | None = None,
     designation: str | None = None,
@@ -352,77 +352,6 @@ async def role_matches(current_user: RequireEmployee, refresh: bool = False):
 @router.get("/recommendations")
 async def recommendations(current_user: RequireEmployee, refresh: bool = False):
     return await learning_service.get_recommendations(current_user, refresh=refresh)
-
-
-# ---------------------------------------------------------------------- #
-# Recruiter Knowledge Base (roles + certifications)
-# ---------------------------------------------------------------------- #
-@router.get("/knowledge-base/roles")
-async def kb_list_roles(current_user: RequireRecruiterWithLearning):
-    from app.services.recruiter_kb_service import recruiter_kb_service
-
-    return await recruiter_kb_service.list_roles(current_user)
-
-
-@router.post("/knowledge-base/roles", status_code=201)
-async def kb_create_role(request: dict, current_user: RequireRecruiterWithLearning):
-    from app.schemas.recruiter_kb import KbRoleCreate
-    from app.services.recruiter_kb_service import recruiter_kb_service
-
-    payload = KbRoleCreate(**request)
-    return await recruiter_kb_service.create_role(current_user, payload.model_dump())
-
-
-@router.put("/knowledge-base/roles/{role_id}")
-async def kb_update_role(role_id: str, request: dict, current_user: RequireRecruiterWithLearning):
-    from app.schemas.recruiter_kb import KbRoleUpdate
-    from app.services.recruiter_kb_service import recruiter_kb_service
-
-    payload = KbRoleUpdate(**request)
-    return await recruiter_kb_service.update_role(
-        current_user, role_id, payload.model_dump(exclude_unset=True)
-    )
-
-
-@router.delete("/knowledge-base/roles/{role_id}")
-async def kb_delete_role(role_id: str, current_user: RequireRecruiterWithLearning):
-    from app.services.recruiter_kb_service import recruiter_kb_service
-
-    return await recruiter_kb_service.delete_role(current_user, role_id)
-
-
-@router.get("/knowledge-base/certifications")
-async def kb_list_certs(current_user: RequireRecruiterWithLearning):
-    from app.services.recruiter_kb_service import recruiter_kb_service
-
-    return await recruiter_kb_service.list_certifications(current_user)
-
-
-@router.post("/knowledge-base/certifications", status_code=201)
-async def kb_create_cert(request: dict, current_user: RequireRecruiterWithLearning):
-    from app.schemas.recruiter_kb import KbCertificationCreate
-    from app.services.recruiter_kb_service import recruiter_kb_service
-
-    payload = KbCertificationCreate(**request)
-    return await recruiter_kb_service.create_certification(current_user, payload.model_dump())
-
-
-@router.put("/knowledge-base/certifications/{cert_id}")
-async def kb_update_cert(cert_id: str, request: dict, current_user: RequireRecruiterWithLearning):
-    from app.schemas.recruiter_kb import KbCertificationUpdate
-    from app.services.recruiter_kb_service import recruiter_kb_service
-
-    payload = KbCertificationUpdate(**request)
-    return await recruiter_kb_service.update_certification(
-        current_user, cert_id, payload.model_dump(exclude_unset=True)
-    )
-
-
-@router.delete("/knowledge-base/certifications/{cert_id}")
-async def kb_delete_cert(cert_id: str, current_user: RequireRecruiterWithLearning):
-    from app.services.recruiter_kb_service import recruiter_kb_service
-
-    return await recruiter_kb_service.delete_certification(current_user, cert_id)
 
 
 # ---------------------------------------------------------------------- #

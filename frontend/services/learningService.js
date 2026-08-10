@@ -212,54 +212,6 @@ export async function getRecommendations(accessToken, refresh = false) {
   return data;
 }
 
-// ─── Recruiter Knowledge Base ────────────────────────────────────────────────
-
-export async function listKbRoles(accessToken) {
-  const { data } = await apiClient.get("/api/learning/knowledge-base/roles");
-  return data;
-}
-
-export async function createKbRole(accessToken, payload) {
-  const { data } = await apiClient.post("/api/learning/knowledge-base/roles", payload);
-  invalidateLearningCaches();
-  return data;
-}
-
-export async function updateKbRole(accessToken, roleId, payload) {
-  const { data } = await apiClient.put(`/api/learning/knowledge-base/roles/${roleId}`, payload);
-  invalidateLearningCaches();
-  return data;
-}
-
-export async function deleteKbRole(accessToken, roleId) {
-  const { data } = await apiClient.delete(`/api/learning/knowledge-base/roles/${roleId}`);
-  invalidateLearningCaches();
-  return data;
-}
-
-export async function listKbCertifications(accessToken) {
-  const { data } = await apiClient.get("/api/learning/knowledge-base/certifications");
-  return data;
-}
-
-export async function createKbCertification(accessToken, payload) {
-  const { data } = await apiClient.post("/api/learning/knowledge-base/certifications", payload);
-  invalidateLearningCaches();
-  return data;
-}
-
-export async function updateKbCertification(accessToken, certId, payload) {
-  const { data } = await apiClient.put(`/api/learning/knowledge-base/certifications/${certId}`, payload);
-  invalidateLearningCaches();
-  return data;
-}
-
-export async function deleteKbCertification(accessToken, certId) {
-  const { data } = await apiClient.delete(`/api/learning/knowledge-base/certifications/${certId}`);
-  invalidateLearningCaches();
-  return data;
-}
-
 // ─── Recruiter: assign, oversight, analytics (US-067 / US-073) ─────────────
 
 export async function assignCourses(accessToken, payload) {

@@ -258,9 +258,6 @@ async def purge_organization(organization_id: str) -> dict:
         await _delete_many("hr_threads", {"recruiter_id": {"$in": recruiter_user_ids}})
         await _delete_many("learning_assignments", {"assigned_by_id": {"$in": recruiter_user_ids}})
         await _delete_many("learning_certificates", {"recruiter_id": {"$in": recruiter_user_ids}})
-        await _delete_many("recruiter_kb_roles", {"recruiter_id": {"$in": recruiter_user_ids}})
-        await _delete_many("recruiter_kb_certifications", {"recruiter_id": {"$in": recruiter_user_ids}})
-        await _delete_many("recruiter_kb_meta", {"recruiter_id": {"$in": recruiter_user_ids}})
         await _delete_many("internal_opportunities", {"created_by": {"$in": recruiter_user_ids}})
         await _delete_many("audit_logs", {"recruiter_id": {"$in": recruiter_user_ids}})
 

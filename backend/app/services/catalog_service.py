@@ -16,9 +16,8 @@ from __future__ import annotations
 from app.services import coursera_service, ms_learn_service
 from app.services.dynamic_catalog_service import dynamic_catalog_service
 from app.services.managed_learning_service import MANAGED_SOURCE, managed_learning_service
-from app.services.recruiter_kb_service import recruiter_kb_service
 
-SOURCES: tuple[str, ...] = (MANAGED_SOURCE, "microsoft_learn", "coursera", "recruiter_kb")
+SOURCES: tuple[str, ...] = (MANAGED_SOURCE, "microsoft_learn", "coursera")
 
 
 def source_of(uid: str) -> str:

@@ -1,7 +1,7 @@
 """Hash-based caching for AI learning analyses.
 
-AI results are reused until inputs change (resume, skills, certifications,
-recruiter knowledge base version) or an explicit refresh is requested.
+AI results are reused until inputs change (resume, skills, certifications)
+or an explicit refresh is requested.
 """
 
 from __future__ import annotations
@@ -78,58 +78,23 @@ async def compute_certifications_hash(user_id: str) -> str:
     return _stable_hash(payload)
 
 
-async def get_knowledge_base_version(recruiter_id: str | None = None) -> str:
-    """Monotonic version for recruiter role/cert knowledge base."""
-    query: dict[str, Any] = {}
-    if recruiter_id:
-        query["recruiter_id"] = recruiter_id
-    meta = await database.recruiter_kb_meta.find_one(query or {"_id": "global"})
-    if meta and meta.get("version") is not None:
-        return str(meta["version"])
-    # Fallback: hash latest role/cert update timestamps
-    roles = await database.recruiter_kb_roles.find(query).sort("updated_at", -1).limit(1).to_list(length=1)
-    certs = await database.recruiter_kb_certifications.find(query).sort("updated_at", -1).limit(1).to_list(length=1)
-    stamp = None
-    for docs in (roles, certs):
-        if docs:
-            stamp = max(filter(None, [stamp, docs[0].get("updated_at")]))
-    return _stable_hash({"kb": stamp.isoformat() if stamp else "empty"})
-
-
-async def bump_knowledge_base_version(recruiter_id: str) -> str:
-    now = _now()
-    await database.recruiter_kb_meta.update_one(
-        {"recruiter_id": recruiter_id},
-        {
-            "$inc": {"version": 1},
-            "$set": {"updated_at": now},
-            "$setOnInsert": {"recruiter_id": recruiter_id, "created_at": now},
-        },
-        upsert=True,
-    )
-    doc = await database.recruiter_kb_meta.find_one({"recruiter_id": recruiter_id})
-    return str((doc or {}).get("version") or 1)
-
-
 async def compute_input_hashes(user_id: str, recruiter_id: str | None = None) -> dict[str, str]:
     resume_hash, skills_hash, certifications_hash = (
         await compute_resume_hash(user_id),
         await compute_skills_hash(user_id),
         await compute_certifications_hash(user_id),
     )
-    kb_version = await get_knowledge_base_version(recruiter_id)
     return {
         "resumeHash": resume_hash,
         "skillsHash": skills_hash,
         "certificationsHash": certifications_hash,
-        "knowledgeBaseVersion": kb_version,
     }
 
 
 def hashes_match(cached: dict | None, current: dict) -> bool:
     if not cached:
         return False
-    for key in ("resumeHash", "skillsHash", "certificationsHash", "knowledgeBaseVersion"):
+    for key in ("resumeHash", "skillsHash", "certificationsHash"):
         if cached.get(key) != current.get(key):
             return False
     return True

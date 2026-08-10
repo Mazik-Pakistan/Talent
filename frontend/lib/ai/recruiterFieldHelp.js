@@ -50,18 +50,6 @@ export const RECRUITER_FIELD_HELP = {
   meeting_link: "Optional video call link for remote orientation.",
   agenda: "What orientation will cover — required so the employee knows what to expect.",
 
-  // Learning — knowledge base
-  title: "Clear title recruiters and employees will recognize.",
-  required_skills: "Comma-separated skills this role or opportunity needs.",
-  required_certifications: "Comma-separated certifications expected for this role.",
-  description: "Short description of purpose, scope, or expectations.",
-  provider: "Who issues this certification (e.g. Microsoft, Coursera, internal).",
-  official_url: "Official page or syllabus link for this certification.",
-  skills_covered: "Skills this certification develops (comma-separated).",
-  estimated_hours: "Rough hours to complete — helps employees plan.",
-  difficulty: "Beginner → Expert so people pick the right level.",
-  priority: "How urgent: critical, immediate, medium, or low.",
-
   // Learning — catalog / assign
   type: "Course type filter: learning path, module, or certification.",
   level: "Difficulty filter for catalog browse.",
@@ -374,13 +362,8 @@ export const ORG_CONFIG_TAB_HELP = {
 export const LEARNING_TAB_HELP = {
   catalog: {
     title: "Course catalog",
-    hint: "Browse Microsoft, Coursera, or your KB courses — then Assign to jump into the wizard.",
+    hint: "Browse Microsoft, Coursera, or managed learning courses — then Assign to jump into the wizard.",
     fields: ["q", "type", "level", "role"],
-  },
-  knowledge: {
-    title: "Knowledge base",
-    hint: "Add org roles and certifications so assignments and recommendations stay accurate.",
-    fields: ["title", "required_skills", "required_certifications", "description", "provider", "difficulty", "priority"],
   },
   assign: {
     title: "Assign learning",
