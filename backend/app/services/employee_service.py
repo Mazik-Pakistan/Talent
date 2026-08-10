@@ -678,26 +678,23 @@ class EmployeeService:
                 )
             except Exception as exc:
                 logger.warning("Company email notification failed: %s", exc, exc_info=True)
+            # Single activation email — contains employee ID, company email, and temp password
+            if temp_password:
+                try:
+                    email_service.send_employee_activation(
+                        to_email=candidate["email"],
+                        full_name=employee_doc.get("full_name") or "Team member",
+                        employee_id=employee_id,
+                        job_title=employee_doc.get("job_title") or "Team Member",
+                        department=employee_doc.get("department") or "—",
+                        company_email=company_email,
+                        temp_password=temp_password,
+                        organization_id=employee_doc.get("organization_id"),
+                    )
+                except Exception as exc:
+                    logger.warning("Employee activation email send failed: %s", exc, exc_info=True)
 
         await it_provisioning_service.mark_applied(it_doc["_id"], employee_id)
-
-        # Single consolidated email with Employee ID, company email, and temporary password
-        email_sent = False
-        try:
-            email_service.send_employee_welcome(
-                to_email=candidate["email"],
-                full_name=candidate["full_name"],
-                employee_id=employee_id,
-                job_title=employee_doc.get("job_title") or "Team Member",
-                department=employee_doc.get("department") or "—",
-                organization_id=candidate.get("organization_id"),
-                company_email=company_email,
-                temp_password=temp_password,
-            )
-            email_sent = True
-        except Exception as exc:
-            logger.warning("Employee welcome email failed: %s", exc, exc_info=True)
-            email_sent = False
 
         await create_notification(
             recipient_id=current_user.id,
@@ -727,7 +724,6 @@ class EmployeeService:
 
         return {
             "message": "Candidate converted to employee successfully.",
-            "email_sent": email_sent,
             "employee": self._public_employee(employee_doc),
             "redirect_hint": "Ask the new hire to sign in with the Employee role.",
         }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -64,6 +64,7 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const cardRef = useRef(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -72,7 +73,9 @@ function LoginForm() {
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [loginFeedback, setLoginFeedback] = useState("idle");
-  
+  // "none" | "email" | "password" — drives the mascot's attentive/privacy states
+  const [focusedField, setFocusedField] = useState("none");
+
   // Auto-rotation state
   const [contentIndex, setContentIndex] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -105,6 +108,11 @@ function LoginForm() {
   function handleBlur(field) {
     setTouched((current) => ({ ...current, [field]: true }));
     setErrors(validateForm({ email, password }));
+    setFocusedField((current) => (current === field ? "none" : current));
+  }
+
+  function handleFocus(field) {
+    setFocusedField(field);
   }
 
   function handleEmailChange(value) {
@@ -187,12 +195,14 @@ function LoginForm() {
    }
 
   const mascotMood = loginFeedback === "success" ? "green" : loginFeedback === "error" ? "red" : password ? "yellow" : "neutral";
+  const mascotAuthStatus =
+    loginFeedback === "checking" ? "checking" : loginFeedback === "success" ? "success" : loginFeedback === "error" ? "error" : "idle";
 
   return (
     <main className={styles.shell}>
       <ToastContainer position="top-right" autoClose={4000} theme="colored" newestOnTop />
 
-      <div className={styles.card}>
+      <div className={styles.card} ref={cardRef}>
         <aside className={styles.aside} aria-label="Talent platform introduction">
           <div className={styles.asideBrandRow}>
             <img
@@ -217,7 +227,10 @@ function LoginForm() {
           <div className={styles.mascotContainer}>
             <MascotStatic
               mood={mascotMood}
-              message={loginFeedback === "success" ? "Welcome back! 🎉" : undefined}
+              fieldFocus={focusedField}
+              passwordVisible={showPassword}
+              authStatus={mascotAuthStatus}
+              cardRef={cardRef}
             />
           </div>
         </aside>
@@ -239,6 +252,7 @@ function LoginForm() {
                   name="email"
                   value={email}
                   onChange={(e) => handleEmailChange(e.target.value)}
+                  onFocus={() => handleFocus("email")}
                   onBlur={() => handleBlur("email")}
                   aria-invalid={Boolean((touched.email && errors.email) || loginFeedback === "error")}
                   aria-describedby={touched.email && errors.email ? "email-error" : undefined}
@@ -263,6 +277,7 @@ function LoginForm() {
                   name="password"
                   value={password}
                   onChange={(e) => handlePasswordChange(e.target.value)}
+                  onFocus={() => handleFocus("password")}
                   onBlur={() => handleBlur("password")}
                   aria-invalid={loginFeedback === "error"}
                   aria-describedby={touched.password && errors.password ? "password-error" : undefined}
