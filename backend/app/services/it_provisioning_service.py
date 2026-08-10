@@ -658,7 +658,7 @@ class ItProvisioningService:
                 notif_type="it_provisioning_submitted",
                 title="IT provisioning complete",
                 message=(
-                    f"IT submitted company email and assets for {snapshot.get('full_name')}. "
+                    f"IT submitted the company email setup for {snapshot.get('full_name')}. "
                     "You can now Approve & activate."
                 ),
                 link="/dashboard/recruiter/candidates",
@@ -1236,7 +1236,7 @@ class ItProvisioningService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    "IT must assign a company email and assets before activation. "
+                    "IT must complete the company email setup before activation. "
                     "Send the IT provisioning request and wait for their form submission."
                 ),
             )
@@ -1245,7 +1245,7 @@ class ItProvisioningService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    "IT must assign a company email and assets before activation. "
+                    "IT must complete the company email setup before activation. "
                     "Send the IT provisioning request and wait for their form submission."
                 ),
             )

@@ -563,10 +563,7 @@ export default function ItSetupPublicPage() {
       }))
       .filter((row) => row.name);
 
-    if (!cleanedAssets.length && !cleanedLicenses.length) {
-      setFormMessage("Assign at least one asset or software license.");
-      return;
-    }
+    // Assets and licenses are optional — submitting without either is valid.
 
     const passwordError = tempPasswordError(temporaryPassword, editing);
     if (passwordError) {
@@ -804,7 +801,7 @@ export default function ItSetupPublicPage() {
         <p className="it-lead">
           {editing
             ? "Correct the company email or hardware. Activation stays blocked until you save."
-            : "Create the company mailbox and record hardware/licenses. Activation stays blocked until you submit."}
+            : "Create the company mailbox and optionally record hardware/licenses. Activation stays blocked until you submit."}
         </p>
       </div>
 
@@ -887,7 +884,7 @@ export default function ItSetupPublicPage() {
         <div className="it-section">
           <div className="it-section-head">
             <div>
-              <h2>3. Hardware devices</h2>
+              <h2>3. Hardware devices <span className="it-chip">Optional</span></h2>
               <p>Laptops, monitors, phones, badges…</p>
             </div>
             <button type="button" className="it-add" onClick={() => setAssets((c) => [...c, emptyAsset()])}>
@@ -897,7 +894,7 @@ export default function ItSetupPublicPage() {
           {assets.map((asset, index) => (
             <div key={`asset-${index}`} className="it-row">
               <label className="it-field">
-                <span>Asset name</span>
+                <span>Asset name (optional)</span>
                 <input
                   value={asset.name}
                   onChange={(e) => updateAsset(index, "name", e.target.value)}
@@ -944,8 +941,8 @@ export default function ItSetupPublicPage() {
         <div className="it-section">
           <div className="it-section-head">
             <div>
-              <h2>4. Software licenses</h2>
-              <p>Optional if hardware covers everything needed.</p>
+              <h2>4. Software licenses <span className="it-chip">Optional</span></h2>
+              <p>Optional — add any software the employee needs.</p>
             </div>
             <button type="button" className="it-add" onClick={() => setLicenses((c) => [...c, emptyLicense()])}>
               + Add license

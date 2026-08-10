@@ -186,6 +186,8 @@ class ItProvisioningSubmitRequest(BaseModel):
     # the very first sign-in. The employee is then forced to set their own
     # password, which covers both the personal and company email login.
     temporary_password: str | None = Field(default=None, min_length=8, max_length=128)
+    # Asset assignment is optional — an employee may be provisioned without
+    # any hardware or software licenses. Empty/omitted lists are accepted.
     assets: list[ItAssetItem] = Field(default_factory=list, max_length=40)
     licenses: list[ItLicenseItem] = Field(default_factory=list, max_length=40)
     it_notes: str | None = Field(default=None, max_length=2000)
@@ -235,12 +237,6 @@ class ItProvisioningSubmitRequest(BaseModel):
             return None
         cleaned = value.strip()
         return cleaned or None
-
-    @model_validator(mode="after")
-    def require_asset_or_license(self) -> ItProvisioningSubmitRequest:
-        if not self.assets and not self.licenses:
-            raise ValueError("Assign at least one asset or software license before submitting.")
-        return self
 
 
 class RevealCompanyEmailPasswordRequest(BaseModel):
@@ -395,6 +391,8 @@ class ItProvisioningBatchSubmitRequest(BaseModel):
     """IT provisions a whole batch at once. assets/licenses apply to every person."""
 
     entries: list[ItBatchSubmitEntry] = Field(min_length=1, max_length=100)
+    # Asset assignment is optional — a batch may be provisioned without any
+    # hardware or software licenses. Empty/omitted lists are accepted.
     assets: list[ItAssetItem] = Field(default_factory=list, max_length=40)
     licenses: list[ItLicenseItem] = Field(default_factory=list, max_length=40)
     it_notes: str | None = Field(default=None, max_length=2000)
@@ -407,9 +405,3 @@ class ItProvisioningBatchSubmitRequest(BaseModel):
             return None
         cleaned = value.strip()
         return cleaned or None
-
-    @model_validator(mode="after")
-    def require_asset_or_license(self) -> ItProvisioningBatchSubmitRequest:
-        if not self.assets and not self.licenses:
-            raise ValueError("Assign at least one asset or software license before submitting.")
-        return self

@@ -406,22 +406,37 @@ EMAIL_TEMPLATES: dict[str, dict[str, Any]] = {
         ),
     },
     "first_time_password": {
-        "name": "First-time Password",
-        "description": "Shares the temporary password with a new employee.",
+        "name": "Employee Account Credentials",
+        "description": "Sends the new employee their Employee ID, company email, and temporary password in one email.",
         "category": "Onboarding",
         "variables": [
             {"name": "full_name", "label": "Employee name"},
+            {"name": "employee_id", "label": "Employee ID"},
+            {"name": "company_email", "label": "Company email"},
             {"name": "temp_password", "label": "Temporary password"},
             {"name": "company_name", "label": "Company name"},
         ],
-        "default_subject": "Your employee account is ready — TalentAI",
+        "default_subject": "Your employee account credentials — TalentAI",
         "default_body": (
             "<p style=\"margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;\">"
-            "Hello {{full_name}}, your employee account is ready.</p>"
-            "<p style=\"margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;\">"
-            "Sign in with your personal or company email using this one-time password:</p>"
-            "<p style=\"margin:0 0 18px;font-size:20px;font-weight:800;color:#1e3a5f;"
+            "Hello {{full_name}}, your employee account is ready. Use the credentials below "
+            "to access the employee portal.</p>"
+            "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+            "style=\"background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 20px;\">"
+            "<tr><td style=\"padding:20px 22px;\">"
+            "<p style=\"margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Employee ID</p>"
+            "<p style=\"margin:0 0 14px;color:#0D5C91;font-size:20px;font-weight:800;letter-spacing:1px;\">"
+            "{{employee_id}}</p>"
+            "<p style=\"margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Company email</p>"
+            "<p style=\"margin:0 0 14px;color:#1a1a2e;font-size:16px;font-weight:700;word-break:break-all;\">"
+            "{{company_email}}</p>"
+            "<p style=\"margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;"
+            "text-transform:uppercase;letter-spacing:1.2px;\">Temporary password</p>"
+            "<p style=\"margin:0;font-size:20px;font-weight:800;color:#1e3a5f;"
             "font-family:Consolas,Menlo,monospace;\">{{temp_password}}</p>"
+            "</td></tr></table>"
             "<p style=\"margin:0;color:#8a9bb0;font-size:13px;line-height:1.6;\">"
             "After signing in you will be asked to create your own password. From then on, "
             "that single password covers both your personal and company email logins.</p>"

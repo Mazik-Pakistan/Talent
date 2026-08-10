@@ -1366,7 +1366,8 @@ class EmailService:
         )
 
     # ------------------------------------------------------------------ #
-    # First-time password (sent at activation / IT reset)
+    # Employee credentials (sent once at activation — Employee ID, company
+    # email, and temporary password all in a single email)
     # ------------------------------------------------------------------ #
     def send_first_time_password(
         self,
@@ -1374,18 +1375,37 @@ class EmailService:
         full_name: str | None = None,
         temp_password: str | None = None,
         organization_id: str | None = None,
+        employee_id: str | None = None,
+        company_email: str | None = None,
     ) -> None:
-        subject = "Your employee account is ready — TalentAI"
+        subject = "Your employee account credentials — TalentAI"
         body = f"""
 <p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
-  Hello {escape(full_name or "there")}, your employee account is ready.
+  Hello {escape(full_name or "there")}, your employee account is ready. Use the
+  credentials below to access the employee portal.
 </p>
-<p style="margin:0 0 8px;color:#1a1a2e;font-size:14px;line-height:1.6;">
-  Sign in with your personal or company email using this one-time password:
-</p>
-<p style="margin:0 0 18px;font-size:20px;font-weight:800;color:#1e3a5f;font-family:Consolas,Menlo,monospace;">
-  {escape(temp_password or "")}
-</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 20px;">
+  <tr>
+    <td style="padding:20px 22px;">
+      <p style="margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Employee ID</p>
+      <p style="margin:0 0 14px;color:#0D5C91;font-size:20px;font-weight:800;letter-spacing:1px;">
+        {escape(employee_id or "")}
+      </p>
+      <p style="margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Company email</p>
+      <p style="margin:0 0 14px;color:#1a1a2e;font-size:16px;font-weight:700;word-break:break-all;">
+        {escape(company_email or "")}
+      </p>
+      <p style="margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Temporary password</p>
+      <p style="margin:0;font-size:20px;font-weight:800;color:#1e3a5f;font-family:Consolas,Menlo,monospace;">
+        {escape(temp_password or "")}
+      </p>
+    </td>
+  </tr>
+</table>
 <p style="margin:0;color:#8a9bb0;font-size:13px;line-height:1.6;">
   After signing in you will be asked to create your own password. From then on,
   that single password covers both your personal and company email logins.
@@ -1395,7 +1415,7 @@ class EmailService:
         self._send(
             to_email,
             subject,
-            self._branded_shell("Account ready", "Set your password", body),
+            self._branded_shell("Account ready", "Your employee account credentials", body),
         )
 
     # ------------------------------------------------------------------ #
