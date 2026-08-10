@@ -415,6 +415,11 @@ async def upload_onboarding_file(
     if current_user.role not in ("candidate", "employee", "super_admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only candidates/employees can upload files.")
 
+    if current_user.role == "candidate":
+        from app.services.offer_service import offer_service
+
+        await offer_service.require_signed_offer_for_candidate(current_user)
+
     original = file.filename or "upload.bin"
     ext = Path(original).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -491,6 +496,8 @@ async def upload_onboarding_file(
                 doc_type=resolved_doc_type if purpose == "government_doc" else doc_type,
                 index=slot,
             )
+        except HTTPException:
+            raise
         except Exception:
             resp = {"file_name": file_name, "file_url": file_url, "purpose": purpose}
     elif current_user.role == "employee":
@@ -503,6 +510,8 @@ async def upload_onboarding_file(
                 doc_type=resolved_doc_type if purpose == "government_doc" else doc_type,
                 index=slot,
             )
+        except HTTPException:
+            raise
         except Exception:
             resp = {"file_name": file_name, "file_url": file_url, "purpose": purpose}
     else:
@@ -528,6 +537,9 @@ async def clear_onboarding_file(
 ):
     """Remove an onboarding file (transcript / resume / CNIC) so the candidate can replace it."""
     if current_user.role == "candidate":
+        from app.services.offer_service import offer_service
+
+        await offer_service.require_signed_offer_for_candidate(current_user)
         return await candidate_service.clear_uploaded_file(current_user, purpose=purpose, index=index)
     if current_user.role == "employee":
         return await service.clear_uploaded_file(current_user, purpose=purpose, index=index)

@@ -74,8 +74,21 @@ PURPOSE_REJECT_MESSAGES = {
     "government_doc": "This is not a valid National ID or Passport.",
     "cnic": "This is not a valid National ID.",
     "passport": "This is not a valid passport.",
-    "education_cert": "Uploaded document is not a valid transcript or education certificate.",
-    "transcript": "Uploaded document is not a valid transcript or education certificate.",
+    "education_cert": (
+        "This file does not look like an academic transcript or degree certificate. "
+        "Upload your mark sheet, transcript, or degree certificate here. "
+        "Resumes belong on the Skills step."
+    ),
+    "transcript": (
+        "This file does not look like an academic transcript or degree certificate. "
+        "Upload your mark sheet, transcript, or degree certificate here. "
+        "Resumes belong on the Skills step."
+    ),
+    "education_got_resume": (
+        "This looks like a resume/CV, not a transcript. "
+        "The file was kept, but please upload your academic transcript or degree certificate "
+        "for this step. Upload your resume on the Skills step instead."
+    ),
     "identity": "This is not a valid National ID or Passport.",
 }
 

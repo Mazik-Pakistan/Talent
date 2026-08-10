@@ -23,6 +23,7 @@ import { getEmployeeNavItems, isEmployeeNavActive } from "@/utils/employeeNav";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
 import { COPILOT_DOCUMENTS_ASSIST_EVENT, publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
 import { publishCandidateContext, clearCandidateContext } from "@/lib/ai/candidateContext";
+import OfferSigningGate from "@/components/candidate/OfferSigningGate";
 import candidateStyles from "@/app/dashboard/candidate/candidate-dashboard.module.css";
 import employeeStyles from "@/app/dashboard/employee/employee-dashboard.module.css";
 
@@ -49,6 +50,7 @@ function DocumentsPageContent() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
+  const [offerSigned, setOfferSigned] = useState(true);
 
   const isEmployee = user?.role === "employee";
   const isCandidate = user?.role === "candidate";
@@ -90,7 +92,7 @@ function DocumentsPageContent() {
       publishCandidateContext({
         pathname: "/documents",
         section: "documents",
-        hint: "Upload clear identity documents so recruiters can verify you before offer steps.",
+        hint: "Sign your offer letter first — then upload identity and supporting documents for recruiter verification.",
         fields: [],
       });
       return () => clearCandidateContext();
@@ -168,9 +170,11 @@ function DocumentsPageContent() {
       if (user.role === "employee") {
         const profileData = await getMyEmployeeProfile(accessToken);
         setProfileMeta(profileData.employee || null);
+        setOfferSigned(true);
       } else {
         const dashboard = await getCandidateDashboard(accessToken);
         setProfileMeta(dashboard?.profile || null);
+        setOfferSigned(dashboard?.offer_signed !== false);
       }
       setLoadError("");
     } catch (error) {
@@ -318,30 +322,56 @@ function DocumentsPageContent() {
             </div>
           </div>
 
-          <div className={styles.content}>
+          <div
+            className={styles.content}
+            style={
+              isCandidate && !offerSigned
+                ? {
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minHeight: "calc(100vh - 140px)",
+                    paddingBottom: 64,
+                  }
+                : undefined
+            }
+          >
             {loadError && <div className={styles.loadError} role="alert">{loadError}</div>}
 
-            <div className={styles.section} style={{ marginBottom: 24 }}>
-              <div className={styles.sectionHead}>
-                <div className={styles.sectionHeadLeft}>
-                  <div className={`${styles.bar} ${styles.orange}`} />
-                  <div>
-                    <div className={styles.sectionTitle}>My documents</div>
-                    <div className={styles.sectionDesc}>
-                      Upload identity, education, and supporting files. Each new upload stays Pending review until a
-                      recruiter verifies it.
+            {isCandidate && !offerSigned ? (
+              <OfferSigningGate
+                styles={styles}
+                centered
+                title="Sign your offer letter to unlock documents"
+                description="Document upload and verification stay locked until you digitally sign your offer letter."
+                onOpenOffer={() => router.push("/offer")}
+              />
+            ) : (
+              <div className={styles.section} style={{ marginBottom: 24 }}>
+                <div className={styles.sectionHead}>
+                  <div className={styles.sectionHeadLeft}>
+                    <div className={`${styles.bar} ${styles.orange}`} />
+                    <div>
+                      <div className={styles.sectionTitle}>My documents</div>
+                      <div className={styles.sectionDesc}>
+                        Upload identity, education, and supporting files. Each new upload stays Pending review until a
+                        recruiter verifies it.
+                      </div>
                     </div>
                   </div>
                 </div>
+                <div className={styles.sectionBody}>
+                  <DocumentManager compact={false} />
+                </div>
               </div>
-              <div className={styles.sectionBody}>
-                <DocumentManager compact={false} />
-              </div>
-            </div>
+            )}
 
-            <div className={styles.footerNote}>
-              Talent by  · {isEmployee ? "Employee" : "Candidate"} Documents
-            </div>
+            {!(isCandidate && !offerSigned) ? (
+              <div className={styles.footerNote}>
+                Talent by  · {isEmployee ? "Employee" : "Candidate"} Documents
+              </div>
+            ) : null}
           </div>
         </main>
       </div>

@@ -2092,19 +2092,27 @@ async def _tool_get_status(user: CurrentUser, args: dict) -> ToolResult:
         ob = onboarding.get("onboarding") or {}
         resume = ob.get("resume") or {}
         summary = (resume.get("summary") or "").strip()
+        offer_signed = bool(onboarding.get("offer_signed"))
         return ToolResult(
             ok=True,
             data={
-                "stage": "pre_offer_intake",
+                "stage": "post_offer_onboarding" if offer_signed else "awaiting_offer_signature",
+                "offer_signed": offer_signed,
+                "onboarding_locked": not offer_signed,
                 "status": progress.get("status"),
                 "current_step": progress.get("current_step"),
-                "percentage": progress.get("percentage"),
-                "missing_fields": progress.get("missing_fields"),
-                "steps": progress.get("steps"),
-                "documents_on_file": [d.get("doc_type") for d in docs.get("documents", [])],
-                "resume_file_on_file": bool(resume.get("file_url") or resume.get("file_name")),
-                "resume_summary_ready": len(summary) >= 20,
-                "resume_summary_length": len(summary),
+                "percentage": progress.get("percentage") if offer_signed else 0,
+                "missing_fields": progress.get("missing_fields") if offer_signed else ["offer_signature"],
+                "steps": progress.get("steps") if offer_signed else [],
+                "documents_on_file": [d.get("doc_type") for d in docs.get("documents", [])] if offer_signed else [],
+                "resume_file_on_file": bool(resume.get("file_url") or resume.get("file_name")) if offer_signed else False,
+                "resume_summary_ready": len(summary) >= 20 if offer_signed else False,
+                "resume_summary_length": len(summary) if offer_signed else 0,
+                "guidance": (
+                    None
+                    if offer_signed
+                    else "Offer signing is required before onboarding can begin. Use get_my_offer / sign_offer."
+                ),
             },
         )
     except Exception as exc:  # noqa: BLE001
@@ -2474,11 +2482,34 @@ def tools_for_user(user: CurrentUser) -> list[Tool]:
     return [tool for tool in tools_for_role(user.role) if _tool_allowed_for(user, tool)]
 
 
+# Candidate onboarding mutations — hidden until offer_letters.status == signed.
+_CANDIDATE_ONBOARDING_MUTATION_TOOLS = frozenset(
+    {
+        "save_step",
+        "update_my_profile",
+        "delete_document",
+        "reextract_document",
+    }
+)
+
+
 def find_tool(role: str, name: str) -> Tool | None:
     for tool in tools_for_role(role):
         if tool.name == name:
             return tool
     return None
+
+
+async def tools_for_user_async(user: CurrentUser) -> list[Tool]:
+    """Like tools_for_user, but also hides onboarding mutations when unsigned."""
+    tools = tools_for_user(user)
+    if user.role != "candidate":
+        return tools
+    from app.services.offer_service import offer_service
+
+    if await offer_service.has_signed_offer(user.id, user.email):
+        return tools
+    return [t for t in tools if t.name not in _CANDIDATE_ONBOARDING_MUTATION_TOOLS]
 
 
 async def run_tool(user: CurrentUser, name: str, args: dict) -> ToolResult:
@@ -2495,6 +2526,19 @@ async def run_tool(user: CurrentUser, name: str, args: dict) -> ToolResult:
                 "that action. Contact the Super Admin to request access."
             ),
         )
+    if user.role == "candidate" and name in _CANDIDATE_ONBOARDING_MUTATION_TOOLS:
+        from app.services.offer_service import OFFER_SIGN_REQUIRED_DETAIL, offer_service
+
+        if not await offer_service.has_signed_offer(user.id, user.email):
+            return ToolResult(
+                ok=False,
+                error=(
+                    f"{OFFER_SIGN_REQUIRED_DETAIL} "
+                    "Please sign your offer letter before starting the onboarding process. "
+                    "Once your offer is signed, onboarding activities will become available."
+                ),
+                data={"offer_signing_required": True, "offer_page": "/offer"},
+            )
     try:
         return await tool.handler(user, args or {})
     except Exception as exc:  # noqa: BLE001

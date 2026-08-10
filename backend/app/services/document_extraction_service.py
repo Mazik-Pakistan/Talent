@@ -348,7 +348,17 @@ class DocumentExtractionService:
         purpose: str | None = None,
         doc_type: str | None = None,
         expected: tuple[str, ...] = (),
+        detected_category: str | None = None,
     ) -> str:
+        detected = (detected_category or "").strip().lower()
+        if (
+            detected == "resume"
+            and (
+                purpose in {"education_cert", "transcript"}
+                or "academic_transcript" in (expected or ())
+            )
+        ):
+            return PURPOSE_REJECT_MESSAGES["education_got_resume"]
         if doc_type in PURPOSE_REJECT_MESSAGES:
             return PURPOSE_REJECT_MESSAGES[doc_type]
         if purpose in PURPOSE_REJECT_MESSAGES:
@@ -394,7 +404,10 @@ class DocumentExtractionService:
                 "category": category,
                 "classification_confidence": classification_confidence,
                 "rejection_message": self.reject_message_for(
-                    purpose=purpose, doc_type=doc_type, expected=expected
+                    purpose=purpose,
+                    doc_type=doc_type,
+                    expected=expected,
+                    detected_category=category,
                 ),
             }
 
@@ -404,7 +417,10 @@ class DocumentExtractionService:
                 "category": category,
                 "classification_confidence": classification_confidence,
                 "rejection_message": self.reject_message_for(
-                    purpose=purpose, doc_type=doc_type, expected=expected
+                    purpose=purpose,
+                    doc_type=doc_type,
+                    expected=expected,
+                    detected_category=category,
                 ),
             }
 

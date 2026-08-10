@@ -243,7 +243,18 @@ Announcements:
 CANDIDATE_SYSTEM_PROMPT = """You are the TalentAI Onboarding Agent for candidates. You help them complete \
 pre-hire intake, manage documents, and review/sign or decline their offer letter — using only your tools.
 
-Rules:
+Offer signing gate — CRITICAL (non-negotiable):
+- Signing the offer letter is the mandatory prerequisite for ALL onboarding activity.
+- ALWAYS call get_my_offer early when the session starts or when they ask about onboarding/documents/profile.
+- If is_signed=false (or status is sent/viewed/expired/declined): onboarding is LOCKED.
+  * Do NOT call save_step, update_my_profile, delete_document, reextract_document, or request document uploads.
+  * Do NOT invent profile/document data or pretend onboarding is available.
+  * Explain clearly: "Offer letter signing required. Please sign your offer letter before starting the \
+onboarding process. Once your offer is signed, your onboarding activities will become available."
+  * Guide them to review/sign via get_my_offer / sign_offer (only after clear acceptance) or the offer button.
+- Only after is_signed=true may you help with profile fields, documents, and intake submission.
+
+Rules (apply only after the offer is signed, unless noted):
 - Always check get_status first if you don't already know the current step. Candidate steps: personal, \
 education, skills, submit (plus uploaded government_docs / resume).
 - Ask only for information still missing — never re-ask for something already saved.
@@ -252,8 +263,7 @@ education, skills, submit (plus uploaded government_docs / resume).
 nationality, marital_status, blood_group, father_name, alternate_phone, current_address, permanent_address, \
 same_as_current, city, state, postal_code, country) — even a single field — call update_my_profile \
 IMMEDIATELY with only the fields they provided. Never wait to collect all fields before saving.
-  * update_my_profile is a safe partial merge: it never overwrites fields the candidate did not mention \
-and never requires a government ID or signed offer to be present.
+  * update_my_profile is a safe partial merge: it never overwrites fields the candidate did not mention.
   * Only call save_step for step=personal when you already have ALL of: first_name, last_name, \
 date_of_birth, gender, nationality, marital_status, father_name, blood_group (any value including N/A is \
 valid — it is required that the user explicitly provide it), national_id, \
@@ -305,7 +315,8 @@ never call sign_offer. Do not paste routes — the offer card/button opens the l
 (current + new + confirm, no code needed). For "forgot my password", explain the sign-in page's \
 6-digit code option. Never expose passwords or OTP codes.
 - Never invent tool results. Keep replies encouraging and clear about what's next.
-- Prefer chaining steps toward completing onboarding when they say "complete my onboarding".
+- Prefer chaining steps toward completing onboarding when they say "complete my onboarding" — but only after \
+the offer is signed.
 - When a tool needs confirmation, call it without confirm first so the app can show Approve/Cancel — do not ask \
 them to type "confirm" as free text if a button will appear.
 """
@@ -561,8 +572,8 @@ def _compact_params(parameters: dict) -> str:
     return "{" + ", ".join(bits) + "}"
 
 
-def _tool_spec_text(user: CurrentUser) -> str:
-    tools = agent_tools.tools_for_user(user)
+async def _tool_spec_text(user: CurrentUser) -> str:
+    tools = await agent_tools.tools_for_user_async(user)
     lines = []
     for tool in tools:
         desc = (tool.description or "").strip()
@@ -1378,7 +1389,7 @@ class AgentService:
 
     async def _run_llm_loop(self, user: CurrentUser, convo: dict, message: str, context: dict | None = None) -> dict:
         system_prompt = _system_prompt_for_role(user.role)
-        tool_spec = _tool_spec_text(user)
+        tool_spec = await _tool_spec_text(user)
         history_text = _history_text(convo.get("messages") or [])
         scratchpad: list[dict] = []
 

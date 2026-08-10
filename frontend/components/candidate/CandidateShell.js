@@ -173,7 +173,7 @@ function CandidateShellInner({ activeKey, title, subtitle, jobTitle, actions, ch
                 title="Edit profile"
                 role="button"
                 tabIndex={0}
-                onClick={() => router.push("/onboarding?edit=true")}
+                onClick={() => router.push("/dashboard/candidate/profile")}
               >
                 <ProfileIcon />
               </div>

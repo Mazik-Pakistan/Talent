@@ -34,6 +34,7 @@ import { normalizeDocumentType } from "@/lib/ai/documentProcessing";
 import { CANDIDATE_NAV_ITEMS, isCandidateNavActive } from "@/utils/candidateNav";
 import { validateDateOfBirth, getMaxDob } from "@/utils/validation";
 import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
+import OfferSigningGate from "@/components/candidate/OfferSigningGate";
 import styles from "./onboarding.module.css";
 
 const STEPS = [
@@ -279,11 +280,15 @@ function OnboardingContent() {
           setFillMode("manual");
         }
         const data = await getOnboarding(accessToken);
-        // Never auto-redirect to /offer — Profile/Onboarding stay open; offer is opt-in via nav/CTA.
-        setOfferUnsigned(data.offer_signed === false);
+        const unsigned = data.offer_signed === false;
+        setOfferUnsigned(unsigned);
         setCandidate(data.candidate);
         setOnboarding(data.onboarding);
         setProgress(data.progress);
+        if (unsigned) {
+          setLoading(false);
+          return;
+        }
         hydrateForms(data.onboarding);
         try {
           const draft = JSON.parse(localStorage.getItem(draftStorageKey()) || "null");
@@ -327,6 +332,16 @@ function OnboardingContent() {
       }
     });
   }, [isEditMode, router, requestedStep]);
+
+  // CNIC/transcript "Scan complete" banner is step-local — don't carry it to Education/Skills.
+  const scanBannerStepRef = useRef(step);
+  useEffect(() => {
+    if (scanBannerStepRef.current === step) return;
+    scanBannerStepRef.current = step;
+    setExtractionPreview(null);
+    setAutoFilledKeys([]);
+    setMessage("");
+  }, [step]);
 
   function hydrateForms(data) {
     if (!data) return;
@@ -1296,6 +1311,9 @@ function OnboardingContent() {
       invalidateCandidateInsightCache();
       setMessage(data.message);
       showToast("success", data.message || "Saved successfully.");
+      // Dismiss personal-step OCR banner before advancing (Save & continue → Education).
+      setExtractionPreview(null);
+      setAutoFilledKeys([]);
       if (payload.step === "submit") {
         setStep("submit");
       } else if (data.onboarding?.current_step) {
@@ -1391,7 +1409,7 @@ function OnboardingContent() {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
 
-    const willScan = purpose === "government_doc";
+    const willScan = purpose === "government_doc" && isOcrMode;
     const softOcr = purpose === "education_cert" || purpose === "resume";
     if (willScan) {
       clearIdentityForRescan(index);
@@ -1429,7 +1447,10 @@ function OnboardingContent() {
 
       const ocr = data.ocr_result;
       const willAutofillCnic =
-        purpose === "government_doc" && ocr?.status === "completed" && ocr?.accepted !== false;
+        purpose === "government_doc" &&
+        isOcrMode &&
+        ocr?.status === "completed" &&
+        ocr?.accepted !== false;
       const ocrHardRejected =
         purpose === "government_doc" && (ocr?.status === "rejected_type" || ocr?.accepted === false);
 
@@ -1462,7 +1483,7 @@ function OnboardingContent() {
             "National ID scanned successfully — fields were pre-filled and saved. Review and finish the remaining fields."
           );
           showToast("success", "NIC scanned and details filled.");
-        } else {
+        } else if (isOcrMode) {
           setGovDocs((current) => {
             const next = [...current];
             next[index] = {
@@ -1483,6 +1504,17 @@ function OnboardingContent() {
             error: ocr?.rejection_message || "Could not extract text — please fill the fields manually.",
             progress: 1,
           });
+        } else {
+          setGovDocs((current) => {
+            const next = [...current];
+            next[index] = {
+              ...next[index],
+              ...fileMeta,
+              document_number: next[index].document_number || "pending",
+            };
+            return next;
+          });
+          setMessage("Document uploaded and saved.");
         }
         if (data.document_verification) setDocumentVerification(data.document_verification);
         return;
@@ -1519,13 +1551,15 @@ function OnboardingContent() {
         processing.succeed();
         // Hold the shared success activity (same as CNIC) before form-fill or close.
         await new Promise((resolve) => setTimeout(resolve, 900));
-        if (ocr.fields && Object.keys(ocr.fields).length) {
+        const wrongType = ocr.status === "rejected_type" || ocr.accepted === false;
+        // Soft-keep wrong types (e.g. resume in transcript slot) — only autofill when type matches.
+        if (!wrongType && ocr.fields && Object.keys(ocr.fields).length) {
           void autoFillFromOCR(
             {
               ...ocr,
               accepted: true,
               status: "completed",
-              category: ocr.category || "academic_transcript",
+              category: ocr.category || (purpose === "resume" ? "resume" : "academic_transcript"),
             },
             purpose,
             index
@@ -1536,14 +1570,23 @@ function OnboardingContent() {
         }
         const failHint =
           ocr.rejection_message ||
-          ocr.error ||
           "Could not auto-read every field — please enter any missing details manually.";
-        setExtractionPreview(ocr.status === "completed" ? ocr : null);
-        setMessage(ocr.status === "completed" ? "Document saved and details extracted where possible." : `Document saved. ${failHint}`);
-        showToast(
-          ocr.status === "completed" ? "success" : "info",
-          ocr.status === "completed" ? "Document uploaded and scanned." : failHint
-        );
+        if (wrongType) {
+          setExtractionPreview(null);
+          setMessage(`Document saved for recruiter review. ${failHint}`);
+          showToast("info", failHint);
+        } else {
+          setExtractionPreview(ocr.status === "completed" ? ocr : null);
+          setMessage(
+            ocr.status === "completed"
+              ? "Document saved and details extracted where possible."
+              : `Document saved. ${failHint}`
+          );
+          showToast(
+            ocr.status === "completed" ? "success" : "info",
+            ocr.status === "completed" ? "Document uploaded and scanned." : failHint
+          );
+        }
       } else if (ocr) {
         setExtractionPreview(ocr);
         setMessage(ocr.rejection_message || "File uploaded. Fill fields manually if needed.");
@@ -1741,7 +1784,13 @@ function OnboardingContent() {
       });
       
       if (hasErrors) {
-        showFormError("Please fix the errors in education fields.", educationErrors);
+        const flattened = {};
+        Object.entries(educationErrors).forEach(([index, entry]) => {
+          Object.entries(entry).forEach(([field, message]) => {
+            flattened[`edu_${index}_${field}`] = message;
+          });
+        });
+        showFormError("Please fix the errors in education fields.", flattened);
         return;
       }
       setFieldErrors({});
@@ -1754,7 +1803,9 @@ function OnboardingContent() {
         return;
       }
       if (!resume.summary || resume.summary.length < 20) {
-        showFormError("Add a professional summary (at least 20 characters).", { summary: true });
+        showFormError("Add a professional summary (at least 20 characters).", {
+          summary: "Add a professional summary (at least 20 characters).",
+        });
         return;
       }
       setFieldErrors({});
@@ -1855,8 +1906,31 @@ function OnboardingContent() {
             </button>
           </div>
 
-          <div className={styles.content}>
-            {!loading && (
+          <div
+            className={styles.content}
+            style={
+              offerUnsigned
+                ? {
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minHeight: "calc(100vh - 120px)",
+                    paddingBottom: 64,
+                  }
+                : undefined
+            }
+          >
+            {!loading && offerUnsigned && (
+              <OfferSigningGate
+                styles={styles}
+                centered
+                title="Sign your offer letter to unlock onboarding"
+                description="Onboarding forms, document uploads, and profile intake stay locked until you digitally sign your offer letter."
+                onOpenOffer={() => router.push("/offer")}
+              />
+            )}
+
+            {!loading && !offerUnsigned && (
               <section className={styles.card}>
                 {isEditMode && (
                   <div className={styles.editBanner}>
@@ -1864,15 +1938,6 @@ function OnboardingContent() {
                       <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                     </svg>
                     <span>Edit mode — changes save automatically as you move through each step.</span>
-                  </div>
-                )}
-
-                {offerUnsigned && (
-                  <div className={styles.offerHintBanner}>
-                    <span>You still have an unsigned offer letter.</span>
-                    <button type="button" className={styles.offerHintBtn} onClick={() => router.push("/offer")}>
-                      View offer
-                    </button>
                   </div>
                 )}
 
@@ -2253,7 +2318,11 @@ function OnboardingContent() {
                                 styles={styles}
                                 label="Alternate contact"
                                 value={personal.alternate_phone}
-                                onChange={(e) => setPersonal({ ...personal, alternate_phone: e.target.value })}
+                                error={fieldErrors.alternate_phone}
+                                onChange={(e) => {
+                                  setPersonal({ ...personal, alternate_phone: e.target.value });
+                                  setFieldErrors((prev) => ({ ...prev, alternate_phone: false }));
+                                }}
                               />
                               <Field styles={styles} label="ID issue date" value={personal.id_issue_date || ""} onChange={(e) => setPersonal({ ...personal, id_issue_date: e.target.value })} {...fillAnimProps("id_issue_date")} />
                               <Field styles={styles} label="ID expiry date" value={personal.id_expiry_date || ""} onChange={(e) => setPersonal({ ...personal, id_expiry_date: e.target.value })} {...fillAnimProps("id_expiry_date")} />
@@ -2325,7 +2394,7 @@ function OnboardingContent() {
                                     placeholder="Enter country"
                                   />
                                 )}
-                                {fieldErrors.country && <em className={styles.fieldErrorText}>Required</em>}
+                                {fieldErrors.country && <em className={styles.fieldErrorText}>{typeof fieldErrors.country === "string" ? fieldErrors.country : "Required"}</em>}
                               </label>
                               {personal.country === "Pakistan" && (
                                 <label className={`${styles.field} ${fieldErrors.city ? styles.fieldError : ""}`} data-field-error={fieldErrors.city ? "true" : undefined}>
@@ -2354,7 +2423,7 @@ function OnboardingContent() {
                                       placeholder="Enter city"
                                     />
                                   )}
-                                  {fieldErrors.city && <em className={styles.fieldErrorText}>Required</em>}
+                                  {fieldErrors.city && <em className={styles.fieldErrorText}>{typeof fieldErrors.city === "string" ? fieldErrors.city : "Required"}</em>}
                                 </label>
                               )}
                               {personal.country === "Pakistan" ? (
@@ -2376,7 +2445,7 @@ function OnboardingContent() {
                                   {(otherSelections.state || (personal.state && !PAKISTANI_PROVINCES.includes(personal.state))) && (
                                     <input value={personal.state} onChange={(e) => setPersonal({ ...personal, state: e.target.value })} placeholder="Enter province" />
                                   )}
-                                  {fieldErrors.state && <em className={styles.fieldErrorText}>Required</em>}
+                                  {fieldErrors.state && <em className={styles.fieldErrorText}>{typeof fieldErrors.state === "string" ? fieldErrors.state : "Required"}</em>}
                                 </label>
                               ) : (
                                 <Field styles={styles} label="State / Province" required value={personal.state} error={fieldErrors.state} onChange={(e) => { setPersonal({ ...personal, state: e.target.value }); setFieldErrors((prev) => ({ ...prev, state: false })); }} />
@@ -2409,7 +2478,7 @@ function OnboardingContent() {
                                   onChange={(e) => handleFileUpload(e, "education_cert", index)}
                                   onRemove={() => handleFileRemove("education_cert", index)}
                                   fileUrl={entry.certificate_file}
-                                  hint="PDF, JPG, or PNG"
+                                  hint="Upload a mark sheet, transcript, or degree certificate — not your resume (that goes on Skills)."
                                   wide
                                 />
                                 <UniversityAutocomplete
@@ -2420,7 +2489,7 @@ function OnboardingContent() {
                                     setEducationEntries(next);
                                     setFieldErrors((prev) => ({ ...prev, [`edu_${index}_institution`]: false }));
                                   }}
-                                  error={!!fieldErrors[`edu_${index}_institution`]}
+                                  error={fieldErrors[`edu_${index}_institution`]}
                                   styles={styles}
                                   fillAnimClass={fillAnimLabelClass(`edu_${index}_institution`)}
                                   fillAnimStyle={fillAnimLabelStyle(`edu_${index}_institution`)}
@@ -2440,20 +2509,23 @@ function OnboardingContent() {
                                   }}
                                   {...fillAnimProps(`edu_${index}_city`)}
                                 />
-                                <Field styles={styles} label="Degree" required value={entry.degree || ""} onChange={(e) => {
+                                <Field styles={styles} label="Degree" required value={entry.degree || ""} error={fieldErrors[`edu_${index}_degree`]} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], degree: e.target.value };
                                   setEducationEntries(next);
+                                  setFieldErrors((prev) => ({ ...prev, [`edu_${index}_degree`]: false }));
                                 }} {...fillAnimProps(`edu_${index}_degree`)} />
-                                <Field styles={styles} label="Major / Field of study" required value={entry.field_of_study || ""} onChange={(e) => {
+                                <Field styles={styles} label="Major / Field of study" required value={entry.field_of_study || ""} error={fieldErrors[`edu_${index}_field_of_study`]} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], field_of_study: e.target.value };
                                   setEducationEntries(next);
+                                  setFieldErrors((prev) => ({ ...prev, [`edu_${index}_field_of_study`]: false }));
                                 }} {...fillAnimProps(`edu_${index}_field_of_study`)} />
-                                <Field styles={styles} label="Year completed" required value={entry.year_completed || ""} onChange={(e) => {
+                                <Field styles={styles} label="Year completed" required value={entry.year_completed || ""} error={fieldErrors[`edu_${index}_year_completed`]} onChange={(e) => {
                                   const next = [...educationEntries];
                                   next[index] = { ...next[index], year_completed: e.target.value };
                                   setEducationEntries(next);
+                                  setFieldErrors((prev) => ({ ...prev, [`edu_${index}_year_completed`]: false }));
                                 }} {...fillAnimProps(`edu_${index}_year_completed`)} />
                                 <Field styles={styles} label="CGPA / Percentage" value={entry.cgpa_or_percentage || ""} onChange={(e) => {
                                   const next = [...educationEntries];
@@ -2512,18 +2584,23 @@ function OnboardingContent() {
                                 wide
                               />
                               <label
-                                className={`${styles.field} ${styles.wide} ${fillAnimLabelClass("summary")}`}
+                                className={`${styles.field} ${styles.wide} ${fieldErrors.summary ? styles.fieldError : ""} ${fillAnimLabelClass("summary")}`}
                                 style={fillAnimLabelStyle("summary")}
                                 data-ocr-key="summary"
+                                data-field-error={fieldErrors.summary ? "true" : undefined}
                               >
                                 <span>Professional summary <span style={{ color: "red", marginLeft: 4 }}>*</span></span>
                                 <textarea
                                   rows={4}
                                   value={resume.summary}
-                                  onChange={(e) => setResume({ ...resume, summary: e.target.value })}
+                                  onChange={(e) => {
+                                    setResume({ ...resume, summary: e.target.value });
+                                    setFieldErrors((prev) => ({ ...prev, summary: false }));
+                                  }}
                                   className={styles.resumeTextarea}
                                   placeholder="A few sentences about your background and strengths…"
                                 />
+                                {fieldErrors.summary && <em className={styles.fieldErrorText}>{fieldErrors.summary}</em>}
                               </label>
                             </div>
                           </section>
@@ -2649,7 +2726,7 @@ function OnboardingContent() {
                         <div className={styles.formStack}>
                           <h2 className={styles.stepTitle}>Review &amp; submit</h2>
                           <p className={styles.reviewIntro}>
-                            Confirm every section looks right. Your recruiter reviews this next and sends your offer letter.
+                            Confirm every section looks right. Your recruiter will review your documents next, then continue IT setup and activation.
                           </p>
                           <div className={styles.reviewStack}>
                             <ReviewSection
@@ -2890,16 +2967,15 @@ function SubmittedState({ candidate, onEdit, onDashboard, styles }) {
           <path d="M20 6L9 17l-5-5" />
         </svg>
       </div>
-      <h2 className={styles.submittedHeading}>You&apos;re all set, {candidate?.full_name?.split(" ")[0]}</h2>
+      <h2 className={styles.submittedHeading}>Documents submitted successfully</h2>
       <p className={`${styles.lead} ${styles.submittedLead}`}>
-        Your profile, education history, ID documents, and resume are with your recruiter now. Here&apos;s what
-        happens next:
+        Your onboarding documents have been submitted for review. You can track the status of your onboarding from your dashboard.
       </p>
       <ol className={styles.submittedSteps}>
-        <li>Your recruiter reviews your documents (OCR speeds this up automatically).</li>
-        <li>You&apos;ll receive an <strong>offer letter</strong> to review and digitally sign.</li>
-        <li>Once HR approves your signed offer, you become an employee with your own Employee ID.</li>
-        <li>You&apos;ll then complete a short post-hire profile (emergency contact, banking, references, Self Declaration).</li>
+        <li>Your recruiter reviews your documents and profile details.</li>
+        <li>IT provisioning is arranged for your start date.</li>
+        <li>Once everything is approved, you are activated as an employee with your own Employee ID.</li>
+        <li>You will then complete a short post-hire profile (emergency contact, banking, references, Self Declaration).</li>
       </ol>
       <div className={`${styles.actions} ${styles.center}`}>
         <button type="button" className={styles.secondaryButton} onClick={onEdit}>Edit my details</button>
@@ -3003,7 +3079,7 @@ function Field({ label, name, value, onChange, type = "text", wide, styles, erro
     >
       <span>{label}{required && <span style={{ color: "red", marginLeft: 4 }}>*</span>}</span>
       <input name={name} type={type} value={safeValue} onChange={onChange} aria-invalid={!!error} aria-busy={ocrTyping || undefined} max={type === "date" ? max : undefined} />
-      {error && <em className={styles.fieldErrorText}>Required</em>}
+      {error && <em className={styles.fieldErrorText}>{typeof error === "string" ? error : "Required"}</em>}
       {!error && hint ? <small>{hint}</small> : null}
     </label>
   );

@@ -62,7 +62,7 @@ export const CANDIDATE_NAV_ITEMS = [
   {
     key: "profile",
     label: "Profile",
-    href: "/onboarding?edit=true",
+    href: "/dashboard/candidate/profile",
     icon: CANDIDATE_NAV_ICONS.profile,
   },
   {
@@ -80,7 +80,6 @@ export function isCandidateNavActive(item, { pathname, search = "", activeKey } 
   if (!item.href || !pathname) return false;
 
   const pathOnly = item.href.split("?")[0];
-  const isEdit = /(?:\?|&)edit=true\b/.test(search);
 
   if (item.key === "dashboard") {
     return pathname === pathOnly;
@@ -89,10 +88,10 @@ export function isCandidateNavActive(item, { pathname, search = "", activeKey } 
     return pathname === pathOnly || pathname.startsWith(`${pathOnly}/`);
   }
   if (item.key === "profile") {
-    return pathname.startsWith("/onboarding") && isEdit;
+    return pathname.startsWith("/dashboard/candidate/profile");
   }
   if (item.key === "onboarding") {
-    return pathname.startsWith("/onboarding") && !isEdit;
+    return pathname.startsWith("/onboarding");
   }
   if (item.key === "documents") {
     return pathname === pathOnly || pathname.startsWith(`${pathOnly}/`);
