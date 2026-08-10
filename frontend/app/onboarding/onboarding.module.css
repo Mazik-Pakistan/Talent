@@ -614,6 +614,10 @@ a.fileChip:hover {
   min-width: 0;
   overflow: hidden;
 }
+.sectionCardError {
+  border-color: #f04438 !important;
+  box-shadow: 0 0 0 3px rgba(240, 68, 56, 0.12);
+}
 .sectionScanning {
   border-color: #9ad7e4;
   box-shadow: 0 0 0 3px rgba(0, 169, 206, 0.12);

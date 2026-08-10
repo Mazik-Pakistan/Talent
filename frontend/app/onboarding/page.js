@@ -1615,10 +1615,18 @@ function OnboardingContent() {
     setSkills(prev => {
       const current = prev[category] || [];
       const exists = current.includes(skill);
-      return {
+      const next = {
         ...prev,
         [category]: exists ? current.filter(s => s !== skill) : [...current, skill],
       };
+      if (next[category]?.length) {
+        setFieldErrors((currentErrors) => {
+          const updated = { ...currentErrors };
+          delete updated.skills;
+          return updated;
+        });
+      }
+      return next;
     });
   }
 
@@ -1788,16 +1796,22 @@ function OnboardingContent() {
       const hasSkills = skills.technical_skills.length > 0 || skills.soft_skills.length > 0;
       const hasCertifications = (skills.certifications || []).filter(c => c.name.trim()).length > 0;
       if (!hasSkills && !hasCertifications) {
-        showFormError("Select at least one skill or add a certification.");
+        setFieldErrors({ skills: "Select at least one skill or add a certification." });
         return;
       }
       if (!resume.summary || resume.summary.length < 20) {
-        showFormError("Add a professional summary (at least 20 characters).", {
+        setFieldErrors({
+          skills: false,
           summary: "Add a professional summary (at least 20 characters).",
         });
         return;
       }
-      setFieldErrors({});
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next.skills;
+        delete next.summary;
+        return next;
+      });
       await persist({
         step: "skills",
         skills: {
@@ -2594,10 +2608,16 @@ function OnboardingContent() {
                           </section>
 
                           {/* Technical Skills Pills */}
-                          <section className={styles.sectionCard}>
+                          <section
+                            className={`${styles.sectionCard} ${fieldErrors.skills ? styles.sectionCardError : ""}`}
+                            data-field-error={fieldErrors.skills ? "true" : undefined}
+                          >
                             <div className={styles.sectionCardHead}>
                               <div>
-                                <h3>Technical Skills</h3>
+                                <h3>
+                                  Technical Skills{" "}
+                                  <span style={{ color: "red", marginLeft: 4 }}>*</span>
+                                </h3>
                                 <p>Select all that apply</p>
                               </div>
                             </div>
@@ -2613,13 +2633,24 @@ function OnboardingContent() {
                                 </button>
                               ))}
                             </div>
+                            {fieldErrors.skills && (
+                              <em className={styles.fieldErrorText} style={{ marginTop: 10, display: "block" }}>
+                                {fieldErrors.skills}
+                              </em>
+                            )}
                           </section>
 
                           {/* Soft Skills Pills */}
-                          <section className={styles.sectionCard}>
+                          <section
+                            className={`${styles.sectionCard} ${fieldErrors.skills ? styles.sectionCardError : ""}`}
+                            data-field-error={fieldErrors.skills ? "true" : undefined}
+                          >
                             <div className={styles.sectionCardHead}>
                               <div>
-                                <h3>Soft Skills</h3>
+                                <h3>
+                                  Soft Skills{" "}
+                                  <span style={{ color: "red", marginLeft: 4 }}>*</span>
+                                </h3>
                                 <p>Select all that apply</p>
                               </div>
                             </div>
@@ -2635,6 +2666,11 @@ function OnboardingContent() {
                                 </button>
                               ))}
                             </div>
+                            {fieldErrors.skills && (
+                              <em className={styles.fieldErrorText} style={{ marginTop: 10, display: "block" }}>
+                                {fieldErrors.skills}
+                              </em>
+                            )}
                           </section>
 
                           {/* Certifications */}

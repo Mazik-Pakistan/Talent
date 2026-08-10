@@ -40,6 +40,7 @@ import RecruiterDocumentReview from "@/components/RecruiterDocumentReview";
 import OfferSummaryCard from "@/components/offers/OfferSummaryCard";
 import SendReminderModal from "@/components/recruiter/SendReminderModal";
 import ExtendOfferValidityModal from "@/components/recruiter/ExtendOfferValidityModal";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
 import {
   clearRecruiterContext,
   publishRecruiterContext,
@@ -76,6 +77,7 @@ function RecruiterCandidatesPageContent() {
   const [negoPopup, setNegoPopup] = useState(null);
   const [editingOffer, setEditingOffer] = useState(false);
   const [editDraft, setEditDraft] = useState(null);
+  const [editFieldErrors, setEditFieldErrors] = useState({});
   const [pipelineView, setPipelineView] = useState("active");
   const [historicalCandidates, setHistoricalCandidates] = useState([]);
   const [historicalTotal, setHistoricalTotal] = useState(0);
@@ -528,6 +530,20 @@ function RecruiterCandidatesPageContent() {
     }));
   }
 
+  function clearEditFieldError(key) {
+    setEditFieldErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function updateEditDraft(key, value) {
+    setEditDraft((current) => ({ ...current, [key]: value }));
+    clearEditFieldError(key);
+  }
+
   async function handleEditAndResend(offer) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken || !editDraft) return;
@@ -538,13 +554,20 @@ function RecruiterCandidatesPageContent() {
       });
       return;
     }
-    if (!editDraft.job_title?.trim() || !editDraft.department?.trim() || !editDraft.reporting_manager?.trim()) {
-      toast.error("Job title, department, and reporting manager are required.");
+    const errors = {
+      job_title: !editDraft.job_title?.trim() ? "Job title is required." : undefined,
+      department: !editDraft.department?.trim() ? "Department is required." : undefined,
+      reporting_manager: !editDraft.reporting_manager?.trim() ? "Reporting manager is required." : undefined,
+      start_date: !editDraft.start_date ? "Start date is required." : undefined,
+      monthly_salary: !editDraft.monthly_salary ? "Monthly salary is required." : undefined,
+    };
+    if (Object.values(errors).some(Boolean)) {
+      setEditFieldErrors(errors);
       return;
     }
     const salaryRaw = unformatMoney(editDraft.monthly_salary);
-    if (!editDraft.start_date || salaryRaw === "" || Number.isNaN(Number(salaryRaw))) {
-      toast.error("Start date and monthly salary are required.");
+    if (Number.isNaN(Number(salaryRaw))) {
+      setEditFieldErrors({ ...errors, monthly_salary: "Enter a valid salary amount." });
       return;
     }
 
@@ -599,6 +622,7 @@ function RecruiterCandidatesPageContent() {
       setNegoPopup(null);
       setEditingOffer(false);
       setEditDraft(null);
+      setEditFieldErrors({});
       await loadCandidates();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not edit and resend offer."));
@@ -1476,11 +1500,13 @@ function RecruiterCandidatesPageContent() {
                     <div className={styles.formGrid} style={{ marginBottom: 0 }}>
                       <label className={styles.field}>
                         <span>Job title</span>
-                        <input value={editDraft.job_title} onChange={(e) => updateEditDraft("job_title", e.target.value)} />
+                        <input value={editDraft.job_title} onChange={(e) => updateEditDraft("job_title", e.target.value)} aria-invalid={Boolean(editFieldErrors.job_title)} style={editFieldErrors.job_title ? INPUT_ERROR_STYLE : undefined} />
+                        {editFieldErrors.job_title && <FieldError>{editFieldErrors.job_title}</FieldError>}
                       </label>
                       <label className={styles.field}>
                         <span>Department</span>
-                        <input value={editDraft.department} onChange={(e) => updateEditDraft("department", e.target.value)} />
+                        <input value={editDraft.department} onChange={(e) => updateEditDraft("department", e.target.value)} aria-invalid={Boolean(editFieldErrors.department)} style={editFieldErrors.department ? INPUT_ERROR_STYLE : undefined} />
+                        {editFieldErrors.department && <FieldError>{editFieldErrors.department}</FieldError>}
                       </label>
                       <label className={styles.field}>
                         <span>Employment type</span>
@@ -1506,7 +1532,10 @@ function RecruiterCandidatesPageContent() {
                         <input
                           value={editDraft.reporting_manager}
                           onChange={(e) => updateEditDraft("reporting_manager", e.target.value)}
+                          aria-invalid={Boolean(editFieldErrors.reporting_manager)}
+                          style={editFieldErrors.reporting_manager ? INPUT_ERROR_STYLE : undefined}
                         />
+                        {editFieldErrors.reporting_manager && <FieldError>{editFieldErrors.reporting_manager}</FieldError>}
                       </label>
                       <label className={styles.field}>
                         <span>Start date</span>
@@ -1514,7 +1543,10 @@ function RecruiterCandidatesPageContent() {
                           type="date"
                           value={normalizeDateInput(editDraft.start_date)}
                           onChange={(e) => updateEditDraft("start_date", e.target.value)}
+                          aria-invalid={Boolean(editFieldErrors.start_date)}
+                          style={editFieldErrors.start_date ? INPUT_ERROR_STYLE : undefined}
                         />
+                        {editFieldErrors.start_date && <FieldError>{editFieldErrors.start_date}</FieldError>}
                       </label>
                       <label className={styles.field}>
                         <span>Monthly base salary</span>
@@ -1523,7 +1555,10 @@ function RecruiterCandidatesPageContent() {
                           value={formatMoney(editDraft.monthly_salary)}
                           onChange={(e) => updateEditDraft("monthly_salary", sanitizeMoneyInput(e.target.value))}
                           placeholder="e.g. 150,000"
+                          aria-invalid={Boolean(editFieldErrors.monthly_salary)}
+                          style={editFieldErrors.monthly_salary ? INPUT_ERROR_STYLE : undefined}
                         />
+                        {editFieldErrors.monthly_salary && <FieldError>{editFieldErrors.monthly_salary}</FieldError>}
                       </label>
                       <label className={styles.field}>
                         <span>Currency</span>

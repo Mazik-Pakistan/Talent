@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import s from "./RecruitersPanel.module.css";
 import StatsCard from "@/components/super-admin/StatsCard";
+import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
 
 const CAPABILITY_LABELS = {
   overview: "Overview dashboard",
@@ -163,6 +164,8 @@ export default function RecruitersPanel({
   saveEdit = () => {},
   cancelEdit = () => {},
   editSaving = false,
+  editErrors = {},
+  onClearEditError = () => {},
   toggleCapability = () => {},
   quickDeleteRecruiter = () => {},
   onTabChange = () => {},
@@ -275,9 +278,12 @@ export default function RecruitersPanel({
               type="text"
               className={s.editInput}
               value={editForm?.job_title || ""}
-              onChange={(e) => setEditForm({ ...(editForm || {}), job_title: e.target.value })}
+              onChange={(e) => { setEditForm({ ...(editForm || {}), job_title: e.target.value }); onClearEditError("job_title"); }}
               aria-label="Job title"
+              aria-invalid={Boolean(editErrors.job_title)}
+              style={editErrors.job_title ? INPUT_ERROR_STYLE : undefined}
             />
+            {editErrors.job_title && <FieldError>{editErrors.job_title}</FieldError>}
           </label>
           <label className={s.editField}>
             <span className={s.editLabel}>Department</span>
@@ -285,9 +291,12 @@ export default function RecruitersPanel({
               type="text"
               className={s.editInput}
               value={editForm?.department || ""}
-              onChange={(e) => setEditForm({ ...(editForm || {}), department: e.target.value })}
+              onChange={(e) => { setEditForm({ ...(editForm || {}), department: e.target.value }); onClearEditError("department"); }}
               aria-label="Department"
+              aria-invalid={Boolean(editErrors.department)}
+              style={editErrors.department ? INPUT_ERROR_STYLE : undefined}
             />
+            {editErrors.department && <FieldError>{editErrors.department}</FieldError>}
           </label>
           <label className={s.editField}>
             <span className={s.editLabel}>Office Location</span>
