@@ -467,17 +467,17 @@ async def upload_onboarding_file(
     file_url = (document or {}).get("file_url") or ""
     file_name = (document or {}).get("file_name") or original
 
-    # Identity docs must match type. Education/resume uploads are still attached
-    # even when OCR is uncertain — candidates can fill fields manually.
-    rejected_type = ocr_result and ocr_result.get("status") == "rejected_type"
-    hard_reject = rejected_type and purpose == "government_doc"
+    # Identity docs must match type and be readable. Education/resume uploads stay
+    # attached even when OCR is uncertain — recruiters verify them manually.
+    ocr_failed = ocr_result and ocr_result.get("accepted") is False
+    hard_reject = purpose == "government_doc" and ocr_failed
     if hard_reject:
         return {
             "file_name": file_name,
             "file_url": file_url,
             "purpose": purpose,
             "ocr_result": ocr_result,
-            "message": ocr_result.get("rejection_message") or "Document type rejected.",
+            "message": (ocr_result or {}).get("rejection_message") or "Document type rejected.",
         }
 
     slot = max(0, index)
