@@ -17,7 +17,7 @@ export default function PasswordToggle({ visible, onToggle, className = "", size
       aria-label={label}
       title={label}
     >
-      {visible ? <EyeOff size={size} aria-hidden="true" /> : <Eye size={size} aria-hidden="true" />}
+      {visible ? <Eye size={size} aria-hidden="true" /> : <EyeOff size={size} aria-hidden="true" />}
     </button>
   );
 }
