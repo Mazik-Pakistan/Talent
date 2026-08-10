@@ -40,15 +40,6 @@ def _cosine(a: list[float], b: list[float]) -> float:
     if not na or not nb:
         return 0.0
     return dot / (na * nb)
-from app.services.recruiter_kb_service import recruiter_kb_service
-
-SENIORITY_KEYWORDS: list[tuple[int, tuple[str, ...]]] = [
-    (0, ("intern", "trainee", "junior", "associate")),
-    (2, ("senior", "sr.", "sr ")),
-    (3, ("lead", "staff", "principal", "architect")),
-    (4, ("manager", "director", "head of", "vp", "chief")),
-]
-
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -60,14 +51,6 @@ def _iso(value: Any) -> str | None:
     if isinstance(value, str):
         return value
     return value.isoformat()
-
-
-def _seniority_rank(title: str | None) -> int:
-    t = (title or "").lower()
-    for rank, keywords in SENIORITY_KEYWORDS:
-        if any(k in t for k in keywords):
-            return rank
-    return 1  # plain / mid-level title with no seniority keyword
 
 
 def _oid(value: str, field: str = "id") -> ObjectId:
@@ -300,49 +283,12 @@ class TalentService:
         if org_ladder and org_ladder.get("ladder"):
             return org_ladder
 
-        recruiter_id = self._recruiter_id(employee)
-        roles = await recruiter_kb_service.get_roles_for_matching(recruiter_id)
-        if not roles:
-            return {
-                "current_title": employee.get("job_title"),
-                "current_department": employee.get("department"),
-                "ladder": [],
-                "message": "No role ladder found for your department yet. Ask your recruiter to add your job title under Organization Setup → Role ladders.",
-                "source": "none",
-            }
-
-        current_rank = _seniority_rank(employee.get("job_title"))
-
-        ladder = []
-        for role in sorted(roles, key=lambda r: _seniority_rank(r.get("title"))):
-            match = role_matching_service.match_employee_to_role(
-                employee_skills=skill_names, employee_certifications=cert_titles, role=role
-            )
-            rank = _seniority_rank(role.get("title"))
-            ladder.append(
-                {
-                    "title": role.get("title"),
-                    "description": role.get("description"),
-                    "seniority_rank": rank,
-                    "is_current": rank == current_rank
-                    and (role.get("title") or "").strip().lower() == (employee.get("job_title") or "").strip().lower(),
-                    "is_next_step": rank == current_rank + 1,
-                    "required_skills": role.get("required_skills") or [],
-                    "required_certifications": role.get("required_certifications") or [],
-                    "missing_skills": match["missing_skills"],
-                    "missing_certifications": match["missing_certifications"],
-                    "progress_percentage": match["readiness_score"],
-                    "skill_match_percent": match["skill_match_percent"],
-                    "certification_match_percent": match["certification_match_percent"],
-                }
-            )
-
         return {
             "current_title": employee.get("job_title"),
             "current_department": employee.get("department"),
-            "ladder": ladder,
-            "next_step": next((r for r in ladder if r["is_next_step"]), None),
-            "source": "knowledge_base",
+            "ladder": [],
+            "message": "No role ladder found for your department yet. Ask your recruiter to add your job title under Organization Setup → Role ladders.",
+            "source": "none",
         }
 
     async def _org_framework_career_ladder(

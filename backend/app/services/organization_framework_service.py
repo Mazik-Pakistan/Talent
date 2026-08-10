@@ -2110,7 +2110,7 @@ async def resolve_roadmap_catalog_refs(organization_id: str, data: dict) -> list
     async def _live_matches(name: str, provider: str) -> list[dict]:
         from app.services.dynamic_catalog_service import dynamic_catalog_service
 
-        sources = ("managed_learning", "microsoft_learn", "coursera", "recruiter_kb")
+        sources = ("managed_learning", "microsoft_learn", "coursera")
         found: list[dict] = []
         seen: set[str] = set()
         for source in sources:

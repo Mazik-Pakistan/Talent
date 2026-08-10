@@ -1,4 +1,4 @@
-"""Build ordered career learning paths from catalog + recruiter KB."""
+"""Build ordered career learning paths from catalog."""
 
 from __future__ import annotations
 
@@ -35,13 +35,12 @@ def build_learning_path(
     missing_skills: list[str],
     missing_certifications: list[Any],
     catalog_courses: list[dict],
-    kb_certifications: list[dict] | None = None,
     existing_certifications: list[str] | None = None,
     completed_uids: set[str] | None = None,
 ) -> dict:
     """Arrange learning steps: foundations → skills → certifications.
 
-    Sources: Microsoft Learn, Coursera, Recruiter Knowledge Base.
+    Sources: Microsoft Learn, Coursera, managed learning providers.
     """
     completed_uids = completed_uids or set()
     existing = {(c or "").strip().lower() for c in (existing_certifications or []) if c}
@@ -94,13 +93,8 @@ def build_learning_path(
             }
         )
 
-    # Step group 2: missing certifications from KB + catalog
+    # Step group 2: missing certifications from catalog
     cert_steps: list[dict] = []
-    kb_by_title = {}
-    for cert in kb_certifications or []:
-        title = (cert.get("title") or "").strip()
-        if title:
-            kb_by_title[title.lower()] = cert
 
     for missing in missing_certifications or []:
         if isinstance(missing, dict):
@@ -108,21 +102,21 @@ def build_learning_path(
             meta = missing
         else:
             title = str(missing).strip()
-            meta = kb_by_title.get(title.lower()) or {"title": title}
+            meta = {"title": title}
 
         if title.lower() in existing:
             continue
 
-        # Prefer KB official URL / metadata
+        # Prefer catalog course metadata
         course = find_course_for(title)
         cert_steps.append(
             {
                 "skill": title,
                 "title": meta.get("title") or title,
                 "type": "certification",
-                "source": meta.get("provider") or (course or {}).get("source") or "recruiter_kb",
+                "source": meta.get("provider") or (course or {}).get("source") or "catalog",
                 "url": meta.get("official_url") or meta.get("url") or (course or {}).get("url"),
-                "uid": (course or {}).get("uid") or f"kb-cert:{(meta.get('id') or title)}",
+                "uid": (course or {}).get("uid"),
                 "duration_minutes": int(float(meta.get("estimated_hours") or 0) * 60) or (course or {}).get("duration_minutes"),
                 "estimated_hours": float(meta.get("estimated_hours") or _hours(course or {})),
                 "difficulty": meta.get("difficulty") or (course or {}).get("levels", [None])[0],
