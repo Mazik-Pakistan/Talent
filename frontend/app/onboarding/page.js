@@ -1959,7 +1959,6 @@ function OnboardingContent() {
                   <SubmittedState
                     styles={styles}
                     candidate={candidate}
-                    onEdit={() => router.push("/onboarding?edit=true")}
                     onDashboard={() => router.push("/dashboard/candidate")}
                   />
                 )}
@@ -2979,7 +2978,6 @@ function SubmittedState({ candidate, onEdit, onDashboard, styles }) {
         <li>You will then complete a short post-hire profile (emergency contact, banking, references, Self Declaration).</li>
       </ol>
       <div className={`${styles.actions} ${styles.center}`}>
-        <button type="button" className={styles.secondaryButton} onClick={onEdit}>Edit my details</button>
         <button type="button" className={styles.primaryButton} onClick={onDashboard}>Go to my dashboard</button>
       </div>
     </div>

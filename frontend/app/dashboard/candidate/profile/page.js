@@ -191,9 +191,6 @@ export default function CandidateProfilePage() {
                   <button type="button" className={styles.btnGhost} onClick={() => router.push("/offer")}>
                     View offer
                   </button>
-                  <button type="button" className={styles.btnGhost} onClick={() => router.push("/onboarding?edit=true")}>
-                    Edit details
-                  </button>
                   <button type="button" className={styles.btnPrimary} onClick={() => router.push("/documents")}>
                     Documents
                   </button>
