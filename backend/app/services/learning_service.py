@@ -15,6 +15,7 @@ URLs (see learning_ai_service.py for the no-hallucination design).
 from __future__ import annotations
 
 import logging
+import random
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -44,7 +45,7 @@ from app.services import (
     role_matching_service,
     storage_service,
 )
-from app.services.managed_learning_service import managed_learning_service
+from app.services.managed_learning_service import MANAGED_SOURCE, managed_learning_service
 from app.services.dashboard_service import create_notification
 from app.services.recruiter_kb_service import recruiter_kb_service
 
@@ -507,22 +508,49 @@ class LearningService:
 
     async def start_course(self, current_user: CurrentUser, uid: str) -> dict:
         item = await catalog_service.get_course_by_uid(uid)
-        if not item:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found in the catalog.")
         employee = await self._get_employee(current_user)
         now = _now()
+        assignment = await database.learning_assignments.find_one(
+            {"user_id": current_user.id, "course_uid": uid}
+        )
+        # Career-path / org courses may not be in the live catalog — still allow open via stored URL.
+        if not item:
+            fallback_url = await self._resolve_course_url(
+                course_uid=uid,
+                course_title=(assignment or {}).get("course_title"),
+                existing_url=(assignment or {}).get("course_url"),
+                user_id=current_user.id,
+            )
+            if not fallback_url:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Course not found in the catalog and no course link is saved. Ask your recruiter to add the URL.",
+                )
+            item = {
+                "title": (assignment or {}).get("course_title") or uid,
+                "url": fallback_url,
+                "type": (assignment or {}).get("course_type") or "course",
+                "duration_minutes": (assignment or {}).get("duration_minutes"),
+            }
+
         existing = await database.learning_enrollments.find_one({"user_id": current_user.id, "course_uid": uid})
         if existing:
-            return {"enrollment": self._public_enrollment(existing), "redirect_url": item.get("url")}
+            redirect = item.get("url") or existing.get("course_url")
+            if redirect and not (existing.get("course_url") or "").strip():
+                await database.learning_enrollments.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": {"course_url": redirect, "updated_at": now}},
+                )
+                existing["course_url"] = redirect
+            return {"enrollment": self._public_enrollment(existing), "redirect_url": redirect}
 
-        assignment = await database.learning_assignments.find_one({"user_id": current_user.id, "course_uid": uid})
         doc = {
             "user_id": current_user.id,
             "employee_id": employee.get("employee_id"),
             "course_uid": uid,
-            "course_title": item.get("title"),
-            "course_url": item.get("url"),
-            "course_type": item.get("type"),
+            "course_title": item.get("title") or (assignment or {}).get("course_title") or uid,
+            "course_url": item.get("url") or (assignment or {}).get("course_url") or "",
+            "course_type": item.get("type") or (assignment or {}).get("course_type"),
             "duration_minutes": item.get("duration_minutes"),
             "status": "in_progress",
             "progress_percent": 0,
@@ -539,7 +567,7 @@ class LearningService:
             await database.learning_assignments.update_one(
                 {"_id": assignment["_id"]}, {"$set": {"status": "in_progress", "updated_at": now}}
             )
-        return {"enrollment": self._public_enrollment(doc), "redirect_url": item.get("url")}
+        return {"enrollment": self._public_enrollment(doc), "redirect_url": doc.get("course_url") or item.get("url")}
 
     async def update_progress(self, current_user: CurrentUser, uid: str, request: EnrollmentProgressRequest) -> dict:
         enrollment = await database.learning_enrollments.find_one({"user_id": current_user.id, "course_uid": uid})
@@ -577,6 +605,8 @@ class LearningService:
         course_uid: str | None,
         organization_id: str | None = None,
         course_title: str | None = None,
+        employee_id: str | None = None,
+        user_id: str | None = None,
     ) -> dict[str, list[str]]:
         """Skills / certifications attached to a catalog item via Career Roadmaps or catalog metadata."""
         skills: list[str] = []
@@ -588,6 +618,9 @@ class LearningService:
             if isinstance(value, (list, tuple, set)):
                 for entry in value:
                     _push(bucket, entry)
+                return
+            if isinstance(value, dict):
+                _push(bucket, value.get("skill") or value.get("certification") or value.get("name"))
                 return
             text = str(value).strip()
             if text and text not in bucket:
@@ -612,6 +645,39 @@ class LearningService:
                 public = self._public_course(item)
                 _push(skills, public.get("skills"))
                 _push(certifications, public.get("certifications"))
+
+        # Fall back to org roadmap match by course title (career-path / LinkedIn title keys).
+        if course_title and (not skills or not certifications):
+            title_q: dict[str, Any] = {
+                "course_name": {
+                    "$regex": f"^{_escape_regex(course_title.strip())}$",
+                    "$options": "i",
+                }
+            }
+            if organization_id:
+                title_q["organization_id"] = organization_id
+            title_rows = await database.org_framework_roadmaps.find(title_q).to_list(length=50)
+            for row in title_rows:
+                _push(skills, row.get("skills"))
+                _push(skills, row.get("competency"))
+                _push(certifications, row.get("certifications"))
+
+        # Career-path nested skills/certs for this course (works for assigned + self-enroll matches).
+        if employee_id or user_id:
+            career_q: dict[str, Any] = {"status": "active"}
+            if employee_id:
+                career_q["employee_id"] = employee_id
+            else:
+                career_q["user_id"] = user_id
+            career = await database.employee_career_assignments.find_one(career_q)
+            uid_l = (course_uid or "").strip().lower()
+            title_l = (course_title or "").strip().lower()
+            for path_course in (career or {}).get("assigned_learning_path") or []:
+                p_uid = (path_course.get("course_uid") or "").strip().lower()
+                p_title = (path_course.get("course_title") or "").strip().lower()
+                if (uid_l and p_uid == uid_l) or (title_l and p_title == title_l):
+                    _push(skills, path_course.get("skills"))
+                    _push(certifications, path_course.get("certifications"))
 
         return {"skills": skills[:12], "certifications": certifications[:8]}
 
@@ -743,6 +809,8 @@ class LearningService:
             course_uid=course_uid,
             organization_id=organization_id,
             course_title=course_title,
+            employee_id=employee_id,
+            user_id=user_id,
         )
         skill_prof = self._normalize_proficiency(
             proficiency or await self._resolve_course_proficiency(course_uid, course_title)
@@ -831,6 +899,79 @@ class LearningService:
             "due_date": _iso(doc.get("due_date")),
         }
 
+    async def _resolve_course_url(
+        self,
+        *,
+        course_uid: str | None,
+        course_title: str | None = None,
+        existing_url: str | None = None,
+        user_id: str | None = None,
+    ) -> str | None:
+        """Best-effort provider URL for Open course (catalog → assignment → roadmap)."""
+        cleaned = (existing_url or "").strip()
+        if cleaned.startswith("http://") or cleaned.startswith("https://"):
+            return cleaned
+
+        uid = (course_uid or "").strip()
+        if uid:
+            try:
+                item = await catalog_service.get_course_by_uid(uid)
+                url = ((item or {}).get("url") or (item or {}).get("course_url") or "").strip()
+                if url.startswith("http://") or url.startswith("https://"):
+                    return url
+            except Exception:
+                pass
+
+        if user_id and uid:
+            assignment = await database.learning_assignments.find_one(
+                {"user_id": user_id, "course_uid": uid}
+            )
+            aurl = ((assignment or {}).get("course_url") or "").strip()
+            if aurl.startswith("http://") or aurl.startswith("https://"):
+                return aurl
+
+        title = (course_title or "").strip()
+        if title:
+            row = await database.org_framework_roadmaps.find_one(
+                {
+                    "course_name": {
+                        "$regex": f"^{_escape_regex(title)}$",
+                        "$options": "i",
+                    }
+                }
+            )
+            if row:
+                rurl = (row.get("course_url") or row.get("url") or "").strip()
+                if rurl.startswith("http://") or rurl.startswith("https://"):
+                    return rurl
+            if user_id:
+                assignment = await database.learning_assignments.find_one(
+                    {
+                        "user_id": user_id,
+                        "course_title": {
+                            "$regex": f"^{_escape_regex(title)}$",
+                            "$options": "i",
+                        },
+                    }
+                )
+                aurl = ((assignment or {}).get("course_url") or "").strip()
+                if aurl.startswith("http://") or aurl.startswith("https://"):
+                    return aurl
+        return None
+
+    async def _enrich_course_url(self, doc: dict, *, user_id: str | None = None) -> dict:
+        """Attach a working course_url onto a public enrollment/assignment row."""
+        public = dict(doc)
+        url = await self._resolve_course_url(
+            course_uid=public.get("course_uid"),
+            course_title=public.get("course_title"),
+            existing_url=public.get("course_url"),
+            user_id=user_id,
+        )
+        if url:
+            public["course_url"] = url
+        return public
+
     async def list_my_courses(self, current_user: CurrentUser, status_filter: str | None) -> dict:
         """Return started enrollments plus open recruiter assignments not yet started.
 
@@ -840,13 +981,65 @@ class LearningService:
         """
         status_filter = (status_filter or "").strip().lower() or None
 
+        # Heal: if a certificate is still pending, the course must not show as completed.
+        pending_certs = await database.learning_certificates.find(
+            {"user_id": current_user.id, "verification_status": "pending"}
+        ).to_list(length=300)
+        pending_uids = {c.get("course_uid") for c in pending_certs if c.get("course_uid")}
+        pending_titles = {
+            (c.get("course_title") or "").strip().lower()
+            for c in pending_certs
+            if (c.get("course_title") or "").strip()
+        }
+        if pending_uids or pending_titles:
+            heal_or: list[dict] = []
+            if pending_uids:
+                heal_or.append({"course_uid": {"$in": list(pending_uids)}})
+            if pending_titles:
+                heal_or.append(
+                    {
+                        "course_title": {
+                            "$regex": f"^({'|'.join(_escape_regex(t) for t in pending_titles)})$",
+                            "$options": "i",
+                        }
+                    }
+                )
+            await database.learning_enrollments.update_many(
+                {
+                    "user_id": current_user.id,
+                    "status": "completed",
+                    "$or": heal_or,
+                },
+                {
+                    "$set": {
+                        "status": "in_progress",
+                        "progress_percent": 90,
+                        "completed_at": None,
+                        "certificate_pending": True,
+                        "updated_at": _now(),
+                    }
+                },
+            )
+
         enrollment_query: dict[str, Any] = {"user_id": current_user.id}
         if status_filter in ("in_progress", "completed"):
             enrollment_query["status"] = status_filter
         enroll_docs = await database.learning_enrollments.find(enrollment_query).sort(
             "updated_at", -1
         ).to_list(length=300)
-        enrollments = [self._public_enrollment(d) for d in enroll_docs]
+        enrollments: list[dict] = []
+        for d in enroll_docs:
+            public = self._public_enrollment(d)
+            enriched = await self._enrich_course_url(public, user_id=current_user.id)
+            # Persist resolved URL so Open course keeps working offline from catalog cache.
+            resolved = (enriched.get("course_url") or "").strip()
+            stored = (d.get("course_url") or "").strip()
+            if resolved and resolved != stored and d.get("_id"):
+                await database.learning_enrollments.update_one(
+                    {"_id": d["_id"]},
+                    {"$set": {"course_url": resolved, "updated_at": _now()}},
+                )
+            enrollments.append(enriched)
 
         # Exclude any enrollment for this user so we don't duplicate an assignment
         # that was already started (even if the status filter hides that enrollment).
@@ -869,7 +1062,16 @@ class LearningService:
                 if not uid or uid in all_enrolled_uids or uid in seen_uids:
                     continue
                 seen_uids.add(uid)
-                pending.append(self._assignment_as_my_course(assignment))
+                row = self._assignment_as_my_course(assignment)
+                enriched = await self._enrich_course_url(row, user_id=current_user.id)
+                resolved = (enriched.get("course_url") or "").strip()
+                stored = (assignment.get("course_url") or "").strip()
+                if resolved and resolved != stored and assignment.get("_id"):
+                    await database.learning_assignments.update_one(
+                        {"_id": assignment["_id"]},
+                        {"$set": {"course_url": resolved, "updated_at": _now()}},
+                    )
+                pending.append(enriched)
 
         if status_filter == "assigned":
             return {"enrollments": pending}
@@ -1029,6 +1231,9 @@ class LearningService:
             "verified_by": doc.get("verified_by"),
             "verified_at": _iso(doc.get("verified_at")),
             "rejection_reason": doc.get("rejection_reason"),
+            "skills_awarded": doc.get("skills_awarded") or [],
+            "certifications_awarded": doc.get("certifications_awarded") or [],
+            "proficiency_awarded": doc.get("proficiency_awarded"),
             "created_at": _iso(doc.get("created_at")),
         }
 
@@ -1040,14 +1245,28 @@ class LearningService:
         course_title: str,
         completion_date: date | None,
         learning_hours: float | None,
-        filename: str,
-        content: bytes,
+        filename: str | None,
+        content: bytes | None,
         source_url: str | None = None,
     ) -> dict:
         employee = await self._get_employee(current_user)
-        upload = await storage_service.save_file(current_user.id, "certificates", filename, content)
-        now = _now()
         cleaned_source = (source_url or "").strip() or None
+        if not cleaned_source:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Certificate link is required so your recruiter can verify it.",
+            )
+
+        now = _now()
+        file_url = None
+        object_path = None
+        file_name = None
+        if filename and content:
+            upload = await storage_service.save_file(current_user.id, "certificates", filename, content)
+            file_url = upload.get("file_url")
+            object_path = upload.get("object_path")
+            file_name = filename
+
         doc = {
             "user_id": current_user.id,
             "employee_id": employee.get("employee_id"),
@@ -1055,10 +1274,10 @@ class LearningService:
             "recruiter_id": employee.get("recruiter_id"),
             "course_uid": course_uid,
             "course_title": course_title,
-            "file_name": filename,
-            "file_url": upload.get("file_url"),
+            "file_name": file_name,
+            "file_url": file_url,
             "source_url": cleaned_source,
-            "object_path": upload.get("object_path"),
+            "object_path": object_path,
             "learning_hours": learning_hours,
             "completion_date": completion_date.isoformat() if completion_date else None,
             "verification_status": "pending",
@@ -1068,15 +1287,65 @@ class LearningService:
         result = await database.learning_certificates.insert_one(doc)
         doc["_id"] = result.inserted_id
 
+        # Keep course in progress until the recruiter verifies the certificate.
         if course_uid:
             enrollment = await database.learning_enrollments.find_one(
                 {"user_id": current_user.id, "course_uid": course_uid}
             )
-            if enrollment:
+            if enrollment and enrollment.get("status") != "completed":
                 await database.learning_enrollments.update_one(
                     {"_id": enrollment["_id"]},
-                    {"$set": {"status": "completed", "progress_percent": 100, "completed_at": now, "updated_at": now}},
+                    {
+                        "$set": {
+                            "status": "in_progress",
+                            "certificate_pending": True,
+                            "updated_at": now,
+                        }
+                    },
                 )
+            elif not enrollment:
+                await database.learning_enrollments.insert_one(
+                    {
+                        "user_id": current_user.id,
+                        "employee_id": employee.get("employee_id"),
+                        "course_uid": course_uid,
+                        "course_title": course_title,
+                        "course_url": "",
+                        "course_type": "course",
+                        "status": "in_progress",
+                        "progress_percent": 0,
+                        "started_at": now,
+                        "completed_at": None,
+                        "certificate_pending": True,
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                )
+            await database.learning_assignments.update_many(
+                {
+                    "user_id": current_user.id,
+                    "$or": [
+                        {"course_uid": course_uid},
+                        {
+                            "course_title": {
+                                "$regex": f"^{_escape_regex(course_title)}$",
+                                "$options": "i",
+                            }
+                        },
+                    ],
+                    "status": {"$nin": ["completed"]},
+                },
+                {"$set": {"status": "in_progress", "updated_at": now}},
+            )
+
+        # Mark career-path course as awaiting recruiter verification.
+        try:
+            await self._sync_career_assignment_progress(
+                user_id=current_user.id,
+                employee_id=employee.get("employee_id"),
+            )
+        except Exception:
+            logger.exception("Career path sync failed after certificate upload")
 
         if employee.get("recruiter_id"):
             await create_notification(
@@ -1084,7 +1353,10 @@ class LearningService:
                 recipient_role="recruiter",
                 notif_type="certificate_uploaded",
                 title="Certificate submitted for review",
-                message=f"{employee.get('full_name')} uploaded a certificate for \"{course_title}\".",
+                message=(
+                    f"{employee.get('full_name')} submitted a certificate for \"{course_title}\". "
+                    f"Review link: {cleaned_source}"
+                ),
                 link="/dashboard/recruiter/learning",
                 related_id=str(doc["_id"]),
             )
@@ -1100,6 +1372,93 @@ class LearningService:
             query["recruiter_id"] = current_user.id
         docs = await database.learning_certificates.find(query).sort("created_at", 1).to_list(length=300)
         return {"certificates": [self._public_certificate(d) for d in docs]}
+
+    async def _complete_course_after_certificate_verify(self, *, cert: dict, now: datetime) -> None:
+        """Mark enrollment + assignment completed only after recruiter verifies the certificate."""
+        user_id = cert.get("user_id")
+        if not user_id:
+            return
+        course_uid = (cert.get("course_uid") or "").strip() or None
+        course_title = (cert.get("course_title") or "").strip() or None
+        if not course_uid and not course_title:
+            return
+
+        enrollment = None
+        if course_uid:
+            enrollment = await database.learning_enrollments.find_one(
+                {"user_id": user_id, "course_uid": course_uid}
+            )
+        if not enrollment and course_title:
+            enrollment = await database.learning_enrollments.find_one(
+                {
+                    "user_id": user_id,
+                    "course_title": {
+                        "$regex": f"^{_escape_regex(course_title)}$",
+                        "$options": "i",
+                    },
+                }
+            )
+
+        enrollment_fields = {
+            "status": "completed",
+            "progress_percent": 100,
+            "completed_at": now,
+            "updated_at": now,
+            "certificate_pending": False,
+        }
+        if enrollment:
+            await database.learning_enrollments.update_one(
+                {"_id": enrollment["_id"]},
+                {"$set": enrollment_fields},
+            )
+        else:
+            employee = None
+            if cert.get("employee_id"):
+                employee = await database.employees.find_one({"employee_id": cert["employee_id"]})
+            if not employee:
+                employee = await database.employees.find_one({"user_id": user_id})
+            course_url = ""
+            if course_uid:
+                try:
+                    item = await catalog_service.get_course_by_uid(course_uid)
+                    course_url = (item or {}).get("url") or ""
+                except Exception:
+                    course_url = ""
+            await database.learning_enrollments.insert_one(
+                {
+                    "user_id": user_id,
+                    "employee_id": cert.get("employee_id") or (employee or {}).get("employee_id"),
+                    "course_uid": course_uid or course_title,
+                    "course_title": course_title or course_uid,
+                    "course_url": course_url,
+                    "course_type": "course",
+                    "status": "completed",
+                    "progress_percent": 100,
+                    "started_at": now,
+                    "completed_at": now,
+                    "certificate_pending": False,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+
+        assignment_or: list[dict] = []
+        if course_uid:
+            assignment_or.append({"course_uid": course_uid})
+        if course_title:
+            assignment_or.append(
+                {
+                    "course_title": {
+                        "$regex": f"^{_escape_regex(course_title)}$",
+                        "$options": "i",
+                    }
+                }
+            )
+        if assignment_or:
+            await database.learning_assignments.update_many(
+                {"user_id": user_id, "$or": assignment_or},
+                {"$set": {"status": "completed", "updated_at": now}},
+            )
 
     async def verify_certificate(self, current_user: CurrentUser, certificate_id: str, request: CertificateVerifyRequest) -> dict:
         if not ObjectId.is_valid(certificate_id):
@@ -1164,6 +1523,10 @@ class LearningService:
                 verifier=current_user,
             )
             try:
+                await self._complete_course_after_certificate_verify(cert=cert, now=now)
+            except Exception:
+                logger.exception("Failed to mark course completed after certificate verify %s", cert.get("_id"))
+            try:
                 await self._sync_career_assignment_progress(
                     user_id=cert["user_id"],
                     employee_id=cert.get("employee_id"),
@@ -1175,8 +1538,11 @@ class LearningService:
                 recipient_role="employee",
                 notif_type="certificate_verified",
                 title="Certificate verified",
-                message=f"Your certificate for \"{cert.get('course_title')}\" was verified.",
-                link="/dashboard/employee/learning",
+                message=(
+                    f"Your certificate for \"{cert.get('course_title')}\" was verified. "
+                    "The course is marked completed and skills were added to your profile."
+                ),
+                link="/dashboard/employee/learning?tab=my-courses",
                 related_id=str(cert["_id"]),
             )
             try:
@@ -1280,11 +1646,24 @@ class LearningService:
                 },
             )
 
-            if cert.get("course_uid"):
-                await database.learning_enrollments.update_one(
-                    {"user_id": cert["user_id"], "course_uid": cert["course_uid"]},
-                    {"$set": {"status": "completed", "progress_percent": 100, "completed_at": now, "updated_at": now}},
+            # Persist the verified course title as a profile certification too.
+            try:
+                await self._upsert_profile_certification(
+                    user_id=cert["user_id"],
+                    employee_id=cert.get("employee_id"),
+                    organization_id=org_id,
+                    recruiter_id=cert.get("recruiter_id") or current_user.id,
+                    title=cert.get("course_title") or "",
+                    course_uid=cert.get("course_uid"),
+                    source="verified_certificate",
                 )
+            except Exception:
+                logger.exception("Failed to mirror verified cert title onto profile for %s", cert.get("_id"))
+
+            try:
+                await self._complete_course_after_certificate_verify(cert=cert, now=now)
+            except Exception:
+                logger.exception("Failed to mark course completed after certificate verify %s", cert.get("_id"))
 
             try:
                 await self._sync_career_assignment_progress(
@@ -1317,8 +1696,11 @@ class LearningService:
             recipient_role="employee",
             notif_type="certificate_verified",
             title="Certificate verified",
-            message=f"Your certificate for \"{cert.get('course_title')}\" was verified.",
-            link="/dashboard/employee/learning",
+            message=(
+                f"Your certificate for \"{cert.get('course_title')}\" was verified. "
+                "The course is marked completed and skills were added to your profile."
+            ),
+            link="/dashboard/employee/learning?tab=my-courses",
             related_id=str(cert["_id"]),
         )
         try:
@@ -1441,7 +1823,49 @@ class LearningService:
         employee = await self._get_employee(current_user)
         department = employee.get("department")
 
-        # Try Career Framework first (career_levels has required_skills, required_certifications, learning_path)
+        # Prefer the employee's active career assignment path (Organization Setup roadmap).
+        assignment = await database.employee_career_assignments.find_one(
+            {"employee_id": employee.get("employee_id"), "status": "active"}
+        )
+        if assignment:
+            assign_target = (assignment.get("target_role_title") or "").strip()
+            assign_current = (assignment.get("current_role_title") or "").strip()
+            target_l = target_role.lower()
+            if target_l in {assign_target.lower(), assign_current.lower()} or (
+                not assign_target and target_l == (employee.get("job_title") or "").strip().lower()
+            ):
+                path = assignment.get("assigned_learning_path") or []
+                required_courses = []
+                for course in path:
+                    title = course.get("course_title") or course.get("course_uid")
+                    if not title:
+                        continue
+                    required_courses.append({
+                        "course_uid": course.get("course_uid") or title,
+                        "course_title": title,
+                        "source": course.get("source") or "org_framework",
+                        "mandatory": course.get("mandatory", True),
+                        "order": course.get("order"),
+                    })
+                required_skills = [
+                    s.get("skill") for s in (assignment.get("skills_to_acquire") or []) if s.get("skill")
+                ]
+                required_certifications = [
+                    c.get("certification")
+                    for c in (assignment.get("certifications_to_earn") or [])
+                    if c.get("certification")
+                ]
+                if required_courses or required_skills or required_certifications:
+                    return {
+                        "target_role": assign_target or target_role,
+                        "department": assignment.get("current_department") or department,
+                        "required_courses": required_courses,
+                        "required_skills": required_skills,
+                        "required_certifications": required_certifications,
+                        "source": "career_assignment",
+                    }
+
+        # Career Framework levels (career_levels)
         level = await database.career_levels.find_one({
             "role_title": {"$regex": f"^{_escape_regex(target_role)}$", "$options": "i"},
             "is_active": True,
@@ -1460,19 +1884,23 @@ class LearningService:
                 })
             required_skills = [s.get("skill") for s in (level.get("required_skills") or []) if s.get("skill")]
             required_certifications = [c.get("certification") for c in (level.get("required_certifications") or []) if c.get("certification")]
-            return {
-                "target_role": target_role,
-                "department": level.get("department"),
-                "required_courses": required_courses,
-                "required_skills": required_skills,
-                "required_certifications": required_certifications,
-                "source": "career_framework",
-            }
+            if required_courses or required_skills or required_certifications:
+                return {
+                    "target_role": target_role,
+                    "department": level.get("department"),
+                    "required_courses": required_courses,
+                    "required_skills": required_skills,
+                    "required_certifications": required_certifications,
+                    "source": "career_framework",
+                }
 
         # Fallback: Organization Framework roles
-        org_role = await database.org_framework_roles.find_one({
+        org_role_q: dict[str, Any] = {
             "name": {"$regex": f"^{_escape_regex(target_role)}$", "$options": "i"},
-        })
+        }
+        if employee.get("organization_id"):
+            org_role_q["organization_id"] = employee["organization_id"]
+        org_role = await database.org_framework_roles.find_one(org_role_q)
 
         if org_role:
             # Career Roadmaps are the single source of truth: one ordered list of
@@ -1560,8 +1988,15 @@ class LearningService:
         user_id = current_user.id
         employee_id = employee.get("employee_id")
 
-        # Resolve target role
+        # Prefer official career-path next role over a free-form / stale goal.
+        assignment = await database.employee_career_assignments.find_one(
+            {"employee_id": employee_id, "status": "active"}
+        )
+        org_target = (assignment or {}).get("target_role_title") or (assignment or {}).get("current_role_title")
+
         resolved_role = target_role
+        if not resolved_role:
+            resolved_role = org_target
         if not resolved_role:
             goal = await database.learning_career_goals.find_one({"user_id": user_id})
             resolved_role = (goal or {}).get("target_role")
@@ -1574,7 +2009,7 @@ class LearningService:
                 "eligible": False,
                 "requirements": [],
                 "missing_count": 0,
-                "message": "Set a career goal to see designation readiness.",
+                "message": "No career path is assigned for your role yet.",
             }
 
         requirements = await self.get_designation_requirements(current_user, resolved_role)
@@ -1582,12 +2017,10 @@ class LearningService:
         req_skills = requirements.get("required_skills") or []
         req_certs = requirements.get("required_certifications") or []
 
-        # Gather actual employee data
+        # All learning assignments (career path + recruiter) — not only designation-flagged rows.
         assigned_courses = await database.learning_assignments.find({
             "employee_id": employee_id,
-            "is_designation_requirement": True,
-            "target_designation": {"$regex": f"^{_escape_regex(resolved_role)}$", "$options": "i"},
-        }).to_list(length=200)
+        }).to_list(length=500)
 
         enrollments = await database.learning_enrollments.find({"user_id": user_id}).to_list(length=500)
         enroll_by_uid = {e.get("course_uid"): e for e in enrollments if e.get("course_uid")}
@@ -1670,7 +2103,23 @@ class LearningService:
                 "status": status,
             })
 
-        readiness_pct = round(completed_weight / total_weight * 100) if total_weight else 100
+        if not requirement_items:
+            return {
+                "target_role": resolved_role,
+                "readiness_percent": 0,
+                "eligible": False,
+                "requirements": [],
+                "missing_count": 0,
+                "completed_count": 0,
+                "total_count": 0,
+                "source": requirements.get("source") or "unknown",
+                "message": (
+                    f"No formal course/skill checklist is configured for “{resolved_role}” yet. "
+                    "Ask your recruiter to add Career Roadmap items under Organization Setup."
+                ),
+            }
+
+        readiness_pct = round(completed_weight / total_weight * 100) if total_weight else 0
 
         # Eligibility: all mandatory items must be completed/verified/acquired
         mandatory_incomplete = any(
@@ -1887,6 +2336,60 @@ class LearningService:
                 cert["status"] = "earned"
                 cert["earned_at"] = cert.get("earned_at") or _iso(now)
 
+        # Pending / verified cert submissions tied to path courses.
+        pending_certs = await database.learning_certificates.find(
+            {"user_id": user_id, "verification_status": {"$in": ["pending", "verified", "rejected"]}}
+        ).to_list(length=300)
+        pending_by_uid = {}
+        pending_by_title = {}
+        for c in pending_certs:
+            if c.get("course_uid"):
+                pending_by_uid[c["course_uid"]] = c
+            title_key = (c.get("course_title") or "").strip().lower()
+            if title_key:
+                pending_by_title[title_key] = c
+
+        for course in path:
+            uid = course.get("course_uid")
+            title_key = (course.get("course_title") or "").strip().lower()
+            cert_doc = (pending_by_uid.get(uid) if uid else None) or pending_by_title.get(title_key)
+            if cert_doc:
+                course["certificate_status"] = cert_doc.get("verification_status")
+                course["certificate_id"] = str(cert_doc.get("_id"))
+                if cert_doc.get("verification_status") == "verified":
+                    course["status"] = "completed"
+                    course["progress_percent"] = 100
+            # Mark nested skills/certs complete when profile has them.
+            nested_skills = []
+            for skill_name in course.get("skills") or []:
+                if isinstance(skill_name, dict):
+                    skill_name = skill_name.get("skill") or skill_name.get("name")
+                key = (skill_name or "").strip().lower()
+                match = owned_map.get(key)
+                nested_skills.append({
+                    "skill": skill_name,
+                    "status": (
+                        "acquired"
+                        if match and self._proficiency_rank(self._normalize_proficiency(match.get("proficiency") or "Beginner"))
+                        >= self._proficiency_rank("Intermediate")
+                        else "pending"
+                    ),
+                })
+            if nested_skills:
+                course["skill_progress"] = nested_skills
+            nested_certs = []
+            for cert_name in course.get("certifications") or []:
+                if isinstance(cert_name, dict):
+                    cert_name = cert_name.get("certification") or cert_name.get("name")
+                key = (cert_name or "").strip().lower()
+                earned = any(key == t or key in t or t in key for t in cert_titles)
+                nested_certs.append({
+                    "certification": cert_name,
+                    "status": "earned" if earned else "pending",
+                })
+            if nested_certs:
+                course["certification_progress"] = nested_certs
+
         total = 0
         done = 0
         for course in path:
@@ -1924,23 +2427,15 @@ class LearningService:
         return {"categories": SKILL_CATEGORIES}
 
     async def list_skills(self, current_user: CurrentUser) -> dict:
-        merged = await self._merged_skills_for_user(current_user.id)
-        skills = []
-        for s in merged:
-            skills.append(
-                {
-                    "id": s.get("id"),
-                    "skill_name": s.get("skill_name"),
-                    "category": s.get("category"),
-                    "proficiency": s.get("proficiency"),
-                    "years_experience": s.get("years_experience"),
-                    "source": s.get("source", "manual"),
-                    "verification_status": s.get("verification_status", "unverified"),
-                    "confidence": s.get("confidence"),
-                    "updated_at": s.get("updated_at"),
-                }
-            )
-        return {"skills": skills}
+        """Return skills saved on the employee profile only (not live resume OCR merge).
+
+        Resume skills are written into employee_skills when the resume is uploaded/updated
+        on Profile / onboarding. Verified courses add skills here too.
+        """
+        docs = await database.employee_skills.find({"user_id": current_user.id}).sort(
+            "skill_name", 1
+        ).to_list(length=300)
+        return {"skills": [self._public_skill(d) for d in docs]}
 
     async def upsert_skill(self, current_user: CurrentUser, request: SkillUpsertRequest) -> dict:
         employee = await self._get_employee(current_user)
@@ -2019,7 +2514,7 @@ class LearningService:
     async def get_skill_gap(
         self, current_user: CurrentUser, target_role: str | None, *, refresh: bool = False
     ) -> dict:
-        """Skill gap dashboard — deterministic when KB role exists; AI summary only when needed."""
+        """Skill gap — prefer Organization Setup career assignment; else KB; else AI."""
         employee = await self._get_employee(current_user)
         resolved_role = target_role
         if not resolved_role:
@@ -2030,6 +2525,11 @@ class LearningService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Set a career goal or target role first.",
             )
+
+        # Official org career path beats free-form / AI invented gaps.
+        org_gap = await self._skill_gap_from_career_assignment(employee, resolved_role)
+        if org_gap:
+            return org_gap
 
         recruiter_id = self._employee_recruiter_id(employee)
         hashes = await learning_cache_service.compute_input_hashes(current_user.id, recruiter_id)
@@ -2154,6 +2654,7 @@ class LearningService:
             "skill_match_percent": analysis.get("skill_match_percent"),
             "certification_match_percent": analysis.get("certification_match_percent"),
             "learning_priority": analysis.get("learning_priority"),
+            "source": "knowledge_base" if role_def else "ai",
             "cached": False,
             "lastAnalyzedAt": _now().isoformat(),
             **{k: hashes[k] for k in hashes},
@@ -2161,14 +2662,106 @@ class LearningService:
         await learning_cache_service.store_skill_gap(current_user.id, resolved_role, payload, hashes)
         return payload
 
+    async def _skill_gap_from_career_assignment(self, employee: dict, resolved_role: str) -> dict | None:
+        """Build skill gap only from Organization Setup career-path skills/certs."""
+        if not employee or not resolved_role:
+            return None
+        assignment = await database.employee_career_assignments.find_one(
+            {"employee_id": employee.get("employee_id"), "status": "active"}
+        )
+        if not assignment:
+            return None
+        target = (assignment.get("target_role_title") or "").strip()
+        current = (assignment.get("current_role_title") or "").strip()
+        role_l = resolved_role.strip().lower()
+        if role_l not in {target.lower(), current.lower()}:
+            return None
+
+        skills = assignment.get("skills_to_acquire") or []
+        certs = assignment.get("certifications_to_earn") or []
+        matched = [
+            s.get("skill")
+            for s in skills
+            if s.get("skill") and s.get("current_status") == "acquired"
+        ]
+        skill_gaps = [
+            {
+                "skill": s.get("skill"),
+                "priority": "immediate",
+                "reason": f"Listed on your Career Roadmap toward {target or resolved_role}",
+            }
+            for s in skills
+            if s.get("skill") and s.get("current_status") != "acquired"
+        ]
+        missing_certs = [
+            c.get("certification")
+            for c in certs
+            if c.get("certification") and c.get("status") != "earned"
+        ]
+        total = len(skills) + len(certs)
+        done = len(matched) + sum(1 for c in certs if c.get("status") == "earned")
+        readiness = assignment.get("readiness_score")
+        if readiness is None:
+            readiness = round(done / total * 100) if total else 0
+        skill_match = round(len(matched) / len(skills) * 100) if skills else 100
+        cert_match = (
+            round(sum(1 for c in certs if c.get("status") == "earned") / len(certs) * 100)
+            if certs
+            else 100
+        )
+        focus = target or resolved_role
+        if skill_gaps or missing_certs:
+            summary = (
+                f"Only skills and certifications from your Organization Setup Career Roadmap "
+                f"toward {focus} are listed here — not generic market suggestions. "
+                f"Finish the remaining roadmap courses in My Learning to close these gaps."
+            )
+        else:
+            unfinished = [
+                c.get("course_title")
+                for c in (assignment.get("assigned_learning_path") or [])
+                if c.get("status") != "completed"
+            ]
+            if unfinished:
+                summary = (
+                    f"You already meet the roadmap skill checklist for {focus}. "
+                    f"Complete the remaining courses on your Career Roadmap "
+                    f"({len(unfinished)} left) and get certificates verified."
+                )
+            else:
+                summary = f"You have completed the Career Roadmap skill and course checklist toward {focus}."
+
+        return {
+            "target_role": focus,
+            "current_skills": matched,
+            "missing_skills": [g["skill"] for g in skill_gaps],
+            "skill_gaps": skill_gaps,
+            "matched_skills": matched,
+            "readiness_percentage": int(round(readiness)),
+            "summary": summary,
+            "recommended_courses": [],
+            "missing_certifications": missing_certs,
+            "skill_match_percent": skill_match,
+            "certification_match_percent": cert_match,
+            "learning_priority": "immediate" if skill_gaps or missing_certs else "low",
+            "source": "career_assignment",
+            "deterministic": True,
+            "cached": False,
+            "lastAnalyzedAt": _now().isoformat(),
+        }
+
     async def get_career_path(self, current_user: CurrentUser, *, refresh: bool = False) -> dict:
         goal = await database.learning_career_goals.find_one({"user_id": current_user.id})
         if not goal or not goal.get("target_role"):
             return {"target_role": None, "path": [], "readiness_percentage": None, "summary": None}
 
+        employee = await self._get_employee(current_user)
+        org_path = await self._career_path_from_assignment(employee, goal["target_role"])
+        if org_path:
+            return org_path
+
         cached = goal.get("ai_path")
-        if cached and not refresh:
-            employee = await self._get_employee(current_user)
+        if cached and not refresh and cached.get("source") != "career_assignment":
             hashes = await learning_cache_service.compute_input_hashes(
                 current_user.id, self._employee_recruiter_id(employee)
             )
@@ -2176,7 +2769,12 @@ class LearningService:
                 return await self._refresh_path_completion_flags(cached, current_user.id)
 
         gap = await self.get_skill_gap(current_user, goal["target_role"], refresh=refresh)
-        employee = await self._get_employee(current_user)
+        # If gap came from career assignment, path builder above should have returned — safety net.
+        if gap.get("source") == "career_assignment":
+            org_path = await self._career_path_from_assignment(employee, goal["target_role"])
+            if org_path:
+                return org_path
+
         recruiter_id = self._employee_recruiter_id(employee)
 
         keywords = list(gap.get("missing_skills") or []) + [goal["target_role"]]
@@ -2227,6 +2825,7 @@ class LearningService:
             "certification_match_percent": gap.get("certification_match_percent"),
             "generated_at": _now().isoformat(),
             "cache_meta": hashes,
+            "source": "ai_catalog",
         }
         ui_path = []
         for step in path_payload.get("path") or []:
@@ -2254,6 +2853,88 @@ class LearningService:
         await database.learning_career_goals.update_one({"_id": goal["_id"]}, {"$set": {"ai_path": payload}})
         return payload
 
+    async def _career_path_from_assignment(self, employee: dict, target_role: str) -> dict | None:
+        """Official Career Roadmap courses for the employee's org assignment."""
+        if not employee or not target_role:
+            return None
+        assignment = await database.employee_career_assignments.find_one(
+            {"employee_id": employee.get("employee_id"), "status": "active"}
+        )
+        if not assignment:
+            return None
+        assign_target = (assignment.get("target_role_title") or "").strip()
+        assign_current = (assignment.get("current_role_title") or "").strip()
+        role_l = target_role.strip().lower()
+        if role_l not in {assign_target.lower(), assign_current.lower()}:
+            return None
+
+        learning_path = list(assignment.get("assigned_learning_path") or [])
+        if employee.get("user_id") and learning_path:
+            try:
+                from app.services.career_framework_service import career_framework_service
+
+                learning_path = await career_framework_service._enrich_learning_path(
+                    employee["user_id"], learning_path
+                )
+            except Exception:
+                pass
+
+        if not learning_path:
+            return None
+
+        ui_path = []
+        for index, course in enumerate(learning_path, start=1):
+            uid = course.get("course_uid") or course.get("course_title")
+            title = course.get("course_title") or uid
+            skills = course.get("skills") or []
+            skill_label = ", ".join(skills[:3]) if skills else "Roadmap course"
+            certs = course.get("certifications") or []
+            status = (course.get("status") or "").lower()
+            cert_status = (course.get("certificate_status") or "").lower()
+            completed = status == "completed" or cert_status == "verified"
+            kind = "certification" if (course.get("catalog_type") or "").lower() in {
+                "certification",
+                "certificate",
+            } or certs else "course"
+            ui_path.append(
+                {
+                    "step": index,
+                    "skill": skill_label,
+                    "course": {
+                        "uid": uid,
+                        "title": title,
+                        "url": course.get("course_url") or course.get("url"),
+                        "type": course.get("catalog_type") or course.get("source") or "course",
+                        "source": course.get("source") or "org_framework",
+                        "duration_minutes": course.get("duration_minutes"),
+                        "provider": course.get("source") or "Career Roadmap",
+                    },
+                    "kind": kind,
+                    "completed": completed,
+                    "estimated_hours": None,
+                    "difficulty": course.get("skills_award_level"),
+                }
+            )
+
+        progress = assignment.get("overall_progress_percent")
+        if progress is None:
+            done = sum(1 for s in ui_path if s.get("completed"))
+            progress = round(done / len(ui_path) * 100) if ui_path else 0
+
+        focus = assign_target or target_role
+        return {
+            "target_role": focus,
+            "path": ui_path,
+            "progress_percent": progress,
+            "readiness_percentage": assignment.get("readiness_score") or progress,
+            "summary": (
+                f"Courses from your Organization Setup Career Roadmap toward {focus}. "
+                "These are the same items as your promotion checklist and My Learning."
+            ),
+            "estimated_total_hours": None,
+            "source": "career_assignment",
+            "generated_at": _now().isoformat(),
+        }
     async def _refresh_path_completion_flags(self, payload: dict, user_id: str) -> dict:
         """Update completed flags on a cached path from live enrollments + certificates."""
         enrollments = await database.learning_enrollments.find(
@@ -2311,18 +2992,19 @@ class LearningService:
     # ------------------------------------------------------------------ #
     # US-074: AI course recommendations
     # ------------------------------------------------------------------ #
-    async def get_recommendations(self, current_user: CurrentUser, *, refresh: bool = False) -> dict:
-        employee = await self._get_employee(current_user)
-        managed_recommendations = await managed_learning_service.recommend_for_employee(employee, limit=8, organization_id=employee.get("organization_id"))
-        if managed_recommendations:
-            return {
-                "recommendations": managed_recommendations,
-                "generated_at": _now().isoformat(),
-                "stale": False,
-                "source": "managed_learning",
-            }
+    _NEXT_PROFICIENCY = {
+        "Beginner": "Intermediate",
+        "Intermediate": "Advanced",
+        "Advanced": "Expert",
+        "Expert": "Expert",
+    }
 
-        cached = await database.learning_ai_recommendations.find_one({"user_id": current_user.id})
+    async def get_recommendations(self, current_user: CurrentUser, *, refresh: bool = False) -> dict:
+        """Recommend courses aligned to role + profile skills, aimed at raising proficiency."""
+        employee = await self._get_employee(current_user)
+        user_id = current_user.id
+
+        cached = await database.learning_ai_recommendations.find_one({"user_id": user_id})
         if cached and not refresh:
             age = _now() - cached["generated_at"]
             if age < timedelta(hours=AI_RECOMMENDATIONS_TTL_HOURS):
@@ -2330,12 +3012,34 @@ class LearningService:
                     "recommendations": cached["recommendations"],
                     "generated_at": _iso(cached["generated_at"]),
                     "stale": False,
+                    "source": cached.get("source") or "skill_role_aligned",
+                    "basis": cached.get("basis")
+                    or "Matched to your role and skills to raise proficiency.",
                 }
 
-        resume_fields = await self._get_resume_fields(current_user.id)
-        current_skills = await self._current_skill_names(current_user.id, resume_fields)
-        goal_doc = await database.learning_career_goals.find_one({"user_id": current_user.id})
-        career_goal = (goal_doc or {}).get("target_role")
+        assignment = await database.employee_career_assignments.find_one(
+            {"employee_id": employee.get("employee_id"), "status": "active"}
+        )
+        org_goal = (assignment or {}).get("target_role_title")
+        goal_doc = await database.learning_career_goals.find_one({"user_id": user_id})
+        career_goal = org_goal or (goal_doc or {}).get("target_role")
+
+        resume_fields = await self._get_resume_fields(user_id)
+        current_skills = await self._current_skill_names(user_id, resume_fields)
+        skill_docs = await database.employee_skills.find({"user_id": user_id}).to_list(length=300)
+
+        proficiency_targets: list[dict] = []
+        level_up_skills: list[str] = []
+        for doc in skill_docs:
+            name = (doc.get("skill_name") or "").strip()
+            if not name:
+                continue
+            current = self._normalize_proficiency(doc.get("proficiency") or "Beginner")
+            if self._proficiency_rank(current) >= self._proficiency_rank("Expert"):
+                continue
+            target = self._NEXT_PROFICIENCY.get(current, "Advanced")
+            proficiency_targets.append({"skill": name, "current": current, "target": target})
+            level_up_skills.append(name)
 
         skill_gaps: list[dict] = []
         try:
@@ -2344,111 +3048,434 @@ class LearningService:
         except HTTPException:
             skill_gaps = []
 
-        keywords = list(current_skills)
-        for gap_item in skill_gaps:
-            if gap_item.get("skill"):
-                keywords.append(gap_item["skill"])
-        if employee.get("job_title"):
-            keywords.append(employee["job_title"])
-        if employee.get("department"):
-            keywords.append(employee["department"])
-        if career_goal:
-            keywords.append(career_goal)
-        if not keywords:
-            keywords = ["fundamentals"]
+        # Skip anything already in My Learning (assigned or enrolled — any status).
+        already_have: set[str] = set()
+        enrollments = await database.learning_enrollments.find(
+            {"user_id": user_id}, {"course_uid": 1, "course_title": 1}
+        ).to_list(length=1000)
+        for e in enrollments:
+            if e.get("course_uid"):
+                already_have.add(e["course_uid"])
+            title = (e.get("course_title") or "").strip().lower()
+            if title:
+                already_have.add(f"title:{title}")
+        assigned_docs = await database.learning_assignments.find(
+            {"user_id": user_id}, {"course_uid": 1, "course_title": 1}
+        ).to_list(length=1000)
+        for a in assigned_docs:
+            if a.get("course_uid"):
+                already_have.add(a["course_uid"])
+            title = (a.get("course_title") or "").strip().lower()
+            if title:
+                already_have.add(f"title:{title}")
+        # Career roadmap courses already live under checklist / My Learning — don't re-recommend.
+        for course in (assignment or {}).get("assigned_learning_path") or []:
+            uid = course.get("course_uid")
+            if uid:
+                already_have.add(uid)
+            title = (course.get("course_title") or "").strip().lower()
+            if title:
+                already_have.add(f"title:{title}")
+        verified = await database.learning_certificates.find(
+            {"user_id": user_id},
+            {"course_uid": 1, "course_title": 1},
+        ).to_list(length=500)
+        for c in verified:
+            if c.get("course_uid"):
+                already_have.add(c["course_uid"])
+            title = (c.get("course_title") or "").strip().lower()
+            if title:
+                already_have.add(f"title:{title}")
 
-        # Prefer keywords from critical/immediate gaps first in search ordering.
+        recommendations: list[dict] = []
+        seen: set[str] = set()
+
+        def _already(uid: str | None, title: str | None = None) -> bool:
+            if uid and uid in already_have:
+                return True
+            if uid and uid in seen:
+                return True
+            t = (title or "").strip().lower()
+            if t and f"title:{t}" in already_have:
+                return True
+            return False
+
+        def _add(entry: dict, *, priority: str = "medium") -> None:
+            uid = entry.get("uid")
+            if not uid or _already(uid, entry.get("title")):
+                return
+            if not entry.get("provider"):
+                entry["provider"] = self._display_provider_name(entry)
+            seen.add(uid)
+            already_have.add(uid)
+            entry.setdefault("priority", priority)
+            recommendations.append(entry)
+
+        # Catalog courses that raise proficiency on profile skills (not already enrolled).
         priority_order = {"critical": 0, "immediate": 1, "medium": 2, "low": 3}
         gap_skills = sorted(skill_gaps, key=lambda g: priority_order.get(g.get("priority"), 2))
-        search_keywords = [g["skill"] for g in gap_skills if g.get("skill")] + keywords
+        search_keywords: list[str] = []
+        # Prefer technical profile skills so soft-skill LinkedIn rows don't flood every slot.
+        soft_skill_hints = {
+            "communication", "active listening", "self-motivation", "time management",
+            "prioritization", "goal setting", "feedback", "decision making", "presentation",
+            "listening", "motivation", "leadership", "mentoring",
+        }
 
-        candidates = await catalog_service.find_courses_for_keywords(
-            list(dict.fromkeys(search_keywords))[:20], per_keyword=5, limit=48
-        )
+        def _is_soft(name: str) -> bool:
+            n = (name or "").strip().lower()
+            return any(h in n for h in soft_skill_hints)
 
-        # Prefer courses already on the employee's learning path (gap-closing steps)
-        path_courses: list[dict] = []
-        goal_path = (goal_doc or {}).get("ai_path") or {}
-        for step in goal_path.get("path") or []:
-            course = step.get("course") or {}
-            uid = course.get("uid")
-            if not uid or str(uid).startswith("kb-cert:"):
-                continue
-            path_courses.append(
-                {
-                    "uid": uid,
-                    "title": course.get("title"),
-                    "url": course.get("url"),
-                    "type": course.get("type") or "module",
-                    "source": course.get("source") or "microsoft_learn",
-                    "duration_minutes": course.get("duration_minutes"),
-                    "levels": [course.get("difficulty")] if course.get("difficulty") else ["beginner"],
-                    "summary": f"Learning path step for {step.get('skill') or career_goal or 'your goal'}",
-                    "products": [step.get("skill")] if step.get("skill") else [],
-                    "subjects": [],
-                    "roles": [career_goal] if career_goal else [],
-                }
+        tech_level_up = [s for s in level_up_skills if not _is_soft(s)]
+        soft_level_up = [s for s in level_up_skills if _is_soft(s)]
+        tech_gaps = [g["skill"] for g in gap_skills if g.get("skill") and not _is_soft(g["skill"])]
+        soft_gaps = [g["skill"] for g in gap_skills if g.get("skill") and _is_soft(g["skill"])]
+
+        search_keywords: list[str] = []
+        search_keywords.extend(tech_level_up[:10])
+        search_keywords.extend(tech_gaps[:4])
+        if employee.get("job_title"):
+            search_keywords.append(employee["job_title"])
+        if career_goal:
+            search_keywords.append(career_goal)
+        if employee.get("department"):
+            search_keywords.append(str(employee["department"]))
+        # Keep a couple soft-skill keywords only (roadmap), not the whole list.
+        search_keywords.extend(soft_gaps[:2])
+        search_keywords.extend(soft_level_up[:2])
+        for hint in current_skills:
+            if hint and not _is_soft(hint) and hint not in search_keywords:
+                search_keywords.append(hint)
+            if len(search_keywords) >= 20:
+                break
+        if not search_keywords:
+            search_keywords = [employee.get("job_title") or "fundamentals"]
+
+        keywords = list(dict.fromkeys(search_keywords))[:20]
+        # LinkedIn / managed catalogs are often soft-skill heavy — give that bucket extra soft keywords.
+        managed_keywords = list(
+            dict.fromkeys(
+                keywords
+                + soft_gaps[:4]
+                + soft_level_up[:4]
+                + ([employee.get("job_title")] if employee.get("job_title") else [])
             )
-        if path_courses:
-            candidates = path_courses + candidates
+        )[:20]
+        target_count = 10
 
-        # Deduplicate candidates by uid (path first)
-        seen_cand: set[str] = set()
-        deduped_cand: list[dict] = []
-        for c in candidates:
-            uid = c.get("uid")
-            if not uid or uid in seen_cand:
-                continue
-            seen_cand.add(uid)
-            deduped_cand.append(c)
-        candidates = deduped_cand
-
-        # Never recommend a course already assigned or enrolled.
-        existing_uids = set()
-        for coll in (database.learning_assignments, database.learning_enrollments):
-            docs = await coll.find({"user_id": current_user.id}, {"course_uid": 1}).to_list(length=1000)
-            existing_uids.update(d["course_uid"] for d in docs if d.get("course_uid"))
-        candidates = [c for c in candidates if c.get("uid") not in existing_uids]
-
-        picks = await learning_ai_service.rank_recommended_courses(
-            job_title=employee.get("job_title"),
-            department=employee.get("department"),
-            current_skills=current_skills,
-            career_goal=career_goal,
-            skill_gaps=skill_gaps,
-            candidates=candidates,
-            top_n=8,
-        )
-
-        by_uid = {c["uid"]: c for c in candidates}
-        recommendations = []
-        for pick in picks:
-            course = by_uid.get(pick["uid"])
-            if course:
-                entry = self._public_course(course)
-                entry["reason"] = pick["reason"]
-                entry["priority"] = pick.get("priority") or "medium"
-                recommendations.append(entry)
-
-        if not recommendations and candidates:
-            for course in candidates[:6]:
-                entry = self._public_course(course)
-                gap_hint = next((g.get("skill") for g in skill_gaps if g.get("skill")), None)
-                entry["reason"] = (
-                    f"Helps close skill gap: {gap_hint}."
-                    if gap_hint
-                    else f"Toward your goal: {career_goal or employee.get('job_title') or 'your role'}."
+        # Fetch separately per provider so LinkedIn cannot crowd out MS Learn / Coursera.
+        provider_sources: list[tuple[str, tuple[str, ...], list[str]]] = [
+            ("Microsoft Learn", ("microsoft_learn",), keywords),
+            ("Coursera", ("coursera",), keywords),
+            ("LinkedIn Learning", (MANAGED_SOURCE,), managed_keywords),
+        ]
+        buckets: dict[str, list[dict]] = {}
+        for label, sources, kw in provider_sources:
+            try:
+                found = await catalog_service.find_courses_for_keywords(
+                    kw,
+                    per_keyword=4,
+                    limit=30,
+                    sources=sources,
                 )
-                entry["priority"] = "medium"
-                recommendations.append(entry)
+            except Exception:
+                found = []
+            cleaned = [
+                c for c in found
+                if c.get("uid") and not _already(c.get("uid"), c.get("title"))
+            ]
+            # Rank within this provider by skill/role fit.
+            cleaned = self._rank_candidates_for_skills(
+                cleaned, proficiency_targets, skill_gaps, employee, career_goal
+            )
+            if cleaned:
+                buckets[label] = cleaned
+
+        # Quotas: e.g. 3 providers → 4, 3, 3 (user request).
+        quotas = self._provider_slot_quotas(target_count, len(buckets) or 1)
+        labels = list(buckets.keys())
+        # Prefer giving the larger quota to tech providers when present.
+        preferred = ["Microsoft Learn", "Coursera", "LinkedIn Learning"]
+        labels.sort(key=lambda L: preferred.index(L) if L in preferred else 99)
+
+        # Optional AI ranking inside each provider bucket (keeps provider mix).
+        for label, quota in zip(labels, quotas):
+            pool = buckets.get(label) or []
+            if not pool or quota <= 0:
+                continue
+            shortlist = pool[: min(16, len(pool))]
+            picks = await learning_ai_service.rank_recommended_courses(
+                job_title=employee.get("job_title"),
+                department=employee.get("department"),
+                current_skills=current_skills,
+                career_goal=career_goal,
+                skill_gaps=skill_gaps,
+                candidates=shortlist,
+                top_n=quota,
+                proficiency_targets=proficiency_targets[:15],
+            )
+            by_uid = {c["uid"]: c for c in shortlist}
+            taken = 0
+            for pick in picks:
+                if taken >= quota:
+                    break
+                course = by_uid.get(pick["uid"])
+                if not course:
+                    continue
+                entry = self._public_course(course)
+                if not entry.get("provider"):
+                    entry["provider"] = label
+                else:
+                    # Normalize managed → LinkedIn Learning when that is the org provider name.
+                    if label == "LinkedIn Learning" and (
+                        not entry.get("provider")
+                        or str(entry.get("provider")).lower() in {"managed learning", "managed_learning"}
+                    ):
+                        entry["provider"] = "LinkedIn Learning"
+                entry["reason"] = pick.get("reason") or self._default_recommendation_reason(
+                    course, proficiency_targets, skill_gaps, employee, career_goal
+                )
+                entry["priority"] = pick.get("priority") or "medium"
+                entry["recommendation_kind"] = "skill_level_up"
+                before = len(recommendations)
+                _add(entry, priority=entry["priority"])
+                if len(recommendations) > before:
+                    taken += 1
+            # Deterministic fill for this provider if AI returned fewer than quota.
+            if taken < quota:
+                for course in pool:
+                    if taken >= quota:
+                        break
+                    if _already(course.get("uid"), course.get("title")):
+                        continue
+                    entry = self._public_course(course)
+                    entry["provider"] = entry.get("provider") or label
+                    if label == "LinkedIn Learning" and str(entry.get("provider") or "").lower() in {
+                        "managed learning",
+                        "managed_learning",
+                    }:
+                        entry["provider"] = "LinkedIn Learning"
+                    entry["reason"] = self._default_recommendation_reason(
+                        course, proficiency_targets, skill_gaps, employee, career_goal
+                    )
+                    entry["priority"] = "medium"
+                    entry["recommendation_kind"] = "skill_level_up"
+                    before = len(recommendations)
+                    _add(entry)
+                    if len(recommendations) > before:
+                        taken += 1
+
+        # If a provider had no matches, redistribute leftover slots from others.
+        if len(recommendations) < target_count:
+            leftovers: list[dict] = []
+            for label in labels:
+                for course in buckets.get(label) or []:
+                    if _already(course.get("uid"), course.get("title")):
+                        continue
+                    entry = self._public_course(course)
+                    entry["provider"] = entry.get("provider") or label
+                    entry["reason"] = self._default_recommendation_reason(
+                        course, proficiency_targets, skill_gaps, employee, career_goal
+                    )
+                    entry["priority"] = "medium"
+                    entry["recommendation_kind"] = "skill_level_up"
+                    leftovers.append(entry)
+            for entry in self._mix_courses_by_provider(leftovers, limit=target_count):
+                if len(recommendations) >= target_count:
+                    break
+                _add(entry)
+
+        recommendations = recommendations[:target_count]
+        # Interleave so the UI doesn't show 4 LinkedIn cards in a row first.
+        recommendations = self._mix_courses_by_provider(recommendations, limit=target_count)
 
         now = _now()
+        providers_shown = sorted(
+            {
+                (r.get("provider") or r.get("source") or "catalog")
+                for r in recommendations
+                if r.get("uid")
+            }
+        )
+        provider_note = f" ({', '.join(providers_shown)})" if providers_shown else ""
+        quota_note = ""
+        if labels and quotas:
+            parts = [f"{q} {lab}" for lab, q in zip(labels, quotas) if q]
+            if parts:
+                quota_note = f" Target mix: {', '.join(parts)}."
+        basis = (
+            f"{len(recommendations)} courses across providers{provider_note}.{quota_note} "
+            f"Matched to your skills and role ({employee.get('job_title') or 'current'}"
+            f"{f' → {career_goal}' if career_goal else ''}) to raise proficiency."
+        )
         await database.learning_ai_recommendations.update_one(
-            {"user_id": current_user.id},
-            {"$set": {"user_id": current_user.id, "recommendations": recommendations, "generated_at": now}},
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "user_id": user_id,
+                    "recommendations": recommendations,
+                    "generated_at": now,
+                    "source": "skill_role_aligned",
+                    "basis": basis,
+                }
+            },
             upsert=True,
         )
-        return {"recommendations": recommendations, "generated_at": now.isoformat(), "stale": False}
+        return {
+            "recommendations": recommendations,
+            "generated_at": now.isoformat(),
+            "stale": False,
+            "source": "skill_role_aligned",
+            "basis": basis,
+        }
+
+    @staticmethod
+    def _provider_slot_quotas(total: int, provider_count: int) -> list[int]:
+        """Split slots across providers — e.g. 10 across 3 → [4, 3, 3]."""
+        if provider_count <= 0:
+            return []
+        if provider_count == 1:
+            return [total]
+        base = total // provider_count
+        rem = total % provider_count
+        # First provider(s) get the remainder so 10/3 → 4,3,3
+        return [base + (1 if i < rem else 0) for i in range(provider_count)]
+
+    def _provider_key(self, course: dict) -> str:
+        return (
+            (course.get("provider") or "").strip()
+            or (course.get("source") or "").strip()
+            or "catalog"
+        ).lower()
+
+    def _display_provider_name(self, course: dict) -> str:
+        provider = (course.get("provider") or "").strip()
+        if provider:
+            return provider
+        source = (course.get("source") or "").strip().lower()
+        mapping = {
+            "microsoft_learn": "Microsoft Learn",
+            "coursera": "Coursera",
+            "managed_learning": "LinkedIn Learning",
+            "org_framework": "Career Roadmap",
+            "recruiter_kb": "Knowledge Base",
+            "linkedin": "LinkedIn Learning",
+            "linkedin_learning": "LinkedIn Learning",
+        }
+        if source in mapping:
+            return mapping[source]
+        if source.startswith("provider:"):
+            return source.split(":", 1)[1].replace("_", " ").title()
+        return source.replace("_", " ").title() if source else "Catalog"
+
+    def _mix_courses_by_provider(self, courses: list[dict], *, limit: int) -> list[dict]:
+        """Round-robin across providers so the list is a mix, not one source only."""
+        if not courses:
+            return []
+        buckets: dict[str, list[dict]] = {}
+        for course in courses:
+            key = self._provider_key(course)
+            buckets.setdefault(key, []).append(course)
+        # Shuffle within each provider for variety on refresh.
+        seed = sum(ord(c) for c in (courses[0].get("uid") or "x")[:12])
+        rng = random.Random(seed ^ limit ^ len(courses))
+        for key in buckets:
+            rng.shuffle(buckets[key])
+
+        mixed: list[dict] = []
+        seen: set[str] = set()
+        keys = list(buckets.keys())
+        rng.shuffle(keys)
+        while len(mixed) < limit and any(buckets.values()):
+            progress = False
+            for key in keys:
+                if len(mixed) >= limit:
+                    break
+                bucket = buckets.get(key) or []
+                while bucket:
+                    course = bucket.pop(0)
+                    uid = course.get("uid")
+                    if not uid or uid in seen:
+                        continue
+                    seen.add(uid)
+                    mixed.append(course)
+                    progress = True
+                    break
+            if not progress:
+                break
+        return mixed
+
+    def _shuffle_preserving_provider_spread(self, courses: list[dict]) -> list[dict]:
+        """Keep provider mix but vary order slightly between refreshes."""
+        if len(courses) <= 2:
+            return courses
+        return self._mix_courses_by_provider(courses, limit=len(courses))
+
+    def _default_recommendation_reason(
+        self,
+        course: dict,
+        proficiency_targets: list[dict],
+        skill_gaps: list[dict],
+        employee: dict,
+        career_goal: str | None,
+    ) -> str:
+        title = (course.get("title") or "").lower()
+        products = " ".join(course.get("products") or []).lower()
+        hay = f"{title} {products}"
+        for item in proficiency_targets:
+            skill = (item.get("skill") or "").strip()
+            if skill and skill.lower() in hay:
+                return (
+                    f"Builds on your {skill} ({item.get('current')}) — "
+                    f"completing it can raise you toward {item.get('target')}."
+                )
+        for gap in skill_gaps:
+            skill = (gap.get("skill") or "").strip()
+            if skill and skill.lower() in hay:
+                return f"Helps close roadmap skill gap: {skill}."
+        role = career_goal or employee.get("job_title") or "your role"
+        return f"Aligned with your work as {employee.get('job_title') or 'your designation'} toward {role}."
+
+    def _rank_candidates_for_skills(
+        self,
+        candidates: list[dict],
+        proficiency_targets: list[dict],
+        skill_gaps: list[dict],
+        employee: dict,
+        career_goal: str | None,
+    ) -> list[dict]:
+        skill_weights = {
+            (item.get("skill") or "").lower(): 3
+            for item in proficiency_targets
+            if item.get("skill")
+        }
+        for gap in skill_gaps:
+            name = (gap.get("skill") or "").lower()
+            if name:
+                skill_weights[name] = max(skill_weights.get(name, 0), 4)
+        role_tokens = [
+            t.lower()
+            for t in " ".join(
+                filter(None, [employee.get("job_title"), career_goal, employee.get("department")])
+            ).split()
+            if len(t) > 3
+        ]
+
+        def score(course: dict) -> int:
+            title = (course.get("title") or "").lower()
+            products = " ".join(course.get("products") or []).lower()
+            subjects = " ".join(course.get("subjects") or []).lower()
+            hay = f"{title} {products} {subjects}"
+            total = 0
+            for skill, weight in skill_weights.items():
+                if skill and skill in hay:
+                    total += weight
+            for token in role_tokens:
+                if token in hay:
+                    total += 1
+            return total
+
+        return sorted(candidates, key=score, reverse=True)
 
     # ------------------------------------------------------------------ #
     # Recruiter: assign courses (US-068), analytics (US-076), oversight
@@ -3043,12 +4070,50 @@ class LearningService:
             }
             for s in merged
         ]
+
+        target_role = None
+        promotion_skills: list[str] = []
+        promotion_certs: list[str] = []
+        eid = employee.get("employee_id")
+        if eid:
+            career = await database.employee_career_assignments.find_one(
+                {"employee_id": eid, "status": "active"}
+            )
+            if career:
+                target_role = (career.get("target_role_title") or "").strip() or None
+                for row in career.get("skills_to_acquire") or []:
+                    name = (row.get("skill") if isinstance(row, dict) else row) or ""
+                    name = str(name).strip()
+                    if name:
+                        promotion_skills.append(name)
+                for row in career.get("certifications_to_earn") or []:
+                    name = (row.get("certification") if isinstance(row, dict) else row) or ""
+                    name = str(name).strip()
+                    if name:
+                        promotion_certs.append(name)
+                for course in career.get("assigned_learning_path") or []:
+                    for name in course.get("skills") or []:
+                        if isinstance(name, dict):
+                            name = name.get("skill") or name.get("name")
+                        name = str(name or "").strip()
+                        if name and name not in promotion_skills:
+                            promotion_skills.append(name)
+                    for name in course.get("certifications") or []:
+                        if isinstance(name, dict):
+                            name = name.get("certification") or name.get("name")
+                        name = str(name or "").strip()
+                        if name and name not in promotion_certs:
+                            promotion_certs.append(name)
+
         assessment = await learning_ai_service.build_skill_matrix(
             job_title=employee.get("job_title"),
             department=employee.get("department"),
             resume_fields=resume_fields,
             resume_text=resume_text,
             existing_skills=existing_public,
+            target_role=target_role,
+            promotion_skills=promotion_skills,
+            promotion_certs=promotion_certs,
         )
         if not assessment:
             return legacy.get("assessment") if legacy else None

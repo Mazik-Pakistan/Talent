@@ -898,6 +898,12 @@ async def create_roadmap(organization_id: str, data: dict) -> dict:
         "role_name": role_name,
         "course_id": course_id,
         "course_name": course_name,
+        "course_url": (
+            (data.get("course_url") or data.get("url") or "").strip()
+            or ((course or {}).get("url") if course else None)
+            or ((course or {}).get("course_url") if course else None)
+            or None
+        ),
         "catalog_type": catalog_type,
         "category": category,
         "competency": competency,
@@ -909,6 +915,17 @@ async def create_roadmap(organization_id: str, data: dict) -> dict:
         "created_at": now,
         "updated_at": now,
     }
+    # Prefer live catalog URL when the org framework course has none.
+    if not doc.get("course_url") and course_id:
+        try:
+            from app.services import catalog_service
+
+            item = await catalog_service.get_course_by_uid(course_id)
+            url = ((item or {}).get("url") or "").strip()
+            if url.startswith("http://") or url.startswith("https://"):
+                doc["course_url"] = url
+        except Exception:
+            pass
     await database.org_framework_roadmaps.insert_one(doc)
     return {k: v for k, v in doc.items() if k != "_id"}
 

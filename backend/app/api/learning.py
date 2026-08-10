@@ -170,20 +170,35 @@ async def remove_bookmark(uid: str, current_user: RequireEmployee):
 @router.post("/certificates", status_code=201)
 async def upload_certificate(
     current_user: RequireEmployee,
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(default=None),
     course_uid: str | None = Form(default=None),
     course_title: str = Form(...),
     completion_date: date | None = Form(default=None),
     learning_hours: float | None = Form(default=None),
     source_url: str | None = Form(default=None),
 ):
-    original = file.filename or "certificate.pdf"
-    ext = Path(original).suffix.lower()
-    if ext not in ALLOWED_CERT_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Unsupported file type. Allowed: PDF, PNG, JPG.")
-    content = await file.read()
-    if len(content) > MAX_CERT_UPLOAD_BYTES:
-        raise HTTPException(status_code=400, detail="File is too large (max 10 MB).")
+    cleaned_source = (source_url or "").strip() or None
+    if not cleaned_source:
+        raise HTTPException(
+            status_code=400,
+            detail="Certificate link is required so your recruiter can verify it.",
+        )
+    if cleaned_source and not (
+        cleaned_source.startswith("http://") or cleaned_source.startswith("https://")
+    ):
+        raise HTTPException(status_code=400, detail="Certificate link must start with http:// or https://.")
+
+    original = None
+    content = b""
+    if file is not None and (file.filename or "").strip():
+        original = file.filename or "certificate.pdf"
+        ext = Path(original).suffix.lower()
+        if ext not in ALLOWED_CERT_EXTENSIONS:
+            raise HTTPException(status_code=400, detail="Unsupported file type. Allowed: PDF, PNG, JPG.")
+        content = await file.read()
+        if len(content) > MAX_CERT_UPLOAD_BYTES:
+            raise HTTPException(status_code=400, detail="File is too large (max 10 MB).")
+
     return await learning_service.upload_certificate(
         current_user,
         course_uid=course_uid,
@@ -192,7 +207,7 @@ async def upload_certificate(
         learning_hours=learning_hours,
         filename=original,
         content=content,
-        source_url=source_url,
+        source_url=cleaned_source,
     )
 
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -439,13 +440,25 @@ class CareerFrameworkService:
             assigned_learning_path.append({
                 "course_uid": course.get("course_uid"),
                 "course_title": course.get("course_title"),
+                "course_url": course.get("course_url") or course.get("url"),
                 "source": course.get("source", "microsoft_learn"),
                 "mandatory": course.get("mandatory", True),
                 "order": course.get("order", 1),
+                "skills": [
+                    str(s.get("skill") if isinstance(s, dict) else s).strip()
+                    for s in (course.get("skills") or [])
+                    if str(s.get("skill") if isinstance(s, dict) else s).strip()
+                ],
+                "certifications": [
+                    str(c.get("certification") if isinstance(c, dict) else c).strip()
+                    for c in (course.get("certifications") or [])
+                    if str(c.get("certification") if isinstance(c, dict) else c).strip()
+                ],
                 "status": "not_started",
                 "progress_percent": 0,
                 "started_at": None,
                 "completed_at": None,
+                "certificate_status": None,
             })
 
         # Build skills to acquire
@@ -537,6 +550,322 @@ class CareerFrameworkService:
                 upsert=True,
             )
 
+        await self._sync_career_path_to_learning_assignments(employee, assigned_learning_path)
+        return self._public_assignment(assignment_doc)
+
+    async def ensure_org_career_assignment(
+        self,
+        employee: dict,
+        *,
+        assigned_by: str = "system",
+        force: bool = False,
+    ) -> dict | None:
+        """Create an active career assignment from Organization Setup when missing.
+
+        Matches the employee's job title + department to an org role ladder entry,
+        uses Promotes-to as the target (or the current role at the top of a ladder),
+        and copies that role's Career Roadmap courses into the assignment.
+        """
+        if not employee:
+            return None
+        employee_id = employee.get("employee_id")
+        organization_id = employee.get("organization_id")
+        job_title = (employee.get("job_title") or "").strip()
+        if not employee_id or not organization_id or not job_title:
+            return None
+
+        existing = await database.employee_career_assignments.find_one(
+            {"employee_id": employee_id, "status": "active"}
+        )
+        if existing and not force:
+            # Refresh org-sourced rows when title/department drifted; leave Pipeline assigns alone.
+            source = existing.get("assignment_source")
+            if source != "org_framework":
+                return self._public_assignment(existing)
+            same_title = (existing.get("current_role_title") or "").strip().lower() == job_title.lower()
+            same_dept = (existing.get("current_department") or "").strip().lower() == (
+                employee.get("department") or ""
+            ).strip().lower()
+            path = existing.get("assigned_learning_path") or []
+            path_nested = bool(path) and all(isinstance(c.get("skills"), list) for c in path)
+            if same_title and same_dept and path_nested:
+                await self._sync_career_path_to_learning_assignments(employee, path)
+                return self._public_assignment(existing)
+
+        org_role = await self._find_org_role(
+            organization_id, job_title, employee.get("department")
+        )
+        if not org_role:
+            return self._public_assignment(existing) if existing else None
+
+        current_role_title = org_role.get("name") or job_title
+        next_role_name = (org_role.get("next_role") or "").strip() or None
+        target_role_title = next_role_name or current_role_title
+        department = org_role.get("department") or employee.get("department")
+
+        target_level = await self._find_level_by_title(
+            target_role_title, department, organization_id
+        )
+        current_level = await self._find_level_by_title(
+            current_role_title, department, organization_id
+        )
+
+        roadmap_role = current_role_title
+        roadmap_rows = await self._list_org_roadmap_rows(organization_id, roadmap_role)
+        if not roadmap_rows and next_role_name and next_role_name != current_role_title:
+            roadmap_role = next_role_name
+            roadmap_rows = await self._list_org_roadmap_rows(organization_id, roadmap_role)
+
+        assigned_learning_path: list[dict] = []
+        skills_seen: set[str] = set()
+        certs_seen: set[str] = set()
+
+        # Prefer the org Career Roadmap; fall back to career_levels when empty.
+        if target_level and not roadmap_rows:
+            for course in target_level.get("learning_path") or []:
+                title = course.get("course_title") or course.get("course_uid")
+                if not title:
+                    continue
+                course_skills = [
+                    str(s.get("skill") if isinstance(s, dict) else s).strip()
+                    for s in (course.get("skills") or [])
+                ]
+                course_skills = [s for s in course_skills if s]
+                course_certs = [
+                    str(c.get("certification") if isinstance(c, dict) else c).strip()
+                    for c in (course.get("certifications") or [])
+                ]
+                course_certs = [c for c in course_certs if c]
+                for name in course_skills:
+                    skills_seen.add(name)
+                for name in course_certs:
+                    certs_seen.add(name)
+                assigned_learning_path.append({
+                    "course_uid": course.get("course_uid") or title,
+                    "course_title": title,
+                    "course_url": course.get("course_url") or course.get("url"),
+                    "source": course.get("source", "microsoft_learn"),
+                    "mandatory": course.get("mandatory", True),
+                    "order": course.get("order") or (len(assigned_learning_path) + 1),
+                    "skills": course_skills,
+                    "certifications": course_certs,
+                    "status": "not_started",
+                    "progress_percent": 0,
+                    "started_at": None,
+                    "completed_at": None,
+                    "certificate_status": None,
+                })
+            for skill_req in target_level.get("required_skills") or []:
+                name = (skill_req.get("skill") or "").strip()
+                if name:
+                    skills_seen.add(name)
+            for cert_req in target_level.get("required_certifications") or []:
+                name = (cert_req.get("certification") or "").strip()
+                if name:
+                    certs_seen.add(name)
+        else:
+            for index, row in enumerate(roadmap_rows, start=1):
+                course_uid = row.get("course_id") or row.get("course_uid")
+                course_title = row.get("course_name") or row.get("course_title") or course_uid
+                if not course_uid and not course_title:
+                    continue
+                course_skills: list[str] = []
+                for skill in row.get("skills") or []:
+                    if isinstance(skill, str) and skill.strip():
+                        course_skills.append(skill.strip())
+                        skills_seen.add(skill.strip())
+                competency = (row.get("competency") or "").strip()
+                if competency and competency not in course_skills:
+                    course_skills.insert(0, competency)
+                    skills_seen.add(competency)
+                course_certs: list[str] = []
+                for cert in row.get("certifications") or []:
+                    if isinstance(cert, str) and cert.strip():
+                        course_certs.append(cert.strip())
+                        certs_seen.add(cert.strip())
+                assigned_learning_path.append({
+                    "course_uid": course_uid or course_title,
+                    "course_title": course_title,
+                    "course_url": row.get("course_url") or row.get("url"),
+                    "source": row.get("source") or "org_framework",
+                    "mandatory": bool(row.get("mandatory", True)),
+                    "order": row.get("order") or index,
+                    "catalog_type": row.get("catalog_type"),
+                    "skills": course_skills,
+                    "certifications": course_certs,
+                    "status": "not_started",
+                    "progress_percent": 0,
+                    "started_at": None,
+                    "completed_at": None,
+                    "certificate_status": None,
+                })
+
+            skill_docs = await database.org_framework_skills.find(
+                {"organization_id": organization_id, "role_name": roadmap_role}
+            ).to_list(length=100)
+            for skill in skill_docs:
+                name = (skill.get("skill_name") or "").strip()
+                if name:
+                    skills_seen.add(name)
+            cert_docs = await database.org_framework_certifications.find(
+                {"organization_id": organization_id, "role_name": roadmap_role}
+            ).to_list(length=100)
+            for cert in cert_docs:
+                name = (cert.get("certification_name") or "").strip()
+                if name:
+                    certs_seen.add(name)
+
+            if target_level:
+                for course in target_level.get("learning_path") or []:
+                    title = course.get("course_title") or course.get("course_uid")
+                    if not title:
+                        continue
+                    if any(
+                        (c.get("course_uid") == course.get("course_uid"))
+                        or (c.get("course_title") or "").lower() == title.lower()
+                        for c in assigned_learning_path
+                    ):
+                        continue
+                    assigned_learning_path.append({
+                        "course_uid": course.get("course_uid") or title,
+                        "course_title": title,
+                        "course_url": course.get("course_url") or course.get("url"),
+                        "source": course.get("source", "microsoft_learn"),
+                        "mandatory": course.get("mandatory", True),
+                        "order": course.get("order") or (len(assigned_learning_path) + 1),
+                        "skills": [],
+                        "certifications": [],
+                        "status": "not_started",
+                        "progress_percent": 0,
+                        "started_at": None,
+                        "completed_at": None,
+                        "certificate_status": None,
+                    })
+                for skill_req in target_level.get("required_skills") or []:
+                    name = (skill_req.get("skill") or "").strip()
+                    if name:
+                        skills_seen.add(name)
+                for cert_req in target_level.get("required_certifications") or []:
+                    name = (cert_req.get("certification") or "").strip()
+                    if name:
+                        certs_seen.add(name)
+
+        # Resolve provider URLs so employees can open / enroll from My Career.
+        for course in assigned_learning_path:
+            if course.get("course_url"):
+                continue
+            uid = course.get("course_uid")
+            if not uid:
+                continue
+            try:
+                from app.services import catalog_service
+
+                item = await catalog_service.get_course_by_uid(uid)
+                if item and item.get("url"):
+                    course["course_url"] = item["url"]
+            except Exception:
+                pass
+
+        current_skills = await self._get_employee_skill_names(employee.get("user_id"))
+        skills_to_acquire = []
+        for skill_name in sorted(skills_seen, key=str.lower):
+            current_prof = self._find_skill_proficiency(current_skills, skill_name)
+            skills_to_acquire.append({
+                "skill": skill_name,
+                "current_proficiency": current_prof,
+                "target_proficiency": "Intermediate",
+                "current_status": (
+                    "acquired"
+                    if current_prof and self._proficiency_rank(current_prof) >= self._proficiency_rank("Intermediate")
+                    else "not_started"
+                ),
+            })
+
+        existing_certs = await self._get_employee_cert_titles(employee.get("user_id"))
+        certifications_to_earn = []
+        for cert_name in sorted(certs_seen, key=str.lower):
+            has_cert = any(cert_name.lower() in c.lower() for c in existing_certs)
+            certifications_to_earn.append({
+                "certification": cert_name,
+                "mandatory": True,
+                "status": "earned" if has_cert else "not_started",
+                "earned_at": None,
+            })
+
+        progress = self._calculate_progress(
+            assigned_learning_path, skills_to_acquire, certifications_to_earn
+        )
+        now = _now()
+        path_fields = {
+            "employee_name": employee.get("full_name"),
+            "current_department": department,
+            "current_track_id": (current_level or target_level or {}).get("track_id"),
+            "current_track_name": (current_level or target_level or {}).get("track_name") or department,
+            "current_level_number": (
+                (current_level or {}).get("level_number")
+                or org_role.get("level_number")
+                or 1
+            ),
+            "current_role_title": current_role_title,
+            "target_level_id": str(target_level["_id"]) if target_level else None,
+            "target_level_number": (
+                (target_level or {}).get("level_number")
+                or (org_role.get("level_number") or 1) + (1 if next_role_name else 0)
+            ),
+            "target_role_title": target_role_title,
+            "target_date": existing.get("target_date") if existing else None,
+            "assigned_learning_path": assigned_learning_path,
+            "skills_to_acquire": skills_to_acquire,
+            "certifications_to_earn": certifications_to_earn,
+            "overall_progress_percent": progress["overall_progress_percent"],
+            "readiness_score": progress["readiness_score"],
+            "status": "active",
+            "promoted_at": None,
+            "promoted_by": None,
+            "assigned_by": assigned_by,
+            "assignment_source": "org_framework",
+            "updated_at": now,
+            "organization_id": organization_id,
+        }
+
+        if existing and (force or existing.get("assignment_source") == "org_framework"):
+            await database.employee_career_assignments.update_one(
+                {"_id": existing["_id"]},
+                {"$set": path_fields},
+            )
+            assignment_doc = await database.employee_career_assignments.find_one({"_id": existing["_id"]})
+        elif existing:
+            return self._public_assignment(existing)
+        else:
+            assignment_doc = {
+                "employee_id": employee_id,
+                "user_id": employee.get("user_id"),
+                "discussions": [],
+                "assigned_at": now,
+                **path_fields,
+            }
+            result = await database.employee_career_assignments.insert_one(assignment_doc)
+            assignment_doc["_id"] = result.inserted_id
+
+        if employee.get("user_id"):
+            await database.learning_career_goals.update_one(
+                {"user_id": employee["user_id"]},
+                {
+                    "$set": {
+                        "target_role": target_role_title,
+                        "updated_at": now,
+                        "ai_path": None,
+                    },
+                    "$setOnInsert": {
+                        "created_at": now,
+                        "user_id": employee["user_id"],
+                        "employee_id": employee_id,
+                    },
+                },
+                upsert=True,
+            )
+
+        await self._sync_career_path_to_learning_assignments(employee, assigned_learning_path)
         return self._public_assignment(assignment_doc)
 
     async def get_employee_career(self, employee_id: str, organization_id: str | None = None) -> dict:
@@ -546,7 +875,28 @@ class CareerFrameworkService:
             query = {"$and": [query, org_filter]}
         doc = await database.employee_career_assignments.find_one(query)
         if not doc:
+            employee_q: dict[str, Any] = {"employee_id": employee_id, "status": "active"}
+            if organization_id:
+                employee_q["organization_id"] = organization_id
+            employee = await database.employees.find_one(employee_q)
+            if not employee and organization_id:
+                employee = await database.employees.find_one(
+                    {"employee_id": employee_id, "status": "active"}
+                )
+            if employee:
+                assignment = await self.ensure_org_career_assignment(employee)
+                if assignment:
+                    return {"assignment": assignment}
             return {"assignment": None}
+        # Heal org-sourced assignments that are out of date with the employee record.
+        if doc.get("assignment_source") == "org_framework":
+            employee = await database.employees.find_one(
+                {"employee_id": employee_id, "status": "active"}
+            )
+            if employee:
+                assignment = await self.ensure_org_career_assignment(employee)
+                if assignment:
+                    return {"assignment": assignment}
         return {"assignment": self._public_assignment(doc)}
 
     async def update_employee_career(self, employee_id: str, updates: dict, organization_id: str | None = None) -> dict:
@@ -675,7 +1025,18 @@ class CareerFrameworkService:
             query = {"$and": [query, org_filter]}
         doc = await database.employee_career_assignments.find_one(query)
         if not doc:
-            return {"assignment": None, "message": "No career path assigned yet. Your recruiter will set this up."}
+            assignment = await self.ensure_org_career_assignment(employee)
+            if assignment:
+                return {"assignment": assignment}
+            return {
+                "assignment": None,
+                "message": "No career path found for your role yet. Ask your recruiter to add your job title to Organization Setup → Role ladders.",
+            }
+
+        if doc.get("assignment_source") == "org_framework":
+            assignment = await self.ensure_org_career_assignment(employee)
+            if assignment:
+                return {"assignment": assignment}
 
         return {"assignment": self._public_assignment(doc)}
 
@@ -693,7 +1054,15 @@ class CareerFrameworkService:
             query = {"$and": [query, org_filter]}
         doc = await database.employee_career_assignments.find_one(query)
         if not doc:
-            return {"progress": None}
+            assignment = await self.ensure_org_career_assignment(employee)
+            if not assignment:
+                return {"progress": None}
+            doc = await database.employee_career_assignments.find_one(query)
+            if not doc:
+                return {"progress": None}
+        elif doc.get("assignment_source") == "org_framework":
+            await self.ensure_org_career_assignment(employee)
+            doc = await database.employee_career_assignments.find_one(query) or doc
 
         # Enrich learning path with enrollment status
         if employee.get("user_id") and doc.get("assigned_learning_path"):
@@ -1147,15 +1516,122 @@ class CareerFrameworkService:
     # Internal helpers
     # ------------------------------------------------------------------ #
 
+    async def _sync_career_path_to_learning_assignments(
+        self,
+        employee: dict,
+        learning_path: list[dict],
+    ) -> None:
+        """Mirror career-path courses into learning_assignments so they show under Learning."""
+        employee_id = employee.get("employee_id")
+        user_id = employee.get("user_id")
+        if not employee_id or not user_id or not learning_path:
+            return
+        now = _now()
+        for course in learning_path:
+            course_uid = (course.get("course_uid") or "").strip()
+            course_title = (course.get("course_title") or course_uid).strip()
+            if not course_uid and not course_title:
+                continue
+            or_clauses: list[dict] = []
+            if course_uid:
+                or_clauses.append({"course_uid": course_uid})
+            if course_title:
+                or_clauses.append({
+                    "course_title": {
+                        "$regex": f"^{re.escape(course_title)}$",
+                        "$options": "i",
+                    }
+                })
+            existing = await database.learning_assignments.find_one(
+                {"employee_id": employee_id, "$or": or_clauses}
+            )
+            course_url = course.get("course_url")
+            if not course_url and course_uid:
+                try:
+                    from app.services import catalog_service
+
+                    item = await catalog_service.get_course_by_uid(course_uid)
+                    course_url = (item or {}).get("url")
+                except Exception:
+                    course_url = None
+            if existing:
+                # Backfill missing Open-course links on older auto-assigned rows.
+                if course_url and not (existing.get("course_url") or "").strip():
+                    await database.learning_assignments.update_one(
+                        {"_id": existing["_id"]},
+                        {"$set": {"course_url": course_url, "updated_at": now}},
+                    )
+                continue
+            await database.learning_assignments.insert_one(
+                {
+                    "employee_id": employee_id,
+                    "user_id": user_id,
+                    "employee_name": employee.get("full_name"),
+                    "department": employee.get("department"),
+                    "job_title": employee.get("job_title"),
+                    "course_uid": course_uid or course_title,
+                    "course_title": course_title,
+                    "course_url": course_url or "",
+                    "course_type": course.get("catalog_type") or course.get("source") or "course",
+                    "duration_minutes": course.get("duration_minutes"),
+                    "assigned_by": "Career path",
+                    "assigned_by_id": "system",
+                    "due_date": None,
+                    "mandatory": bool(course.get("mandatory", True)),
+                    "note": "Auto-assigned from Organization Setup career roadmap",
+                    "status": "assigned",
+                    "assignment_source": "org_career_path",
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+
+    async def _find_org_role(
+        self,
+        organization_id: str,
+        job_title: str | None,
+        department: str | None = None,
+    ) -> dict | None:
+        if not organization_id or not job_title:
+            return None
+        query: dict[str, Any] = {
+            "organization_id": organization_id,
+            "name": {"$regex": f"^{re.escape(job_title.strip())}$", "$options": "i"},
+        }
+        if department:
+            query["department"] = {
+                "$regex": f"^{re.escape(department.strip())}$",
+                "$options": "i",
+            }
+        role = await database.org_framework_roles.find_one(query)
+        if role or not department:
+            return role
+        # Retry without department if title is unique enough in the org.
+        return await database.org_framework_roles.find_one({
+            "organization_id": organization_id,
+            "name": {"$regex": f"^{re.escape(job_title.strip())}$", "$options": "i"},
+        })
+
+    async def _list_org_roadmap_rows(self, organization_id: str, role_name: str) -> list[dict]:
+        if not organization_id or not role_name:
+            return []
+        rows = await database.org_framework_roadmaps.find(
+            {
+                "organization_id": organization_id,
+                "role_name": {"$regex": f"^{re.escape(role_name.strip())}$", "$options": "i"},
+            }
+        ).sort("order", 1).to_list(length=200)
+        return rows
+
     async def _find_level_by_title(self, job_title: str | None, department: str | None, organization_id: str | None = None) -> dict | None:
         if not job_title:
             return None
         query: dict[str, Any] = {
-            "role_title": {"$regex": f"^{job_title}$", "$options": "i"},
+            "role_title": {"$regex": f"^{re.escape(job_title)}$", "$options": "i"},
             "is_active": True,
         }
         if department:
-            query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+            query["department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
@@ -1230,8 +1706,23 @@ class CareerFrameworkService:
         ).to_list(length=500)
         enrollment_map = {e["course_uid"]: e for e in enrollments}
 
+        # Resolve catalog difficulty → proficiency awarded when certificate is verified.
+        try:
+            from app.services.learning_service import learning_service as _learning
+        except Exception:
+            _learning = None
+
         for course in learning_path:
             uid = course.get("course_uid", "")
+            title = course.get("course_title")
+            if _learning and uid and not str(uid).startswith("pending:"):
+                try:
+                    course["skills_award_level"] = await _learning._resolve_course_proficiency(uid, title)
+                except Exception:
+                    course["skills_award_level"] = "Intermediate"
+            else:
+                course["skills_award_level"] = course.get("skills_award_level") or "Intermediate"
+
             if uid.startswith("pending:"):
                 continue
             enrollment = enrollment_map.get(uid)
@@ -1280,6 +1771,7 @@ class CareerFrameworkService:
             "promoted_at": _iso(doc.get("promoted_at")),
             "promoted_by": doc.get("promoted_by"),
             "assigned_by": doc.get("assigned_by"),
+            "assignment_source": doc.get("assignment_source"),
             "assigned_at": _iso(doc.get("assigned_at")),
             "updated_at": _iso(doc.get("updated_at")),
         }

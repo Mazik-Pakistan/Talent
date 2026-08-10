@@ -13,7 +13,6 @@ import styles from "./learning.module.css";
 import { getApiErrorMessage } from "@/services/authService";
 import {
   addBookmark,
-  assessSkills,
   browseCatalog,
   deleteSkill,
   deleteCertificate,
@@ -23,7 +22,6 @@ import {
   getDesignationReadiness,
   getLearningDashboard,
   getRecommendations,
-  getRoleMatches,
   getSkillCategories,
   getSkillGap,
   getSoftSkillCategories,
@@ -40,6 +38,7 @@ import {
   upsertSkill,
 } from "@/services/learningService";
 import { getCareerProgression } from "@/services/talentService";
+import { getMyCareerProgress } from "@/services/careerService";
 import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import { publishGuideContext, registerPageAssist } from "@/lib/ai/guideContext";
 import { invalidateInsightCache } from "@/lib/ai/employeeInsights";
@@ -52,14 +51,6 @@ const TABS = [
   { key: "career", label: "Career Path" },
 ];
 
-const CAREER_SUGGESTIONS = [
-  "Senior Full Stack Developer",
-  "AI Engineer",
-  "Cloud Solutions Architect",
-  "DevOps Engineer",
-  "Data Scientist",
-  "Security Engineer",
-];
 const LEARNING_PROVIDERS_UPDATED_EVENT = "learning-providers-updated";
 const LEARNING_PROVIDERS_UPDATED_STORAGE_KEY = "learning-providers-updated-at";
 
@@ -814,8 +805,14 @@ function MyCoursesTab({ onChange }) {
 
   useEffect(() => { load(); }, [load]);
 
-  function getCertificateForCourse(courseUid) {
-    return certificates.find((c) => c.course_uid === courseUid);
+  function getCertificateForCourse(courseUid, courseTitle) {
+    const uid = (courseUid || "").trim();
+    const title = (courseTitle || "").trim().toLowerCase();
+    return (
+      certificates.find((c) => uid && c.course_uid === uid) ||
+      certificates.find((c) => title && (c.course_title || "").trim().toLowerCase() === title) ||
+      null
+    );
   }
 
   async function bump(uid, current) {
@@ -847,24 +844,59 @@ function MyCoursesTab({ onChange }) {
     }
   }
 
+  async function openCourse(course) {
+    const direct = (course?.course_url || "").trim();
+    if (direct.startsWith("http://") || direct.startsWith("https://")) {
+      window.open(direct, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const token = localStorage.getItem("access_token");
+    const uid = course?.course_uid;
+    if (!token || !uid) {
+      toast.error("No course link is available yet. Ask your recruiter to add the course URL in Organization Setup.");
+      return;
+    }
+    setStartingUid(uid);
+    try {
+      const data = await startCourse(token, uid);
+      const url = (data.redirect_url || data.enrollment?.course_url || "").trim();
+      if (url.startsWith("http://") || url.startsWith("https://")) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        load();
+        onChange?.();
+        return;
+      }
+      toast.error("No course link is available yet. Ask your recruiter to add the course URL in Organization Setup.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not open this course."));
+    } finally {
+      setStartingUid("");
+    }
+  }
+
   async function handleUploadCertificate(courseUid, e) {
     e.preventDefault();
-    if (!uploadFile || !uploadForm.course_title.trim()) {
-      toast.error("Add a course title and select a file.");
+    const link = uploadForm.source_url?.trim() || "";
+    if (!uploadForm.course_title.trim() || !link) {
+      toast.error("Add a course title and certificate link (required for recruiter verification).");
+      return;
+    }
+    if (!/^https?:\/\//i.test(link)) {
+      toast.error("Certificate link must start with http:// or https://");
       return;
     }
     const token = localStorage.getItem("access_token");
     const fd = new FormData();
-    fd.append("file", uploadFile);
+    if (uploadFile) fd.append("file", uploadFile);
     fd.append("course_title", uploadForm.course_title.trim());
     fd.append("course_uid", courseUid);
+    fd.append("source_url", link);
     if (uploadForm.completion_date) fd.append("completion_date", uploadForm.completion_date);
     if (uploadForm.learning_hours) fd.append("learning_hours", uploadForm.learning_hours);
-    if (uploadForm.source_url?.trim()) fd.append("source_url", uploadForm.source_url.trim());
     setUploading(true);
     try {
       await uploadCertificate(token, fd);
-      toast.success("Certificate submitted for recruiter verification.");
+      toast.success("Certificate submitted — course stays in progress until your recruiter verifies it.");
       setUploadForm({ course_title: "", completion_date: "", learning_hours: "", source_url: "" });
       setUploadFile(null);
       setUploadingFor(null);
@@ -942,73 +974,155 @@ function MyCoursesTab({ onChange }) {
         )}
         {enrollments.map((e) => {
           const isAssignedOnly = e.status === "assigned";
-          const cert = getCertificateForCourse(e.course_uid);
+          const cert = getCertificateForCourse(e.course_uid, e.course_title);
           const isVerified = cert?.verification_status === "verified";
           const isPending = cert?.verification_status === "pending";
           const isRejected = cert?.verification_status === "rejected";
+          // Course is completed only after recruiter verifies the certificate (or no cert required and enrollment completed).
+          const isCompleted = isVerified || (e.status === "completed" && !isPending && !isRejected);
+          const progressPct = isCompleted ? 100 : isPending ? Math.min(Number(e.progress_percent) || 0, 90) : (e.progress_percent || 0);
           return (
             <div key={e.id} className={styles.courseListRow}>
               <div className={styles.courseListInfo}>
                 <div className={styles.courseListTitle}>{e.course_title}</div>
                 <div className={styles.courseListMeta}>
-                  {e.assigned || isAssignedOnly ? "Assigned Courses · " : ""}
+                  {e.assigned || isAssignedOnly ? "Assigned · " : ""}
                   {e.due_date ? `Due ${String(e.due_date).slice(0, 10)} · ` : ""}
                   {isAssignedOnly
                     ? "Not started yet"
-                    : `Started ${e.started_at ? new Date(e.started_at).toLocaleDateString() : "—"}`}
-                  {isVerified && " · Complete and Verified"}
+                    : isCompleted
+                      ? `Completed${e.completed_at || cert?.verified_at ? ` ${new Date(e.completed_at || cert.verified_at).toLocaleDateString()}` : ""}`
+                      : `Started ${e.started_at ? new Date(e.started_at).toLocaleDateString() : "—"}`}
+                  {isPending && " · Waiting for recruiter verification"}
+                  {isRejected && " · Certificate rejected — resubmit"}
                 </div>
+                {!isAssignedOnly && (
+                  <div className={styles.progressTrackSm} style={{ marginTop: 8, maxWidth: 220 }}>
+                    <div className={styles.progressFillSm} style={{ width: `${progressPct}%` }} />
+                  </div>
+                )}
               </div>
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <div className={styles.courseListActions}>
+                {isCompleted && (
+                  <span className={`${styles.certStatus} ${styles.verified}`}>Completed</span>
+                )}
                 {isAssignedOnly ? (
+                  <button
+                    type="button"
+                    className={styles.smallBtnPrimary}
+                    disabled={startingUid === e.course_uid}
+                    onClick={() => startAssigned(e.course_uid)}
+                  >
+                    {startingUid === e.course_uid ? "Starting…" : "Start course"}
+                  </button>
+                ) : (
                   <button
                     type="button"
                     className={styles.smallBtn}
                     disabled={startingUid === e.course_uid}
-                    onClick={() => startAssigned(e.course_uid)}
+                    onClick={() => openCourse(e)}
                   >
-                    {startingUid === e.course_uid ? "Starting…" : "Start"}
+                    {startingUid === e.course_uid ? "Opening…" : "Open course"}
                   </button>
-                ) : (
-                  <>
-                    <a href={e.course_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open</a>
-                  </>
                 )}
-                {!isVerified && !isPending && !isRejected && (
-                  <button type="button" className={styles.smallBtn} onClick={() => setUploadingFor(e.course_uid)}>
-                    Upload Certificate
+                {!isVerified && !isPending && (
+                  <button
+                    type="button"
+                    className={styles.smallBtn}
+                    onClick={() => {
+                      setUploadingFor(e.course_uid);
+                      setUploadForm({
+                        course_title: e.course_title || "",
+                        completion_date: "",
+                        learning_hours: "",
+                        source_url: "",
+                      });
+                      setUploadFile(null);
+                    }}
+                  >
+                    {isRejected ? "Resubmit certificate" : "Submit certificate"}
                   </button>
+                )}
+                {isPending && (
+                  <span className={`${styles.certStatus} ${styles.pending}`}>Pending review</span>
+                )}
+                {isVerified && (
+                  <span className={`${styles.certStatus} ${styles.verified}`}>Certificate verified</span>
                 )}
               </div>
 
-              {/* Certificate section */}
-              <div style={{ width: "100%", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border-soft)" }}>
+              {(uploadingFor === e.course_uid || cert) && (
+              <div className={styles.courseCertPanel}>
                 {uploadingFor === e.course_uid && (
                   <form className={styles.uploadCertForm} onSubmit={(ev) => handleUploadCertificate(e.course_uid, ev)}>
-                    <label>
+                    <div className={styles.uploadCertFormHead}>
+                      <strong>Submit certificate for verification</strong>
+                      <p>
+                        Paste the public certificate link so your recruiter can verify it.
+                        A PDF or image is optional.
+                      </p>
+                    </div>
+                    <label className={styles.fieldWide}>
                       Course / certification title
-                      <input value={uploadForm.course_title} onChange={(ev) => setUploadForm((f) => ({ ...f, course_title: ev.target.value }))} required />
+                      <input
+                        value={uploadForm.course_title}
+                        onChange={(ev) => setUploadForm((f) => ({ ...f, course_title: ev.target.value }))}
+                        required
+                      />
+                    </label>
+                    <label className={styles.fieldWide}>
+                      Certificate link <span className={styles.req}>*</span>
+                      <input
+                        type="url"
+                        placeholder="https://linkedin.com/learning/certificates/…"
+                        value={uploadForm.source_url || ""}
+                        onChange={(ev) => setUploadForm((f) => ({ ...f, source_url: ev.target.value }))}
+                        required
+                      />
                     </label>
                     <label>
                       Completion date
-                      <input type="date" value={uploadForm.completion_date} onChange={(ev) => setUploadForm((f) => ({ ...f, completion_date: ev.target.value }))} />
+                      <input
+                        type="date"
+                        value={uploadForm.completion_date}
+                        onChange={(ev) => setUploadForm((f) => ({ ...f, completion_date: ev.target.value }))}
+                      />
                     </label>
                     <label>
                       Learning hours
-                      <input type="number" min="0" step="0.5" value={uploadForm.learning_hours} onChange={(ev) => setUploadForm((f) => ({ ...f, learning_hours: ev.target.value }))} />
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        placeholder="e.g. 2"
+                        value={uploadForm.learning_hours}
+                        onChange={(ev) => setUploadForm((f) => ({ ...f, learning_hours: ev.target.value }))}
+                      />
                     </label>
-                    <FileUploadField
-                      caption="Certificate file"
-                      accept=".pdf,.png,.jpg,.jpeg"
-                      onChange={(ev) => setUploadFile(ev.target.files?.[0] || null)}
-                      required
-                    />
-                    <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-                      <button type="submit" className={dashStyles.btnPrimary} disabled={uploading}>
-                        {uploading ? "Uploading…" : "Submit"}
+                    <div className={styles.fieldWide}>
+                      <FileUploadField
+                        caption="Certificate file (optional)"
+                        accept=".pdf,.png,.jpg,.jpeg"
+                        onChange={(ev) => setUploadFile(ev.target.files?.[0] || null)}
+                      />
+                    </div>
+                    <p className={styles.uploadCertHint}>
+                      After your recruiter approves, this course is marked complete and skills/certifications are added to your profile.
+                    </p>
+                    <div className={styles.uploadCertFormActions}>
+                      <button type="submit" className={styles.uploadCertSubmit} disabled={uploading}>
+                        {uploading ? "Submitting…" : "Send to recruiter"}
                       </button>
-                      <button type="button" className={styles.editCancelBtn} onClick={() => { setUploadingFor(null); setUploadForm({ course_title: "", completion_date: "", learning_hours: "", source_url: "" }); setUploadFile(null); }}>
+                      <button
+                        type="button"
+                        className={styles.editCancelBtn}
+                        onClick={() => {
+                          setUploadingFor(null);
+                          setUploadForm({ course_title: "", completion_date: "", learning_hours: "", source_url: "" });
+                          setUploadFile(null);
+                        }}
+                      >
                         Cancel
                       </button>
                     </div>
@@ -1025,13 +1139,43 @@ function MyCoursesTab({ onChange }) {
                         Submitted {new Date(cert.created_at).toLocaleDateString()}
                         {cert.rejection_reason ? ` · ${cert.rejection_reason}` : ""}
                       </div>
+                      {isVerified && (cert.skills_awarded || []).length > 0 && (
+                        <div className={styles.awardedSkills}>
+                          <span className={styles.focusLabel}>Added to your skills</span>
+                          <div className={styles.nextSkills}>
+                            {cert.skills_awarded.map((name) => (
+                              <span key={name} className={`${styles.nextSkillChip} ${styles.nextSkillHave}`}>
+                                {name}
+                                {cert.proficiency_awarded ? ` · ${cert.proficiency_awarded}` : ""}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {isVerified && (cert.certifications_awarded || []).length > 0 && (
+                        <div className={styles.awardedSkills}>
+                          <span className={styles.focusLabel}>Certifications recorded</span>
+                          <div className={styles.nextSkills}>
+                            {cert.certifications_awarded.map((name) => (
+                              <span key={name} className={styles.focusChip}>{name}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {isVerified && !(cert.skills_awarded || []).length && (
+                        <p className={styles.nextCourseHint}>
+                          Certificate verified — this course counts as completed. Skills appear on My skills when the course has linked outcomes.
+                        </p>
+                      )}
                     </div>
                     <span className={`${styles.certStatus} ${styles[cert.verification_status]}`}>
                       {cert.verification_status === "verified" ? "Verified" : cert.verification_status === "rejected" ? "Rejected" : "Pending review"}
                     </span>
-                    <a href={cert.file_url || cert.certificate_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View</a>
-                    {cert.source_url && cert.source_url !== cert.file_url ? (
-                      <a href={cert.source_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Public URL</a>
+                    {(cert.file_url || cert.certificate_url) && (
+                      <a href={cert.file_url || cert.certificate_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View file</a>
+                    )}
+                    {cert.source_url ? (
+                      <a href={cert.source_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open link</a>
                     ) : null}
                     {cert.verification_status !== "verified" && (
                       <>
@@ -1078,6 +1222,7 @@ function MyCoursesTab({ onChange }) {
                   </div>
                 )}
               </div>
+              )}
             </div>
           );
         })}
@@ -1093,10 +1238,8 @@ function SkillsTab() {
   const { skills: frameworkSkills } = useOrgFrameworkOptions();
   const [skills, setSkills] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [assessment, setAssessment] = useState(null);
-  const [cacheMeta, setCacheMeta] = useState(null);
+  const [career, setCareer] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [assessing, setAssessing] = useState(false);
   const [form, setForm] = useState({ skill_name: "", category: "Programming", proficiency: "Beginner", years_experience: "" });
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -1105,34 +1248,21 @@ function SkillsTab() {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
-    Promise.all([listSkills(token), getSkillCategories(token), assessSkills(token, false, true)])
-      .then(([skillData, catData, assessData]) => {
-        setSkills(assessData.skills || skillData.skills || []);
+    Promise.all([
+      listSkills(token),
+      getSkillCategories(token),
+      getMyCareerProgress(token).catch(() => ({ assignment: null })),
+    ])
+      .then(([skillData, catData, careerData]) => {
+        setSkills(skillData.skills || []);
         setCategories(catData.categories || []);
-        if (assessData.assessment) setAssessment(assessData.assessment);
-        if (assessData.cache_meta) setCacheMeta(assessData.cache_meta);
+        setCareer(careerData?.assignment || null);
       })
       .catch((err) => toast.error(getApiErrorMessage(err, "Could not load your skills.")))
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  async function handleAssess() {
-    const token = localStorage.getItem("access_token");
-    setAssessing(true);
-    try {
-      const data = await assessSkills(token, true);
-      setAssessment(data.assessment);
-      setSkills(data.skills || []);
-      setCacheMeta(data.cache_meta || null);
-      toast.success(data.cached ? "Loaded cached skill assessment." : "AI skill matrix refreshed from your resume and current role.");
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not run AI skill assessment."));
-    } finally {
-      setAssessing(false);
-    }
-  }
 
   async function handleAdd(e) {
     e.preventDefault();
@@ -1165,22 +1295,49 @@ function SkillsTab() {
     try {
       await deleteSkill(token, pendingDelete.id);
       setPendingDelete(null);
-      setAssessment(null);
       load();
-      toast.success("Skill removed. AI analysis cache cleared.");
+      toast.success("Skill removed.");
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not remove skill."));
     }
   }
 
   const proficiencyRank = { Beginner: 25, Intermediate: 50, Advanced: 75, Expert: 100 };
+  const sourceLabel = (source) => {
+    const s = (source || "").toLowerCase();
+    if (s === "manual") return "You added";
+    if (s === "course" || s === "org_roadmap") return "From a course";
+    if (s.includes("resume") || s === "ai_resume") return "From resume";
+    if (s === "certificate") return "From certificate";
+    return null;
+  };
+
+  const targetRole = career?.target_role_title || null;
+  const currentRole = career?.current_role_title || null;
+  const pathCourses = career?.assigned_learning_path || [];
+  const incompleteCourses = pathCourses.filter((c) => c.status !== "completed" && c.certificate_status !== "verified");
+  const readinessPct = career?.readiness_score ?? career?.overall_progress_percent ?? null;
+
+  function courseSkillNames(course) {
+    return (course.skills || [])
+      .map((x) => (typeof x === "string" ? x : x?.skill || ""))
+      .map((n) => n.trim())
+      .filter(Boolean);
+  }
+
+  function courseCertNames(course) {
+    return (course.certifications || [])
+      .map((x) => (typeof x === "string" ? x : x?.certification || x?.name || ""))
+      .map((n) => n.trim())
+      .filter(Boolean);
+  }
 
   return (
     <div className={dashStyles.section}>
       <ConfirmDialog
         open={Boolean(pendingDelete)}
         title="Remove skill?"
-        message="Removing this skill will affect AI analysis and career recommendations. Are you sure?"
+        message="This skill will be removed from your profile. You can add it again later."
         confirmLabel="Remove"
         cancelLabel="Cancel"
         danger
@@ -1191,39 +1348,108 @@ function SkillsTab() {
         <div className={dashStyles.sectionHeadLeft}>
           <span className={`${dashStyles.bar} ${dashStyles.green}`} />
           <div>
-            <div className={dashStyles.sectionTitle}>Skill profile</div>
+            <div className={dashStyles.sectionTitle}>My skills</div>
             <p className={dashStyles.sectionDesc}>
-              Merged from resume, certifications, and manual skills
-              {cacheMeta?.lastAnalyzedAt ? ` · Last analyzed ${new Date(cacheMeta.lastAnalyzedAt).toLocaleString()}` : ""}
+              Skills on your profile. Finish a course → submit certificate → recruiter verifies → skills &amp; level appear here.
             </p>
           </div>
         </div>
-        <button type="button" className={dashStyles.btnPrimary} disabled={assessing} onClick={handleAssess}>
-          {assessing ? "Assessing…" : "Run AI skill assessment"}
-        </button>
       </div>
       <div className={dashStyles.sectionBody}>
-        {assessment && (
-          <div className={styles.assessmentBanner}>
-            <div>
-              <strong>Role fit: {assessment.role_fit_percentage ?? "—"}%</strong>
-              <p>{assessment.summary}</p>
-            </div>
-            {(assessment.gaps || []).length > 0 && (
-              <div className={styles.gapChips}>
-                {assessment.gaps.map((g) => (
-                  <span key={g.skill} className={`${styles.priorityChip} ${styles[g.priority] || ""}`}>
-                    {g.priority}: {g.skill}
-                  </span>
-                ))}
+        {targetRole && (
+          <div className={styles.readyHero}>
+            <div className={styles.readyScore}>{readinessPct ?? 0}%</div>
+            <div className={styles.readyCopy}>
+              <div className={styles.readyTitle}>
+                {currentRole && currentRole.toLowerCase() !== targetRole.toLowerCase()
+                  ? `Toward ${targetRole}`
+                  : `Ready for ${targetRole}`}
               </div>
-            )}
+              <p>
+                These courses are still open. Completing them does not add skills until your recruiter
+                verifies the certificate — then they show below with the level (e.g. Intermediate).
+              </p>
+            </div>
           </div>
         )}
 
-        {skills.length > 0 && (
+        {incompleteCourses.length > 0 && (
+          <div className={styles.nextLearn}>
+            <div className={styles.nextLearnHead}>
+              <h3 className={styles.nextLearnTitle}>Courses still to finish</h3>
+              <p className={styles.nextLearnDesc}>
+                Open them in My Learning, submit a certificate link, then wait for verification.
+                Skills listed here are what you will earn — not skills you already completed.
+              </p>
+            </div>
+
+            <div className={styles.nextCourseList}>
+              {incompleteCourses.map((c) => {
+                const skillNames = courseSkillNames(c);
+                const certNames = courseCertNames(c);
+                const award = c.skills_award_level || "Intermediate";
+                const status =
+                  c.certificate_status === "pending"
+                    ? "Certificate submitted — awaiting recruiter"
+                    : c.status === "in_progress"
+                      ? "In progress — not completed yet"
+                      : "Not started";
+                return (
+                  <div key={c.course_uid || c.course_title} className={styles.nextCourse}>
+                    <div className={styles.nextCourseTop}>
+                      <div>
+                        <div className={styles.nextCourseName}>{c.course_title || c.course_uid}</div>
+                        <div className={styles.nextCourseMeta}>{status}</div>
+                      </div>
+                      <span className={styles.awardBadge}>
+                        After verify → {award}
+                      </span>
+                    </div>
+                    {skillNames.length > 0 && (
+                      <>
+                        <div className={styles.focusLabel} style={{ marginTop: 10 }}>Skills you will earn</div>
+                        <div className={styles.nextSkills}>
+                          {skillNames.map((name) => (
+                            <span key={name} className={styles.nextSkillChip}>
+                              {name} · {award}
+                            </span>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {certNames.length > 0 && (
+                      <>
+                        <div className={styles.focusLabel} style={{ marginTop: 10 }}>Certification from this course</div>
+                        <div className={styles.nextSkills}>
+                          {certNames.map((name) => (
+                            <span key={name} className={styles.focusChip}>
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {skillNames.length === 0 && certNames.length === 0 && (
+                      <p className={styles.nextCourseHint}>
+                        After verification, skills from this course (and the certificate itself) are added to your profile at {award}.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {!loading && skills.length > 0 && (
           <div className={styles.matrixBars}>
-            {skills.slice(0, 12).map((s) => (
+            <div className={styles.yourSkillsHead}>
+              <div className={styles.focusLabel}>Skills on your profile</div>
+              <p className={styles.matrixHint}>
+                Only skills already saved on your profile. Course skills appear here after recruiter verification.
+              </p>
+            </div>
+            {skills.slice(0, 10).map((s) => (
               <div key={s.id || s.skill_name} className={styles.matrixRow}>
                 <span className={styles.matrixLabel}>{s.skill_name}</span>
                 <div className={styles.matrixTrack}>
@@ -1252,7 +1478,7 @@ function SkillsTab() {
             </select>
           </label>
           <label>
-            Proficiency
+            Level
             <select value={form.proficiency} onChange={(e) => setForm((f) => ({ ...f, proficiency: e.target.value }))}>
               {["Beginner", "Intermediate", "Advanced", "Expert"].map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
@@ -1266,8 +1492,10 @@ function SkillsTab() {
 
         {!loading && skills.length === 0 && (
           <div className={dashStyles.emptyState}>
-            <div className={dashStyles.emptyTitle}>No skills recorded yet</div>
-            <div className={dashStyles.emptySub}>Run AI assessment from your onboarding resume, or add skills manually.</div>
+            <div className={dashStyles.emptyTitle}>No skills yet</div>
+            <div className={dashStyles.emptySub}>
+              Add skills here, update your resume on Profile, or complete a course and get the certificate verified.
+            </div>
           </div>
         )}
         <div className={styles.skillGrid}>
@@ -1277,10 +1505,9 @@ function SkillsTab() {
                 <div>
                   <div className={styles.skillName}>{s.skill_name}</div>
                   <div className={styles.skillCategory}>
-                    {s.category}
-                    {s.years_experience ? ` · ${s.years_experience} yrs` : ""}
-                    {s.source ? ` · ${s.source}` : ""}
-                    {s.confidence != null ? ` · ${s.confidence}% conf.` : ""}
+                    {[s.category, s.years_experience ? `${s.years_experience} yrs` : null, sourceLabel(s.source)]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </div>
                 </div>
                 {s.id && (
@@ -1293,7 +1520,7 @@ function SkillsTab() {
               {s.verification_status === "verified" && (
                 <div className={styles.verifiedTag}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
-                  Verified via course completion
+                  Verified from a course
                 </div>
               )}
             </div>
@@ -1311,47 +1538,23 @@ function SkillsTab() {
 function CareerTab() {
   const [goal, setGoal] = useState("");
   const [savedGoal, setSavedGoal] = useState(null);
+  const [orgAssignment, setOrgAssignment] = useState(null);
   const [gap, setGap] = useState(null);
   const [path, setPath] = useState(null);
   const [gapLoading, setGapLoading] = useState(false);
   const [recs, setRecs] = useState(null);
   const [recsLoading, setRecsLoading] = useState(true);
-  const [roleMatches, setRoleMatches] = useState([]);
   const [startingStep, setStartingStep] = useState("");
   const [ladder, setLadder] = useState(null);
   const [ladderLoading, setLadderLoading] = useState(true);
   const [designationReadiness, setDesignationReadiness] = useState(null);
   const [designationLoading, setDesignationLoading] = useState(false);
+  const [showExplore, setShowExplore] = useState(false);
+  const [bootLoading, setBootLoading] = useState(true);
 
-  useEffect(() => {
+  function loadGapAndPath(role, refresh = true) {
     const token = localStorage.getItem("access_token");
-    if (!token) return;
-    setLadderLoading(true);
-    getCareerProgression(token)
-      .then(setLadder)
-      .catch(() => {})
-      .finally(() => setLadderLoading(false));
-  }, []);
-
-  useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    getCareerGoal(token).then((data) => {
-      setSavedGoal(data.target_role);
-      if (data.target_role) {
-        setGoal(data.target_role);
-        loadGapAndPath(data.target_role);
-        loadDesignationReadiness(data.target_role);
-      }
-    });
-    loadRecommendations(false);
-    getRoleMatches(token, false)
-      .then((data) => setRoleMatches(data.roles || []))
-      .catch(() => {});
-  }, []);
-
-  function loadGapAndPath(role, refresh = false) {
-    const token = localStorage.getItem("access_token");
+    if (!token || !role) return;
     setGapLoading(true);
     Promise.all([getCareerPath(token, refresh), getSkillGap(token, role, refresh)])
       .then(([pathData, gapData]) => {
@@ -1372,28 +1575,6 @@ function CareerTab() {
       .finally(() => setDesignationLoading(false));
   }
 
-  async function handleSetGoal(role) {
-    const token = localStorage.getItem("access_token");
-    const target = role || goal;
-    if (!target.trim()) return;
-    setGoal(target);
-    setGapLoading(true);
-    try {
-      const pathData = await setCareerGoal(token, target.trim());
-      setSavedGoal(target.trim());
-      setPath(pathData);
-      const gapData = await getSkillGap(token, target.trim(), true);
-      setGap(gapData);
-      loadRecommendations(true);
-      loadDesignationReadiness(target.trim());
-      toast.success(`Career goal set to "${target.trim()}".`);
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not set your career goal."));
-    } finally {
-      setGapLoading(false);
-    }
-  }
-
   function loadRecommendations(refresh) {
     const token = localStorage.getItem("access_token");
     if (!token) return;
@@ -1404,13 +1585,156 @@ function CareerTab() {
       .finally(() => setRecsLoading(false));
   }
 
+  async function applyTargetRole(role, { silent = false } = {}) {
+    const token = localStorage.getItem("access_token");
+    const target = (role || "").trim();
+    if (!token || !target) return;
+    setGoal(target);
+    setGapLoading(true);
+    try {
+      const pathData = await setCareerGoal(token, target);
+      setSavedGoal(target);
+      setPath(pathData);
+      const gapData = await getSkillGap(token, target, true);
+      setGap(gapData);
+      loadRecommendations(true);
+      loadDesignationReadiness(target);
+      if (!silent) toast.success(`Focused on “${target}”.`);
+    } catch (err) {
+      if (!silent) toast.error(getApiErrorMessage(err, "Could not load role analysis."));
+      // Still try read-only analysis if goal sync fails
+      loadGapAndPath(target, true);
+      loadDesignationReadiness(target);
+    } finally {
+      setGapLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    let cancelled = false;
+    setBootLoading(true);
+    setLadderLoading(true);
+
+    Promise.all([
+      getMyCareerProgress(token).catch(() => ({ assignment: null })),
+      getCareerProgression(token).catch(() => null),
+      getCareerGoal(token).catch(() => ({})),
+    ])
+      .then(async ([progressData, progression, goalData]) => {
+        if (cancelled) return;
+        const assignment = progressData?.assignment || null;
+        setOrgAssignment(assignment);
+
+        let ladderData = progression;
+        // If API ladder is empty but we have an org assignment, show at least current → next.
+        if ((!ladderData?.ladder || ladderData.ladder.length === 0) && assignment) {
+          const current = assignment.current_role_title;
+          const next = assignment.target_role_title;
+          const rungs = [];
+          if (current) {
+            rungs.push({
+              title: current,
+              is_current: true,
+              is_next_step: false,
+              progress_percentage: 100,
+              missing_skills: (assignment.skills_to_acquire || [])
+                .filter((s) => s.current_status !== "acquired")
+                .map((s) => s.skill)
+                .slice(0, 6),
+              missing_certifications: (assignment.certifications_to_earn || [])
+                .filter((c) => c.status !== "earned")
+                .map((c) => c.certification)
+                .slice(0, 4),
+            });
+          }
+          if (next && next.toLowerCase() !== (current || "").toLowerCase()) {
+            rungs.push({
+              title: next,
+              is_current: false,
+              is_next_step: true,
+              progress_percentage: assignment.overall_progress_percent ?? assignment.readiness_score ?? 0,
+              missing_skills: (assignment.skills_to_acquire || [])
+                .filter((s) => s.current_status !== "acquired")
+                .map((s) => s.skill)
+                .slice(0, 6),
+              missing_certifications: (assignment.certifications_to_earn || [])
+                .filter((c) => c.status !== "earned")
+                .map((c) => c.certification)
+                .slice(0, 4),
+            });
+          }
+          ladderData = {
+            current_title: current,
+            ladder: rungs,
+            source: "career_assignment",
+            message: rungs.length ? null : ladderData?.message,
+          };
+        }
+        setLadder(ladderData);
+
+        const orgTarget =
+          (assignment?.target_role_title || assignment?.current_role_title || "").trim() || null;
+        const existingGoal = (goalData?.target_role || "").trim() || null;
+        const focusRole = orgTarget || existingGoal;
+
+        if (focusRole) {
+          setSavedGoal(focusRole);
+          setGoal(focusRole);
+          // Prefer org next-role over a stale free-form goal (e.g. "AI Engineer").
+          if (orgTarget && existingGoal?.toLowerCase() !== orgTarget.toLowerCase()) {
+            await applyTargetRole(orgTarget, { silent: true });
+          } else {
+            loadGapAndPath(focusRole);
+            loadDesignationReadiness(focusRole);
+          }
+        }
+        loadRecommendations(true);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLadderLoading(false);
+          setBootLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep the "Promotes to" rung % in sync with the Promotion checklist ring.
+  useEffect(() => {
+    const pct = designationReadiness?.readiness_percent;
+    if (pct == null || !ladder?.ladder?.length) return;
+    const nextIdx = ladder.ladder.findIndex((r) => r.is_next_step);
+    if (nextIdx < 0) return;
+    const currentPct = Math.round(ladder.ladder[nextIdx].progress_percentage ?? 0);
+    if (currentPct === Math.round(pct)) return;
+    setLadder((prev) => {
+      if (!prev?.ladder?.length) return prev;
+      return {
+        ...prev,
+        ladder: prev.ladder.map((rung) =>
+          rung.is_next_step ? { ...rung, progress_percentage: Math.round(pct) } : rung
+        ),
+      };
+    });
+  }, [designationReadiness, ladder]);
+
+  async function handleSetGoal(role) {
+    const target = role || goal;
+    if (!target?.trim()) return;
+    await applyTargetRole(target.trim(), { silent: false });
+  }
+
   async function startPathStep(step) {
     const token = localStorage.getItem("access_token");
     const uid = step?.course?.uid;
     const url = step?.course?.url;
     if (!token) return;
 
-    // KB cert placeholders — open official URL / send to certificates tab
     if (!uid || String(uid).startsWith("kb-cert:")) {
       if (url) window.open(url, "_blank", "noopener,noreferrer");
       else toast.info("Upload this certification under Certificates when you earn it.");
@@ -1432,6 +1756,17 @@ function CareerTab() {
     }
   }
 
+  const currentRole = orgAssignment?.current_role_title || ladder?.current_title;
+  const nextRole = orgAssignment?.target_role_title || ladder?.next_step?.title || savedGoal;
+  const recSourceLabel =
+    recs?.source === "skill_role_aligned"
+      ? "Your role + skills (proficiency growth)"
+      : recs?.source === "managed_learning"
+        ? "Organization managed learning roadmap"
+        : recs?.source === "ai_catalog"
+          ? "AI + course catalog"
+          : null;
+
   return (
     <>
       <div className={dashStyles.section}>
@@ -1439,20 +1774,25 @@ function CareerTab() {
           <div className={dashStyles.sectionHeadLeft}>
             <span className={`${dashStyles.bar} ${dashStyles.navy}`} />
             <div>
-              <div className={dashStyles.sectionTitle}>Career progression</div>
+              <div className={dashStyles.sectionTitle}>Your role path</div>
               <p className={dashStyles.sectionDesc}>
-                Your organization&apos;s role ladder, with readiness calculated from your current skills and verified
-                certifications against each rung&apos;s requirements.
+                {currentRole && nextRole && currentRole.toLowerCase() !== nextRole.toLowerCase()
+                  ? `From ${currentRole} toward ${nextRole} — from Organization Setup for your job title, not other roles.`
+                  : currentRole
+                    ? `Analysis for your role: ${currentRole}.`
+                    : "Loaded from your job title in Organization Setup."}
               </p>
             </div>
           </div>
         </div>
         <div className={dashStyles.sectionBody}>
+          {(bootLoading || ladderLoading) && <p className={styles.inlineNote}>Loading your role ladder…</p>}
           {!ladderLoading && (!ladder?.ladder || ladder.ladder.length === 0) && (
             <div className={dashStyles.emptyState}>
-              <div className={dashStyles.emptyTitle}>No org roles configured yet</div>
+              <div className={dashStyles.emptyTitle}>No career ladder for your role yet</div>
               <div className={dashStyles.emptySub}>
-                Your recruiter hasn&apos;t added roles to the knowledge base yet — set a free-form goal below instead.
+                {ladder?.message ||
+                  "Ask your recruiter to add your job title under Organization Setup → Role ladders and Career Roadmap."}
               </div>
             </div>
           )}
@@ -1462,14 +1802,16 @@ function CareerTab() {
                 <div key={rung.title}>
                   {idx > 0 && <div className={styles.ladderConnector} />}
                   <div
-                    className={`${styles.ladderRung} ${rung.is_current ? styles.ladderCurrent : ""} ${rung.is_next_step ? styles.ladderNext : ""}`}
+                    className={`${styles.ladderRung} ${rung.is_current ? styles.ladderCurrent : ""}`}
                   >
                     <div className={styles.ladderRungMarker}>{idx + 1}</div>
                     <div className={styles.ladderRungBody}>
                       <div className={styles.ladderRungTitle}>
                         {rung.title}
                         {rung.is_current && <span className={`${styles.ladderRungTag} ${styles.current}`}>You are here</span>}
-                        {rung.is_next_step && <span className={`${styles.ladderRungTag} ${styles.next}`}>Next step</span>}
+                        {rung.is_next_step && !rung.is_current && (
+                          <span className={`${styles.ladderRungTag} ${styles.next}`}>Promotes to</span>
+                        )}
                       </div>
                       {rung.description && <div className={styles.ladderRungMeta}>{rung.description}</div>}
                       {(rung.missing_skills?.length > 0 || rung.missing_certifications?.length > 0) && (
@@ -1478,19 +1820,11 @@ function CareerTab() {
                             <span key={s} className={styles.missingSkillTag}>{s}</span>
                           ))}
                           {(rung.missing_certifications || []).slice(0, 4).map((c) => (
-                            <span key={c} className={styles.missingSkillTag}>{c}</span>
+                            <span key={typeof c === "string" ? c : c.title || c.name} className={styles.missingSkillTag}>
+                              {typeof c === "string" ? c : c.title || c.name}
+                            </span>
                           ))}
                         </div>
-                      )}
-                      {!rung.is_current && (
-                        <button
-                          type="button"
-                          className={styles.smallBtn}
-                          style={{ marginTop: 8 }}
-                          onClick={() => handleSetGoal(rung.title)}
-                        >
-                          Build a learning path toward this
-                        </button>
                       )}
                     </div>
                     <div className={styles.ladderRungProgress}>
@@ -1511,9 +1845,10 @@ function CareerTab() {
             <div className={dashStyles.sectionHeadLeft}>
               <span className={`${dashStyles.bar} ${dashStyles.green}`} />
               <div>
-                <div className={dashStyles.sectionTitle}>Designation requirements</div>
+                <div className={dashStyles.sectionTitle}>Promotion checklist</div>
                 <p className={dashStyles.sectionDesc}>
-                  What you need to complete to become eligible for {savedGoal}.
+                  Courses, skills, and certifications from your Career Roadmap toward {savedGoal}.
+                  These are designation requirements for eligibility — complete them in My Learning and get certificates verified.
                 </p>
               </div>
             </div>
@@ -1527,7 +1862,11 @@ function CareerTab() {
             </button>
           </div>
           <div className={dashStyles.sectionBody}>
-            {designationReadiness && (
+            {designationLoading && <p className={styles.inlineNote}>Loading checklist…</p>}
+            {designationReadiness?.message && (designationReadiness.total_count ?? 0) === 0 && (
+              <p className={styles.inlineNote}>{designationReadiness.message}</p>
+            )}
+            {designationReadiness && (designationReadiness.total_count ?? 0) > 0 && (
               <>
                 <div className={styles.readinessWrap} style={{ marginBottom: 16 }}>
                   <ReadinessRing percentage={designationReadiness.readiness_percent ?? 0} />
@@ -1536,11 +1875,12 @@ function CareerTab() {
                       {designationReadiness.eligible ? (
                         <span style={{ color: "var(--green)" }}>Eligible</span>
                       ) : (
-                        <span style={{ color: "var(--red)" }}>Not eligible</span>
+                        <span style={{ color: "var(--red)" }}>Not eligible yet</span>
                       )}
                     </div>
                     <div className={styles.inlineNote}>
                       {designationReadiness.completed_count ?? 0} of {designationReadiness.total_count ?? 0} requirements completed · {designationReadiness.missing_count ?? 0} remaining
+                      {designationReadiness.source === "career_assignment" ? " · From your org career path" : ""}
                     </div>
                   </div>
                 </div>
@@ -1565,9 +1905,6 @@ function CareerTab() {
                 </div>
               </>
             )}
-            {!designationReadiness && !designationLoading && (
-              <p className={styles.inlineNote}>Click Refresh to load your designation requirements.</p>
-            )}
           </div>
         </div>
       )}
@@ -1577,44 +1914,46 @@ function CareerTab() {
           <div className={dashStyles.sectionHeadLeft}>
             <span className={`${dashStyles.bar} ${dashStyles.orange}`} />
             <div>
-              <div className={dashStyles.sectionTitle}>Career goal &amp; skill gap</div>
+              <div className={dashStyles.sectionTitle}>Roadmap skills for your next role</div>
               <p className={dashStyles.sectionDesc}>
-                Recruiter Knowledge Base defines required skills &amp; certs for roles like Software Engineer.
-                Close the gaps below to raise readiness.
+                {nextRole
+                  ? `Only skills and certs from your Organization Setup Career Roadmap toward ${nextRole} — not generic AI suggestions.`
+                  : "Only skills from your official Career Roadmap."}
               </p>
             </div>
           </div>
+          <button type="button" className={styles.smallBtn} onClick={() => setShowExplore((v) => !v)}>
+            {showExplore ? "Hide explore" : "Explore another role"}
+          </button>
         </div>
         <div className={dashStyles.sectionBody}>
-          <div className={styles.goalRow}>
-            <input
-              className={styles.goalInput}
-              placeholder="e.g. Senior Full Stack Developer"
-              value={goal}
-              onChange={(e) => setGoal(e.target.value)}
-            />
-            <button type="button" className={dashStyles.btnPrimary} onClick={() => handleSetGoal()} disabled={gapLoading}>
-              {gapLoading ? "Analyzing…" : "Analyze"}
-            </button>
-          </div>
-          <div className={styles.chipSuggestions}>
-            {(roleMatches.length > 0 ? roleMatches.map((r) => r.role) : CAREER_SUGGESTIONS).map((s) => (
-              <button key={s} type="button" className={styles.chipSuggestion} onClick={() => handleSetGoal(s)}>
-                {s}
-                {roleMatches.find((r) => r.role === s) ? ` · ${Math.round(roleMatches.find((r) => r.role === s).readiness_score)}%` : ""}
+          {showExplore && (
+            <div className={styles.goalRow} style={{ marginBottom: 16 }}>
+              <input
+                className={styles.goalInput}
+                placeholder="Optional: analyze a different title"
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+              />
+              <button type="button" className={dashStyles.btnPrimary} onClick={() => handleSetGoal()} disabled={gapLoading}>
+                {gapLoading ? "Analyzing…" : "Analyze"}
               </button>
-            ))}
-          </div>
+            </div>
+          )}
 
-          {!savedGoal && !gapLoading && <p className={styles.inlineNote}>Set a target role above to see your personalized skill gap and learning path.</p>}
+          {gapLoading && !gap && <p className={styles.inlineNote}>Analyzing your role…</p>}
+          {!savedGoal && !gapLoading && !bootLoading && (
+            <p className={styles.inlineNote}>
+              No career path assigned yet. Ask your recruiter to map your job title in Organization Setup.
+            </p>
+          )}
 
           {gap && (
             <>
               <div className={styles.readinessWrap}>
-                <ReadinessRing percentage={gap.readiness_percentage ?? 0} />
+                <ReadinessRing percentage={gap.readiness_percentage ?? orgAssignment?.readiness_score ?? 0} />
                 <div className={styles.readinessSummary}>
                   {gap.summary}
-                  {gap.cached ? <div className={styles.inlineNote}>Cached analysis — click Analyze after completing path steps</div> : null}
                   {(gap.skill_match_percent != null || gap.certification_match_percent != null) && (
                     <div className={styles.inlineNote}>
                       Skills {gap.skill_match_percent ?? "—"}% · Certs {gap.certification_match_percent ?? "—"}%
@@ -1625,7 +1964,7 @@ function CareerTab() {
               </div>
               {gap.matched_skills?.length > 0 && (
                 <>
-                  <div className={dashStyles.fieldLabel} style={{ marginBottom: 6 }}>Skills you already have</div>
+                  <div className={dashStyles.fieldLabel} style={{ marginBottom: 6 }}>Roadmap skills you already have</div>
                   <div className={styles.missingSkillsRow}>
                     {gap.matched_skills.map((s) => <span key={s} className={styles.matchedSkillTag}>{s}</span>)}
                   </div>
@@ -1633,7 +1972,7 @@ function CareerTab() {
               )}
               {(gap.skill_gaps?.length > 0 || gap.missing_skills?.length > 0) && (
                 <>
-                  <div className={dashStyles.fieldLabel} style={{ marginBottom: 6 }}>Skills to build (priority order)</div>
+                  <div className={dashStyles.fieldLabel} style={{ marginBottom: 6 }}>Roadmap skills still to build</div>
                   <div className={styles.missingSkillsRow}>
                     {(gap.skill_gaps || gap.missing_skills.map((s) => ({ skill: s, priority: "medium" }))).map((g) => (
                       <span key={g.skill || g} className={`${styles.priorityChip} ${styles[g.priority] || styles.medium}`} title={g.reason || ""}>
@@ -1642,6 +1981,13 @@ function CareerTab() {
                     ))}
                   </div>
                 </>
+              )}
+              {gap.source === "career_assignment"
+                && !(gap.skill_gaps?.length || gap.missing_skills?.length)
+                && !(gap.missing_certifications || []).length && (
+                <p className={styles.inlineNote} style={{ marginTop: 8 }}>
+                  No remaining roadmap skill gaps — finish any open courses on the checklist above.
+                </p>
               )}
               {(gap.missing_certifications || []).length > 0 && (
                 <>
@@ -1665,12 +2011,15 @@ function CareerTab() {
             <div className={dashStyles.sectionHeadLeft}>
               <span className={`${dashStyles.bar} ${dashStyles.navy}`} />
               <div>
-                <div className={dashStyles.sectionTitle}>Your learning path</div>
+                <div className={dashStyles.sectionTitle}>Your Career Roadmap courses</div>
                 <p className={dashStyles.sectionDesc}>
                   Toward: {path.target_role}
                   {path.progress_percent != null ? ` · ${path.progress_percent}% complete` : ""}
-                  {path.estimated_total_hours ? ` · ~${path.estimated_total_hours}h` : ""}
-                  {" · "}Start each step, finish in My Learning (or upload certs), then Analyze again
+                  {path.source === "career_assignment"
+                    ? " · Same courses as your promotion checklist and My Learning"
+                    : path.estimated_total_hours
+                      ? ` · ~${path.estimated_total_hours}h`
+                      : ""}
                 </p>
               </div>
             </div>
@@ -1745,7 +2094,8 @@ function CareerTab() {
             <div>
               <div className={dashStyles.sectionTitle}>Course recommendations</div>
               <p className={dashStyles.sectionDesc}>
-                Extra picks ranked from your skill gaps and learning-path steps (not random catalog popularity)
+                {recs?.basis ||
+                  "About 10 new courses mixed across providers — matched to your skills to raise proficiency."}
               </p>
             </div>
           </div>
@@ -1754,19 +2104,39 @@ function CareerTab() {
           </button>
         </div>
         <div className={dashStyles.sectionBody}>
+          {recSourceLabel && !recsLoading && (
+            <p className={styles.inlineNote} style={{ marginBottom: 12 }}>
+              Source: {recSourceLabel}
+            </p>
+          )}
           {recsLoading && <p className={styles.inlineNote}>Thinking…</p>}
           {!recsLoading && (!recs?.recommendations || recs.recommendations.length === 0) && (
             <div className={dashStyles.emptyState}>
               <div className={dashStyles.emptyTitle}>No recommendations yet</div>
-              <div className={dashStyles.emptySub}>Set a career goal and add skills, or refresh after Analyze.</div>
+              <div className={dashStyles.emptySub}>
+                Finish a few roadmap courses or refresh after your skill profile has gaps to close.
+              </div>
             </div>
           )}
           <div className={styles.aiGrid}>
-            {(recs?.recommendations || []).map((course) => (
+            {(recs?.recommendations || []).map((course) => {
+              const providerLabel = (
+                course.provider
+                || (course.source === "microsoft_learn" ? "Microsoft Learn"
+                  : course.source === "coursera" ? "Coursera"
+                  : course.source === "org_framework" ? "Career Roadmap"
+                  : course.source === "managed_learning" ? "Managed learning"
+                  : course.source)
+                || "Catalog"
+              );
+              return (
               <div key={course.uid} className={styles.aiCard}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <span className={`${styles.courseType} ${course.type === "certification" ? styles.certification : ""}`}>
                     {course.type === "learningPath" ? "Learning Path" : course.type === "certification" ? "Certification" : "Module"}
+                  </span>
+                  <span className={styles.providerBadge} title="Learning provider">
+                    {providerLabel}
                   </span>
                   {course.priority && (
                     <span className={`${styles.priorityChip} ${styles[course.priority] || ""}`}>
@@ -1777,7 +2147,7 @@ function CareerTab() {
                 <div className={styles.courseTitle} style={{ marginTop: 8 }}>{course.title}</div>
                 <div className={styles.courseMeta} style={{ marginTop: 6 }}>
                   {(course.levels || [])[0] && <span className={styles.levelBadge}>{course.levels[0]}</span>}
-                  <span>{course.duration_minutes} min</span>
+                  {course.duration_minutes != null && <span>{course.duration_minutes} min</span>}
                 </div>
                 <div className={styles.aiReason}>
                   <div className={styles.aiReasonLabel}>Why this course</div>
@@ -1787,7 +2157,8 @@ function CareerTab() {
                   <a href={course.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtnPrimary}>Start Learning</a>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1842,21 +2213,26 @@ function CertificatesTab({ onChange }) {
 
   async function handleUpload(e) {
     e.preventDefault();
-    if (!file || !form.course_title.trim()) {
-      toast.error("Add a course title and select a file.");
+    const link = form.source_url?.trim() || "";
+    if (!form.course_title.trim() || !link) {
+      toast.error("Add a course title and certificate link (required for recruiter verification).");
+      return;
+    }
+    if (!/^https?:\/\//i.test(link)) {
+      toast.error("Certificate link must start with http:// or https://");
       return;
     }
     const token = localStorage.getItem("access_token");
     const fd = new FormData();
-    fd.append("file", file);
+    if (file) fd.append("file", file);
     fd.append("course_title", form.course_title.trim());
+    fd.append("source_url", link);
     if (form.completion_date) fd.append("completion_date", form.completion_date);
     if (form.learning_hours) fd.append("learning_hours", form.learning_hours);
-    if (form.source_url?.trim()) fd.append("source_url", form.source_url.trim());
     setSaving(true);
     try {
       await uploadCertificate(token, fd);
-      toast.success("Certificate submitted for recruiter verification.");
+      toast.success("Certificate submitted — course stays in progress until your recruiter verifies it.");
       setForm({ course_title: "", completion_date: "", learning_hours: "", source_url: "" });
       setFile(null);
       load();
@@ -1947,9 +2323,25 @@ function CertificatesTab({ onChange }) {
       </div>
       <div className={dashStyles.sectionBody}>
         <form className={styles.uploadCertForm} onSubmit={handleUpload}>
-          <label>
+          <div className={styles.uploadCertFormHead}>
+            <strong>Upload a completion certificate</strong>
+            <p>
+              Certificate link is required for recruiter verification. Attach a PDF or image only if you want.
+            </p>
+          </div>
+          <label className={styles.fieldWide}>
             Course / certification title
             <input value={form.course_title} onChange={(e) => setForm((f) => ({ ...f, course_title: e.target.value }))} required />
+          </label>
+          <label className={styles.fieldWide}>
+            Certificate link <span className={styles.req}>*</span>
+            <input
+              type="url"
+              placeholder="https://linkedin.com/learning/certificates/…"
+              value={form.source_url || ""}
+              onChange={(e) => setForm((f) => ({ ...f, source_url: e.target.value }))}
+              required
+            />
           </label>
           <label>
             Completion date
@@ -1957,26 +2349,23 @@ function CertificatesTab({ onChange }) {
           </label>
           <label>
             Learning hours
-            <input type="number" min="0" step="0.5" value={form.learning_hours} onChange={(e) => setForm((f) => ({ ...f, learning_hours: e.target.value }))} />
+            <input type="number" min="0" step="0.5" placeholder="e.g. 2" value={form.learning_hours} onChange={(e) => setForm((f) => ({ ...f, learning_hours: e.target.value }))} />
           </label>
-          <FileUploadField
-            caption="Certificate file"
-            accept=".pdf,.png,.jpg,.jpeg"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            required
-          />
-          <label>
-            Public certificate URL (optional)
-            <input
-              type="url"
-              placeholder="https://…"
-              value={form.source_url || ""}
-              onChange={(e) => setForm((f) => ({ ...f, source_url: e.target.value }))}
+          <div className={styles.fieldWide}>
+            <FileUploadField
+              caption="Certificate file (optional)"
+              accept=".pdf,.png,.jpg,.jpeg"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
-          </label>
-          <button type="submit" className={dashStyles.btnPrimary} disabled={saving} style={{ gridColumn: "1 / -1", justifySelf: "start" }}>
-            {saving ? "Uploading…" : "Submit for verification"}
-          </button>
+          </div>
+          <p className={styles.uploadCertHint}>
+            After approval, skills and certifications from the course are added to your profile.
+          </p>
+          <div className={styles.uploadCertFormActions}>
+            <button type="submit" className={styles.uploadCertSubmit} disabled={saving}>
+              {saving ? "Submitting…" : "Send to recruiter"}
+            </button>
+          </div>
         </form>
 
         {!loading && certificates.length === 0 && (
