@@ -133,7 +133,6 @@
 
 .main {
   composes: main from "../shared/shell/shell-base.module.css";
-  margin: 28px 28px 44px 28px;
 }
 .topbar {
   position: sticky; top: 0; z-index: 8; background: rgba(242, 247, 253, .82); backdrop-filter: saturate(160%) blur(18px);
@@ -589,7 +588,6 @@
   .topbar { padding: 14px 16px; }
   .topbarTitle { font-size: 17px; }
   .searchWrap { display: none; }
-  .main { padding: 16px 14px 36px 14px; }
   .content { padding: 18px 16px 40px 16px; }
   .hero { padding: 22px 20px; border-radius: 16px; }
   .hero h1 { font-size: 20px; }
