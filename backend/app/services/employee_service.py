@@ -663,8 +663,7 @@ class EmployeeService:
         temp_password = temp_password_container[0]
 
         if company_email:
-            # Notify the new employee that their company email is live and
-            # that their employee account credentials are ready.
+            # Notify the new employee that their company email is live.
             try:
                 await self._notify_employee(
                     employee_doc,
@@ -679,26 +678,10 @@ class EmployeeService:
                 )
             except Exception as exc:
                 logger.warning("Company email notification failed: %s", exc, exc_info=True)
-            # Single credentials email — Employee ID, company email, and the
-            # temporary password are sent together in one message. No separate
-            # "company email assigned" / "first-time password" emails.
-            if temp_password:
-                try:
-                    email_service.send_to_both(
-                        employee_doc.get("email"),
-                        company_email,
-                        email_service.send_first_time_password,
-                        employee_doc.get("full_name") or "Team member",
-                        temp_password,
-                        organization_id=employee_doc.get("organization_id"),
-                        employee_id=employee_id,
-                        company_email=company_email,
-                    )
-                except Exception as exc:
-                    logger.warning("Employee credentials email send failed: %s", exc, exc_info=True)
 
         await it_provisioning_service.mark_applied(it_doc["_id"], employee_id)
 
+        # Single consolidated email with Employee ID, company email, and temporary password
         email_sent = False
         try:
             email_service.send_employee_welcome(
@@ -708,6 +691,8 @@ class EmployeeService:
                 job_title=employee_doc.get("job_title") or "Team Member",
                 department=employee_doc.get("department") or "—",
                 organization_id=candidate.get("organization_id"),
+                company_email=company_email,
+                temp_password=temp_password,
             )
             email_sent = True
         except Exception as exc:

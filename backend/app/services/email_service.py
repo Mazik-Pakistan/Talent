@@ -469,8 +469,35 @@ class EmailService:
         job_title: str,
         department: str,
         organization_id: str | None = None,
+        company_email: str | None = None,
+        temp_password: str | None = None,
     ) -> None:
         subject = "Congratulations — Welcome to TalentAI"
+        credentials_block = ""
+        if temp_password:
+            credentials_block = f"""
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:12px;margin:0 0 24px;">
+  <tr>
+    <td style="padding:20px 22px;">
+      <p style="margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Company email</p>
+      <p style="margin:0 0 14px;color:#1a1a2e;font-size:16px;font-weight:700;word-break:break-all;">
+        {escape(company_email or "")}
+      </p>
+      <p style="margin:0 0 6px;color:#6b7a8f;font-size:11px;font-weight:700;
+                text-transform:uppercase;letter-spacing:1.2px;">Temporary password</p>
+      <p style="margin:0;font-size:20px;font-weight:800;color:#1e3a5f;font-family:Consolas,Menlo,monospace;">
+        {escape(temp_password)}
+      </p>
+    </td>
+  </tr>
+</table>
+<p style="margin:0 0 16px;color:#8a9bb0;font-size:13px;line-height:1.6;">
+  After signing in you will be asked to create your own password. That single
+  password covers both your personal and company email logins.
+</p>
+"""
         body = f"""
 <p style="margin:0 0 16px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   Your onboarding has been approved and you are now an official employee
@@ -495,6 +522,7 @@ class EmailService:
     </td>
   </tr>
 </table>
+{credentials_block}
 <p style="margin:0 0 12px;color:#1a1a2e;font-size:15px;line-height:1.7;">
   Sign in to TalentAI and choose the <strong>Employee</strong> role to open
   your employee dashboard.
