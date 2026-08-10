@@ -328,7 +328,8 @@ function DocumentsPageContent() {
                   <div>
                     <div className={styles.sectionTitle}>My documents</div>
                     <div className={styles.sectionDesc}>
-                      Organize files by category, download when needed, and upload updates from one place.
+                      Upload identity, education, and supporting files. Each new upload stays Pending review until a
+                      recruiter verifies it.
                     </div>
                   </div>
                 </div>

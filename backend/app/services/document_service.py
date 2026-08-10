@@ -51,6 +51,15 @@ def _should_run_ocr(*, doc_type: str, purpose: str | None = None) -> bool:
     if purpose_normalized in {"resume", "education_cert", "government_doc"}:
         return True
     return False
+
+
+def _is_identity_upload(*, doc_type: str, purpose: str | None = None) -> bool:
+    """CNIC/passport must match type; education/resume can stay pending for manual review."""
+    normalized = (doc_type or "").strip().lower()
+    purpose_normalized = (purpose or "").strip().lower()
+    return normalized in {"cnic", "passport"} or purpose_normalized in {"government_doc", "identity"}
+
+
 def _extensions_for(category: str, doc_type: str) -> set[str]:
     if doc_type == "resume" or category == "other":
         return RESUME_EXTENSIONS
@@ -328,6 +337,8 @@ class DocumentService:
                     or 0.0
                 )
 
+                identity_hard = _is_identity_upload(doc_type=doc_type, purpose=purpose)
+
                 if not raw_text.strip():
                     ocr_result = {
                         "status": "failed",
@@ -342,8 +353,13 @@ class DocumentService:
                         "accepted": False,
                         "rejection_message": "Could not read text from this document. Please upload a clearer scan.",
                     }
-                    doc_status = "reupload_required"
-                    verification_status = "reupload_required"
+                    # Education/resume stay visible for recruiter review; identity must be readable.
+                    if identity_hard:
+                        doc_status = "reupload_required"
+                        verification_status = "reupload_required"
+                    else:
+                        doc_status = "pending_verification"
+                        verification_status = "pending"
                     mismatch_reasons: list = []
                 elif not validation["accepted"]:
                     ocr_result = {
@@ -359,8 +375,13 @@ class DocumentService:
                         "accepted": False,
                         "rejection_message": validation["rejection_message"],
                     }
-                    doc_status = "reupload_required"
-                    verification_status = "rejected"
+                    if identity_hard:
+                        doc_status = "reupload_required"
+                        verification_status = "rejected"
+                    else:
+                        # Soft keep: file is stored; recruiter verifies manually.
+                        doc_status = "pending_verification"
+                        verification_status = "pending"
                     mismatch_reasons = []
                 else:
                     fields = parsed.get("fields") or {}
@@ -398,6 +419,7 @@ class DocumentService:
                     exc,
                 )
                 raw_text = ""
+                identity_hard = _is_identity_upload(doc_type=doc_type, purpose=purpose)
                 ocr_result = {
                     "status": "failed",
                     "confidence": 0.0,
@@ -412,8 +434,12 @@ class DocumentService:
                     "rejection_message": "Extraction failed. Please try again or fill fields manually.",
                     "error": str(exc),
                 }
-                doc_status = "reupload_required"
-                verification_status = "reupload_required"
+                if identity_hard:
+                    doc_status = "reupload_required"
+                    verification_status = "reupload_required"
+                else:
+                    doc_status = "pending_verification"
+                    verification_status = "pending"
                 mismatch_reasons = []
             finally:
                 if temp_local_path:
@@ -440,8 +466,12 @@ class DocumentService:
             await database.documents.update_one({"_id": doc["_id"]}, {"$set": update})
             doc.update(update)
 
-            # A failed/wrong replacement must not hide the last valid document.
-            if ocr_result.get("status") == "completed":
+            # Hard-fail only identity mismatches/unreadable scans — hide the bad upload
+            # so the last good CNIC stays visible. Soft-kept education/resume replace previous.
+            keep_upload = ocr_result.get("status") == "completed" or not _is_identity_upload(
+                doc_type=doc_type, purpose=purpose
+            )
+            if keep_upload:
                 if previous:
                     previous_update = {
                         "is_active": False,
@@ -531,12 +561,13 @@ class DocumentService:
                 {"$set": previous_update},
             )
 
+        # Notify when the uploaded file remains active (completed OCR or soft-kept education/resume).
+        should_notify = bool(doc.get("is_active", True))
         await self._notify_recruiter_owner(
             current_user,
             doc_type,
             category,
-            requested_reupload=requested_reupload
-            and (not needs_ocr or (doc.get("ocr_result") or {}).get("status") == "completed"),
+            requested_reupload=requested_reupload and should_notify,
             document_id=str(doc["_id"]),
         )
         await database.audit_logs.insert_one(
