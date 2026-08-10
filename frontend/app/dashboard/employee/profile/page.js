@@ -5,7 +5,6 @@ import { useRouter, usePathname } from "next/navigation";
 import { toast } from "react-toastify";
 
 import RequireAccess from "@/components/RequireAccess";
-import Toast from "@/components/Toast";
 import ProfilePhotoEditor from "@/components/ProfilePhotoEditor";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SidebarBrand from "@/components/SidebarBrand";
@@ -614,7 +613,6 @@ function EmployeeProfileContent() {
 
   return (
     <div className={dashStyles.root} data-app-shell>
-      <Toast toast={toast} onDismiss={() => setToast(null)} />
 
       <div className={dashStyles.app}>
         <aside className={`${dashStyles.sidebar} ${sidebarCollapsed ? dashStyles.collapsed : ""}`}>
@@ -869,14 +867,8 @@ function EmployeeProfileContent() {
                           hint={BLOOD_GROUP_HINT}
                           onChange={(e) => {
                             const next = normalizeBloodGroup(e.target.value);
-                            if (!needsBloodGroupConfirmation(next, personalDraft.blood_group)) {
-                              setPersonalDraft({ ...personalDraft, blood_group: next });
-                              return;
-                            }
-                            setBloodGroupConfirm({
-                              value: next,
-                              previous: normalizeBloodGroup(personalDraft.blood_group),
-                            });
+                            setPersonalDraft({ ...personalDraft, blood_group: next });
+                            clearFieldError("blood_group");
                           }}
                         />
                         <Field label="National ID" value={personalDraft.national_id} error={fieldErrors.national_id} onChange={(e) => { setPersonalDraft({ ...personalDraft, national_id: e.target.value }); clearFieldError("national_id"); }} required />
