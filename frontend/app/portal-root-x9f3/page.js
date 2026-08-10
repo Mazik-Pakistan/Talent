@@ -7,6 +7,7 @@ import "react-toastify/dist/ReactToastify.css";
 
 import { getApiErrorMessage, login, persistLoginSession } from "@/services/authService";
 import { LOGO_URL } from "@/lib/logo";
+import PasswordToggle from "@/components/PasswordToggle";
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic";
 
@@ -209,14 +210,11 @@ function SuperAdminLoginForm() {
                   placeholder="••••••••"
                   required
                 />
-                <button
-                  type="button"
+                <PasswordToggle
+                  visible={showPassword}
+                  onToggle={() => setShowPassword((v) => !v)}
                   className={styles.toggleButton}
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </button>
+                />
               </span>
               {touched.password && errors.password && (
                 <small className={styles.fieldError} id="password-error">⚠ {errors.password}</small>

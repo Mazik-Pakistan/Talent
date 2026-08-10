@@ -376,12 +376,19 @@ function RecruiterCandidatesPageContent() {
   async function handleNegoAccept(offer) {
     const accessToken = localStorage.getItem("access_token");
     if (!accessToken) return;
+    const responseNote = (negoNotes[offer.id] || "").trim();
+    if (!responseNote) {
+      toast.error("Please enter a clarification response before sending.", {
+        toastId: `clarification-note-required-${offer.id}`,
+      });
+      return;
+    }
     setNegoBusyId(offer.id);
     setNegoBusyAction("accept");
     try {
       const data = await acceptOfferNegotiation(
         offer.id,
-        { recruiter_note: (negoNotes[offer.id] || "").trim() || null },
+        { recruiter_note: responseNote },
         accessToken
       );
       toast.success(data.message || "Clarification response sent to the candidate.", {

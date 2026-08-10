@@ -17,8 +17,19 @@ import {
   listItServiceRequests,
   sendItServiceRequest,
 } from "@/services/authService";
+import { parseFieldErrors } from "@/lib/apiFieldErrors";
 import { Settings, Wrench, ChevronDown, ChevronUp, Users, Search as SearchIcon } from "lucide-react";
 import s from "./it.module.css";
+
+const inputErrorStyle = { borderColor: "#dc2626" };
+const fieldErrorStyle = {
+  display: "block",
+  marginTop: 4,
+  fontSize: 12,
+  fontWeight: 600,
+  color: "#dc2626",
+  lineHeight: 1.4,
+};
 
 const STATUS_LABELS = {
   draft: "Waiting for HR",
@@ -257,6 +268,8 @@ function RecruiterItHubPageContent() {
   const [sendTarget, setSendTarget] = useState(null);
   const [sendItEmail, setSendItEmail] = useState("");
   const [cancelTarget, setCancelTarget] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [sendErrors, setSendErrors] = useState({});
   const [form, setForm] = useState({
     employee_id: "",
     request_type: "replacement",
@@ -301,10 +314,11 @@ function RecruiterItHubPageContent() {
   async function handleCreate() {
     const token = localStorage.getItem("access_token");
     if (!token || sending) return;
-    if (!form.employee_id || !form.title.trim()) {
-      toast.error("Pick an employee and give the request a title.");
-      return;
-    }
+    const errors = {};
+    if (!form.employee_id) errors.employee_id = "Select an employee.";
+    if (!form.title.trim()) errors.title = "What's needed is required.";
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     setSending(true);
     try {
       const payload = {
@@ -315,12 +329,25 @@ function RecruiterItHubPageContent() {
         it_manager_email: form.it_manager_email.trim() || undefined,
       };
       const result = await createItServiceRequest(payload, token);
-      toast.success(result.message || "IT request created.");
+      toast.success(result.message || "IT request created successfully.");
+      setFieldErrors({});
       setShowCreate(false);
       setForm({ employee_id: "", request_type: "replacement", title: "", description: "", it_manager_email: "" });
       await Promise.all([loadRequests(), loadOfficers()]);
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not create the IT request."));
+      const { fieldErrors: fe, general } = parseFieldErrors(err, [
+        "employee_id",
+        "request_type",
+        "title",
+        "description",
+        "it_manager_email",
+      ]);
+      setFieldErrors(fe);
+      if (general) {
+        toast.error(general);
+      } else if (Object.keys(fe).length === 0) {
+        toast.error(getApiErrorMessage(err, "Failed to submit IT request. Please try again."));
+      }
     } finally {
       setSending(false);
     }
@@ -329,22 +356,29 @@ function RecruiterItHubPageContent() {
   async function handleSend() {
     const token = localStorage.getItem("access_token");
     if (!token || !sendTarget) return;
-    if (!sendItEmail.trim()) {
-      toast.error("Enter the IT officer email.");
-      return;
-    }
+    const errors = {};
+    if (!sendItEmail.trim()) errors.it_manager_email = "Enter the IT officer email.";
+    setSendErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     setSending(true);
     try {
       await sendItServiceRequest(
         { request_id: sendTarget.request_id, it_manager_email: sendItEmail.trim() },
         token
       );
-      toast.success("IT request sent.");
+      toast.success("Request sent to IT successfully.");
+      setSendErrors({});
       setSendTarget(null);
       setSendItEmail("");
       await Promise.all([loadRequests(), loadOfficers()]);
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not send the IT request."));
+      const { fieldErrors: fe, general } = parseFieldErrors(err, ["request_id", "it_manager_email", "note"]);
+      setSendErrors(fe);
+      if (general) {
+        toast.error(general);
+      } else if (Object.keys(fe).length === 0) {
+        toast.error(getApiErrorMessage(err, "Could not send the IT request."));
+      }
     } finally {
       setSending(false);
     }
@@ -368,6 +402,7 @@ function RecruiterItHubPageContent() {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setForm({ employee_id: "", request_type: "replacement", title: "", description: "", it_manager_email: "" });
+    setFieldErrors({});
     setShowCreate(true);
     try {
       const data = await listEmployees(token, { status: "active" });
@@ -627,7 +662,7 @@ function RecruiterItHubPageContent() {
                               {!isOpen && r.it_manager_email && <div className={s.requestIT}>→ {r.it_manager_email}</div>}
                             </div>
                             <div className={s.requestActions} onClick={(e) => e.stopPropagation()}>
-                              {canSend && <button type="button" className="btn btnPrimary" style={{ fontSize: 11, padding: "5px 10px", minHeight: 28, borderRadius: 7 }} onClick={() => { setSendTarget(r); setSendItEmail(r.it_manager_email || ""); }}>Send to IT</button>}
+                              {canSend && <button type="button" className="btn btnPrimary" style={{ fontSize: 11, padding: "5px 10px", minHeight: 28, borderRadius: 7 }} onClick={() => { setSendErrors({}); setSendTarget(r); setSendItEmail(r.it_manager_email || ""); }}>Send to IT</button>}
                               {canCancel && <button type="button" className="btn btnGhost" style={{ fontSize: 11, padding: "5px 8px", minHeight: 28 }} onClick={() => setCancelTarget(r)}>Cancel</button>}
                               <span style={{ color: "var(--text-faint)" }}>{isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
                             </div>
@@ -680,7 +715,12 @@ function RecruiterItHubPageContent() {
                 className={styles.input}
                 name="employee_id"
                 value={form.employee_id}
-                onChange={(e) => setForm((f) => ({ ...f, employee_id: e.target.value }))}
+                aria-invalid={Boolean(fieldErrors.employee_id)}
+                style={fieldErrors.employee_id ? inputErrorStyle : undefined}
+                onChange={(e) => {
+                  setFieldErrors((f) => (f.employee_id ? { ...f, employee_id: undefined } : f));
+                  setForm((f) => ({ ...f, employee_id: e.target.value }));
+                }}
               >
                 <option value="">Select employee…</option>
                 {filteredEmployees.map((e) => (
@@ -689,6 +729,7 @@ function RecruiterItHubPageContent() {
                   </option>
                 ))}
               </select>
+              {fieldErrors.employee_id && <small style={fieldErrorStyle} role="alert">{fieldErrors.employee_id}</small>}
             </label>
             <label className={styles.field}>
               <span className={styles.label}>Type</span>
@@ -696,7 +737,12 @@ function RecruiterItHubPageContent() {
                 className={styles.input}
                 name="request_type"
                 value={form.request_type}
-                onChange={(e) => setForm((f) => ({ ...f, request_type: e.target.value }))}
+                aria-invalid={Boolean(fieldErrors.request_type)}
+                style={fieldErrors.request_type ? inputErrorStyle : undefined}
+                onChange={(e) => {
+                  setFieldErrors((f) => (f.request_type ? { ...f, request_type: undefined } : f));
+                  setForm((f) => ({ ...f, request_type: e.target.value }));
+                }}
               >
                 {Object.entries(TYPE_LABELS).map(([k, v]) => (
                   <option key={k} value={k}>
@@ -704,6 +750,7 @@ function RecruiterItHubPageContent() {
                   </option>
                 ))}
               </select>
+              {fieldErrors.request_type && <small style={fieldErrorStyle} role="alert">{fieldErrors.request_type}</small>}
             </label>
             <label className={styles.field}>
               <span className={styles.label}>What&apos;s needed</span>
@@ -711,9 +758,15 @@ function RecruiterItHubPageContent() {
                 className={styles.input}
                 name="it_request_title"
                 value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                aria-invalid={Boolean(fieldErrors.title)}
+                style={fieldErrors.title ? inputErrorStyle : undefined}
+                onChange={(e) => {
+                  setFieldErrors((f) => (f.title ? { ...f, title: undefined } : f));
+                  setForm((f) => ({ ...f, title: e.target.value }));
+                }}
                 placeholder="e.g. New laptop — current one is not working"
               />
+              {fieldErrors.title && <small style={fieldErrorStyle} role="alert">{fieldErrors.title}</small>}
             </label>
             <label className={styles.field}>
               <span className={styles.label}>Details (optional)</span>
@@ -722,9 +775,15 @@ function RecruiterItHubPageContent() {
                 name="it_request_description"
                 rows={3}
                 value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                aria-invalid={Boolean(fieldErrors.description)}
+                style={fieldErrors.description ? inputErrorStyle : undefined}
+                onChange={(e) => {
+                  setFieldErrors((f) => (f.description ? { ...f, description: undefined } : f));
+                  setForm((f) => ({ ...f, description: e.target.value }));
+                }}
                 placeholder="What's wrong and what does IT need to know?"
               />
+              {fieldErrors.description && <small style={fieldErrorStyle} role="alert">{fieldErrors.description}</small>}
             </label>
             <label className={styles.field}>
               <span className={styles.label}>IT officer email (optional — leave blank to save as draft)</span>
@@ -733,9 +792,15 @@ function RecruiterItHubPageContent() {
                 name="it_manager_email"
                 type="email"
                 value={form.it_manager_email}
-                onChange={(e) => setForm((f) => ({ ...f, it_manager_email: e.target.value }))}
+                aria-invalid={Boolean(fieldErrors.it_manager_email)}
+                style={fieldErrors.it_manager_email ? inputErrorStyle : undefined}
+                onChange={(e) => {
+                  setFieldErrors((f) => (f.it_manager_email ? { ...f, it_manager_email: undefined } : f));
+                  setForm((f) => ({ ...f, it_manager_email: e.target.value }));
+                }}
                 placeholder="it.support@company.com"
               />
+              {fieldErrors.it_manager_email && <small style={fieldErrorStyle} role="alert">{fieldErrors.it_manager_email}</small>}
             </label>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
               <button type="button" className={styles.secondaryButton} onClick={() => setShowCreate(false)}>
@@ -774,9 +839,15 @@ function RecruiterItHubPageContent() {
               <input
                 type="email"
                 value={sendItEmail}
-                onChange={(e) => setSendItEmail(e.target.value)}
+                aria-invalid={Boolean(sendErrors.it_manager_email)}
+                style={sendErrors.it_manager_email ? inputErrorStyle : undefined}
+                onChange={(e) => {
+                  setSendErrors((f) => (f.it_manager_email ? { ...f, it_manager_email: undefined } : f));
+                  setSendItEmail(e.target.value);
+                }}
                 placeholder="it.support@company.com"
               />
+              {sendErrors.it_manager_email && <small style={fieldErrorStyle} role="alert">{sendErrors.it_manager_email}</small>}
             </label>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
               <button type="button" className={styles.secondaryButton} onClick={() => setSendTarget(null)}>

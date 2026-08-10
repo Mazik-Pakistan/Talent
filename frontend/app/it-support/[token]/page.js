@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "react-toastify";
 
 import {
   fulfillItServiceRequestPublic,
@@ -114,6 +115,7 @@ export default function ItSupportPublicPage() {
         fulfillment_note: fulfillmentNote.trim() || undefined,
         serial_number: serialNumber.trim() || undefined,
       });
+      toast.success("Request resolved successfully.");
       await load();
     } catch (err) {
       setError(getApiErrorMessage(err, "Could not mark this request as fulfilled."));

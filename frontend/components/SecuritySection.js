@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 
+import PasswordToggle from "@/components/PasswordToggle";
 import { changePassword, clearLocalSession, getApiErrorMessage } from "@/services/authService";
 
 const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])(?!.*\s).{8,}$/;
@@ -14,12 +14,12 @@ export default function SecuritySection() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -95,32 +95,22 @@ export default function SecuritySection() {
     boxSizing: "border-box",
   };
   const inputFocus = { borderColor: "#38a2ff", boxShadow: "0 0 0 3px rgb(56 162 255 / .16)" };
-  const eyeBtn = {
+  const toggleStyle = {
     position: "absolute",
-    right: 10,
-    background: "none",
-    border: "none",
-    padding: 0,
-    cursor: "pointer",
-    color: "#94a3b8",
-    display: "flex",
+    right: 4,
+    top: "50%",
+    transform: "translateY(-50%)",
+    display: "inline-flex",
     alignItems: "center",
+    justifyContent: "center",
+    width: 32,
+    height: 32,
+    border: 0,
+    borderRadius: 6,
+    background: "transparent",
+    color: "#2d6cdf",
+    cursor: "pointer",
   };
-
-  function EyeIcon({ open }) {
-    return open ? (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-        <circle cx="12" cy="12" r="3" />
-      </svg>
-    ) : (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-        <line x1="1" y1="1" x2="23" y2="23" />
-      </svg>
-    );
-  }
 
   return (
     <div style={{ maxWidth: 460 }}>
@@ -147,9 +137,7 @@ export default function SecuritySection() {
               onFocus={(e) => Object.assign(e.target.style, inputFocus)}
               onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
             />
-            <button type="button" style={eyeBtn} onClick={() => setShowCurrent((v) => !v)} tabIndex={-1} aria-label={showCurrent ? "Hide password" : "Show password"}>
-              <EyeIcon open={showCurrent} />
-            </button>
+            <PasswordToggle visible={showCurrent} onToggle={() => setShowCurrent((v) => !v)} style={toggleStyle} />
           </div>
         </label>
 
@@ -168,9 +156,7 @@ export default function SecuritySection() {
               onFocus={(e) => Object.assign(e.target.style, inputFocus)}
               onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
             />
-            <button type="button" style={eyeBtn} onClick={() => setShowNew((v) => !v)} tabIndex={-1} aria-label={showNew ? "Hide password" : "Show password"}>
-              <EyeIcon open={showNew} />
-            </button>
+            <PasswordToggle visible={showNew} onToggle={() => setShowNew((v) => !v)} style={toggleStyle} />
           </div>
         </label>
 
@@ -189,9 +175,7 @@ export default function SecuritySection() {
               onFocus={(e) => Object.assign(e.target.style, inputFocus)}
               onBlur={(e) => Object.assign(e.target.style, { borderColor: "#bed0dc", boxShadow: "none" })}
             />
-            <button type="button" style={eyeBtn} onClick={() => setShowConfirm((v) => !v)} tabIndex={-1} aria-label={showConfirm ? "Hide password" : "Show password"}>
-              <EyeIcon open={showConfirm} />
-            </button>
+            <PasswordToggle visible={showConfirm} onToggle={() => setShowConfirm((v) => !v)} style={toggleStyle} />
           </div>
         </label>
 

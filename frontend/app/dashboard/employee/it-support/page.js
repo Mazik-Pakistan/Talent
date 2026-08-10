@@ -12,6 +12,17 @@ import {
   getApiErrorMessage,
   listMyItServiceRequests,
 } from "@/services/authService";
+import { parseFieldErrors } from "@/lib/apiFieldErrors";
+
+const inputErrorStyle = { borderColor: "#dc2626" };
+const fieldErrorStyle = {
+  display: "block",
+  marginTop: 4,
+  fontSize: 12,
+  fontWeight: 600,
+  color: "#dc2626",
+  lineHeight: 1.4,
+};
 
 const TYPE_LABELS = {
   new_asset: "New asset",
@@ -228,6 +239,7 @@ export default function EmployeeItSupportPage() {
   const [closingId, setClosingId] = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [form, setForm] = useState({ request_type: "replacement", title: "", description: "" });
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const load = useCallback(async () => {
     const token = localStorage.getItem("access_token");
@@ -250,10 +262,10 @@ export default function EmployeeItSupportPage() {
   async function handleCreate() {
     const token = localStorage.getItem("access_token");
     if (!token || submitting) return;
-    if (!form.title.trim()) {
-      toast.error("Tell us what you need.");
-      return;
-    }
+    const errors = {};
+    if (!form.title.trim()) errors.title = "Tell us what you need.";
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     setSubmitting(true);
     try {
       await createMyItServiceRequest(
@@ -264,11 +276,18 @@ export default function EmployeeItSupportPage() {
         },
         token
       );
-      toast.success("Request sent to HR. They will review it and forward to IT.");
+      toast.success("IT request submitted successfully.");
+      setFieldErrors({});
       setForm({ request_type: "replacement", title: "", description: "" });
       await load();
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not submit the request."));
+      const { fieldErrors: fe, general } = parseFieldErrors(err, ["title", "request_type", "description"]);
+      setFieldErrors(fe);
+      if (general) {
+        toast.error(general);
+      } else if (Object.keys(fe).length === 0) {
+        toast.error(getApiErrorMessage(err, "Failed to submit IT request. Please try again."));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -334,10 +353,13 @@ export default function EmployeeItSupportPage() {
                   What do you need?
                 </span>
                 <select
-                  style={inputStyle}
+                  style={{ ...inputStyle, ...(fieldErrors.request_type ? inputErrorStyle : null) }}
                   name="request_type"
                   value={form.request_type}
-                  onChange={(e) => setForm((f) => ({ ...f, request_type: e.target.value }))}
+                  onChange={(e) => {
+                    setFieldErrors((f) => (f.request_type ? { ...f, request_type: undefined } : f));
+                    setForm((f) => ({ ...f, request_type: e.target.value }));
+                  }}
                 >
                   {Object.entries(TYPE_FORM_LABELS).map(([k, v]) => (
                     <option key={k} value={k}>
@@ -345,6 +367,7 @@ export default function EmployeeItSupportPage() {
                     </option>
                   ))}
                 </select>
+                {fieldErrors.request_type && <small style={fieldErrorStyle} role="alert">{fieldErrors.request_type}</small>}
               </label>
               <label style={{ display: "block" }}>
                 <span
@@ -359,12 +382,17 @@ export default function EmployeeItSupportPage() {
                   Short title
                 </span>
                 <input
-                  style={inputStyle}
+                  style={{ ...inputStyle, ...(fieldErrors.title ? inputErrorStyle : null) }}
                   name="it_request_title"
                   value={form.title}
-                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                  aria-invalid={Boolean(fieldErrors.title)}
+                  onChange={(e) => {
+                    setFieldErrors((f) => (f.title ? { ...f, title: undefined } : f));
+                    setForm((f) => ({ ...f, title: e.target.value }));
+                  }}
                   placeholder="e.g. Laptop not turning on, need replacement"
                 />
+                {fieldErrors.title && <small style={fieldErrorStyle} role="alert">{fieldErrors.title}</small>}
               </label>
             </div>
             <label style={{ display: "block", marginBottom: 14 }}>
@@ -380,13 +408,18 @@ export default function EmployeeItSupportPage() {
                 Details (optional)
               </span>
               <textarea
-                style={{ ...inputStyle, resize: "vertical" }}
+                style={{ ...inputStyle, resize: "vertical", ...(fieldErrors.description ? inputErrorStyle : null) }}
                 name="it_request_description"
                 rows={3}
                 value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                aria-invalid={Boolean(fieldErrors.description)}
+                onChange={(e) => {
+                  setFieldErrors((f) => (f.description ? { ...f, description: undefined } : f));
+                  setForm((f) => ({ ...f, description: e.target.value }));
+                }}
                 placeholder="What's wrong and what should IT know?"
               />
+              {fieldErrors.description && <small style={fieldErrorStyle} role="alert">{fieldErrors.description}</small>}
             </label>
             <button
               type="button"

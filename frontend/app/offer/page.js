@@ -678,8 +678,15 @@ function OfferLetterPageContent() {
               )}
               {clarificationResolved && ["sent", "viewed", "expired"].includes(offer.status) && (
                 <p className={`${styles.offerFormMessage} ${styles.offerFormMessageWarning}`}>
-                  Clarification response received
-                  {negotiation.recruiter_note ? `: ${negotiation.recruiter_note}` : "."} You can continue with this offer.
+                  Clarification response received.
+                  {negotiation.recruiter_note ? (
+                    <>
+                      <br />
+                      {negotiation.recruiter_note}
+                    </>
+                  ) : null}
+                  <br />
+                  You can continue with this offer.
                 </p>
               )}
               {offer.extended_at && ["sent", "viewed"].includes(offer.status) && (

@@ -228,6 +228,9 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   position: absolute; 
   right: 5px; 
   width: 32px; 
+  display: inline-flex; 
+  align-items: center; 
+  justify-content: center; 
   border: 0; 
   border-radius: 5px; 
   padding: 4px; 
@@ -283,7 +286,7 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   transform: scale(0);
   transition: transform .15s ease;
 }
-.checkboxField input:hover:not(:disabled) {
+.checkboxField input:hover:not(:disabled):not(:checked) {
   border-color: var(--navy);
   background: color-mix(in srgb, var(--navy) 6%, var(--card));
 }
@@ -291,6 +294,12 @@ input[type="password"]::-webkit-textfield-decoration-inner-container {
   border-color: var(--navy);
   background: var(--navy);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--navy) 12%, transparent);
+}
+.checkboxField input:checked:hover:not(:disabled),
+.checkboxField input:checked:focus-visible {
+  border-color: var(--navy);
+  background: var(--navy);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--navy) 18%, transparent);
 }
 .checkboxField input:checked::before {
   transform: scale(1);
