@@ -258,8 +258,10 @@ function EmployeeCareerInner() {
                           {!completed && (
                             <button
                               type="button"
-                              className={dashStyles.btnPrimary || undefined}
-                              style={actionBtnStyle("#0D5C91", "#fff")}
+                              style={{
+                                ...actionBtnStyle("linear-gradient(100deg, var(--blue-strong), var(--blue))", "#fff"),
+                                fontWeight: 700,
+                              }}
                               disabled={busyUid === course.course_uid}
                               onClick={() => handleStartCourse(course)}
                             >
@@ -361,7 +363,7 @@ function EmployeeCareerInner() {
                           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                             <button
                               type="button"
-                              style={actionBtnStyle("#0D5C91", "#fff")}
+                              style={actionBtnStyle("linear-gradient(100deg, var(--blue-strong), var(--blue))", "#fff")}
                               disabled={certBusy}
                               onClick={() => handleSubmitCertificate(course)}
                             >
