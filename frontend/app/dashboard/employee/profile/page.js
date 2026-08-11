@@ -604,7 +604,7 @@ function EmployeeProfileContent() {
     });
   }
 
-  if (!user) {
+  if (!user || loading) {
     return <RecruiterLoader />;
   }
 
