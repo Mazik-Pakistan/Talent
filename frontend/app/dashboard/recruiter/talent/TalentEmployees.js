@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./talent.module.css";
@@ -31,6 +31,7 @@ function openEmployee(onNavigate, e, department) {
 export default function TalentEmployees({
   departmentNames = [],
   roleNames = [],
+  metrics,
   promotion,
   requirements,
   initialDepartment = "",
@@ -55,12 +56,24 @@ export default function TalentEmployees({
     return set;
   });
 
+  const highPotentialIds = useMemo(
+    () => new Set(
+      (metrics?.high_potential_employees || [])
+        .map((row) => row?.employee_id)
+        .filter(Boolean)
+    ),
+    [metrics]
+  );
+
   useEffect(() => {
-    if (initialDepartment) setDepartment(initialDepartment);
+    if (!initialDepartment) return undefined;
+    const t = setTimeout(() => setDepartment(initialDepartment), 0);
+    return () => clearTimeout(t);
   }, [initialDepartment]);
 
   useEffect(() => {
-    setIncompleteOnly(Boolean(initialIncompleteOnly));
+    const t = setTimeout(() => setIncompleteOnly(Boolean(initialIncompleteOnly)), 0);
+    return () => clearTimeout(t);
   }, [initialIncompleteOnly]);
 
   useEffect(() => {
@@ -121,7 +134,7 @@ export default function TalentEmployees({
 
         // When client filters are active, pull remaining pages (capped) then filter + paginate locally.
         if (needsClientFilter && pages > 1) {
-          const maxPages = Math.min(pages, 5);
+          const maxPages = Math.min(pages, 10);
           const extras = [];
           for (let p = 2; p <= maxPages; p += 1) {
             try {
@@ -150,11 +163,7 @@ export default function TalentEmployees({
           employees = employees.filter((e) => (e.job_title || "").trim().toLowerCase() === r);
         }
         if (highPotential) {
-          employees = employees.filter(
-            (e) =>
-              (e.skill_count >= 5 || (e.skills || []).length >= 5) &&
-              (e.verified_certifications > 0 || e.certification_count > 0 || (e.certifications || []).length > 0)
-          );
+          employees = employees.filter((e) => highPotentialIds.has(e.employee_id));
         }
         if (promoIds) {
           employees = employees.filter((e) => promoIds.has(e.employee_id));
@@ -184,7 +193,7 @@ export default function TalentEmployees({
       })
       .catch((err) => toast.error(getApiErrorMessage(err, "Search failed.")))
       .finally(() => setLoading(false));
-  }, [q, department, role, highPotential, promoBucket, promotion, needsClientFilter, incompleteOnly, incompleteIds]);
+  }, [q, department, role, highPotential, promoBucket, promotion, needsClientFilter, incompleteOnly, incompleteIds, highPotentialIds]);
 
   // Debounced search on filters (runs on mount and when filters change).
   useEffect(() => {

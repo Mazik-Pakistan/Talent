@@ -803,7 +803,7 @@ function RoadmapPanel({ providerNames, onProvidersChanged }) {
     month: filterMonth,
   });
 
-  const load = useCallback(() => {
+  const load = useCallback((force = false) => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
@@ -813,7 +813,7 @@ function RoadmapPanel({ providerNames, onProvidersChanged }) {
       page: 1,
       page_size: 100,
       for_roadmap: true,
-    })
+    }, { force })
       .then((courseData) => {
         // hierarchy includes all matching courses; flatten for org grouping
         const fromHierarchy = flattenRoadmapCourses(courseData.hierarchy || []);
@@ -824,7 +824,7 @@ function RoadmapPanel({ providerNames, onProvidersChanged }) {
   }, []);
 
   useEffect(() => {
-    load();
+    load(false);
   }, [load]);
 
   function handleDownloadRoadmapTemplate() {
@@ -927,7 +927,7 @@ function RoadmapPanel({ providerNames, onProvidersChanged }) {
         toast.success("Course placed on roadmap.");
       }
       resetForm();
-      load();
+      load(true);
       onProvidersChanged?.();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not save roadmap course."));
@@ -943,7 +943,7 @@ function RoadmapPanel({ providerNames, onProvidersChanged }) {
     try {
       await deleteManagedCourse(token, course.uid.split(":")[1]);
       toast.success("Course removed.");
-      load();
+      load(true);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not delete course."));
     }
@@ -977,7 +977,7 @@ function RoadmapPanel({ providerNames, onProvidersChanged }) {
       toast.success(data.message || "Roadmap imported.");
       setPreview(null);
       setPreviewFile(null);
-      load();
+      load(true);
       onProvidersChanged?.();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not import roadmap."));
@@ -1004,7 +1004,7 @@ function RoadmapPanel({ providerNames, onProvidersChanged }) {
         </div>
         <div className={styles.toolbar} style={{ marginBottom: 0 }}>
           <div className={styles.toolbarRight}>
-            <button type="button" className={styles.modeBtn} onClick={load} title="Reload roadmap placements from the server">
+            <button type="button" className={styles.modeBtn} onClick={() => load(true)} title="Reload roadmap placements from the server">
               <RefreshCw aria-hidden="true" /> Reload
             </button>
             <button
@@ -1062,6 +1062,10 @@ function RoadmapPanel({ providerNames, onProvidersChanged }) {
             ))}
           </select>
         </div>
+
+        {frameworkLoading && (
+          <p className={styles.inlineNote}>Loading organization roles…</p>
+        )}
 
         {!frameworkLoading && !frameworkRoles.length && (
           <div className={styles.emptyState}>

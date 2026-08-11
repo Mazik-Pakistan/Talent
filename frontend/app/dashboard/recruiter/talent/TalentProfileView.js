@@ -108,9 +108,19 @@ function getPromotionStatus(assignment, readiness, progress) {
   if (!assignment) return "No path";
   if (assignment.status === "paused") return "Paused";
   if (readiness == null && progress == null) return "No path";
+  const isTerminal = Boolean(
+    assignment.is_terminal_role
+    || (
+      assignment.current_role_title
+      && assignment.target_role_title
+      && String(assignment.current_role_title).trim().toLowerCase()
+        === String(assignment.target_role_title).trim().toLowerCase()
+    )
+  );
+  if (isTerminal && (readiness == null || readiness >= 80)) return "Highest role";
   if (readiness >= 80) return "Ready";
-  if (progress >= 50 && readiness >= 50) return "On track";
-  return "At risk";
+  if (progress >= 50 && readiness >= 50) return "Almost ready";
+  return "Behind on path";
 }
 
 function statusLabel(status) {
@@ -417,9 +427,9 @@ export default function TalentProfileView({
     () => deriveCourseChecklist(assignment?.assigned_learning_path, learning?.enrollments),
     [assignment, learning]
   );
-  const certChecklist = useMemo(
-    () => deriveCertChecklist(assignment?.certifications_to_earn, learning?.certificates || certs),
-    [assignment, learning, certs]
+  const certChecklist = deriveCertChecklist(
+    assignment?.certifications_to_earn,
+    learning?.certificates || certs
   );
 
   // Path completion from done/not-done checklists only (no enrollment progress %).

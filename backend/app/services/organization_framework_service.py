@@ -1245,12 +1245,11 @@ async def get_org_structure_options(organization_id: str) -> dict:
     courses so recruiter, candidate and employee UIs (and their AI assistants)
     never need independent or hardcoded lists.
     """
-    [departments, roles, skills, certifications, courses] = await asyncio.gather(
+    [departments, roles, skills, certifications] = await asyncio.gather(
         list_departments(organization_id),
         list_roles(organization_id),
         list_skills(organization_id),
         list_certifications(organization_id),
-        list_courses(organization_id),
     )
     return {
         "departments": [d["name"] for d in departments if d.get("name")],
@@ -1263,11 +1262,7 @@ async def get_org_structure_options(organization_id: str) -> dict:
         "certifications": sorted(
             {c.get("certification_name") for c in certifications if c.get("certification_name")}
         ),
-        "courses": [
-            {"course_id": c["course_id"], "name": c["name"], "provider": c.get("provider"), "category": c.get("category")}
-            for c in courses
-            if c.get("name")
-        ],
+        "courses": [],
     }
 
 
