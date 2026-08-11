@@ -53,7 +53,7 @@ class CareerFrameworkService:
 
         # Check if track already exists for this department+name
         existing = await database.career_tracks.find_one(
-            {"department": {"$regex": f"^{department}$", "$options": "i"}, "track_name": {"$regex": f"^{track_name}$", "$options": "i"}}
+            {"department": {"$regex": f"^{re.escape(department)}$", "$options": "i"}, "track_name": {"$regex": f"^{re.escape(track_name)}$", "$options": "i"}}
         )
         if existing:
             raise HTTPException(
@@ -79,7 +79,7 @@ class CareerFrameworkService:
     async def list_tracks(self, department: str | None = None, organization_id: str | None = None) -> dict:
         query: dict[str, Any] = {"is_active": True}
         if department:
-            query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+            query["department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
@@ -195,8 +195,8 @@ class CareerFrameworkService:
 
         # Get or create the parent track
         track_query: dict[str, Any] = {
-            "department": {"$regex": f"^{department}$", "$options": "i"},
-            "track_name": {"$regex": f"^{track_name}$", "$options": "i"},
+            "department": {"$regex": f"^{re.escape(department)}$", "$options": "i"},
+            "track_name": {"$regex": f"^{re.escape(track_name)}$", "$options": "i"},
             "is_active": True,
         }
         org_filter = self._org_filter(organization_id)
@@ -277,7 +277,7 @@ class CareerFrameworkService:
         if track_id:
             query["track_id"] = track_id
         if department:
-            query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+            query["department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
@@ -1086,7 +1086,7 @@ class CareerFrameworkService:
     async def get_promotion_readiness(self, current_user: CurrentUser, department: str | None = None, organization_id: str | None = None) -> dict:
         query: dict[str, Any] = {"status": "active"}
         if department:
-            query["current_department"] = {"$regex": f"^{department}$", "$options": "i"}
+            query["current_department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
         if current_user.role != "super_admin":
             query["assigned_by"] = current_user.id
         org_filter = self._org_filter(organization_id)
@@ -1196,7 +1196,7 @@ class CareerFrameworkService:
         if current_user.role != "super_admin":
             query["assigned_by"] = current_user.id
         if department:
-            query["current_department"] = {"$regex": f"^{department}$", "$options": "i"}
+            query["current_department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
         if status_filter:
             query["status"] = status_filter
         else:
@@ -1409,7 +1409,7 @@ class CareerFrameworkService:
                 role_title = row_data["role_title"]
 
                 existing_query: dict[str, Any] = {
-                    "department": {"$regex": f"^{department}$", "$options": "i"},
+                    "department": {"$regex": f"^{re.escape(department)}$", "$options": "i"},
                     "level_number": level_number,
                     "is_active": True,
                 }
@@ -1437,8 +1437,8 @@ class CareerFrameworkService:
                     track_id = ""
                     if track_name:
                         track_query: dict[str, Any] = {
-                            "department": {"$regex": f"^{department}$", "$options": "i"},
-                            "track_name": {"$regex": f"^{track_name}$", "$options": "i"},
+                            "department": {"$regex": f"^{re.escape(department)}$", "$options": "i"},
+                            "track_name": {"$regex": f"^{re.escape(track_name)}$", "$options": "i"},
                             "is_active": True,
                         }
                         if org_filter:
