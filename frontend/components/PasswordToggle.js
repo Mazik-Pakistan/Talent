@@ -14,6 +14,7 @@ export default function PasswordToggle({ visible, onToggle, className = "", size
       className={className}
       style={style}
       onClick={onToggle}
+      onMouseDown={(event) => event.preventDefault()}
       aria-label={label}
       title={label}
     >

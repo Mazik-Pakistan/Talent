@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -9,11 +9,9 @@ import { getApiErrorMessage, login, persistLoginSession } from "@/services/authS
 import { LOGO_URL } from "@/lib/logo";
 import PasswordToggle from "@/components/PasswordToggle";
 import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
-import { EMAIL_REGEX, PASSWORD_REGEX, PASSWORD_HINT_TEXT } from "@/utils/validation";
+import { EMAIL_REGEX } from "@/utils/validation";
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic";
-
-const PASSWORD_HINT = PASSWORD_HINT_TEXT;
 
 
 function validateForm(values) {
@@ -27,8 +25,6 @@ function validateForm(values) {
 
   if (!values.password) {
     errors.password = "Password is required.";
-  } else if (!PASSWORD_REGEX.test(values.password)) {
-    errors.password = PASSWORD_HINT;
   }
 
   return errors;
@@ -41,6 +37,7 @@ export default function SuperAdminLoginPage() {
 function SuperAdminLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const cardRef = useRef(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -49,6 +46,8 @@ function SuperAdminLoginForm() {
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [loginFeedback, setLoginFeedback] = useState("idle");
+  const [userRole, setUserRole] = useState(null);
+  const [focusedField, setFocusedField] = useState("none");
 
   useEffect(() => {
     const reason = searchParams.get("reason");
@@ -62,6 +61,11 @@ function SuperAdminLoginForm() {
   function handleBlur(field) {
     setTouched((current) => ({ ...current, [field]: true }));
     setErrors(validateForm({ email, password }));
+    setFocusedField((current) => (current === field ? "none" : current));
+  }
+
+  function handleFocus(field) {
+    setFocusedField(field);
   }
 
   function handleEmailChange(value) {
@@ -105,6 +109,7 @@ function SuperAdminLoginForm() {
         rememberMe,
         email: email.trim(),
       });
+      setUserRole(data.user?.role || null);
       setLoginFeedback("success");
       if (data.user?.must_change_password) {
         toast.info("First-time sign-in. Set your own password to continue.");
@@ -124,12 +129,20 @@ function SuperAdminLoginForm() {
   }
 
   const mascotMood = loginFeedback === "success" ? "green" : loginFeedback === "error" ? "red" : password ? "yellow" : "neutral";
+  const mascotAuthStatus =
+    loginFeedback === "checking"
+      ? "checking"
+      : loginFeedback === "success"
+        ? "success"
+        : loginFeedback === "error"
+          ? "error"
+          : "idle";
 
   return (
     <main className={styles.shell}>
       <ToastContainer position="top-right" autoClose={4000} theme="colored" newestOnTop />
 
-      <div className={styles.card}>
+      <div className={styles.card} ref={cardRef}>
         <aside className={styles.aside} aria-label="Talent platform introduction">
           <div className={styles.asideBrandRow}>
             <img
@@ -152,7 +165,10 @@ function SuperAdminLoginForm() {
           <div className={styles.mascotContainer}>
             <MascotStatic
               mood={mascotMood}
-              message={loginFeedback === "success" ? "Welcome back! 🎉" : undefined}
+              fieldFocus={focusedField}
+              authStatus={mascotAuthStatus}
+              cardRef={cardRef}
+              role={userRole}
             />
           </div>
         </aside>
@@ -183,6 +199,7 @@ function SuperAdminLoginForm() {
                   name="email"
                   value={email}
                   onChange={(e) => handleEmailChange(e.target.value)}
+                  onFocus={() => handleFocus("email")}
                   onBlur={() => handleBlur("email")}
                   aria-invalid={Boolean((touched.email && errors.email) || loginFeedback === "error")}
                   aria-describedby={touched.email && errors.email ? "email-error" : undefined}
@@ -207,6 +224,7 @@ function SuperAdminLoginForm() {
                   name="password"
                   value={password}
                   onChange={(e) => handlePasswordChange(e.target.value)}
+                  onFocus={() => handleFocus("password")}
                   onBlur={() => handleBlur("password")}
                   aria-invalid={loginFeedback === "error"}
                   aria-describedby={touched.password && errors.password ? "password-error" : undefined}

@@ -73,6 +73,7 @@ function LoginForm() {
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [loginFeedback, setLoginFeedback] = useState("idle");
+  const [userRole, setUserRole] = useState(null);
   // "none" | "email" | "password" — drives the mascot's attentive/privacy states
   const [focusedField, setFocusedField] = useState("none");
 
@@ -172,12 +173,13 @@ function LoginForm() {
          // Continue with login-payload capabilities
        }
        
-       persistLoginSession(data.session, data.user, {
-         rememberMe,
-         email: email.trim(),
-         capabilities,
-       });
-       setLoginFeedback("success");
+        persistLoginSession(data.session, data.user, {
+          rememberMe,
+          email: email.trim(),
+          capabilities,
+        });
+        setUserRole(data.user?.role || null);
+        setLoginFeedback("success");
        if (data.user?.must_change_password) {
           toast.info("First-time sign-in. Set your own password to continue.");
          router.push("/set-password");
@@ -228,9 +230,9 @@ function LoginForm() {
             <MascotStatic
               mood={mascotMood}
               fieldFocus={focusedField}
-              passwordVisible={showPassword}
               authStatus={mascotAuthStatus}
               cardRef={cardRef}
+              role={userRole}
             />
           </div>
         </aside>
