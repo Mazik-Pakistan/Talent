@@ -12,7 +12,9 @@ from app.core.security import require_any_capability, require_roles
 router = APIRouter(prefix="/api/email-templates", tags=["Email Templates"])
 
 RequireRecruiterOrgConfig = Annotated[
-    CurrentUser, Depends(require_any_capability("org_config", "learning"))
+    CurrentUser,
+    Depends(require_roles("recruiter", "super_admin")),
+    Depends(require_any_capability("org_config", "learning")),
 ]
 RequireWriteRole = Annotated[
     CurrentUser, Depends(require_roles("recruiter", "super_admin")),

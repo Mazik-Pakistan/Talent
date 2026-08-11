@@ -5,7 +5,7 @@ from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Response,
 
 from app.core.rbac import CurrentUser
 from app.core.security import RequireOnboardingSelf as RequireCandidate
-from app.core.security import RequireEmployee, RequireRecruiter, require_capabilities
+from app.core.security import RequireEmployee, RequireRecruiter, require_capabilities, require_roles
 from app.schemas.career import CareerEventCreateRequest, RoleAssignRequest
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
 from app.schemas.employee_exit import EmployeeExitRequest
@@ -23,8 +23,16 @@ router = APIRouter(prefix="/api/employees", tags=["Employees"])
 service = EmployeeService()
 candidate_service = CandidateService()
 
-RequireRecruiterWithEmployees = Annotated[CurrentUser, Depends(require_capabilities("employees"))]
-RequireRecruiterWithCandidates = Annotated[CurrentUser, Depends(require_capabilities("candidates"))]
+RequireRecruiterWithEmployees = Annotated[
+    CurrentUser,
+    Depends(require_roles("recruiter", "super_admin")),
+    Depends(require_capabilities("employees")),
+]
+RequireRecruiterWithCandidates = Annotated[
+    CurrentUser,
+    Depends(require_roles("recruiter", "super_admin")),
+    Depends(require_capabilities("candidates")),
+]
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx"}

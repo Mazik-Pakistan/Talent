@@ -22,6 +22,7 @@ from app.core.security import (
     RequireRecruiter,
     get_current_user,
     require_any_capability,
+    require_roles,
 )
 from app.schemas.career_framework import (
     BulkCareerAssignRequest,
@@ -39,7 +40,9 @@ router = APIRouter(prefix="/api/career-framework", tags=["Career Framework"])
 
 # Talent Management owns career framework; Learning retains access for legacy/shared use.
 RequireRecruiterWithTalentOrLearning = Annotated[
-    CurrentUser, Depends(require_any_capability("talent", "learning"))
+    CurrentUser,
+    Depends(require_roles("recruiter", "super_admin")),
+    Depends(require_any_capability("talent", "learning")),
 ]
 
 

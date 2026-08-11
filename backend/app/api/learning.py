@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, Depends
 
-from app.core.security import RequireAny, RequireEmployee, RequireRecruiter, require_capabilities, get_current_user
+from app.core.security import RequireAny, RequireEmployee, RequireRecruiter, require_capabilities, require_roles, get_current_user
 from app.core.rbac import CurrentUser
 from app.schemas.learning import (
     BookmarkRequest,
@@ -36,8 +36,11 @@ router = APIRouter(prefix="/api/learning", tags=["Learning"])
 MAX_CERT_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_CERT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 
-# Recruiter dependency with learning capability check
-RequireRecruiterWithLearning = Annotated[CurrentUser, Depends(require_capabilities("learning"))]
+RequireRecruiterWithLearning = Annotated[
+    CurrentUser,
+    Depends(require_roles("recruiter", "super_admin")),
+    Depends(require_capabilities("learning")),
+]
 
 
 # ---------------------------------------------------------------------- #
