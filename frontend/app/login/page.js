@@ -6,15 +6,13 @@ import { useEffect, useRef, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-import { getApiErrorMessage, login, persistLoginSession } from "@/services/authService";
+import { login, persistLoginSession } from "@/services/authService";
 import { LOGO_URL } from "@/lib/logo";
 import PasswordToggle from "@/components/PasswordToggle";
 import FieldError, { INPUT_ERROR_STYLE } from "@/lib/formFeedback";
-import { EMAIL_REGEX, PASSWORD_REGEX, PASSWORD_HINT_TEXT } from "@/utils/validation";
+import { EMAIL_REGEX } from "@/utils/validation";
 import styles from "@/app/styles/auth.module.css";
 import MascotStatic from "@/components/MascotStatic";
-
-const PASSWORD_HINT = PASSWORD_HINT_TEXT;
 
 const ROTATING_CONTENT = [
   {
@@ -45,13 +43,11 @@ function validateForm(values) {
   if (!values.email.trim()) {
     errors.email = "Email is required.";
   } else if (!EMAIL_REGEX.test(values.email.trim())) {
-    errors.email = "Enter a valid email address.";
+    errors.email = "Invalid email or password.";
   }
 
   if (!values.password) {
     errors.password = "Password is required.";
-  } else if (!PASSWORD_REGEX.test(values.password)) {
-    errors.password = PASSWORD_HINT;
   }
 
   return errors;
@@ -187,11 +183,11 @@ function LoginForm() {
        }
        toast.success("Signed in successfully. Redirecting…");
        router.push(data.redirect_to);
-     } catch (error) {
-       const message = getApiErrorMessage(error, "Login failed. Please check your credentials.");
-       setLoginFeedback("error");
-       toast.error(message);
-     } finally {
+      } catch (error) {
+        setErrors((current) => ({ ...current, password: "Invalid email or password." }));
+        setLoginFeedback("error");
+        toast.error("Invalid email or password.");
+      } finally {
        setIsSubmitting(false);
      }
    }
