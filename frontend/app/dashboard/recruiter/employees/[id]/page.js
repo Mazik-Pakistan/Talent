@@ -758,16 +758,35 @@ function DayOneOnboardingSection({ employee, employeeId, onEmployeeUpdate }) {
 /**
  * Career tab: unified timeline (hire / promo / resign / prior tenures),
  * add-event form, and resign/exit controls.
+ *
+ * Smart behaviour:
+ *  - "Promoted" auto-selects the next role from the org career ladder.
+ *  - "Department change" shows only roles in the target department.
+ *  - "Title change" shows roles in the current department.
+ *  - Any save auto-updates the employee record and refreshes the career
+ *    assignment with the correct learning path / courses via the backend.
  */
 function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeUpdate }) {
-  const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
+  const { options, departments: frameworkDepartments } = useOrgFrameworkOptions();
   const departmentOptions = frameworkDepartments;
-  const designationOptions = frameworkDesignations;
+
+  const allRoles = (options?.roles || []).filter((r) => r.name);
+
+  const currentRoleName = (employee.job_title || "").trim();
+  const currentDepartment = (employee.department || "").trim();
+
+  const currentRoleInLadder = allRoles.find(
+    (r) =>
+      r.name.toLowerCase() === currentRoleName.toLowerCase() &&
+      (!r.department || r.department.toLowerCase() === currentDepartment.toLowerCase())
+  );
+  const nextRoleName = (currentRoleInLadder?.next_role || "").trim() || null;
+
   const [careerForm, setCareerForm] = useState({
     event_type: "promoted",
     effective_date: new Date().toISOString().slice(0, 10),
-    to_title: employee.job_title || "",
-    to_department: employee.department || "",
+    to_title: nextRoleName || currentRoleName,
+    to_department: currentDepartment,
     to_manager: employee.reporting_manager || "",
     note: "",
   });
@@ -775,6 +794,93 @@ function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeU
   const isHistorical =
     employee.history_bucket === "historical" ||
     ["resigned", "terminated", "exited"].includes(String(employee.status || "").toLowerCase());
+
+  const eventType = careerForm.event_type;
+  const effectiveTargetDept =
+    eventType === "department_change"
+      ? (careerForm.to_department || currentDepartment)
+      : currentDepartment;
+
+  const availableTitles = allRoles
+    .filter((r) => !r.department || r.department === effectiveTargetDept)
+    .map((r) => r.name)
+    .filter(Boolean);
+  const uniqueTitles = [...new Set(availableTitles)];
+
+  function handleEventTypeChange(newType) {
+    setCareerForm((prev) => {
+      if (newType === "promoted") {
+        return {
+          ...prev,
+          event_type: newType,
+          to_title: nextRoleName || prev.to_title || "",
+          to_department: currentDepartment,
+        };
+      }
+      if (newType === "department_change") {
+        return {
+          ...prev,
+          event_type: newType,
+          to_title: "",
+          to_department: currentDepartment,
+        };
+      }
+      if (newType === "title_change") {
+        return {
+          ...prev,
+          event_type: newType,
+          to_title: currentRoleName,
+          to_department: currentDepartment,
+        };
+      }
+      return { ...prev, event_type: newType };
+    });
+  }
+
+  function handleDepartmentChange(newDept) {
+    setCareerForm((prev) => {
+      const rolesInNewDept = allRoles
+        .filter((r) => !r.department || r.department === newDept)
+        .map((r) => r.name);
+      const titleStillValid = rolesInNewDept.includes(prev.to_title);
+      return {
+        ...prev,
+        to_department: newDept,
+        to_title: titleStillValid ? prev.to_title : "",
+      };
+    });
+  }
+
+  const preview = (() => {
+    if (eventType === "promoted") {
+      if (nextRoleName) {
+        return {
+          text: `${currentRoleName} \u2192 ${nextRoleName}`,
+          detail: `Career path, learning courses, required skills and certifications for "${nextRoleName}" will be auto-assigned.`,
+        };
+      }
+      return {
+        text: `${currentRoleName} is the top role in the career ladder.`,
+        detail: "No further promotion target is available. You can still record this as a title or status change.",
+      };
+    }
+    if (eventType === "department_change" && careerForm.to_department && careerForm.to_department !== currentDepartment) {
+      const target = careerForm.to_title || "a role in the new department";
+      return {
+        text: `${currentDepartment} \u2192 ${careerForm.to_department}`,
+        detail: careerForm.to_title
+          ? `New designation: ${target}. Career path and learning assignments will be refreshed for the new department.`
+          : "Select a designation in the new department. Career path and learning assignments will be created.",
+      };
+    }
+    if (eventType === "title_change" && careerForm.to_title && careerForm.to_title !== currentRoleName) {
+      return {
+        text: `${currentRoleName} \u2192 ${careerForm.to_title}`,
+        detail: "Career path and learning assignments will be updated for the new role.",
+      };
+    }
+    return null;
+  })();
 
   async function refreshEmployee() {
     const accessToken = localStorage.getItem("access_token");
@@ -785,6 +891,14 @@ function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeU
   async function handleSaveCareerEvent() {
     if (!careerForm.effective_date) {
       toast.error("Effective date is required.");
+      return;
+    }
+    if (eventType === "department_change" && !careerForm.to_department) {
+      toast.error("Select a target department.");
+      return;
+    }
+    if (["promoted", "title_change"].includes(eventType) && !careerForm.to_title) {
+      toast.error("Select a target designation.");
       return;
     }
     setBusy(true);
@@ -802,7 +916,7 @@ function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeU
         localStorage.getItem("access_token")
       );
       await refreshEmployee();
-      toast.success("Career event saved.");
+      toast.success("Career event saved. Career path and learning assignments have been updated.");
       setCareerForm((prev) => ({ ...prev, note: "" }));
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Could not save career event."));
@@ -826,7 +940,7 @@ function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeU
             <div>
               <div className={styles.sectionTitle}>Career timeline</div>
               <div className={styles.sectionDesc}>
-                Hires, promotions, resignations, and prior tenures for this person — not listed again under Historical once rehired.
+                Hires, promotions, resignations, and prior tenures for this person &mdash; not listed again under Historical once rehired.
               </div>
             </div>
           </div>
@@ -865,10 +979,10 @@ function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeU
                       ) : null}
                       <div className={styles.sectionDesc}>
                         {fmtDate(event.effective_date) || "No date"}
-                        {event.to_title ? ` · ${event.to_title}` : ""}
-                        {event.to_department ? ` · ${event.to_department}` : ""}
-                        {event.to_manager ? ` · Manager: ${event.to_manager}` : ""}
-                        {event.note ? ` — ${event.note}` : ""}
+                        {event.to_title ? ` \u00b7 ${event.to_title}` : ""}
+                        {event.to_department ? ` \u00b7 ${event.to_department}` : ""}
+                        {event.to_manager ? ` \u00b7 Manager: ${event.to_manager}` : ""}
+                        {event.note ? ` \u2014 ${event.note}` : ""}
                       </div>
                     </div>
                   </li>
@@ -886,18 +1000,36 @@ function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeU
               <div className={`${styles.bar} ${styles.purple}`} />
               <div>
                 <div className={styles.sectionTitle}>Add career event</div>
-                <div className={styles.sectionDesc}>Log a promotion, title, department, or manager change.</div>
+                <div className={styles.sectionDesc}>
+                  Log a promotion, title, department, or manager change. Courses and skills are auto-assigned from the career ladder.
+                </div>
               </div>
             </div>
           </div>
           <div className={styles.sectionBody}>
+            {currentRoleName ? (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: "8px 12px",
+                  background: "var(--blue-light, #f0f4ff)",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  color: "var(--text-secondary, #555)",
+                }}
+              >
+                Current: <strong>{currentRoleName}</strong>
+                {currentDepartment ? ` in ${currentDepartment}` : ""}
+                {nextRoleName ? (
+                  <> &middot; Next in ladder: <strong>{nextRoleName}</strong></>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className={styles.formGrid}>
               <label className={styles.field}>
                 <span>Event type</span>
-                <select
-                  value={careerForm.event_type}
-                  onChange={(e) => setCareerForm({ ...careerForm, event_type: e.target.value })}
-                >
+                <select value={eventType} onChange={(e) => handleEventTypeChange(e.target.value)}>
                   <option value="promoted">Promoted</option>
                   <option value="title_change">Title change</option>
                   <option value="department_change">Department change</option>
@@ -905,6 +1037,7 @@ function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeU
                   <option value="status_change">Status change</option>
                 </select>
               </label>
+
               <label className={styles.field}>
                 <span>Effective date</span>
                 <input
@@ -913,49 +1046,79 @@ function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeU
                   onChange={(e) => setCareerForm({ ...careerForm, effective_date: e.target.value })}
                 />
               </label>
-              <label className={styles.field}>
-                <span>New title</span>
-                <select
-                  value={careerForm.to_title}
-                  onChange={(e) => setCareerForm({ ...careerForm, to_title: e.target.value })}
-                >
-                  <option value="">Select designation</option>
-                  {designationOptions.map((designation) => (
-                    <option key={designation} value={designation}>
-                      {designation}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.field}>
-                <span>New department</span>
-                <select
-                  value={careerForm.to_department}
-                  onChange={(e) => setCareerForm({ ...careerForm, to_department: e.target.value })}
-                >
-                  <option value="">Select department</option>
-                  {departmentOptions.map((department) => (
-                    <option key={department} value={department}>
-                      {department}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.field}>
-                <span>New manager</span>
-                <input
-                  value={careerForm.to_manager}
-                  onChange={(e) => setCareerForm({ ...careerForm, to_manager: e.target.value })}
-                />
-              </label>
+
+              {["promoted", "title_change", "department_change"].includes(eventType) && (
+                <label className={styles.field}>
+                  <span>New designation</span>
+                  <select
+                    value={careerForm.to_title}
+                    onChange={(e) => setCareerForm({ ...careerForm, to_title: e.target.value })}
+                    disabled={eventType === "promoted" && !nextRoleName}
+                  >
+                    <option value="">{eventType === "promoted" && nextRoleName ? nextRoleName : "Select designation"}</option>
+                    {uniqueTitles.map((title) => (
+                      <option key={title} value={title}>
+                        {title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {eventType === "department_change" && (
+                <label className={styles.field}>
+                  <span>New department</span>
+                  <select
+                    value={careerForm.to_department}
+                    onChange={(e) => handleDepartmentChange(e.target.value)}
+                  >
+                    <option value="">Select department</option>
+                    {departmentOptions.map((dept) => (
+                      <option key={dept} value={dept}>
+                        {dept}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {eventType === "manager_change" && (
+                <label className={styles.field}>
+                  <span>New manager</span>
+                  <input
+                    value={careerForm.to_manager}
+                    onChange={(e) => setCareerForm({ ...careerForm, to_manager: e.target.value })}
+                    placeholder="Enter manager name"
+                  />
+                </label>
+              )}
+
               <label className={styles.field}>
                 <span>Note</span>
                 <input
                   value={careerForm.note}
                   onChange={(e) => setCareerForm({ ...careerForm, note: e.target.value })}
+                  placeholder="Optional — visible on the career timeline"
                 />
               </label>
             </div>
+
+            {preview && (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: "10px 14px",
+                  background: eventType === "promoted" && !nextRoleName ? "var(--orange-light, #fff4e6)" : "var(--green-light, #f0fff4)",
+                  border: `1px solid ${eventType === "promoted" && !nextRoleName ? "var(--orange, #f0ad4e)" : "var(--green, #4caf50)"}`,
+                  borderRadius: 8,
+                  fontSize: 13,
+                }}
+              >
+                <strong>{preview.text}</strong>
+                <div style={{ marginTop: 4, color: "var(--text-secondary, #666)" }}>{preview.detail}</div>
+              </div>
+            )}
+
             <div className={styles.actions} style={{ marginTop: 12 }}>
               <button
                 type="button"
@@ -963,7 +1126,7 @@ function CareerTimelineSection({ employee, employeeId, careerEvents, onEmployeeU
                 disabled={busy}
                 onClick={handleSaveCareerEvent}
               >
-                {busy ? "Saving…" : "Save event"}
+                {busy ? "Saving\u2026" : "Save event"}
               </button>
             </div>
           </div>
