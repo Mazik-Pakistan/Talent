@@ -442,8 +442,18 @@ function RecruiterItHubPageContent() {
   }
 
   return (
-    <RecruiterShell capability="it">
+    <RecruiterShell
+      capability="it"
+      title="IT Support"
+      subtitle="Track the IT officers you work with, the people they provisioned, and support requests"
+    >
       <div className={styles.content}>
+        <div className={styles.hero} style={{ marginBottom: 20 }}>
+          <div className={styles.heroEyebrow}>Recruiter IT Center</div>
+          <h1>IT Support</h1>
+          <div className={styles.heroMeta}>Track the IT officers you work with, the people they provisioned, and support requests</div>
+        </div>
+
         {error && (
           <div style={{ padding: "10px 16px", borderRadius: 10, background: "var(--red-light)", color: "var(--red)", fontSize: 13, fontWeight: 600, marginBottom: 14 }} role="alert">
             {error}
@@ -462,9 +472,9 @@ function RecruiterItHubPageContent() {
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-              <Link href="/dashboard/recruiter/it-kits" className="btn btnSecondary" style={{ fontSize: 12, padding: "7px 14px", minHeight: 32, borderRadius: 8, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5 }}>Manage kits</Link>
-              <button type="button" className="btn btnPrimary" onClick={openCreate} style={{ fontSize: 12, padding: "7px 14px", minHeight: 32, borderRadius: 8 }}>
-                <Wrench size={13} /> Request IT help
+              <Link href="/dashboard/recruiter/it-kits" className={`${s.tabBtn} ${s.tabBtnActive}`} style={{ textDecoration: "none" }}>Manage kits</Link>
+              <button type="button" className={`${s.tabBtn} ${s.tabBtnActive}`} onClick={openCreate}>
+                <Wrench size={13} style={{ marginRight: 5, verticalAlign: -2 }} /> Request IT help
               </button>
             </div>
           </div>

@@ -15,6 +15,7 @@ import {
   listItKits,
   updateItKit,
 } from "@/services/authService";
+import { useRouter } from "next/navigation";
 
 const ASSET_TYPES = [
   { value: "laptop", label: "Laptop" },
@@ -38,6 +39,7 @@ export default function RecruiterItKitsPage() {
 }
 
 function RecruiterItKitsPageContent() {
+  const router = useRouter();
   const [auth] = useState(() => readAuth());
   const [kits, setKits] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -212,9 +214,29 @@ function RecruiterItKitsPageContent() {
                 </div>
               </div>
             </div>
-            <button type="button" className={styles.primaryButton} onClick={openCreate}>
-              New kit
-            </button>
+            <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => router.push("/dashboard/recruiter/it")}
+                style={{ 
+                  background: "white", 
+                  color: "#333",
+                  border: "1px solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px"
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Back
+              </button>
+              <button type="button" className={styles.primaryButton} onClick={openCreate}>
+                New kit
+              </button>
+            </div>
           </div>
 
           <div className={styles.sectionBody}>
@@ -228,41 +250,73 @@ function RecruiterItKitsPageContent() {
                 No IT kits yet. Create one to standardize new-hire setups.
               </p>
             ) : (
-              <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
+              <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))" }}>
                 {kits.map((kit) => (
                   <div
                     key={kit.kit_id}
                     style={{
-                      border: "1px solid var(--border)",
+                      border: "1px solid #e5e7eb",
                       borderRadius: 12,
-                      padding: 16,
-                      background: "#fff",
+                      padding: 20,
+                      background: "#ffffff",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                      transition: "box-shadow 0.2s ease",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.1)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)";
                     }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
-                      <div>
-                        <strong style={{ fontSize: 15 }}>{kit.name}</strong>
-                        {kit.is_default && (
-                          <span
-                            style={{
-                              marginLeft: 8,
-                              fontSize: 11,
-                              fontWeight: 700,
-                              color: "#0d5c91",
-                              background: "#e7f1f9",
-                              padding: "2px 8px",
-                              borderRadius: 999,
-                            }}
-                          >
-                            default
-                          </span>
+                    {/* Header Section */}
+                    <div style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between", 
+                      alignItems: "flex-start",
+                      borderBottom: "1px solid #f0f0f0",
+                      paddingBottom: 12
+                    }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <strong style={{ fontSize: 16, color: "#1a1a2e" }}>{kit.name}</strong>
+                          {kit.is_default && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                color: "#0d5c91",
+                                background: "#e7f1f9",
+                                padding: "3px 10px",
+                                borderRadius: 999,
+                                letterSpacing: "0.3px",
+                                textTransform: "uppercase"
+                              }}
+                            >
+                              Default
+                            </span>
+                          )}
+                        </div>
+                        {kit.description && (
+                          <p style={{ 
+                            margin: "4px 0 0 0", 
+                            fontSize: 13, 
+                            color: "#6b7280",
+                            lineHeight: 1.4
+                          }}>
+                            {kit.description}
+                          </p>
                         )}
                       </div>
-                      <div style={{ display: "flex", gap: 6 }}>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0, marginLeft: 12 }}>
                         <button
                           type="button"
                           className={styles.secondaryButton}
                           onClick={() => openEdit(kit)}
+                          style={{ fontSize: 12, padding: "4px 12px" }}
                         >
                           Edit
                         </button>
@@ -270,46 +324,194 @@ function RecruiterItKitsPageContent() {
                           type="button"
                           className={styles.secondaryButton}
                           onClick={() => setDeleteTarget(kit)}
+                          style={{ fontSize: 12, padding: "4px 12px", color: "#dc2626" }}
                         >
                           Delete
                         </button>
                       </div>
                     </div>
-                    {kit.description && (
-                      <p style={{ margin: "6px 0", fontSize: 13, color: "#556" }}>{kit.description}</p>
-                    )}
+
+                    {/* Roles Section */}
                     {kit.roles && kit.roles.length > 0 && (
-                      <p style={{ margin: "6px 0", fontSize: 12, color: "#6b7a8f" }}>
-                        Roles: {kit.roles.join(", ")}
-                      </p>
+                      <div style={{ 
+                        display: "flex", 
+                        alignItems: "center", 
+                        gap: 8,
+                        flexWrap: "wrap"
+                      }}>
+                        <span style={{ 
+                          fontSize: 12, 
+                          fontWeight: 500, 
+                          color: "#6b7280",
+                          letterSpacing: "0.3px",
+                          textTransform: "uppercase"
+                        }}>
+                          Roles:
+                        </span>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {kit.roles.map((role, idx) => (
+                            <span
+                              key={idx}
+                              style={{
+                                fontSize: 12,
+                                background: "#f3f4f6",
+                                color: "#374151",
+                                padding: "2px 10px",
+                                borderRadius: 999,
+                                fontWeight: 500
+                              }}
+                            >
+                              {role}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     )}
-                    <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.6 }}>
-                      <div style={{ fontWeight: 600, marginBottom: 2 }}>
-                        Assets ({kit.assets?.length || 0})
+
+                    {/* Assets & Licenses Grid */}
+                    <div style={{ 
+                      display: "grid", 
+                      gridTemplateColumns: "1fr 1fr", 
+                      gap: 16,
+                      marginTop: 4
+                    }}>
+                      {/* Assets Column */}
+                      <div>
+                        <div style={{ 
+                          display: "flex", 
+                          alignItems: "center", 
+                          gap: 6,
+                          marginBottom: 8
+                        }}>
+                          <span style={{ 
+                            fontSize: 12, 
+                            fontWeight: 600, 
+                            color: "#374151",
+                            letterSpacing: "0.3px",
+                            textTransform: "uppercase"
+                          }}>
+                            Assets
+                          </span>
+                          <span style={{
+                            fontSize: 11,
+                            color: "#6b7280",
+                            background: "#f3f4f6",
+                            padding: "1px 8px",
+                            borderRadius: 999,
+                            fontWeight: 500
+                          }}>
+                            {kit.assets?.length || 0}
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {(kit.assets || []).length ? (
+                            (kit.assets || []).map((a, i) => (
+                              <div key={i} style={{ 
+                                display: "flex", 
+                                alignItems: "center", 
+                                gap: 6,
+                                fontSize: 13,
+                                color: "#1f2937",
+                                padding: "4px 8px",
+                                background: "#f9fafb",
+                                borderRadius: 6
+                              }}>
+                                <span style={{ color: "#6b7280" }}>•</span>
+                                <span style={{ fontWeight: 500 }}>{a.name}</span>
+                                {a.serial_number && (
+                                  <span style={{ 
+                                    fontSize: 11, 
+                                    color: "#6b7280",
+                                    background: "#e5e7eb",
+                                    padding: "1px 6px",
+                                    borderRadius: 4
+                                  }}>
+                                    {a.serial_number}
+                                  </span>
+                                )}
+                                <span style={{
+                                  fontSize: 10,
+                                  color: "#6b7280",
+                                  background: "#e5e7eb",
+                                  padding: "1px 6px",
+                                  borderRadius: 4,
+                                  textTransform: "lowercase"
+                                }}>
+                                  {a.asset_type || "other"}
+                                </span>
+                              </div>
+                            ))
+                          ) : (
+                            <div style={{ fontSize: 13, color: "#9ca3af", padding: "4px 8px" }}>
+                              No assets
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {(kit.assets || []).length ? (
-                        (kit.assets || []).map((a, i) => (
-                          <div key={i}>
-                            • {a.name}
-                            {a.serial_number ? ` (${a.serial_number})` : ""}
-                          </div>
-                        ))
-                      ) : (
-                        <div style={{ color: "#999" }}>—</div>
-                      )}
-                      <div style={{ fontWeight: 600, marginTop: 6, marginBottom: 2 }}>
-                        Licenses ({kit.licenses?.length || 0})
+
+                      {/* Licenses Column */}
+                      <div>
+                        <div style={{ 
+                          display: "flex", 
+                          alignItems: "center", 
+                          gap: 6,
+                          marginBottom: 8
+                        }}>
+                          <span style={{ 
+                            fontSize: 12, 
+                            fontWeight: 600, 
+                            color: "#374151",
+                            letterSpacing: "0.3px",
+                            textTransform: "uppercase"
+                          }}>
+                            Licenses
+                          </span>
+                          <span style={{
+                            fontSize: 11,
+                            color: "#6b7280",
+                            background: "#f3f4f6",
+                            padding: "1px 8px",
+                            borderRadius: 999,
+                            fontWeight: 500
+                          }}>
+                            {kit.licenses?.length || 0}
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {(kit.licenses || []).length ? (
+                            (kit.licenses || []).map((l, i) => (
+                              <div key={i} style={{ 
+                                display: "flex", 
+                                alignItems: "center", 
+                                gap: 6,
+                                fontSize: 13,
+                                color: "#1f2937",
+                                padding: "4px 8px",
+                                background: "#f9fafb",
+                                borderRadius: 6
+                              }}>
+                                <span style={{ color: "#6b7280" }}>•</span>
+                                <span style={{ fontWeight: 500 }}>{l.name}</span>
+                                {l.vendor && (
+                                  <span style={{ 
+                                    fontSize: 11, 
+                                    color: "#6b7280",
+                                    background: "#e5e7eb",
+                                    padding: "1px 6px",
+                                    borderRadius: 4
+                                  }}>
+                                    {l.vendor}
+                                  </span>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            <div style={{ fontSize: 13, color: "#9ca3af", padding: "4px 8px" }}>
+                              No licenses
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {(kit.licenses || []).length ? (
-                        (kit.licenses || []).map((l, i) => (
-                          <div key={i}>
-                            • {l.name}
-                            {l.vendor ? ` — ${l.vendor}` : ""}
-                          </div>
-                        ))
-                      ) : (
-                        <div style={{ color: "#999" }}>—</div>
-                      )}
                     </div>
                   </div>
                 ))}
@@ -337,7 +539,7 @@ function RecruiterItKitsPageContent() {
             style={{
               background: "#fff",
               borderRadius: 16,
-              width: "min(100%, 680px)",
+              width: "min(100%, 900px)",
               padding: 24,
             }}
           >
