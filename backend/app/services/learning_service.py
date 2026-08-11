@@ -14,6 +14,7 @@ URLs (see learning_ai_service.py for the no-hallucination design).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 from datetime import UTC, date, datetime, timedelta
@@ -3545,7 +3546,7 @@ class LearningService:
                     logger.warning("Course assignment email failed: %s", exc, exc_info=True)
         return {"assigned": assigned, "skipped": skipped, "errors": errors, "due_date": due_date.isoformat()}
 
-    def _public_assignment(self, doc: dict) -> dict:
+    def _public_assignment(self, doc: dict, provider: str | None = None) -> dict:
         return {
             "id": str(doc["_id"]),
             "employee_id": doc.get("employee_id"),
@@ -3556,6 +3557,7 @@ class LearningService:
             "course_title": doc.get("course_title"),
             "course_url": doc.get("course_url"),
             "course_type": doc.get("course_type"),
+            "provider": provider,
             "due_date": _iso(doc.get("due_date")),
             "mandatory": bool(doc.get("mandatory")),
             "note": doc.get("note"),
@@ -3648,7 +3650,36 @@ class LearningService:
             query["mandatory"] = True
         docs = await database.learning_assignments.find(query).sort("created_at", -1).to_list(length=500)
         deduped = self._dedupe_assignment_docs(docs)
-        return {"assignments": [self._public_assignment(d) for d in deduped]}
+
+        provider_map: dict[str, str] = {}
+        unique_uids = list({d.get("course_uid") for d in deduped if d.get("course_uid")})
+        if unique_uids:
+            async def _resolve(uid: str) -> tuple[str, str | None]:
+                try:
+                    item = await catalog_service.get_course_by_uid(uid)
+                    if item:
+                        provider = item.get("provider")
+                        if provider:
+                            return uid, provider
+                        source = item.get("source") or catalog_service.source_of(uid)
+                        if source == "coursera":
+                            return uid, "Coursera"
+                        if source == "microsoft_learn":
+                            return uid, "Microsoft Learn"
+                        if source == MANAGED_SOURCE:
+                            return uid, item.get("provider") or "Managed Learning"
+                        if source.startswith("provider:"):
+                            return uid, source.split(":", 1)[1]
+                except Exception:
+                    pass
+                return uid, None
+
+            resolved = await asyncio.gather(*[_resolve(uid) for uid in unique_uids])
+            for uid, provider in resolved:
+                if provider:
+                    provider_map[uid] = provider
+
+        return {"assignments": [self._public_assignment(d, provider_map.get(d.get("course_uid"))) for d in deduped]}
 
     async def get_employee_learning_profile(
         self, current_user: CurrentUser, employee_id: str, *, refresh_ai: bool = False
