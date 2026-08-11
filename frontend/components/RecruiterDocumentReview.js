@@ -55,7 +55,6 @@ function fieldLabel(key) {
 }
 
 function documentConfig(doc) {
-  if (doc.ocr_result?.category === "academic_transcript") return DOCUMENT_CONFIG.transcript;
   return DOCUMENT_CONFIG[doc.doc_type] || {
     label: String(doc.doc_type || "Document").replace(/_/g, " "),
     previewFields: [],
