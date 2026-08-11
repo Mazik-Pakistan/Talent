@@ -1106,6 +1106,15 @@ function MyCoursesTab({ onChange }) {
                         accept=".pdf,.png,.jpg,.jpeg"
                         onChange={(ev) => setUploadFile(ev.target.files?.[0] || null)}
                       />
+                      {uploadFile && (
+                        <div className={styles.uploadCertSelectedFile}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+                            <polyline points="14 2 14 8 20 8" />
+                          </svg>
+                          {uploadFile.name}
+                        </div>
+                      )}
                     </div>
                     <p className={styles.uploadCertHint}>
                       After your recruiter approves, this course is marked complete and skills/certifications are added to your profile.
