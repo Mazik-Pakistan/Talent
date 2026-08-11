@@ -102,6 +102,31 @@ class Settings(BaseSettings):
             return value.replace(" ", "").strip()
         return value
 
+    @field_validator("JWT_SECRET", mode="before")
+    @classmethod
+    def reject_weak_jwt_secret(cls, value: object) -> object:
+        """Reject known-weak/placeholder JWT signing secrets at startup."""
+        if not isinstance(value, str):
+            raise ValueError("JWT_SECRET must be a non-empty string.")
+        value = value.strip()
+        _WEAK_SECRETS = {
+            "", "secret", "changeme", "test", "your_secret_key",
+            "YOUR_SECRET_KEY", "your-secret-key", "jwt-secret",
+            "super-secret", "password", "123456",
+        }
+        if value.lower() in {s.lower() for s in _WEAK_SECRETS}:
+            raise ValueError(
+                "JWT_SECRET is set to a weak or placeholder value. "
+                "Generate a cryptographically random secret (>= 64 chars) "
+                "and set it in the environment or .env file."
+            )
+        if len(value) < 32:
+            raise ValueError(
+                f"JWT_SECRET is too short ({len(value)} chars). "
+                "Use at least 32 characters of random data."
+            )
+        return value
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
