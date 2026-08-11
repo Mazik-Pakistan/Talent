@@ -358,6 +358,15 @@
 .fieldWide {
   grid-column: 1 / -1;
 }
+
+.uploadCertFileField {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
 .uploadCertForm input,
 .uploadCertForm select {
   border: 1px solid #d5e4f4;
@@ -400,6 +409,79 @@
 .uploadCertFormActions .editCancelBtn:hover {
   background: #b91c1c;
   border-color: transparent;
+}
+
+.uploadCertForm :global(.file-upload-field) {
+  display: contents;
+}
+
+.uploadCertForm :global(.file-upload-caption) {
+  flex: 0 0 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5b70;
+}
+
+.uploadCertForm :global(.file-upload-btn) {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: 0;
+  padding: 11px 18px;
+  border-radius: 10px;
+  border: none;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 8px;
+  color: #fff;
+  background: linear-gradient(135deg, #38a2ff, #1f7fe0 60%, #153d5e);
+  box-shadow: 0 8px 18px -10px rgba(56, 162, 255, 0.85);
+  transition: filter 0.15s, box-shadow 0.15s;
+}
+
+.uploadCertForm :global(.file-upload-btn:hover) {
+  background: linear-gradient(135deg, #38a2ff, #1f7fe0 60%, #153d5e);
+  border-color: transparent;
+  box-shadow: 0 8px 18px -10px rgba(56, 162, 255, 0.85);
+  filter: brightness(1.03);
+}
+
+.uploadCertForm :global(.file-upload-btn:focus-within) {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(56, 162, 255, 0.22), 0 8px 18px -10px rgba(56, 162, 255, 0.85);
+}
+
+.uploadCertForm :global(.file-upload-btn svg) {
+  width: 15px;
+  height: 15px;
+  color: #fff;
+  stroke: #fff;
+}
+
+.uploadCertSelectedFile {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: #eef6ed;
+  border: 1px solid #c3d9bf;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2d5016;
+  max-width: min(100%, 360px);
+  min-width: 0;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.uploadCertSelectedFile svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
 
 .uploadCertSubmit {

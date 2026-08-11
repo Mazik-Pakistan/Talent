@@ -1092,24 +1092,24 @@ function MyCoursesTab({ onChange }) {
                         onChange={(ev) => setUploadForm((f) => ({ ...f, learning_hours: ev.target.value }))}
                       />
                     </label>
-                    <div className={styles.fieldWide}>
-                      <span className="file-upload-field">
-                        <span className="file-upload-caption">Certificate file (optional)</span>
-                        <label className="file-upload-btn">
-                          <input
-                            type="file"
-                            accept=".pdf,.png,.jpg,.jpeg"
-                            onChange={(ev) => setUploadFile(ev.target.files?.[0] || null)}
-                            className="file-upload-input"
-                          />
+                    <div className={styles.uploadCertFileField}>
+                      <FileUploadField
+                        caption="Certificate file (optional)"
+                        label="Upload document"
+                        replaceLabel="Replace document"
+                        accept=".pdf,.png,.jpg,.jpeg"
+                        onChange={(ev) => setUploadFile(ev.target.files?.[0] || null)}
+                        selected={!!uploadFile}
+                      />
+                      {uploadFile && (
+                        <div className={styles.uploadCertSelectedFile}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="17 8 12 3 7 8" />
-                            <line x1="12" y1="3" x2="12" y2="15" />
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+                            <polyline points="14 2 14 8 20 8" />
                           </svg>
-                          {uploadFile ? uploadFile.name : "Choose file"}
-                        </label>
-                      </span>
+                          {uploadFile.name}
+                        </div>
+                      )}
                     </div>
                     <p className={styles.uploadCertHint}>
                       After your recruiter approves, this course is marked complete and skills/certifications are added to your profile.
@@ -2355,12 +2355,24 @@ function CertificatesTab({ onChange }) {
             Learning hours
             <input type="number" min="0" step="0.5" placeholder="e.g. 2" value={form.learning_hours} onChange={(e) => setForm((f) => ({ ...f, learning_hours: e.target.value }))} />
           </label>
-          <div className={styles.fieldWide}>
+          <div className={styles.uploadCertFileField}>
             <FileUploadField
               caption="Certificate file (optional)"
+              label="Upload document"
+              replaceLabel="Replace document"
               accept=".pdf,.png,.jpg,.jpeg"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
+              selected={!!file}
             />
+            {file && (
+              <div className={styles.uploadCertSelectedFile}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                {file.name}
+              </div>
+            )}
           </div>
           <p className={styles.uploadCertHint}>
             After approval, skills and certifications from the course are added to your profile.
