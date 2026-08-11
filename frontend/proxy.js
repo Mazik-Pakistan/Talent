@@ -14,6 +14,7 @@ const PUBLIC_PATHS = new Set([
   "/it-setup",
   "/it-support",
   "/portal-root-x9f3",
+  "/terms",
   "/_next",
   "/favicon.ico",
 ]);
