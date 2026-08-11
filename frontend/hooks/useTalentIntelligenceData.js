@@ -172,7 +172,7 @@ async function fetchBundle(force = false) {
         name,
         description: description || "",
         employeeCount: analysis?.headcount ?? req?.employee_count ?? null,
-        roleCount: deptRoles.length,
+        roleCount: analysis?.role_count ?? deptRoles.length,
         skillsTracked: analysis?.skills_tracked ?? null,
         avgProgress: careerAvgProgress(career),
         avgReadiness: career?.avg_readiness_score ?? null,
@@ -287,17 +287,27 @@ export function useTalentIntelligenceData() {
   }, []);
 
   const departmentNames = useMemo(() => {
+    const fromMetrics = (data?.metrics?.department_skill_analysis || [])
+      .map((d) => d?.department)
+      .filter(Boolean);
     const fromFramework = (data?.departments || [])
       .map((d) => (typeof d === "string" ? d : d?.name))
       .filter(Boolean);
-    if (fromFramework.length) {
-      return [...new Set(fromFramework)].sort((a, b) => a.localeCompare(b));
+    const merged = [...new Set([...fromMetrics, ...fromFramework])];
+    if (merged.length) {
+      return merged.sort((a, b) => a.localeCompare(b));
     }
     return (data?.departmentCards || []).map((d) => d.name).filter(Boolean);
   }, [data]);
 
   const roleNames = useMemo(() => {
-    const names = [...new Set((data?.roles || []).map((r) => r.name || (typeof r === "string" ? r : "")).filter(Boolean))];
+    const fromMetrics = (data?.metrics?.role_analysis || [])
+      .map((r) => r?.role)
+      .filter(Boolean);
+    const fromFramework = (data?.roles || [])
+      .map((r) => r.name || (typeof r === "string" ? r : ""))
+      .filter(Boolean);
+    const names = [...new Set([...fromMetrics, ...fromFramework])];
     return names.sort((a, b) => a.localeCompare(b));
   }, [data]);
 

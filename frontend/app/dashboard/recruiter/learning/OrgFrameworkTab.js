@@ -13,7 +13,6 @@ import {
   createOrgRole,
   updateOrgRole,
   deleteOrgRole,
-  listOrgCourses,
   listOrgRoadmaps,
   createOrgRoadmap,
   updateOrgRoadmap,
@@ -79,7 +78,6 @@ export default function OrgFrameworkTab() {
   const [summary, setSummary] = useState(null);
   const [departments, setDepartments] = useState([]);
   const [roles, setRoles] = useState([]);
-  const [courses, setCourses] = useState([]);
   const [roadmaps, setRoadmaps] = useState([]);
   const [promotionRules, setPromotionRules] = useState([]);
   const [versions, setVersions] = useState([]);
@@ -153,11 +151,10 @@ export default function OrgFrameworkTab() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [sum, depts, rls, crss, rmps, rules, vers] = await Promise.all([
+      const [sum, depts, rls, rmps, rules, vers] = await Promise.all([
         getFrameworkSummary(token()),
         listOrgDepartments(token()),
         listOrgRoles(token()),
-        listOrgCourses(token()),
         listOrgRoadmaps(token()),
         listOrgPromotionRules(token()),
         listOrgVersions(token()),
@@ -165,7 +162,6 @@ export default function OrgFrameworkTab() {
       setSummary(sum);
       setDepartments(depts);
       setRoles(rls);
-      setCourses(crss);
       setRoadmaps(rmps);
       setPromotionRules(rules);
       setVersions(vers);
@@ -198,7 +194,7 @@ export default function OrgFrameworkTab() {
     return () => clearRecruiterContext();
   }, [section]);
 
-  const hasData = departments.length > 0 || roles.length > 0 || courses.length > 0;
+  const hasData = departments.length > 0 || roles.length > 0 || roadmaps.length > 0;
 
   return (
     <div className={s.layout}>

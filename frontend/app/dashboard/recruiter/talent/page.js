@@ -257,6 +257,7 @@ function RecruiterTalentPageContent() {
         <TalentEmployees
           departmentNames={departmentNames}
           roleNames={roleNames}
+          metrics={data?.metrics}
           promotion={data?.promotion}
           requirements={data?.requirements}
           initialDepartment={department}

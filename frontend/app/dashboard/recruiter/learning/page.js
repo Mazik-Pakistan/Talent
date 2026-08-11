@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { Suspense } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { useSearchParams } from "next/navigation";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
@@ -18,6 +18,7 @@ import {
   Building2,
   Calendar,
   Check,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   CircleAlert,
@@ -26,6 +27,7 @@ import {
   Compass,
   Download,
   Eye,
+  FolderTree,
   Globe,
   Library,
   ListChecks,
@@ -273,31 +275,39 @@ function LearningPageContent() {
         })}
       </div>
 
-       {tab === "catalog" && <CatalogTab onAssignCourse={handleAssignFromCatalog} />}
-       {tab === "courses" && (
-         <CoursesTab
-           initialProvider={pendingImportProvider}
-           onConsumedInitial={clearPendingImportProvider}
-         />
-       )}
-       {tab === "providers" && (
-         <ProvidersTab
-           onImportProvider={(p) => {
-             setPendingImportProvider(p);
-             setTab("courses");
-           }}
-         />
-       )}
-       {tab === "assign" && (
-         <AssignTab
-           initialCourse={pendingAssign?.course || null}
-           initialSource={pendingAssign?.source || null}
-           onConsumedInitial={clearPendingAssign}
-         />
-       )}
-       {tab === "assignments" && <AssignmentsTab />}
-       {tab === "certificates" && <CertificatesTab selectedCertificateId={selectedCertificateId} />}
-       {tab === "analytics" && <AnalyticsTab />}
+      <div hidden={tab !== "catalog"} aria-hidden={tab !== "catalog"}>
+        <CatalogTab onAssignCourse={handleAssignFromCatalog} />
+      </div>
+      <div hidden={tab !== "courses"} aria-hidden={tab !== "courses"}>
+        <CoursesTab
+          initialProvider={pendingImportProvider}
+          onConsumedInitial={clearPendingImportProvider}
+        />
+      </div>
+      <div hidden={tab !== "providers"} aria-hidden={tab !== "providers"}>
+        <ProvidersTab
+          onImportProvider={(p) => {
+            setPendingImportProvider(p);
+            setTab("courses");
+          }}
+        />
+      </div>
+      <div hidden={tab !== "assign"} aria-hidden={tab !== "assign"}>
+        <AssignTab
+          initialCourse={pendingAssign?.course || null}
+          initialSource={pendingAssign?.source || null}
+          onConsumedInitial={clearPendingAssign}
+        />
+      </div>
+      <div hidden={tab !== "assignments"} aria-hidden={tab !== "assignments"}>
+        <AssignmentsTab />
+      </div>
+      <div hidden={tab !== "certificates"} aria-hidden={tab !== "certificates"}>
+        <CertificatesTab selectedCertificateId={selectedCertificateId} />
+      </div>
+      <div hidden={tab !== "analytics"} aria-hidden={tab !== "analytics"}>
+        <AnalyticsTab />
+      </div>
     </RecruiterShell>
   );
 }
@@ -316,7 +326,6 @@ function CatalogTab({ onAssignCourse }) {
   const [source, setSource] = useState("microsoft_learn");
   const [q, setQ] = useState("");
   const [facets, setFacets] = useState({ roles: [], levels: [], products: [], providers: [], designations: [], months: [], categories: [], competencies: [] });
-  const [providers, setProviders] = useState([]);
   const [dynamicSources, setDynamicSources] = useState(STATIC_CATALOG_SOURCES);
   const [role, setRole] = useState("");
   const [level, setLevel] = useState("");
@@ -330,65 +339,25 @@ function CatalogTab({ onAssignCourse }) {
   const [page, setPage] = useState(1);
   const [result, setResult] = useState({ courses: [], total: 0, pages: 1 });
   const [loading, setLoading] = useState(true);
-  const initializedProvidersRef = useRef(false);
 
-  const loadManagedProviders = useCallback(() => {
+  const loadCatalogSources = useCallback(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return Promise.resolve();
-    return getManagedFacets(token)
+    return getCatalogSources(token)
       .then((data) => {
-        // Source of truth is the server only — do NOT merge from localStorage
-        // (stale localStorage entries like "test" or "dfsd" would reappear otherwise).
-        const providerList = normalizeManagedProviderTabs(data?.providers || []);
-        // Overwrite localStorage with the clean server list.
+        const allSources = Array.isArray(data?.sources) ? data.sources : [];
+        const providerSources = allSources.filter((item) => String(item?.key || "").startsWith("provider:"));
+        const externalSources = allSources.filter((item) => !String(item?.key || "").startsWith("provider:"));
+        const providerList = normalizeManagedProviderTabs(providerSources.map((item) => item.provider_name || item.label));
         writeManagedProviderRegistry(providerList);
-        setProviders(providerList);
-        // Build dynamic sources with provider tabs first, then external sources
-        const providerSources = providerList.map((prov) => ({
-          key: `provider:${prov}`,
-          label: prov,
-          hint: `Managed roadmap courses from ${prov}.`,
-          type: "managed",
-          providerName: prov,
-        }));
-        setDynamicSources([...STATIC_CATALOG_SOURCES, ...providerSources]);
+        setDynamicSources(allSources.length ? [...externalSources, ...providerSources] : STATIC_CATALOG_SOURCES);
         setSource((current) => {
-          if (current.startsWith("provider:")) {
-            const currentProvider = current.split(":")[1];
-            if (providerList.length && !providerList.includes(currentProvider)) {
-              return `provider:${providerList[0]}`;
-            }
-            return current;
-          }
-          const merged = [...STATIC_CATALOG_SOURCES, ...providerSources];
-          if (!merged.some((s) => s.key === current)) {
-            return merged[0]?.key || current;
-          }
-          return current;
+          const merged = allSources.length ? [...externalSources, ...providerSources] : STATIC_CATALOG_SOURCES;
+          return merged.some((s) => s.key === current) ? current : (merged[0]?.key || current);
         });
-        initializedProvidersRef.current = true;
       })
       .catch(() => setDynamicSources(STATIC_CATALOG_SOURCES));
   }, []);
-
-  // Keep provider tabs current when Excel imports or provider changes happen elsewhere.
-  useEffect(() => {
-    loadManagedProviders();
-    const onProvidersChanged = () => {
-      loadManagedProviders().then(() => load());
-    };
-    const onStorage = (event) => {
-      if (event.key === LEARNING_PROVIDERS_UPDATED_STORAGE_KEY) {
-        loadManagedProviders().then(() => load());
-      }
-    };
-    window.addEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onProvidersChanged);
-    window.addEventListener("storage", onStorage);
-    return () => {
-      window.removeEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onProvidersChanged);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [loadManagedProviders]);
 
   function switchSource(nextSource) {
     if (nextSource === source) return;
@@ -415,7 +384,7 @@ function CatalogTab({ onAssignCourse }) {
     if (!token) return;
     const isManagedProvider = source.startsWith("provider:");
     const loader = isManagedProvider ? getManagedFacets : getCatalogFacets;
-    loader(token, isManagedProvider ? "managed_learning" : source)
+    loader(token, source)
       .then(setFacets)
       .catch(() => {});
   }, [source]);
@@ -425,20 +394,19 @@ function CatalogTab({ onAssignCourse }) {
     if (!token) return;
     setLoading(true);
     const isManagedProvider = source.startsWith("provider:");
-    const actualSource = isManagedProvider ? "managed_learning" : source;
     const selectedProvider = isManagedProvider ? source.split(":")[1] : "";
     browseCatalog(token, {
       q: q || undefined,
-      role: actualSource === "microsoft_learn" ? role || undefined : undefined,
-      level: actualSource === "microsoft_learn" ? level || undefined : undefined,
-      type: actualSource === "microsoft_learn" ? type || undefined : undefined,
-      provider: actualSource === "managed_learning" ? (selectedProvider || provider || undefined) : undefined,
-      designation: actualSource === "managed_learning" ? designation || undefined : undefined,
-      learning_month: actualSource === "managed_learning" ? learningMonth || undefined : undefined,
-      category: actualSource === "managed_learning" || actualSource === "coursera" ? category || undefined : undefined,
-      competency: actualSource === "managed_learning" ? competency || undefined : undefined,
+      role: source === "microsoft_learn" ? role || undefined : undefined,
+      level: source === "microsoft_learn" ? level || undefined : undefined,
+      type: source === "microsoft_learn" ? type || undefined : undefined,
+      provider: isManagedProvider ? (selectedProvider || provider || undefined) : undefined,
+      designation: isManagedProvider ? designation || undefined : undefined,
+      learning_month: isManagedProvider ? learningMonth || undefined : undefined,
+      category: isManagedProvider || source === "coursera" ? category || undefined : undefined,
+      competency: isManagedProvider ? competency || undefined : undefined,
       archived: isManagedProvider ? (archivedOnly ? true : undefined) : undefined,
-      source: actualSource,
+      source,
       page,
       page_size: 12,
     })
@@ -454,6 +422,25 @@ function CatalogTab({ onAssignCourse }) {
     const timer = setTimeout(load, 300);
     return () => clearTimeout(timer);
   }, [load]);
+
+  // Keep provider tabs current when Excel imports or provider changes happen elsewhere.
+  useEffect(() => {
+    loadCatalogSources();
+    const onProvidersChanged = () => {
+      loadCatalogSources().then(() => load());
+    };
+    const onStorage = (event) => {
+      if (event.key === LEARNING_PROVIDERS_UPDATED_STORAGE_KEY) {
+        loadCatalogSources().then(() => load());
+      }
+    };
+    window.addEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onProvidersChanged);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onProvidersChanged);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [loadCatalogSources, load]);
 
   const activeSource = dynamicSources.find((s) => s.key === source) || dynamicSources[0];
   const isManagedProvider = source.startsWith("provider:");
@@ -535,7 +522,7 @@ function CatalogTab({ onAssignCourse }) {
               </label>
             </>
           )}
-          {source === "managed_learning" && (
+          {!isManagedProvider && source === "managed_learning" && (
             <>
               <select className={styles.filterSelect} value={provider} onChange={(e) => { setPage(1); setProvider(e.target.value); }}>
                 <option value="">All providers</option>
@@ -600,7 +587,9 @@ function CatalogTab({ onAssignCourse }) {
             </div>
             <div className={styles.emptyStateTitle}>No courses found</div>
             <p className={styles.emptyStateHint}>
-              Try a different source, clear your filters, or search with different keywords.
+              {isManagedProvider
+                ? `No courses have been imported or synced for ${source.split(":")[1]} yet.`
+                : "Try a different source, clear your filters, or search with different keywords."}
             </p>
           </div>
         )}
@@ -620,7 +609,7 @@ function CatalogTab({ onAssignCourse }) {
                 <div className={styles.courseTitle}>{c.title}</div>
               </div>
               <div className={styles.courseMeta}>
-                {source === "managed_learning" ? (
+                {isManagedProvider || source === "managed_learning" ? (
                   <>
                     <span className={styles.metaChip}>
                       <Building2 aria-hidden="true" />{c.provider || "Managed Learning"}
@@ -644,7 +633,7 @@ function CatalogTab({ onAssignCourse }) {
                 )}
               </div>
               <p className={styles.courseSummary}>
-                {source === "managed_learning"
+                {isManagedProvider || source === "managed_learning"
                   ? [c.designation, c.learning_month, c.category, c.competency].filter(Boolean).join(" · ") || (c.summary || "").slice(0, 140)
                   : (c.summary || "").slice(0, 140)}
               </p>
@@ -795,7 +784,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
     if (!token) return;
     const isManagedProvider = source.startsWith("provider:");
     const loader = isManagedProvider ? getManagedFacets : getCatalogFacets;
-    loader(token, isManagedProvider ? "managed_learning" : source)
+    loader(token, source)
       .then(setFacets)
       .catch(() => {});
   }, [source]);
@@ -818,7 +807,6 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
     const token = localStorage.getItem("access_token");
     if (!token || selectedCourse) return;
     const isManagedProvider = source.startsWith("provider:");
-    const actualSource = isManagedProvider ? "managed_learning" : source;
     const selectedProvider = isManagedProvider ? source.split(":")[1] : "";
     const hasQuery = Boolean(q.trim());
     const hasFilters = Boolean(
@@ -833,15 +821,15 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       setSearching(true);
       browseCatalog(token, {
         q: q.trim() || undefined,
-        source: actualSource,
-        role: actualSource === "microsoft_learn" ? role || undefined : undefined,
-        level: actualSource === "microsoft_learn" ? level || undefined : undefined,
-        type: actualSource === "microsoft_learn" ? type || undefined : undefined,
-        provider: actualSource === "managed_learning" ? selectedProvider || undefined : undefined,
-        designation: actualSource === "managed_learning" ? designation || undefined : undefined,
-        learning_month: actualSource === "managed_learning" ? learningMonth || undefined : undefined,
-        category: actualSource === "managed_learning" || actualSource === "coursera" ? category || undefined : undefined,
-        competency: actualSource === "managed_learning" ? competency || undefined : undefined,
+        source,
+        role: source === "microsoft_learn" ? role || undefined : undefined,
+        level: source === "microsoft_learn" ? level || undefined : undefined,
+        type: source === "microsoft_learn" ? type || undefined : undefined,
+        provider: isManagedProvider ? selectedProvider || undefined : undefined,
+        designation: isManagedProvider ? designation || undefined : undefined,
+        learning_month: isManagedProvider ? learningMonth || undefined : undefined,
+        category: isManagedProvider || source === "coursera" ? category || undefined : undefined,
+        competency: isManagedProvider ? competency || undefined : undefined,
         page: 1,
         page_size: 20,
       })
@@ -953,7 +941,6 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
   const selectedCourseBadgeClass = courseBadgeClass(selectedCourse, courseSource);
   const activeSource = dynamicSources.find((s) => s.key === source) || dynamicSources[0] || STATIC_CATALOG_SOURCES[0];
   const isManagedProvider = source.startsWith("provider:");
-  const actualSource = isManagedProvider ? "managed_learning" : source;
   const hasSearchOrFilters = Boolean(
     q.trim() || role || level || type || designation || learningMonth || category || competency
   );
@@ -1076,7 +1063,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               />
             </div>
             <div className={styles.filterBar} style={{ marginTop: 10 }}>
-              {actualSource === "microsoft_learn" && (
+              {source === "microsoft_learn" && (
                 <>
                   <select className={styles.filterSelect} value={role} onChange={(e) => setRole(e.target.value)}>
                     <option value="">All roles</option>
@@ -1094,13 +1081,13 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   </select>
                 </>
               )}
-              {actualSource === "coursera" && (
+              {source === "coursera" && (
                 <select className={styles.filterSelect} value={category} onChange={(e) => setCategory(e.target.value)}>
                   <option value="">All categories</option>
                   {(facets.categories || []).map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
               )}
-              {actualSource === "managed_learning" && (
+              {isManagedProvider && (
                 <>
                   <select className={styles.filterSelect} value={designation} onChange={(e) => setDesignation(e.target.value)}>
                     <option value="">All designations</option>
@@ -1371,19 +1358,105 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
 }
 
 
+function assignmentStatusLabel(status) {
+  const key = String(status || "").toLowerCase();
+  if (key === "completed") return "Completed";
+  if (key === "in_progress") return "In progress";
+  if (key === "assigned") return "Not started";
+  return (status || "—").replace(/_/g, " ");
+}
+
+function buildAssignmentTree(assignments) {
+  const deptMap = new Map();
+  for (const a of assignments) {
+    const department = (a.department || "").trim() || "Unassigned department";
+    const role = (a.job_title || a.target_designation || "").trim() || "Unassigned role";
+    const personKey = a.employee_id || a.employee_name || "unknown";
+    if (!deptMap.has(department)) deptMap.set(department, new Map());
+    const roleMap = deptMap.get(department);
+    if (!roleMap.has(role)) roleMap.set(role, new Map());
+    const personMap = roleMap.get(role);
+    if (!personMap.has(personKey)) {
+      personMap.set(personKey, {
+        employee_id: a.employee_id,
+        employee_name: a.employee_name || "Unknown employee",
+        courses: [],
+      });
+    }
+    personMap.get(personKey).courses.push(a);
+  }
+
+  const sortText = (a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: "base" });
+  return Array.from(deptMap.entries())
+    .sort(([a], [b]) => sortText(a, b))
+    .map(([department, roleMap]) => ({
+      department,
+      assignmentCount: Array.from(roleMap.values()).reduce(
+        (sum, people) => sum + Array.from(people.values()).reduce((n, p) => n + p.courses.length, 0),
+        0
+      ),
+      personCount: Array.from(roleMap.values()).reduce((sum, people) => sum + people.size, 0),
+      roles: Array.from(roleMap.entries())
+        .sort(([a], [b]) => sortText(a, b))
+        .map(([role, personMap]) => ({
+          role,
+          assignmentCount: Array.from(personMap.values()).reduce((n, p) => n + p.courses.length, 0),
+          people: Array.from(personMap.values())
+            .sort((a, b) => sortText(a.employee_name, b.employee_name))
+            .map((person) => ({
+              ...person,
+              courses: [...person.courses].sort((a, b) =>
+                sortText(a.course_title || "", b.course_title || "")
+              ),
+            })),
+        })),
+    }));
+}
+
 function AssignmentsTab() {
   const [assignments, setAssignments] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
   const [mandatoryOnly, setMandatoryOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [remindingId, setRemindingId] = useState(null);
+  const [collapsed, setCollapsed] = useState({});
+
+  const departmentOptions = useMemo(() => {
+    const set = new Set();
+    for (const a of assignments) {
+      const dept = (a.department || "").trim();
+      if (dept) set.add(dept);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [assignments]);
+
+  const filteredAssignments = useMemo(() => {
+    if (!departmentFilter) return assignments;
+    return assignments.filter(
+      (a) => (a.department || "").trim().toLowerCase() === departmentFilter.toLowerCase()
+    );
+  }, [assignments, departmentFilter]);
+
+  const assignmentTree = useMemo(
+    () => buildAssignmentTree(filteredAssignments),
+    [filteredAssignments]
+  );
+
+  function toggleCollapsed(key) {
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  function isOpen(key, defaultOpen = true) {
+    return collapsed[key] === undefined ? defaultOpen : !collapsed[key];
+  }
 
   function exportProgress() {
     const headers = [
+      "Department",
+      "Role",
       "Employee ID",
       "Employee Name",
-      "Department",
-      "Job Title",
       "Course Title",
       "Course Type",
       "Status",
@@ -1392,20 +1465,29 @@ function AssignmentsTab() {
       "Due Date",
       "Assigned Date",
     ];
-    const rows = assignments.map((a) => {
+    const sorted = [...filteredAssignments].sort((a, b) => {
+      const dept = String(a.department || "").localeCompare(String(b.department || ""), undefined, { sensitivity: "base" });
+      if (dept) return dept;
+      const role = String(a.job_title || "").localeCompare(String(b.job_title || ""), undefined, { sensitivity: "base" });
+      if (role) return role;
+      const name = String(a.employee_name || "").localeCompare(String(b.employee_name || ""), undefined, { sensitivity: "base" });
+      if (name) return name;
+      return String(a.course_title || "").localeCompare(String(b.course_title || ""), undefined, { sensitivity: "base" });
+    });
+    const rows = sorted.map((a) => {
       const status = (a.status || "").toLowerCase();
-      let progress = status;
+      let progress = assignmentStatusLabel(status);
       if (status === "completed") progress = "100%";
       else if (status === "in_progress") progress = "In Progress";
       else if (status === "assigned") progress = "Not Started";
       return {
+        Department: a.department || "",
+        Role: a.job_title || a.target_designation || "",
         "Employee ID": a.employee_id || "",
         "Employee Name": a.employee_name || "",
-        Department: a.department || "",
-        "Job Title": a.job_title || "",
         "Course Title": a.course_title || "",
         "Course Type": a.course_type || "",
-        Status: (a.status || "").replace(/_/g, " "),
+        Status: assignmentStatusLabel(a.status),
         Progress: progress,
         Mandatory: a.mandatory ? "Yes" : "No",
         "Due Date": a.due_date || "",
@@ -1414,19 +1496,19 @@ function AssignmentsTab() {
     });
     const ws = XLSX.utils.json_to_sheet(rows, { header: headers, skipHeader: false });
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Learning Progress");
+    XLSX.utils.book_append_sheet(wb, ws, "Assigned Courses");
     const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `learning-progress-${Date.now()}.xlsx`;
+    link.download = `assigned-courses-${Date.now()}.xlsx`;
     link.click();
     URL.revokeObjectURL(url);
-    toast.success("Learning progress exported.");
+    toast.success("Assigned courses exported.");
   }
 
-  const load = useCallback((force = false) => {
+  const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setLoading(true);
@@ -1443,7 +1525,7 @@ function AssignmentsTab() {
       .finally(() => setLoading(false));
   }, [statusFilter, mandatoryOnly]);
 
-  useEffect(() => { load(false); }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   async function handleRemind(assignment) {
     const token = localStorage.getItem("access_token");
@@ -1471,13 +1553,13 @@ function AssignmentsTab() {
           <div>
             <div className={shellStyles.sectionTitle}>Assigned courses</div>
             <p className={shellStyles.sectionDesc}>
-              Track completion — reminders go by email and notification
+              Drill down by department, role, and person — export Excel for recruiters
             </p>
           </div>
         </div>
         <div className={styles.toolbar}>
           <div className={styles.toolbarLeft}>
-            <button type="button" className={styles.modeBtn} onClick={exportProgress}>
+            <button type="button" className={styles.modeBtn} onClick={exportProgress} disabled={!filteredAssignments.length}>
               <Download aria-hidden="true" /> Export Excel
             </button>
             <label className={styles.checkPill}>
@@ -1485,59 +1567,167 @@ function AssignmentsTab() {
               <Milestone aria-hidden="true" />
               Mandatory only
             </label>
+            <select
+              className={styles.filterSelect}
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+              aria-label="Filter by department"
+            >
+              <option value="">All departments</option>
+              {departmentOptions.map((dept) => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
             <select className={styles.filterSelect} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">All statuses</option>
-              <option value="assigned">Assigned</option>
+              <option value="assigned">Not started</option>
               <option value="in_progress">In progress</option>
               <option value="completed">Completed</option>
             </select>
           </div>
           <div className={styles.toolbarRight}>
-            <button type="button" className={styles.modeBtn} onClick={() => load(true)}>
+            <button type="button" className={styles.modeBtn} onClick={load}>
               <RefreshCw aria-hidden="true" /> Refresh
             </button>
           </div>
         </div>
       </div>
       <div className={shellStyles.sectionBody}>
-        {!loading && assignments.length === 0 && (
+        {loading && <p className={styles.inlineNote}>Loading assignments…</p>}
+        {!loading && filteredAssignments.length === 0 && (
           <div className={styles.emptyState}>
-            <div className={styles.emptyStateIcon}><ListChecks aria-hidden="true" /></div>
+            <div className={styles.emptyStateIcon}><FolderTree aria-hidden="true" /></div>
             <div className={styles.emptyStateTitle}>No assignments yet</div>
-            <p className={styles.emptyStateHint}>Assign a course from the Assign Courses tab to start tracking completion.</p>
+            <p className={styles.emptyStateHint}>
+              Assign a course from the Assign Courses tab. Progress appears here by department → role → person.
+            </p>
           </div>
         )}
-        {assignments.map((a) => (
-          <div key={a.id} className={styles.listRow}>
-            <div className={styles.listInfo}>
-              <div className={styles.listTitle}>
-                {a.course_title}
-                {a.mandatory ? <span className={`${styles.statusChip} ${styles.mandatory}`}>Mandatory</span> : null}
-              </div>
-              <div className={styles.listMeta}>
-                <span className={styles.metaChip}><Users aria-hidden="true" />{a.employee_name}</span>
-                <span className={styles.metaChip}>{a.job_title || "—"}</span>
-                <span className={styles.metaChip}><Building2 aria-hidden="true" />{a.department || "—"}</span>
-                {a.due_date ? <span className={styles.metaChip}><Calendar aria-hidden="true" />Due {a.due_date}</span> : null}
-              </div>
-            </div>
-            <span className={`${styles.statusChip} ${styles[a.status] || ""}`}>{a.status.replace("_", " ")}</span>
-            {a.status !== "completed" ? (
-              <button
-                type="button"
-                className={styles.smallBtn}
-                disabled={remindingId === a.id}
-                onClick={() => handleRemind(a)}
-              >
-                {remindingId === a.id ? (
-                  <><RefreshCw aria-hidden="true" className="animate-spin" /> Sending…</>
-                ) : (
-                  <><Bell aria-hidden="true" /> Remind</>
+        {!loading &&
+          assignmentTree.map((deptNode) => {
+            const deptKey = `dept:${deptNode.department}`;
+            const deptOpen = isOpen(deptKey, true);
+            return (
+              <div key={deptNode.department} className={styles.hierarchyDept}>
+                <button
+                  type="button"
+                  className={styles.hierarchyToggle}
+                  onClick={() => toggleCollapsed(deptKey)}
+                  aria-expanded={deptOpen}
+                >
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={`${styles.hierarchyChevron} ${deptOpen ? "" : styles.hierarchyChevronClosed}`}
+                  />
+                  <Building2 aria-hidden="true" />
+                  <span className={styles.hierarchyToggleLabel}>{deptNode.department}</span>
+                  <span className={styles.hierarchyToggleMeta}>
+                    {deptNode.personCount} person{deptNode.personCount === 1 ? "" : "s"} · {deptNode.assignmentCount} course{deptNode.assignmentCount === 1 ? "" : "s"}
+                  </span>
+                </button>
+                {deptOpen && (
+                  <div className={styles.hierarchyMonths}>
+                    {deptNode.roles.map((roleNode) => {
+                      const roleKey = `role:${deptNode.department}::${roleNode.role}`;
+                      const roleOpen = isOpen(roleKey, true);
+                      return (
+                        <div key={roleKey} className={styles.hierarchyMonth}>
+                          <button
+                            type="button"
+                            className={styles.hierarchyToggle}
+                            onClick={() => toggleCollapsed(roleKey)}
+                            aria-expanded={roleOpen}
+                          >
+                            <ChevronDown
+                              aria-hidden="true"
+                              className={`${styles.hierarchyChevron} ${roleOpen ? "" : styles.hierarchyChevronClosed}`}
+                            />
+                            <Briefcase aria-hidden="true" />
+                            <span className={styles.hierarchyToggleLabel}>{roleNode.role}</span>
+                            <span className={styles.hierarchyToggleMeta}>
+                              {roleNode.people.length} person{roleNode.people.length === 1 ? "" : "s"} · {roleNode.assignmentCount} course{roleNode.assignmentCount === 1 ? "" : "s"}
+                            </span>
+                          </button>
+                          {roleOpen && (
+                            <div className={styles.progressPersonList}>
+                              {roleNode.people.map((person) => {
+                                const personKey = `person:${deptNode.department}::${roleNode.role}::${person.employee_id || person.employee_name}`;
+                                const personOpen = isOpen(personKey, true);
+                                const completed = person.courses.filter((c) => c.status === "completed").length;
+                                return (
+                                  <div key={personKey} className={styles.progressPerson}>
+                                    <button
+                                      type="button"
+                                      className={styles.progressPersonHead}
+                                      onClick={() => toggleCollapsed(personKey)}
+                                      aria-expanded={personOpen}
+                                    >
+                                      <ChevronDown
+                                        aria-hidden="true"
+                                        className={`${styles.hierarchyChevron} ${personOpen ? "" : styles.hierarchyChevronClosed}`}
+                                      />
+                                      <Users aria-hidden="true" />
+                                      <span className={styles.progressPersonName}>{person.employee_name}</span>
+                                      <span className={styles.hierarchyToggleMeta}>
+                                        {completed}/{person.courses.length} completed
+                                      </span>
+                                    </button>
+                                    {personOpen && (
+                                      <div className={styles.progressCourseList}>
+                                        {person.courses.map((a) => (
+                                          <div key={a.id} className={styles.progressCourseRow}>
+                                            <div className={styles.listInfo}>
+                                              <div className={styles.listTitle}>
+                                                {a.course_title}
+                                                {a.mandatory ? (
+                                                  <span className={`${styles.statusChip} ${styles.mandatory}`}>Mandatory</span>
+                                                ) : null}
+                                              </div>
+                                              <div className={styles.listMeta}>
+                                                {a.due_date ? (
+                                                  <span className={styles.metaChip}>
+                                                    <Calendar aria-hidden="true" />Due {a.due_date}
+                                                  </span>
+                                                ) : null}
+                                                {a.course_type ? (
+                                                  <span className={styles.metaChip}>{a.course_type}</span>
+                                                ) : null}
+                                              </div>
+                                            </div>
+                                            <span className={`${styles.statusChip} ${styles[a.status] || ""}`}>
+                                              {assignmentStatusLabel(a.status)}
+                                            </span>
+                                            {a.status !== "completed" ? (
+                                              <button
+                                                type="button"
+                                                className={styles.smallBtn}
+                                                disabled={remindingId === a.id}
+                                                onClick={() => handleRemind(a)}
+                                              >
+                                                {remindingId === a.id ? (
+                                                  <><RefreshCw aria-hidden="true" className="animate-spin" /> Sending…</>
+                                                ) : (
+                                                  <><Bell aria-hidden="true" /> Remind</>
+                                                )}
+                                              </button>
+                                            ) : null}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
-              </button>
-            ) : null}
-          </div>
-        ))}
+              </div>
+            );
+          })}
       </div>
     </div>
   );
@@ -1666,10 +1856,14 @@ function CertificatesTab({ selectedCertificateId = null }) {
 
 function AnalyticsTab() {
   const { departments: frameworkDepartments } = useOrgFrameworkOptions();
-  const departmentOptions = frameworkDepartments;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [department, setDepartment] = useState("");
+  const departmentOptions = useMemo(() => {
+    const fromFramework = frameworkDepartments || [];
+    const fromData = (data?.department_comparison || []).map((d) => d.department).filter(Boolean);
+    return [...new Set([...fromFramework, ...fromData])].sort((a, b) => a.localeCompare(b));
+  }, [frameworkDepartments, data]);
 
   const load = useCallback((force = false) => {
     const token = localStorage.getItem("access_token");
@@ -1681,46 +1875,95 @@ function AnalyticsTab() {
       .finally(() => setLoading(false));
   }, [department]);
 
-  useEffect(() => { load(false); }, [load]);
+  useEffect(() => {
+    const t = setTimeout(() => { load(false); }, 0);
+    return () => clearTimeout(t);
+  }, [load]);
 
   function handleExport() {
     if (!data) return;
     const rows = (data.department_comparison || []).map((d) => ({
       department: d.department,
+      employee_count: d.employee_count,
       assigned: d.assigned,
       completed: d.completed,
       completion_rate: d.completion_rate,
     }));
     downloadCsv(
       `learning-analytics${department ? `-${department}` : ""}.csv`,
-      ["department", "assigned", "completed", "completion_rate"],
+      ["department", "employee_count", "assigned", "completed", "completion_rate"],
       rows.length
         ? rows
         : [{
             department: department || "All",
+            employee_count: data.employees_in_scope,
             assigned: data.total_assignments,
-            completed: "",
-            completion_rate: data.completion_rate,
+            completed: data.completed_assignments,
+            completion_rate: data.assignment_completion_rate,
           }]
     );
     const popularRows = (data.popular_courses || []).map((c) => ({
       title: c.title,
-      enrollments: c.enrollments,
+      activity_count: c.enrollments,
+      basis: data.popular_courses_basis || "activity",
     }));
     if (popularRows.length) {
-      downloadCsv("learning-popular-courses.csv", ["title", "enrollments"], popularRows);
+      downloadCsv(
+        `learning-popular-courses${department ? `-${department}` : ""}.csv`,
+        ["title", "activity_count", "basis"],
+        popularRows
+      );
     }
     toast.success("Analytics exported.");
   }
 
-  if (loading) return null;
-  if (!data) return null;
+  if (loading) return <p className={styles.inlineNote}>Loading learning analytics…</p>;
+  if (!data) {
+    return (
+      <div className={styles.emptyState}>
+        <div className={styles.emptyStateIcon}><BarChart3 aria-hidden="true" /></div>
+        <div className={styles.emptyStateTitle}>Analytics unavailable</div>
+        <p className={styles.emptyStateHint}>Refresh to try loading learning analytics again.</p>
+      </div>
+    );
+  }
 
   const stats = [
-    { label: "Completion Rate", value: `${data.completion_rate}%`, color: "cyan", icon: CircleCheck },
-    { label: "Certification Rate", value: `${data.certification_rate}%`, color: "green", icon: Award },
-    { label: "Learning Hours", value: data.total_learning_hours, color: "orange", icon: Clock },
-    { label: "Mandatory completion", value: `${data.mandatory_completion_rate ?? 0}%`, color: "navy", icon: Target },
+    {
+      label: "Employees in scope",
+      value: data.employees_in_scope ?? 0,
+      hint: `${data.departments_in_scope ?? 0} department${data.departments_in_scope === 1 ? "" : "s"}`,
+      color: "navy",
+      icon: Users,
+    },
+    {
+      label: "Assignment completion",
+      value: `${data.assignment_completion_rate ?? data.completion_rate ?? 0}%`,
+      hint: `${data.completed_assignments ?? 0}/${data.total_assignments ?? 0} completed`,
+      color: "cyan",
+      icon: CircleCheck,
+    },
+    {
+      label: "Mandatory completion",
+      value: `${data.mandatory_completion_rate ?? 0}%`,
+      hint: `${data.mandatory_completed_assignments ?? 0}/${data.mandatory_assignments ?? 0} mandatory done`,
+      color: "orange",
+      icon: Target,
+    },
+    {
+      label: "Verified cert rate",
+      value: `${data.certification_rate ?? 0}%`,
+      hint: `${data.verified_certificates ?? 0}/${data.total_certificates ?? 0} verified`,
+      color: "green",
+      icon: Award,
+    },
+    {
+      label: "Learning hours",
+      value: data.total_learning_hours ?? 0,
+      hint: "Verified certificates + completed enrollments",
+      color: "navy",
+      icon: Clock,
+    },
   ];
 
   const maxPopular = Math.max(1, ...(data.popular_courses || []).map((c) => c.enrollments));
@@ -1746,6 +1989,11 @@ function AnalyticsTab() {
         </div>
       </div>
 
+      <p className={styles.inlineNote}>
+        {data.empty_reason
+          || `Showing recruiter-scoped learning activity${department ? ` for ${department}` : " across all departments"}.`}
+      </p>
+
       <div className={styles.analyticsGrid}>
         {stats.map((s) => {
           const Icon = s.icon;
@@ -1758,6 +2006,7 @@ function AnalyticsTab() {
               </div>
               <div className={shellStyles.statValue}>{s.value}</div>
               <div className={shellStyles.statLabel}>{s.label}</div>
+              {s.hint && <div className={styles.inlineNote} style={{ marginBottom: 0 }}>{s.hint}</div>}
             </div>
           );
         })}
@@ -1769,7 +2018,9 @@ function AnalyticsTab() {
             <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
             <div>
               <div className={shellStyles.sectionTitle}>Popular courses</div>
-              <p className={shellStyles.sectionDesc}>Most-enrolled courses across your employees</p>
+              <p className={shellStyles.sectionDesc}>
+                Ranked by {data.popular_courses_basis === "assignments" ? "assignments" : "enrollments"} in this scope
+              </p>
             </div>
           </div>
         </div>
@@ -1809,6 +2060,7 @@ function AnalyticsTab() {
               <div className={styles.listInfo}>
                 <div className={styles.listTitle}>{d.department}</div>
                 <div className={styles.listMeta}>
+                  <span className={styles.metaChip}><Users aria-hidden="true" />{d.employee_count} people</span>
                   <span className={styles.metaChip}><Users aria-hidden="true" />{d.completed}/{d.assigned} completed</span>
                 </div>
                 <div className={styles.barTrack} style={{ marginTop: 8, maxWidth: 320 }}>
