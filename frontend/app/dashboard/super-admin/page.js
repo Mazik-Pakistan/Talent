@@ -910,6 +910,7 @@ export default function SuperAdminDashboardPage() {
           toggleCapability={toggleCapability}
           quickDeleteRecruiter={quickDeleteRecruiter}
           onTabChange={setActiveTab}
+          onRefresh={loadRecruiters}
         />
       )}
 

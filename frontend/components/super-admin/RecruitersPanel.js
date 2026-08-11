@@ -169,6 +169,7 @@ export default function RecruitersPanel({
   toggleCapability = () => {},
   quickDeleteRecruiter = () => {},
   onTabChange = () => {},
+  onRefresh = () => {},
 }) {
   const [refreshing, setRefreshing] = useState(false);
   const headerCheckRef = useRef(null);
@@ -232,7 +233,9 @@ export default function RecruitersPanel({
   function handleRefresh() {
     if (refreshing) return;
     setRefreshing(true);
-    window.setTimeout(() => window.location.reload(), 350);
+    Promise.resolve(onRefresh()).finally(() => {
+      window.setTimeout(() => setRefreshing(false), 350);
+    });
   }
 
   function clearFilters() {
