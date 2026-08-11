@@ -206,12 +206,39 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
   if (!dashboard) return null;
   const s = dashboard.summary || {};
 
-  const stats = [
-    { label: "To start", value: s.assigned_count ?? 0, color: "orange" },
-    { label: "In Progress", value: s.in_progress_count ?? 0, color: "cyan" },
-    { label: "Completed", value: s.completed_count ?? 0, color: "green" },
-    { label: "Certificates Earned", value: s.certificates_earned ?? 0, color: "navy" },
+const stats = [
+    { label: "To start", value: s.assigned_count ?? 0, color: "orange", icon: "play" },
+    { label: "In Progress", value: s.in_progress_count ?? 0, color: "cyan", icon: "clock" },
+    { label: "Completed", value: s.completed_count ?? 0, color: "green", icon: "check" },
+    { label: "Certificates Earned", value: s.certificates_earned ?? 0, color: "navy", icon: "award" },
   ];
+
+  const STAT_ICONS = {
+    play: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+    clock: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+    ),
+    check: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="8 12 11 15 16 9" />
+      </svg>
+    ),
+    award: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="8" r="6" />
+        <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" />
+      </svg>
+    ),
+  };
 
   async function startAssigned(uid) {
     const token = localStorage.getItem("access_token");
@@ -255,7 +282,9 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
         {stats.map((stat) => (
           <div key={stat.label} className={dashStyles.statCard}>
             <div className={dashStyles.statTop}>
-              <span className={`${dashStyles.statIcon} ${dashStyles[stat.color]}`}>●</span>
+              <span className={`${dashStyles.statIcon} ${dashStyles[stat.color]}`}>
+                {STAT_ICONS[stat.icon]}
+              </span>
             </div>
             <div className={dashStyles.statValue}>{stat.value}</div>
             <div className={dashStyles.statLabel}>{stat.label}</div>
