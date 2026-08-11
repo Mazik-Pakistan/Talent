@@ -84,8 +84,8 @@ export const SUPER_ADMIN_TAB_HELP = {
   },
   recruiters: {
     title: "Recruiter management",
-    hint: "View, edit, or deactivate recruiter accounts. Bulk-edit capabilities with templates.",
-    fields: ["q", "status"],
+    hint: "View, edit, deactivate, or remove recruiter accounts. Use search, status filters, and bulk-edit templates to manage access and capabilities.",
+    fields: [],
   },
   organizations: {
     title: "Organizations",
@@ -112,8 +112,8 @@ export const SUPER_ADMIN_PAGE_SUMMARIES = {
   },
   recruiters: {
     title: "Recruiter Management",
-    what: "View, edit, or deactivate recruiter accounts and bulk-edit capabilities.",
-    why: "Maintains access control and recruiter lifecycle across the platform.",
+    what: "View, edit, deactivate, or remove recruiter accounts — use search, filters, and bulk-edit templates.",
+    why: "Maintains access control, status, and lifecycle for every recruiter on the platform.",
   },
   organizations: {
     title: "Organizations",

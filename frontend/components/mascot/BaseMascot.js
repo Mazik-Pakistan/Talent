@@ -1061,14 +1061,13 @@ export default function BaseMascot({
   ]);
 
   useEffect(() => {
-    const onContext = () => {
-      // Tab/section changed on the same page — refresh tips + page summary.
+    const onContext = async () => {
       coachEngagedRef.current = false;
       setCoachEngaged(false);
       setBrowsingTips(false);
       lastCoachNextKeyRef.current = null;
       clearFieldHighlight();
-      refreshInsights();
+      await refreshInsights();
       const snapshot = refreshCoach({ announce: false });
       if (snapshot?.total) showFormIntro(snapshot);
       else showPageSuggestion(true);

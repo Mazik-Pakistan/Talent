@@ -174,18 +174,55 @@ function recruitersInsights(snapshot) {
         priority: MASCOT_PRIORITY.insight,
         message: `${snapshot.totalRecruiters} recruiter${snapshot.totalRecruiters === 1 ? "" : "s"} on the platform — ${snapshot.activeRecruiters} active, ${snapshot.pendingInvitations} pending.`,
       });
+      if (snapshot.inactiveRecruiters > 0) {
+        push(insights, {
+          id: "sa-recruiters-inactive",
+          priority: MASCOT_PRIORITY.task,
+          message: `${snapshot.inactiveRecruiters} inactive recruiter${snapshot.inactiveRecruiters === 1 ? "" : "s"} — review and reactivate or remove from this page.`,
+        });
+      }
     } else {
       push(insights, {
         id: "sa-recruiters-empty",
         priority: MASCOT_PRIORITY.task,
-        message: "No recruiters yet — use the Invite tab to create the first account.",
+        message: "No recruiters yet — use the Invite tab or click Invite Recruiter to create the first account.",
       });
     }
   }
   push(insights, {
+    id: "sa-recruiters-search",
+    priority: MASCOT_PRIORITY.tip,
+    message: "Use the search bar to find recruiters by name, email, department, or job title.",
+  });
+  push(insights, {
+    id: "sa-recruiters-status-filter",
+    priority: MASCOT_PRIORITY.tip,
+    message: "Filter by status — Active, Pending, or Inactive — to focus on recruiters that need attention.",
+  });
+  push(insights, {
+    id: "sa-recruiters-org-filter",
+    priority: MASCOT_PRIORITY.tip,
+    message: "Filter by organization to manage recruiters within a specific company.",
+  });
+  push(insights, {
     id: "sa-recruiters-bulk",
     priority: MASCOT_PRIORITY.tip,
-    message: "Select multiple recruiters and use Bulk Edit to apply a capability template.",
+    message: "Select multiple recruiters and use Bulk Edit to apply a role template or change status at once.",
+  });
+  push(insights, {
+    id: "sa-recruiters-capabilities",
+    priority: MASCOT_PRIORITY.tip,
+    message: "Each recruiter's capabilities control which modules they can access — review and adjust them in the edit panel.",
+  });
+  push(insights, {
+    id: "sa-recruiters-actions",
+    priority: MASCOT_PRIORITY.tip,
+    message: "From this page you can edit profiles, toggle status, manage capabilities, or remove recruiters.",
+  });
+  push(insights, {
+    id: "sa-recruiters-refresh",
+    priority: MASCOT_PRIORITY.tip,
+    message: "Use Refresh to reload the latest recruiter data from the server.",
   });
   return insights;
 }
