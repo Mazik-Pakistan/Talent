@@ -1184,11 +1184,11 @@ class CareerFrameworkService:
                 if doc.get("employee_id")
             }
 
+        # Org-scoped only. Do NOT filter by assigned_by — auto-created paths use
+        # assigned_by="system", and recruiters in the same org must see them.
         query: dict[str, Any] = {"status": "active"}
         if department:
             query["current_department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
-        if current_user.role != "super_admin":
-            query["assigned_by"] = current_user.id
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}

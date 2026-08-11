@@ -1092,11 +1092,14 @@ function MyCoursesTab({ onChange }) {
                         onChange={(ev) => setUploadForm((f) => ({ ...f, learning_hours: ev.target.value }))}
                       />
                     </label>
-                    <div className={styles.fieldWide}>
+                    <div className={styles.uploadCertFileField}>
                       <FileUploadField
                         caption="Certificate file (optional)"
+                        label="Upload document"
+                        replaceLabel="Replace document"
                         accept=".pdf,.png,.jpg,.jpeg"
                         onChange={(ev) => setUploadFile(ev.target.files?.[0] || null)}
+                        selected={!!uploadFile}
                       />
                       {uploadFile && (
                         <div className={styles.uploadCertSelectedFile}>
@@ -2352,12 +2355,24 @@ function CertificatesTab({ onChange }) {
             Learning hours
             <input type="number" min="0" step="0.5" placeholder="e.g. 2" value={form.learning_hours} onChange={(e) => setForm((f) => ({ ...f, learning_hours: e.target.value }))} />
           </label>
-          <div className={styles.fieldWide}>
+          <div className={styles.uploadCertFileField}>
             <FileUploadField
               caption="Certificate file (optional)"
+              label="Upload document"
+              replaceLabel="Replace document"
               accept=".pdf,.png,.jpg,.jpeg"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
+              selected={!!file}
             />
+            {file && (
+              <div className={styles.uploadCertSelectedFile}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                {file.name}
+              </div>
+            )}
           </div>
           <p className={styles.uploadCertHint}>
             After approval, skills and certifications from the course are added to your profile.
