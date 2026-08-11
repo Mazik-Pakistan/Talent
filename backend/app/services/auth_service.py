@@ -805,6 +805,12 @@ class AuthService:
                 detail="The refresh token is invalid or has expired.",
             )
 
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token. Please log in again.",
+            )
+
         user_id = payload.get("user_id")
         email = payload.get("email")
         role = payload.get("role")
