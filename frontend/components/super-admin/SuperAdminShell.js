@@ -17,77 +17,98 @@ import {
 import { can } from "@/services/rbac";
 import styles from "@/components/recruiter/recruiter-shell.module.css";
 
+
 const COLLAPSE_KEY = "super_admin_sidebar_collapsed";
 const POLL_MS = 20000;
+
+
+const iconProps = {
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: "1.8",
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+};
+
 
 const NAV_ITEMS = [
   {
     key: "overview",
     label: "Overview",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="7" height="9" rx="1.5" />
-        <rect x="14" y="3" width="7" height="5" rx="1.5" />
-        <rect x="14" y="12" width="7" height="9" rx="1.5" />
-        <rect x="3" y="16" width="7" height="5" rx="1.5" />
+      <svg {...iconProps}>
+        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+        <rect x="14" y="14" width="7" height="7" rx="1.5" />
       </svg>
     ),
   },
+
   {
     key: "recruiters",
     label: "Recruiters",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      <svg {...iconProps}>
+        <circle cx="9" cy="8" r="3.5" />
+        <path d="M3.5 20c.7-3.5 2.8-5.5 5.5-5.5s4.8 2 5.5 5.5" />
+        <circle cx="18" cy="8" r="2.5" />
+        <path d="M16 14.5c2.2.2 3.8 2 4.5 4.5" />
       </svg>
     ),
   },
+
   {
     key: "organizations",
     label: "Organizations",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="7" height="9" rx="1.5" />
-        <rect x="14" y="3" width="7" height="5" rx="1.5" />
-        <rect x="14" y="12" width="7" height="9" rx="1.5" />
-        <rect x="3" y="16" width="7" height="5" rx="1.5" />
+      <svg {...iconProps}>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M9 21V13h6v8" />
+        <path d="M8 7h.01" />
+        <path d="M12 7h.01" />
+        <path d="M16 7h.01" />
+        <path d="M8 10h.01" />
+        <path d="M12 10h.01" />
+        <path d="M16 10h.01" />
       </svg>
     ),
   },
+
   {
     key: "invite",
     label: "Invite Recruiter",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="8.5" cy="7" r="4" />
-        <line x1="20" y1="8" x2="20" y2="14" />
-        <line x1="23" y1="11" x2="17" y2="11" />
+      <svg {...iconProps}>
+        <circle cx="8.5" cy="8" r="3.5" />
+        <path d="M3 20c.6-3.5 2.5-5.5 5.5-5.5S13.4 16.5 14 20" />
+        <path d="M19 7v7" />
+        <path d="M15.5 10.5H22.5" />
       </svg>
     ),
   },
+
   {
     key: "support",
     label: "Support",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 16v-4" />
-        <path d="M12 8h.01" />
+      <svg {...iconProps}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9.2 9a3 3 0 0 1 5.7 1.3c0 2-2.9 2.5-2.9 4.2" />
+        <path d="M12 17h.01" />
       </svg>
     ),
   },
+
   {
     key: "assistant",
     label: "AI Assistant",
     route: "/dashboard/super-admin/ai-assistant",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1-5.1-1.9 5.1-1.9L12 2.5z" />
-        <path d="M19 15l.9 2.3L22 18l-2.1.7L19 21l-.9-2.3L16 18l2.1-.7L19 15z" />
+      <svg {...iconProps}>
+        <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z" />
+        <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z" />
       </svg>
     ),
   },

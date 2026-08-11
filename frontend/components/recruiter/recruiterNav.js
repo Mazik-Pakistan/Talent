@@ -1,11 +1,20 @@
 "use client";
 
 /**
- * Recruiter sidebar items. Each maps to exactly one independent capability
- * key so toggling one never affects unrelated nav sections.
+ * Recruiter sidebar items.
+ * Each maps to exactly one independent capability key.
  */
 
 import { hasCapability } from "../../services/rbac";
+
+const iconProps = {
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: "1.8",
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+};
 
 const ALL_NAV_ITEMS = [
   {
@@ -14,62 +23,70 @@ const ALL_NAV_ITEMS = [
     href: "/dashboard/recruiter/overview",
     capability: "overview",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="7" height="9" rx="1.5" />
-        <rect x="14" y="3" width="7" height="5" rx="1.5" />
-        <rect x="14" y="12" width="7" height="9" rx="1.5" />
-        <rect x="3" y="16" width="7" height="5" rx="1.5" />
+      <svg {...iconProps}>
+        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+        <rect x="14" y="14" width="7" height="7" rx="1.5" />
       </svg>
     ),
   },
+
   {
     key: "candidates",
     label: "Candidates",
     href: "/dashboard/recruiter/candidates",
     capability: "candidates",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      <svg {...iconProps}>
+        <circle cx="9" cy="8" r="3.5" />
+        <path d="M3 20c.6-3.4 2.6-5.2 6-5.2s5.4 1.8 6 5.2" />
+        <path d="M16 5.5a3.5 3.5 0 0 1 0 5.9" />
+        <path d="M18 14.8c1.8.8 2.8 2.4 3 5.2" />
       </svg>
     ),
   },
+
   {
     key: "invite",
-    label: "Invite & offer",
+    label: "Invite & Offer",
     href: "/dashboard/recruiter/invite",
     capability: "invite",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="8.5" cy="7" r="4" />
-        <line x1="20" y1="8" x2="20" y2="14" />
-        <line x1="23" y1="11" x2="17" y2="11" />
+      <svg {...iconProps}>
+        <circle cx="9" cy="8" r="3.5" />
+        <path d="M3 20c.6-3.4 2.6-5.2 6-5.2s5.4 1.8 6 5.2" />
+        <path d="M19 12v7" />
+        <path d="M15.5 15.5h7" />
       </svg>
     ),
   },
+
   {
     key: "employees",
     label: "Employees",
     href: "/dashboard/recruiter/employees",
     capability: "employees",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="2" y="7" width="20" height="14" rx="2" />
-        <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+      <svg {...iconProps}>
+        <rect x="3" y="6.5" width="18" height="14" rx="2" />
+        <path d="M8 6.5V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1.5" />
+        <path d="M3 11h18" />
+        <path d="M10 14h4" />
       </svg>
     ),
   },
+
   {
     key: "talent",
     label: "Talent",
     href: "/dashboard/recruiter/talent",
     capability: "talent",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2l2.9 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l7.1-1z" />
+      <svg {...iconProps}>
+        <circle cx="12" cy="8" r="3.2" />
+        <path d="M5 20c.7-3.5 3-5.5 7-5.5s6.3 2 7 5.5" />
+        <path d="M19 3.5l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6z" />
       </svg>
     ),
   },
@@ -80,110 +97,135 @@ const ALL_NAV_ITEMS = [
     href: "/dashboard/recruiter/learning",
     capability: "learning",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      <svg {...iconProps}>
+        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v17H6.5A2.5 2.5 0 0 1 4 17.5z" />
+        <path d="M4 5.5v12" />
+        <path d="M8 7h8" />
+        <path d="M8 11h6" />
       </svg>
     ),
   },
-   {
-     key: "org-config",
-     label: "Organization Setup",
-     href: "/dashboard/recruiter/organization-config",
-     capability: "org_config",
-     icon: (
-       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-         <rect x="4" y="2" width="16" height="20" rx="2" />
-         <path d="M9 22V12h6v10" />
-         <path d="M8 6h.01" /><path d="M12 6h.01" /><path d="M16 6h.01" />
-         <path d="M8 10h.01" /><path d="M12 10h.01" /><path d="M16 10h.01" />
-       </svg>
-     ),
-   },
+
+  {
+    key: "org-config",
+    label: "Organization Setup",
+    href: "/dashboard/recruiter/organization-config",
+    capability: "org_config",
+    icon: (
+      <svg {...iconProps}>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M9 21v-6h6v6" />
+        <path d="M8 7h.01" />
+        <path d="M12 7h.01" />
+        <path d="M16 7h.01" />
+        <path d="M8 11h.01" />
+        <path d="M12 11h.01" />
+        <path d="M16 11h.01" />
+      </svg>
+    ),
+  },
+
   {
     key: "messages",
     label: "Messages",
     href: "/dashboard/recruiter/messages",
     capability: "messages",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <svg {...iconProps}>
+        <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H7l-4 2v-9.5A7.5 7.5 0 0 1 10.5 4h2A7.5 7.5 0 0 1 20 11.5z" />
+        <path d="M8 11h.01" />
+        <path d="M12 11h.01" />
+        <path d="M16 11h.01" />
       </svg>
     ),
   },
+
   {
     key: "announcements",
     label: "Announcements",
     href: "/dashboard/recruiter/announcements",
     capability: "announcements",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-        <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+      <svg {...iconProps}>
+        <path d="M4 14V10l12-4v12L4 14z" />
+        <path d="M16 9.5a3.5 3.5 0 0 1 0 5" />
+        <path d="M6 14l1.5 5h3L9 15" />
       </svg>
     ),
   },
+
   {
     key: "it-provisioning",
-    label: "IT & support",
+    label: "IT Support",
     href: "/dashboard/recruiter/it",
     capability: "it",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="2" y="7" width="20" height="14" rx="2" />
-        <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-        <path d="M2 13h20" />
+      <svg {...iconProps}>
+        <rect x="3" y="4" width="14" height="11" rx="1.5" />
+        <path d="M7 20h6" />
+        <path d="M10 15v5" />
+        <circle cx="18" cy="17" r="3" />
+        <path d="M18 15.5v1.5l1 1" />
+        <path d="M18 13v1" />
+        <path d="M18 20v1" />
+        <path d="M14 17h1" />
+        <path d="M21 17h1" />
       </svg>
     ),
   },
+
   {
     key: "activity",
     label: "Activity",
     href: "/dashboard/recruiter/activity",
     capability: "reporting",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+      <svg {...iconProps}>
+        <path d="M3 17h4l2.5-7 4 10L16 13h5" />
+        <path d="M3 6h4" />
       </svg>
     ),
   },
+
   {
     key: "assistant",
     label: "AI Assistant",
     href: "/dashboard/recruiter/ai-assistant",
     capability: "assistant",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1-5.1-1.9 5.1-1.9L12 2.5z" />
-        <path d="M19 15l.9 2.3L22 18l-2.1.7L19 21l-.9-2.3L16 18l2.1-.7L19 15z" />
+      <svg {...iconProps}>
+        <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z" />
+        <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z" />
       </svg>
     ),
   },
+
   {
     key: "support",
     label: "Support",
     href: "/dashboard/recruiter/support",
     capability: "support",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 16v-4" />
-        <path d="M12 8h.01" />
+      <svg {...iconProps}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9.5 9a2.6 2.6 0 1 1 4.8 1.4c-.8 1.1-2.3 1.4-2.3 2.9" />
+        <path d="M12 17h.01" />
       </svg>
     ),
   },
+
   {
     key: "profile",
     label: "Profile",
     href: "/dashboard/recruiter/profile",
     capability: "profile",
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
+      <svg {...iconProps}>
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M4.5 20c.8-3.4 3.3-5.2 7.5-5.2s6.7 1.8 7.5 5.2" />
       </svg>
     ),
-  }
+  },
 ];
 
 /**
