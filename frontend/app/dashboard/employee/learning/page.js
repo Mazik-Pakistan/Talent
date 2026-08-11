@@ -1064,14 +1064,6 @@ function MyCoursesTab({ onChange }) {
                       </p>
                     </div>
                     <label className={styles.fieldWide}>
-                      Course / certification title
-                      <input
-                        value={uploadForm.course_title}
-                        onChange={(ev) => setUploadForm((f) => ({ ...f, course_title: ev.target.value }))}
-                        required
-                      />
-                    </label>
-                    <label className={styles.fieldWide}>
                       Certificate link <span className={styles.req}>*</span>
                       <input
                         type="url"
