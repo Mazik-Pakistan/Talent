@@ -125,6 +125,7 @@ class ItProvisioningService:
                 "recruiter_id": current_user.id,
                 "recruiter_email": current_user.email,
                 "recruiter_name": current_user.full_name,
+                "organization_id": current_user.organization_id or offer.get("organization_id"),
                 "recruiter_note": request.note,
                 "it_manager_email": it_email,
                 "status": "pending",
@@ -1107,6 +1108,7 @@ class ItProvisioningService:
             "recruiter_id": current_user.id,
             "recruiter_name": current_user.full_name,
             "recruiter_email": current_user.email,
+            "organization_id": current_user.organization_id,
             "note": note,
             "status": "pending",
             "submitted_at": None,
@@ -1160,7 +1162,10 @@ class ItProvisioningService:
     async def get_for_offer(self, offer_id: str, current_user: CurrentUser | None = None) -> dict | None:
         base_filter: dict = {"offer_id": str(offer_id), "status": {"$in": ["pending", "submitted", "applied"]}}
         if current_user and current_user.role != "super_admin":
-            base_filter["recruiter_id"] = current_user.id
+            if current_user.organization_id:
+                base_filter["organization_id"] = current_user.organization_id
+            else:
+                base_filter["recruiter_id"] = current_user.id
         doc = await database.it_provisioning_requests.find_one(
             base_filter,
             sort=[("created_at", -1)],
@@ -1181,7 +1186,10 @@ class ItProvisioningService:
                 query_or.append({"candidate_email": candidate["email"].lower()})
         base_filter: dict = {"$or": query_or, "status": {"$in": ["pending", "submitted", "applied"]}}
         if current_user.role != "super_admin":
-            base_filter["recruiter_id"] = current_user.id
+            if current_user.organization_id:
+                base_filter["organization_id"] = current_user.organization_id
+            else:
+                base_filter["recruiter_id"] = current_user.id
         docs = (
             await database.it_provisioning_requests.find(
                 base_filter,

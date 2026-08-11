@@ -4118,27 +4118,36 @@ class LearningService:
 
     async def get_analytics(self, current_user: CurrentUser, *, department: str | None = None) -> dict:
         """US-073: recruiter learning analytics."""
-        query: dict[str, Any] = {}
-        assignment_query: dict[str, Any] = {}
+        employee_query: dict[str, Any] = {}
         if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
-            assignment_query["assigned_by_id"] = current_user.id
+            employee_query["recruiter_id"] = current_user.id
         if department:
-            assignment_query["department"] = {
+            employee_query["department"] = {
                 "$regex": f"^{_escape_regex(department)}$",
                 "$options": "i",
             }
-            query["department"] = {"$regex": f"^{_escape_regex(department)}$", "$options": "i"}
 
-        assignments = await database.learning_assignments.find(assignment_query).to_list(length=5000)
-        certificates = await database.learning_certificates.find(query).to_list(length=5000)
+        employees = await database.employees.find(employee_query).to_list(length=5000)
+        employee_ids = [e.get("employee_id") for e in employees if e.get("employee_id")]
+        user_ids = [e.get("user_id") for e in employees if e.get("user_id")]
 
-        employee_ids = {a["employee_id"] for a in assignments if a.get("employee_id")}
-        enrollments: list[dict] = []
-        if employee_ids:
-            enrollments = await database.learning_enrollments.find(
-                {"employee_id": {"$in": list(employee_ids)}}
-            ).to_list(length=5000)
+        assignment_docs = (
+            await database.learning_assignments.find({"employee_id": {"$in": employee_ids}}).to_list(length=10000)
+            if employee_ids
+            else []
+        )
+        assignments = self._dedupe_assignment_docs(assignment_docs)
+
+        certificates = (
+            await database.learning_certificates.find({"user_id": {"$in": user_ids}}).to_list(length=10000)
+            if user_ids
+            else []
+        )
+        enrollments = (
+            await database.learning_enrollments.find({"user_id": {"$in": user_ids}}).to_list(length=10000)
+            if user_ids
+            else []
+        )
 
         total_assigned = len(assignments)
         completed_assigned = len([a for a in assignments if a.get("status") == "completed"])
@@ -4149,60 +4158,93 @@ class LearningService:
         )
 
         verified_certs = [c for c in certificates if c.get("verification_status") == "verified"]
+        pending_certs = [c for c in certificates if c.get("verification_status") == "pending"]
         certification_rate = round((len(verified_certs) / len(certificates)) * 100, 1) if certificates else 0.0
-        total_learning_hours = round(sum((c.get("learning_hours") or 0) for c in verified_certs), 1)
+        total_learning_hours = round(
+            sum((c.get("learning_hours") or 0) for c in verified_certs)
+            + sum((e.get("duration_minutes") or 0) for e in enrollments if e.get("status") == "completed") / 60,
+            1,
+        )
 
         popular: dict[str, int] = {}
-        for e in enrollments:
-            title = e.get("course_title") or "Untitled"
+        popular_basis = "enrollments"
+        popular_source = enrollments if enrollments else assignments
+        if not enrollments:
+            popular_basis = "assignments"
+        for row in popular_source:
+            title = row.get("course_title") or "Untitled"
             popular[title] = popular.get(title, 0) + 1
-        popular_courses = sorted(popular.items(), key=lambda kv: -kv[1])[:8]
+        popular_courses = [
+            {"title": title, "enrollments": count}
+            for title, count in sorted(popular.items(), key=lambda kv: (-kv[1], kv[0].lower()))[:8]
+        ]
 
         dept_stats: dict[str, dict[str, int]] = {}
-        for a in assignments:
-            dept = a.get("department") or "Unassigned"
-            bucket = dept_stats.setdefault(dept, {"assigned": 0, "completed": 0})
+        for employee in employees:
+            dept = employee.get("department") or "Unassigned"
+            dept_stats.setdefault(dept, {"employee_count": 0, "assigned": 0, "completed": 0})
+            dept_stats[dept]["employee_count"] += 1
+        for assignment in assignments:
+            dept = assignment.get("department") or "Unassigned"
+            bucket = dept_stats.setdefault(dept, {"employee_count": 0, "assigned": 0, "completed": 0})
             bucket["assigned"] += 1
-            if a.get("status") == "completed":
+            if assignment.get("status") == "completed":
                 bucket["completed"] += 1
+
         department_comparison = [
             {
                 "department": dept,
+                "employee_count": stats["employee_count"],
                 "assigned": stats["assigned"],
                 "completed": stats["completed"],
-                "completion_rate": round((stats["completed"] / stats["assigned"]) * 100, 1) if stats["assigned"] else 0,
+                "completion_rate": round((stats["completed"] / stats["assigned"]) * 100, 1) if stats["assigned"] else 0.0,
             }
             for dept, stats in sorted(dept_stats.items())
         ]
 
-        managed = await managed_learning_service.analytics()
+        unique_courses = {
+            str(doc.get("course_uid") or "").strip() or self._normalize_course_title(doc.get("course_title"))
+            for doc in assignments
+            if doc.get("course_uid") or doc.get("course_title")
+        }
 
         return {
-            "total_courses": managed.get("total_courses", 0),
-            "archived_courses": managed.get("archived_courses", 0),
-            "assigned_courses": managed.get("assigned_courses", total_assigned),
-            "completed_courses": managed.get("completed_courses", completed_assigned),
-            "pending_certificates": managed.get(
-                "pending_certificates", len([c for c in certificates if c.get("verification_status") == "pending"])
-            ),
-            "learning_hours": managed.get("learning_hours", total_learning_hours),
-            "completion_rate": managed.get("completion_rate", completion_rate),
+            "department_filter": department,
+            "employees_in_scope": len(employees),
+            "departments_in_scope": len(department_comparison),
+            "total_courses": len(unique_courses),
+            "archived_courses": 0,
+            "assigned_courses": total_assigned,
+            "completed_courses": completed_assigned,
+            "pending_certificates": len(pending_certs),
+            "learning_hours": total_learning_hours,
+            "completion_rate": completion_rate,
             "assignment_completion_rate": completion_rate,
             "certification_rate": certification_rate,
             "total_learning_hours": total_learning_hours,
             "total_assignments": total_assigned,
+            "completed_assignments": completed_assigned,
             "mandatory_assignments": mandatory_assigned,
+            "mandatory_completed_assignments": mandatory_completed,
             "mandatory_completion_rate": (
                 round((mandatory_completed / mandatory_assigned) * 100, 1) if mandatory_assigned else 0.0
             ),
             "total_certificates": len(certificates),
-            "popular_courses": [{"title": t, "enrollments": n} for t, n in popular_courses],
+            "verified_certificates": len(verified_certs),
+            "popular_courses_basis": popular_basis,
+            "popular_courses": popular_courses,
             "department_comparison": department_comparison,
-            "department_filter": department,
-            "most_popular_courses": managed.get("most_popular_courses", []),
-            "learning_trend": managed.get("learning_trend", []),
-            "department_progress": managed.get("department_progress", []),
-            "designation_progress": managed.get("designation_progress", []),
+            "most_popular_courses": popular_courses,
+            "learning_trend": [],
+            "department_progress": department_comparison,
+            "designation_progress": [],
+            "empty_reason": (
+                "No employees in this scope yet."
+                if not employees
+                else "No learning assignments or enrollments in this scope yet."
+                if not assignments and not enrollments
+                else None
+            ),
         }
 
 

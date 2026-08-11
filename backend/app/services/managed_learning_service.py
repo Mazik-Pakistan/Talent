@@ -853,27 +853,22 @@ class ManagedLearningService:
             query["category"] = {"$regex": f"^{re.escape(category.strip())}$", "$options": "i"}
         if competency:
             query["competency"] = {"$regex": f"^{re.escape(competency.strip())}$", "$options": "i"}
-        docs = await database.learning_courses.find(query).to_list(length=5000)
         if provider:
-            docs = [d for d in docs if _normalize_provider_name(d.get("provider") or "Managed Learning") == provider]
+            query["provider"] = {"$regex": f"^{re.escape(_normalize_provider_name(provider))}$", "$options": "i"}
         if q:
             needle = q.strip().lower()
-            docs = [
-                doc
-                for doc in docs
-                if needle in " ".join(
-                    [
-                        doc.get("title") or "",
-                        doc.get("designation") or "",
-                        doc.get("learning_month") or "",
-                        doc.get("category") or "",
-                        doc.get("competency") or "",
-                        doc.get("provider") or "",
-                        *[str(t) for t in (doc.get("tags") or [])],
-                        doc.get("instructor") or "",
-                    ]
-                ).lower()
+            search_pattern = {"$regex": re.escape(needle), "$options": "i"}
+            query["$or"] = [
+                {"title": search_pattern},
+                {"designation": search_pattern},
+                {"learning_month": search_pattern},
+                {"category": search_pattern},
+                {"competency": search_pattern},
+                {"provider": search_pattern},
+                {"tags": search_pattern},
+                {"instructor": search_pattern},
             ]
+        docs = await database.learning_courses.find(query).to_list(length=5000)
 
         for doc in docs:
             for field in ("created_at", "updated_at"):
@@ -1014,7 +1009,6 @@ class ManagedLearningService:
                 query = {"$and": [query, roadmap_filter]}
             else:
                 query = roadmap_filter
-        docs = await database.learning_courses.find(query).to_list(length=5000)
 
         # Sync any course provider names into the registry first (idempotent).
         # This ensures providers added via import always appear in catalog tabs.
@@ -1042,10 +1036,10 @@ class ManagedLearningService:
         if any(name != "Managed Learning" for name in providers):
             providers = [name for name in providers if name != "Managed Learning"]
         providers = sorted(providers, key=lambda value: value.lower())
-        designations = sorted({(doc.get("designation") or "").strip() for doc in docs if doc.get("designation")})
-        months = sorted({(doc.get("learning_month") or "").strip() for doc in docs if doc.get("learning_month")})
-        categories = sorted({(doc.get("category") or "").strip() for doc in docs if doc.get("category")})
-        competencies = sorted({(doc.get("competency") or "").strip() for doc in docs if doc.get("competency")})
+        designations = sorted({str(value).strip() for value in await database.learning_courses.distinct("designation", query) if str(value or "").strip()})
+        months = sorted({str(value).strip() for value in await database.learning_courses.distinct("learning_month", query) if str(value or "").strip()})
+        categories = sorted({str(value).strip() for value in await database.learning_courses.distinct("category", query) if str(value or "").strip()})
+        competencies = sorted({str(value).strip() for value in await database.learning_courses.distinct("competency", query) if str(value or "").strip()})
         return {
             "providers": providers,
             "designations": designations,

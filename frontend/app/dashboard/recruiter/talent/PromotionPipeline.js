@@ -5,13 +5,14 @@ import { toast } from "react-toastify";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./talent.module.css";
 import ListPager, { paginateLocal } from "./ListPager";
-import { getApiErrorMessage, listEmployees } from "@/services/authService";
+import { getApiErrorMessage } from "@/services/authService";
 import {
   assignEmployeeCareer,
   getPromotionReadiness,
   listCareerLevels,
 } from "@/services/careerService";
 import { bustTalentIntelligenceCache } from "@/hooks/useTalentIntelligenceData";
+import { searchTalent } from "@/services/talentService";
 import {
   AlertTriangle,
   Building2,
@@ -54,6 +55,14 @@ function PromotionRow({ item, onOpenProfile }) {
   const color = scoreColor(item.readiness_score || 0);
   const circumference = 2 * Math.PI * 15.9155;
   const statusLabel = item.status === "paused" || item.assignment_status === "paused" ? "Paused" : null;
+  const isTerminal = Boolean(
+    item.is_terminal_role
+    || (
+      item.current_role
+      && item.target_role
+      && String(item.current_role).trim().toLowerCase() === String(item.target_role).trim().toLowerCase()
+    )
+  );
 
   return (
     <div className={styles.prRow}>
@@ -61,11 +70,20 @@ function PromotionRow({ item, onOpenProfile }) {
         <div className={styles.prRowName}>
           {item.employee_name}
           {statusLabel && <span className={styles.pausedChip}>{statusLabel}</span>}
+          {isTerminal && !statusLabel && (
+            <span className={styles.pausedChip}>Highest role</span>
+          )}
         </div>
         <div className={styles.prRowMeta}>
           <span>{item.current_role || "—"}</span>
-          <span className={styles.prArrow}><ChevronRight size={16} aria-hidden="true" /></span>
-          <span>{item.target_role || "—"}</span>
+          {isTerminal ? (
+            <span className={styles.metaChip}>Top of ladder</span>
+          ) : (
+            <>
+              <span className={styles.prArrow}><ChevronRight size={16} aria-hidden="true" /></span>
+              <span>{item.target_role || "—"}</span>
+            </>
+          )}
           <span className={styles.metaChip}><Building2 size={14} aria-hidden="true" />{item.department || "—"}</span>
         </div>
       </div>
@@ -128,8 +146,12 @@ function PipelineBucket({
       </div>
       <div className={shellStyles.sectionBody}>
         <div className={styles.scrollList}>
-          {sliced.items.map((item) => (
-            <PromotionRow key={item.employee_id} item={item} onOpenProfile={onOpenProfile} />
+          {sliced.items.map((item, idx) => (
+            <PromotionRow
+              key={`${item.employee_id || "emp"}-${item.target_role || "role"}-${idx}`}
+              item={item}
+              onOpenProfile={onOpenProfile}
+            />
           ))}
         </div>
         <ListPager
@@ -184,19 +206,33 @@ export default function PromotionPipeline({
       .finally(() => setLoading(false));
   }, [department]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    const t = setTimeout(() => { reload(); }, 0);
+    return () => clearTimeout(t);
+  }, [reload]);
 
   useEffect(() => {
     if (!empQuery.trim() || empQuery.length < 2) {
-      setEmployees([]);
-      return;
+      const t = setTimeout(() => setEmployees([]), 0);
+      return () => clearTimeout(t);
     }
     const token = localStorage.getItem("access_token");
     if (!token) return;
-    listEmployees(token, { q: empQuery, page_size: 20 })
+    searchTalent(token, {
+      q: empQuery,
+      department: department || null,
+      skills: [],
+      certifications: [],
+      min_learning_progress: null,
+      min_experience_years: null,
+      min_competency_score: null,
+      semantic: false,
+      page: 1,
+      page_size: 20,
+    })
       .then((data) => setEmployees(data.employees || []))
       .catch(() => setEmployees([]));
-  }, [empQuery]);
+  }, [empQuery, department]);
 
   const filtered = useMemo(() => {
     const ready = (report?.ready || []).filter((i) => matchesQuery(i, q, ""));
@@ -207,27 +243,24 @@ export default function PromotionPipeline({
 
   // Reset bucket pages when search changes.
   useEffect(() => {
-    setPages({ ready: 1, almost: 1, behind: 1 });
+    const t = setTimeout(() => setPages({ ready: 1, almost: 1, behind: 1 }), 0);
+    return () => clearTimeout(t);
   }, [q]);
 
   async function handleAssign(e) {
     e.preventDefault();
-    console.log("[Assign] Form submitted", assignForm);
     if (!assignForm.employee_id || !assignForm.target_level_id) {
       toast.warn("Please select an employee and target level.");
       return;
     }
     const token = localStorage.getItem("access_token");
-    console.log("[Assign] Token present:", !!token);
     if (!token) return;
     setAssigning(true);
     try {
-      console.log("[Assign] Calling API...");
-      const result = await assignEmployeeCareer(token, assignForm.employee_id, {
+      await assignEmployeeCareer(token, assignForm.employee_id, {
         target_level_id: assignForm.target_level_id,
         target_date: assignForm.target_date || undefined,
       });
-      console.log("[Assign] API result:", result);
       toast.success("Career path saved.");
       setShowAssign(false);
       setAssignForm({ employee_id: "", target_level_id: "", target_date: "" });

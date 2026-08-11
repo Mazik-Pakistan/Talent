@@ -53,7 +53,7 @@ class CareerFrameworkService:
 
         # Check if track already exists for this department+name
         existing = await database.career_tracks.find_one(
-            {"department": {"$regex": f"^{department}$", "$options": "i"}, "track_name": {"$regex": f"^{track_name}$", "$options": "i"}}
+            {"department": {"$regex": f"^{re.escape(department)}$", "$options": "i"}, "track_name": {"$regex": f"^{re.escape(track_name)}$", "$options": "i"}}
         )
         if existing:
             raise HTTPException(
@@ -79,7 +79,7 @@ class CareerFrameworkService:
     async def list_tracks(self, department: str | None = None, organization_id: str | None = None) -> dict:
         query: dict[str, Any] = {"is_active": True}
         if department:
-            query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+            query["department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
@@ -195,8 +195,8 @@ class CareerFrameworkService:
 
         # Get or create the parent track
         track_query: dict[str, Any] = {
-            "department": {"$regex": f"^{department}$", "$options": "i"},
-            "track_name": {"$regex": f"^{track_name}$", "$options": "i"},
+            "department": {"$regex": f"^{re.escape(department)}$", "$options": "i"},
+            "track_name": {"$regex": f"^{re.escape(track_name)}$", "$options": "i"},
             "is_active": True,
         }
         org_filter = self._org_filter(organization_id)
@@ -277,7 +277,7 @@ class CareerFrameworkService:
         if track_id:
             query["track_id"] = track_id
         if department:
-            query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+            query["department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
@@ -588,7 +588,7 @@ class CareerFrameworkService:
             ).strip().lower()
             path = existing.get("assigned_learning_path") or []
             path_nested = bool(path) and all(isinstance(c.get("skills"), list) for c in path)
-            if same_title and same_dept and path_nested:
+            if same_title and same_dept and path_nested and existing.get("is_terminal_role") is not None:
                 await self._sync_career_path_to_learning_assignments(employee, path)
                 return self._public_assignment(existing)
 
@@ -600,6 +600,10 @@ class CareerFrameworkService:
 
         current_role_title = org_role.get("name") or job_title
         next_role_name = (org_role.get("next_role") or "").strip() or None
+        if next_role_name and next_role_name.lower() == current_role_title.strip().lower():
+            next_role_name = None
+        # No Promotes-to means this is the top of the ladder — target stays the current role.
+        is_terminal_role = not next_role_name
         target_role_title = next_role_name or current_role_title
         department = org_role.get("department") or employee.get("department")
 
@@ -795,6 +799,17 @@ class CareerFrameworkService:
         progress = self._calculate_progress(
             assigned_learning_path, skills_to_acquire, certifications_to_earn
         )
+        # Top-of-ladder with no remaining roadmap work is already at the highest role.
+        if (
+            is_terminal_role
+            and not assigned_learning_path
+            and not skills_to_acquire
+            and not certifications_to_earn
+        ):
+            progress = {
+                "overall_progress_percent": 100,
+                "readiness_score": 100,
+            }
         now = _now()
         path_fields = {
             "employee_name": employee.get("full_name"),
@@ -813,6 +828,7 @@ class CareerFrameworkService:
                 or (org_role.get("level_number") or 1) + (1 if next_role_name else 0)
             ),
             "target_role_title": target_role_title,
+            "is_terminal_role": is_terminal_role,
             "target_date": existing.get("target_date") if existing else None,
             "assigned_learning_path": assigned_learning_path,
             "skills_to_acquire": skills_to_acquire,
@@ -873,7 +889,7 @@ class CareerFrameworkService:
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
-        doc = await database.employee_career_assignments.find_one(query)
+        doc = await self._best_assignment_for_query(query)
         if not doc:
             employee_q: dict[str, Any] = {"employee_id": employee_id, "status": "active"}
             if organization_id:
@@ -904,7 +920,7 @@ class CareerFrameworkService:
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
-        doc = await database.employee_career_assignments.find_one(query)
+        doc = await self._best_assignment_for_query(query)
         if not doc:
             raise HTTPException(status_code=404, detail="No active career assignment found.")
 
@@ -969,7 +985,7 @@ class CareerFrameworkService:
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
-        doc = await database.employee_career_assignments.find_one(query)
+        doc = await self._best_assignment_for_query(query)
         if not doc:
             raise HTTPException(status_code=404, detail="No active career assignment found.")
 
@@ -1023,7 +1039,7 @@ class CareerFrameworkService:
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
-        doc = await database.employee_career_assignments.find_one(query)
+        doc = await self._best_assignment_for_query(query)
         if not doc:
             assignment = await self.ensure_org_career_assignment(employee)
             if assignment:
@@ -1052,17 +1068,17 @@ class CareerFrameworkService:
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
-        doc = await database.employee_career_assignments.find_one(query)
+        doc = await self._best_assignment_for_query(query)
         if not doc:
             assignment = await self.ensure_org_career_assignment(employee)
             if not assignment:
                 return {"progress": None}
-            doc = await database.employee_career_assignments.find_one(query)
+            doc = await self._best_assignment_for_query(query)
             if not doc:
                 return {"progress": None}
         elif doc.get("assignment_source") == "org_framework":
             await self.ensure_org_career_assignment(employee)
-            doc = await database.employee_career_assignments.find_one(query) or doc
+            doc = await self._best_assignment_for_query(query) or doc
 
         # Enrich learning path with enrollment status
         if employee.get("user_id") and doc.get("assigned_learning_path"):
@@ -1083,29 +1099,123 @@ class CareerFrameworkService:
     # Reports
     # ------------------------------------------------------------------ #
 
+    async def _ensure_org_pipeline_assignments(
+        self,
+        organization_id: str | None,
+        department: str | None = None,
+    ) -> None:
+        """Backfill org role-ladder career paths so Pipeline matches auto-assign behavior.
+
+        Only creates missing assignments (existing rows are left alone). Safe to call on
+        every promotion-readiness load — cost is one employee scan + ensure for gaps.
+        """
+        if not organization_id:
+            return
+
+        emp_query: dict[str, Any] = {
+            "organization_id": organization_id,
+            "status": "active",
+            "job_title": {"$exists": True, "$nin": [None, ""]},
+        }
+        if department:
+            emp_query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+
+        employees = await database.employees.find(emp_query).to_list(length=500)
+        for employee in employees:
+            if not employee.get("employee_id"):
+                continue
+            try:
+                # Always run ensure so missing paths are created and top-of-ladder
+                # flags (is_terminal_role) stay in sync with Organization Setup.
+                await self.ensure_org_career_assignment(employee)
+            except Exception:
+                # Skip employees whose job title doesn't match an org ladder entry.
+                continue
+
+    @staticmethod
+    def _dedupe_assignments_by_employee(docs: list[dict]) -> list[dict]:
+        """One pipeline row per employee — prefer higher readiness, then newest update."""
+        best: dict[str, dict] = {}
+        for doc in docs:
+            eid = doc.get("employee_id")
+            if not eid:
+                continue
+            prev = best.get(eid)
+            if not prev:
+                best[eid] = doc
+                continue
+            score = doc.get("readiness_score") or 0
+            prev_score = prev.get("readiness_score") or 0
+            if score > prev_score:
+                best[eid] = doc
+                continue
+            if score < prev_score:
+                continue
+            doc_updated = doc.get("updated_at") or datetime.min.replace(tzinfo=UTC)
+            prev_updated = prev.get("updated_at") or datetime.min.replace(tzinfo=UTC)
+            if doc_updated >= prev_updated:
+                best[eid] = doc
+        return list(best.values())
+
+    async def _best_assignment_for_query(self, query: dict[str, Any]) -> dict | None:
+        docs = await database.employee_career_assignments.find(query).to_list(length=50)
+        deduped = self._dedupe_assignments_by_employee(docs)
+        return deduped[0] if deduped else None
+
     async def get_promotion_readiness(self, current_user: CurrentUser, department: str | None = None, organization_id: str | None = None) -> dict:
+        # Org auto-assign uses assigned_by="system"; Pipeline must be org-scoped,
+        # not filtered to the viewing recruiter's user id.
+        await self._ensure_org_pipeline_assignments(organization_id, department)
+
+        valid_employee_ids: set[str] | None = None
+        if organization_id:
+            employee_query: dict[str, Any] = {
+                "organization_id": organization_id,
+                "status": "active",
+            }
+            if department:
+                employee_query["department"] = {"$regex": f"^{department}$", "$options": "i"}
+            valid_employee_ids = {
+                doc.get("employee_id")
+                for doc in await database.employees.find(
+                    employee_query,
+                    {"employee_id": 1},
+                ).to_list(length=500)
+                if doc.get("employee_id")
+            }
+
         query: dict[str, Any] = {"status": "active"}
         if department:
-            query["current_department"] = {"$regex": f"^{department}$", "$options": "i"}
+            query["current_department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
         if current_user.role != "super_admin":
             query["assigned_by"] = current_user.id
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
 
-        docs = await database.employee_career_assignments.find(query).to_list(length=500)
+        docs = self._dedupe_assignments_by_employee(
+            await database.employee_career_assignments.find(query).to_list(length=500)
+        )
+        if valid_employee_ids is not None:
+            docs = [doc for doc in docs if doc.get("employee_id") in valid_employee_ids]
 
         ready = []
         almost_ready = []
         behind = []
 
         for doc in docs:
+            current_role = doc.get("current_role_title")
+            target_role = doc.get("target_role_title")
+            is_terminal = bool(doc.get("is_terminal_role"))
+            if not is_terminal and current_role and target_role:
+                is_terminal = current_role.strip().lower() == target_role.strip().lower()
             item = {
                 "employee_id": doc.get("employee_id"),
                 "employee_name": doc.get("employee_name"),
                 "department": doc.get("current_department"),
-                "current_role": doc.get("current_role_title"),
-                "target_role": doc.get("target_role_title"),
+                "current_role": current_role,
+                "target_role": target_role,
+                "is_terminal_role": is_terminal,
                 "progress_percent": doc.get("overall_progress_percent", 0),
                 "readiness_score": doc.get("readiness_score", 0),
                 "target_date": doc.get("target_date"),
@@ -1133,13 +1243,23 @@ class CareerFrameworkService:
 
     async def get_career_progress_report(self, current_user: CurrentUser, organization_id: str | None = None) -> dict:
         query: dict[str, Any] = {"status": "active"}
-        if current_user.role != "super_admin":
-            query["assigned_by"] = current_user.id
         org_filter = self._org_filter(organization_id)
         if org_filter:
             query = {"$and": [query, org_filter]}
 
-        docs = await database.employee_career_assignments.find(query).to_list(length=500)
+        docs = self._dedupe_assignments_by_employee(
+            await database.employee_career_assignments.find(query).to_list(length=500)
+        )
+        if organization_id:
+            valid_employee_ids = {
+                doc.get("employee_id")
+                for doc in await database.employees.find(
+                    {"organization_id": organization_id, "status": "active"},
+                    {"employee_id": 1},
+                ).to_list(length=500)
+                if doc.get("employee_id")
+            }
+            docs = [doc for doc in docs if doc.get("employee_id") in valid_employee_ids]
 
         by_department: dict[str, dict] = {}
         for doc in docs:
@@ -1193,10 +1313,8 @@ class CareerFrameworkService:
 
     async def list_all_assignments(self, current_user: CurrentUser, department: str | None = None, status_filter: str | None = None, organization_id: str | None = None) -> dict:
         query: dict[str, Any] = {}
-        if current_user.role != "super_admin":
-            query["assigned_by"] = current_user.id
         if department:
-            query["current_department"] = {"$regex": f"^{department}$", "$options": "i"}
+            query["current_department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
         if status_filter:
             query["status"] = status_filter
         else:
@@ -1409,7 +1527,7 @@ class CareerFrameworkService:
                 role_title = row_data["role_title"]
 
                 existing_query: dict[str, Any] = {
-                    "department": {"$regex": f"^{department}$", "$options": "i"},
+                    "department": {"$regex": f"^{re.escape(department)}$", "$options": "i"},
                     "level_number": level_number,
                     "is_active": True,
                 }
@@ -1437,8 +1555,8 @@ class CareerFrameworkService:
                     track_id = ""
                     if track_name:
                         track_query: dict[str, Any] = {
-                            "department": {"$regex": f"^{department}$", "$options": "i"},
-                            "track_name": {"$regex": f"^{track_name}$", "$options": "i"},
+                            "department": {"$regex": f"^{re.escape(department)}$", "$options": "i"},
+                            "track_name": {"$regex": f"^{re.escape(track_name)}$", "$options": "i"},
                             "is_active": True,
                         }
                         if org_filter:
@@ -1594,22 +1712,24 @@ class CareerFrameworkService:
     ) -> dict | None:
         if not organization_id or not job_title:
             return None
+        title = re.sub(r"\s+", " ", job_title.strip())
+        dept = re.sub(r"\s+", " ", (department or "").strip()) if department else ""
         query: dict[str, Any] = {
             "organization_id": organization_id,
-            "name": {"$regex": f"^{re.escape(job_title.strip())}$", "$options": "i"},
+            "name": {"$regex": f"^{re.escape(title)}$", "$options": "i"},
         }
-        if department:
+        if dept:
             query["department"] = {
-                "$regex": f"^{re.escape(department.strip())}$",
+                "$regex": f"^{re.escape(dept)}$",
                 "$options": "i",
             }
         role = await database.org_framework_roles.find_one(query)
-        if role or not department:
+        if role or not dept:
             return role
         # Retry without department if title is unique enough in the org.
         return await database.org_framework_roles.find_one({
             "organization_id": organization_id,
-            "name": {"$regex": f"^{re.escape(job_title.strip())}$", "$options": "i"},
+            "name": {"$regex": f"^{re.escape(title)}$", "$options": "i"},
         })
 
     async def _list_org_roadmap_rows(self, organization_id: str, role_name: str) -> list[dict]:
@@ -1760,6 +1880,12 @@ class CareerFrameworkService:
             "target_level_id": doc.get("target_level_id"),
             "target_level_number": doc.get("target_level_number"),
             "target_role_title": doc.get("target_role_title"),
+            "is_terminal_role": bool(doc.get("is_terminal_role")) or (
+                bool(doc.get("current_role_title"))
+                and bool(doc.get("target_role_title"))
+                and str(doc.get("current_role_title")).strip().lower()
+                == str(doc.get("target_role_title")).strip().lower()
+            ),
             "target_date": doc.get("target_date"),
             "assigned_learning_path": doc.get("assigned_learning_path") or [],
             "skills_to_acquire": doc.get("skills_to_acquire") or [],
