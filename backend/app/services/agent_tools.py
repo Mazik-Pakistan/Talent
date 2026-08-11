@@ -141,18 +141,25 @@ def _name_match_clauses(term: str) -> list[dict]:
     return clauses
 
 
-def _recruiter_scope(user: CurrentUser) -> str | None:
-    return None if user.role == "super_admin" else user.id
+def _recruiter_scope(user: CurrentUser) -> dict | None:
+    """Return a scoping filter so recruiters only see records in their organization."""
+    if user.role == "super_admin":
+        return None
+    if user.role == "recruiter" and user.organization_id:
+        return {"organization_id": user.organization_id}
+    return None
 
 
-async def _find_employee_by_query(q: str, *, recruiter_id: str | None = None) -> dict | None:
+async def _find_employee_by_query(q: str, *, scope: dict | None = None) -> dict | None:
     term = (q or "").strip()
     if not term:
         return None
     if "@" in term:
         emp = await _find_employee_by_email(term)
-        if emp and recruiter_id and emp.get("recruiter_id") != recruiter_id:
-            return None
+        if emp and scope:
+            for k, v in scope.items():
+                if emp.get(k) != v:
+                    return None
         return emp
     query: dict = {
         "$or": [
@@ -160,23 +167,25 @@ async def _find_employee_by_query(q: str, *, recruiter_id: str | None = None) ->
             {"employee_id": {"$regex": _escape_regex(term), "$options": "i"}},
         ]
     }
-    if recruiter_id:
-        query = {"$and": [{"recruiter_id": recruiter_id}, query]}
+    if scope:
+        query = {"$and": [scope, query]}
     return await database.employees.find_one(query)
 
 
-async def _find_candidate_by_query(q: str, *, recruiter_id: str | None = None) -> dict | None:
+async def _find_candidate_by_query(q: str, *, scope: dict | None = None) -> dict | None:
     term = (q or "").strip()
     if not term:
         return None
     if "@" in term:
         cand = await _find_candidate_by_email(term)
-        if cand and recruiter_id and cand.get("recruiter_id") != recruiter_id:
-            return None
+        if cand and scope:
+            for k, v in scope.items():
+                if cand.get(k) != v:
+                    return None
         return cand
     query: dict = {"$or": _name_match_clauses(term)}
-    if recruiter_id:
-        query = {"$and": [{"recruiter_id": recruiter_id}, query]}
+    if scope:
+        query = {"$and": [scope, query]}
     return await database.candidates.find_one(query)
 
 
@@ -255,7 +264,9 @@ def _employee_status_payload(employee: dict) -> dict:
 async def _tool_list_candidates(user: CurrentUser, args: dict) -> ToolResult:
     query: dict = {}
     if user.role != "super_admin":
-        query["recruiter_id"] = user.id
+        scope = _recruiter_scope(user)
+        if scope:
+            query.update(scope)
     status_filter = args.get("status")
     if status_filter:
         query["conversion_status"] = status_filter
@@ -288,7 +299,9 @@ async def _tool_list_candidates(user: CurrentUser, args: dict) -> ToolResult:
 async def _tool_list_employees(user: CurrentUser, args: dict) -> ToolResult:
     query: dict = {"status": {"$in": ["active", "inactive", "on_leave"]}}
     if user.role != "super_admin":
-        query["recruiter_id"] = user.id
+        scope = _recruiter_scope(user)
+        if scope:
+            query.update(scope)
     profile_status = (args.get("profile_status") or "").strip().lower()
     if profile_status in ("incomplete", "complete"):
         query["profile_status"] = profile_status
@@ -328,8 +341,8 @@ async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResul
         return ToolResult(ok=False, error="An email or name is required.")
 
     scope = _recruiter_scope(user)
-    employee = await _find_employee_by_query(query, recruiter_id=scope)
-    candidate = await _find_candidate_by_query(query, recruiter_id=scope)
+    employee = await _find_employee_by_query(query, scope=scope)
+    candidate = await _find_candidate_by_query(query, scope=scope)
 
     if employee:
         payload = _employee_status_payload(employee)
@@ -609,7 +622,7 @@ async def _tool_remind_employee_profile(user: CurrentUser, args: dict) -> ToolRe
         query = email or name
         if not query:
             return ToolResult(ok=False, error="Provide email, name, or employee_id.")
-        employee = await _find_employee_by_query(query, recruiter_id=_recruiter_scope(user))
+        employee = await _find_employee_by_query(query, scope=_recruiter_scope(user))
         if not employee:
             return ToolResult(ok=False, error=f"No employee found for {query}.")
 
@@ -672,7 +685,7 @@ async def _resolve_employee(user: CurrentUser, args: dict) -> tuple[dict | None,
         query = email or name
         if not query:
             return None, "Provide email, name, or employee_id."
-        employee = await _find_employee_by_query(query, recruiter_id=_recruiter_scope(user))
+        employee = await _find_employee_by_query(query, scope=_recruiter_scope(user))
         if not employee:
             return None, f"No employee found for {query}."
         # Enforce recruiter ownership via service resolver.
@@ -700,13 +713,13 @@ async def _resolve_candidate(user: CurrentUser, args: dict) -> tuple[dict | None
             query["$or"].append({"_id": ObjectId(candidate_id)})
         scope = _recruiter_scope(user)
         if scope:
-            query = {"$and": [query, {"recruiter_id": scope}]}
+            query = {"$and": [query, scope]}
         doc = await database.candidates.find_one(query)
         return (doc, None) if doc else (None, f"No candidate found for id {candidate_id}.")
     query_text = email or name
     if not query_text:
         return None, "Provide email, name, or candidate_id."
-    doc = await _find_candidate_by_query(query_text, recruiter_id=_recruiter_scope(user))
+    doc = await _find_candidate_by_query(query_text, scope=_recruiter_scope(user))
     if not doc:
         return None, f"No candidate found for {query_text}."
     return doc, None

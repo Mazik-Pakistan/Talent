@@ -1272,6 +1272,17 @@ class DocumentService:
         if current_user.role not in ("recruiter", "super_admin"):
             raise HTTPException(status_code=403, detail="Not authorized.")
 
+    @staticmethod
+    def _assert_owner_scope(current_user: CurrentUser, owner: dict | None, detail: str) -> None:
+        """Recruiters can access any employee/candidate record within their organization."""
+        if current_user.role == "super_admin" or not owner:
+            return
+        if current_user.organization_id:
+            if owner.get("organization_id") != current_user.organization_id:
+                raise HTTPException(status_code=403, detail=detail)
+        elif owner.get("recruiter_id") != current_user.id:
+            raise HTTPException(status_code=403, detail=detail)
+
     async def _find(self, document_id: str) -> dict:
         query_or = [{"object_path": document_id}]
         if ObjectId.is_valid(document_id):

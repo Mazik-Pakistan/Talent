@@ -371,15 +371,16 @@ async def create_default_organization_if_needed() -> None:
 
 
 def recruiter_scope(user: CurrentUser) -> dict:
-    """Mongo query fragment that scopes recruiter data to their own records.
+    """Mongo query fragment that scopes recruiter data within their organization.
 
     - super_admin: sees everything (empty filter)
-    - recruiter: only rows they own (recruiter_id matches their user id)
+    - recruiter: only rows within the same organization
+    - other roles: no additional scoping (empty filter)
     """
     if user.role == "super_admin":
         return {}
-    if user.role == "recruiter":
-        return {"recruiter_id": user.id}
+    if user.role == "recruiter" and user.organization_id:
+        return {"organization_id": user.organization_id}
     return {}
 
 
