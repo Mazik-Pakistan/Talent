@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from app.core.rbac import CurrentUser
-from app.core.security import require_capabilities
+from app.core.security import require_capabilities, require_roles
 from app.schemas.it_provisioning import (
     BulkRemindItProvisioningRequest,
     BulkSendItProvisioningRequest,
@@ -20,7 +20,11 @@ from app.services.it_kit_service import it_kit_service
 
 router = APIRouter(prefix="/api/it-provisioning", tags=["IT Provisioning"])
 
-RequireRecruiterWithIT = Annotated[CurrentUser, Depends(require_capabilities("it"))]
+RequireRecruiterWithIT = Annotated[
+    CurrentUser,
+    Depends(require_roles("recruiter", "super_admin")),
+    Depends(require_capabilities("it")),
+]
 
 
 @router.get("/kits")
