@@ -3,6 +3,7 @@ Also owns the post-hire 'complete your profile' flow (US-025..US-033 subset
 that moved to the employee side of the offer-letter flow)."""
 
 import logging
+import re
 from datetime import UTC, datetime
 
 from bson import ObjectId
@@ -32,6 +33,11 @@ from app.services.people_history import (
 
 EMPLOYEE_ID_PREFIX = "EMP"
 EMPLOYEE_ID_COUNTER = "employee_id"
+
+
+def _escape_regex(term: str) -> str:
+    """Escape user input before use in MongoDB $regex to prevent regex injection."""
+    return re.escape(term or "")
 
 # Post-hire profile completion — the flow the user lands on right after
 # their Employee ID is issued ("profile incomplete" banner on the dashboard).
@@ -245,7 +251,7 @@ class EmployeeService:
         if scope:
             query.update(scope)
         if q and q.strip():
-            term = q.strip()
+            term = _escape_regex(q.strip())
             query["$or"] = [
                 {"full_name": {"$regex": term, "$options": "i"}},
                 {"user_id": {"$regex": term, "$options": "i"}},
@@ -774,11 +780,11 @@ class EmployeeService:
         if profile_status:
             query["profile_status"] = profile_status.strip().lower()
         if employee_id:
-            query["employee_id"] = {"$regex": employee_id.strip(), "$options": "i"}
+            query["employee_id"] = {"$regex": _escape_regex(employee_id.strip()), "$options": "i"}
         if department:
-            query["department"] = {"$regex": department.strip(), "$options": "i"}
+            query["department"] = {"$regex": _escape_regex(department.strip()), "$options": "i"}
         if job_title:
-            query["job_title"] = {"$regex": job_title.strip(), "$options": "i"}
+            query["job_title"] = {"$regex": _escape_regex(job_title.strip()), "$options": "i"}
         if joining_from or joining_to:
             date_filter: dict = {}
             if joining_from:
@@ -787,7 +793,7 @@ class EmployeeService:
                 date_filter["$lte"] = joining_to
             query["start_date"] = date_filter
         if q and q.strip():
-            term = q.strip()
+            term = _escape_regex(q.strip())
             text_or = [
                 {"full_name": {"$regex": term, "$options": "i"}},
                 {"email": {"$regex": term, "$options": "i"}},
@@ -1283,7 +1289,7 @@ class EmployeeService:
         if reason:
             query["historical_reason"] = reason.strip().lower()
         if q and q.strip():
-            term = q.strip()
+            term = _escape_regex(q.strip())
             query = {
                 "$and": [
                     query,

@@ -20,6 +20,7 @@ always cheap to compute from what's already in Mongo.
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -665,10 +666,11 @@ class TalentService:
         if department:
             query["department"] = department
         if q and q.strip():
+            term = re.escape(q.strip())
             query["$or"] = [
-                {"title": {"$regex": q.strip(), "$options": "i"}},
-                {"description": {"$regex": q.strip(), "$options": "i"}},
-                {"required_skills": {"$regex": q.strip(), "$options": "i"}},
+                {"title": {"$regex": term, "$options": "i"}},
+                {"description": {"$regex": term, "$options": "i"}},
+                {"required_skills": {"$regex": term, "$options": "i"}},
             ]
 
         total = await database.internal_opportunities.count_documents(query)

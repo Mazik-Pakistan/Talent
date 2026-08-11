@@ -7,6 +7,7 @@ same permission-checked service layer used by the Super Admin dashboard.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
 
@@ -284,7 +285,7 @@ async def _tool_get_recruiter_detail(user: CurrentUser, args: dict) -> ToolResul
     elif email:
         query = {"email": email}
     elif name:
-        query = {"full_name": {"$regex": name, "$options": "i"}}
+        query = {"full_name": {"$regex": re.escape(name), "$options": "i"}}
 
     recruiter = await database.recruiters.find_one(query)
     if not recruiter:
