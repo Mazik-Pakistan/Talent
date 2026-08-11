@@ -697,9 +697,23 @@ async def list_courses(organization_id: str) -> list[dict]:
     learning_query = {
         "$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]
     }
+    # Project only list fields — full docs (API catalogs) exceed Mongo's 32MB in-memory sort.
     learning_docs = await database.learning_courses.find(
-        learning_query
-    ).sort("title", 1).to_list(10000)
+        learning_query,
+        {
+            "_id": 1,
+            "title": 1,
+            "provider": 1,
+            "category": 1,
+            "designation": 1,
+            "duration_minutes": 1,
+            "difficulty": 1,
+            "url": 1,
+            "description": 1,
+            "org_framework_course_id": 1,
+        },
+    ).to_list(10000)
+    learning_docs.sort(key=lambda d: str(d.get("title") or "").lower())
 
     seen = {c["course_id"] for c in framework_docs}
     for ld in learning_docs:

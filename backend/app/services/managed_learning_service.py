@@ -826,6 +826,7 @@ class ManagedLearningService:
         page: int = 1,
         page_size: int = 20,
         organization_id: str | None = None,
+        for_roadmap: bool = False,
     ) -> dict:
         query = self._collection_query(include_archived=archived is True)
         if archived is True:
@@ -836,6 +837,14 @@ class ManagedLearningService:
                 query = {"$and": [query, org_filter]}
             else:
                 query = org_filter
+        if for_roadmap:
+            # Build roadmap is for strategic curriculum placement — not the full
+            # Coursera / Microsoft Learn API catalogs (those live in Course Catalog).
+            roadmap_filter = {"source_kind": {"$ne": "api"}}
+            if query:
+                query = {"$and": [query, roadmap_filter]}
+            else:
+                query = roadmap_filter
         if designation:
             query["designation"] = {"$regex": f"^{re.escape(designation.strip())}$", "$options": "i"}
         if learning_month:
@@ -991,7 +1000,7 @@ class ManagedLearningService:
                     return {"provider": {"name": existing.get("name") or normalized, "slug": existing.get("slug") or slug}}
             raise
 
-    async def list_facets(self, organization_id: str | None = None) -> dict:
+    async def list_facets(self, organization_id: str | None = None, *, for_roadmap: bool = False) -> dict:
         query = self._collection_query(include_archived=False)
         if organization_id:
             org_filter = {"$or": [{"organization_id": organization_id}, {"organization_id": {"$exists": False}}]}
@@ -999,6 +1008,12 @@ class ManagedLearningService:
                 query = {"$and": [query, org_filter]}
             else:
                 query = org_filter
+        if for_roadmap:
+            roadmap_filter = {"source_kind": {"$ne": "api"}}
+            if query:
+                query = {"$and": [query, roadmap_filter]}
+            else:
+                query = roadmap_filter
         docs = await database.learning_courses.find(query).to_list(length=5000)
 
         # Sync any course provider names into the registry first (idempotent).
@@ -1314,6 +1329,85 @@ class ManagedLearningService:
         # Non-blocking helper for future workflow hooks.
         _ = current_user, preview
         return None
+
+    async def backfill_missing_provider_ids(self) -> dict:
+        """Set provider_id on legacy courses that were saved without one.
+
+        Uses the same resolution as ``_ensure_provider`` (normalize name → slug
+        lookup → create provider if missing). Idempotent.
+
+        Also clears null/empty ``external_id`` values. The unique
+        (external_id, provider_id) index treated explicit nulls as real keys,
+        which blocked backfilling many Managed/Excel rows under one provider.
+        """
+        missing_query = {
+            "$or": [
+                {"provider_id": {"$exists": False}},
+                {"provider_id": None},
+                {"provider_id": ""},
+            ]
+        }
+        before = await database.learning_courses.count_documents(missing_query)
+        if before == 0:
+            return {
+                "before": 0,
+                "backfilled": 0,
+                "after": 0,
+                "providers_ensured": [],
+                "external_ids_cleared": 0,
+            }
+
+        # Drop null/empty external_id so unique (external_id, provider_id) does
+        # not reject multiple legitimate courses under the same provider.
+        cleared = await database.learning_courses.update_many(
+            {"$or": [{"external_id": None}, {"external_id": ""}]},
+            {"$unset": {"external_id": ""}},
+        )
+
+        provider_names = await database.learning_courses.distinct("provider", missing_query)
+        providers_ensured: list[dict] = []
+        backfilled = 0
+
+        for raw_name in provider_names:
+            provider = await self._ensure_provider(raw_name)
+            if not provider:
+                continue
+            # ``distinct`` returns the exact stored strings, so match those exactly.
+            # Empty / missing provider names all resolve to Managed Learning via
+            # ``_ensure_provider`` / ``_normalize_provider_name``.
+            if raw_name in (None, ""):
+                name_query: dict[str, Any] = {
+                    "$or": [
+                        {"provider": {"$exists": False}},
+                        {"provider": None},
+                        {"provider": ""},
+                    ]
+                }
+            else:
+                name_query = {"provider": raw_name}
+
+            result = await database.learning_courses.update_many(
+                {"$and": [missing_query, name_query]},
+                {"$set": {"provider_id": str(provider["_id"]), "updated_at": _now()}},
+            )
+            backfilled += result.modified_count
+            providers_ensured.append(
+                {
+                    "provider_name": provider.get("name"),
+                    "provider_id": str(provider["_id"]),
+                    "matched_raw_name": raw_name,
+                    "courses_updated": result.modified_count,
+                }
+            )
+
+        after = await database.learning_courses.count_documents(missing_query)
+        return {
+            "before": before,
+            "backfilled": backfilled,
+            "after": after,
+            "providers_ensured": providers_ensured,
+            "external_ids_cleared": cleared.modified_count,
+        }
 
 
 managed_learning_service = ManagedLearningService()

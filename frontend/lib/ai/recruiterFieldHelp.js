@@ -386,8 +386,13 @@ export const LEARNING_TAB_HELP = {
     fields: ["department"],
   },
   managed: {
-    title: "Managed Learning",
-    hint: "Create, edit, and import courses for your own providers — manage the roadmap hierarchy.",
+    title: "Courses",
+    hint: "Add courses to a provider (one-by-one or Excel), then build the designation/role roadmap.",
+    fields: ["managed_provider", "designation", "learning_month", "managed_category", "competency", "duration_minutes", "course_title", "url", "description"],
+  },
+  courses: {
+    title: "Courses",
+    hint: "Add courses to a provider (one-by-one or Excel), then build the designation/role roadmap.",
     fields: ["managed_provider", "designation", "learning_month", "managed_category", "competency", "duration_minutes", "course_title", "url", "description"],
   },
   providers: {
@@ -396,8 +401,8 @@ export const LEARNING_TAB_HELP = {
     fields: ["provider_name", "provider_type", "import_method", "logo_url", "description", "active"],
   },
   imports: {
-    title: "Import courses",
-    hint: "Pick a provider, upload .xlsx or .csv, preview the validation, then confirm the import.",
+    title: "Courses",
+    hint: "Add courses to a provider (one-by-one or Excel), then build the designation/role roadmap.",
     fields: ["provider", "missing_action"],
   },
 };

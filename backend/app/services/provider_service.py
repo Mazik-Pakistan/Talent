@@ -16,12 +16,15 @@ from typing import Any
 from bson import ObjectId
 from fastapi import HTTPException, status
 
+from app.core.crypto import encrypt_text
 from app.core.database import database
 from app.core.rbac import CurrentUser
 from app.schemas.provider import (
+    SECRET_MASK,
     LearningProviderCreate,
     LearningProviderResponse,
     LearningProviderUpdate,
+    ProviderApiConfig,
 )
 
 
@@ -71,7 +74,30 @@ def _normalize_provider_name(value: Any) -> str:
 
 class ProviderService:
     """Manage learning providers across all phases."""
-    
+
+    def _public_api_config(self, config: dict | None) -> dict | None:
+        """Return a redacted API config — secrets are never exposed.
+
+        Credential fields are replaced with ``has_*`` flags so the UI can
+        show masked placeholders without ever receiving the secret.
+        """
+        if not config:
+            return None
+        auth = config.get("auth") or {}
+        return {
+            "endpoint": config.get("endpoint"),
+            "auth": {
+                "type": auth.get("type") or "none",
+                "header_name": auth.get("header_name"),
+                "username": auth.get("username"),
+                "has_api_key": bool(auth.get("api_key_enc") or auth.get("api_key")),
+                "has_bearer_token": bool(auth.get("bearer_token_enc") or auth.get("bearer_token")),
+                "has_password": bool(auth.get("password_enc") or auth.get("password")),
+            },
+            "headers": config.get("headers") or {},
+            "mapping": config.get("mapping") or {},
+        }
+
     def _public_provider(self, doc: dict, course_count: int = 0) -> dict:
         """Convert database doc to public provider response."""
         return {
@@ -84,11 +110,86 @@ class ProviderService:
             "description": doc.get("description"),
             "active": bool(doc.get("active", True)),
             "course_count": course_count,
+            "api_config": self._public_api_config(doc.get("api_config")),
+            # Built-in connector slug (coursera / microsoft-learn) when sync
+            # cannot be expressed as a generic GET + mapping alone.
+            "api_connector": doc.get("api_connector") or None,
             "created_at": _iso(doc.get("created_at")),
             "updated_at": _iso(doc.get("updated_at")),
             "created_by_name": doc.get("created_by_name"),
         }
-    
+
+    def _prepare_api_config(self, api_config: ProviderApiConfig | None) -> dict | None:
+        """Encrypt API credentials before storing a new provider config."""
+        if api_config is None:
+            return None
+        auth = api_config.auth
+        stored_auth: dict[str, Any] = {
+            "type": auth.type or "none",
+            "header_name": auth.header_name if auth.type == "api_key" else None,
+            "username": auth.username if auth.type == "basic" else None,
+        }
+        if auth.type == "api_key" and auth.api_key:
+            stored_auth["api_key_enc"] = encrypt_text(auth.api_key)
+        elif auth.type == "bearer" and auth.bearer_token:
+            stored_auth["bearer_token_enc"] = encrypt_text(auth.bearer_token)
+        elif auth.type == "basic" and auth.password:
+            stored_auth["password_enc"] = encrypt_text(auth.password)
+        return {
+            "endpoint": (api_config.endpoint or "").strip() or None,
+            "auth": stored_auth,
+            "headers": {
+                str(k).strip(): str(v)
+                for k, v in (api_config.headers or {}).items()
+                if k and str(k).strip()
+            },
+            "mapping": api_config.mapping.model_dump(exclude_none=True) if api_config.mapping else {},
+        }
+
+    def _merge_api_config(
+        self,
+        existing_config: dict | None,
+        incoming: ProviderApiConfig,
+    ) -> dict:
+        """Merge an incoming API config with the stored one, preserving secrets.
+
+        Secret fields that arrive empty or masked keep their stored encrypted
+        value; a real value replaces it. This is what lets the UI show
+        ``••••••••`` placeholders without ever round-tripping secrets.
+        """
+        existing_auth = (existing_config or {}).get("auth") or {}
+        auth = incoming.auth
+        stored_auth: dict[str, Any] = {
+            "type": auth.type or "none",
+            "header_name": auth.header_name if auth.type == "api_key" else None,
+            "username": auth.username if auth.type == "basic" else None,
+        }
+
+        def resolve_secret(incoming_value: str | None, stored_field: str) -> Any:
+            value = (incoming_value or "").strip()
+            if value and value != SECRET_MASK and not value.startswith(SECRET_MASK):
+                return encrypt_text(value)
+            # Empty or masked -> keep the stored (already encrypted) value.
+            return existing_auth.get(stored_field)
+
+        if auth.type == "api_key":
+            stored_auth["api_key_enc"] = resolve_secret(auth.api_key, "api_key_enc")
+        elif auth.type == "bearer":
+            stored_auth["bearer_token_enc"] = resolve_secret(auth.bearer_token, "bearer_token_enc")
+        elif auth.type == "basic":
+            stored_auth["password_enc"] = resolve_secret(auth.password, "password_enc")
+
+        return {
+            "endpoint": (incoming.endpoint or "").strip() or None,
+            "auth": stored_auth,
+            "headers": {
+                str(k).strip(): str(v)
+                for k, v in (incoming.headers or {}).items()
+                if k and str(k).strip()
+            },
+            "mapping": incoming.mapping.model_dump(exclude_none=True) if incoming.mapping else {},
+        }
+
     async def _get_provider_by_id(self, provider_id: str) -> dict:
         """Get provider by ID."""
         if not ObjectId.is_valid(provider_id):
@@ -222,11 +323,10 @@ class ProviderService:
             "name", 1
         ).skip(skip).limit(page_size).to_list(length=page_size)
         
-        # Enrich with course counts — one aggregation for managed courses,
-        # plus in-memory cache lookups for external API providers.
+        # Course counts come from learning_courses only (API Sync writes here).
+        # Do not override Coursera / Microsoft Learn with in-memory catalog
+        # cache sizes — that hid whether Sync actually persisted courses.
         course_counts: dict[str, int] = {}
-
-        # Managed / imported courses (stored in MongoDB)
         pipeline = [
             {"$match": {"$or": [{"archived": {"$exists": False}}, {"archived": False}]}},
             {"$group": {"_id": "$provider", "count": {"$sum": 1}}},
@@ -235,24 +335,6 @@ class ProviderService:
             name = (row.get("_id") or "").strip().lower()
             if name:
                 course_counts[name] = row.get("count", 0)
-
-        # External API providers — read from in-memory caches, triggering inline
-        # fetch on cold start so counts match the catalog page exactly.
-        try:
-            from app.services import coursera_service as _cs
-            await _cs._get_cached_catalog(force_refresh=False)
-            cs_items = _cs._cache.get("items") or []
-            if cs_items:
-                course_counts["coursera"] = len(cs_items)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            from app.services import ms_learn_service as _ms
-            ms_items = await _ms.get_catalog()
-            if ms_items:
-                course_counts["microsoft learn"] = len(ms_items)
-        except Exception:  # noqa: BLE001
-            pass
 
         enriched = []
         for provider in providers:
@@ -318,6 +400,8 @@ class ProviderService:
         # Get creator name
         creator_name = current_user.full_name or current_user.email
         
+        api_config = self._prepare_api_config(payload.api_config)
+        
         doc = {
             "name": normalized_name,
             "slug": slug,
@@ -326,6 +410,7 @@ class ProviderService:
             "logo_url": payload.logo_url,
             "description": payload.description,
             "active": payload.active,
+            "api_config": api_config,
             "created_at": now,
             "updated_at": now,
             "created_by_id": current_user.id,
@@ -407,6 +492,13 @@ class ProviderService:
         
         if payload.active is not None:
             updates["active"] = payload.active
+        
+        if payload.api_config is not None:
+            updates["api_config"] = self._merge_api_config(
+                provider.get("api_config"), payload.api_config
+            )
+        elif payload.clear_api_config:
+            updates["api_config"] = None
         
         if not updates:
             # No changes
