@@ -15,7 +15,11 @@ from app.services.it_service_request_service import it_service_request_service
 
 router = APIRouter(prefix="/api/it-service-requests", tags=["IT Service Requests"])
 
-RequireRecruiterWithIT = Annotated[CurrentUser, Depends(require_capabilities("it"))]
+RequireRecruiterWithIT = Annotated[
+    CurrentUser,
+    Depends(require_roles("recruiter", "super_admin")),
+    Depends(require_capabilities("it")),
+]
 RequireEmployee = Annotated[CurrentUser, Depends(require_roles("employee", "super_admin"))]
 
 

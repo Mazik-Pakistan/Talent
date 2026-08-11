@@ -23,7 +23,11 @@ router = APIRouter(prefix="/api/offers", tags=["Offers"])
 # differs from the "onboarding.self"-permission-based RequireCandidate used
 # in employees.py, so it stays local rather than being centralized.
 RequireCandidate = Annotated[CurrentUser, Depends(require_roles("candidate", "super_admin"))]
-RequireRecruiterWithInvite = Annotated[CurrentUser, Depends(require_capabilities("invite"))]
+RequireRecruiterWithInvite = Annotated[
+    CurrentUser,
+    Depends(require_roles("recruiter", "super_admin")),
+    Depends(require_capabilities("invite")),
+]
 
 
 @router.post("", status_code=201)

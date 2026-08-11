@@ -5,12 +5,16 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends
 
 from app.core.rbac import CurrentUser
-from app.core.security import RequireAny, RequireEmployee, RequireRecruiter, require_capabilities
+from app.core.security import RequireAny, RequireEmployee, RequireRecruiter, require_capabilities, require_roles
 from app.services.message_service import message_service
 
 router = APIRouter(prefix="/api/messages", tags=["Messages"])
 
-RequireRecruiterWithMessages = Annotated[CurrentUser, Depends(require_capabilities("messages"))]
+RequireRecruiterWithMessages = Annotated[
+    CurrentUser,
+    Depends(require_roles("recruiter", "super_admin")),
+    Depends(require_capabilities("messages")),
+]
 
 
 @router.get("")
