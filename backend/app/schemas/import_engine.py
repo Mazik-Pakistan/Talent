@@ -8,13 +8,140 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 RowStatus = Literal["new", "updated", "duplicate", "invalid", "skipped"]
 MissingAction = Literal["keep", "archive", "delete"]
 
 IMPORT_MAX_SIZE_BYTES = 8 * 1024 * 1024
 IMPORT_MAX_ROWS = 5000
+
+
+def _clean_required_text(value: str) -> str:
+    return " ".join(value.split())
+
+
+def _clean_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = " ".join(value.split())
+    return cleaned or None
+
+
+class ImportCourseCreateRequest(BaseModel):
+    """Create a single course through the Import Engine (sets provider_id)."""
+
+    provider_id: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=300)
+    url: str | None = Field(default=None, max_length=1000)
+    external_id: str | None = Field(default=None, max_length=200)
+    designation: str = Field(default="", max_length=120)
+    learning_month: str = Field(default="", max_length=120)
+    category: str = Field(default="", max_length=120)
+    competency: str = Field(default="", max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    duration_minutes: int | None = Field(default=None, ge=1, le=20000)
+    instructor: str | None = Field(default=None, max_length=200)
+    tags: list[str] = Field(default_factory=list)
+    archived: bool = False
+
+    @field_validator("title", "designation", "learning_month", "category", "competency")
+    @classmethod
+    def clean_text(cls, value: str) -> str:
+        return _clean_required_text(value)
+
+    @field_validator("external_id", "instructor")
+    @classmethod
+    def clean_optional(cls, value: str | None) -> str | None:
+        return _clean_optional_text(value)
+
+    @field_validator("url")
+    @classmethod
+    def clean_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.schemas.auth import validate_url_format
+
+        return validate_url_format(value, "course URL")
+
+    @field_validator("description")
+    @classmethod
+    def clean_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+
+        return sanitize_html(value)
+
+    @field_validator("tags")
+    @classmethod
+    def clean_tags(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for item in value or []:
+            text = _clean_optional_text(item)
+            if text and text not in cleaned:
+                cleaned.append(text)
+        return cleaned
+
+
+class ImportCourseUpdateRequest(BaseModel):
+    """Update a single course through the Import Engine."""
+
+    provider_id: str | None = Field(default=None, min_length=1, max_length=64)
+    title: str | None = Field(default=None, max_length=300)
+    url: str | None = Field(default=None, max_length=1000)
+    external_id: str | None = Field(default=None, max_length=200)
+    designation: str | None = Field(default=None, max_length=120)
+    learning_month: str | None = Field(default=None, max_length=120)
+    category: str | None = Field(default=None, max_length=120)
+    competency: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    duration_minutes: int | None = Field(default=None, ge=1, le=20000)
+    instructor: str | None = Field(default=None, max_length=200)
+    tags: list[str] | None = None
+    archived: bool | None = None
+
+    @field_validator("title", "designation", "learning_month", "category", "competency")
+    @classmethod
+    def clean_optional_required_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _clean_required_text(value)
+
+    @field_validator("external_id", "instructor")
+    @classmethod
+    def clean_optional(cls, value: str | None) -> str | None:
+        return _clean_optional_text(value)
+
+    @field_validator("url")
+    @classmethod
+    def clean_optional_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.schemas.auth import validate_url_format
+
+        return validate_url_format(value, "course URL")
+
+    @field_validator("description")
+    @classmethod
+    def clean_optional_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.schemas.auth import sanitize_html
+
+        return sanitize_html(value)
+
+    @field_validator("tags")
+    @classmethod
+    def clean_optional_tags(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned: list[str] = []
+        for item in value:
+            text = _clean_optional_text(item)
+            if text and text not in cleaned:
+                cleaned.append(text)
+        return cleaned
 
 
 class ImportIssue(BaseModel):

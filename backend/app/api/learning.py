@@ -17,9 +17,14 @@ from app.schemas.learning import (
     ManagedLearningCourseUpdateRequest,
     SkillUpsertRequest,
 )
+from app.schemas.import_engine import (
+    ImportCourseCreateRequest,
+    ImportCourseUpdateRequest,
+)
 from app.schemas.provider import (
     LearningProviderCreate,
     LearningProviderUpdate,
+    ProviderTestConnection,
 )
 from app.services.learning_service import learning_service
 from app.services.managed_learning_service import managed_learning_service
@@ -424,6 +429,7 @@ async def list_managed_courses(
     sort_by: str | None = Query(default="newest", description="newest|oldest|updated|title_asc|title_desc|duration|provider"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    for_roadmap: bool = Query(default=False, description="Exclude API catalog syncs (Coursera/MS Learn) from roadmap builder"),
 ):
     return await managed_learning_service.list_courses(
         q=q,
@@ -437,6 +443,7 @@ async def list_managed_courses(
         page=page,
         page_size=page_size,
         organization_id=current_user.organization_id,
+        for_roadmap=for_roadmap,
     )
 
 
@@ -454,8 +461,14 @@ async def create_managed_provider(request: dict, current_user: RequireRecruiterW
 
 
 @router.get("/managed/facets")
-async def managed_facets(current_user: RequireRecruiterWithLearning):
-    return await managed_learning_service.list_facets(organization_id=current_user.organization_id)
+async def managed_facets(
+    current_user: RequireRecruiterWithLearning,
+    for_roadmap: bool = Query(default=False),
+):
+    return await managed_learning_service.list_facets(
+        organization_id=current_user.organization_id,
+        for_roadmap=for_roadmap,
+    )
 
 
 @router.post("/managed/courses", status_code=201)
@@ -597,6 +610,28 @@ async def get_provider(
     return await provider_service.get_provider(provider_id)
 
 
+@router.post("/providers/test-connection")
+async def test_provider_connection(
+    current_user: RequireRecruiterWithLearning,
+    payload: ProviderTestConnection,
+):
+    """Test an API provider configuration without saving it.
+
+    Validates the endpoint, applies authentication/headers, parses the
+    response, and verifies the configured mapping. Credentials are never
+    returned or logged.
+    """
+    from app.services.generic_api_provider_service import (
+        ApiImportError,
+        test_connection,
+    )
+
+    try:
+        return await test_connection(payload.api_config.model_dump())
+    except ApiImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+
+
 @router.post("/providers", status_code=201)
 async def create_provider(
     current_user: RequireRecruiterWithLearning,
@@ -647,6 +682,25 @@ async def deactivate_provider(
 # ========================================================================== #
 # UNIVERSAL IMPORT ENGINE (Phase 2)
 # ========================================================================== #
+@router.post("/import/courses")
+async def import_create_course(
+    payload: ImportCourseCreateRequest,
+    current_user: RequireRecruiterWithLearning,
+):
+    """Create a single course via the Import Engine (always sets provider_id)."""
+    return await import_engine_service.create_course(current_user, payload)
+
+
+@router.put("/import/courses/{course_id}")
+async def import_update_course(
+    course_id: str,
+    payload: ImportCourseUpdateRequest,
+    current_user: RequireRecruiterWithLearning,
+):
+    """Update a single course via the Import Engine (keeps/sets provider_id)."""
+    return await import_engine_service.update_course(current_user, course_id, payload)
+
+
 @router.post("/import/preview")
 async def import_preview(
     current_user: RequireRecruiterWithLearning,
@@ -732,7 +786,7 @@ async def import_history_report(
 async def import_sync_from_api(
     provider_id: str,
     current_user: RequireRecruiterWithLearning,
-    missing_action: str = Form(default="keep"),
+    missing_action: str = Query(default="keep"),
 ):
     """Run an API synchronization for an API provider (same engine as Excel)."""
     return await import_engine_service.sync_from_api(

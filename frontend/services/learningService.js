@@ -33,8 +33,8 @@ export async function listManagedCourses(accessToken, params = {}) {
   return data;
 }
 
-export async function getManagedFacets(accessToken) {
-  const { data } = await apiClient.get("/api/learning/managed/facets");
+export async function getManagedFacets(accessToken, params = {}) {
+  const { data } = await apiClient.get("/api/learning/managed/facets", { params });
   return data;
 }
 
@@ -432,7 +432,28 @@ export async function deactivateProvider(accessToken, providerId) {
   return data;
 }
 
+export async function testProviderApiConnection(accessToken, payload) {
+  const { data } = await apiClient.post("/api/learning/providers/test-connection", payload);
+  return data;
+}
+
 // ─── Universal import engine (Phase 2) ────────────────────────────────────
+
+export async function createImportCourse(accessToken, payload) {
+  const { data } = await apiClient.post("/api/learning/import/courses", payload);
+  invalidateLearningCaches();
+  invalidateCachePrefix("learning-providers");
+  notifyLearningProvidersUpdated();
+  return data;
+}
+
+export async function updateImportCourse(accessToken, courseId, payload) {
+  const { data } = await apiClient.put(`/api/learning/import/courses/${courseId}`, payload);
+  invalidateLearningCaches();
+  invalidateCachePrefix("learning-providers");
+  notifyLearningProvidersUpdated();
+  return data;
+}
 
 async function postImportFile(url, accessToken, { file, providerId, providerName, missingAction }) {
   const formData = new FormData();
@@ -484,11 +505,17 @@ export async function downloadImportReport(accessToken, historyId) {
 }
 
 export async function syncProviderFromApi(accessToken, providerId, missingAction = "keep") {
-  const formData = new FormData();
-  formData.append("missing_action", missingAction);
-  const { data } = await apiClient.post(`/api/learning/import/providers/${providerId}/sync`, formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  // JSON POST (not multipart) so CORS preflight stays simple and axios does not
+  // need a manually set multipart Content-Type without a boundary.
+  // Long timeout: connector catalogs can be up to API_MAX_COURSES (5000) rows.
+  const { data } = await apiClient.post(
+    `/api/learning/import/providers/${providerId}/sync`,
+    {},
+    {
+      params: { missing_action: missingAction },
+      timeout: 10 * 60 * 1000,
+    }
+  );
   invalidateLearningCaches();
   invalidateCachePrefix("learning-providers");
   notifyLearningProvidersUpdated();

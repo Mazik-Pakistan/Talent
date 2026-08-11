@@ -25,6 +25,8 @@ from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException, UploadFile, status
+from pymongo import InsertOne, UpdateOne
+from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from app.core.database import database
 from app.core.rbac import CurrentUser
@@ -32,6 +34,8 @@ from app.schemas.import_engine import (
     IMPORT_MAX_ROWS,
     IMPORT_MAX_SIZE_BYTES,
     FileLevelIssue,
+    ImportCourseCreateRequest,
+    ImportCourseUpdateRequest,
     ImportIssue,
     ImportPreview,
     ImportPreviewRow,
@@ -385,17 +389,11 @@ class ImportEngineService:
         if not any([title, url, designation, learning_month, category, competency, external_id, description]):
             return None  # blank row -> skip silently
 
-        # Required fields
+        # Required fields — catalog import only needs a title. Roadmap placement
+        # (designation / month / category / competency) is optional here and can
+        # be filled later in Build roadmap.
         if not title:
             issues.append(ImportIssue(row=row_number, field="title", message="Course title is required."))
-        if not designation:
-            issues.append(ImportIssue(row=row_number, field="designation", message="Designation is required."))
-        if not learning_month:
-            issues.append(ImportIssue(row=row_number, field="learning_month", message="Learning month is required."))
-        if not category:
-            issues.append(ImportIssue(row=row_number, field="category", message="Category is required."))
-        if not competency:
-            issues.append(ImportIssue(row=row_number, field="competency", message="Competency is required."))
 
         # URL validation
         if url and not re.match(r"^https?://", url, re.I):
@@ -462,7 +460,9 @@ class ImportEngineService:
     ) -> tuple[dict | None, str | None]:
         """Find an existing course by identity priority.
 
-        Priority: External Course ID -> Course URL -> Provider + Course Name.
+        Priority: External Course ID -> Course URL -> Provider + Course Name
+        -> course_key (covers legacy docs without provider_id that still share
+        the unique course_key index).
         Returns (doc, match_method).
         """
         provider_id = str(provider["_id"]) if provider else None
@@ -492,6 +492,31 @@ class ImportEngineService:
             for doc in docs:
                 if _normalize(doc.get("title")) == title_key and _normalize(doc.get("provider")) == name_key:
                     return doc, "provider_name"
+
+        # Fallback: unique course_key. Legacy Managed Learning rows often have
+        # no provider_id, so the scoped matches above miss them and a naive
+        # insert then fails on the unique course_key index. Matching here lets
+        # Excel/API re-imports merge as "updated" instead.
+        from app.services.managed_learning_service import _course_key
+
+        provider_name = (
+            (provider.get("name") if provider else None)
+            or record.get("provider")
+            or "Managed Learning"
+        )
+        course_key = record.get("course_key") or _course_key(
+            provider=provider_name,
+            designation=record.get("designation") or "",
+            learning_month=record.get("learning_month") or "",
+            category=record.get("category") or "",
+            competency=record.get("competency") or "",
+            title=record.get("title") or "",
+            url=record.get("url") or None,
+        )
+        if course_key:
+            doc = await database.learning_courses.find_one({"course_key": course_key})
+            if doc:
+                return doc, "course_key"
 
         return None, None
 
@@ -690,7 +715,11 @@ class ImportEngineService:
                     updated_before.append({"_id": str(existing["_id"]), "snapshot": snapshot})
                     updated_doc = {**existing, **record, "updated_at": now, "updated_by_id": current_user.id}
                     updated_doc = await self._finalize_course_doc(updated_doc)
-                    await database.learning_courses.update_one({"_id": existing["_id"]}, {"$set": updated_doc})
+                    set_doc = {k: v for k, v in updated_doc.items() if k != "_id"}
+                    update_ops: dict[str, Any] = {"$set": set_doc}
+                    if "external_id" not in set_doc:
+                        update_ops["$unset"] = {"external_id": ""}
+                    await database.learning_courses.update_one({"_id": existing["_id"]}, update_ops)
                     updated += 1
                 else:
                     # Insert path
@@ -818,7 +847,186 @@ class ImportEngineService:
             for part in [doc.get("designation"), doc.get("learning_month"), doc.get("category"), doc.get("competency")]
             if part
         ]
+        # Never persist null/empty external_id — the unique (external_id, provider_id)
+        # index must only cover real ids.
+        if not doc.get("external_id"):
+            doc.pop("external_id", None)
         return doc
+
+    def _public_course(self, doc: dict) -> dict:
+        """Serialize a course for Import Engine single-course responses."""
+        return {
+            "id": str(doc["_id"]),
+            "uid": f"learning_course:{doc['_id']}",
+            "provider_id": doc.get("provider_id"),
+            "provider": doc.get("provider") or "Managed Learning",
+            "external_id": doc.get("external_id"),
+            "title": doc.get("title") or "",
+            "url": doc.get("url") or "",
+            "designation": doc.get("designation") or "",
+            "learning_month": doc.get("learning_month") or "",
+            "category": doc.get("category") or "",
+            "competency": doc.get("competency") or "",
+            "description": doc.get("description") or "",
+            "duration_minutes": doc.get("duration_minutes"),
+            "instructor": doc.get("instructor"),
+            "tags": list(doc.get("tags") or []),
+            "archived": bool(doc.get("archived")),
+            "source_kind": doc.get("source_kind") or "manual",
+            "course_key": doc.get("course_key"),
+            "hierarchy_key": doc.get("hierarchy_key"),
+            "hierarchy_path": doc.get("hierarchy_path") or [],
+            "created_at": doc.get("created_at"),
+            "updated_at": doc.get("updated_at"),
+        }
+
+    async def _course_key_conflict(self, course_key: str, *, exclude_id: ObjectId | None = None) -> dict | None:
+        query: dict[str, Any] = {"course_key": course_key}
+        if exclude_id is not None:
+            query["_id"] = {"$ne": exclude_id}
+        return await database.learning_courses.find_one(query)
+
+    async def create_course(self, current_user: CurrentUser, payload: ImportCourseCreateRequest) -> dict:
+        """Create one course via the Import Engine domain (always sets provider_id)."""
+        provider = await self.resolve_provider(payload.provider_id, None, allow_inactive=False)
+        if not provider:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found.")
+
+        now = _now()
+        record = {
+            "external_id": payload.external_id,
+            "title": payload.title,
+            "url": payload.url,
+            "provider": provider.get("name"),
+            "designation": payload.designation or "",
+            "learning_month": payload.learning_month or "",
+            "category": payload.category or "",
+            "competency": payload.competency or "",
+            "description": payload.description,
+            "duration_minutes": payload.duration_minutes,
+            "instructor": payload.instructor,
+            "tags": list(payload.tags or []),
+            "provider_id": str(provider["_id"]),
+        }
+
+        existing, match_method = await self._match_existing(record, provider)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Course already exists (matched by {match_method}).",
+            )
+
+        doc = {
+            **record,
+            "archived": bool(payload.archived),
+            "source_kind": "manual",
+            "created_by_id": current_user.id,
+            "updated_by_id": current_user.id,
+            "created_at": now,
+            "updated_at": now,
+        }
+        if current_user.organization_id:
+            doc["organization_id"] = current_user.organization_id
+
+        doc = await self._finalize_course_doc(doc)
+        conflict = await self._course_key_conflict(doc["course_key"])
+        if conflict:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course already exists.")
+
+        try:
+            result = await database.learning_courses.insert_one(doc)
+        except DuplicateKeyError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course already exists.") from exc
+
+        doc["_id"] = result.inserted_id
+
+        if current_user.organization_id:
+            try:
+                from app.services.course_sync_service import sync_to_framework
+
+                await sync_to_framework(current_user.organization_id, doc)
+            except Exception:
+                pass
+
+        return {"course": self._public_course(doc)}
+
+    async def update_course(
+        self, current_user: CurrentUser, course_id: str, payload: ImportCourseUpdateRequest
+    ) -> dict:
+        """Update one course via the Import Engine domain (keeps/sets provider_id)."""
+        if not ObjectId.is_valid(course_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+
+        existing = await database.learning_courses.find_one({"_id": ObjectId(course_id)})
+        if not existing:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+
+        updates = payload.model_dump(exclude_unset=True)
+        provider_id = updates.pop("provider_id", None) or existing.get("provider_id")
+
+        provider = None
+        if provider_id:
+            provider = await self.resolve_provider(provider_id, None, allow_inactive=False)
+            if not provider:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found.")
+
+        if not provider and existing.get("provider"):
+            provider = await self.resolve_provider(None, existing.get("provider"), allow_inactive=False)
+
+        if not provider:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A valid provider_id is required so the course stays visible to the Import Engine.",
+            )
+
+        merged = {**existing, **updates}
+        merged["_id"] = existing["_id"]
+        merged["provider"] = provider.get("name")
+        merged["provider_id"] = str(provider["_id"])
+        merged["updated_by_id"] = current_user.id
+        merged["updated_at"] = _now()
+
+        merged = await self._finalize_course_doc(merged)
+
+        conflict = await self._course_key_conflict(merged["course_key"], exclude_id=existing["_id"])
+        if conflict:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A different course already uses the same roadmap slot.",
+            )
+
+        # Identity collision against another course for this provider.
+        match_doc, match_method = await self._match_existing(merged, provider)
+        if match_doc and str(match_doc["_id"]) != str(existing["_id"]):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Course already exists (matched by {match_method}).",
+            )
+
+        set_doc = {k: v for k, v in merged.items() if k != "_id"}
+        update_ops: dict[str, Any] = {"$set": set_doc}
+        if "external_id" not in set_doc:
+            update_ops["$unset"] = {"external_id": ""}
+        try:
+            await database.learning_courses.update_one({"_id": existing["_id"]}, update_ops)
+        except DuplicateKeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A different course already uses the same roadmap slot.",
+            ) from exc
+
+        saved = await database.learning_courses.find_one({"_id": existing["_id"]})
+
+        org_id = existing.get("organization_id") or current_user.organization_id
+        if org_id:
+            try:
+                from app.services.course_sync_service import sync_to_framework
+
+                await sync_to_framework(org_id, saved)
+            except Exception:
+                pass
+
+        return {"course": self._public_course(saved)}
 
     # ------------------------------------------------------------------ #
     # History + rollback
@@ -1072,10 +1280,11 @@ class ImportEngineService:
     ) -> dict:
         """API-provider sync entry point.
 
-        Fetches courses from the provider adapter, then runs the same
-        compare -> insert -> update -> archive path as Excel imports.
-        For Phase 2 the adapter layer is a stub that returns an empty list;
-        it is wired so adding a real adapter requires zero import-engine changes.
+        Fetches courses from either a legacy connector (Coursera / Microsoft
+        Learn) or the generic config-driven importer, then runs the same
+        compare -> insert -> update path as Excel imports. Writes use batched
+        ``bulk_write`` so large catalogs (capped at API_MAX_COURSES) finish
+        within a normal request timeout.
         """
         if not ObjectId.is_valid(provider_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found.")
@@ -1085,25 +1294,42 @@ class ImportEngineService:
         if not provider.get("active", True):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provider is inactive.")
 
-        # Adapter hook: registry of API provider adapters by slug.
-        adapters = self._api_adapters()
-        slug = provider.get("slug") or ""
-        adapter = adapters.get(slug)
+        from app.services.generic_api_provider_service import API_MAX_COURSES
 
-        if adapter is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"No API adapter is configured for '{provider.get('name')}'. "
-                    "You can still import courses via Excel, or register an adapter."
-                ),
-            )
+        courses = await self._fetch_provider_courses(provider)
+        capped = len(courses) >= API_MAX_COURSES
 
-        courses = await adapter.fetch_courses()
         now = _now()
-        imported = updated = 0
+        imported = updated = failed = 0
         created_ids: list[str] = []
         updated_before: list[dict] = []
+
+        provider_id_str = str(provider["_id"])
+        existing_docs = await database.learning_courses.find(
+            {"$or": [
+                {"provider_id": provider_id_str},
+                {"provider": {"$regex": f"^{re.escape(provider.get('name') or '')}$", "$options": "i"}},
+            ]}
+        ).to_list(length=100000)
+        by_external: dict[str, dict] = {}
+        by_url: dict[str, dict] = {}
+        by_title: dict[str, dict] = {}
+        for doc in existing_docs:
+            ext = doc.get("external_id")
+            if ext:
+                by_external.setdefault(str(ext), doc)
+            url = doc.get("url")
+            if url:
+                by_url.setdefault(_normalize(url), doc)
+            title = doc.get("title")
+            if title:
+                by_title.setdefault(_normalize(title), doc)
+
+        ops: list[Any] = []
+        op_kinds: list[str] = []  # "insert" | "update" aligned with ops
+        pending_inserts: list[dict] = []
+        max_snapshots = 500
+        planned_imported = planned_updated = prepare_failed = 0
 
         for course in courses:
             record = {
@@ -1121,23 +1347,40 @@ class ImportEngineService:
                 "skills": course.get("skills") or [],
                 "difficulty": course.get("difficulty"),
                 "provider": provider.get("name"),
-                "provider_id": str(provider["_id"]),
+                "provider_id": provider_id_str,
             }
             if not record.get("title"):
                 continue
-            existing, _ = await self._match_existing(record, provider)
+
+            existing = None
+            if record.get("external_id"):
+                existing = by_external.get(str(record["external_id"]))
+            if existing is None and record.get("url"):
+                existing = by_url.get(_normalize(record["url"]))
+            if existing is None and record.get("title"):
+                existing = by_title.get(_normalize(record["title"]))
+
             try:
                 if existing:
-                    snapshot = {k: existing.get(k) for k in (
-                        "title", "url", "designation", "learning_month", "category",
-                        "competency", "description", "duration_minutes", "provider",
-                        "provider_id", "external_id", "archived", "instructor", "tags",
-                    )}
-                    updated_before.append({"_id": str(existing["_id"]), "snapshot": snapshot})
-                    updated_doc = {**existing, **record, "archived": False, "updated_at": now, "updated_by_id": current_user.id}
+                    if len(updated_before) < max_snapshots:
+                        snapshot = {k: existing.get(k) for k in (
+                            "title", "url", "designation", "learning_month", "category",
+                            "competency", "description", "duration_minutes", "provider",
+                            "provider_id", "external_id", "archived", "instructor", "tags",
+                        )}
+                        updated_before.append({"_id": str(existing["_id"]), "snapshot": snapshot})
+                    updated_doc = {
+                        **existing,
+                        **record,
+                        "archived": False,
+                        "updated_at": now,
+                        "updated_by_id": current_user.id,
+                    }
                     updated_doc = await self._finalize_course_doc(updated_doc)
-                    await database.learning_courses.update_one({"_id": existing["_id"]}, {"$set": updated_doc})
-                    updated += 1
+                    set_doc = {k: v for k, v in updated_doc.items() if k != "_id"}
+                    ops.append(UpdateOne({"_id": existing["_id"]}, {"$set": set_doc}))
+                    op_kinds.append("update")
+                    planned_updated += 1
                 else:
                     new_doc = {
                         **record,
@@ -1151,12 +1394,80 @@ class ImportEngineService:
                         "updated_at": now,
                     }
                     new_doc = await self._finalize_course_doc(new_doc)
-                    result = await database.learning_courses.insert_one(new_doc)
-                    created_ids.append(str(result.inserted_id))
-                    imported += 1
+                    pending_inserts.append(new_doc)
+                    ops.append(InsertOne(new_doc))
+                    op_kinds.append("insert")
+                    planned_imported += 1
             except Exception:  # noqa: BLE001
-                pass
+                prepare_failed += 1
 
+        imported = updated = write_failed = 0
+        batch_size = 500
+
+        def _apply_chunk_success(kinds: list[str], inserted_ids: dict | None = None) -> None:
+            nonlocal imported, updated
+            insert_pos = 0
+            for kind in kinds:
+                if kind == "insert":
+                    imported += 1
+                    if inserted_ids is not None and insert_pos in inserted_ids:
+                        created_ids.append(str(inserted_ids[insert_pos]))
+                    insert_pos += 1
+                else:
+                    updated += 1
+
+        for i in range(0, len(ops), batch_size):
+            chunk = ops[i : i + batch_size]
+            kinds = op_kinds[i : i + batch_size]
+            try:
+                result = await database.learning_courses.bulk_write(chunk, ordered=False)
+                _apply_chunk_success(kinds, getattr(result, "inserted_ids", None) or {})
+            except BulkWriteError as exc:
+                details = exc.details or {}
+                err_indices = {int(err.get("index", -1)) for err in (details.get("writeErrors") or [])}
+                # Partial success still writes; count successes vs failures by index.
+                insert_pos = 0
+                local_inserted = details.get("insertedIds") or {}
+                # Normalize insertedIds keys to int
+                local_inserted = {int(k): v for k, v in local_inserted.items()}
+                for j, kind in enumerate(kinds):
+                    if j in err_indices:
+                        write_failed += 1
+                        if kind == "insert":
+                            insert_pos += 1
+                        continue
+                    if kind == "insert":
+                        imported += 1
+                        if j in local_inserted:
+                            created_ids.append(str(local_inserted[j]))
+                        insert_pos += 1
+                    else:
+                        updated += 1
+            except Exception:  # noqa: BLE001
+                write_failed += len(chunk)
+
+        if imported and len(created_ids) < imported:
+            for doc in pending_inserts:
+                if doc.get("_id") is not None:
+                    cid = str(doc["_id"])
+                    if cid not in created_ids:
+                        created_ids.append(cid)
+
+        failed = prepare_failed + write_failed
+        # Prefer actual write counts; fall back to planned if writes reported nothing
+        # but no failures (shouldn't happen).
+        if imported == 0 and updated == 0 and write_failed == 0:
+            imported, updated = planned_imported, planned_updated
+
+        cap_note = (
+            f" (capped at {API_MAX_COURSES} courses per sync)"
+            if capped
+            else ""
+        )
+        message = (
+            f"API sync completed: {imported} new course(s), {updated} updated"
+            f"{cap_note}."
+        )
         history_id = await self._record_history(
             provider=provider,
             current_user=current_user,
@@ -1165,30 +1476,78 @@ class ImportEngineService:
             rows_total=len(courses),
             rows_imported=imported,
             rows_updated=updated,
-            rows_failed=0,
+            rows_failed=failed,
             rows_archived=0,
             rows_deleted=0,
-            validation_summary={"api_sync": True, "total_fetched": len(courses)},
-            message=f"API sync completed: {imported} new, {updated} updated.",
+            validation_summary={
+                "api_sync": True,
+                "total_fetched": len(courses),
+                "capped_at": API_MAX_COURSES if capped else None,
+                "api_connector": provider.get("api_connector") or provider.get("slug"),
+            },
+            message=message,
             created_ids=created_ids,
             updated_before=updated_before,
             archived_ids=[],
             deleted_ids=[],
         )
         return {
-            "message": f"API sync completed: {imported} new course(s), {updated} updated.",
+            "message": message,
             "imported": imported,
             "updated": updated,
+            "failed": failed,
+            "capped": capped,
+            "cap": API_MAX_COURSES if capped else None,
             "history_id": history_id,
         }
 
-    def _api_adapters(self) -> dict[str, Any]:
-        """Registry of API provider adapters keyed by provider slug.
+    async def _fetch_provider_courses(self, provider: dict) -> list[dict]:
+        """Fetch courses using a legacy connector or the generic importer.
 
-        Adding a new API provider = add an adapter here (or import from a module);
-        the import engine and UI need no changes.
+        Resolution order:
+          1. Built-in connector via ``api_connector`` (or legacy slug).
+          2. Generic importer driven by the provider's saved api_config.
         """
-        return {}
+        from app.services.generic_api_provider_service import API_MAX_COURSES
+
+        adapters = self._api_adapters()
+        connector_key = (provider.get("api_connector") or provider.get("slug") or "").strip()
+        adapter = adapters.get(connector_key)
+        if adapter is not None:
+            return await adapter.fetch_courses(max_items=API_MAX_COURSES)
+
+        api_config = provider.get("api_config") or {}
+        if not (api_config.get("endpoint") or "").strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"No API configuration is set for '{provider.get('name')}'. "
+                    "Open the provider and configure the API endpoint and mapping."
+                ),
+            )
+
+        from app.services.generic_api_provider_service import ApiImportError, fetch_courses
+
+        try:
+            return await fetch_courses(api_config, max_items=API_MAX_COURSES)
+        except ApiImportError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message)
+
+    def _api_adapters(self) -> dict[str, Any]:
+        """Registry of legacy API provider connectors.
+
+        Only providers whose APIs need special handling (pagination, multi-type
+        fetches, URL construction) that the generic config cannot express
+        belong here. Keys match ``api_connector`` / slug values stored on the
+        provider document. Every new API provider added from the UI is fetched
+        by the generic importer instead.
+        """
+        from app.services.api_connectors import CourseraConnector, MicrosoftLearnConnector
+
+        return {
+            "coursera": CourseraConnector(),
+            "microsoft-learn": MicrosoftLearnConnector(),
+        }
 
 
 import_engine_service = ImportEngineService()

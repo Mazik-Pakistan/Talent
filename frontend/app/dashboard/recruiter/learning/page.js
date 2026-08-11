@@ -6,7 +6,6 @@ import { toast } from "react-toastify";
 import { useSearchParams } from "next/navigation";
 import ProtectedRecruiterRoute from "@/components/ProtectedRecruiterRoute";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import FileUploadField from "@/components/FileUploadField";
 import {
   Archive,
   ArrowRight,
@@ -27,7 +26,6 @@ import {
   Compass,
   Download,
   Eye,
-  FolderTree,
   Globe,
   Library,
   ListChecks,
@@ -52,6 +50,7 @@ import RecruiterShell from "@/components/recruiter/RecruiterShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./learning.module.css";
+import CoursesTab from "./CoursesTab";
 import { useOrgFrameworkOptions } from "@/hooks/useOrgFrameworkOptions";
 import { getApiErrorMessage, listEmployees, remindCourseAssignments } from "@/services/authService";
 import { downloadCsv } from "@/utils/downloadCsv";
@@ -63,49 +62,45 @@ import { LEARNING_TAB_HELP } from "@/lib/ai/recruiterFieldHelp";
 import { dispatchFrameworkInvalidated } from "@/lib/frameworkEvents";
 import {
   assignCourses,
-  archiveManagedCourse,
-  commitManagedImport,
-  createManagedCourse,
   browseCatalog,
-  deleteManagedCourse,
   getCatalogFacets,
   getCatalogSources,
   getManagedFacets,
   getOrgTaxonomy,
   getLearningAnalytics,
-  listManagedCourses,
   listAssignments,
   listPendingCertificates,
-  bulkManagedCourseAction,
-  previewManagedImport,
-  restoreManagedCourse,
   verifyCertificate,
-  updateManagedCourse,
   listProviders,
   createProvider,
   updateProvider,
   deleteProvider,
   activateProvider,
   deactivateProvider,
-  previewImport,
-  commitImport,
-  listImportHistory,
-  getImportHistory,
-  downloadImportReport,
-  rollbackImport,
   syncProviderFromApi,
 } from "@/services/learningService";
 
 const TABS = [
   { key: "catalog", label: "Course Catalog", icon: Compass },
-  { key: "managed", label: "Managed Learning", icon: BookOpen },
+  { key: "courses", label: "Courses", icon: BookOpen },
   { key: "providers", label: "Providers", icon: Building2 },
-  { key: "imports", label: "Import Courses", icon: Upload },
   { key: "assign", label: "Assign Courses", icon: UserCheck },
   { key: "assignments", label: "Track Progress", icon: ListChecks },
   { key: "certificates", label: "Verify Certificates", icon: BadgeCheck },
   { key: "analytics", label: "Learning Analytics", icon: BarChart3 },
 ];
+
+const LEGACY_TAB_MAP = {
+  managed: "courses",
+  imports: "courses",
+};
+
+function resolveTabKey(raw) {
+  if (!raw) return null;
+  if (LEGACY_TAB_MAP[raw]) return LEGACY_TAB_MAP[raw];
+  if (TABS.some((item) => item.key === raw)) return raw;
+  return null;
+}
 
 const STATIC_CATALOG_SOURCES = [
   {
@@ -199,19 +194,16 @@ function LearningPageContent() {
    const searchParams = useSearchParams();
    const tabBarRef = useRef(null);
    const [tab, setTab] = useState(() => {
-      const t = searchParams.get("tab");
-      if (TABS.some((item) => item.key === t)) return t;
-      return "catalog";
+      const resolved = resolveTabKey(searchParams.get("tab"));
+      return resolved || "catalog";
     });
    const [pendingAssign, setPendingAssign] = useState(null);
    const [pendingImportProvider, setPendingImportProvider] = useState(null);
    const selectedCertificateId = searchParams.get("certificateId");
 
   useEffect(() => {
-    const t = searchParams.get("tab");
-    if (t && TABS.some((item) => item.key === t)) {
-      setTab(t);
-    }
+    const resolved = resolveTabKey(searchParams.get("tab"));
+    if (resolved) setTab(resolved);
   }, [searchParams]);
 
   useEffect(() => {
@@ -282,9 +274,20 @@ function LearningPageContent() {
       </div>
 
        {tab === "catalog" && <CatalogTab onAssignCourse={handleAssignFromCatalog} />}
-       {tab === "managed" && <ManagedLearningTab />}
-       {tab === "providers" && <ProvidersTab onImportProvider={(p) => { setPendingImportProvider(p); setTab("imports"); }} />}
-       {tab === "imports" && <ImportsTab initialProvider={pendingImportProvider} onConsumedInitial={clearPendingImportProvider} />}
+       {tab === "courses" && (
+         <CoursesTab
+           initialProvider={pendingImportProvider}
+           onConsumedInitial={clearPendingImportProvider}
+         />
+       )}
+       {tab === "providers" && (
+         <ProvidersTab
+           onImportProvider={(p) => {
+             setPendingImportProvider(p);
+             setTab("courses");
+           }}
+         />
+       )}
        {tab === "assign" && (
          <AssignTab
            initialCourse={pendingAssign?.course || null}
@@ -683,9 +686,28 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
   const { departments: frameworkDepartments, roleNames: frameworkDesignations } = useOrgFrameworkOptions();
   const departmentOptions = frameworkDepartments;
   const designationOptions = frameworkDesignations;
+  const [dynamicSources, setDynamicSources] = useState(STATIC_CATALOG_SOURCES);
   const [source, setSource] = useState(initialSource || "microsoft_learn");
   const [q, setQ] = useState("");
+  const [facets, setFacets] = useState({
+    roles: [],
+    levels: [],
+    products: [],
+    providers: [],
+    designations: [],
+    months: [],
+    categories: [],
+    competencies: [],
+  });
+  const [role, setRole] = useState("");
+  const [level, setLevel] = useState("");
+  const [type, setType] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [learningMonth, setLearningMonth] = useState("");
+  const [category, setCategory] = useState("");
+  const [competency, setCompetency] = useState("");
   const [courses, setCourses] = useState([]);
+  const [searching, setSearching] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState(initialCourse || null);
   const [employees, setEmployees] = useState([]);
   const [empQuery, setEmpQuery] = useState("");
@@ -701,6 +723,64 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
   const [targetDesignation, setTargetDesignation] = useState("");
   const [isDesignationRequirement, setIsDesignationRequirement] = useState(false);
 
+  const loadCatalogSources = useCallback(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return Promise.resolve();
+    return getCatalogSources(token)
+      .then((data) => {
+        const fromApi = (data?.sources || [])
+          .filter((s) => s?.key && s.active !== false)
+          .map((s) => ({
+            key: s.key,
+            label: s.label || s.key,
+            hint: s.hint || `Courses from ${s.label || s.key}.`,
+            type: s.type || (String(s.key).startsWith("provider:") ? "managed" : "external"),
+            providerName: s.provider_name || (String(s.key).startsWith("provider:") ? s.key.split(":")[1] : ""),
+          }));
+        // Prefer registry order (org providers first), fall back to static MS/Coursera.
+        const merged = fromApi.length
+          ? fromApi
+          : STATIC_CATALOG_SOURCES;
+        setDynamicSources(merged);
+        setSource((current) => {
+          if (merged.some((s) => s.key === current)) return current;
+          if (initialSource && merged.some((s) => s.key === initialSource)) return initialSource;
+          return merged[0]?.key || current;
+        });
+      })
+      .catch(() => {
+        // Fall back to managed facets + static external sources (same as Course Catalog).
+        return getManagedFacets(token)
+          .then((data) => {
+            const providerList = normalizeManagedProviderTabs(data?.providers || []);
+            const providerSources = providerList.map((prov) => ({
+              key: `provider:${prov}`,
+              label: prov,
+              hint: `Managed courses from ${prov}.`,
+              type: "managed",
+              providerName: prov,
+            }));
+            const merged = [...providerSources, ...STATIC_CATALOG_SOURCES];
+            setDynamicSources(merged.length ? merged : STATIC_CATALOG_SOURCES);
+          })
+          .catch(() => setDynamicSources(STATIC_CATALOG_SOURCES));
+      });
+  }, [initialSource]);
+
+  useEffect(() => {
+    loadCatalogSources();
+    const onProvidersChanged = () => loadCatalogSources();
+    const onStorage = (event) => {
+      if (event.key === LEARNING_PROVIDERS_UPDATED_STORAGE_KEY) loadCatalogSources();
+    };
+    window.addEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onProvidersChanged);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onProvidersChanged);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [loadCatalogSources]);
+
   useEffect(() => {
     if (!initialCourse) return;
     setSelectedCourse(initialCourse);
@@ -714,20 +794,63 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
     const token = localStorage.getItem("access_token");
     if (!token) return;
     const isManagedProvider = source.startsWith("provider:");
+    const loader = isManagedProvider ? getManagedFacets : getCatalogFacets;
+    loader(token, isManagedProvider ? "managed_learning" : source)
+      .then(setFacets)
+      .catch(() => {});
+  }, [source]);
+
+  function switchSource(nextSource) {
+    if (nextSource === source) return;
+    setSource(nextSource);
+    setRole("");
+    setLevel("");
+    setType("");
+    setDesignation("");
+    setLearningMonth("");
+    setCategory("");
+    setCompetency("");
+    setQ("");
+    setCourses([]);
+  }
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token || selectedCourse) return;
+    const isManagedProvider = source.startsWith("provider:");
     const actualSource = isManagedProvider ? "managed_learning" : source;
     const selectedProvider = isManagedProvider ? source.split(":")[1] : "";
+    const hasQuery = Boolean(q.trim());
+    const hasFilters = Boolean(
+      role || level || type || designation || learningMonth || category || competency
+    );
     const timer = setTimeout(() => {
-      if (!q.trim()) { setCourses([]); return; }
+      if (!hasQuery && !hasFilters) {
+        setCourses([]);
+        setSearching(false);
+        return;
+      }
+      setSearching(true);
       browseCatalog(token, {
-        q,
+        q: q.trim() || undefined,
         source: actualSource,
+        role: actualSource === "microsoft_learn" ? role || undefined : undefined,
+        level: actualSource === "microsoft_learn" ? level || undefined : undefined,
+        type: actualSource === "microsoft_learn" ? type || undefined : undefined,
         provider: actualSource === "managed_learning" ? selectedProvider || undefined : undefined,
-        provider: actualSource === "managed_learning" ? (selectedProvider || undefined) : undefined,
-        page_size: 10,
-      }).then((data) => setCourses(data.courses || [])).catch(() => {});
+        designation: actualSource === "managed_learning" ? designation || undefined : undefined,
+        learning_month: actualSource === "managed_learning" ? learningMonth || undefined : undefined,
+        category: actualSource === "managed_learning" || actualSource === "coursera" ? category || undefined : undefined,
+        competency: actualSource === "managed_learning" ? competency || undefined : undefined,
+        page: 1,
+        page_size: 20,
+      })
+        .then((data) => setCourses(data.courses || []))
+        .catch(() => setCourses([]))
+        .finally(() => setSearching(false));
     }, 300);
     return () => clearTimeout(timer);
-  }, [q, source]);
+  }, [q, source, role, level, type, designation, learningMonth, category, competency, selectedCourse]);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -756,6 +879,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
     setSelectedCourse(null);
     setQ("");
     setCourses([]);
+    setSelectedIds([]);
   }
 
   async function handleAssign() {
@@ -814,8 +938,25 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
 
   const courseSource = selectedCourse?.source || source;
   const audienceReady = Boolean(selectedCourse);
+  const audienceComplete =
+    audienceReady &&
+    ((assignMode === "employees" && selectedIds.length > 0) ||
+      (assignMode === "department" && Boolean(filterDept)) ||
+      (assignMode === "designation" && Boolean(filterTitle)) ||
+      (assignMode === "skills" &&
+        requiredSkills.split(",").map((s) => s.trim()).filter(Boolean).length > 0));
+  const step1Done = Boolean(selectedCourse);
+  const step2Done = audienceComplete;
+  const step2Active = step1Done && !step2Done;
+  const step3Active = step2Done;
   const selectedCourseLabel = courseDisplayLabel(selectedCourse, courseSource);
   const selectedCourseBadgeClass = courseBadgeClass(selectedCourse, courseSource);
+  const activeSource = dynamicSources.find((s) => s.key === source) || dynamicSources[0] || STATIC_CATALOG_SOURCES[0];
+  const isManagedProvider = source.startsWith("provider:");
+  const actualSource = isManagedProvider ? "managed_learning" : source;
+  const hasSearchOrFilters = Boolean(
+    q.trim() || role || level || type || designation || learningMonth || category || competency
+  );
   const assignLabel = submitting
     ? "Assigning…"
     : assignMode === "employees"
@@ -837,18 +978,26 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
       </div>
 
       <div className={shellStyles.sectionBody}>
-        <div className={styles.assignSteps}>
-          <div className={`${styles.assignStep} ${selectedCourse ? styles.assignStepDone : styles.assignStepActive}`}>
-            <span className={styles.assignStepNum}>{selectedCourse ? <Check aria-hidden="true" size={14} /> : "1"}</span>
+        <div className={styles.assignSteps} aria-label="Assignment steps">
+          <div className={`${styles.assignStep} ${step1Done ? styles.assignStepDone : styles.assignStepActive}`}>
+            <span className={styles.assignStepNum}>{step1Done ? <Check aria-hidden="true" size={14} /> : "1"}</span>
             <span>Course</span>
           </div>
-          <div className={styles.assignStepLine} />
-          <div className={`${styles.assignStep} ${selectedCourse ? styles.assignStepActive : ""}`}>
-            <span className={styles.assignStepNum}>2</span>
+          <div className={`${styles.assignStepLine} ${step1Done ? styles.assignStepLineDone : ""}`} />
+          <div
+            className={`${styles.assignStep} ${
+              step2Done ? styles.assignStepDone : step2Active ? styles.assignStepActive : ""
+            }`}
+          >
+            <span className={styles.assignStepNum}>{step2Done ? <Check aria-hidden="true" size={14} /> : "2"}</span>
             <span>Audience</span>
           </div>
-          <div className={styles.assignStepLine} />
-          <div className={`${styles.assignStep} ${selectedCourse ? styles.assignStepActive : ""}`}>
+          <div className={`${styles.assignStepLine} ${step2Done ? styles.assignStepLineDone : ""}`} />
+          <div
+            className={`${styles.assignStep} ${
+              step3Active ? styles.assignStepActive : ""
+            }`}
+          >
             <span className={styles.assignStepNum}>3</span>
             <span>Send</span>
           </div>
@@ -896,43 +1045,81 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
               <div>
                 <div className={styles.assignPanelTitle}>1 · Select a course</div>
                 <p className={styles.assignPanelDesc}>
-                  Search below, or use Course Catalog â†’ Assign to employees.
+                  Pick a provider, search or filter courses, or use Course Catalog → Assign to employees.
                 </p>
               </div>
             </div>
             <div className={styles.sourceToggle} role="tablist" aria-label="Course source">
-              {STATIC_CATALOG_SOURCES.map((s) => (
+              {dynamicSources.map((s) => (
                 <button
                   key={s.key}
                   type="button"
                   role="tab"
                   aria-selected={source === s.key}
                   className={`${styles.sourceBtn} ${source === s.key ? styles.sourceBtnActive : ""}`}
-                  onClick={() => { setSource(s.key); setQ(""); setCourses([]); }}
+                  onClick={() => switchSource(s.key)}
                 >
                   <span className={styles.sourceDot} aria-hidden="true" />
                   {s.label}
                 </button>
               ))}
             </div>
-            <p className={styles.sourceHint}>
-              {(STATIC_CATALOG_SOURCES.find((s) => s.key === source) || STATIC_CATALOG_SOURCES[0]).hint}
-            </p>
+            <p className={styles.sourceHint}>{activeSource?.hint}</p>
             <div className={styles.searchField}>
               <Search className={styles.searchFieldIcon} aria-hidden="true" />
               <input
                 className={styles.searchFieldInput}
                 aria-label="Search courses"
-                placeholder={
-                  source === "coursera"
-                    ? "Search soft skills, e.g. negotiation, leadership…"
-                    : source === "managed_learning"
-                      ? "Search roadmap courses…"
-                      : "Search Microsoft courses…"
-                }
+                placeholder={`Search ${activeSource?.label || "courses"}…`}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
+            </div>
+            <div className={styles.filterBar} style={{ marginTop: 10 }}>
+              {actualSource === "microsoft_learn" && (
+                <>
+                  <select className={styles.filterSelect} value={role} onChange={(e) => setRole(e.target.value)}>
+                    <option value="">All roles</option>
+                    {(facets.roles || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                  <select className={styles.filterSelect} value={level} onChange={(e) => setLevel(e.target.value)}>
+                    <option value="">All levels</option>
+                    {(facets.levels || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                  <select className={styles.filterSelect} value={type} onChange={(e) => setType(e.target.value)}>
+                    <option value="">All types</option>
+                    <option value="learningPath">Learning path</option>
+                    <option value="module">Module</option>
+                    <option value="certification">Certification</option>
+                  </select>
+                </>
+              )}
+              {actualSource === "coursera" && (
+                <select className={styles.filterSelect} value={category} onChange={(e) => setCategory(e.target.value)}>
+                  <option value="">All categories</option>
+                  {(facets.categories || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              )}
+              {actualSource === "managed_learning" && (
+                <>
+                  <select className={styles.filterSelect} value={designation} onChange={(e) => setDesignation(e.target.value)}>
+                    <option value="">All designations</option>
+                    {(facets.designations || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                  <select className={styles.filterSelect} value={learningMonth} onChange={(e) => setLearningMonth(e.target.value)}>
+                    <option value="">All months</option>
+                    {(facets.months || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                  <select className={styles.filterSelect} value={category} onChange={(e) => setCategory(e.target.value)}>
+                    <option value="">All categories</option>
+                    {(facets.categories || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                  <select className={styles.filterSelect} value={competency} onChange={(e) => setCompetency(e.target.value)}>
+                    <option value="">All competencies</option>
+                    {(facets.competencies || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </>
+              )}
             </div>
             <div className={styles.pickerList}>
               {courses.map((c) => (
@@ -943,10 +1130,10 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   onClick={() => setSelectedCourse(c)}
                 >
                   <div>
-                  <div className={styles.pickerRowTitle}>{c.title}</div>
-                  <div className={styles.pickerRowMeta}>
+                    <div className={styles.pickerRowTitle}>{c.title}</div>
+                    <div className={styles.pickerRowMeta}>
                       <span className={styles.metaChip}>{courseDisplayLabel(c, source)}</span>
-                      <span className={styles.metaChip}>{c.type}</span>
+                      <span className={styles.metaChip}>{c.type || "course"}</span>
                       <span className={styles.metaChip}><Clock aria-hidden="true" />{c.duration_minutes || "—"} min</span>
                       {(c.levels || [])[0] || c.category ? <span className={styles.metaChip}>{(c.levels || [])[0] || c.category}</span> : null}
                     </div>
@@ -956,14 +1143,17 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
                   </span>
                 </button>
               ))}
-              {q.trim() && courses.length === 0 && (
+              {searching && (
+                <div className={styles.assignEmpty}>Searching…</div>
+              )}
+              {!searching && hasSearchOrFilters && courses.length === 0 && (
                 <div className={styles.assignEmpty}>
-                  No matches — try a different search term.
+                  No matches — try a different search or filter.
                 </div>
               )}
-              {!q.trim() && (
+              {!searching && !hasSearchOrFilters && (
                 <div className={styles.assignEmpty}>
-                  Start typing to find a course, or pick one from the Course Catalog tab.
+                  Start typing to find a course, use filters, or pick one from the Course Catalog tab.
                 </div>
               )}
             </div>
@@ -1101,7 +1291,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
             )}
           </div>
 
-          <div className={styles.assignPanel}>
+          <div className={`${styles.assignPanel} ${!audienceComplete ? styles.assignPanelMuted : ""}`}>
             <div className={styles.assignPanelHead}>
               <div>
                 <div className={styles.assignPanelTitle}>3 · Details &amp; send</div>
@@ -1111,6 +1301,8 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
 
             {!audienceReady ? (
               <div className={styles.assignLockedNote}>Select a course to finish assignment details.</div>
+            ) : !audienceComplete ? (
+              <div className={styles.assignLockedNote}>Choose an audience in step 2 to unlock send.</div>
             ) : (
               <>
                 <div className={styles.assignDetails}>
@@ -1177,6 +1369,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
     </div>
   );
 }
+
 
 function AssignmentsTab() {
   const [assignments, setAssignments] = useState([]);
@@ -1641,639 +1834,6 @@ function AnalyticsTab() {
   );
 }
 
-function ManagedLearningTab() {
-  const emptyForm = {
-    id: "",
-    provider: "Managed Learning",
-    designation: "",
-    learning_month: "",
-    category: "",
-    competency: "",
-    title: "",
-    url: "",
-    duration_minutes: "",
-    description: "",
-    archived: false,
-  };
-
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [courses, setCourses] = useState([]);
-  const [hierarchy, setHierarchy] = useState([]);
-  const [facets, setFacets] = useState({ providers: [], designations: [], months: [], categories: [], competencies: [] });
-  const [q, setQ] = useState("");
-  const [provider, setProvider] = useState("");
-  const [designation, setDesignation] = useState("");
-  const [learningMonth, setLearningMonth] = useState("");
-  const [category, setCategory] = useState("");
-  const [competency, setCompetency] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
-  const [sortBy, setSortBy] = useState("newest");
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [preview, setPreview] = useState(null);
-  const [previewFile, setPreviewFile] = useState(null);
-  const [previewBusy, setPreviewBusy] = useState(false);
-  const [providers, setProviders] = useState([]);
-  const fileInputRef = useRef(null);
-
-  const loadProviderList = useCallback(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) return Promise.resolve([]);
-    // Single source of truth: the provider registry.
-    // Do NOT merge with getManagedFacets — facets include providers from course docs
-    // which may include deleted providers that haven't been fully cleaned up yet.
-    return listProviders(token, { include_inactive: false, page_size: 100 })
-      .catch(() => ({ providers: [] }))
-      .then((providerData) => {
-        const list = (providerData?.providers || [])
-          .map((p) => p.name ?? p)
-          .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b));
-        setProviders(list);
-        return list;
-      });
-  }, []);
-
-  const load = useCallback(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    setLoading(true);
-    Promise.all([
-      listManagedCourses(token, {
-        q: q || undefined,
-        provider: provider || undefined,
-        designation: designation || undefined,
-        learning_month: learningMonth || undefined,
-        category: category || undefined,
-        competency: competency || undefined,
-        archived: showArchived ? true : undefined,
-        sort_by: sortBy,
-        page: 1,
-        page_size: 100,
-      }),
-      getManagedFacets(token).catch(() => ({ providers: [], designations: [], months: [], categories: [], competencies: [] })),
-    ])
-      .then(([courseData, facetData]) => {
-        setCourses(courseData.courses || []);
-        setHierarchy(courseData.hierarchy || []);
-        setFacets(facetData || { providers: [], designations: [], months: [], categories: [], competencies: [] });
-        // Refresh provider list after courses load so any new providers from
-        // saved courses also appear in the dropdown.
-        loadProviderList().then((merged) => {
-          setForm((current) => {
-            if (!current.provider && merged.length) {
-              return { ...current, provider: merged[0] };
-            }
-            return current;
-          });
-        });
-      })
-      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load managed-learning courses.")))
-      .finally(() => setLoading(false));
-  }, [q, provider, designation, learningMonth, category, competency, showArchived, sortBy, loadProviderList]);
-
-  // Load providers immediately on mount, independent of the course list.
-  // Also re-load whenever a provider is created, updated, or deleted elsewhere.
-  useEffect(() => {
-    loadProviderList();
-    const onChanged = () => loadProviderList();
-    window.addEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onChanged);
-    const onStorage = (e) => {
-      if (e.key === LEARNING_PROVIDERS_UPDATED_STORAGE_KEY) loadProviderList();
-    };
-    window.addEventListener("storage", onStorage);
-    return () => {
-      window.removeEventListener(LEARNING_PROVIDERS_UPDATED_EVENT, onChanged);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [loadProviderList]);
-
-  useEffect(() => {
-    const timer = setTimeout(load, 250);
-    return () => clearTimeout(timer);
-  }, [load]);
-
-  function resetForm() {
-    setForm(emptyForm);
-  }
-
-  function beginEdit(course) {
-    setForm({
-      id: course.uid?.split(":")[1] || "",
-      provider: course.provider || "Managed Learning",
-      designation: course.designation || "",
-      learning_month: course.learning_month || "",
-      category: course.category || "",
-      competency: course.competency || "",
-      title: course.title || "",
-      url: course.url || "",
-      duration_minutes: course.duration_minutes || "",
-      description: course.summary || "",
-      archived: Boolean(course.archived),
-    });
-    toast.info(`Editing "${course.title}".`);
-  }
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    setSaving(true);
-    const payload = {
-      provider: form.provider.trim(),
-      designation: form.designation.trim(),
-      learning_month: form.learning_month.trim(),
-      category: form.category.trim(),
-      competency: form.competency.trim(),
-      title: form.title.trim(),
-      url: form.url.trim() || undefined,
-      description: form.description.trim() || undefined,
-      duration_minutes: form.duration_minutes ? Number(form.duration_minutes) : null,
-      archived: Boolean(form.archived),
-    };
-    try {
-      if (form.id) {
-        await updateManagedCourse(token, form.id, payload);
-        toast.success("Course updated.");
-      } else {
-        await createManagedCourse(token, payload);
-        toast.success("Course added to managed learning.");
-      }
-      resetForm();
-      load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not save course."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleArchiveToggle(course) {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    try {
-      if (course.archived) {
-        await restoreManagedCourse(token, course.uid.split(":")[1]);
-        toast.success("Course restored.");
-      } else {
-        await archiveManagedCourse(token, course.uid.split(":")[1]);
-        toast.success("Course archived.");
-      }
-      load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not update course status."));
-    }
-  }
-
-async function handleDelete(course) {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    if (!window.confirm(`Delete "${course.title}"? This cannot be undone.`)) return;
-    try {
-      await deleteManagedCourse(token, course.uid.split(":")[1]);
-      toast.success("Course deleted.");
-      load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not delete course."));
-    }
-  }
-
-  function toggleSelectCourse(uid) {
-    setSelectedIds((prev) =>
-      prev.includes(uid) ? prev.filter((x) => x !== uid) : [...prev, uid]
-    );
-  }
-
-  function toggleSelectAll() {
-    const visibleIds = courses.map((c) => c.uid?.split(":")[1]).filter(Boolean);
-    if (selectedIds.length === visibleIds.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(visibleIds);
-    }
-  }
-
-  async function handleBulkAction(action) {
-    if (!selectedIds.length) { toast.error("Select at least one course."); return; }
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    const labels = { archive: "archive", restore: "restore", delete: "permanently delete" };
-    if (!window.confirm(`${labels[action] || action} ${selectedIds.length} course(s)?`)) return;
-    setBulkBusy(true);
-    try {
-      const res = await bulkManagedCourseAction(token, selectedIds, action);
-      toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}d ${res.affected} course(s).`);
-      setSelectedIds([]);
-      load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Bulk action failed."));
-    } finally {
-      setBulkBusy(false);
-    }
-  }
-
-  async function handleExportCsv() {
-    const rows = courses.map((c) => ({
-      Provider: c.provider || "",
-      Designation: c.designation || "",
-      "Learning Month": c.learning_month || "",
-      Category: c.category || "",
-      Competency: c.competency || "",
-      Title: c.title || "",
-      URL: c.url || "",
-      "Duration (min)": c.duration_minutes || "",
-      Description: c.summary || "",
-      Archived: c.archived ? "Yes" : "No",
-    }));
-    const selected = selectedIds.length
-      ? rows.filter((_, i) => selectedIds.includes(courses[i]?.uid?.split(":")[1]))
-      : rows;
-    const headers = ["Provider", "Designation", "Learning Month", "Category", "Competency", "Title", "URL", "Duration (min)", "Description", "Archived"];
-    downloadCsv(`managed-courses-${Date.now()}.csv`, headers, selected);
-  }
-
-  function selectedImportProvider() {
-    return form.provider || "Managed Learning";
-  }
-
-  async function handlePreviewUpload(file) {
-     const token = localStorage.getItem("access_token");
-     if (!token || !file) return;
-     setPreviewBusy(true);
-     setPreview(null);
-     setPreviewFile(file);
-     try {
-       const data = await previewManagedImport(file, token, form.provider || "Managed Learning");
-       setPreview(data);
-       toast.success(`Preview ready: ${data.total_rows || 0} rows parsed.`);
-     } catch (err) {
-       setPreview(null);
-       toast.error(getApiErrorMessage(err, "Could not preview roadmap import."));
-     } finally {
-       setPreviewBusy(false);
-       if (fileInputRef.current) fileInputRef.current.value = "";
-     }
-   }
-
-   async function handleCommitImport() {
-     const token = localStorage.getItem("access_token");
-     if (!token || !previewFile) return;
-     setSaving(true);
-     try {
-       const data = await commitManagedImport(previewFile, token, form.provider || "Managed Learning");
-       toast.success(data.message || "Roadmap imported.");
-       setPreview(null);
-       setPreviewFile(null);
-       load();
-     } catch (err) {
-       toast.error(getApiErrorMessage(err, "Could not import roadmap."));
-     } finally {
-       setSaving(false);
-     }
-   }
-
-  return (
-    <div className={shellStyles.section}>
-      <div className={shellStyles.sectionHead}>
-        <div className={shellStyles.sectionHeadLeft}>
-          <span className={`${shellStyles.bar} ${shellStyles.green}`} />
-          <div>
-            <div className={shellStyles.sectionTitle}>Managed learning roadmap</div>
-            <p className={shellStyles.sectionDesc}>Import, edit, archive, and delete managed roadmap courses by designation and month.</p>
-          </div>
-        </div>
-        <div className={styles.toolbar} style={{ marginBottom: 0 }}>
-          <div className={styles.toolbarRight}>
-            <button type="button" className={styles.modeBtn} onClick={() => load(true)}>
-              <RefreshCw aria-hidden="true" /> Refresh
-            </button>
-            <button type="button" className={styles.modeBtn} onClick={resetForm}>
-              <Plus aria-hidden="true" /> New course
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className={shellStyles.sectionBody}>
-        <div className={styles.filterBar}>
-          <div className={styles.searchField}>
-            <Search className={styles.searchFieldIcon} aria-hidden="true" />
-            <input
-              className={styles.searchFieldInput}
-              aria-label="Search roadmap courses"
-              placeholder="Search roadmap courses…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </div>
-          <select className={styles.filterSelect} value={provider} onChange={(e) => setProvider(e.target.value)}>
-            <option value="">All providers</option>
-            {(facets.providers || []).map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-          <select className={styles.filterSelect} value={designation} onChange={(e) => setDesignation(e.target.value)}>
-            <option value="">All designations</option>
-            {(facets.designations || []).map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-          <select className={styles.filterSelect} value={learningMonth} onChange={(e) => setLearningMonth(e.target.value)}>
-            <option value="">All months</option>
-            {(facets.months || []).map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-          <select className={styles.filterSelect} value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="">All categories</option>
-            {(facets.categories || []).map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-          <select className={styles.filterSelect} value={competency} onChange={(e) => setCompetency(e.target.value)}>
-            <option value="">All competencies</option>
-            {(facets.competencies || []).map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-          <label className={styles.checkPill}>
-            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-            <Archive aria-hidden="true" />
-            Show archived
-          </label>
-          <select
-            className={styles.filterSelect}
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            aria-label="Sort courses"
-          >
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-            <option value="updated">Recently updated</option>
-            <option value="title_asc">Title A–Z</option>
-            <option value="title_desc">Title Z–A</option>
-            <option value="duration">Duration</option>
-            <option value="provider">Provider</option>
-          </select>
-        </div>
-
-        {selectedIds.length > 0 && (
-          <div className={styles.filterBar} style={{ background: "var(--blue-lighter)", borderRadius: 10, padding: "8px 12px", marginBottom: 12, gap: 8 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--navy)", marginRight: 4 }}>
-              {selectedIds.length} selected
-            </span>
-            <button type="button" className={styles.smallBtn} disabled={bulkBusy} onClick={() => handleBulkAction("archive")}>
-              <Archive aria-hidden="true" /> Archive
-            </button>
-            <button type="button" className={styles.smallBtn} disabled={bulkBusy} onClick={() => handleBulkAction("restore")}>
-              <RefreshCw aria-hidden="true" /> Restore
-            </button>
-            <button type="button" className={`${styles.smallBtn}`} style={{ color: "#b42318", borderColor: "#f3c6c1" }} disabled={bulkBusy} onClick={() => handleBulkAction("delete")}>
-              <Trash2 aria-hidden="true" /> Delete
-            </button>
-            <button type="button" className={styles.smallBtn} disabled={bulkBusy} onClick={handleExportCsv}>
-              <Download aria-hidden="true" /> Export CSV
-            </button>
-            <button type="button" className={styles.smallBtn} onClick={() => setSelectedIds([])}>
-              <X aria-hidden="true" /> Clear
-            </button>
-          </div>
-        )}
-
-        <div className={shellStyles.cols2}>
-          <div className={shellStyles.section} style={{ margin: 0 }}>
-            <div className={shellStyles.sectionHead}>
-              <div className={shellStyles.sectionHeadLeft}>
-                <span className={`${shellStyles.bar} ${shellStyles.cyan}`} />
-                <div>
-                  <div className={shellStyles.sectionTitle}>{form.id ? "Edit course" : "Add course"}</div>
-                  <p className={shellStyles.sectionDesc}>Manual course management for managed learning and other providers.</p>
-                </div>
-              </div>
-            </div>
-            <div className={shellStyles.sectionBody}>
-              <form data-partner-coach className={styles.managedForm} onSubmit={handleSubmit}>
-                <label className={styles.fieldLabel}>
-                  Provider
-                  <select data-field-key="managed_provider" value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))}>
-                    <option value="">Select provider</option>
-                    {(providers || []).map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                </label>
-                <label className={styles.fieldLabel}>
-                  Designation
-                  <input data-field-key="designation" placeholder="e.g. Software Engineer" value={form.designation} onChange={(e) => setForm((current) => ({ ...current, designation: e.target.value }))} />
-                </label>
-                <label className={styles.fieldLabel}>
-                  Learning month
-                  <input data-field-key="learning_month" placeholder="e.g. 2025-03" value={form.learning_month} onChange={(e) => setForm((current) => ({ ...current, learning_month: e.target.value }))} />
-                </label>
-                <label className={styles.fieldLabel}>
-                  Category
-                  <input data-field-key="managed_category" placeholder="e.g. Cloud" value={form.category} onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))} />
-                </label>
-                <label className={styles.fieldLabel}>
-                  Competency
-                  <input data-field-key="competency" placeholder="e.g. Azure" value={form.competency} onChange={(e) => setForm((current) => ({ ...current, competency: e.target.value }))} />
-                </label>
-                <label className={styles.fieldLabel}>
-                  Duration (minutes)
-                  <input data-field-key="duration_minutes" type="number" min="1" placeholder="e.g. 45" value={form.duration_minutes} onChange={(e) => setForm((current) => ({ ...current, duration_minutes: e.target.value }))} />
-                </label>
-                <label className={`${styles.fieldLabel} ${styles.wide}`}>
-                  Course title
-                  <input data-field-key="course_title" placeholder="e.g. Azure Fundamentals" value={form.title} onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))} required />
-                </label>
-                <label className={`${styles.fieldLabel} ${styles.wide}`}>
-                  Course URL
-                  <input data-field-key="url" placeholder="https://example.com/course" value={form.url} onChange={(e) => setForm((current) => ({ ...current, url: e.target.value }))} />
-                </label>
-                <label className={`${styles.fieldLabel} ${styles.wide}`}>
-                  Description
-                  <textarea data-field-key="description" rows={3} placeholder="Short summary shown in the catalog" value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} />
-                </label>
-                <label className={styles.checkPill} style={{ justifySelf: "start" }}>
-                  <input type="checkbox" checked={Boolean(form.archived)} onChange={(e) => setForm((current) => ({ ...current, archived: e.target.checked }))} />
-                  <Archive aria-hidden="true" />
-                  Archived
-                </label>
-                <div className={styles.formActions}>
-                  <button type="submit" className={styles.assignCourseBtn} disabled={saving}>
-                    <Check aria-hidden="true" /> {saving ? "Saving…" : form.id ? "Update course" : "Create course"}
-                  </button>
-                  <button type="button" className={styles.smallBtn} onClick={resetForm}>
-                    <X aria-hidden="true" /> Clear
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-
-          <div className={shellStyles.section} style={{ margin: 0 }}>
-            <div className={shellStyles.sectionHead}>
-              <div className={shellStyles.sectionHeadLeft}>
-                <span className={`${shellStyles.bar} ${shellStyles.orange}`} />
-                <div>
-                  <div className={shellStyles.sectionTitle}>Import roadmap</div>
-                  <p className={shellStyles.sectionDesc}>Upload .xlsx or .csv, preview the hierarchy, then confirm.</p>
-                </div>
-              </div>
-            </div>
-            <div className={shellStyles.sectionBody}>
-              <label className={styles.fieldLabel} style={{ marginBottom: 12 }}>
-                Import provider
-                <select value={form.provider} onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))}>
-                  <option value="">Select provider</option>
-                  {(providers || []).map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-              </label>
-              {!preview && (
-                <label className={styles.fileDrop}>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".xlsx,.csv"
-                    className={styles.fileDropInput}
-                    onChange={(e) => handlePreviewUpload(e.target.files?.[0])}
-                  />
-                  <Upload className={styles.fileDropIcon} aria-hidden="true" />
-                  <strong>Choose a spreadsheet</strong>
-                   <span>.xlsx or .csv — parsed and previewed before saving</span>
-                </label>
-              )}
-              {previewBusy && <p className={styles.inlineNote} style={{ marginTop: 12 }}>Parsing spreadsheet…</p>}
-              {preview ? (
-                <div style={{ marginTop: 12 }}>
-                  <div className={styles.importStats}>
-                    <div className={styles.importStat}><div className={styles.importStatValue}>{preview.total_rows}</div><div className={styles.importStatLabel}>Rows</div></div>
-                    <div className={styles.importStat}><div className={styles.importStatValue}>{preview.new_courses}</div><div className={styles.importStatLabel}>New</div></div>
-                    <div className={styles.importStat}><div className={styles.importStatValue}>{preview.updated_courses}</div><div className={styles.importStatLabel}>Updated</div></div>
-                    <div className={styles.importStat}><div className={styles.importStatValue}>{preview.duplicate_courses}</div><div className={styles.importStatLabel}>Duplicate</div></div>
-                    <div className={styles.importStat}><div className={styles.importStatValue}>{preview.invalid_rows}</div><div className={styles.importStatLabel}>Invalid</div></div>
-                  </div>
-                  <div className={styles.formActions}>
-                    <button type="button" className={styles.assignCourseBtn} disabled={saving} onClick={handleCommitImport}>
-                      <Check aria-hidden="true" /> {saving ? "Importing…" : "Confirm import"}
-                    </button>
-                    <button type="button" className={styles.smallBtn} onClick={() => { setPreview(null); setPreviewFile(null); }}>
-                      <X aria-hidden="true" /> Clear preview
-                    </button>
-                  </div>
-                  <p className={styles.inlineNote} style={{ marginTop: 10, marginBottom: 0 }}>
-                    {preview.filename || "Uploaded file"} · {preview.rows?.length || 0} preview row(s)
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        {hierarchy.length > 0 && (
-          <div className={shellStyles.section} style={{ marginTop: 16 }}>
-            <div className={shellStyles.sectionHead}>
-              <div className={shellStyles.sectionHeadLeft}>
-                <span className={`${shellStyles.bar} ${shellStyles.navy}`} />
-                <div>
-                   <div className={shellStyles.sectionTitle}>Strategic Roadmap</div>
-                  <p className={shellStyles.sectionDesc}>Designation â†’ Month â†’ Category â†’ Competency</p>
-                </div>
-              </div>
-            </div>
-            <div className={shellStyles.sectionBody}>
-              {hierarchy.map((designationNode) => (
-                <div key={designationNode.designation} className={styles.hierarchyDept}>
-                  <div className={styles.hierarchyDeptTitle}>
-                    <FolderTree aria-hidden="true" />
-                    {designationNode.designation}
-                  </div>
-                  <div className={styles.hierarchyMonths}>
-                    {(designationNode.months || []).map((monthNode) => (
-                      <div key={monthNode.learning_month} className={styles.hierarchyMonth}>
-                        <div className={styles.hierarchyMonthTitle}>
-                          <Calendar aria-hidden="true" />
-                          {monthNode.learning_month}
-                        </div>
-                        <div className={styles.hierarchyCats}>
-                          {(monthNode.categories || []).map((categoryNode) => (
-                            <div key={categoryNode.category}>
-                              <div className={styles.hierarchyCatTitle}>{categoryNode.category}</div>
-                              <div className={styles.hierarchyChips}>
-                                {(categoryNode.competencies || []).map((competencyNode) => (
-                                  <span key={competencyNode.competency} className={styles.hierarchyChip}>{competencyNode.competency}</span>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {!loading && courses.length === 0 && (
-          <div className={styles.emptyState}>
-            <div className={styles.emptyStateIcon}><BookOpen aria-hidden="true" /></div>
-            <div className={styles.emptyStateTitle}>No managed courses</div>
-            <p className={styles.emptyStateHint}>Clear your filters or add a new course to build your managed learning roadmap.</p>
-          </div>
-        )}
-
-        {!loading && courses.length > 0 && (
-          <div className={styles.sourceToggle} style={{ marginBottom: 12 }}>
-            <label className={styles.checkPill}>
-              <input
-                type="checkbox"
-                checked={selectedIds.length > 0 && selectedIds.length === courses.length}
-                onChange={toggleSelectAll}
-              />
-              Select all
-            </label>
-          </div>
-        )}
-        <div className={styles.courseGrid}>
-          {courses.map((course) => {
-            const courseId = course.uid?.split(":")[1];
-            const isSelected = selectedIds.includes(courseId);
-            return (
-              <div key={course.uid} className={`${styles.courseCard} ${isSelected ? styles.sourceBtnActive : ""}`}>
-                <div className={styles.courseCardHead}>
-                  <span className={`${styles.sourceBadge} ${styles.sourceBadgeRecruiter}`}>{course.provider || "Managed Learning"}</span>
-                  <label className={styles.checkPill}>
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelectCourse(courseId)}
-                    />
-                  </label>
-                </div>
-                <div className={styles.courseTitle}>{course.title}</div>
-                <div className={styles.courseMeta}>
-                  {course.designation ? <span className={styles.metaChip}><Briefcase aria-hidden="true" />{course.designation}</span> : null}
-                  {course.learning_month ? <span className={styles.metaChip}><Calendar aria-hidden="true" />{course.learning_month}</span> : null}
-                  <span className={styles.metaChip}><Clock aria-hidden="true" />{course.duration_minutes || "—"} min</span>
-                </div>
-                <p className={styles.courseSummary}>{[course.category, course.competency, course.summary].filter(Boolean).join(" · ")}</p>
-                <div className={styles.courseActions}>
-                  {course.url && (
-                    <a href={course.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
-                      <Eye aria-hidden="true" /> Preview
-                    </a>
-                  )}
-                  <button type="button" className={styles.smallBtn} onClick={() => beginEdit(course)}>
-                    <Pencil aria-hidden="true" /> Edit
-                  </button>
-                  <button type="button" className={styles.smallBtn} onClick={() => handleArchiveToggle(course)}>
-                    {course.archived ? <><RefreshCw aria-hidden="true" /> Restore</> : <><Archive aria-hidden="true" /> Archive</>}
-                  </button>
-                  <button type="button" className={styles.smallBtn} onClick={() => handleDelete(course)}>
-                    <Trash2 aria-hidden="true" /> Delete
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ──────────────────────────────────────────────────────────────────────────── //
 // Providers (Phase 1 — Generic Learning Provider Framework)
 // ──────────────────────────────────────────────────────────────────────────── //
@@ -2292,7 +1852,9 @@ function ProvidersTab({ onImportProvider }) {
     description: "",
     logo_url: "",
     active: true,
+    api_connector: null,
   });
+  const isBuiltInSync = Boolean(form.api_connector);
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
@@ -2320,19 +1882,33 @@ function ProvidersTab({ onImportProvider }) {
 
   function startCreate() {
     setEditingId(null);
-    setForm({ name: "", provider_type: "manual", import_method: "excel", description: "", logo_url: "", active: true });
+    setForm({
+      name: "",
+      provider_type: "manual",
+      import_method: "excel",
+      description: "",
+      logo_url: "",
+      active: true,
+      api_connector: null,
+    });
     setShowForm(true);
   }
 
   function startEdit(provider) {
+    const isSyncProvider = Boolean(provider.api_connector);
     setEditingId(provider.id);
     setForm({
       name: provider.name || "",
-      provider_type: provider.provider_type || "manual",
-      import_method: provider.import_method || "manual",
+      provider_type: isSyncProvider ? "api" : "manual",
+      import_method: isSyncProvider
+        ? "api"
+        : provider.import_method === "api"
+          ? "excel"
+          : provider.import_method || "excel",
       description: provider.description || "",
       logo_url: provider.logo_url || "",
       active: Boolean(provider.active),
+      api_connector: provider.api_connector || null,
     });
     setShowForm(true);
   }
@@ -2342,13 +1918,29 @@ function ProvidersTab({ onImportProvider }) {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     if (!form.name.trim()) { toast.error("Provider name is required."); return; }
+    const payload = isBuiltInSync
+      ? {
+          name: form.name,
+          logo_url: form.logo_url,
+          description: form.description,
+          active: form.active,
+        }
+      : {
+          name: form.name,
+          provider_type: "manual",
+          import_method: form.import_method === "manual" ? "manual" : "excel",
+          logo_url: form.logo_url,
+          description: form.description,
+          active: form.active,
+          ...(editingId ? { clear_api_config: true } : {}),
+        };
     setSaving(true);
     try {
       if (editingId) {
-        await updateProvider(token, editingId, form);
+        await updateProvider(token, editingId, payload);
         toast.success("Provider updated.");
       } else {
-        await createProvider(token, form);
+        await createProvider(token, payload);
         toast.success("Provider created — it now appears in every catalog.");
       }
       setShowForm(false);
@@ -2422,7 +2014,8 @@ function ProvidersTab({ onImportProvider }) {
             <div>
               <div className={shellStyles.sectionTitle}>Learning providers</div>
               <p className={shellStyles.sectionDesc}>
-                Add any learning provider — Coursera, Udemy, DataCamp, Skillsoft, your internal academy — with zero code changes.
+                Add providers like Udemy or your internal academy, then import courses from Excel.
+                Coursera and Microsoft Learn can Sync courses with one click.
               </p>
             </div>
           </div>
@@ -2445,22 +2038,31 @@ function ProvidersTab({ onImportProvider }) {
                   />
                   <div className={styles.providerFormHint}>This name appears in every catalog tab, filter, and report.</div>
                 </label>
-                <label className={styles.fieldLabel}>
-                  Provider type
-                  <select data-field-key="provider_type" value={form.provider_type} onChange={(e) => setForm((f) => ({ ...f, provider_type: e.target.value }))}>
-                    <option value="manual">Manual</option>
-                    <option value="api">API</option>
-                  </select>
-                  <div className={styles.providerFormHint}>API providers sync automatically; manual providers use Excel imports.</div>
-                </label>
-                <label className={styles.fieldLabel}>
-                  Import method
-                  <select data-field-key="import_method" value={form.import_method} onChange={(e) => setForm((f) => ({ ...f, import_method: e.target.value }))}>
-                    <option value="excel">Excel</option>
-                    <option value="api">API</option>
-                    <option value="manual">Manual entry</option>
-                  </select>
-                </label>
+                {isBuiltInSync ? (
+                  <div className={`${styles.apiConnectorNotice} ${styles.wide}`} role="status">
+                    Built-in provider — use <strong>Sync</strong> on the provider card to refresh courses.
+                    No API setup needed.
+                  </div>
+                ) : (
+                  <label className={styles.fieldLabel}>
+                    How you add courses
+                    <select
+                      data-field-key="import_method"
+                      value={form.import_method}
+                      onChange={(e) => setForm((f) => ({
+                        ...f,
+                        import_method: e.target.value,
+                        provider_type: "manual",
+                      }))}
+                    >
+                      <option value="excel">Excel import</option>
+                      <option value="manual">Manual entry</option>
+                    </select>
+                    <div className={styles.providerFormHint}>
+                      Most teams upload an Excel/CSV from the provider. Use Import Courses after saving.
+                    </div>
+                  </label>
+                )}
                 <label className={styles.fieldLabel}>
                   Logo URL
                   <input
@@ -2534,11 +2136,15 @@ function ProvidersTab({ onImportProvider }) {
                   </div>
                   {p.description && <p className={styles.providerDesc}>{p.description}</p>}
                   <div className={styles.providerChips}>
-                    <span className={`${styles.providerChip} ${p.provider_type === "api" ? styles.providerChipGreen : styles.providerChipGrey}`}>
-                      {p.provider_type === "api" ? "API" : "Manual"}
+                    <span className={`${styles.providerChip} ${p.api_connector ? styles.providerChipGreen : styles.providerChipGrey}`}>
+                      {p.api_connector ? "Built-in sync" : "Manual"}
                     </span>
                     <span className={styles.providerChip}>
-                      {p.import_method === "api" ? "API sync" : p.import_method === "excel" ? "Excel import" : "Manual entry"}
+                      {p.api_connector
+                        ? "One-click sync"
+                        : p.import_method === "excel"
+                          ? "Excel import"
+                          : "Manual entry"}
                     </span>
                     <span className={`${styles.providerChip} ${p.active ? styles.providerChipGreen : styles.providerChipRed}`}>
                       {p.active ? "Active" : "Inactive"}
@@ -2550,17 +2156,21 @@ function ProvidersTab({ onImportProvider }) {
                     </span>
                     <div className={styles.providerActions}>
                       <button type="button" className={styles.providerActionBtn} disabled={busyId === p.id} onClick={() => onImportProvider?.(p)}>
-                        <Upload aria-hidden="true" /> Import
+                        <Upload aria-hidden="true" /> Add courses
                       </button>
-                      {p.provider_type === "api" && (
+                      {p.api_connector && (
                         <button
                           type="button"
                           className={styles.providerActionBtn}
                           disabled={busyId === p.id}
                           onClick={async () => {
                             const token = localStorage.getItem("access_token");
-                            if (!token) return;
+                            if (!token) {
+                              toast.error("Please sign in again to sync.");
+                              return;
+                            }
                             setBusyId(p.id);
+                            toast.info("Syncing courses… this may take a minute for large catalogs.", { autoClose: 8000 });
                             try {
                               const res = await syncProviderFromApi(token, p.id);
                               toast.success(res.message || "API sync completed.");
@@ -2572,7 +2182,7 @@ function ProvidersTab({ onImportProvider }) {
                             }
                           }}
                         >
-                          <RefreshCw aria-hidden="true" /> Sync
+                          <RefreshCw aria-hidden="true" /> {busyId === p.id ? "Syncing…" : "Sync"}
                         </button>
                       )}
                       <button type="button" className={styles.providerActionBtn} disabled={busyId === p.id} onClick={() => startEdit(p)}>
@@ -2601,394 +2211,6 @@ function ProvidersTab({ onImportProvider }) {
               ))}
             </div>
           )}
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────── //
-// Import Courses (Phase 2 — Universal Provider Import Engine)
-// ──────────────────────────────────────────────────────────────────────────── //
-function ImportsTab({ initialProvider = null, onConsumedInitial }) {
-  const [providers, setProviders] = useState([]);
-  const [provider, setProvider] = useState(initialProvider ? initialProvider.id : "");
-  const [providerName, setProviderName] = useState(initialProvider ? initialProvider.name : "");
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [previewing, setPreviewing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [missingAction, setMissingAction] = useState("keep");
-  const [history, setHistory] = useState([]);
-  const [historyLoading, setHistoryLoading] = useState(true);
-  const [step, setStep] = useState(1); // 1 select+upload, 2 preview, 3 done
-  const [pendingRollback, setPendingRollback] = useState(null);
-  const [busyId, setBusyId] = useState("");
-
-  const loadProviders = useCallback(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) return Promise.resolve();
-    return listProviders(token, { include_inactive: true, page_size: 100 })
-      .then((data) => setProviders(data.providers || []))
-      .catch((err) => toast.error(getApiErrorMessage(err, "Could not load providers.")));
-  }, []);
-
-  const loadHistory = useCallback(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    setHistoryLoading(true);
-    listImportHistory(token, { page_size: 20 })
-      .then((data) => setHistory(data.history || []))
-      .catch(() => {})
-      .finally(() => setHistoryLoading(false));
-  }, []);
-
-  useEffect(() => {
-    loadProviders();
-    loadHistory();
-  }, [loadProviders, loadHistory]);
-
-  // Consume the initial provider passed from the Providers tab.
-  useEffect(() => {
-    if (!initialProvider) return;
-    setProvider(initialProvider.id);
-    setProviderName(initialProvider.name);
-    onConsumedInitial?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialProvider]);
-
-  async function handlePreview(e) {
-    e.preventDefault();
-    if (!provider) { toast.error("Select a provider first."); return; }
-    if (!file) { toast.error("Choose an Excel or CSV file to import."); return; }
-    const token = localStorage.getItem("access_token");
-    setPreviewing(true);
-    setPreview(null);
-    try {
-      const data = await previewImport(token, { file, providerId: provider, providerName: providerName || undefined });
-      setPreview(data);
-      setStep(data.valid ? 2 : 1);
-      if (!data.valid) toast.warn("The file has validation issues. Review the report below.");
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not preview the file."));
-    } finally {
-      setPreviewing(false);
-    }
-  }
-
-  async function handleCommit() {
-    if (!preview || !preview.valid) return;
-    const token = localStorage.getItem("access_token");
-    setSaving(true);
-    try {
-      const data = await commitImport(token, {
-        file,
-        providerId: provider,
-        providerName: providerName || undefined,
-        missingAction,
-      });
-      toast.success(data.message || "Import completed.");
-      setPreview(null);
-      setFile(null);
-      setStep(3);
-      loadProviders();
-      loadHistory();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Import failed."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleNewImport() {
-    setPreview(null);
-    setFile(null);
-    setStep(1);
-    setProvider("");
-    setProviderName("");
-  }
-
-  async function downloadReport(historyId) {
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
-    try {
-      const blob = await downloadImportReport(token, historyId);
-      const url = window.URL.createObjectURL(new Blob([blob]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `import-report-${historyId}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not download the report."));
-    }
-  }
-
-  async function confirmRollback() {
-    const token = localStorage.getItem("access_token");
-    if (!token || !pendingRollback) return;
-    setBusyId(pendingRollback.id);
-    try {
-      const res = await rollbackImport(token, pendingRollback.id);
-      toast.success("Import rolled back.");
-      setPendingRollback(null);
-      loadProviders();
-      loadHistory();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not roll back the import."));
-    } finally {
-      setBusyId("");
-    }
-  }
-
-  const selectedProvider = providers.find((p) => p.id === provider);
-  const hasInvalid = (preview?.invalid_rows || 0) > 0;
-
-  return (
-    <>
-      <ConfirmDialog
-        open={Boolean(pendingRollback)}
-        title="Roll back this import?"
-        message="Rolling back undoes the courses created, updated, archived, or deleted by this import. Continue?"
-        confirmLabel="Roll back"
-        cancelLabel="Cancel"
-        danger
-        onConfirm={confirmRollback}
-        onCancel={() => setPendingRollback(null)}
-      />
-      <div className={shellStyles.section}>
-        <div className={shellStyles.sectionHead}>
-          <div className={shellStyles.sectionHeadLeft}>
-            <span className={`${shellStyles.bar} ${shellStyles.green}`} />
-            <div>
-              <div className={shellStyles.sectionTitle}>Import course catalog</div>
-              <p className={shellStyles.sectionDesc}>
-                One import engine for every provider — validate, preview, then import. No provider-specific uploads.
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className={shellStyles.sectionBody}>
-          <div className={styles.importStepBar}>
-            <span className={`${styles.importStep} ${step >= 1 ? styles.importStepActive : ""}`}>
-              {step > 1 ? <Check aria-hidden="true" /> : "1"} Provider &amp; file
-            </span>
-            <span className={styles.importStepLine} />
-            <span className={`${styles.importStep} ${step >= 2 ? styles.importStepActive : ""}`}>2 Preview</span>
-            <span className={styles.importStepLine} />
-            <span className={`${styles.importStep} ${step >= 3 ? styles.importStepDone : ""}`}>3 Import</span>
-          </div>
-
-          {step !== 3 && (
-            <form onSubmit={handlePreview}>
-              <div className={styles.providerFormGrid}>
-                <label className={styles.fieldLabel}>
-                  Provider
-                  <select
-                    className={styles.importProviderSelect}
-                    value={provider}
-                    onChange={(e) => {
-                      setProvider(e.target.value);
-                      const found = providers.find((p) => p.id === e.target.value);
-                      setProviderName(found ? found.name : "");
-                    }}
-                  >
-                    <option value="">Select a provider…</option>
-                    {providers.map((p) => (
-                      <option key={p.id} value={p.id} disabled={!p.active}>
-                        {p.name}{!p.active ? " (inactive)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedProvider?.provider_type === "api" && (
-                    <div className={styles.providerFormHint}>
-                      API provider — you can sync automatically from the Providers tab, or import an Excel snapshot here.
-                    </div>
-                  )}
-                </label>
-                <label className={styles.fieldLabel}>
-                  Missing courses
-                  <select value={missingAction} onChange={(e) => setMissingAction(e.target.value)}>
-                    <option value="keep">Keep (default)</option>
-                    <option value="archive">Archive</option>
-                    <option value="delete">Delete</option>
-                  </select>
-                  <div className={styles.providerFormHint}>
-                    What to do with existing courses that are missing from this file. Never automatic by default.
-                  </div>
-                </label>
-                <div className={`${styles.fieldLabel} ${styles.wide}`}>
-                  Spreadsheet
-                  <FileUploadField
-                    accept=".xlsx,.xls,.csv"
-                    onChange={(e) => { setFile(e.target.files?.[0] || null); setPreview(null); }}
-                  />
-                  <div className={styles.providerFormHint}>
-                    Supported: .xlsx, .xls, .csv. Required columns: Course Title, URL, Designation, Learning Month, Category, Competency.
-                  </div>
-                </div>
-              </div>
-              <div className={styles.formActions}>
-                <button type="submit" className={styles.assignCourseBtn} disabled={previewing || !provider || !file}>
-                  {previewing ? "Validating…" : "Validate & preview"}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {preview && (
-            <div className={styles.assignPanel} style={{ marginTop: 18 }}>
-              <div className={styles.assignPanelHead}>
-                <div>
-                  <div className={styles.assignPanelTitle}>Import preview — {preview.provider_name || "courses"}</div>
-                  <p className={styles.assignPanelDesc}>
-                    {preview.filename} · {preview.total_rows} row(s). Review the breakdown, then confirm.
-                  </p>
-                </div>
-              </div>
-              <div className={styles.importStats}>
-                <div className={styles.importStat}>
-                  <div className={styles.importStatValue}>{preview.new_courses}</div>
-                  <div className={styles.importStatLabel}>New</div>
-                </div>
-                <div className={styles.importStat}>
-                  <div className={styles.importStatValue}>{preview.updated_courses}</div>
-                  <div className={styles.importStatLabel}>Updated</div>
-                </div>
-                <div className={styles.importStat}>
-                  <div className={styles.importStatValue}>{preview.duplicate_rows}</div>
-                  <div className={styles.importStatLabel}>Duplicate</div>
-                </div>
-                <div className={styles.importStat}>
-                  <div className={styles.importStatValue}>{preview.invalid_rows}</div>
-                  <div className={styles.importStatLabel}>Invalid</div>
-                </div>
-                <div className={styles.importStat}>
-                  <div className={styles.importStatValue}>{preview.skipped_rows}</div>
-                  <div className={styles.importStatLabel}>Skipped</div>
-                </div>
-              </div>
-              {hasInvalid ? (
-                <div className={styles.importErrorBanner}>
-                  <CircleAlert aria-hidden="true" />
-                  <div>
-                    This file contains invalid rows and will <b>not</b> be imported until they are fixed.
-                    Invalid rows are flagged below with the exact reason.
-                  </div>
-                </div>
-              ) : (
-                <div className={styles.providerFormHint} style={{ marginTop: 10 }}>
-                  The file is valid — duplicate rows will be skipped and existing courses will be updated in place.
-                </div>
-              )}
-              {(preview.rows || []).length > 0 && (
-                <div style={{ maxHeight: 320, overflow: "auto" }}>
-                  <table className={styles.importPreviewTable}>
-                    <thead>
-                      <tr>
-                        <th>Row</th>
-                        <th>Status</th>
-                        <th>Course</th>
-                        <th>Designation</th>
-                        <th>Month</th>
-                        <th>Category</th>
-                        <th>Issues</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(preview.rows || []).slice(0, 60).map((row) => {
-                        const statusKey = row.status[0].toUpperCase() + row.status.slice(1);
-                        return (
-                          <tr key={row.row}>
-                            <td>{row.row}</td>
-                            <td>
-                              <span className={`${styles.rowStatusBadge} ${styles[`rowStatus${statusKey}`] || styles.rowStatusSkipped}`}>
-                                {row.status}
-                              </span>
-                            </td>
-                            <td>{row.title || "—"}</td>
-                            <td>{row.designation || "—"}</td>
-                            <td>{row.learning_month || "—"}</td>
-                            <td>{row.category || "—"}</td>
-                            <td>
-                              {(row.issues || []).length > 0 && (
-                                <ul className={styles.issueList}>
-                                  {(row.issues || []).slice(0, 4).map((issueObj, i) => (
-                                    <li key={i}>{issueObj.message}</li>
-                                  ))}
-                                </ul>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <div className={styles.formActions} style={{ marginTop: 16 }}>
-                <button type="button" className={styles.assignCourseBtn} disabled={saving || hasInvalid || !preview.valid} onClick={handleCommit}>
-                  <Check aria-hidden="true" /> {saving ? "Importing…" : "Confirm import"}
-                </button>
-                <button type="button" className={styles.smallBtn} onClick={handleNewImport}>
-                  Start over
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className={styles.emptyState} style={{ marginTop: 18 }}>
-              <div className={styles.emptyStateIcon}><CircleCheck aria-hidden="true" /></div>
-              <div className={styles.emptyStateTitle}>Import completed</div>
-              <p className={styles.emptyStateHint}>
-                The courses are live in every catalog. Track the result or roll it back from the history below.
-              </p>
-              <button type="button" className={styles.assignCourseBtn} onClick={handleNewImport}>
-                <Plus aria-hidden="true" /> Import another file
-              </button>
-            </div>
-          )}
-
-          <div style={{ marginTop: 28 }}>
-            <div className={shellStyles.sectionTitle}>Import history</div>
-            <p className={shellStyles.sectionDesc}>Every import and API sync, with rollback and downloadable reports.</p>
-            <div className={shellStyles.sectionBody} style={{ paddingLeft: 0, paddingRight: 0 }}>
-              {!historyLoading && history.length === 0 && (
-                <p className={styles.inlineNote}>No imports recorded yet.</p>
-              )}
-              {!historyLoading && history.map((h) => (
-                <div key={h.id} className={styles.importHistoryRow}>
-                  <div className={styles.importHistoryMain}>
-                    <div className={styles.importHistoryTitle}>
-                      {h.provider_name || "Unknown provider"} · {h.import_type === "api" ? "API sync" : "Excel import"}
-                      {h.status !== "completed" && <span className={styles.statusChip}> {h.status}</span>}
-                    </div>
-                    <div className={styles.importHistoryMeta}>
-                      <span><b>{h.imported_by_name || "—"}</b> · {h.created_at ? new Date(h.created_at).toLocaleString() : ""}</span>
-                      {h.filename && <span>{h.filename}</span>}
-                      <span>+{h.rows_imported} new</span>
-                      <span>~{h.rows_updated} updated</span>
-                      <span>{h.rows_failed} failed</span>
-                      {h.rows_archived > 0 && <span>{h.rows_archived} archived</span>}
-                    </div>
-                  </div>
-                  <div className={styles.importHistoryActions}>
-                    <button type="button" className={styles.smallBtn} onClick={() => downloadReport(h.id)}>
-                      <Download aria-hidden="true" /> Report
-                    </button>
-                    {h.status === "completed" && !h.rollback_at && (
-                      <button type="button" className={styles.smallBtn} disabled={busyId === h.id} onClick={() => setPendingRollback(h)}>
-                        <RefreshCw aria-hidden="true" /> Roll back
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </>

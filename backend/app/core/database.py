@@ -264,7 +264,28 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.learning_courses, [("provider_id", 1), ("archived", 1)])
     await _ensure_index(database.learning_courses, [("archived", 1), ("updated_at", -1)])
     await _ensure_index(database.learning_courses, [("created_at", -1)])
-    await _ensure_index(database.learning_courses, [("external_id", 1), ("provider_id", 1)], unique=True, sparse=True, name="learning_courses_external_id_provider_unique")
+    # Sparse unique indexes still index explicit nulls, so many courses with
+    # external_id:null + the same provider_id collide. Prefer a partial unique
+    # index that only covers real external ids.
+    course_indexes = await _index_names(database.learning_courses)
+    if "learning_courses_external_id_provider_unique" in course_indexes:
+        try:
+            info = await database.learning_courses.index_information()
+            existing = info.get("learning_courses_external_id_provider_unique") or {}
+            if existing.get("sparse") or not existing.get("partialFilterExpression"):
+                await _drop_index_quiet(database.learning_courses, "learning_courses_external_id_provider_unique")
+        except Exception:
+            await _drop_index_quiet(database.learning_courses, "learning_courses_external_id_provider_unique")
+    await _ensure_index(
+        database.learning_courses,
+        [("external_id", 1), ("provider_id", 1)],
+        unique=True,
+        name="learning_courses_external_id_provider_unique",
+        partialFilterExpression={
+            "external_id": {"$type": "string"},
+            "provider_id": {"$type": "string"},
+        },
+    )
     await _ensure_index(database.learning_courses, [("organization_id", 1), ("created_at", -1)])
     await _ensure_index(database.learning_courses, [("organization_id", 1), ("archived", 1)])
 

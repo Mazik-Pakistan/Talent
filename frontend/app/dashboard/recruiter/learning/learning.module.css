@@ -691,6 +691,12 @@
   background: var(--border);
   border-radius: 2px;
 }
+.assignStepLineDone {
+  background: var(--green-light);
+}
+.assignPanelMuted {
+  opacity: 0.78;
+}
 
 .assignCourseHero {
   display: flex;
@@ -1298,6 +1304,27 @@
 .hierarchyMonthTitle svg { width: 12px; height: 12px; color: var(--blue-strong); }
 .hierarchyCats { display: flex; flex-direction: column; gap: 8px; }
 .hierarchyCatTitle { font-size: 12px; font-weight: 700; color: var(--text); }
+.roadmapMonthHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  font-size: 12.5px;
+  font-weight: 750;
+  color: var(--navy-2);
+}
+.roadmapMonthHead svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--blue-strong);
+}
+.roadmapMonthLabel { line-height: 1.2; }
+.roadmapMonthCount {
+  font-weight: 550;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
 .hierarchyChips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .hierarchyChip {
   font-size: 11px;
@@ -1307,6 +1334,39 @@
   background: #fff;
   border: 1px solid var(--border);
   color: var(--text-muted);
+}
+
+.roadmapCourseList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.roadmapCourseRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+}
+.roadmapCourseMain { min-width: 0; flex: 1; }
+.roadmapCourseTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1.35;
+}
+.roadmapCourseMeta {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+@media (max-width: 720px) {
+  .roadmapCourseRow { flex-direction: column; align-items: stretch; }
 }
 
 /* ───────────────────────── Career framework ladder ───────────────────────── */
@@ -1976,6 +2036,126 @@
 .providerFormHint { font-size: 11.5px; color: var(--text-faint); margin-top: 4px; line-height: 1.45; }
 .providerToggle { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 650; color: var(--text-muted); cursor: pointer; user-select: none; }
 .providerToggle input { accent-color: var(--blue-strong); width: 15px; height: 15px; cursor: pointer; }
+
+/* ───────────────────── Generic API provider config ───────────────────── */
+
+.apiConfigSection {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 4px;
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: rgba(248, 250, 253, 0.7);
+}
+.apiConfigSection .fieldLabel { margin: 0; }
+.apiConfigSection .wide { grid-column: 1 / -1; }
+.apiConfigTitle {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  font-weight: 750;
+  color: var(--navy);
+  letter-spacing: .01em;
+}
+.apiConfigHint {
+  grid-column: 1 / -1;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin-top: -8px;
+  line-height: 1.45;
+}
+.apiConnectorNotice {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--navy);
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.providerFormGrid .apiConnectorNotice {
+  margin: 0;
+}
+.apiSubLabel {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.apiHeaderRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+.apiHeaderRow input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--navy);
+  background: #fff;
+  outline: none;
+  transition: border-color .16s var(--ease);
+}
+.apiHeaderRow input:focus { border-color: var(--blue-mid); }
+.apiHeaderRemoveBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color .16s var(--ease), border-color .16s var(--ease), background .16s var(--ease);
+}
+.apiHeaderRemoveBtn:hover { color: #b42318; border-color: #f3c6c1; background: var(--red-light); }
+.apiHeaderRemoveBtn svg { width: 14px; height: 14px; }
+.apiMappingGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.apiMappingField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+.apiMappingField input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--navy);
+  background: #fff;
+  outline: none;
+  transition: border-color .16s var(--ease);
+}
+.apiMappingField input:focus { border-color: var(--blue-mid); }
+.apiMappingField code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+@media (max-width: 900px) {
+  .apiMappingGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .apiConfigSection { grid-template-columns: 1fr; }
+  .apiMappingGrid { grid-template-columns: 1fr; }
+  .apiHeaderRow { grid-template-columns: 1fr; }
+}
 
 /* ───────────────────── Universal import engine (Phase 2) ───────────────────── */
 
