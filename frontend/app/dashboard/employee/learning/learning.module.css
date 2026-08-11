@@ -402,13 +402,13 @@
   border-color: transparent;
 }
 
-.uploadCertForm :global(.file-upload-caption) {
+.uploadCertForm .file-upload-caption {
   font-size: 12px;
   font-weight: 600;
   color: #4a5b70;
 }
 
-.uploadCertForm :global(.file-upload-btn) {
+.uploadCertForm .file-upload-btn {
   min-height: 34px;
   padding: 7px 14px;
   border-radius: 8px;
@@ -418,7 +418,7 @@
   align-items: center;
 }
 
-.uploadCertForm :global(.file-upload-btn) svg {
+.uploadCertForm .file-upload-btn svg {
   width: 14px;
   height: 14px;
 }
