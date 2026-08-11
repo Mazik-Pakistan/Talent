@@ -19,6 +19,13 @@ const PHASE_COPY = {
   error: "Let's try that again.",
 };
 
+const ROLE_GREETINGS = {
+  candidate: "Welcome, Candidate.",
+  employee: "Welcome, Employee.",
+  recruiter: "Welcome, Recruiter.",
+  super_admin: "Welcome, Admin.",
+};
+
 const EYE_MAX = 5.5; // px, clamps how far the eyes can travel from center
 const EYE_EASE = 0.16; // spring damping factor per animation frame
 const GREETING_DELAY = 380; // ms before the wave starts
@@ -58,9 +65,9 @@ export default function MascotStatic({
   mood = "neutral",
   message,
   fieldFocus = "none",
-  passwordVisible = false,
   authStatus = "idle",
   cardRef,
+  role,
 }) {
   const safeMood = MOOD_COPY[mood] ? mood : "neutral";
   const reducedMotion = usePrefersReducedMotion();
@@ -97,10 +104,10 @@ export default function MascotStatic({
     if (authStatus === "success") return "success";
     if (authStatus === "error") return "error";
     if (greetingActive) return "greeting";
-    if (fieldFocus === "password") return passwordVisible ? "password_visible" : "password_privacy";
+    if (fieldFocus === "password") return "password_privacy";
     if (fieldFocus === "email") return "email_focus";
     return "tracking";
-  }, [authStatus, greetingActive, fieldFocus, passwordVisible]);
+  }, [authStatus, greetingActive, fieldFocus]);
 
   const trackingEnabled = phase === "tracking" || phase === "greeting";
 
@@ -200,7 +207,11 @@ export default function MascotStatic({
 
   const eyesClosed = eyesClosedVisual;
   const eyesBlinking = blinking && !eyesClosed;
-  const bubbleText = message || PHASE_COPY[phase] || MOOD_COPY[safeMood];
+  const bubbleText =
+    message ||
+    (phase === "success" && role ? ROLE_GREETINGS[role] : null) ||
+    PHASE_COPY[phase] ||
+    MOOD_COPY[safeMood];
 
   const wrapperClasses = [
     styles.mascotWrapper,

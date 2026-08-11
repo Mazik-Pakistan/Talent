@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import shellStyles from "@/components/recruiter/recruiter-shell.module.css";
 import styles from "./talent.module.css";
-import { getApiErrorMessage, listEmployees } from "@/services/authService";
+import { getApiErrorMessage } from "@/services/authService";
 import {
   getTalentMetrics,
   getTalentRequirementsStatus,
@@ -136,8 +136,11 @@ export default function TalentDashboard({
   const [scopedReq, setScopedReq] = useState(null);
   const [sortBy, setSortBy] = useState("readiness");
 
-  const cards = data?.departmentCards || [];
-  const incompleteByEmployee = data?.incompleteByEmployee || {};
+  const cards = useMemo(() => data?.departmentCards || [], [data?.departmentCards]);
+  const incompleteByEmployee = useMemo(
+    () => data?.incompleteByEmployee || {},
+    [data?.incompleteByEmployee]
+  );
 
   const departmentNames = useMemo(() => {
     const fromFramework = (data?.departments || [])
@@ -150,9 +153,21 @@ export default function TalentDashboard({
   }, [data, cards]);
 
   const frameworkRoles = useMemo(() => {
-    return (data?.roles || []).map((r) => (
+    const metricRoles = (data?.metrics?.role_analysis || []).map((r) => ({
+      name: r.role,
+      department: r.department || "",
+      headcount: r.headcount || 0,
+    }));
+    const configuredRoles = (data?.roles || []).map((r) => (
       typeof r === "string" ? { name: r, department: "" } : r
-    )).filter((r) => r?.name);
+    ));
+    const merged = new Map();
+    for (const roleRow of [...metricRoles, ...configuredRoles]) {
+      if (!roleRow?.name) continue;
+      const key = `${(roleRow.department || "").trim().toLowerCase()}::${roleRow.name.trim().toLowerCase()}`;
+      if (!merged.has(key)) merged.set(key, roleRow);
+    }
+    return [...merged.values()];
   }, [data]);
 
   const roleOptions = useMemo(() => {
@@ -168,7 +183,7 @@ export default function TalentDashboard({
     setScopeLoading(true);
     try {
       const deptParam = department || undefined;
-      const [metricsRes, promoRes, searchRes, empRes, reqRes] = await Promise.allSettled([
+      const [metricsRes, promoRes, searchRes, reqRes] = await Promise.allSettled([
         getTalentMetrics(token, deptParam, { force: true }),
         getPromotionReadiness(token, deptParam || null),
         searchTalent(token, {
@@ -182,10 +197,6 @@ export default function TalentDashboard({
           semantic: false,
           page: 1,
           page_size: 60,
-        }),
-        listEmployees(token, {
-          department: deptParam,
-          page_size: 100,
         }),
         getTalentRequirementsStatus(token, {
           department: deptParam || undefined,
@@ -203,33 +214,31 @@ export default function TalentDashboard({
       if (reqRes.status === "fulfilled") setScopedReq(reqRes.value);
       else setScopedReq(data?.requirements || null);
 
-      // Prefer directory listing (paginated) so Overview always has people;
-      // merge talent-search hits for richer skill/progress fields.
       let list = [];
-      if (empRes.status === "fulfilled") {
-        list = empRes.value.employees || [];
-        const pages = empRes.value.pages || 1;
+      if (searchRes.status === "fulfilled") {
+        list = searchRes.value.employees || [];
+        const pages = searchRes.value.pages || 1;
         for (let page = 2; page <= Math.min(pages, 10); page += 1) {
           try {
-            const more = await listEmployees(token, {
-              department: deptParam,
+            const more = await searchTalent(token, {
+              q: null,
+              department: deptParam || null,
+              skills: [],
+              certifications: [],
+              min_learning_progress: null,
+              min_experience_years: null,
+              min_competency_score: null,
+              semantic: false,
               page,
-              page_size: 100,
+              page_size: 60,
             });
             list = [...list, ...(more.employees || [])];
           } catch {
             break;
           }
         }
-      }
-      if (searchRes.status === "fulfilled" && (searchRes.value.employees || []).length) {
-        const byId = new Map(list.map((e) => [e.employee_id, e]));
-        for (const row of searchRes.value.employees) {
-          if (!row?.employee_id) continue;
-          const prev = byId.get(row.employee_id);
-          byId.set(row.employee_id, prev ? { ...prev, ...row } : row);
-        }
-        list = [...byId.values()];
+      } else if (searchRes.status === "rejected") {
+        toast.error(getApiErrorMessage(searchRes.reason, "Could not load employees in this scope."));
       }
       if (department) list = list.filter((e) => matchDept(e, department));
       if (role) list = list.filter((e) => matchRole(e, role));
@@ -242,7 +251,8 @@ export default function TalentDashboard({
   }, [department, role, data]);
 
   useEffect(() => {
-    loadScope();
+    const t = setTimeout(() => { loadScope(); }, 0);
+    return () => clearTimeout(t);
   }, [loadScope]);
 
   const metrics = scopedMetrics || data?.metrics;
@@ -313,7 +323,7 @@ export default function TalentDashboard({
       .sort((a, b) => (b.open_high || 0) - (a.open_high || 0) || (b.open_total || 0) - (a.open_total || 0));
   }, [employees, incompleteMap]);
 
-  const headcount = employees.length;
+  const headcount = employees.length || (role ? 0 : (metrics?.headcount ?? 0));
   // Counts must reflect people actually in scope — never invent org-wide structure when a role filter is empty.
   const deptsInScope = department
     ? 1

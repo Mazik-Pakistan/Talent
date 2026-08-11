@@ -24,17 +24,83 @@ export function invalidateLearningCaches() {
 // ─── Catalog (US-065 / US-066 / US-072) ──────────────────────────────────────
 
 export async function browseCatalog(accessToken, params = {}) {
-  const { data } = await apiClient.get("/api/learning/catalog", { params });
+  const cacheKey = `learning-catalog:${JSON.stringify({
+    q: params.q || "",
+    role: params.role || "",
+    level: params.level || "",
+    product: params.product || "",
+    type: params.type || "",
+    source: params.source || "microsoft_learn",
+    category: params.category || "",
+    provider: params.provider || "",
+    designation: params.designation || "",
+    learning_month: params.learning_month || "",
+    competency: params.competency || "",
+    archived: params.archived === true,
+    sort_by: params.sort_by || "newest",
+    bookmarked_only: params.bookmarked_only === true,
+    page: params.page || 1,
+    page_size: params.page_size || 20,
+  })}`;
+  const { data } = await cachedFetch(
+    cacheKey,
+    async () => {
+      const res = await apiClient.get("/api/learning/catalog", { params });
+      return res.data;
+    },
+    { force: false, maxAgeMs: 5 * 60 * 1000 }
+  );
   return data;
 }
 
-export async function listManagedCourses(accessToken, params = {}) {
-  const { data } = await apiClient.get("/api/learning/managed/courses", { params });
+function normalizeManagedParams(params = {}) {
+  if (typeof params === "string") {
+    return { source: params };
+  }
+  return params || {};
+}
+
+export async function listManagedCourses(accessToken, params = {}, { force = false } = {}) {
+  const normalized = normalizeManagedParams(params);
+  const cacheKey = `learning-managed-courses:${JSON.stringify({
+    q: normalized.q || "",
+    provider: normalized.provider || "",
+    designation: normalized.designation || "",
+    learning_month: normalized.learning_month || "",
+    category: normalized.category || "",
+    competency: normalized.competency || "",
+    archived: normalized.archived === true,
+    sort_by: normalized.sort_by || "newest",
+    page: normalized.page || 1,
+    page_size: normalized.page_size || 20,
+    for_roadmap: normalized.for_roadmap === true,
+  })}`;
+  const { data } = await cachedFetch(
+    cacheKey,
+    async () => {
+      const res = await apiClient.get("/api/learning/managed/courses", { params: normalized });
+      return res.data;
+    },
+    { force, maxAgeMs: normalized.for_roadmap ? 10 * 60 * 1000 : 5 * 60 * 1000 }
+  );
   return data;
 }
 
-export async function getManagedFacets(accessToken, params = {}) {
-  const { data } = await apiClient.get("/api/learning/managed/facets", { params });
+export async function getManagedFacets(accessToken, params = {}, { force = false } = {}) {
+  const normalized = normalizeManagedParams(params);
+  const cacheKey = `learning-managed-facets:${JSON.stringify({
+    for_roadmap: normalized.for_roadmap === true,
+    source: normalized.source || "",
+  })}`;
+  const requestParams = normalized.for_roadmap ? { for_roadmap: true } : {};
+  const { data } = await cachedFetch(
+    cacheKey,
+    async () => {
+      const res = await apiClient.get("/api/learning/managed/facets", { params: requestParams });
+      return res.data;
+    },
+    { force, maxAgeMs: 10 * 60 * 1000 }
+  );
   return data;
 }
 
@@ -51,7 +117,15 @@ export async function createManagedProvider(accessToken, name) {
 }
 
 export async function getCatalogFacets(accessToken, source = "microsoft_learn") {
-  const { data } = await apiClient.get("/api/learning/catalog/facets", { params: { source } });
+  const key = `learning-catalog-facets:${source || "microsoft_learn"}`;
+  const { data } = await cachedFetch(
+    key,
+    async () => {
+      const res = await apiClient.get("/api/learning/catalog/facets", { params: { source } });
+      return res.data;
+    },
+    { force: false, maxAgeMs: 10 * 60 * 1000 }
+  );
   return data;
 }
 
@@ -374,7 +448,14 @@ export async function deleteDepartment(accessToken, name) {
 // ─── Catalog sources (dynamic provider tabs) ────────────────────────────────
 
 export async function getCatalogSources(accessToken) {
-  const { data } = await apiClient.get("/api/learning/catalog/sources");
+  const { data } = await cachedFetch(
+    "learning-catalog-sources",
+    async () => {
+      const res = await apiClient.get("/api/learning/catalog/sources");
+      return res.data;
+    },
+    { force: false, maxAgeMs: 10 * 60 * 1000 }
+  );
   return data;
 }
 

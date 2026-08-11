@@ -384,6 +384,69 @@
   margin-top: 4px;
   padding-top: 4px;
 }
+
+.uploadCertFormActions .editCancelBtn {
+  padding: 11px 18px;
+  border: none;
+  border-radius: 10px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+
+.uploadCertFormActions .editCancelBtn:hover {
+  background: #b91c1c;
+  border-color: transparent;
+}
+
+.uploadCertForm .file-upload-caption {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5b70;
+}
+
+.uploadCertForm .file-upload-btn {
+  min-height: 34px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 650;
+  gap: 6px;
+  align-items: center;
+}
+
+.uploadCertForm .file-upload-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.uploadCertSelectedFile {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: #eef6ed;
+  border: 1px solid #c3d9bf;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2d5016;
+  max-width: 100%;
+  min-width: 0;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.uploadCertSelectedFile svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
 .uploadCertSubmit {
   border: none;
   border-radius: 10px;

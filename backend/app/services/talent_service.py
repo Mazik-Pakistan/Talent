@@ -85,12 +85,62 @@ class TalentService:
         rid = employee.get("recruiter_id")
         return str(rid) if rid else None
 
+    def _employee_in_talent_scope(self, current_user: CurrentUser, employee: dict) -> bool:
+        if current_user.role == "super_admin":
+            return True
+        employee_org = employee.get("organization_id")
+        if current_user.organization_id and employee_org:
+            return employee_org == current_user.organization_id
+        return self._recruiter_id(employee) == current_user.id
+
     async def _assert_recruiter_owns(self, current_user: CurrentUser, employee: dict) -> None:
         if current_user.role == "super_admin":
             return
-        rid = self._recruiter_id(employee)
-        if rid != current_user.id:
+        if not self._employee_in_talent_scope(current_user, employee):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this employee.")
+
+    def _talent_employee_query(
+        self,
+        current_user: CurrentUser,
+        *,
+        department: str | None = None,
+        active_only: bool = True,
+    ) -> dict[str, Any]:
+        query: dict[str, Any] = {
+            "status": "active" if active_only else {"$in": ["active", "inactive", "on_leave"]},
+        }
+        if current_user.role != "super_admin":
+            if current_user.organization_id:
+                query["organization_id"] = current_user.organization_id
+            else:
+                query["recruiter_id"] = current_user.id
+        if department:
+            query["department"] = department
+        return query
+
+    @staticmethod
+    def _dedupe_assignments_by_employee(docs: list[dict]) -> dict[str, dict]:
+        best: dict[str, dict] = {}
+        for doc in docs:
+            eid = doc.get("employee_id")
+            if not eid:
+                continue
+            prev = best.get(eid)
+            if not prev:
+                best[eid] = doc
+                continue
+            score = doc.get("readiness_score") or 0
+            prev_score = prev.get("readiness_score") or 0
+            if score > prev_score:
+                best[eid] = doc
+                continue
+            if score < prev_score:
+                continue
+            doc_updated = doc.get("updated_at") or datetime.min.replace(tzinfo=UTC)
+            prev_updated = prev.get("updated_at") or datetime.min.replace(tzinfo=UTC)
+            if doc_updated >= prev_updated:
+                best[eid] = doc
+        return best
 
     async def _employee_skills(self, user_id: str) -> list[dict]:
         return await database.employee_skills.find({"user_id": user_id}).sort("skill_name", 1).to_list(length=500)
@@ -774,11 +824,7 @@ class TalentService:
     # US-100: Talent search
     # ------------------------------------------------------------------ #
     async def search_talent(self, current_user: CurrentUser, request: Any) -> dict:
-        query: dict[str, Any] = {"status": "active"}
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
-        if request.department:
-            query["department"] = request.department
+        query = self._talent_employee_query(current_user, department=request.department, active_only=True)
 
         candidates = await database.employees.find(query).to_list(length=2000)
 
@@ -792,12 +838,15 @@ class TalentService:
         }
 
         certs_by_user: dict[str, list[str]] = {}
+        verified_cert_count_by_user: dict[str, int] = {}
         if user_ids:
             cert_docs = await database.learning_certificates.find(
                 {"user_id": {"$in": user_ids}, "verification_status": "verified"}
             ).to_list(length=10000)
             for c in cert_docs:
-                certs_by_user.setdefault(c["user_id"], []).append(c.get("course_title") or "")
+                uid = c["user_id"]
+                certs_by_user.setdefault(uid, []).append(c.get("course_title") or "")
+                verified_cert_count_by_user[uid] = verified_cert_count_by_user.get(uid, 0) + 1
 
         progress_by_emp: dict[str, float] = {}
         if emp_ids:
@@ -914,7 +963,9 @@ class TalentService:
                     "job_title": c.get("job_title"),
                     "department": c.get("department"),
                     "skills": emp_skills[:12],
+                    "skill_count": len(emp_skills),
                     "certifications": emp_certs[:8],
+                    "verified_certifications": verified_cert_count_by_user.get(uid, 0),
                     "years_experience": years_experience,
                     "performance_rating": performance_rating,
                     "learning_progress": learning_progress,
@@ -944,11 +995,7 @@ class TalentService:
     # US-102: Recruiter talent metrics dashboard
     # ------------------------------------------------------------------ #
     async def talent_metrics(self, current_user: CurrentUser, *, department: str | None = None) -> dict:
-        query: dict[str, Any] = {"status": "active"}
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
-        if department:
-            query["department"] = department
+        query = self._talent_employee_query(current_user, department=department, active_only=True)
 
         employees = await database.employees.find(query).to_list(length=5000)
         user_ids = [e.get("user_id") for e in employees if e.get("user_id")]
@@ -1010,23 +1057,58 @@ class TalentService:
         high_potential.sort(key=lambda h: (-h["verified_certifications"], -h["skill_count"]))
 
         dept_stats: dict[str, dict[str, int]] = {}
+        dept_roles: dict[str, set[str]] = {}
+        role_stats: dict[tuple[str, str], dict[str, Any]] = {}
         for e in employees:
             dept = e.get("department") or "Unassigned"
+            role_name = (e.get("job_title") or "").strip() or "Unassigned"
             uid = e.get("user_id") or ""
             bucket = dept_stats.setdefault(dept, {"headcount": 0, "skills_tracked": 0})
             bucket["headcount"] += 1
             bucket["skills_tracked"] += skills_per_user.get(uid, 0)
+            dept_roles.setdefault(dept, set()).add(role_name)
+            role_bucket = role_stats.setdefault(
+                (dept, role_name),
+                {"department": dept, "role": role_name, "headcount": 0},
+            )
+            role_bucket["headcount"] += 1
+
+        for dept, roles in dept_roles.items():
+            dept_stats.setdefault(dept, {"headcount": 0, "skills_tracked": 0})["role_count"] = len(roles)
+
+        promotion_ready_count = 0
+        promotion_almost_count = 0
+        promotion_behind_count = 0
+        if emp_ids:
+            assignments = await database.employee_career_assignments.find(
+                {"employee_id": {"$in": emp_ids}, "status": "active"}
+            ).to_list(length=5000)
+            for assignment in self._dedupe_assignments_by_employee(assignments).values():
+                score = assignment.get("readiness_score") or 0
+                if score >= 80:
+                    promotion_ready_count += 1
+                elif score >= 50:
+                    promotion_almost_count += 1
+                else:
+                    promotion_behind_count += 1
 
         return {
             "headcount": len(employees),
             "skill_distribution": [{"category": k, "count": v} for k, v in sorted(skill_distribution.items(), key=lambda kv: -kv[1])],
             "high_potential_employees": high_potential[:20],
             "certification_stats": certification_stats,
-            "promotion_readiness_count": len(high_potential),
+            "promotion_readiness_count": promotion_ready_count,
+            "promotion_ready_count": promotion_ready_count,
+            "promotion_almost_ready_count": promotion_almost_count,
+            "promotion_behind_count": promotion_behind_count,
             "learning_completion_rate": learning_completion,
             "department_skill_analysis": [
                 {"department": dept, **stats} for dept, stats in sorted(dept_stats.items())
             ],
+            "role_analysis": sorted(
+                role_stats.values(),
+                key=lambda row: (row["department"].lower(), row["role"].lower()),
+            ),
         }
 
     # ------------------------------------------------------------------ #
@@ -1536,18 +1618,20 @@ class TalentService:
                 if user_id
                 else []
             )
-            assignment = await database.employee_career_assignments.find_one(
+            assignments = await database.employee_career_assignments.find(
                 {"employee_id": employee_id, "status": "active"}
-            )
+            ).to_list(length=50)
+            assignment = self._dedupe_assignments_by_employee(assignments).get(employee_id)
             if not assignment:
                 try:
                     from app.services.career_framework_service import career_framework_service
 
                     ensured = await career_framework_service.ensure_org_career_assignment(employee)
                     if ensured:
-                        assignment = await database.employee_career_assignments.find_one(
+                        assignments = await database.employee_career_assignments.find(
                             {"employee_id": employee_id, "status": "active"}
-                        )
+                        ).to_list(length=50)
+                        assignment = self._dedupe_assignments_by_employee(assignments).get(employee_id)
                 except Exception:
                     pass
             skill_n = (
@@ -1577,11 +1661,7 @@ class TalentService:
                 "by_category": detail["by_category"],
             }
 
-        query: dict[str, Any] = {"status": {"$in": ["active", "inactive", "on_leave"]}}
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
-        if department:
-            query["department"] = department
+        query = self._talent_employee_query(current_user, department=department, active_only=True)
 
         employees = await database.employees.find(query).sort("full_name", 1).to_list(length=500)
         if role:
@@ -1611,7 +1691,7 @@ class TalentService:
             if emp_ids
             else []
         )
-        assignment_by_emp = {a.get("employee_id"): a for a in assignments if a.get("employee_id")}
+        assignment_by_emp = self._dedupe_assignments_by_employee(assignments)
 
         skill_counts: dict[str, int] = {}
         enroll_counts: dict[str, int] = {}

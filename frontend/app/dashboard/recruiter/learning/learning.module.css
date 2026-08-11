@@ -1302,6 +1302,122 @@
   margin-bottom: 8px;
 }
 .hierarchyMonthTitle svg { width: 12px; height: 12px; color: var(--blue-strong); }
+
+.hierarchyToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  min-width: 0;
+}
+.hierarchyToggleLabel {
+  font-weight: 750;
+  color: var(--navy);
+  font-size: 13.5px;
+  font-family: 'Sora', system-ui, sans-serif;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hierarchyMonth .hierarchyToggleLabel {
+  font-size: 12.5px;
+  color: var(--navy-2);
+}
+.hierarchyToggleMeta {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.hierarchyToggle > svg:not(.hierarchyChevron) {
+  width: 15px;
+  height: 15px;
+  color: var(--blue-strong);
+  flex-shrink: 0;
+}
+.hierarchyMonth .hierarchyToggle > svg:not(.hierarchyChevron) {
+  width: 12px;
+  height: 12px;
+}
+.hierarchyChevron {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform .15s var(--ease);
+}
+.hierarchyChevronClosed {
+  transform: rotate(-90deg);
+}
+
+.progressPersonList {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+.progressPerson {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.progressPersonHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  min-width: 0;
+}
+.progressPersonHead > svg:not(.hierarchyChevron) {
+  width: 14px;
+  height: 14px;
+  color: var(--blue-strong);
+  flex-shrink: 0;
+}
+.progressPersonName {
+  font-weight: 700;
+  color: var(--navy);
+  font-size: 12.5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.progressCourseList {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.progressCourseRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--blue-lighter);
+  flex-wrap: wrap;
+}
+.progressCourseRow .listInfo { flex: 1; min-width: 180px; }
+.progressCourseRow .listTitle { font-size: 12.5px; }
+
 .hierarchyCats { display: flex; flex-direction: column; gap: 8px; }
 .hierarchyCatTitle { font-size: 12px; font-weight: 700; color: var(--text); }
 .roadmapMonthHead {
