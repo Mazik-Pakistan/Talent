@@ -1636,8 +1636,8 @@ function SkillsTab() {
 // (US-074, US-075, US-095, US-099, US-100)
 // ------------------------------------------------------------------------ //
 function CareerTab({ onGo }) {
-  const [goal, setGoal] = useState("");
   const [savedGoal, setSavedGoal] = useState(null);
+  const [, setGoal] = useState("");
   const [orgAssignment, setOrgAssignment] = useState(null);
   const [gap, setGap] = useState(null);
   const [path, setPath] = useState(null);
@@ -1649,9 +1649,7 @@ function CareerTab({ onGo }) {
   const [ladderLoading, setLadderLoading] = useState(true);
   const [designationReadiness, setDesignationReadiness] = useState(null);
   const [designationLoading, setDesignationLoading] = useState(false);
-  const [showExplore, setShowExplore] = useState(false);
   const [showRemaining, setShowRemaining] = useState(true);
-  const [showExtras, setShowExtras] = useState(false);
   const [bootLoading, setBootLoading] = useState(true);
 
   function loadGapAndPath(role, refresh = true) {
@@ -1831,12 +1829,6 @@ function CareerTab({ onGo }) {
     });
   }, [designationReadiness, ladder]);
 
-  async function handleSetGoal(role) {
-    const target = role || goal;
-    if (!target?.trim()) return;
-    await applyTargetRole(target.trim(), { silent: false });
-  }
-
   async function startChecklistCourse(req) {
     const token = localStorage.getItem("access_token");
     if (!token) return;
@@ -1885,7 +1877,7 @@ function CareerTab({ onGo }) {
       if (data.redirect_url || course.url) {
         window.open(data.redirect_url || course.url, "_blank", "noopener,noreferrer");
       }
-      toast.success("Optional course started — it now appears in My Learning.");
+      toast.success("AI recommended course started — it now appears in My Learning.");
     } catch (err) {
       if (course.url) window.open(course.url, "_blank", "noopener,noreferrer");
       toast.error(getApiErrorMessage(err, "Could not start this course."));
@@ -2072,9 +2064,6 @@ function CareerTab({ onGo }) {
             </div>
           </div>
           <div className={styles.checklistHeadActions}>
-            <button type="button" className={styles.smallBtn} onClick={() => setShowExplore((v) => !v)}>
-              {showExplore ? "Hide explore" : "Explore another role"}
-            </button>
             <button
               type="button"
               className={styles.smallBtn}
@@ -2090,20 +2079,6 @@ function CareerTab({ onGo }) {
           </div>
         </div>
         <div className={dashStyles.sectionBody}>
-          {showExplore && (
-            <div className={styles.goalRow} style={{ marginBottom: 16 }}>
-              <input
-                className={styles.goalInput}
-                placeholder="Optional: analyze a different title"
-                value={goal}
-                onChange={(e) => setGoal(e.target.value)}
-              />
-              <button type="button" className={dashStyles.btnPrimary} onClick={() => handleSetGoal()} disabled={gapLoading}>
-                {gapLoading ? "Analyzing…" : "Analyze"}
-              </button>
-            </div>
-          )}
-
           {(designationLoading || (gapLoading && checklistItems.length === 0)) && (
             <p className={styles.inlineNote}>Loading checklist…</p>
           )}
@@ -2145,7 +2120,7 @@ function CareerTab({ onGo }) {
                         ? " — submit the certificate in My Learning so this requirement can count."
                         : nextCourse.status === "in_progress" || nextCourse.status === "assigned"
                           ? " — continue this required course, then submit a certificate in My Learning."
-                          : " — start this required course. Optional extras are not needed for eligibility."}
+                          : " — start this required course. AI recommended courses below are extra practice, not required for eligibility."}
                     </p>
                   </div>
                   <button
@@ -2248,24 +2223,16 @@ function CareerTab({ onGo }) {
           <div className={dashStyles.sectionHeadLeft}>
             <span className={`${dashStyles.bar} ${dashStyles.cyan}`} />
             <div>
-              <div className={dashStyles.sectionTitle}>Optional extras</div>
+              <div className={dashStyles.sectionTitle}>AI recommended courses</div>
               <p className={dashStyles.sectionDesc}>
-                Not required for promotion. Matched to your skills and role after the checklist above is covered.
+                Suggested from your role and skills to raise proficiency. These are not required for promotion.
               </p>
             </div>
           </div>
-          <div className={styles.checklistHeadActions}>
-            <button type="button" className={styles.smallBtn} onClick={() => setShowExtras((v) => !v)}>
-              {showExtras ? "Hide extras" : extraRecs.length ? `Show extras (${Math.min(6, extraRecs.length)})` : "Show extras"}
-            </button>
-            {showExtras && (
-              <button type="button" className={styles.smallBtn} onClick={() => loadRecommendations(true)} disabled={recsLoading}>
-                {recsLoading ? "Refreshing…" : "Refresh"}
-              </button>
-            )}
-          </div>
+          <button type="button" className={styles.smallBtn} onClick={() => loadRecommendations(true)} disabled={recsLoading}>
+            {recsLoading ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
-        {showExtras && (
         <div className={dashStyles.sectionBody}>
           {recSourceLabel && !recsLoading && extraRecs.length > 0 && (
             <p className={styles.inlineNote} style={{ marginBottom: 12 }}>
@@ -2276,9 +2243,9 @@ function CareerTab({ onGo }) {
           {recsLoading && <p className={styles.inlineNote}>Thinking…</p>}
           {!recsLoading && extraRecs.length === 0 && (
             <div className={dashStyles.emptyState}>
-              <div className={dashStyles.emptyTitle}>No extra courses right now</div>
+              <div className={dashStyles.emptyTitle}>No AI recommendations yet</div>
               <div className={dashStyles.emptySub}>
-                Focus on the promotion checklist above. Refresh later for optional courses that are not already required.
+                Finish a few required courses or refresh after your skill profile has gaps to close.
               </div>
             </div>
           )}
@@ -2345,7 +2312,6 @@ function CareerTab({ onGo }) {
           </div>
           )}
         </div>
-        )}
       </div>
     </>
   );

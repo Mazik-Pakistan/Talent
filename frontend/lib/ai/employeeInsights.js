@@ -133,8 +133,8 @@ const LEARNING_SECTION_HELP = {
     fields: ["Add skill", "Proficiency level", "Skill categories"],
   },
   career: {
-    message: "Career Path is your promotion list. Start the Next up course, finish it in My Learning, then submit a certificate. Optional extras are not required.",
-    fields: ["Next up", "Promotion checklist", "My Learning"],
+    message: "Career Path is your promotion list. Start the Next up course, finish it in My Learning, then submit a certificate. AI recommended courses are extra practice.",
+    fields: ["Next up", "Promotion checklist", "AI recommended courses"],
   },
   certificates: {
     message: "Upload certificates here so they appear on your talent journey and profile.",
