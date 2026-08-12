@@ -1,0 +1,31 @@
+.certFileField :global(.file-upload-btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 8px;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(100deg, var(--blue-strong), var(--blue));
+  transition: filter 0.15s ease;
+}
+
+.certFileField :global(.file-upload-btn:hover) {
+  background: linear-gradient(100deg, var(--blue-strong), var(--blue));
+  border-color: transparent;
+  filter: brightness(1.05);
+}
+
+.certFileField :global(.file-upload-btn:focus-within) {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(56, 162, 255, 0.22);
+}
+
+.certFileField :global(.file-upload-btn svg) {
+  color: #fff;
+  stroke: #fff;
+}

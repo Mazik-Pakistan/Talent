@@ -5,6 +5,7 @@ import { toast } from "react-toastify";
 
 import EmployeeShell from "@/components/employee/EmployeeShell";
 import RecruiterLoader from "@/components/recruiter/RecruiterLoader";
+import FileUploadField from "@/components/FileUploadField";
 import dashStyles from "@/app/dashboard/employee/employee-dashboard.module.css";
 import { getApiErrorMessage } from "@/services/authService";
 import { getMyCareerProgress } from "@/services/careerService";
@@ -48,8 +49,11 @@ function EmployeeCareerInner() {
   const [busyUid, setBusyUid] = useState("");
   const [certFormFor, setCertFormFor] = useState(null);
   const [certLink, setCertLink] = useState("");
+  const [certCompletionDate, setCertCompletionDate] = useState("");
+  const [certLearningHours, setCertLearningHours] = useState("");
   const [certFile, setCertFile] = useState(null);
   const [certBusy, setCertBusy] = useState(false);
+  const today = new Date().toISOString().split("T")[0];
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
@@ -100,17 +104,25 @@ function EmployeeCareerInner() {
       toast.error("Certificate link must start with http:// or https://");
       return;
     }
+    if (certCompletionDate && certCompletionDate > today) {
+      toast.error("Completion date cannot be in the future.");
+      return;
+    }
     setCertBusy(true);
     try {
       const formData = new FormData();
       formData.append("course_title", course.course_title || "Course certificate");
       if (course.course_uid) formData.append("course_uid", course.course_uid);
       formData.append("source_url", link);
+      if (certCompletionDate) formData.append("completion_date", certCompletionDate);
+      if (certLearningHours) formData.append("learning_hours", certLearningHours);
       if (certFile) formData.append("file", certFile);
       await uploadCertificate(token, formData);
       toast.success("Certificate submitted — your recruiter will verify the link.");
       setCertFormFor(null);
       setCertLink("");
+      setCertCompletionDate("");
+      setCertLearningHours("");
       setCertFile(null);
       load();
     } catch (err) {
@@ -313,6 +325,8 @@ function EmployeeCareerInner() {
                               onClick={() => {
                                 setCertFormFor(course.course_uid || course.course_title);
                                 setCertLink("");
+                                setCertCompletionDate("");
+                                setCertLearningHours("");
                                 setCertFile(null);
                               }}
                             >
@@ -386,14 +400,67 @@ function EmployeeCareerInner() {
                             placeholder="https://…"
                             style={inputStyle}
                           />
-                          <label style={{ display: "block", fontSize: 12, fontWeight: 600, margin: "10px 0 4px" }}>
-                            Certificate file (optional)
-                          </label>
-                          <input
-                            type="file"
-                            accept=".pdf,.png,.jpg,.jpeg"
-                            onChange={(e) => setCertFile(e.target.files?.[0] || null)}
-                          />
+                          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 10 }}>
+                            <div>
+                              <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                                Completion date
+                              </label>
+                              <input
+                                type="date"
+                                value={certCompletionDate}
+                                max={today}
+                                onChange={(e) => setCertCompletionDate(e.target.value)}
+                                style={{ ...inputStyle, maxWidth: 200 }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                                Learning hours
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                placeholder="e.g. 2"
+                                value={certLearningHours}
+                                onChange={(e) => setCertLearningHours(e.target.value)}
+                                style={{ ...inputStyle, maxWidth: 160 }}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ marginTop: 10 }}>
+                            <FileUploadField
+                              caption="Certificate file (optional)"
+                              label="Upload document"
+                              replaceLabel="Replace document"
+                              accept=".pdf,.png,.jpg,.jpeg"
+                              onChange={(e) => setCertFile(e.target.files?.[0] || null)}
+                              selected={!!certFile}
+                            />
+                            {certFile && (
+                              <div
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  marginTop: 6,
+                                  padding: "5px 10px",
+                                  borderRadius: 7,
+                                  background: "#eef6ed",
+                                  border: "1px solid #c3d9bf",
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  color: "#2d5016",
+                                }}
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+                                  <polyline points="14 2 14 8 20 8" />
+                                </svg>
+                                {certFile.name}
+                              </div>
+                            )}
+                          </div>
                           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                             <button
                               type="button"
@@ -406,7 +473,13 @@ function EmployeeCareerInner() {
                             <button
                               type="button"
                               style={actionBtnStyle("#fff", "#0c2a41", "#dfe9f6")}
-                              onClick={() => setCertFormFor(null)}
+                              onClick={() => {
+                                setCertFormFor(null);
+                                setCertLink("");
+                                setCertCompletionDate("");
+                                setCertLearningHours("");
+                                setCertFile(null);
+                              }}
                             >
                               Cancel
                             </button>
