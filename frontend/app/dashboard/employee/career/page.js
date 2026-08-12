@@ -12,6 +12,27 @@ import { startCourse, uploadCertificate } from "@/services/learningService";
 
 export const dynamic = "force-dynamic";
 
+const STAT_ICONS = {
+  book: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  ),
+  clock: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  ),
+  check: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="8 12 11 15 16 9" />
+    </svg>
+  ),
+};
+
 export default function EmployeeCareerPage() {
   return (
     <Suspense fallback={<RecruiterLoader />}>
@@ -158,25 +179,38 @@ function EmployeeCareerInner() {
               <div style={{ display: "flex", gap: 32, alignItems: "center", flexWrap: "wrap" }}>
                 <ProgressRing percentage={assignment.overall_progress_percent} />
                 <div style={{ flex: 1, minWidth: 200 }}>
-                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                    <StatBlock
-                      label="Courses"
-                      value={courses.length}
-                      sub={`${completedCount(courses)} done`}
-                      color="#00A9CE"
-                    />
-                    <StatBlock
-                      label="Awaiting review"
-                      value={courses.filter((c) => c.certificate_status === "pending").length}
-                      sub="certificate links"
-                      color="#f39c12"
-                    />
-                    <StatBlock
-                      label="Verified"
-                      value={courses.filter((c) => c.certificate_status === "verified" || c.status === "completed").length}
-                      sub="approved by recruiter"
-                      color="#27ae60"
-                    />
+                  <div className={dashStyles.stats} style={{ marginBottom: 0 }}>
+                    <div className={dashStyles.statCard}>
+                      <div className={dashStyles.statTop}>
+                        <span className={`${dashStyles.statIcon} ${dashStyles.cyan}`}>
+                          {STAT_ICONS.book}
+                        </span>
+                      </div>
+                      <div className={dashStyles.statValue}>{courses.length}</div>
+                      <div className={dashStyles.statLabel}>Courses</div>
+                    </div>
+                    <div className={dashStyles.statCard}>
+                      <div className={dashStyles.statTop}>
+                        <span className={`${dashStyles.statIcon} ${dashStyles.orange}`}>
+                          {STAT_ICONS.clock}
+                        </span>
+                      </div>
+                      <div className={dashStyles.statValue}>
+                        {courses.filter((c) => c.certificate_status === "pending").length}
+                      </div>
+                      <div className={dashStyles.statLabel}>Awaiting review</div>
+                    </div>
+                    <div className={dashStyles.statCard}>
+                      <div className={dashStyles.statTop}>
+                        <span className={`${dashStyles.statIcon} ${dashStyles.green}`}>
+                          {STAT_ICONS.check}
+                        </span>
+                      </div>
+                      <div className={dashStyles.statValue}>
+                        {courses.filter((c) => c.certificate_status === "verified" || c.status === "completed").length}
+                      </div>
+                      <div className={dashStyles.statLabel}>Verified</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -492,16 +526,6 @@ function ProgressRing({ percentage = 0, size = 120, stroke = 10 }) {
           {percentage}%
         </text>
       </svg>
-    </div>
-  );
-}
-
-function StatBlock({ label, value, sub, color }) {
-  return (
-    <div style={{ textAlign: "center", padding: "8px 16px", borderRadius: 8, background: "#f8f9fa" }}>
-      <div style={{ fontSize: 24, fontWeight: 800, color }}>{value}</div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "#333" }}>{label}</div>
-      <div style={{ fontSize: 11, color: "#999" }}>{sub}</div>
     </div>
   );
 }
