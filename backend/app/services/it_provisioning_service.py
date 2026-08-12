@@ -29,6 +29,7 @@ from app.schemas.it_provisioning import (
 )
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
+from app.services.organization_service import recruiter_can_access
 
 
 def _generate_otp() -> str:
@@ -1438,7 +1439,7 @@ class ItProvisioningService:
     def _assert_recruiter_owns_offer(current_user: CurrentUser, offer: dict) -> None:
         if current_user.role == "super_admin":
             return
-        if offer.get("recruiter_id") != current_user.id:
+        if not recruiter_can_access(current_user, offer):
             raise HTTPException(status_code=403, detail="Not authorized for this offer.")
 
 

@@ -16,6 +16,7 @@ from app.core.rbac import CurrentUser
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
 from app.services.employee_service import EmployeeService
+from app.services.organization_service import recruiter_can_access
 
 REMINDER_KINDS = frozenset({"onboarding", "profile", "reupload", "course", "general"})
 THROTTLE_SECONDS = 3600
@@ -84,7 +85,7 @@ class ReminderService:
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found.")
         if current_user.role != "super_admin":
-            if candidate.get("recruiter_id") != current_user.id:
+            if not recruiter_can_access(current_user, candidate):
                 raise HTTPException(status_code=403, detail="Not allowed.")
 
         note_text = (note or "").strip() or None

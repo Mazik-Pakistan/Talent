@@ -1819,9 +1819,11 @@ function CertificatesTab({ selectedCertificateId = null }) {
                 {c.learning_hours ? <span className={styles.metaChip}><Clock aria-hidden="true" />{c.learning_hours} hrs</span> : null}
               </div>
             </div>
-            <a href={c.file_url || c.certificate_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
-              <Eye aria-hidden="true" /> View file
-            </a>
+            {c.file_url ? (
+              <a href={c.file_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
+                <Eye aria-hidden="true" /> View file
+              </a>
+            ) : null}
             {c.source_url && c.source_url !== c.file_url ? (
               <a href={c.source_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
                 <Globe aria-hidden="true" /> Public URL
