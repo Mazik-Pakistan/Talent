@@ -1,67 +1,115 @@
 "use client";
 
+const iconProps = {
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: "1.8",
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+};
+
 export const EMPLOYEE_NAV_ICONS = {
   dashboard: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="3" width="7" height="9" rx="1.5" />
-      <rect x="14" y="3" width="7" height="5" rx="1.5" />
-      <rect x="14" y="12" width="7" height="9" rx="1.5" />
-      <rect x="3" y="16" width="7" height="5" rx="1.5" />
+    <svg {...iconProps}>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
+
   onboarding: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M9 12l2 2 4-4" />
+    <svg {...iconProps}>
       <circle cx="12" cy="12" r="9" />
+      <path d="M8 12l2.5 2.5L16 9" />
     </svg>
   ),
+
   documents: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <path d="M14 2v6h6" />
+    <svg {...iconProps}>
+      <path d="M6 3h8l5 5v13H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+      <path d="M14 3v6h5" />
+      <path d="M8 13h6" />
+      <path d="M8 17h5" />
     </svg>
   ),
+
   learning: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    <svg {...iconProps}>
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v17H6.5A2.5 2.5 0 0 1 4 17.5z" />
+      <path d="M4 5.5v12" />
+      <path d="M8 7h8" />
+      <path d="M8 11h6" />
     </svg>
   ),
+
   ai: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 2a5 5 0 0 1 5 5v2a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z" />
-      <path d="M19 11a7 7 0 0 1-14 0M12 18v4" />
+    <svg {...iconProps}>
+      <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z" />
+      <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z" />
     </svg>
   ),
+
   profile: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
+    <svg {...iconProps}>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M4.5 20c.8-3.4 3.3-5.2 7.5-5.2s6.7 1.8 7.5 5.2" />
     </svg>
   ),
+
   messages: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    <svg {...iconProps}>
+      <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H7l-4 2v-9.5A7.5 7.5 0 0 1 10.5 4h2A7.5 7.5 0 0 1 20 11.5z" />
+      <path d="M8 11h.01" />
+      <path d="M12 11h.01" />
+      <path d="M16 11h.01" />
     </svg>
   ),
+
+  // My Career — career progression
+  career: (
+    <svg {...iconProps}>
+      <path d="M4 19h16" />
+      <path d="M6 16l4-4 3 3 5-7" />
+      <path d="M15 8h3v3" />
+    </svg>
+  ),
+
+  // My Talent — personal skills and strengths
   talent: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 2l2.9 6.3L22 9.3l-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l7.1-1z" />
+    <svg {...iconProps}>
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M5 20c.7-3.5 3-5.5 7-5.5s6.3 2 7 5.5" />
+      <path d="M19 3.5l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6z" />
     </svg>
   ),
+
   it: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="2" y="3" width="20" height="14" rx="2" />
-      <path d="M8 21h8M12 17v4" />
-      <path d="M9.5 8.5a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0" />
+    <svg {...iconProps}>
+      <rect x="3" y="4" width="14" height="11" rx="1.5" />
+      <path d="M7 20h6" />
+      <path d="M10 15v5" />
+
+      <circle cx="18" cy="17" r="3" />
+      <path d="M18 15.5v1.5l1 1" />
+      <path d="M18 13v1" />
+      <path d="M18 20v1" />
+      <path d="M14 17h1" />
+      <path d="M21 17h1" />
     </svg>
   ),
 };
 
+
 /**
- * Employee sidebar items. Onboarding is only shown while the profile is
- * incomplete — after 100% completion, edits go through Profile. Recruiter-
- * employees (can_switch_to_recruiter) skip the onboarding item entirely.
+ * Employee sidebar items.
+ *
+ * Onboarding is only shown while the profile is incomplete.
+ * After 100% completion, profile edits go through Profile.
+ *
+ * Recruiter-employees (can_switch_to_recruiter) skip the
+ * onboarding item entirely.
  */
 export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
   const allItems = [
@@ -72,6 +120,7 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
       href: "/dashboard/employee",
       icon: EMPLOYEE_NAV_ICONS.dashboard,
     },
+
     {
       key: "onboarding",
       label: "Onboarding",
@@ -79,6 +128,7 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
       href: "/dashboard/employee/complete-profile",
       icon: EMPLOYEE_NAV_ICONS.onboarding,
     },
+
     {
       key: "documents",
       label: "Documents",
@@ -86,6 +136,7 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
       href: "/documents",
       icon: EMPLOYEE_NAV_ICONS.documents,
     },
+
     {
       key: "learning",
       label: "Learning",
@@ -93,13 +144,15 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
       href: "/dashboard/employee/learning",
       icon: EMPLOYEE_NAV_ICONS.learning,
     },
+
     {
       key: "career",
       label: "My Career",
       module: "learning",
       href: "/dashboard/employee/career",
-      icon: EMPLOYEE_NAV_ICONS.talent,
+      icon: EMPLOYEE_NAV_ICONS.career,
     },
+
     {
       key: "talent",
       label: "My Talent",
@@ -107,6 +160,7 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
       href: "/dashboard/employee/talent",
       icon: EMPLOYEE_NAV_ICONS.talent,
     },
+
     {
       key: "ai-assistant",
       label: "AI Assistant",
@@ -114,6 +168,7 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
       href: "/dashboard/employee/ai-assistant",
       icon: EMPLOYEE_NAV_ICONS.ai,
     },
+
     {
       key: "it-support",
       label: "IT support",
@@ -121,6 +176,7 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
       href: "/dashboard/employee/it-support",
       icon: EMPLOYEE_NAV_ICONS.it,
     },
+
     {
       key: "messages",
       label: "Message HR",
@@ -128,6 +184,7 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
       href: "/dashboard/employee/messages",
       icon: EMPLOYEE_NAV_ICONS.messages,
     },
+
     {
       key: "profile",
       label: "Profile",
@@ -136,24 +193,47 @@ export function getEmployeeNavItems({ profileComplete = false, user } = {}) {
       icon: EMPLOYEE_NAV_ICONS.profile,
     },
   ];
+
   return allItems.filter((item) => {
-    if (item.key === "onboarding" && (profileComplete || user?.can_switch_to_recruiter)) {
+    if (
+      item.key === "onboarding" &&
+      (profileComplete || user?.can_switch_to_recruiter)
+    ) {
       return false;
     }
+
     return true;
   });
 }
 
+
 /**
  * Exclusive active matching for employee nav.
- * Dashboard is exact-match only so /dashboard/employee/* does not keep it lit.
+ *
+ * Dashboard is exact-match only so /dashboard/employee/*
+ * does not keep Dashboard highlighted.
  */
-export function isEmployeeNavActive(item, { pathname, activeKey } = {}) {
-  if (activeKey) return item.key === activeKey;
-  if (!item.href || !pathname) return false;
+export function isEmployeeNavActive(
+  item,
+  { pathname, activeKey } = {}
+) {
+  if (activeKey) {
+    return item.key === activeKey;
+  }
+
+  if (!item.href || !pathname) {
+    return false;
+  }
 
   if (item.key === "dashboard") {
-    return pathname === item.href || pathname === `${item.href}/`;
+    return (
+      pathname === item.href ||
+      pathname === `${item.href}/`
+    );
   }
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+  return (
+    pathname === item.href ||
+    pathname.startsWith(`${item.href}/`)
+  );
 }

@@ -206,12 +206,39 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
   if (!dashboard) return null;
   const s = dashboard.summary || {};
 
-  const stats = [
-    { label: "To start", value: s.assigned_count ?? 0, color: "orange" },
-    { label: "In Progress", value: s.in_progress_count ?? 0, color: "cyan" },
-    { label: "Completed", value: s.completed_count ?? 0, color: "green" },
-    { label: "Certificates Earned", value: s.certificates_earned ?? 0, color: "navy" },
+const stats = [
+    { label: "To start", value: s.assigned_count ?? 0, color: "orange", icon: "play" },
+    { label: "In Progress", value: s.in_progress_count ?? 0, color: "cyan", icon: "clock" },
+    { label: "Completed", value: s.completed_count ?? 0, color: "green", icon: "check" },
+    { label: "Certificates Earned", value: s.certificates_earned ?? 0, color: "navy", icon: "award" },
   ];
+
+  const STAT_ICONS = {
+    play: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+    clock: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+    ),
+    check: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="8 12 11 15 16 9" />
+      </svg>
+    ),
+    award: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="8" r="6" />
+        <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" />
+      </svg>
+    ),
+  };
 
   async function startAssigned(uid) {
     const token = localStorage.getItem("access_token");
@@ -255,7 +282,9 @@ function OverviewTab({ dashboard, onGo, onRefresh }) {
         {stats.map((stat) => (
           <div key={stat.label} className={dashStyles.statCard}>
             <div className={dashStyles.statTop}>
-              <span className={`${dashStyles.statIcon} ${dashStyles[stat.color]}`}>●</span>
+              <span className={`${dashStyles.statIcon} ${dashStyles[stat.color]}`}>
+                {STAT_ICONS[stat.icon]}
+              </span>
             </div>
             <div className={dashStyles.statValue}>{stat.value}</div>
             <div className={dashStyles.statLabel}>{stat.label}</div>
@@ -786,6 +815,7 @@ function MyCoursesTab({ onChange }) {
   const [uploading, setUploading] = useState(false);
   const [editingCertId, setEditingCertId] = useState(null);
   const [editForm, setEditForm] = useState({ course_title: "", completion_date: "", learning_hours: "" });
+  const today = new Date().toISOString().split("T")[0];
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
@@ -885,6 +915,10 @@ function MyCoursesTab({ onChange }) {
       toast.error("Certificate link must start with http:// or https://");
       return;
     }
+    if (uploadForm.completion_date && uploadForm.completion_date > today) {
+      toast.error("Completion date cannot be in the future.");
+      return;
+    }
     const token = localStorage.getItem("access_token");
     const fd = new FormData();
     if (uploadFile) fd.append("file", uploadFile);
@@ -927,6 +961,10 @@ function MyCoursesTab({ onChange }) {
   async function handleEditSave(certId) {
     if (!editForm.course_title.trim()) {
       toast.error("Course title is required.");
+      return;
+    }
+    if (editForm.completion_date && editForm.completion_date > today) {
+      toast.error("Completion date cannot be in the future.");
       return;
     }
     const token = localStorage.getItem("access_token");
@@ -1078,6 +1116,7 @@ function MyCoursesTab({ onChange }) {
                       <input
                         type="date"
                         value={uploadForm.completion_date}
+                        max={today}
                         onChange={(ev) => setUploadForm((f) => ({ ...f, completion_date: ev.target.value }))}
                       />
                     </label>
@@ -1135,94 +1174,90 @@ function MyCoursesTab({ onChange }) {
 
                 {cert && uploadingFor !== e.course_uid && (
                   <div className={styles.certRow}>
-                    <div className={styles.certInfo}>
-                      <div className={styles.certTitle}>{cert.course_title}</div>
-                      <div className={styles.certMeta}>
-                        {cert.completion_date ? `Completed ${cert.completion_date} · ` : ""}
-                        {cert.learning_hours ? `${cert.learning_hours} hrs · ` : ""}
-                        Submitted {new Date(cert.created_at).toLocaleDateString()}
-                        {cert.rejection_reason ? ` · ${cert.rejection_reason}` : ""}
-                      </div>
-                      {isVerified && (cert.skills_awarded || []).length > 0 && (
-                        <div className={styles.awardedSkills}>
-                          <span className={styles.focusLabel}>Added to your skills</span>
-                          <div className={styles.nextSkills}>
-                            {cert.skills_awarded.map((name) => (
-                              <span key={name} className={`${styles.nextSkillChip} ${styles.nextSkillHave}`}>
-                                {name}
-                                {cert.proficiency_awarded ? ` · ${cert.proficiency_awarded}` : ""}
-                              </span>
-                            ))}
+                    <div className={styles.certLeft}>
+                      {editingCertId === cert.id ? (
+                        <form className={styles.editCertForm} onSubmit={(ev) => { ev.preventDefault(); handleEditSave(cert.id); }}>
+                          <div className={styles.editFormRow}>
+                            <label>
+                              Course / certification title
+                              <input value={editForm.course_title} readOnly onChange={(ev) => setEditForm((f) => ({ ...f, course_title: ev.target.value }))} required />
+                            </label>
                           </div>
-                        </div>
-                      )}
-                      {isVerified && (cert.certifications_awarded || []).length > 0 && (
-                        <div className={styles.awardedSkills}>
-                          <span className={styles.focusLabel}>Certifications recorded</span>
-                          <div className={styles.nextSkills}>
-                            {cert.certifications_awarded.map((name) => (
-                              <span key={name} className={styles.focusChip}>{name}</span>
-                            ))}
+                          <div className={styles.editFormRow}>
+                            <label>
+                              Completion date
+                              <input type="date" value={editForm.completion_date} max={today} onChange={(ev) => setEditForm((f) => ({ ...f, completion_date: ev.target.value }))} />
+                            </label>
+                            <label>
+                              Learning hours
+                              <input type="number" min="0" step="0.5" value={editForm.learning_hours} onChange={(ev) => setEditForm((f) => ({ ...f, learning_hours: ev.target.value }))} />
+                            </label>
                           </div>
+                          <div className={styles.editFormActions}>
+                            <button type="submit" className={dashStyles.btnPrimary}>Save changes</button>
+                            <button type="button" className={styles.editCancelBtn} onClick={() => { setEditingCertId(null); setEditForm({ course_title: "", completion_date: "", learning_hours: "" }); }}>Cancel</button>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className={styles.certInfo}>
+                          <div className={styles.certTitle}>{cert.course_title}</div>
+                          {cert.rejection_reason && (
+                            <div className={styles.certMeta}>{cert.rejection_reason}</div>
+                          )}
+                          {isVerified && (cert.skills_awarded || []).length > 0 && (
+                            <div className={styles.awardedSkills}>
+                              <span className={styles.focusLabel}>Added to your skills</span>
+                              <div className={styles.nextSkills}>
+                                {cert.skills_awarded.map((name) => (
+                                  <span key={name} className={`${styles.nextSkillChip} ${styles.nextSkillHave}`}>
+                                    {name}
+                                    {cert.proficiency_awarded ? ` · ${cert.proficiency_awarded}` : ""}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {isVerified && (cert.certifications_awarded || []).length > 0 && (
+                            <div className={styles.awardedSkills}>
+                              <span className={styles.focusLabel}>Certifications recorded</span>
+                              <div className={styles.nextSkills}>
+                                {cert.certifications_awarded.map((name) => (
+                                  <span key={name} className={styles.focusChip}>{name}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {isVerified && !(cert.skills_awarded || []).length && (
+                            <p className={styles.nextCourseHint}>
+                              Certificate verified — this course counts as completed. Skills appear on My skills when the course has linked outcomes.
+                            </p>
+                          )}
                         </div>
-                      )}
-                      {isVerified && !(cert.skills_awarded || []).length && (
-                        <p className={styles.nextCourseHint}>
-                          Certificate verified — this course counts as completed. Skills appear on My skills when the course has linked outcomes.
-                        </p>
                       )}
                     </div>
-                    <span className={`${styles.certStatus} ${styles[cert.verification_status]}`}>
-                      {cert.verification_status === "verified" ? "Verified" : cert.verification_status === "rejected" ? "Rejected" : "Pending review"}
-                    </span>
-                    {cert.file_url ? (
-                      <a href={cert.file_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View file</a>
-                    ) : null}
-                    {cert.source_url ? (
-                      <a href={cert.source_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open link</a>
-                    ) : null}
-                    {cert.verification_status !== "verified" && (
-                      <>
-                        {editingCertId === cert.id ? (
-                          <form className={styles.editCertForm} onSubmit={(ev) => { ev.preventDefault(); handleEditSave(cert.id); }}>
-                            <div className={styles.editFormRow}>
-                              <label>
-                                Course / certification title
-                                <input value={editForm.course_title} onChange={(ev) => setEditForm((f) => ({ ...f, course_title: ev.target.value }))} required />
-                              </label>
-                            </div>
-                            <div className={styles.editFormRow}>
-                              <label>
-                                Completion date
-                                <input type="date" value={editForm.completion_date} onChange={(ev) => setEditForm((f) => ({ ...f, completion_date: ev.target.value }))} />
-                              </label>
-                              <label>
-                                Learning hours
-                                <input type="number" min="0" step="0.5" value={editForm.learning_hours} onChange={(ev) => setEditForm((f) => ({ ...f, learning_hours: ev.target.value }))} />
-                              </label>
-                            </div>
-                            <div className={styles.editFormActions}>
-                              <button type="submit" className={dashStyles.btnPrimary}>Save changes</button>
-                              <button type="button" className={styles.editCancelBtn} onClick={() => { setEditingCertId(null); setEditForm({ course_title: "", completion_date: "", learning_hours: "" }); }}>Cancel</button>
-                            </div>
-                          </form>
-                        ) : (
-                          <>
-                            <button type="button" className={styles.editCertBtn} onClick={() => { setEditingCertId(cert.id); setEditForm({ course_title: cert.course_title, completion_date: cert.completion_date || "", learning_hours: cert.learning_hours || "" }); }} title="Edit certificate">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                              </svg>
-                            </button>
-                            <button type="button" className={styles.deleteCertBtn} onClick={() => handleDeleteCertificate(cert.id)} title="Delete certificate">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h16zM10 11v6M14 11v6" />
-                              </svg>
-                            </button>
-                          </>
-                        )}
-                      </>
-                    )}
+                    <div className={styles.certRight}>
+                      {(cert.file_url || cert.certificate_url) && (
+                        <a href={cert.file_url || cert.certificate_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View file</a>
+                      )}
+                      {cert.source_url ? (
+                        <a href={cert.source_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>Open link</a>
+                      ) : null}
+                      {cert.verification_status !== "verified" && editingCertId !== cert.id && (
+                        <>
+                          <button type="button" className={styles.editCertBtn} onClick={() => { setEditingCertId(cert.id); setEditForm({ course_title: cert.course_title, completion_date: cert.completion_date || "", learning_hours: cert.learning_hours || "" }); }} title="Edit certificate">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          <button type="button" className={styles.deleteCertBtn} onClick={() => handleDeleteCertificate(cert.id)} title="Delete certificate">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h16zM10 11v6M14 11v6" />
+                            </svg>
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -2220,6 +2255,7 @@ function CertificatesTab({ onChange }) {
   const [editForm, setEditForm] = useState({ course_title: "", completion_date: "", learning_hours: "" });
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const today = new Date().toISOString().split("T")[0];
 
   const load = useCallback(() => {
     const token = localStorage.getItem("access_token");
@@ -2242,6 +2278,10 @@ function CertificatesTab({ onChange }) {
     }
     if (!/^https?:\/\//i.test(link)) {
       toast.error("Certificate link must start with http:// or https://");
+      return;
+    }
+    if (form.completion_date && form.completion_date > today) {
+      toast.error("Completion date cannot be in the future.");
       return;
     }
     const token = localStorage.getItem("access_token");
@@ -2297,6 +2337,10 @@ function CertificatesTab({ onChange }) {
   async function handleEditSave(certId) {
     if (!editForm.course_title.trim()) {
       toast.error("Course title is required.");
+      return;
+    }
+    if (editForm.completion_date && editForm.completion_date > today) {
+      toast.error("Completion date cannot be in the future.");
       return;
     }
     const token = localStorage.getItem("access_token");
@@ -2367,7 +2411,7 @@ function CertificatesTab({ onChange }) {
           </label>
           <label>
             Completion date
-            <input type="date" value={form.completion_date} onChange={(e) => setForm((f) => ({ ...f, completion_date: e.target.value }))} />
+            <input type="date" value={form.completion_date} max={today} onChange={(e) => setForm((f) => ({ ...f, completion_date: e.target.value }))} />
           </label>
           <label>
             Learning hours
@@ -2415,13 +2459,13 @@ function CertificatesTab({ onChange }) {
                 <div className={styles.editFormRow}>
                   <label>
                     Course / certification title
-                    <input value={editForm.course_title} onChange={(e) => setEditForm((f) => ({ ...f, course_title: e.target.value }))} required />
+                    <input value={editForm.course_title} readOnly onChange={(e) => setEditForm((f) => ({ ...f, course_title: e.target.value }))} required />
                   </label>
                 </div>
                 <div className={styles.editFormRow}>
                   <label>
                     Completion date
-                    <input type="date" value={editForm.completion_date} onChange={(e) => setEditForm((f) => ({ ...f, completion_date: e.target.value }))} />
+                    <input type="date" value={editForm.completion_date} max={today} onChange={(e) => setEditForm((f) => ({ ...f, completion_date: e.target.value }))} />
                   </label>
                   <label>
                     Learning hours

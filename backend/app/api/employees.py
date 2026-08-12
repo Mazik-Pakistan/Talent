@@ -5,10 +5,17 @@ from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Response,
 
 from app.core.rbac import CurrentUser
 from app.core.security import RequireOnboardingSelf as RequireCandidate
-from app.core.security import RequireEmployee, RequireRecruiter, require_capabilities, require_roles
+from app.core.security import (
+    RequireEmployee,
+    RequireRecruiter,
+    _audit_denied,
+    require_capabilities,
+    require_roles,
+)
 from app.schemas.career import CareerEventCreateRequest, RoleAssignRequest
 from app.schemas.employee import CreateFromCandidateRequest, GenerateEmployeeIdRequest
 from app.schemas.employee_exit import EmployeeExitRequest
+from app.schemas.invitation import OnboardingEmploymentInfo
 from app.schemas.onboarding_assignment import (
     AssetAssignRequest,
     AssetUpdateRequest,
@@ -325,17 +332,32 @@ async def schedule_orientation(
     return await service.schedule_orientation(current_user, employee_id, request)
 
 
+async def _require_banking_recruiter(
+    user: Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))],
+) -> CurrentUser:
+    """Banking route auth: recruiter/super_admin AND the employees capability.
+
+    FastAPI only honors the LAST annotation inside an Annotated block
+    (analyze_param uses fastapi_specific_annotations[-1]), so composing
+    require_roles() and require_capabilities() as two Depends in one Annotated
+    silently drops the role check. This single dependency composes both so the
+    role gate actually runs and employees/candidates cannot modify banking.
+    """
+    if user.role == "recruiter" and not user.has_capability("employees"):
+        detail = "You do not have access to this feature. Required: employees"
+        await _audit_denied(user, "capabilities:employees", detail)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+    return user
+
+
 @router.put("/detail/{employee_id}/banking")
 async def update_employee_banking(
     employee_id: str,
-    payload: dict,
-    current_user: RequireRecruiterWithEmployees,
+    payload: OnboardingEmploymentInfo,
+    current_user: Annotated[CurrentUser, Depends(_require_banking_recruiter)],
 ):
     """Add or update payroll banking for on-site employees (recruiter-managed)."""
-    from app.schemas.invitation import OnboardingEmploymentInfo
-
-    request = OnboardingEmploymentInfo.model_validate(payload)
-    return await service.update_employee_banking(current_user, employee_id, request)
+    return await service.update_employee_banking(current_user, employee_id, payload)
 
 
 @router.post("/detail/{employee_id}/remind-profile")

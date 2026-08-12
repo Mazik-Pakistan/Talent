@@ -1417,6 +1417,7 @@ function AssignmentsTab() {
   const [assignments, setAssignments] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
+  const [providerFilter, setProviderFilter] = useState("");
   const [mandatoryOnly, setMandatoryOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [remindingId, setRemindingId] = useState(null);
@@ -1431,12 +1432,29 @@ function AssignmentsTab() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   }, [assignments]);
 
+  const providerOptions = useMemo(() => {
+    const set = new Set();
+    for (const a of assignments) {
+      const prov = (a.provider || "").trim();
+      if (prov) set.add(prov);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [assignments]);
+
   const filteredAssignments = useMemo(() => {
-    if (!departmentFilter) return assignments;
-    return assignments.filter(
-      (a) => (a.department || "").trim().toLowerCase() === departmentFilter.toLowerCase()
-    );
-  }, [assignments, departmentFilter]);
+    let result = assignments;
+    if (departmentFilter) {
+      result = result.filter(
+        (a) => (a.department || "").trim().toLowerCase() === departmentFilter.toLowerCase()
+      );
+    }
+    if (providerFilter) {
+      result = result.filter(
+        (a) => (a.provider || "").trim().toLowerCase() === providerFilter.toLowerCase()
+      );
+    }
+    return result;
+  }, [assignments, departmentFilter, providerFilter]);
 
   const assignmentTree = useMemo(
     () => buildAssignmentTree(filteredAssignments),
@@ -1459,6 +1477,7 @@ function AssignmentsTab() {
       "Employee Name",
       "Course Title",
       "Course Type",
+      "Provider",
       "Status",
       "Progress",
       "Mandatory",
@@ -1487,6 +1506,7 @@ function AssignmentsTab() {
         "Employee Name": a.employee_name || "",
         "Course Title": a.course_title || "",
         "Course Type": a.course_type || "",
+        Provider: a.provider || "",
         Status: assignmentStatusLabel(a.status),
         Progress: progress,
         Mandatory: a.mandatory ? "Yes" : "No",
@@ -1583,6 +1603,17 @@ function AssignmentsTab() {
               <option value="assigned">Not started</option>
               <option value="in_progress">In progress</option>
               <option value="completed">Completed</option>
+            </select>
+            <select
+              className={styles.filterSelect}
+              value={providerFilter}
+              onChange={(e) => setProviderFilter(e.target.value)}
+              aria-label="Filter by provider"
+            >
+              <option value="">All providers</option>
+              {providerOptions.map((prov) => (
+                <option key={prov} value={prov}>{prov}</option>
+              ))}
             </select>
           </div>
           <div className={styles.toolbarRight}>
@@ -1684,6 +1715,9 @@ function AssignmentsTab() {
                                                 ) : null}
                                               </div>
                                               <div className={styles.listMeta}>
+                                                <span className={styles.metaChip}>
+                                                  <Building2 aria-hidden="true" />{a.provider || "Unknown"}
+                                                </span>
                                                 {a.due_date ? (
                                                   <span className={styles.metaChip}>
                                                     <Calendar aria-hidden="true" />Due {a.due_date}

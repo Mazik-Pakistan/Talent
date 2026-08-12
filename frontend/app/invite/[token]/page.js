@@ -150,7 +150,7 @@ export default function InviteRegisterPage() {
               <h2 className={styles.asideHeading}>
                 {isRecruiterInvite ? 
                   "Your recruiter account is ready. Let's get you set up." : 
-                  <>Your offer is ready. Let's get you <em>onboarded.</em></>
+                  <>Your offer is ready. Let&apos;s get you <em>onboarded.</em></>
                 }
               </h2>
               <p className={styles.asideText}>{isRecruiterInvite ? "Register with this invitation, verify your email, then access your recruiter workspace." : "Register with this invitation, verify your email, then complete your employee onboarding profile."}</p>
@@ -226,10 +226,11 @@ export default function InviteRegisterPage() {
               />
             </div>
 
-            <label className={styles.checkboxField}>
-              <input name="terms_accepted" type="checkbox" checked={form.terms_accepted} onChange={updateField} />
-              <span>I agree to the Terms &amp; Conditions.</span>
-            </label>
+            <div className={styles.checkboxField}>
+              <input id="terms-checkbox" name="terms_accepted" type="checkbox" checked={form.terms_accepted} onChange={updateField} />
+              <label htmlFor="terms-checkbox">I agree to the</label>
+              <Link href="/terms" className={styles.legalLink} target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</Link>
+            </div>
             {errors.terms_accepted && <p className={styles.fieldError}>⚠ {errors.terms_accepted}</p>}
             {formMessage && <p className={styles.fieldError} role="status">⚠ {formMessage}</p>}
 

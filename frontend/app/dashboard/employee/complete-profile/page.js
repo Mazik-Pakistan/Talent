@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
+import Link from "next/link";
 
 import {
   getApiErrorMessage,
@@ -1087,20 +1088,44 @@ function OnboardingForm({
                 </p>
               </div>
               <div style={{ display: "grid", gap: 10 }}>
-                <AiCheckRow
-                  checked={documents.accepted_privacy_policy}
-                  onChange={(event) => updateDocuments("accepted_privacy_policy", event.target.checked)}
-                  {...fieldProps("documents.accepted_privacy_policy", { required: true })}
-                >
-                  I have read and agree to the Privacy &amp; IT Security Policy.
-                </AiCheckRow>
-                <AiCheckRow
-                  checked={documents.accepted_employee_handbook}
-                  onChange={(event) => updateDocuments("accepted_employee_handbook", event.target.checked)}
-                  {...fieldProps("documents.accepted_employee_handbook", { required: true })}
-                >
-                  I have read and agree to the Employee Handbook.
-                </AiCheckRow>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <input
+                    id="privacy-policy-checkbox"
+                    type="checkbox"
+                    checked={documents.accepted_privacy_policy}
+                    onChange={(event) => updateDocuments("accepted_privacy_policy", event.target.checked)}
+                    style={{ marginTop: 2 }}
+                  />
+                  <label htmlFor="privacy-policy-checkbox" style={{ fontSize: "0.88rem", lineHeight: 1.55, color: "#486076" }}>
+                    I have read and agree to the{" "}
+                    <Link href="/privacy-policy" target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue-strong)", fontWeight: 700, textDecoration: "none" }}>
+                      Privacy &amp; IT Security Policy
+                    </Link>
+                    .
+                  </label>
+                </div>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <input
+                    id="employee-handbook-checkbox"
+                    type="checkbox"
+                    checked={documents.accepted_employee_handbook}
+                    onChange={(event) => updateDocuments("accepted_employee_handbook", event.target.checked)}
+                    style={{ marginTop: 2 }}
+                  />
+                  <label htmlFor="employee-handbook-checkbox" style={{ fontSize: "0.88rem", lineHeight: 1.55, color: "#486076" }}>
+                    I have read and agree to the{" "}
+                    <Link href="/employee-handbook" target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue-strong)", fontWeight: 700, textDecoration: "none" }}>
+                      Employee Handbook
+                    </Link>
+                    .
+                  </label>
+                </div>
+                {fieldErrors["documents.accepted_privacy_policy"] && (
+                  <p style={{ margin: "-2px 0 0", color: "var(--danger)", fontSize: ".78rem", fontWeight: 600 }}>⚠ {fieldErrors["documents.accepted_privacy_policy"]}</p>
+                )}
+                {fieldErrors["documents.accepted_employee_handbook"] && (
+                  <p style={{ margin: "-2px 0 0", color: "var(--danger)", fontSize: ".78rem", fontWeight: 600 }}>⚠ {fieldErrors["documents.accepted_employee_handbook"]}</p>
+                )}
               </div>
             </div>
           ) : null}
