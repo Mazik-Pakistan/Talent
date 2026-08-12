@@ -379,7 +379,7 @@ See `AGENTS.md` for the full, tool-level version of this contract used by autono
 
 ## Roadmap
 
-Not commitments — directions the current architecture makes natural next steps:
+The following are potential directions based on the current architecture, not scheduled deliverables:
 
 - Tighten CORS to an explicit allowlist for production deployments.
 - Introduce a shared type contract (e.g. TypeScript types generated from the FastAPI OpenAPI schema) so frontend/backend contract drift fails at build time instead of runtime.
