@@ -269,11 +269,17 @@ class DashboardService:
 
         if current_user.role != "super_admin":
             candidate_emails = await self._scoped_candidate_emails(current_user)
-            query["$or"] = [
-                {"user_id": current_user.id},
-                {"recruiter_id": current_user.id},
-                {"email": {"$in": candidate_emails}},
-            ]
+            if current_user.organization_id:
+                query["$or"] = [
+                    {"organization_id": current_user.organization_id},
+                    {"email": {"$in": candidate_emails}},
+                ]
+            else:
+                query["$or"] = [
+                    {"user_id": current_user.id},
+                    {"recruiter_id": current_user.id},
+                    {"email": {"$in": candidate_emails}},
+                ]
 
         cursor = database.audit_logs.find(query).sort("created_at", -1).limit(limit)
         entries = await cursor.to_list(length=limit)
