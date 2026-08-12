@@ -143,11 +143,20 @@ function EmployeeLearningPageInner() {
         }
         if (tab === "overview" && !assigned && !inProgress) {
           return {
-            message: "Nothing is overdue. I can open the Course Catalog so you can pick something that closes a skill gap.",
-            applyLabel: "Browse catalog",
-            busyMessage: "Opening the catalog…",
-            doneMessage: "✓ Catalog is open — enroll in anything that fits your role.",
-            meta: { tab: "catalog" },
+            message: "Nothing is waiting in My Learning. I can open Career Path so you can work the promotion checklist for your next role.",
+            applyLabel: "Open Career Path",
+            busyMessage: "Opening Career Path…",
+            doneMessage: "✓ Career Path is open — start the next required course.",
+            meta: { tab: "career" },
+          };
+        }
+        if (tab === "career") {
+          return {
+            message: "Start the next required course on this checklist, then finish it in My Learning so it counts toward promotion.",
+            applyLabel: "Open My Learning",
+            busyMessage: "Switching to My Learning…",
+            doneMessage: "✓ You're on My Learning — resume or submit a certificate.",
+            meta: { tab: "my-courses" },
           };
         }
         if (tab === "skills") {
@@ -193,7 +202,7 @@ function EmployeeLearningPageInner() {
       {tab === "catalog" && <CatalogTab onEnroll={refreshAfterChange} refreshSeed={providerRefreshSeed} />}
       {tab === "my-courses" && <MyCoursesTab onChange={refreshAfterChange} />}
       {tab === "skills" && <SkillsTab />}
-      {tab === "career" && <CareerTab />}
+      {tab === "career" && <CareerTab onGo={setTab} />}
     </EmployeeShell>
   );
 }
@@ -257,6 +266,29 @@ const stats = [
     }
   }
 
+  const assigned = s.assigned_count ?? 0;
+  const inProgress = s.in_progress_count ?? 0;
+  const nextAction = assigned > 0
+    ? {
+        title: "Start here",
+        body: `You have ${assigned} assigned course${assigned === 1 ? "" : "s"} waiting. Open My Learning to begin — that is what counts toward progress.`,
+        cta: "Open My Learning",
+        tab: "my-courses",
+      }
+    : inProgress > 0
+      ? {
+          title: "Continue learning",
+          body: `${inProgress} course${inProgress === 1 ? "" : "s"} in progress. Pick up where you left off, then submit a certificate when you finish.`,
+          cta: "Continue in My Learning",
+          tab: "my-courses",
+        }
+      : {
+          title: "Work toward your next role",
+          body: "Your promotion checklist is on Career Path. Complete those required items to become eligible — optional catalog courses come after.",
+          cta: "Open Career Path",
+          tab: "career",
+        };
+
   return (
     <>
       <div className={dashStyles.hero}>
@@ -267,14 +299,21 @@ const stats = [
             Overall progress: <b>{s.overall_progress_percent ?? 0}%</b> · Learning hours logged:{" "}
             <b>{s.total_learning_hours ?? 0}</b>
           </div>
-          <div className={dashStyles.heroChips}>
-            <button type="button" className={dashStyles.chip} onClick={() => onGo("catalog")} style={{ cursor: "pointer", border: "none" }}>
+          <div className={dashStyles.heroActions}>
+            <button type="button" className={dashStyles.btnPrimary} onClick={() => onGo(nextAction.tab)}>
+              {nextAction.cta}
+            </button>
+            <button type="button" className={dashStyles.btnGhost} onClick={() => onGo("catalog")}>
               Browse catalog
             </button>
-            <button type="button" className={dashStyles.chip} onClick={() => onGo("career")} style={{ cursor: "pointer", border: "none" }}>
-              Get AI recommendations
-            </button>
           </div>
+        </div>
+      </div>
+
+      <div className={styles.readyHero}>
+        <div className={styles.readyCopy}>
+          <div className={styles.readyTitle}>{nextAction.title}</div>
+          <p>{nextAction.body}</p>
         </div>
       </div>
 
@@ -321,11 +360,9 @@ const stats = [
                     {e.status === "completed" ? "Completed" : `${e.progress_percent}% complete`}
                   </div>
                 </div>
-                <div className={styles.courseListProgress}>
-                  <div className={styles.progressTrackSm}>
-                    <div className={styles.progressFillSm} style={{ width: `${e.progress_percent}%` }} />
-                  </div>
-                </div>
+                <button type="button" className={styles.smallBtn} onClick={() => onGo("my-courses")}>
+                  {e.status === "completed" ? "View" : "Continue"}
+                </button>
               </div>
             ))}
           </div>
@@ -343,7 +380,13 @@ const stats = [
           </div>
           <div className={dashStyles.sectionBody}>
             {(dashboard.upcoming_due || []).length === 0 && (
-              <p className={styles.inlineNote}>No pending assignments — you&apos;re caught up.</p>
+              <p className={styles.inlineNote}>
+                No pending assignments.{" "}
+                <button type="button" className={styles.textLink} onClick={() => onGo("career")}>
+                  Open Career Path
+                </button>{" "}
+                for the courses required for your next role.
+              </p>
             )}
             {(dashboard.upcoming_due || []).map((a, index) => (
               <div key={a.id || `${a.course_uid}-${a.due_date || index}`} className={styles.courseListRow}>
@@ -1592,7 +1635,7 @@ function SkillsTab() {
 // Career goal + skill gap + AI path + AI recommendations
 // (US-074, US-075, US-095, US-099, US-100)
 // ------------------------------------------------------------------------ //
-function CareerTab() {
+function CareerTab({ onGo }) {
   const [goal, setGoal] = useState("");
   const [savedGoal, setSavedGoal] = useState(null);
   const [orgAssignment, setOrgAssignment] = useState(null);
@@ -1607,7 +1650,8 @@ function CareerTab() {
   const [designationReadiness, setDesignationReadiness] = useState(null);
   const [designationLoading, setDesignationLoading] = useState(false);
   const [showExplore, setShowExplore] = useState(false);
-  const [showRemaining, setShowRemaining] = useState(false);
+  const [showRemaining, setShowRemaining] = useState(true);
+  const [showExtras, setShowExtras] = useState(false);
   const [bootLoading, setBootLoading] = useState(true);
 
   function loadGapAndPath(role, refresh = true) {
@@ -1793,15 +1837,19 @@ function CareerTab() {
     await applyTargetRole(target.trim(), { silent: false });
   }
 
-  async function startPathStep(step) {
+  async function startChecklistCourse(req) {
     const token = localStorage.getItem("access_token");
-    const uid = step?.course?.uid;
-    const url = step?.course?.url;
     if (!token) return;
-
+    const step = findPathStep(req);
+    const uid = req?.course_uid || step?.course?.uid;
+    const url = step?.course?.url;
     if (!uid || String(uid).startsWith("kb-cert:")) {
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
-      else toast.info("Upload this certification under Certificates when you earn it.");
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      toast.info("This is a certification requirement — earn it, then upload proof in My Learning.");
+      onGo?.("my-courses");
       return;
     }
 
@@ -1811,10 +1859,36 @@ function CareerTab() {
       if (data.redirect_url || url) {
         window.open(data.redirect_url || url, "_blank", "noopener,noreferrer");
       }
-      toast.success("Course started — mark progress in My Learning when done.");
-      if (savedGoal) loadGapAndPath(savedGoal, true);
+      toast.success("Course started. Finish it in My Learning, then submit a certificate so it counts.");
+      if (savedGoal) {
+        loadDesignationReadiness(savedGoal);
+        loadGapAndPath(savedGoal, true);
+      }
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "Could not start this path step."));
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        toast.info("Opened the course link. If it does not appear in My Learning, ask your recruiter to add the catalog URL.");
+      } else {
+        toast.error(getApiErrorMessage(err, "Could not start this course."));
+      }
+    } finally {
+      setStartingStep("");
+    }
+  }
+
+  async function startRecommended(course) {
+    const token = localStorage.getItem("access_token");
+    if (!token || !course?.uid) return;
+    setStartingStep(course.uid);
+    try {
+      const data = await startCourse(token, course.uid);
+      if (data.redirect_url || course.url) {
+        window.open(data.redirect_url || course.url, "_blank", "noopener,noreferrer");
+      }
+      toast.success("Optional course started — it now appears in My Learning.");
+    } catch (err) {
+      if (course.url) window.open(course.url, "_blank", "noopener,noreferrer");
+      toast.error(getApiErrorMessage(err, "Could not start this course."));
     } finally {
       setStartingStep("");
     }
@@ -1921,6 +1995,8 @@ function CareerTab() {
   const extraRecs = (recs?.recommendations || []).filter(
     (c) => !checklistKeys.has(c.uid) && !checklistKeys.has((c.title || "").toLowerCase())
   );
+  const nextCourse = checklistItems.find((r) => r.type === "course" && !doneStatuses.has(r.status));
+  const nextCourseUid = nextCourse?.course_uid || findPathStep(nextCourse || {})?.course?.uid;
 
   return (
     <>
@@ -1991,8 +2067,7 @@ function CareerTab() {
                 {nextRole ? `Path to ${nextRole}` : "Promotion checklist"}
               </div>
               <p className={dashStyles.sectionDesc}>
-                One checklist for promotion — courses, skills, and certifications from your Career Roadmap.
-                Start a course here, then finish it in My Learning.
+                Work this list in order. Start a required course, finish it in My Learning, then submit a certificate so it counts toward promotion.
               </p>
             </div>
           </div>
@@ -2056,9 +2131,42 @@ function CareerTab() {
                   <div className={styles.inlineNote}>
                     {doneCount} of {checklistItems.length} requirements completed
                     {designationReadiness?.source === "career_assignment" ? " · From your org career path" : ""}
+                    {nextCourse ? ` · Next: ${nextCourse.title}` : ""}
                   </div>
                 </div>
               </div>
+              {nextCourse && (
+                <div className={styles.readyHero} style={{ marginBottom: 16 }}>
+                  <div className={styles.readyCopy}>
+                    <div className={styles.readyTitle}>Next up</div>
+                    <p>
+                      <strong>{nextCourse.title}</strong>
+                      {nextCourse.status === "certificate_pending"
+                        ? " — submit the certificate in My Learning so this requirement can count."
+                        : nextCourse.status === "in_progress" || nextCourse.status === "assigned"
+                          ? " — continue this required course, then submit a certificate in My Learning."
+                          : " — start this required course. Optional extras are not needed for eligibility."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={dashStyles.btnPrimary}
+                    disabled={Boolean(startingStep && nextCourseUid && startingStep === nextCourseUid && nextCourse.status !== "certificate_pending")}
+                    onClick={() => {
+                      if (nextCourse.status === "certificate_pending") onGo?.("my-courses");
+                      else startChecklistCourse(nextCourse);
+                    }}
+                  >
+                    {startingStep && nextCourseUid && startingStep === nextCourseUid
+                      ? "Starting…"
+                      : nextCourse.status === "certificate_pending"
+                        ? "Open My Learning"
+                        : nextCourse.status === "in_progress" || nextCourse.status === "assigned"
+                          ? "Continue"
+                          : "Start learning"}
+                  </button>
+                </div>
+              )}
               <div className={styles.checklistToolbar}>
                 <span className={styles.checklistHint}>
                   {showRemaining ? `${visibleChecklist.length} remaining` : `${checklistItems.length} items`}
@@ -2076,11 +2184,13 @@ function CareerTab() {
                   const busy = Boolean(startingStep && uid && startingStep === uid);
                   const kind = requirementStatusKind(req.status);
                   const done = doneStatuses.has(req.status);
-                  const canStart = req.type === "course" && step && !done;
+                  const isNext = nextCourse && req.type === nextCourse.type && req.title === nextCourse.title;
+                  const canStart = req.type === "course" && !done && req.status !== "certificate_pending" && Boolean(uid || step?.course?.url);
+                  const continueLabel = req.status === "in_progress" || req.status === "assigned";
                   return (
                     <div
                       key={`${req.type}-${req.title}-${idx}`}
-                      className={`${styles.requirementRow} ${done ? styles.requirementRowDone : ""}`}
+                      className={`${styles.requirementRow} ${done ? styles.requirementRowDone : ""} ${isNext ? styles.requirementRowNext : ""}`}
                     >
                       <span className={`${styles.requirementStatus} ${styles[req.status] || styles.not_started}`}>
                         {req.status === "acquired" && "✓"}
@@ -2109,9 +2219,19 @@ function CareerTab() {
                           type="button"
                           className={styles.smallBtnPrimary}
                           disabled={busy}
-                          onClick={() => startPathStep(step)}
+                          onClick={() => startChecklistCourse(req)}
                         >
-                          {busy ? "Starting…" : step.kind === "certification" ? "Open / earn cert" : "Start learning"}
+                          {busy ? "Starting…" : continueLabel ? "Continue" : "Start learning"}
+                        </button>
+                      )}
+                      {req.type === "skill" && !done && (
+                        <button type="button" className={styles.smallBtn} onClick={() => onGo?.("skills")}>
+                          Open Skill Profile
+                        </button>
+                      )}
+                      {(req.type === "certification" || req.status === "certificate_pending") && !done && (
+                        <button type="button" className={styles.smallBtn} onClick={() => onGo?.("my-courses")}>
+                          {req.status === "certificate_pending" ? "Submit / view certificate" : "Upload in My Learning"}
                         </button>
                       )}
                     </div>
@@ -2130,14 +2250,22 @@ function CareerTab() {
             <div>
               <div className={dashStyles.sectionTitle}>Optional extras</div>
               <p className={dashStyles.sectionDesc}>
-                Extra courses beyond your promotion checklist — pick these only after the required items above.
+                Not required for promotion. Matched to your skills and role after the checklist above is covered.
               </p>
             </div>
           </div>
-          <button type="button" className={styles.smallBtn} onClick={() => loadRecommendations(true)} disabled={recsLoading}>
-            {recsLoading ? "Refreshing…" : "Refresh"}
-          </button>
+          <div className={styles.checklistHeadActions}>
+            <button type="button" className={styles.smallBtn} onClick={() => setShowExtras((v) => !v)}>
+              {showExtras ? "Hide extras" : extraRecs.length ? `Show extras (${Math.min(6, extraRecs.length)})` : "Show extras"}
+            </button>
+            {showExtras && (
+              <button type="button" className={styles.smallBtn} onClick={() => loadRecommendations(true)} disabled={recsLoading}>
+                {recsLoading ? "Refreshing…" : "Refresh"}
+              </button>
+            )}
+          </div>
         </div>
+        {showExtras && (
         <div className={dashStyles.sectionBody}>
           {recSourceLabel && !recsLoading && extraRecs.length > 0 && (
             <p className={styles.inlineNote} style={{ marginBottom: 12 }}>
@@ -2202,7 +2330,14 @@ function CareerTab() {
                   </div>
                 </div>
                 <div className={`${styles.courseActions} ${styles.aiCardActions}`}>
-                  <a href={course.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtnPrimary}>Start Learning</a>
+                  <button
+                    type="button"
+                    className={styles.smallBtnPrimary}
+                    disabled={startingStep === course.uid}
+                    onClick={() => startRecommended(course)}
+                  >
+                    {startingStep === course.uid ? "Starting…" : "Start learning"}
+                  </button>
                 </div>
               </div>
               );
@@ -2210,6 +2345,7 @@ function CareerTab() {
           </div>
           )}
         </div>
+        )}
       </div>
     </>
   );
