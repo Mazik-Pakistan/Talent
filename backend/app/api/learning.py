@@ -181,8 +181,8 @@ async def upload_certificate(
     file: UploadFile | None = File(default=None),
     course_uid: str | None = Form(default=None),
     course_title: str = Form(...),
-    completion_date: date | None = Form(default=None),
-    learning_hours: float | None = Form(default=None),
+    completion_date: date = Form(...),
+    learning_hours: float = Form(...),
     source_url: str | None = Form(default=None),
 ):
     cleaned_source = (source_url or "").strip() or None
@@ -195,6 +195,11 @@ async def upload_certificate(
         cleaned_source.startswith("http://") or cleaned_source.startswith("https://")
     ):
         raise HTTPException(status_code=400, detail="Certificate link must start with http:// or https://.")
+
+    if completion_date > date.today():
+        raise HTTPException(status_code=400, detail="Completion date cannot be in the future.")
+    if learning_hours < 0:
+        raise HTTPException(status_code=400, detail="Learning hours must be non-negative.")
 
     original = None
     content = b""

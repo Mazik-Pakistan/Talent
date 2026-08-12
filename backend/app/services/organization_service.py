@@ -370,6 +370,50 @@ async def create_default_organization_if_needed() -> None:
         return
 
 
+def _org_id_str(value) -> str | None:
+    if value is None or value == "":
+        return None
+    return str(value)
+
+
+def _org_id_query_values(organization_id) -> list:
+    """Mongo can store organization_id as a string or ObjectId; match both."""
+    raw = _org_id_str(organization_id)
+    if not raw:
+        return []
+    values: list = [raw]
+    if ObjectId.is_valid(raw):
+        oid = ObjectId(raw)
+        if oid not in values:
+            values.append(oid)
+    return values
+
+
+def _organization_id_clause(organization_id) -> dict:
+    values = _org_id_query_values(organization_id)
+    if not values:
+        return {}
+    if len(values) == 1:
+        return {"organization_id": values[0]}
+    return {"organization_id": {"$in": values}}
+
+
+async def _recruiter_user_ids_for_org(organization_id) -> list[str]:
+    clause = _organization_id_clause(organization_id)
+    if not clause:
+        return []
+    docs = await database.recruiters.find(
+        clause, {"user_id": 1, "supabase_user_id": 1}
+    ).to_list(length=2000)
+    ids: list[str] = []
+    for doc in docs:
+        for key in ("user_id", "supabase_user_id"):
+            value = doc.get(key)
+            if value:
+                ids.append(str(value))
+    return list(dict.fromkeys(ids))
+
+
 def recruiter_scope(user: CurrentUser) -> dict:
     """Mongo query fragment that scopes recruiter data within their organization.
 
@@ -382,9 +426,74 @@ def recruiter_scope(user: CurrentUser) -> dict:
         return {}
     if user.role == "recruiter":
         if user.organization_id:
-            return {"organization_id": user.organization_id}
+            return _organization_id_clause(user.organization_id)
         return {"recruiter_id": user.id}
     return {}
+
+
+async def recruiter_people_scope(user: CurrentUser) -> dict:
+    """Org-wide people query, including legacy rows missing organization_id.
+
+    Employees/candidates created before org binding may only have recruiter_id.
+    Those rows are still visible to every recruiter in the same organization.
+    """
+    if user.role == "super_admin":
+        return {}
+    if user.role != "recruiter":
+        return {}
+    if not user.organization_id:
+        return {"recruiter_id": user.id}
+    org_clause = _organization_id_clause(user.organization_id)
+    recruiter_ids = await _recruiter_user_ids_for_org(user.organization_id)
+    if str(user.id) not in recruiter_ids:
+        recruiter_ids.append(str(user.id))
+    if not recruiter_ids:
+        return org_clause
+    legacy_owner_clause = {
+        "$and": [
+            {
+                "$or": [
+                    {"organization_id": {"$exists": False}},
+                    {"organization_id": None},
+                    {"organization_id": ""},
+                ]
+            },
+            {"recruiter_id": {"$in": recruiter_ids}},
+        ]
+    }
+    return {"$or": [org_clause, legacy_owner_clause]}
+
+
+async def organization_record_scope(
+    organization_id, *, legacy_owner_field: str | None = None
+) -> dict:
+    """Scope tenant records, optionally including legacy rows owned by org recruiters."""
+    org_clause = _organization_id_clause(organization_id)
+    if not org_clause:
+        return {}
+    if not legacy_owner_field:
+        return org_clause
+    recruiter_ids = await _recruiter_user_ids_for_org(organization_id)
+    if not recruiter_ids:
+        return org_clause
+    legacy_owner_clause = {
+        "$and": [
+            {
+                "$or": [
+                    {"organization_id": {"$exists": False}},
+                    {"organization_id": None},
+                    {"organization_id": ""},
+                ]
+            },
+            {legacy_owner_field: {"$in": recruiter_ids}},
+        ]
+    }
+    return {
+        "$or": [
+            org_clause,
+            legacy_owner_clause,
+        ]
+    }
 
 
 def recruiter_can_access(user: CurrentUser, record: dict) -> bool:
@@ -398,10 +507,29 @@ def recruiter_can_access(user: CurrentUser, record: dict) -> bool:
     if user.role == "super_admin":
         return True
     if user.role == "recruiter":
-        if user.organization_id:
-            return record.get("organization_id") == user.organization_id
-        return record.get("recruiter_id") == user.id
+        user_org = _org_id_str(user.organization_id)
+        if user_org:
+            record_org = _org_id_str(record.get("organization_id"))
+            if record_org:
+                return record_org == user_org
+            return False
+        return _org_id_str(record.get("recruiter_id")) == _org_id_str(user.id)
     return False
+
+
+async def recruiter_can_access_record(user: CurrentUser, record: dict) -> bool:
+    """Like recruiter_can_access, plus legacy rows owned by a same-org recruiter."""
+    if recruiter_can_access(user, record):
+        return True
+    if user.role != "recruiter" or not user.organization_id:
+        return False
+    if _org_id_str(record.get("organization_id")):
+        return False
+    owner_id = _org_id_str(record.get("recruiter_id"))
+    if not owner_id:
+        return False
+    recruiter_ids = await _recruiter_user_ids_for_org(user.organization_id)
+    return owner_id in set(recruiter_ids)
 
 
 def make_invitation_token() -> str:

@@ -29,7 +29,7 @@ from app.schemas.it_provisioning import (
 )
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
-from app.services.organization_service import recruiter_can_access
+from app.services.organization_service import recruiter_can_access_record, recruiter_people_scope
 
 
 def _generate_otp() -> str:
@@ -62,7 +62,7 @@ class ItProvisioningService:
         self, current_user: CurrentUser, request: SendItProvisioningRequest, *, send_email: bool = True
     ) -> dict:
         offer = await self._find_offer(request.offer_id)
-        self._assert_recruiter_owns_offer(current_user, offer)
+        await self._assert_recruiter_owns_offer(current_user, offer)
         if offer.get("status") != "signed":
             raise HTTPException(
                 status_code=409,
@@ -401,7 +401,7 @@ class ItProvisioningService:
 
     async def remind(self, current_user: CurrentUser, request: RemindItProvisioningRequest) -> dict:
         offer = await self._find_offer(request.offer_id)
-        self._assert_recruiter_owns_offer(current_user, offer)
+        await self._assert_recruiter_owns_offer(current_user, offer)
 
         doc = await database.it_provisioning_requests.find_one(
             {"offer_id": str(offer["_id"]), "status": {"$in": ["pending", "submitted"]}}
@@ -1163,10 +1163,9 @@ class ItProvisioningService:
     async def get_for_offer(self, offer_id: str, current_user: CurrentUser | None = None) -> dict | None:
         base_filter: dict = {"offer_id": str(offer_id), "status": {"$in": ["pending", "submitted", "applied"]}}
         if current_user and current_user.role != "super_admin":
-            if current_user.organization_id:
-                base_filter["organization_id"] = current_user.organization_id
-            else:
-                base_filter["recruiter_id"] = current_user.id
+            scope = await recruiter_people_scope(current_user)
+            if scope:
+                base_filter = {"$and": [base_filter, scope]}
         doc = await database.it_provisioning_requests.find_one(
             base_filter,
             sort=[("created_at", -1)],
@@ -1187,10 +1186,9 @@ class ItProvisioningService:
                 query_or.append({"candidate_email": candidate["email"].lower()})
         base_filter: dict = {"$or": query_or, "status": {"$in": ["pending", "submitted", "applied"]}}
         if current_user.role != "super_admin":
-            if current_user.organization_id:
-                base_filter["organization_id"] = current_user.organization_id
-            else:
-                base_filter["recruiter_id"] = current_user.id
+            scope = await recruiter_people_scope(current_user)
+            if scope:
+                base_filter = {"$and": [base_filter, scope]}
         docs = (
             await database.it_provisioning_requests.find(
                 base_filter,
@@ -1436,10 +1434,10 @@ class ItProvisioningService:
         return employee
 
     @staticmethod
-    def _assert_recruiter_owns_offer(current_user: CurrentUser, offer: dict) -> None:
+    async def _assert_recruiter_owns_offer(current_user: CurrentUser, offer: dict) -> None:
         if current_user.role == "super_admin":
             return
-        if not recruiter_can_access(current_user, offer):
+        if not await recruiter_can_access_record(current_user, offer):
             raise HTTPException(status_code=403, detail="Not authorized for this offer.")
 
 

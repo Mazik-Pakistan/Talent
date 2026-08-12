@@ -21,7 +21,7 @@ from app.services.document_extraction_service import document_extraction_service
 from app.services.document_matching_service import compare_extractions
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
-from app.services.organization_service import recruiter_can_access
+from app.services.organization_service import recruiter_can_access_record
 
 MAX_UPLOAD_BYTES = settings.MAX_DOCUMENT_MB * 1024 * 1024
 
@@ -720,7 +720,7 @@ class DocumentService:
             ) or await database.employees.find_one(
                 {"$or": [{"user_id": owner_id}, {"email": owner_id}]}
             )
-            if owner and not recruiter_can_access(current_user, owner):
+            if owner and not await recruiter_can_access_record(current_user, owner):
                 raise HTTPException(status_code=403, detail="You can only view documents for employees/candidates within your organization.")
         docs = (
             await database.documents.find({"owner_id": owner_id, "is_active": True})
@@ -788,7 +788,7 @@ class DocumentService:
             ) or await database.employees.find_one(
                 {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
             )
-            if owner and not recruiter_can_access(current_user, owner):
+            if owner and not await recruiter_can_access_record(current_user, owner):
                 raise HTTPException(status_code=403, detail="You can only verify documents for employees/candidates within your organization.")
         if payload.status not in ("verified", "rejected", "reupload_required", "mismatch"):
             raise HTTPException(status_code=400, detail="Invalid verification status.")
@@ -984,7 +984,7 @@ class DocumentService:
             ) or await database.employees.find_one(
                 {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
             )
-            if owner and not recruiter_can_access(current_user, owner):
+            if owner and not await recruiter_can_access_record(current_user, owner):
                 raise HTTPException(status_code=403, detail="You can only re-extract documents for employees/candidates within your organization.")
         if doc.get("deleted_at"):
             raise HTTPException(status_code=404, detail="Document has been deleted.")
@@ -1226,7 +1226,7 @@ class DocumentService:
             ) or await database.employees.find_one(
                 {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
             )
-            if owner and not recruiter_can_access(current_user, owner):
+            if owner and not await recruiter_can_access_record(current_user, owner):
                 raise HTTPException(status_code=403, detail="You can only view documents for employees/candidates within your organization.")
         url = await storage_service.get_signed_url(doc)
         await database.audit_logs.insert_one(
@@ -1274,11 +1274,11 @@ class DocumentService:
             raise HTTPException(status_code=403, detail="Not authorized.")
 
     @staticmethod
-    def _assert_owner_scope(current_user: CurrentUser, owner: dict | None, detail: str) -> None:
+    async def _assert_owner_scope(current_user: CurrentUser, owner: dict | None, detail: str) -> None:
         """Recruiters can access any employee/candidate record within their organization."""
         if current_user.role == "super_admin" or not owner:
             return
-        if not recruiter_can_access(current_user, owner):
+        if not await recruiter_can_access_record(current_user, owner):
             raise HTTPException(status_code=403, detail=detail)
 
     async def _find(self, document_id: str) -> dict:

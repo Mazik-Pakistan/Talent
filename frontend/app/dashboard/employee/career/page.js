@@ -104,8 +104,16 @@ function EmployeeCareerInner() {
       toast.error("Certificate link must start with http:// or https://");
       return;
     }
-    if (certCompletionDate && certCompletionDate > today) {
+    if (!certCompletionDate) {
+      toast.error("Completion date is required.");
+      return;
+    }
+    if (certCompletionDate > today) {
       toast.error("Completion date cannot be in the future.");
+      return;
+    }
+    if (!certLearningHours && certLearningHours !== 0) {
+      toast.error("Learning hours are required.");
       return;
     }
     setCertBusy(true);
@@ -114,8 +122,8 @@ function EmployeeCareerInner() {
       formData.append("course_title", course.course_title || "Course certificate");
       if (course.course_uid) formData.append("course_uid", course.course_uid);
       formData.append("source_url", link);
-      if (certCompletionDate) formData.append("completion_date", certCompletionDate);
-      if (certLearningHours) formData.append("learning_hours", certLearningHours);
+      formData.append("completion_date", certCompletionDate);
+      formData.append("learning_hours", certLearningHours);
       if (certFile) formData.append("file", certFile);
       await uploadCertificate(token, formData);
       toast.success("Certificate submitted — your recruiter will verify the link.");
@@ -402,9 +410,9 @@ function EmployeeCareerInner() {
                           />
                           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 10 }}>
                             <div>
-                              <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                                Completion date
-                              </label>
+                           <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                             Completion date *
+                           </label>
                               <input
                                 type="date"
                                 value={certCompletionDate}
@@ -414,9 +422,9 @@ function EmployeeCareerInner() {
                               />
                             </div>
                             <div>
-                              <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                                Learning hours
-                              </label>
+                           <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                             Learning hours *
+                           </label>
                               <input
                                 type="number"
                                 min="0"

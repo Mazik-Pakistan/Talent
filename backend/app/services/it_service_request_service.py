@@ -27,7 +27,7 @@ from app.schemas.it_service_request import (
 )
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
-from app.services.organization_service import recruiter_can_access
+from app.services.organization_service import recruiter_can_access_record, recruiter_people_scope
 
 
 def _iso(value):
@@ -109,10 +109,7 @@ class ItServiceRequestService:
         if not doc:
             raise HTTPException(status_code=404, detail="IT request not found.")
         if current_user.role != "super_admin":
-            if current_user.organization_id:
-                if str(doc.get("organization_id")) != str(current_user.organization_id):
-                    raise HTTPException(status_code=404, detail="IT request not found.")
-            elif not recruiter_can_access(current_user, doc):
+            if not await recruiter_can_access_record(current_user, doc):
                 raise HTTPException(status_code=404, detail="IT request not found.")
         return doc
 
@@ -133,9 +130,12 @@ class ItServiceRequestService:
         if current_user.role == "super_admin":
             query: dict = {}
         else:
-            query = {"organization_id": current_user.organization_id}
+            query = await recruiter_people_scope(current_user)
         if status_filter:
-            query["status"] = status_filter
+            if query:
+                query = {"$and": [query, {"status": status_filter}]}
+            else:
+                query = {"status": status_filter}
         docs = await database.it_service_requests.find(query).sort("created_at", -1).to_list(length=200)
         # auto-mark any unreviewed employee-raised drafts as "reviewing"
         now = datetime.now(UTC)
@@ -181,11 +181,8 @@ class ItServiceRequestService:
     async def create_for_employee(self, current_user: CurrentUser, request: ItServiceRequestCreate) -> dict:
         emp = await self._find_employee(request.employee_id)
         if current_user.role != "super_admin":
-            if current_user.organization_id:
-                if emp.get("organization_id") != current_user.organization_id:
-                    raise HTTPException(status_code=403, detail="You can only create IT requests for employees within your organization.")
-            elif not recruiter_can_access(current_user, emp):
-                raise HTTPException(status_code=403, detail="You can only create IT requests for employees assigned to you.")
+            if not await recruiter_can_access_record(current_user, emp):
+                raise HTTPException(status_code=403, detail="You can only create IT requests for employees within your organization.")
         now = datetime.now(UTC)
         doc = {
             "token": token_urlsafe(32),
@@ -451,8 +448,8 @@ class ItServiceRequestService:
             prov_query: dict = {}
             serv_query: dict = {}
         else:
-            prov_query = {"organization_id": current_user.organization_id}
-            serv_query = {"organization_id": current_user.organization_id}
+            prov_query = await recruiter_people_scope(current_user)
+            serv_query = prov_query
         provisioning = await database.it_provisioning_requests.find(prov_query).to_list(length=500)
         service = await database.it_service_requests.find(serv_query).to_list(length=300)
 

@@ -915,8 +915,16 @@ function MyCoursesTab({ onChange }) {
       toast.error("Certificate link must start with http:// or https://");
       return;
     }
-    if (uploadForm.completion_date && uploadForm.completion_date > today) {
+    if (!uploadForm.completion_date) {
+      toast.error("Completion date is required.");
+      return;
+    }
+    if (uploadForm.completion_date > today) {
       toast.error("Completion date cannot be in the future.");
+      return;
+    }
+    if (!uploadForm.learning_hours && uploadForm.learning_hours !== 0) {
+      toast.error("Learning hours are required.");
       return;
     }
     const token = localStorage.getItem("access_token");
@@ -925,8 +933,8 @@ function MyCoursesTab({ onChange }) {
     fd.append("course_title", uploadForm.course_title.trim());
     fd.append("course_uid", courseUid);
     fd.append("source_url", link);
-    if (uploadForm.completion_date) fd.append("completion_date", uploadForm.completion_date);
-    if (uploadForm.learning_hours) fd.append("learning_hours", uploadForm.learning_hours);
+    fd.append("completion_date", uploadForm.completion_date);
+    fd.append("learning_hours", uploadForm.learning_hours);
     setUploading(true);
     try {
       await uploadCertificate(token, fd);
@@ -963,16 +971,24 @@ function MyCoursesTab({ onChange }) {
       toast.error("Course title is required.");
       return;
     }
-    if (editForm.completion_date && editForm.completion_date > today) {
+    if (!editForm.completion_date) {
+      toast.error("Completion date is required.");
+      return;
+    }
+    if (editForm.completion_date > today) {
       toast.error("Completion date cannot be in the future.");
+      return;
+    }
+    if (!editForm.learning_hours && editForm.learning_hours !== 0) {
+      toast.error("Learning hours are required.");
       return;
     }
     const token = localStorage.getItem("access_token");
     if (!token) return;
     const payload = {
       course_title: editForm.course_title.trim(),
-      completion_date: editForm.completion_date || undefined,
-      learning_hours: editForm.learning_hours !== "" && editForm.learning_hours != null ? parseFloat(editForm.learning_hours) : undefined,
+      completion_date: editForm.completion_date,
+      learning_hours: parseFloat(editForm.learning_hours),
     };
     try {
       await updateCertificate(token, certId, payload);
@@ -1112,16 +1128,17 @@ function MyCoursesTab({ onChange }) {
                       />
                     </label>
                     <label>
-                      Completion date
+                      Completion date <span className={styles.req}>*</span>
                       <input
                         type="date"
                         value={uploadForm.completion_date}
                         max={today}
                         onChange={(ev) => setUploadForm((f) => ({ ...f, completion_date: ev.target.value }))}
+                        required
                       />
                     </label>
                     <label>
-                      Learning hours
+                      Learning hours <span className={styles.req}>*</span>
                       <input
                         type="number"
                         min="0"
@@ -1129,6 +1146,7 @@ function MyCoursesTab({ onChange }) {
                         placeholder="e.g. 2"
                         value={uploadForm.learning_hours}
                         onChange={(ev) => setUploadForm((f) => ({ ...f, learning_hours: ev.target.value }))}
+                        required
                       />
                     </label>
                     <div className={styles.uploadCertFileField}>
@@ -1185,12 +1203,12 @@ function MyCoursesTab({ onChange }) {
                           </div>
                           <div className={styles.editFormRow}>
                             <label>
-                              Completion date
-                              <input type="date" value={editForm.completion_date} max={today} onChange={(ev) => setEditForm((f) => ({ ...f, completion_date: ev.target.value }))} />
+                              Completion date <span className={styles.req}>*</span>
+                              <input type="date" value={editForm.completion_date} max={today} onChange={(ev) => setEditForm((f) => ({ ...f, completion_date: ev.target.value }))} required />
                             </label>
                             <label>
-                              Learning hours
-                              <input type="number" min="0" step="0.5" value={editForm.learning_hours} onChange={(ev) => setEditForm((f) => ({ ...f, learning_hours: ev.target.value }))} />
+                              Learning hours <span className={styles.req}>*</span>
+                              <input type="number" min="0" step="0.5" value={editForm.learning_hours} onChange={(ev) => setEditForm((f) => ({ ...f, learning_hours: ev.target.value }))} required />
                             </label>
                           </div>
                           <div className={styles.editFormActions}>
@@ -2280,8 +2298,16 @@ function CertificatesTab({ onChange }) {
       toast.error("Certificate link must start with http:// or https://");
       return;
     }
-    if (form.completion_date && form.completion_date > today) {
+    if (!form.completion_date) {
+      toast.error("Completion date is required.");
+      return;
+    }
+    if (form.completion_date > today) {
       toast.error("Completion date cannot be in the future.");
+      return;
+    }
+    if (!form.learning_hours && form.learning_hours !== 0) {
+      toast.error("Learning hours are required.");
       return;
     }
     const token = localStorage.getItem("access_token");
@@ -2289,8 +2315,8 @@ function CertificatesTab({ onChange }) {
     if (file) fd.append("file", file);
     fd.append("course_title", form.course_title.trim());
     fd.append("source_url", link);
-    if (form.completion_date) fd.append("completion_date", form.completion_date);
-    if (form.learning_hours) fd.append("learning_hours", form.learning_hours);
+    fd.append("completion_date", form.completion_date);
+    fd.append("learning_hours", form.learning_hours);
     setSaving(true);
     try {
       await uploadCertificate(token, fd);
@@ -2339,16 +2365,24 @@ function CertificatesTab({ onChange }) {
       toast.error("Course title is required.");
       return;
     }
-    if (editForm.completion_date && editForm.completion_date > today) {
+    if (!editForm.completion_date) {
+      toast.error("Completion date is required.");
+      return;
+    }
+    if (editForm.completion_date > today) {
       toast.error("Completion date cannot be in the future.");
+      return;
+    }
+    if (!editForm.learning_hours && editForm.learning_hours !== 0) {
+      toast.error("Learning hours are required.");
       return;
     }
     const token = localStorage.getItem("access_token");
     if (!token) return;
     const payload = {
       course_title: editForm.course_title.trim(),
-      completion_date: editForm.completion_date || undefined,
-      learning_hours: editForm.learning_hours !== "" && editForm.learning_hours != null ? parseFloat(editForm.learning_hours) : undefined,
+      completion_date: editForm.completion_date,
+      learning_hours: parseFloat(editForm.learning_hours),
     };
     console.log("Updating certificate:", certId, payload);
     try {
@@ -2410,12 +2444,12 @@ function CertificatesTab({ onChange }) {
             />
           </label>
           <label>
-            Completion date
-            <input type="date" value={form.completion_date} max={today} onChange={(e) => setForm((f) => ({ ...f, completion_date: e.target.value }))} />
+            Completion date <span className={styles.req}>*</span>
+            <input type="date" value={form.completion_date} max={today} onChange={(e) => setForm((f) => ({ ...f, completion_date: e.target.value }))} required />
           </label>
           <label>
-            Learning hours
-            <input type="number" min="0" step="0.5" placeholder="e.g. 2" value={form.learning_hours} onChange={(e) => setForm((f) => ({ ...f, learning_hours: e.target.value }))} />
+            Learning hours <span className={styles.req}>*</span>
+            <input type="number" min="0" step="0.5" placeholder="e.g. 2" value={form.learning_hours} onChange={(e) => setForm((f) => ({ ...f, learning_hours: e.target.value }))} required />
           </label>
           <div className={styles.uploadCertFileField}>
             <FileUploadField
@@ -2464,12 +2498,12 @@ function CertificatesTab({ onChange }) {
                 </div>
                 <div className={styles.editFormRow}>
                   <label>
-                    Completion date
-                    <input type="date" value={editForm.completion_date} max={today} onChange={(e) => setEditForm((f) => ({ ...f, completion_date: e.target.value }))} />
+                    Completion date <span className={styles.req}>*</span>
+                    <input type="date" value={editForm.completion_date} max={today} onChange={(e) => setEditForm((f) => ({ ...f, completion_date: e.target.value }))} required />
                   </label>
                   <label>
-                    Learning hours
-                    <input type="number" min="0" step="0.5" value={editForm.learning_hours} onChange={(e) => setEditForm((f) => ({ ...f, learning_hours: e.target.value }))} />
+                    Learning hours <span className={styles.req}>*</span>
+                    <input type="number" min="0" step="0.5" value={editForm.learning_hours} onChange={(e) => setEditForm((f) => ({ ...f, learning_hours: e.target.value }))} required />
                   </label>
                 </div>
                 <div className={styles.editFormActions}>

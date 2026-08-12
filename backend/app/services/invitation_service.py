@@ -10,6 +10,7 @@ from app.schemas.invitation import CreateInvitationRequest
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
 from app.services.offer_service import offer_service
+from app.services.organization_service import recruiter_people_scope
 from app.services.people_history import (
     find_active_candidate,
     find_active_employee,
@@ -78,6 +79,7 @@ class InvitationService:
             organization_id=None if actor.role == "super_admin" else actor.organization_id,
             recruiter_id=None if actor.role == "super_admin" else actor.id,
             is_super_admin=actor.role == "super_admin",
+            people_scope=await recruiter_people_scope(actor),
         )
         # Same-email reinvite: archive old login so a fresh candidate cycle can register.
         await prepare_email_for_reinvite(email)

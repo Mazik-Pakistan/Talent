@@ -165,8 +165,8 @@ class CertificateUploadMeta(BaseModel):
 
     course_uid: str | None = None
     course_title: str = Field(min_length=1, max_length=300)
-    completion_date: date | None = None
-    learning_hours: float | None = Field(default=None, ge=0, le=2000)
+    completion_date: date
+    learning_hours: float = Field(ge=0, le=2000)
 
 
 class CertificateVerifyRequest(BaseModel):
@@ -180,8 +180,8 @@ class CertificateUpdateRequest(BaseModel):
     """Employee edits their own pending/rejected certificate."""
 
     course_title: str | None = Field(default=None, max_length=300)
-    completion_date: date | None = None
-    learning_hours: float | None = Field(default=None, ge=0, le=2000)
+    completion_date: date
+    learning_hours: float = Field(ge=0, le=2000)
 
 
 class SkillUpsertRequest(BaseModel):

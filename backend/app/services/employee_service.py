@@ -21,7 +21,10 @@ from app.schemas.auth import names_match
 from app.services.candidate_service import CandidateService, onboarding_missing_keys
 from app.services.dashboard_service import DashboardService, create_notification
 from app.services.email_service import email_service
-from app.services.organization_service import recruiter_can_access, recruiter_scope
+from app.services.organization_service import (
+    recruiter_can_access_record,
+    recruiter_people_scope,
+)
 from app.services.people_history import (
     ACTIVE_EMPLOYEE_STATUSES,
     HISTORICAL_EMPLOYEE_STATUSES,
@@ -112,12 +115,12 @@ class EmployeeService:
         }
 
     @staticmethod
-    def _assert_org_or_owner(current_user: CurrentUser, record: dict, detail: str = "Not allowed.") -> None:
+    async def _assert_org_or_owner(current_user: CurrentUser, record: dict, detail: str = "Not allowed.") -> None:
         if current_user.role == "super_admin":
             return
         if current_user.role == "recruiter":
             # Recruiters can access any record within their organization
-            if not recruiter_can_access(current_user, record):
+            if not await recruiter_can_access_record(current_user, record):
                 raise HTTPException(status_code=403, detail="You can only view employees within your organization.")
             return
         if record.get("recruiter_id") != current_user.id:
@@ -130,7 +133,7 @@ class EmployeeService:
             "status": {"$ne": "converted"},
             "conversion_status": {"$in": ["intake_submitted", "offer_signed"]},
         }
-        scope = recruiter_scope(current_user)
+        scope = await recruiter_people_scope(current_user)
         if scope:
             query.update(scope)
 
@@ -186,7 +189,7 @@ class EmployeeService:
             "onboarding.status": {"$in": ["in_progress", "not_started", None]},
             "conversion_status": {"$in": ["offer_signed", "offer_sent"]},
         }
-        scope = recruiter_scope(current_user)
+        scope = await recruiter_people_scope(current_user)
         if scope:
             query.update(scope)
 
@@ -252,7 +255,7 @@ class EmployeeService:
             "conversion_status": {"$ne": "converted"},
             "onboarding.status": {"$ne": "submitted"},
         }
-        scope = recruiter_scope(current_user)
+        scope = await recruiter_people_scope(current_user)
         if scope:
             query.update(scope)
         if q and q.strip():
@@ -309,7 +312,7 @@ class EmployeeService:
         candidate = await self._find_candidate(candidate_id)
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found.")
-        self._assert_org_or_owner(current_user, candidate)
+        await self._assert_org_or_owner(current_user, candidate)
 
         progress = CandidateService()._progress_payload(candidate)
         if progress["status"] == "submitted" or candidate.get("conversion_status") == "converted" or candidate.get("status") == "converted":
@@ -379,7 +382,7 @@ class EmployeeService:
         from app.services.it_provisioning_service import it_provisioning_service
 
         query: dict = {"status": {"$in": ["signed", "expired"]}}
-        scope = recruiter_scope(current_user)
+        scope = await recruiter_people_scope(current_user)
         if scope:
             query.update(scope)
 
@@ -460,7 +463,7 @@ class EmployeeService:
         if not candidate:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found.")
 
-        self._assert_org_or_owner(
+        await self._assert_org_or_owner(
             current_user, candidate, detail="You can only convert candidates assigned to you."
         )
 
@@ -749,7 +752,7 @@ class EmployeeService:
             "redirect_hint": "Ask the new hire to sign in with the Employee role.",
         }
 
-    def _directory_query(
+    async def _directory_query(
         self,
         current_user: CurrentUser,
         *,
@@ -763,40 +766,37 @@ class EmployeeService:
         joining_to: str | None = None,
         history_bucket: str | None = None,
     ) -> dict:
-        query: dict = {}
-        scope = recruiter_scope(current_user)
-        if scope:
-            query.update(scope)
+        filters: dict = {}
         bucket = (history_bucket or "").strip().lower()
         if bucket == "historical":
-            query["$or"] = [
+            filters["$or"] = [
                 {"history_bucket": "historical"},
                 {"status": {"$in": list(HISTORICAL_EMPLOYEE_STATUSES)}},
             ]
             if status:
-                query["status"] = status
+                filters["status"] = status
         elif bucket == "all":
             if status:
-                query["status"] = status
+                filters["status"] = status
         elif status:
-            query["status"] = status
+            filters["status"] = status
         else:
-            query["status"] = {"$in": list(ACTIVE_EMPLOYEE_STATUSES)}
+            filters["status"] = {"$in": list(ACTIVE_EMPLOYEE_STATUSES)}
         if profile_status:
-            query["profile_status"] = profile_status.strip().lower()
+            filters["profile_status"] = profile_status.strip().lower()
         if employee_id:
-            query["employee_id"] = {"$regex": _escape_regex(employee_id.strip()), "$options": "i"}
+            filters["employee_id"] = {"$regex": _escape_regex(employee_id.strip()), "$options": "i"}
         if department:
-            query["department"] = {"$regex": _escape_regex(department.strip()), "$options": "i"}
+            filters["department"] = {"$regex": _escape_regex(department.strip()), "$options": "i"}
         if job_title:
-            query["job_title"] = {"$regex": _escape_regex(job_title.strip()), "$options": "i"}
+            filters["job_title"] = {"$regex": _escape_regex(job_title.strip()), "$options": "i"}
         if joining_from or joining_to:
             date_filter: dict = {}
             if joining_from:
                 date_filter["$gte"] = joining_from
             if joining_to:
                 date_filter["$lte"] = joining_to
-            query["start_date"] = date_filter
+            filters["start_date"] = date_filter
         if q and q.strip():
             term = _escape_regex(q.strip())
             text_or = [
@@ -806,16 +806,19 @@ class EmployeeService:
                 {"department": {"$regex": term, "$options": "i"}},
                 {"job_title": {"$regex": term, "$options": "i"}},
             ]
-            # When historical query already uses $or for status, combine with $and.
-            if "$or" in query and bucket == "historical":
-                status_or = query.pop("$or")
+            if "$or" in filters:
+                status_or = filters.pop("$or")
                 and_clauses = [{"$or": status_or}, {"$or": text_or}]
-                if status:
-                    and_clauses.append({"status": query.pop("status")})
-                query["$and"] = and_clauses
+                if status and "status" in filters:
+                    and_clauses.append({"status": filters.pop("status")})
+                existing_and = filters.pop("$and", [])
+                filters["$and"] = existing_and + and_clauses
             else:
-                query["$or"] = text_or
-        return query
+                filters["$or"] = text_or
+        scope = await recruiter_people_scope(current_user)
+        if scope and filters:
+            return {"$and": [scope, filters]}
+        return scope or filters
 
     async def _active_employee_emails(self, current_user: CurrentUser) -> set[str]:
         """Emails that currently have an active/inactive/on_leave employee tenure."""
@@ -827,9 +830,9 @@ class EmployeeService:
             ],
         }
         if current_user.role != "super_admin":
-            org_scope = recruiter_scope(current_user)
+            org_scope = await recruiter_people_scope(current_user)
             if org_scope:
-                scope.update(org_scope)
+                scope = {"$and": [scope, org_scope]}
         emails = await database.employees.distinct("email", scope)
         return {cycle_group_key(e) for e in emails if e}
 
@@ -852,7 +855,7 @@ class EmployeeService:
     ) -> dict:
         page = max(1, page)
         page_size = max(1, min(page_size, 100))
-        query = self._directory_query(
+        query = await self._directory_query(
             current_user,
             q=q,
             employee_id=employee_id,
@@ -962,7 +965,7 @@ class EmployeeService:
         employee = await database.employees.find_one({"$or": query_or})
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
-        self._assert_org_or_owner(current_user, employee)
+        await self._assert_org_or_owner(current_user, employee)
         # Recruiters manage on-site banking, so reveal full values for those employees.
         # Remote employee banking stays masked on the recruiter view.
         should_reveal = reveal_banking or not _employee_is_remote(employee)
@@ -995,6 +998,7 @@ class EmployeeService:
             organization_id=None if current_user.role == "super_admin" else current_user.organization_id,
             recruiter_id=None if current_user.role == "super_admin" else current_user.id,
             is_super_admin=current_user.role == "super_admin",
+            people_scope=await recruiter_people_scope(current_user),
         )
         return {"employee": payload}
 
@@ -1146,7 +1150,7 @@ class EmployeeService:
         employee = await database.employees.find_one({"employee_id": employee_id})
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
-        self._assert_org_or_owner(current_user, employee)
+        await self._assert_org_or_owner(current_user, employee)
 
         now = datetime.now(UTC)
         data = request.model_dump(mode="json")
@@ -1291,7 +1295,7 @@ class EmployeeService:
                 {"history_bucket": {"$ne": "converted"}},
             ]
         }
-        scope = recruiter_scope(current_user)
+        scope = await recruiter_people_scope(current_user)
         if scope:
             query.update(scope)
         if reason:
@@ -1352,6 +1356,7 @@ class EmployeeService:
             organization_id=None if current_user.role == "super_admin" else current_user.organization_id,
             recruiter_id=None if current_user.role == "super_admin" else current_user.id,
             is_super_admin=current_user.role == "super_admin",
+            people_scope=await recruiter_people_scope(current_user),
         )
 
     async def assign_role(self, current_user: CurrentUser, employee_id: str, request) -> dict:
@@ -1363,7 +1368,7 @@ class EmployeeService:
         employee = await database.employees.find_one({"employee_id": employee_id})
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
-        self._assert_org_or_owner(current_user, employee)
+        await self._assert_org_or_owner(current_user, employee)
 
         event_type = request.event_type
         if request.job_title != employee.get("job_title") and request.department != employee.get("department"):
@@ -1485,7 +1490,7 @@ class EmployeeService:
         candidate = await self._find_candidate(candidate_id)
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found.")
-        self._assert_org_or_owner(current_user, candidate)
+        await self._assert_org_or_owner(current_user, candidate)
         payload = self._public_candidate(candidate, CandidateService()._progress_payload(candidate), include_onboarding=True)
         payload["offers"] = await self._list_related_offers(
             candidate_id=candidate.get("user_id") or str(candidate.get("_id") or ""),
@@ -1497,6 +1502,7 @@ class EmployeeService:
             organization_id=None if current_user.role == "super_admin" else current_user.organization_id,
             recruiter_id=None if current_user.role == "super_admin" else current_user.id,
             is_super_admin=current_user.role == "super_admin",
+            people_scope=await recruiter_people_scope(current_user),
         )
         payload["person_history"] = history
         return {"candidate": payload}
@@ -2020,7 +2026,7 @@ class EmployeeService:
         employee = await database.employees.find_one({"$or": query_or})
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
-        self._assert_org_or_owner(current_user, employee)
+        await self._assert_org_or_owner(current_user, employee)
         return employee
 
     async def update_employee_banking(self, current_user: CurrentUser, employee_id: str, request) -> dict:
