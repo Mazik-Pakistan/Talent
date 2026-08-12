@@ -480,7 +480,7 @@ function EmployeeDashboardContent() {
                     onFocus={() => setSearchOpen(true)}
                     onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
                   />
-                  <span className={styles.searchKbd}>⌘K</span>
+                  
                 </div>
                 {searchOpen && searchQuery.trim().length >= 2 && (
                   <div className={styles.searchResults}>
