@@ -42,6 +42,7 @@ import {
   Clock,
   Compass,
   Download,
+  FileText,
   Layers,
   Mail,
   Pencil,
@@ -60,6 +61,10 @@ import {
   publishRecruiterContext,
 } from "@/lib/ai/recruiterContext";
 import { ORG_CONFIG_TAB_HELP } from "@/lib/ai/recruiterFieldHelp";
+import {
+  downloadOrgFrameworkFilledTemplate,
+  downloadOrgFrameworkSample,
+} from "./orgFrameworkTemplate";
 import s from "./OrgFrameworkTab.module.css";
 
 const SECTIONS = [
@@ -339,24 +344,21 @@ function ImportReportPanel({ importReport, onDismiss, onApply, applying, compact
 }
 
 function EmptyState({ onLoad, onStart, onImport, onSeed, seeding, importReport, applying, onApply }) {
-  const token = () => localStorage.getItem("access_token");
-  const [exporting, setExporting] = useState(false);
-
-  const handleDownloadTemplate = async () => {
-    setExporting(true);
+  const handleDownloadSample = () => {
     try {
-      const blob = await exportOrgFramework(token());
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "organization_framework_template.xlsx";
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("Template downloaded.");
+      downloadOrgFrameworkSample();
+      toast.success("Empty sample downloaded — headers only.");
     } catch (err) {
       toast.error(getApiErrorMessage(err, "Download failed."));
-    } finally {
-      setExporting(false);
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    try {
+      downloadOrgFrameworkFilledTemplate();
+      toast.success("Template downloaded with example rows.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Download failed."));
     }
   };
 
@@ -367,14 +369,17 @@ function EmptyState({ onLoad, onStart, onImport, onSeed, seeding, importReport, 
       </div>
       <h3 className={`${s.emptyTitle} ${s.emptyTitleLarge}`}>Organization Framework Not Configured</h3>
       <p className={s.emptyText}>
-        Download the Excel template and fill sheets in order: Departments → Career Roles → Career Roadmaps → Promotion Rules. Use Catalog Index to copy Course IDs, or put Course Name (+ Provider) and leave Course ID blank to resolve on import.
+        Download the empty sample (headers only) or the Excel template with example rows. Fill sheets in order: Departments → Career Roles → Career Roadmaps → Promotion Rules. Use Catalog Index to copy Course IDs, or put Course Name (+ Provider) and leave Course ID blank to resolve on import.
       </p>
       <div className={s.emptyActions}>
         <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={onSeed} disabled={seeding}>
           <Zap aria-hidden="true" /> {seeding ? "Building framework…" : "Auto-configure from existing employees"}
         </button>
-        <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={handleDownloadTemplate} disabled={exporting}>
-          <Download aria-hidden="true" /> {exporting ? "Preparing…" : "Download Excel Template"}
+        <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={handleDownloadSample}>
+          <FileText aria-hidden="true" /> Sample CSV
+        </button>
+        <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={handleDownloadTemplate}>
+          <Download aria-hidden="true" /> Download Excel Template
         </button>
         <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={onImport}>
           <Upload aria-hidden="true" /> Import Organization Framework
@@ -502,6 +507,15 @@ function OverviewSection({
   const stepsDone = setupSteps.filter((step) => step.done).length;
   const setupPct = Math.round((stepsDone / setupSteps.length) * 100);
   const nextStep = setupSteps.find((step) => !step.done);
+
+  const handleDownloadSample = () => {
+    try {
+      downloadOrgFrameworkSample();
+      toast.success("Empty sample downloaded — headers only.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Download failed."));
+    }
+  };
 
   const handleExport = async () => {
     setExporting(true);
@@ -634,6 +648,9 @@ function OverviewSection({
         <div className={s.pageActions}>
           <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={onSeed} disabled={seeding}>
             <Zap aria-hidden="true" /> {seeding ? "Seeding…" : "Seed from existing records"}
+          </button>
+          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={handleDownloadSample}>
+            <FileText aria-hidden="true" /> Sample CSV
           </button>
           <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={handleExport} disabled={exporting}>
             <Download aria-hidden="true" /> {exporting ? "Exporting…" : "Export Excel"}
