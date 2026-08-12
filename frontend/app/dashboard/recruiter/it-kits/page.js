@@ -200,8 +200,18 @@ function RecruiterItKitsPageContent() {
   }
 
   return (
-    <RecruiterShell capability="it">
+    <RecruiterShell
+      capability="it"
+      title="IT Kits"
+      subtitle="Reusable standard setups IT applies when provisioning new hires"
+    >
       <div className={styles.content}>
+        <div className={styles.hero} style={{ marginBottom: 20 }}>
+          <div className={styles.heroEyebrow}>Recruiter IT Center</div>
+          <h1>IT Kits</h1>
+          <div className={styles.heroMeta}>Reusable standard setups IT applies when provisioning new hires</div>
+        </div>
+
         <div className={styles.section}>
           <div className={styles.sectionHead}>
             <div className={styles.sectionHeadLeft}>
