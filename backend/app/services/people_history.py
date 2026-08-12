@@ -62,42 +62,49 @@ async def archive_user_login(email: str, *, reason: str) -> dict | None:
     return user
 
 
-async def find_active_user(email: str) -> dict | None:
+def _scoped_query(query: dict, scope: dict | None) -> dict:
+    """Combine a tenant scope with a query without overwriting either one's operators."""
+    return {"$and": [scope, query]} if scope else query
+
+
+async def find_active_user(email: str, *, scope: dict | None = None) -> dict | None:
     email = cycle_group_key(email)
     if not email:
         return None
-    return await database.users.find_one({"email": email, "status": {"$ne": "archived"}})
+    return await database.users.find_one(
+        _scoped_query({"email": email, "status": {"$ne": "archived"}}, scope)
+    )
 
 
-async def find_active_candidate(email: str) -> dict | None:
+async def find_active_candidate(email: str, *, scope: dict | None = None) -> dict | None:
     email = cycle_group_key(email)
     if not email:
         return None
     return await database.candidates.find_one(
-        {
+        _scoped_query({
             "email": email,
             "status": "active",
             "$or": [
                 {"history_bucket": {"$exists": False}},
                 {"history_bucket": "active"},
             ],
-        }
+        }, scope)
     )
 
 
-async def find_active_employee(email: str) -> dict | None:
+async def find_active_employee(email: str, *, scope: dict | None = None) -> dict | None:
     email = cycle_group_key(email)
     if not email:
         return None
     return await database.employees.find_one(
-        {
+        _scoped_query({
             "email": email,
             "status": {"$in": list(ACTIVE_EMPLOYEE_STATUSES)},
             "$or": [
                 {"history_bucket": {"$exists": False}},
                 {"history_bucket": "active"},
             ],
-        }
+        }, scope)
     )
 
 
@@ -187,7 +194,14 @@ def public_history_match(*, record_type: str, doc: dict) -> dict:
     }
 
 
-async def lookup_history_by_email(email: str, *, organization_id: str | None = None, recruiter_id: str | None = None, is_super_admin: bool = False) -> dict:
+async def lookup_history_by_email(
+    email: str,
+    *,
+    organization_id: str | None = None,
+    recruiter_id: str | None = None,
+    is_super_admin: bool = False,
+    people_scope: dict | None = None,
+) -> dict:
     """Return prior candidate cycles and employee tenures for an email.
 
     Rules:
@@ -212,21 +226,20 @@ async def lookup_history_by_email(email: str, *, organization_id: str | None = N
             "suggestion_summary": "No email provided.",
         }
 
-    active_candidate = await find_active_candidate(email)
-    active_employee = await find_active_employee(email)
-    active_user = await find_active_user(email)
-
-    scope: dict = {}
-    if not is_super_admin:
+    scope: dict = people_scope or {}
+    if not is_super_admin and not scope:
         if organization_id:
             scope["organization_id"] = organization_id
         elif recruiter_id:
             scope["recruiter_id"] = recruiter_id
 
+    active_candidate = await find_active_candidate(email, scope=scope)
+    active_employee = await find_active_employee(email, scope=scope)
+    active_user = await find_active_user(email, scope=scope)
+
     # Declined / expired / withdrawn — true historical candidates.
-    candidate_query = {
+    candidate_query = _scoped_query({
         "email": email,
-        **scope,
         "$and": [
             {
                 "$or": [
@@ -239,34 +252,31 @@ async def lookup_history_by_email(email: str, *, organization_id: str | None = N
             {"conversion_status": {"$ne": "converted"}},
             {"history_bucket": {"$ne": "converted"}},
         ],
-    }
-    employee_query = {
+    }, scope)
+    employee_query = _scoped_query({
         "email": email,
-        **scope,
         "$or": [
             {"history_bucket": "historical"},
             {"status": {"$in": list(HISTORICAL_EMPLOYEE_STATUSES)}},
         ],
-    }
-    converted_query = {
+    }, scope)
+    converted_query = _scoped_query({
         "email": email,
-        **scope,
         "$or": [
             {"status": "converted"},
             {"conversion_status": "converted"},
             {"history_bucket": "converted"},
         ],
-    }
+    }, scope)
 
     candidates = await database.candidates.find(candidate_query).sort("created_at", -1).to_list(length=50)
     employees = await database.employees.find(employee_query).sort("created_at", -1).to_list(length=50)
     converted_docs = await database.candidates.find(converted_query).sort("created_at", -1).to_list(length=50)
 
-    invite_query = {
+    invite_query = _scoped_query({
         "email": email,
         "status": {"$in": ["expired", "used"]},
-        **scope,
-    }
+    }, scope)
     invitations = await database.invitations.find(invite_query).sort("created_at", -1).to_list(length=20)
 
     candidate_matches = [public_history_match(record_type="candidate", doc=doc) for doc in candidates]

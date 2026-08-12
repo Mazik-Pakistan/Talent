@@ -10,6 +10,7 @@ from app.schemas.date_utils import parse_natural_date
 from app.schemas.invitation import CreateInvitationRequest
 from app.schemas.offer import DEFAULT_BENEFITS, DEFAULT_OFFER_TERMS, OfferTermsPayload
 from app.services.invitation_service import InvitationService
+from app.services.organization_service import recruiter_people_scope
 from app.services.people_history import lookup_history_by_email
 from app.services.spreadsheet_roster import (
     BULK_INVITE_MAX_ROWS,
@@ -183,6 +184,7 @@ class BulkInviteService:
                 organization_id=None if current_user.role == "super_admin" else current_user.organization_id,
                 recruiter_id=None if current_user.role == "super_admin" else current_user.id,
                 is_super_admin=current_user.role == "super_admin",
+                people_scope=await recruiter_people_scope(current_user),
             )
             item["person_history"] = {
                 "suggestion_summary": history.get("suggestion_summary"),
