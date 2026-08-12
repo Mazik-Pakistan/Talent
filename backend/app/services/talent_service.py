@@ -29,7 +29,7 @@ from fastapi import HTTPException, status
 
 from app.core.database import database
 from app.core.rbac import CurrentUser
-from app.services.organization_service import recruiter_can_access, recruiter_scope
+from app.services.organization_service import recruiter_can_access_record, recruiter_people_scope
 from app.services import role_matching_service
 
 
@@ -85,13 +85,11 @@ class TalentService:
     async def _assert_recruiter_owns(self, current_user: CurrentUser, employee: dict) -> None:
         if current_user.role == "super_admin":
             return
-        if current_user.role == "recruiter" and recruiter_can_access(current_user, employee):
+        if current_user.role == "recruiter" and await recruiter_can_access_record(current_user, employee):
             return
-        if current_user.role != "recruiter":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this employee.")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this employee.")
 
-    def _talent_employee_query(
+    async def _talent_employee_query(
         self,
         current_user: CurrentUser,
         *,
@@ -101,7 +99,7 @@ class TalentService:
         query: dict[str, Any] = {
             "status": "active" if active_only else {"$in": ["active", "inactive", "on_leave"]},
         }
-        scope = recruiter_scope(current_user)
+        scope = await recruiter_people_scope(current_user)
         if scope:
             query.update(scope)
         if department:
@@ -814,7 +812,7 @@ class TalentService:
     # US-100: Talent search
     # ------------------------------------------------------------------ #
     async def search_talent(self, current_user: CurrentUser, request: Any) -> dict:
-        query = self._talent_employee_query(current_user, department=request.department, active_only=True)
+        query = await self._talent_employee_query(current_user, department=request.department, active_only=True)
 
         candidates = await database.employees.find(query).to_list(length=2000)
 
@@ -985,7 +983,7 @@ class TalentService:
     # US-102: Recruiter talent metrics dashboard
     # ------------------------------------------------------------------ #
     async def talent_metrics(self, current_user: CurrentUser, *, department: str | None = None) -> dict:
-        query = self._talent_employee_query(current_user, department=department, active_only=True)
+        query = await self._talent_employee_query(current_user, department=department, active_only=True)
 
         employees = await database.employees.find(query).to_list(length=5000)
         user_ids = [e.get("user_id") for e in employees if e.get("user_id")]
@@ -1651,7 +1649,7 @@ class TalentService:
                 "by_category": detail["by_category"],
             }
 
-        query = self._talent_employee_query(current_user, department=department, active_only=True)
+        query = await self._talent_employee_query(current_user, department=department, active_only=True)
 
         employees = await database.employees.find(query).sort("full_name", 1).to_list(length=500)
         if role:

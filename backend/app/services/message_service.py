@@ -1,5 +1,9 @@
 """Employee ↔ recruiter (HR) messaging threads.
 
+Messaging is recruiter-specific: an employee/candidate can only talk to the
+recruiter on their profile, and recruiters only see their own threads.
+Other recruiter actions (directory, learning, reminders, talent) are org-wide.
+
 One open thread per employee–recruiter pair. Each message fans out to
 in-app notification + email (email soft-fails).
 """
@@ -18,7 +22,6 @@ from app.core.database import database
 from app.core.rbac import CurrentUser
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
-from app.services.organization_service import recruiter_can_access
 
 
 def _now() -> datetime:
@@ -153,13 +156,7 @@ class MessageService:
     async def list_threads_for_recruiter(self, user: CurrentUser) -> dict:
         query: dict = {}
         if user.role != "super_admin":
-            if user.organization_id:
-                query["$or"] = [
-                    {"recruiter_id": user.id},
-                    {"organization_id": user.organization_id},
-                ]
-            else:
-                query["recruiter_id"] = user.id
+            query["recruiter_id"] = user.id
         docs = await database.hr_threads.find(query).sort("updated_at", -1).to_list(length=200)
         return {"threads": [self._public_thread(d, include_messages=False) for d in docs]}
 
@@ -188,6 +185,8 @@ class MessageService:
         if thread_id:
             thread = await self._load_thread(thread_id)
             self._assert_access(user, thread)
+            if str(thread.get("recruiter_id") or "") != str(recruiter_id):
+                raise HTTPException(status_code=403, detail="You can only message your assigned recruiter.")
             if thread.get("status") == "closed":
                 raise HTTPException(status_code=400, detail="This conversation is closed.")
         else:
@@ -277,6 +276,8 @@ class MessageService:
         if thread_id:
             thread = await self._load_thread(thread_id)
             self._assert_access(user, thread)
+            if str(thread.get("recruiter_id") or "") != str(recruiter_id):
+                raise HTTPException(status_code=403, detail="You can only message your assigned recruiter.")
             if thread.get("status") == "closed":
                 raise HTTPException(status_code=400, detail="This conversation is closed.")
         else:
@@ -421,8 +422,8 @@ class MessageService:
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
         if user.role != "super_admin":
-            if not recruiter_can_access(user, employee):
-                raise HTTPException(status_code=403, detail="Employee is not assigned to you.")
+            if str(employee.get("recruiter_id") or "") != str(user.id):
+                raise HTTPException(status_code=403, detail="You can only message employees assigned to you.")
 
         employee_user_id = employee.get("user_id")
         if not employee_user_id:
@@ -503,13 +504,11 @@ class MessageService:
         return thread
 
     def _assert_access(self, user: CurrentUser, thread: dict) -> None:
-        if user.role in ("recruiter", "super_admin"):
-            if user.role != "super_admin":
-                if user.organization_id:
-                    if thread.get("organization_id") != user.organization_id and thread.get("recruiter_id") != user.id:
-                        raise HTTPException(status_code=403, detail="Not allowed.")
-                elif thread.get("recruiter_id") != user.id:
-                    raise HTTPException(status_code=403, detail="Not allowed.")
+        if user.role == "super_admin":
+            return
+        if user.role == "recruiter":
+            if str(thread.get("recruiter_id") or "") != str(user.id):
+                raise HTTPException(status_code=403, detail="Not allowed.")
             return
         if user.role == "employee":
             if thread.get("employee_user_id") != user.id:

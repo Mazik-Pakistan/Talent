@@ -850,7 +850,7 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
         job_title: filterTitle || undefined,
         status: "active",
         page: 1,
-        page_size: 40,
+        page_size: 100,
         sort: "full_name",
       })
         .then((data) => setEmployees(data.employees || []))

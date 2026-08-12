@@ -14,7 +14,7 @@ from app.schemas.dashboard import (
     UpdateRecruiterProfileRequest,
 )
 from app.services.email_service import email_service
-from app.services.organization_service import recruiter_scope
+from app.services.organization_service import recruiter_people_scope
 
 UPCOMING_JOINING_WINDOW_DAYS = 30
 RECENT_ACTIVITY_LIMIT_DEFAULT = 20
@@ -152,8 +152,8 @@ class DashboardService:
     # US-013: Recruiter's Dashboard Overview
     # ------------------------------------------------------------------
     async def get_summary(self, current_user: CurrentUser) -> dict:
-        candidate_filter = self._scope_filter(current_user)
-        employee_filter = self._scope_filter(current_user)
+        candidate_filter = await self._scope_filter(current_user)
+        employee_filter = candidate_filter
 
         candidates = await database.candidates.find(candidate_filter).to_list(length=None)
         employees = await database.employees.find(employee_filter).to_list(length=None)
@@ -367,9 +367,13 @@ class DashboardService:
             ]
         }
 
-        scope = self._scope_filter(current_user)
-        candidate_query = {**scope, **text_filter} if scope else text_filter
-        employee_query = {**scope, **text_filter} if scope else text_filter
+        scope = await self._scope_filter(current_user)
+        if scope:
+            candidate_query = {"$and": [scope, text_filter]}
+            employee_query = {"$and": [scope, text_filter]}
+        else:
+            candidate_query = text_filter
+            employee_query = text_filter
 
         candidates = await database.candidates.find(candidate_query).limit(15).to_list(length=15)
         employees = await database.employees.find(employee_query).limit(15).to_list(length=15)
@@ -668,12 +672,14 @@ class DashboardService:
     ) -> tuple[int, int]:
         audience = announcement.get("audience") or "both"
         recipients: list[dict] = []
-        scope = self._scope_filter(current_user)
+        scope = await self._scope_filter(current_user)
 
         if audience in ("candidates", "both"):
-            candidate_query = {**scope, "status": {"$ne": "converted"}}
+            candidate_query: dict = {"status": {"$ne": "converted"}}
             if announcement.get("target_candidate_ids"):
                 candidate_query["user_id"] = {"$in": announcement["target_candidate_ids"]}
+            if scope:
+                candidate_query = {"$and": [scope, candidate_query]}
             candidates = await database.candidates.find(
                 candidate_query,
                 {"user_id": 1, "email": 1, "full_name": 1},
@@ -698,8 +704,13 @@ class DashboardService:
                 employee_filters.append({"job_title": {"$in": announcement["target_designations"]}})
             if announcement.get("target_employee_ids"):
                 employee_filters.append({"user_id": {"$in": announcement["target_employee_ids"]}})
+            employee_query: dict = {"status": "active"}
+            if employee_filters:
+                employee_query["$or"] = employee_filters
+            if scope:
+                employee_query = {"$and": [scope, employee_query]}
             employees = await database.employees.find(
-                {**scope, "status": "active", **({"$or": employee_filters} if employee_filters else {})},
+                employee_query,
                 {"user_id": 1, "email": 1, "company_email": 1, "full_name": 1},
             ).to_list(length=None)
             for doc in employees:
@@ -947,11 +958,11 @@ class DashboardService:
     # ------------------------------------------------------------------
     # Scoping helpers
     # ------------------------------------------------------------------
-    def _scope_filter(self, current_user: CurrentUser) -> dict:
-        return recruiter_scope(current_user)
+    async def _scope_filter(self, current_user: CurrentUser) -> dict:
+        return await recruiter_people_scope(current_user)
 
     async def _scoped_candidate_emails(self, current_user: CurrentUser) -> list[str]:
-        scope = self._scope_filter(current_user)
+        scope = await self._scope_filter(current_user)
         cursor = database.candidates.find(scope, {"email": 1})
         docs = await cursor.to_list(length=None)
         return [doc["email"] for doc in docs if doc.get("email")]
