@@ -1218,6 +1218,17 @@ class LearningService:
                 detail="Certificate link is required so your recruiter can verify it.",
             )
 
+        if completion_date is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Completion date is required.",
+            )
+        if learning_hours is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Learning hours are required.",
+            )
+
         now = _now()
         file_url = None
         object_path = None
@@ -1768,6 +1779,16 @@ class LearningService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
         if cert.get("verification_status") == "verified":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot edit verified certificates.")
+        if completion_date is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Completion date is required.",
+            )
+        if learning_hours is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Learning hours are required.",
+            )
         now = _now()
         updates = {"updated_at": now}
         if course_title is not None:

@@ -939,6 +939,8 @@ const AgentChatCoreInner = forwardRef(function AgentChatCoreInner({ variant = "f
           formData.append("course_title", hint.course_title || hint.title || "Certificate");
           if (hint.course_uid) formData.append("course_uid", hint.course_uid);
           if (hint.source_url) formData.append("source_url", hint.source_url);
+          if (hint.completion_date) formData.append("completion_date", hint.completion_date);
+          if (hint.learning_hours) formData.append("learning_hours", hint.learning_hours);
           const result = await uploadCertificate(auth.accessToken, formData);
           const cert = result?.certificate || result || {};
           const url = cert.file_url || cert.certificate_url || "";
