@@ -388,7 +388,7 @@ function RecruiterOverviewPageContent() {
               {announcements.map((announcement) => (
                 <article className={styles.announcementCard} key={announcement.id}>
                   <h4>{announcement.title}</h4>
-                  <p>{announcement.body}</p>
+                  <p className={styles.announcementBody}>{announcement.body}</p>
                   <p className={styles.announcementMeta}>{announcement.created_by_name || "Recruiting team"} · {formatDate(announcement.created_at)}</p>
                 </article>
               ))}

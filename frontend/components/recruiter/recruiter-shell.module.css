@@ -437,13 +437,46 @@
 
 .announcementStack { display: grid; gap: 12px; }
 .announcementCard {
-  border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; background: linear-gradient(180deg, #fff 0%, #fbfcfe 100%);
+  border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; background: linear-gradient(180deg, #fff 0%, #fbfcfe 100%);
   min-width: 0;
 }
 .announcementCardHead { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-.announcementCard h4 { margin: 0 0 4px; font-size: 15px; color: var(--navy); font-family: 'Sora', system-ui, sans-serif; }
-.announcementMeta { margin: 0; font-size: 12px; color: var(--text-muted); }
-.announcementBody { margin: 12px 0; font-size: 13.5px; color: var(--text); line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.announcementCard h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.35;
+  color: var(--navy);
+  font-family: 'Sora', system-ui, sans-serif;
+}
+.announcementMeta {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.announcementCard p.announcementMeta {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.announcementBody {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.announcementCard p {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.5;
+}
 .targetSummary { margin: -4px 0 12px; color: #08728d; font-size: 11.5px; font-weight: 700; }
 .announcementCardActions { display: flex; gap: 8px; flex-wrap: wrap; }
 .audiencePill {
