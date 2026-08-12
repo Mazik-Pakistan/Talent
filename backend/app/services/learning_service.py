@@ -48,7 +48,7 @@ from app.services import (
 )
 from app.services.managed_learning_service import MANAGED_SOURCE, managed_learning_service
 from app.services.dashboard_service import create_notification
-from app.services.organization_service import recruiter_can_access, recruiter_scope
+from app.services.organization_service import recruiter_can_access_record, recruiter_people_scope
 
 
 def _iso(value: Any) -> Any:
@@ -81,10 +81,27 @@ class LearningService:
         if current_user.role == "super_admin":
             return
         if current_user.role == "recruiter":
-            if not recruiter_can_access(current_user, employee):
+            if not await recruiter_can_access_record(current_user, employee):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
             return
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
+
+    async def _certificate_owner(self, cert: dict) -> dict:
+        owner = await database.employees.find_one(
+            {
+                "$or": [
+                    {"user_id": cert.get("user_id")},
+                    {"employee_id": cert.get("employee_id")},
+                ]
+            }
+        )
+        if owner:
+            return owner
+        if cert.get("user_id"):
+            candidate = await database.candidates.find_one({"user_id": cert.get("user_id")})
+            if candidate:
+                return candidate
+        return cert
 
     async def _get_resume_doc(self, user_id: str) -> dict | None:
         return await database.documents.find_one(
@@ -1342,33 +1359,10 @@ class LearningService:
         query: dict[str, Any] = {"verification_status": "pending"}
         docs = await database.learning_certificates.find(query).sort("created_at", 1).to_list(length=300)
         if current_user.role != "super_admin":
-            org_cache: dict[str, str | None] = {}
-
-            async def _cert_org(cert: dict) -> str | None:
-                org = cert.get("organization_id")
-                if org:
-                    return org
-                uid = cert.get("user_id")
-                if not uid:
-                    return None
-                if uid not in org_cache:
-                    owner = await database.employees.find_one(
-                        {
-                            "$or": [
-                                {"user_id": uid},
-                                {"employee_id": cert.get("employee_id")},
-                            ]
-                        }
-                    ) or await database.candidates.find_one({"user_id": uid})
-                    org_cache[uid] = (owner or {}).get("organization_id")
-                return org_cache[uid]
-
             scoped = []
             for cert in docs:
-                if current_user.organization_id:
-                    if await _cert_org(cert) == current_user.organization_id:
-                        scoped.append(cert)
-                elif cert.get("recruiter_id") == current_user.id:
+                owner = await self._certificate_owner(cert)
+                if await recruiter_can_access_record(current_user, owner):
                     scoped.append(cert)
             docs = scoped
         return {"certificates": [self._public_certificate(d) for d in docs]}
@@ -1467,21 +1461,8 @@ class LearningService:
         if not cert:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
         if current_user.role != "super_admin":
-            if current_user.organization_id:
-                cert_org = cert.get("organization_id")
-                if not cert_org:
-                    cert_owner = await database.employees.find_one(
-                        {
-                            "$or": [
-                                {"user_id": cert.get("user_id")},
-                                {"employee_id": cert.get("employee_id")},
-                            ]
-                        }
-                    ) or await database.candidates.find_one({"user_id": cert.get("user_id")})
-                    cert_org = (cert_owner or {}).get("organization_id")
-                if cert_org != current_user.organization_id:
-                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
-            elif cert.get("recruiter_id") != current_user.id:
+            owner = await self._certificate_owner(cert)
+            if not await recruiter_can_access_record(current_user, owner):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
 
         now = _now()
@@ -3477,7 +3458,7 @@ class LearningService:
         if needs_filter:
             query: dict[str, Any] = {"status": "active"}
             if current_user.role != "super_admin":
-                scope = recruiter_scope(current_user)
+                scope = await recruiter_people_scope(current_user)
                 if scope:
                     query.update(scope)
             if request.department:
@@ -3554,7 +3535,7 @@ class LearningService:
                 "employee_id": employee_id,
                 "user_id": employee.get("user_id"),
                 "employee_name": employee.get("full_name"),
-                "organization_id": employee.get("organization_id"),
+                "organization_id": employee.get("organization_id") or current_user.organization_id,
                 "department": employee.get("department"),
                 "job_title": employee.get("job_title"),
                 "course_uid": request.course_uid,
@@ -3724,9 +3705,9 @@ class LearningService:
     ) -> dict:
         query: dict[str, Any] = {}
         if current_user.role != "super_admin":
-            scope = recruiter_scope(current_user)
+            scope = await recruiter_people_scope(current_user)
             visible_employees = await database.employees.find(
-                {"status": "active", **scope},
+                {"status": "active", **scope} if scope else {"status": "active"},
                 {"employee_id": 1},
             ).to_list(length=5000)
             employee_ids = [doc.get("employee_id") for doc in visible_employees if doc.get("employee_id")]
@@ -4245,7 +4226,7 @@ class LearningService:
         """US-073: recruiter learning analytics."""
         employee_query: dict[str, Any] = {}
         if current_user.role != "super_admin":
-            scope = recruiter_scope(current_user)
+            scope = await recruiter_people_scope(current_user)
             if scope:
                 employee_query.update(scope)
         if department:

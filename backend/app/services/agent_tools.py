@@ -41,6 +41,7 @@ from app.services.email_service import email_service
 from app.services.employee_service import EmployeeService
 from app.services.invitation_service import InvitationService
 from app.services.offer_service import offer_service
+from app.services.organization_service import recruiter_people_scope
 from app.services.ticket_service import ticket_service
 
 candidate_service = CandidateService()
@@ -141,17 +142,17 @@ def _name_match_clauses(term: str) -> list[dict]:
     return clauses
 
 
-def _recruiter_scope(user: CurrentUser) -> dict | None:
+async def _recruiter_scope(user: CurrentUser) -> dict | None:
     """Return a scoping filter so recruiters only see records in their organization.
 
     Unbound recruiters (no organization) only see records they personally created.
+    Org-bound recruiters also see legacy people rows owned by any recruiter in the org.
     """
     if user.role == "super_admin":
         return None
     if user.role == "recruiter":
-        if user.organization_id:
-            return {"organization_id": user.organization_id}
-        return {"recruiter_id": user.id}
+        scope = await recruiter_people_scope(user)
+        return scope or None
     return None
 
 
@@ -269,7 +270,7 @@ def _employee_status_payload(employee: dict) -> dict:
 async def _tool_list_candidates(user: CurrentUser, args: dict) -> ToolResult:
     query: dict = {}
     if user.role != "super_admin":
-        scope = _recruiter_scope(user)
+        scope = await _recruiter_scope(user)
         if scope:
             query.update(scope)
     status_filter = args.get("status")
@@ -304,7 +305,7 @@ async def _tool_list_candidates(user: CurrentUser, args: dict) -> ToolResult:
 async def _tool_list_employees(user: CurrentUser, args: dict) -> ToolResult:
     query: dict = {"status": {"$in": ["active", "inactive", "on_leave"]}}
     if user.role != "super_admin":
-        scope = _recruiter_scope(user)
+        scope = await _recruiter_scope(user)
         if scope:
             query.update(scope)
     profile_status = (args.get("profile_status") or "").strip().lower()
@@ -345,7 +346,7 @@ async def _tool_get_candidate_status(user: CurrentUser, args: dict) -> ToolResul
     if not query:
         return ToolResult(ok=False, error="An email or name is required.")
 
-    scope = _recruiter_scope(user)
+    scope = await _recruiter_scope(user)
     employee = await _find_employee_by_query(query, scope=scope)
     candidate = await _find_candidate_by_query(query, scope=scope)
 
@@ -627,7 +628,7 @@ async def _tool_remind_employee_profile(user: CurrentUser, args: dict) -> ToolRe
         query = email or name
         if not query:
             return ToolResult(ok=False, error="Provide email, name, or employee_id.")
-        employee = await _find_employee_by_query(query, scope=_recruiter_scope(user))
+        employee = await _find_employee_by_query(query, scope=await _recruiter_scope(user))
         if not employee:
             return ToolResult(ok=False, error=f"No employee found for {query}.")
 
@@ -690,7 +691,7 @@ async def _resolve_employee(user: CurrentUser, args: dict) -> tuple[dict | None,
         query = email or name
         if not query:
             return None, "Provide email, name, or employee_id."
-        employee = await _find_employee_by_query(query, scope=_recruiter_scope(user))
+        employee = await _find_employee_by_query(query, scope=await _recruiter_scope(user))
         if not employee:
             return None, f"No employee found for {query}."
         # Enforce recruiter ownership via service resolver.
@@ -716,7 +717,7 @@ async def _resolve_candidate(user: CurrentUser, args: dict) -> tuple[dict | None
         query: dict = {"$or": [{"user_id": candidate_id}]}
         if ObjectId.is_valid(candidate_id):
             query["$or"].append({"_id": ObjectId(candidate_id)})
-        scope = _recruiter_scope(user)
+        scope = await _recruiter_scope(user)
         if scope:
             query = {"$and": [query, scope]}
         doc = await database.candidates.find_one(query)
@@ -724,7 +725,7 @@ async def _resolve_candidate(user: CurrentUser, args: dict) -> tuple[dict | None
     query_text = email or name
     if not query_text:
         return None, "Provide email, name, or candidate_id."
-    doc = await _find_candidate_by_query(query_text, scope=_recruiter_scope(user))
+    doc = await _find_candidate_by_query(query_text, scope=await _recruiter_scope(user))
     if not doc:
         return None, f"No candidate found for {query_text}."
     return doc, None
