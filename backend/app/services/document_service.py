@@ -21,6 +21,7 @@ from app.services.document_extraction_service import document_extraction_service
 from app.services.document_matching_service import compare_extractions
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
+from app.services.organization_service import recruiter_can_access
 
 MAX_UPLOAD_BYTES = settings.MAX_DOCUMENT_MB * 1024 * 1024
 
@@ -719,8 +720,8 @@ class DocumentService:
             ) or await database.employees.find_one(
                 {"$or": [{"user_id": owner_id}, {"email": owner_id}]}
             )
-            if owner and owner.get("recruiter_id") != current_user.id:
-                raise HTTPException(status_code=403, detail="You can only view documents for employees/candidates assigned to you.")
+            if owner and not recruiter_can_access(current_user, owner):
+                raise HTTPException(status_code=403, detail="You can only view documents for employees/candidates within your organization.")
         docs = (
             await database.documents.find({"owner_id": owner_id, "is_active": True})
             .sort("uploaded_at", -1)
@@ -787,8 +788,8 @@ class DocumentService:
             ) or await database.employees.find_one(
                 {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
             )
-            if owner and owner.get("recruiter_id") != current_user.id:
-                raise HTTPException(status_code=403, detail="You can only verify documents for employees/candidates assigned to you.")
+            if owner and not recruiter_can_access(current_user, owner):
+                raise HTTPException(status_code=403, detail="You can only verify documents for employees/candidates within your organization.")
         if payload.status not in ("verified", "rejected", "reupload_required", "mismatch"):
             raise HTTPException(status_code=400, detail="Invalid verification status.")
         if payload.status in ("rejected", "reupload_required") and not payload.rejection_reason:
@@ -983,8 +984,8 @@ class DocumentService:
             ) or await database.employees.find_one(
                 {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
             )
-            if owner and owner.get("recruiter_id") != current_user.id:
-                raise HTTPException(status_code=403, detail="You can only re-extract documents for employees/candidates assigned to you.")
+            if owner and not recruiter_can_access(current_user, owner):
+                raise HTTPException(status_code=403, detail="You can only re-extract documents for employees/candidates within your organization.")
         if doc.get("deleted_at"):
             raise HTTPException(status_code=404, detail="Document has been deleted.")
 
@@ -1225,8 +1226,8 @@ class DocumentService:
             ) or await database.employees.find_one(
                 {"$or": [{"user_id": doc["owner_id"]}, {"email": doc["owner_id"]}]}
             )
-            if owner and owner.get("recruiter_id") != current_user.id:
-                raise HTTPException(status_code=403, detail="You can only view documents for employees/candidates assigned to you.")
+            if owner and not recruiter_can_access(current_user, owner):
+                raise HTTPException(status_code=403, detail="You can only view documents for employees/candidates within your organization.")
         url = await storage_service.get_signed_url(doc)
         await database.audit_logs.insert_one(
             {
@@ -1277,10 +1278,7 @@ class DocumentService:
         """Recruiters can access any employee/candidate record within their organization."""
         if current_user.role == "super_admin" or not owner:
             return
-        if current_user.organization_id:
-            if owner.get("organization_id") != current_user.organization_id:
-                raise HTTPException(status_code=403, detail=detail)
-        elif owner.get("recruiter_id") != current_user.id:
+        if not recruiter_can_access(current_user, owner):
             raise HTTPException(status_code=403, detail=detail)
 
     async def _find(self, document_id: str) -> dict:

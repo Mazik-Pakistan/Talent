@@ -1236,7 +1236,6 @@ function MyCoursesTab({ onChange }) {
                       )}
                     </div>
                     <div className={styles.certRight}>
-                     
                       {(cert.file_url || cert.certificate_url) && (
                         <a href={cert.file_url || cert.certificate_url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>View file</a>
                       )}
@@ -1615,7 +1614,7 @@ function CareerTab() {
       .finally(() => setDesignationLoading(false));
   }
 
-  function loadRecommendations(refresh) {
+  function loadRecommendations(refresh = false) {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     setRecsLoading(true);
@@ -1637,7 +1636,9 @@ function CareerTab() {
       setPath(pathData);
       const gapData = await getSkillGap(token, target, true);
       setGap(gapData);
-      loadRecommendations(true);
+      // Cache-first: do not regenerate AI recs on role sync / tab open.
+      // User clicks Refresh on Course recommendations to force a new run.
+      loadRecommendations(false);
       loadDesignationReadiness(target);
       if (!silent) toast.success(`Focused on “${target}”.`);
     } catch (err) {
@@ -1645,6 +1646,7 @@ function CareerTab() {
       // Still try read-only analysis if goal sync fails
       loadGapAndPath(target, true);
       loadDesignationReadiness(target);
+      loadRecommendations(false);
     } finally {
       setGapLoading(false);
     }
@@ -1726,11 +1728,14 @@ function CareerTab() {
           if (orgTarget && existingGoal?.toLowerCase() !== orgTarget.toLowerCase()) {
             await applyTargetRole(orgTarget, { silent: true });
           } else {
-            loadGapAndPath(focusRole);
+            loadGapAndPath(focusRole, false);
             loadDesignationReadiness(focusRole);
+            loadRecommendations(false);
           }
+        } else {
+          // No career goal yet — still show cached recs if any.
+          loadRecommendations(false);
         }
-        loadRecommendations(true);
       })
       .finally(() => {
         if (!cancelled) {
@@ -2147,6 +2152,7 @@ function CareerTab() {
           {recSourceLabel && !recsLoading && (
             <p className={styles.inlineNote} style={{ marginBottom: 12 }}>
               Source: {recSourceLabel}
+              {recs?.cached ? " · Saved for you — click Refresh to regenerate" : ""}
             </p>
           )}
           {recsLoading && <p className={styles.inlineNote}>Thinking…</p>}
@@ -2169,31 +2175,42 @@ function CareerTab() {
                   : course.source)
                 || "Catalog"
               );
+              const levelLabel = (course.levels || []).find(Boolean) || "All levels";
+              const durationLabel =
+                course.duration_minutes != null && course.duration_minutes > 0
+                  ? `${course.duration_minutes} min`
+                  : "Self-paced";
+              const typeLabel =
+                course.type === "learningPath"
+                  ? "Learning Path"
+                  : course.type === "certification"
+                    ? "Certification"
+                    : "Module";
               return (
               <div key={course.uid} className={styles.aiCard}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <div className={styles.aiCardTop}>
                   <span className={`${styles.courseType} ${course.type === "certification" ? styles.certification : ""}`}>
-                    {course.type === "learningPath" ? "Learning Path" : course.type === "certification" ? "Certification" : "Module"}
+                    {typeLabel}
                   </span>
                   <span className={styles.providerBadge} title="Learning provider">
                     {providerLabel}
                   </span>
-                  {course.priority && (
-                    <span className={`${styles.priorityChip} ${styles[course.priority] || ""}`}>
-                      {course.priority}
-                    </span>
-                  )}
+                  <span className={`${styles.priorityChip} ${styles[course.priority] || styles.medium}`}>
+                    {course.priority || "medium"}
+                  </span>
                 </div>
-                <div className={styles.courseTitle} style={{ marginTop: 8 }}>{course.title}</div>
-                <div className={styles.courseMeta} style={{ marginTop: 6 }}>
-                  {(course.levels || [])[0] && <span className={styles.levelBadge}>{course.levels[0]}</span>}
-                  {course.duration_minutes != null && <span>{course.duration_minutes} min</span>}
+                <div className={`${styles.courseTitle} ${styles.aiCardTitle}`}>{course.title}</div>
+                <div className={`${styles.courseMeta} ${styles.aiCardMeta}`}>
+                  <span className={styles.levelBadge}>{levelLabel}</span>
+                  <span className={styles.aiMetaMuted}>{durationLabel}</span>
                 </div>
                 <div className={styles.aiReason}>
                   <div className={styles.aiReasonLabel}>Why this course</div>
-                  {course.reason}
+                  <div className={styles.aiReasonText}>
+                    {course.reason || "Matched to your skills and role to raise proficiency."}
+                  </div>
                 </div>
-                <div className={styles.courseActions} style={{ marginTop: 10 }}>
+                <div className={`${styles.courseActions} ${styles.aiCardActions}`}>
                   <a href={course.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtnPrimary}>Start Learning</a>
                 </div>
               </div>

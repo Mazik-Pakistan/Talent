@@ -48,8 +48,7 @@ from app.services import (
 )
 from app.services.managed_learning_service import MANAGED_SOURCE, managed_learning_service
 from app.services.dashboard_service import create_notification
-
-AI_RECOMMENDATIONS_TTL_HOURS = 24
+from app.services.organization_service import recruiter_scope
 
 
 def _iso(value: Any) -> Any:
@@ -1328,9 +1327,37 @@ class LearningService:
 
     async def list_pending_certificates(self, current_user: CurrentUser) -> dict:
         query: dict[str, Any] = {"verification_status": "pending"}
-        if current_user.role != "super_admin":
-            query["recruiter_id"] = current_user.id
         docs = await database.learning_certificates.find(query).sort("created_at", 1).to_list(length=300)
+        if current_user.role != "super_admin":
+            org_cache: dict[str, str | None] = {}
+
+            async def _cert_org(cert: dict) -> str | None:
+                org = cert.get("organization_id")
+                if org:
+                    return org
+                uid = cert.get("user_id")
+                if not uid:
+                    return None
+                if uid not in org_cache:
+                    owner = await database.employees.find_one(
+                        {
+                            "$or": [
+                                {"user_id": uid},
+                                {"employee_id": cert.get("employee_id")},
+                            ]
+                        }
+                    ) or await database.candidates.find_one({"user_id": uid})
+                    org_cache[uid] = (owner or {}).get("organization_id")
+                return org_cache[uid]
+
+            scoped = []
+            for cert in docs:
+                if current_user.organization_id:
+                    if await _cert_org(cert) == current_user.organization_id:
+                        scoped.append(cert)
+                elif cert.get("recruiter_id") == current_user.id:
+                    scoped.append(cert)
+            docs = scoped
         return {"certificates": [self._public_certificate(d) for d in docs]}
 
     async def _complete_course_after_certificate_verify(self, *, cert: dict, now: datetime) -> None:
@@ -1427,7 +1454,21 @@ class LearningService:
         if not cert:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found.")
         if current_user.role != "super_admin":
-            if str(cert.get("recruiter_id") or "") != str(current_user.id):
+            if current_user.organization_id:
+                cert_org = cert.get("organization_id")
+                if not cert_org:
+                    cert_owner = await database.employees.find_one(
+                        {
+                            "$or": [
+                                {"user_id": cert.get("user_id")},
+                                {"employee_id": cert.get("employee_id")},
+                            ]
+                        }
+                    ) or await database.candidates.find_one({"user_id": cert.get("user_id")})
+                    cert_org = (cert_owner or {}).get("organization_id")
+                if cert_org != current_user.organization_id:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
+            elif cert.get("recruiter_id") != current_user.id:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
 
         now = _now()
@@ -2892,22 +2933,26 @@ class LearningService:
     }
 
     async def get_recommendations(self, current_user: CurrentUser, *, refresh: bool = False) -> dict:
-        """Recommend courses aligned to role + profile skills, aimed at raising proficiency."""
+        """Recommend courses aligned to role + profile skills, aimed at raising proficiency.
+
+        Cache-first: any saved recommendations for this employee are returned until
+        the user explicitly refreshes (refresh=True). Tab open never forces a regen.
+        """
         employee = await self._get_employee(current_user)
         user_id = current_user.id
 
         cached = await database.learning_ai_recommendations.find_one({"user_id": user_id})
-        if cached and not refresh:
-            age = _now() - cached["generated_at"]
-            if age < timedelta(hours=AI_RECOMMENDATIONS_TTL_HOURS):
-                return {
-                    "recommendations": cached["recommendations"],
-                    "generated_at": _iso(cached["generated_at"]),
-                    "stale": False,
-                    "source": cached.get("source") or "skill_role_aligned",
-                    "basis": cached.get("basis")
-                    or "Matched to your role and skills to raise proficiency.",
-                }
+        if cached and not refresh and (cached.get("recommendations") is not None):
+            # Persist until manual Refresh — do not auto-expire on TTL.
+            return {
+                "recommendations": cached.get("recommendations") or [],
+                "generated_at": _iso(cached.get("generated_at")),
+                "stale": False,
+                "cached": True,
+                "source": cached.get("source") or "skill_role_aligned",
+                "basis": cached.get("basis")
+                or "Matched to your role and skills to raise proficiency.",
+            }
 
         assignment = await database.employee_career_assignments.find_one(
             {"employee_id": employee.get("employee_id"), "status": "active"}
@@ -3091,21 +3136,28 @@ class LearningService:
         labels.sort(key=lambda L: preferred.index(L) if L in preferred else 99)
 
         # Optional AI ranking inside each provider bucket (keeps provider mix).
+        # Only call the LLM on explicit Refresh — tab-open / cold miss stays deterministic
+        # so the section never hangs on OpenRouter/Gemini.
         for label, quota in zip(labels, quotas):
             pool = buckets.get(label) or []
             if not pool or quota <= 0:
                 continue
             shortlist = pool[: min(16, len(pool))]
-            picks = await learning_ai_service.rank_recommended_courses(
-                job_title=employee.get("job_title"),
-                department=employee.get("department"),
-                current_skills=current_skills,
-                career_goal=career_goal,
-                skill_gaps=skill_gaps,
-                candidates=shortlist,
-                top_n=quota,
-                proficiency_targets=proficiency_targets[:15],
-            )
+            picks: list[dict] = []
+            if refresh:
+                try:
+                    picks = await learning_ai_service.rank_recommended_courses(
+                        job_title=employee.get("job_title"),
+                        department=employee.get("department"),
+                        current_skills=current_skills,
+                        career_goal=career_goal,
+                        skill_gaps=skill_gaps,
+                        candidates=shortlist,
+                        top_n=quota,
+                        proficiency_targets=proficiency_targets[:15],
+                    )
+                except Exception:
+                    picks = []
             by_uid = {c["uid"]: c for c in shortlist}
             taken = 0
             for pick in picks:
@@ -3133,7 +3185,8 @@ class LearningService:
                 _add(entry, priority=entry["priority"])
                 if len(recommendations) > before:
                     taken += 1
-            # Deterministic fill for this provider if AI returned fewer than quota.
+            # Deterministic fill for this provider if AI returned fewer than quota
+            # (or when refresh=False and we skipped the LLM entirely).
             if taken < quota:
                 for course in pool:
                     if taken >= quota:
@@ -3195,8 +3248,10 @@ class LearningService:
             parts = [f"{q} {lab}" for lab, q in zip(labels, quotas) if q]
             if parts:
                 quota_note = f" Target mix: {', '.join(parts)}."
+        rank_note = " AI-ranked." if refresh else " Cached for this employee until you refresh."
         basis = (
-            f"{len(recommendations)} courses across providers{provider_note}.{quota_note} "
+            f"{len(recommendations)} courses across providers{provider_note}.{quota_note}"
+            f"{rank_note} "
             f"Matched to your skills and role ({employee.get('job_title') or 'current'}"
             f"{f' → {career_goal}' if career_goal else ''}) to raise proficiency."
         )
@@ -3209,6 +3264,7 @@ class LearningService:
                     "generated_at": now,
                     "source": "skill_role_aligned",
                     "basis": basis,
+                    "ai_ranked": bool(refresh),
                 }
             },
             upsert=True,
@@ -3217,6 +3273,7 @@ class LearningService:
             "recommendations": recommendations,
             "generated_at": now.isoformat(),
             "stale": False,
+            "cached": False,
             "source": "skill_role_aligned",
             "basis": basis,
         }
@@ -3397,7 +3454,9 @@ class LearningService:
         if needs_filter:
             query: dict[str, Any] = {"status": "active"}
             if current_user.role != "super_admin":
-                query["recruiter_id"] = current_user.id
+                scope = recruiter_scope(current_user)
+                if scope:
+                    query.update(scope)
             if request.department:
                 query["department"] = {"$regex": f"^{_escape_regex(request.department)}$", "$options": "i"}
             if request.job_title:
@@ -4151,7 +4210,9 @@ class LearningService:
         """US-073: recruiter learning analytics."""
         employee_query: dict[str, Any] = {}
         if current_user.role != "super_admin":
-            employee_query["recruiter_id"] = current_user.id
+            scope = recruiter_scope(current_user)
+            if scope:
+                employee_query.update(scope)
         if department:
             employee_query["department"] = {
                 "$regex": f"^{_escape_regex(department)}$",

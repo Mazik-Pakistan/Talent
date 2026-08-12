@@ -142,11 +142,16 @@ def _name_match_clauses(term: str) -> list[dict]:
 
 
 def _recruiter_scope(user: CurrentUser) -> dict | None:
-    """Return a scoping filter so recruiters only see records in their organization."""
+    """Return a scoping filter so recruiters only see records in their organization.
+
+    Unbound recruiters (no organization) only see records they personally created.
+    """
     if user.role == "super_admin":
         return None
-    if user.role == "recruiter" and user.organization_id:
-        return {"organization_id": user.organization_id}
+    if user.role == "recruiter":
+        if user.organization_id:
+            return {"organization_id": user.organization_id}
+        return {"recruiter_id": user.id}
     return None
 
 

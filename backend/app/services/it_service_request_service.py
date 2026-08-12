@@ -27,6 +27,7 @@ from app.schemas.it_service_request import (
 )
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
+from app.services.organization_service import recruiter_can_access
 
 
 def _iso(value):
@@ -111,7 +112,7 @@ class ItServiceRequestService:
             if current_user.organization_id:
                 if str(doc.get("organization_id")) != str(current_user.organization_id):
                     raise HTTPException(status_code=404, detail="IT request not found.")
-            elif str(doc.get("recruiter_id")) != str(current_user.id):
+            elif not recruiter_can_access(current_user, doc):
                 raise HTTPException(status_code=404, detail="IT request not found.")
         return doc
 
@@ -185,7 +186,7 @@ class ItServiceRequestService:
             if current_user.organization_id:
                 if emp.get("organization_id") != current_user.organization_id:
                     raise HTTPException(status_code=403, detail="You can only create IT requests for employees within your organization.")
-            elif emp.get("recruiter_id") != current_user.id:
+            elif not recruiter_can_access(current_user, emp):
                 raise HTTPException(status_code=403, detail="You can only create IT requests for employees assigned to you.")
         now = datetime.now(UTC)
         doc = {
@@ -447,13 +448,18 @@ class ItServiceRequestService:
         return doc
 
     async def officers_overview(self, current_user: CurrentUser) -> dict:
-        """All IT officers this recruiter has worked with + who they provisioned."""
-        provisioning = await database.it_provisioning_requests.find(
-            {"recruiter_id": current_user.id}
-        ).to_list(length=500)
-        service = await database.it_service_requests.find(
-            {"recruiter_id": current_user.id}
-        ).to_list(length=300)
+        """All IT officers the recruiter's organization has worked with + who they provisioned."""
+        if current_user.role == "super_admin":
+            prov_query: dict = {}
+            serv_query: dict = {}
+        elif current_user.organization_id:
+            prov_query = {"organization_id": current_user.organization_id}
+            serv_query = {"organization_id": current_user.organization_id}
+        else:
+            prov_query = {"recruiter_id": current_user.id}
+            serv_query = {"recruiter_id": current_user.id}
+        provisioning = await database.it_provisioning_requests.find(prov_query).to_list(length=500)
+        service = await database.it_service_requests.find(serv_query).to_list(length=300)
 
         by_email: dict[str, dict] = {}
 

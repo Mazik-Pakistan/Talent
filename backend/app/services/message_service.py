@@ -18,6 +18,7 @@ from app.core.database import database
 from app.core.rbac import CurrentUser
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
+from app.services.organization_service import recruiter_can_access
 
 
 def _now() -> datetime:
@@ -152,7 +153,13 @@ class MessageService:
     async def list_threads_for_recruiter(self, user: CurrentUser) -> dict:
         query: dict = {}
         if user.role != "super_admin":
-            query["recruiter_id"] = user.id
+            if user.organization_id:
+                query["$or"] = [
+                    {"recruiter_id": user.id},
+                    {"organization_id": user.organization_id},
+                ]
+            else:
+                query["recruiter_id"] = user.id
         docs = await database.hr_threads.find(query).sort("updated_at", -1).to_list(length=200)
         return {"threads": [self._public_thread(d, include_messages=False) for d in docs]}
 
@@ -221,6 +228,7 @@ class MessageService:
                 "employee_email": employee.get("email") or user.email,
                 "recruiter_id": recruiter_id,
                 "recruiter_name": recruiter_name,
+                "organization_id": employee.get("organization_id"),
                 "subject": (subject or "").strip() or "Message to HR",
                 "status": "open",
                 "messages": [msg],
@@ -309,6 +317,7 @@ class MessageService:
                 "candidate_email": candidate.get("email") or user.email,
                 "recruiter_id": recruiter_id,
                 "recruiter_name": recruiter_name,
+                "organization_id": candidate.get("organization_id"),
                 "subject": (subject or "").strip() or "Message to HR",
                 "status": "open",
                 "messages": [msg],
@@ -412,7 +421,7 @@ class MessageService:
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found.")
         if user.role != "super_admin":
-            if employee.get("recruiter_id") != user.id:
+            if not recruiter_can_access(user, employee):
                 raise HTTPException(status_code=403, detail="Employee is not assigned to you.")
 
         employee_user_id = employee.get("user_id")
@@ -446,6 +455,7 @@ class MessageService:
             "employee_email": employee.get("email"),
             "recruiter_id": user.id,
             "recruiter_name": user.full_name or "HR",
+            "organization_id": employee.get("organization_id"),
             "subject": (subject or "").strip() or "Message from HR",
             "status": "open",
             "messages": [msg],
@@ -494,8 +504,12 @@ class MessageService:
 
     def _assert_access(self, user: CurrentUser, thread: dict) -> None:
         if user.role in ("recruiter", "super_admin"):
-            if user.role != "super_admin" and thread.get("recruiter_id") != user.id:
-                raise HTTPException(status_code=403, detail="Not allowed.")
+            if user.role != "super_admin":
+                if user.organization_id:
+                    if thread.get("organization_id") != user.organization_id and thread.get("recruiter_id") != user.id:
+                        raise HTTPException(status_code=403, detail="Not allowed.")
+                elif thread.get("recruiter_id") != user.id:
+                    raise HTTPException(status_code=403, detail="Not allowed.")
             return
         if user.role == "employee":
             if thread.get("employee_user_id") != user.id:

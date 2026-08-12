@@ -180,6 +180,7 @@ class BulkInviteService:
 
             history = await lookup_history_by_email(
                 row["email"],
+                organization_id=None if current_user.role == "super_admin" else current_user.organization_id,
                 recruiter_id=None if current_user.role == "super_admin" else current_user.id,
                 is_super_admin=current_user.role == "super_admin",
             )

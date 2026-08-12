@@ -75,6 +75,7 @@ class InvitationService:
 
         history = await lookup_history_by_email(
             email,
+            organization_id=None if actor.role == "super_admin" else actor.organization_id,
             recruiter_id=None if actor.role == "super_admin" else actor.id,
             is_super_admin=actor.role == "super_admin",
         )
