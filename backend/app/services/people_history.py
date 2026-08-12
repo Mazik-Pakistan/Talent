@@ -187,7 +187,7 @@ def public_history_match(*, record_type: str, doc: dict) -> dict:
     }
 
 
-async def lookup_history_by_email(email: str, *, recruiter_id: str | None = None, is_super_admin: bool = False) -> dict:
+async def lookup_history_by_email(email: str, *, organization_id: str | None = None, recruiter_id: str | None = None, is_super_admin: bool = False) -> dict:
     """Return prior candidate cycles and employee tenures for an email.
 
     Rules:
@@ -217,8 +217,11 @@ async def lookup_history_by_email(email: str, *, recruiter_id: str | None = None
     active_user = await find_active_user(email)
 
     scope: dict = {}
-    if recruiter_id and not is_super_admin:
-        scope["recruiter_id"] = recruiter_id
+    if not is_super_admin:
+        if organization_id:
+            scope["organization_id"] = organization_id
+        elif recruiter_id:
+            scope["recruiter_id"] = recruiter_id
 
     # Declined / expired / withdrawn — true historical candidates.
     candidate_query = {
@@ -262,7 +265,7 @@ async def lookup_history_by_email(email: str, *, recruiter_id: str | None = None
     invite_query = {
         "email": email,
         "status": {"$in": ["expired", "used"]},
-        **({"recruiter_id": recruiter_id} if recruiter_id and not is_super_admin else {}),
+        **scope,
     }
     invitations = await database.invitations.find(invite_query).sort("created_at", -1).to_list(length=20)
 

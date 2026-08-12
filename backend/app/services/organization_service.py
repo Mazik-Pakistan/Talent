@@ -374,14 +374,34 @@ def recruiter_scope(user: CurrentUser) -> dict:
     """Mongo query fragment that scopes recruiter data within their organization.
 
     - super_admin: sees everything (empty filter)
-    - recruiter: only rows within the same organization
+    - recruiter bound to an organization: only rows of that organization
+    - recruiter without an organization: only rows they personally created
     - other roles: no additional scoping (empty filter)
     """
     if user.role == "super_admin":
         return {}
-    if user.role == "recruiter" and user.organization_id:
-        return {"organization_id": user.organization_id}
+    if user.role == "recruiter":
+        if user.organization_id:
+            return {"organization_id": user.organization_id}
+        return {"recruiter_id": user.id}
     return {}
+
+
+def recruiter_can_access(user: CurrentUser, record: dict) -> bool:
+    """Unified recruiter record access within their organization.
+
+    - super_admin: everything
+    - recruiter bound to an organization: any record of that organization
+    - recruiter without an organization: only records they personally created
+    - other roles: False
+    """
+    if user.role == "super_admin":
+        return True
+    if user.role == "recruiter":
+        if user.organization_id:
+            return record.get("organization_id") == user.organization_id
+        return record.get("recruiter_id") == user.id
+    return False
 
 
 def make_invitation_token() -> str:

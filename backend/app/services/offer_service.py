@@ -26,7 +26,7 @@ from app.schemas.offer import (
 )
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
-from app.services.organization_service import recruiter_scope
+from app.services.organization_service import recruiter_can_access, recruiter_scope
 
 logger = logging.getLogger(__name__)
 
@@ -1180,7 +1180,7 @@ class OfferService:
     def _assert_recruiter_can_access(current_user: CurrentUser, record: dict, detail: str = "Not authorized.") -> None:
         if current_user.role == "super_admin":
             return
-        if record.get("recruiter_id") != current_user.id:
+        if not recruiter_can_access(current_user, record):
             raise HTTPException(status_code=403, detail=detail)
 
     def _assert_owner(self, current_user: CurrentUser, offer: dict) -> None:

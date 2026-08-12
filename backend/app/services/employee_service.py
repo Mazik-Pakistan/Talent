@@ -21,7 +21,7 @@ from app.schemas.auth import names_match
 from app.services.candidate_service import CandidateService, onboarding_missing_keys
 from app.services.dashboard_service import DashboardService, create_notification
 from app.services.email_service import email_service
-from app.services.organization_service import recruiter_scope
+from app.services.organization_service import recruiter_can_access, recruiter_scope
 from app.services.people_history import (
     ACTIVE_EMPLOYEE_STATUSES,
     HISTORICAL_EMPLOYEE_STATUSES,
@@ -117,10 +117,9 @@ class EmployeeService:
             return
         if current_user.role == "recruiter":
             # Recruiters can access any record within their organization
-            record_org = record.get("organization_id")
-            if current_user.organization_id and record_org == current_user.organization_id:
-                return
-            raise HTTPException(status_code=403, detail="You can only view employees within your organization.")
+            if not recruiter_can_access(current_user, record):
+                raise HTTPException(status_code=403, detail="You can only view employees within your organization.")
+            return
         if record.get("recruiter_id") != current_user.id:
             raise HTTPException(status_code=403, detail="Not allowed.")
 
@@ -993,6 +992,7 @@ class EmployeeService:
         )
         payload["person_history"] = await lookup_history_by_email(
             employee.get("email") or "",
+            organization_id=None if current_user.role == "super_admin" else current_user.organization_id,
             recruiter_id=None if current_user.role == "super_admin" else current_user.id,
             is_super_admin=current_user.role == "super_admin",
         )
@@ -1349,6 +1349,7 @@ class EmployeeService:
     async def lookup_person_history(self, current_user: CurrentUser, email: str) -> dict:
         return await lookup_history_by_email(
             email,
+            organization_id=None if current_user.role == "super_admin" else current_user.organization_id,
             recruiter_id=None if current_user.role == "super_admin" else current_user.id,
             is_super_admin=current_user.role == "super_admin",
         )
@@ -1493,6 +1494,7 @@ class EmployeeService:
         payload["current_offer"] = payload["offers"][0] if payload["offers"] else None
         history = await lookup_history_by_email(
             candidate.get("email") or "",
+            organization_id=None if current_user.role == "super_admin" else current_user.organization_id,
             recruiter_id=None if current_user.role == "super_admin" else current_user.id,
             is_super_admin=current_user.role == "super_admin",
         )

@@ -610,10 +610,69 @@
 .pathCourseMeta { font-size: 11.5px; color: var(--text-muted); }
 .pathCapstone .pathStepNum { background: var(--orange); }
 
-.aiGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-.aiCard { border: 1px solid var(--border); border-radius: 12px; padding: 18px; background: linear-gradient(180deg, #FBFDFE, #F6F9FC); }
-.aiReason { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
-.aiReasonLabel { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--cyan); margin-bottom: 3px; }
+.aiGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; align-items: stretch; }
+.aiCard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 280px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  background: linear-gradient(180deg, #FBFDFE, #F6F9FC);
+}
+.aiCardTop {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 28px;
+}
+.aiCardTitle {
+  margin-top: 10px;
+  min-height: 2.7em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.aiCardMeta {
+  margin-top: 8px;
+  min-height: 24px;
+  flex-wrap: nowrap;
+}
+.aiCardMeta .levelBadge,
+.aiMetaMuted {
+  flex-shrink: 0;
+}
+.aiMetaMuted {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.aiReason {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  min-height: 0;
+}
+.aiReasonLabel { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--cyan); margin-bottom: 4px; flex-shrink: 0; }
+.aiReasonText {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1;
+}
+.aiCardActions {
+  margin-top: 14px;
+  flex-shrink: 0;
+}
 
 .certRow { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 12px; background: #FBFDFE; margin-bottom: 12px; flex-wrap: wrap; }
 .certLeft { flex: 1; min-width: 220px; }
