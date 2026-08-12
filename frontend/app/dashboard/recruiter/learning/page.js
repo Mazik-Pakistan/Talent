@@ -907,12 +907,15 @@ function AssignTab({ initialCourse = null, initialSource = null, onConsumedIniti
     try {
       const result = await assignCourses(token, payload);
       const assignedCount = result.assigned?.length || 0;
-      const skippedCount = result.skipped?.length || 0;
       toast.success(
         `Assigned to ${assignedCount} employee(s)${result.due_date ? ` · due ${result.due_date}` : ""}.`
       );
       dispatchFrameworkInvalidated();
-      if (skippedCount) toast.warn(`${skippedCount} skipped (already assigned).`);
+      if (result.skipped?.length) {
+        for (const s of result.skipped) {
+          toast.warn(`${s.employee_name || s.employee_id}: ${s.reason || "Already assigned."}`);
+        }
+      }
       if (result.errors?.length) toast.warn(`${result.errors.length} could not be assigned.`);
       setSelectedIds([]);
       setNote("");

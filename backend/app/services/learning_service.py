@@ -472,7 +472,7 @@ class LearningService:
         employee = await self._get_employee(current_user)
         now = _now()
         assignment = await database.learning_assignments.find_one(
-            {"user_id": current_user.id, "course_uid": uid}
+            {"employee_id": employee.get("employee_id"), "course_uid": uid}
         )
         # Career-path / org courses may not be in the live catalog — still allow open via stored URL.
         if not item:
@@ -3520,11 +3520,52 @@ class LearningService:
                 }
             )
             if existing:
+                existing_status = (existing.get("status") or "").lower()
+                if existing_status == "completed":
+                    reason = "Employee has already completed this course."
+                elif existing_status == "in_progress":
+                    reason = "Course is already in progress for this employee."
+                else:
+                    reason = "Course is already assigned to this employee."
+
+                if len(target_ids) == 1:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=reason,
+                    )
+
                 skipped.append(
                     {
                         "employee_id": employee_id,
                         "employee_name": employee.get("full_name"),
-                        "reason": "Course already assigned to this employee.",
+                        "reason": reason,
+                    }
+                )
+                continue
+
+            enrollment = await database.learning_enrollments.find_one(
+                {"employee_id": employee_id, "course_uid": request.course_uid}
+            )
+            if enrollment:
+                enrollment_status = (enrollment.get("status") or "").lower()
+                if enrollment_status == "completed":
+                    reason = "Employee has already completed this course."
+                elif enrollment_status == "in_progress":
+                    reason = "Course is already in progress for this employee."
+                else:
+                    reason = "Employee has already enrolled in this course."
+
+                if len(target_ids) == 1:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=reason,
+                    )
+
+                skipped.append(
+                    {
+                        "employee_id": employee_id,
+                        "employee_name": employee.get("full_name"),
+                        "reason": reason,
                     }
                 )
                 continue
