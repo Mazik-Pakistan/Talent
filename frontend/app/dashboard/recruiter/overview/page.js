@@ -299,9 +299,11 @@ function RecruiterOverviewPageContent() {
           </div>
         </div>
         <div className={styles.sectionBody}>
-          <div className={styles.cols2}>
-            <div>
-              <h3 className={styles.sectionTitle} style={{ fontSize: 14, marginBottom: 10 }}>Pending offer review</h3>
+          <div className={styles.offerSplit}>
+            <div className={styles.offerGroup}>
+              <div className={styles.offerGroupHead}>
+                <h3 className={styles.offerHeading}>Pending offer review</h3>
+              </div>
               {pendingCandidates.length ? (
                 <ul className={styles.miniList}>
                   {pendingCandidates.map((candidate) => (
@@ -316,8 +318,10 @@ function RecruiterOverviewPageContent() {
                 </ul>
               ) : <p className={styles.emptySub}>No candidates currently need an offer step.</p>}
             </div>
-            <div>
-              <h3 className={styles.sectionTitle} style={{ fontSize: 14, marginBottom: 10 }}>Ready to activate</h3>
+            <div className={styles.offerGroup}>
+              <div className={styles.offerGroupHead}>
+                <h3 className={styles.offerHeading}>Ready to activate</h3>
+              </div>
               {readyCandidates.length ? (
                 <ul className={styles.miniList}>
                   {readyCandidates.map((candidate) => (

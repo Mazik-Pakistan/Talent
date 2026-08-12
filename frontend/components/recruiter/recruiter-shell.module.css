@@ -311,6 +311,29 @@
 
 .miniList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .miniListItem { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: #FBFDFE; flex-wrap: wrap; }
+.offerSplit {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 22px;
+  align-items: start;
+}
+.offerGroup { min-width: 0; }
+.offerGroupHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.offerHeading {
+  margin: 0;
+  padding: 0;
+  font-size: 13.5px;
+  font-weight: 750;
+  color: var(--navy);
+  font-family: 'Sora', system-ui, sans-serif;
+  letter-spacing: -0.1px;
+  line-height: 1.3;
+}
 .documentList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .documentRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: #FBFDFE; flex-wrap: wrap; }
 .taskList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
