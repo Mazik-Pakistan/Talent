@@ -192,6 +192,28 @@ function courseBadgeClass(course, fallbackSource) {
   return sourceBadgeClass(source);
 }
 
+// Normalizes completion dates coming from different sources/providers into a
+// consistent "YYYY-MM-DD" string. Handles full ISO timestamps
+// ("2026-08-10T00:00:00"), plain dates ("2026-08-11"), and Date objects.
+function formatCompletionDate(value) {
+  if (!value) return "";
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "";
+    return value.toISOString().split("T")[0];
+  }
+  const str = String(value).trim();
+  if (!str) return "";
+  // Already date-only or has a time component — either way, the date part
+  // is always the first 10 chars once split on "T" or a trailing space.
+  const datePart = str.split("T")[0].split(" ")[0];
+  // Guard against unexpected formats (e.g. "10/08/2026") by trying to parse
+  // and re-serialize; fall back to the raw date part if parsing fails.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+  const parsed = new Date(str);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().split("T")[0];
+  return datePart;
+}
+
 function LearningPageContent() {
    const searchParams = useSearchParams();
    const tabBarRef = useRef(null);
@@ -1720,7 +1742,7 @@ function AssignmentsTab() {
                                                 </span>
                                                 {a.due_date ? (
                                                   <span className={styles.metaChip}>
-                                                    <Calendar aria-hidden="true" />Due {a.due_date}
+                                                    <Calendar aria-hidden="true" />Due {formatCompletionDate(a.due_date)}
                                                   </span>
                                                 ) : null}
                                                 {a.course_type ? (
@@ -1849,7 +1871,7 @@ function CertificatesTab({ selectedCertificateId = null }) {
               <div className={styles.listTitle}>{c.course_title}</div>
               <div className={styles.listMeta}>
                 <span className={styles.metaChip}><Users aria-hidden="true" />{c.employee_name} ({c.employee_id})</span>
-                {c.completion_date ? <span className={styles.metaChip}><Calendar aria-hidden="true" />Completed {c.completion_date}</span> : null}
+                {c.completion_date ? <span className={styles.metaChip}><Calendar aria-hidden="true" />Completed {formatCompletionDate(c.completion_date)}</span> : null}
                 {c.learning_hours ? <span className={styles.metaChip}><Clock aria-hidden="true" />{c.learning_hours} hrs</span> : null}
               </div>
             </div>

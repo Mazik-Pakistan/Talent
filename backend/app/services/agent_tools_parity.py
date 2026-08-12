@@ -803,6 +803,12 @@ async def _tool_update_certificate(user: CurrentUser, args: dict) -> ToolResult:
     certificate_id = (args.get("certificate_id") or "").strip()
     if not certificate_id:
         return ToolResult(ok=False, error="certificate_id is required.")
+    completion_date = _parse_date(args.get("completion_date"))
+    learning_hours = args.get("learning_hours")
+    if completion_date is None:
+        return ToolResult(ok=False, error="completion_date is required.")
+    if learning_hours is None:
+        return ToolResult(ok=False, error="learning_hours is required.")
     try:
         return ToolResult(
             ok=True,
@@ -810,8 +816,8 @@ async def _tool_update_certificate(user: CurrentUser, args: dict) -> ToolResult:
                 user,
                 certificate_id,
                 course_title=args.get("course_title"),
-                completion_date=_parse_date(args.get("completion_date")),
-                learning_hours=args.get("learning_hours"),
+                completion_date=completion_date,
+                learning_hours=learning_hours,
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -3049,8 +3055,8 @@ EMPLOYEE_PARITY_TOOLS: list[Tool] = [
         parameters={
             "certificate_id": "required",
             "course_title": "optional",
-            "completion_date": "optional",
-            "learning_hours": "optional",
+            "completion_date": "required",
+            "learning_hours": "required",
         },
         handler=_tool_update_certificate,
         roles=("employee",),
