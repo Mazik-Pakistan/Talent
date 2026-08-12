@@ -48,7 +48,7 @@ from app.services import (
 )
 from app.services.managed_learning_service import MANAGED_SOURCE, managed_learning_service
 from app.services.dashboard_service import create_notification
-from app.services.organization_service import recruiter_scope
+from app.services.organization_service import recruiter_can_access, recruiter_scope
 
 
 def _iso(value: Any) -> Any:
@@ -80,9 +80,11 @@ class LearningService:
     async def _assert_recruiter_owns(self, current_user: CurrentUser, employee: dict) -> None:
         if current_user.role == "super_admin":
             return
-        owner = str(employee.get("recruiter_id") or "")
-        if owner and owner != str(current_user.id):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
+        if current_user.role == "recruiter":
+            if not recruiter_can_access(current_user, employee):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
+            return
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
 
     async def _get_resume_doc(self, user_id: str) -> dict | None:
         return await database.documents.find_one(
@@ -3531,6 +3533,7 @@ class LearningService:
                 "employee_id": employee_id,
                 "user_id": employee.get("user_id"),
                 "employee_name": employee.get("full_name"),
+                "organization_id": employee.get("organization_id"),
                 "department": employee.get("department"),
                 "job_title": employee.get("job_title"),
                 "course_uid": request.course_uid,
@@ -3700,8 +3703,19 @@ class LearningService:
     ) -> dict:
         query: dict[str, Any] = {}
         if current_user.role != "super_admin":
-            query["assigned_by_id"] = current_user.id
+            scope = recruiter_scope(current_user)
+            visible_employees = await database.employees.find(
+                {"status": "active", **scope},
+                {"employee_id": 1},
+            ).to_list(length=5000)
+            employee_ids = [doc.get("employee_id") for doc in visible_employees if doc.get("employee_id")]
+            if not employee_ids:
+                return {"assignments": []}
+            query["employee_id"] = {"$in": employee_ids}
         if employee_id:
+            if isinstance(query.get("employee_id"), dict) and "$in" in query["employee_id"]:
+                if employee_id not in set(query["employee_id"]["$in"]):
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed.")
             query["employee_id"] = employee_id
         if status_filter:
             query["status"] = status_filter

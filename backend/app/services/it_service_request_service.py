@@ -132,10 +132,8 @@ class ItServiceRequestService:
     async def list_recruiter(self, current_user: CurrentUser, status_filter: str | None = None) -> dict:
         if current_user.role == "super_admin":
             query: dict = {}
-        elif current_user.organization_id:
-            query = {"organization_id": current_user.organization_id}
         else:
-            query = {"recruiter_id": current_user.id}
+            query = {"organization_id": current_user.organization_id}
         if status_filter:
             query["status"] = status_filter
         docs = await database.it_service_requests.find(query).sort("created_at", -1).to_list(length=200)
@@ -452,12 +450,9 @@ class ItServiceRequestService:
         if current_user.role == "super_admin":
             prov_query: dict = {}
             serv_query: dict = {}
-        elif current_user.organization_id:
+        else:
             prov_query = {"organization_id": current_user.organization_id}
             serv_query = {"organization_id": current_user.organization_id}
-        else:
-            prov_query = {"recruiter_id": current_user.id}
-            serv_query = {"recruiter_id": current_user.id}
         provisioning = await database.it_provisioning_requests.find(prov_query).to_list(length=500)
         service = await database.it_service_requests.find(serv_query).to_list(length=300)
 

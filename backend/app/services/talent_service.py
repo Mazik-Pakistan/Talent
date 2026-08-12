@@ -29,6 +29,7 @@ from fastapi import HTTPException, status
 
 from app.core.database import database
 from app.core.rbac import CurrentUser
+from app.services.organization_service import recruiter_can_access, recruiter_scope
 from app.services import role_matching_service
 
 
@@ -81,23 +82,14 @@ class TalentService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found.")
         return employee
 
-    def _recruiter_id(self, employee: dict) -> str | None:
-        rid = employee.get("recruiter_id")
-        return str(rid) if rid else None
-
-    def _employee_in_talent_scope(self, current_user: CurrentUser, employee: dict) -> bool:
-        if current_user.role == "super_admin":
-            return True
-        employee_org = employee.get("organization_id")
-        if current_user.organization_id and employee_org:
-            return employee_org == current_user.organization_id
-        return self._recruiter_id(employee) == current_user.id
-
     async def _assert_recruiter_owns(self, current_user: CurrentUser, employee: dict) -> None:
         if current_user.role == "super_admin":
             return
-        if not self._employee_in_talent_scope(current_user, employee):
+        if current_user.role == "recruiter" and recruiter_can_access(current_user, employee):
+            return
+        if current_user.role != "recruiter":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this employee.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this employee.")
 
     def _talent_employee_query(
         self,
@@ -109,11 +101,9 @@ class TalentService:
         query: dict[str, Any] = {
             "status": "active" if active_only else {"$in": ["active", "inactive", "on_leave"]},
         }
-        if current_user.role != "super_admin":
-            if current_user.organization_id:
-                query["organization_id"] = current_user.organization_id
-            else:
-                query["recruiter_id"] = current_user.id
+        scope = recruiter_scope(current_user)
+        if scope:
+            query.update(scope)
         if department:
             query["department"] = department
         return query

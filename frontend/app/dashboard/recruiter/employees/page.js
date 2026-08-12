@@ -629,11 +629,11 @@ function RecruiterEmployeesPageContent() {
               {total === 0 && !filters.q && !filters.department && !filters.job_title && !filters.employee_id ? (
                 <>
                   <div style={{ fontWeight: 650, color: "var(--navy)", fontSize: 14 }}>
-                    No employees assigned to you yet
+                    No employees in your organization yet
                   </div>
                   <div style={{ marginTop: 4, maxWidth: 360 }}>
-                    Employees created from candidates you invite will appear here.
-                    Use the Invite page to start onboarding new team members.
+                    Employees in your organization will appear here once they are active.
+                    Use Invite to onboard new team members into the shared directory.
                   </div>
                 </>
               ) : (
