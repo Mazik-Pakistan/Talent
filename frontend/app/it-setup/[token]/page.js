@@ -272,7 +272,7 @@ const SHARED_STYLES = `
     border: none;
     border-radius: 10px;
     padding: 14px 18px;
-    background: linear-gradient(135deg, #1e3a5f 0%, #2d6cdf 100%);
+    background: linear-gradient(135deg, var(--blue, #38a2ff), var(--blue-strong, #1f7fe0) 60%, var(--navy-2, #153d5e));
     color: #fff;
     font-size: 15px;
     font-weight: 700;
