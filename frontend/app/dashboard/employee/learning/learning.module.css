@@ -1142,7 +1142,27 @@
 .requirementType { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint); min-width: 70px; }
 .requirementTitle { flex: 1; font-size: 12.5px; font-weight: 600; color: var(--navy); }
 .requirementMandatory { font-size: 10px; font-weight: 700; color: var(--red); background: var(--red-light, #FDEcec); padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .3px; }
-.requirementRowDone { opacity: .78; background: #f7fbf8; }
+.requirementRowNext {
+  border-color: var(--blue, #38a2ff);
+  box-shadow: 0 0 0 1px rgba(56, 162, 255, 0.22);
+  background: #f5fbff;
+}
+.textLink {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--blue-strong, #1f7fe0);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.readyHero .btnPrimary,
+.readyHero button {
+  flex-shrink: 0;
+  align-self: center;
+}
 .requirementStatusLabel {
   font-size: 10px;
   font-weight: 800;
