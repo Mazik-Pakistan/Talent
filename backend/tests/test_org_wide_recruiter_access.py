@@ -60,6 +60,9 @@ def _matches(doc: dict, query: dict) -> bool:
             allowed = {str(item) for item in value["$in"]}
             if str(actual) not in allowed:
                 return False
+        elif isinstance(value, dict) and "$exists" in value:
+            if (key in doc) != bool(value["$exists"]):
+                return False
         elif str(actual) != str(value):
             return False
     return True

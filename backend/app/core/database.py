@@ -184,6 +184,7 @@ async def create_database_indexes() -> None:
     await _ensure_index(database.notifications, [("recipient_id", 1), ("read", 1)])
 
     await _ensure_index(database.announcements, [("created_at", -1)])
+    await _ensure_index(database.announcements, [("organization_id", 1), ("created_at", -1)])
 
     await _ensure_index(database.offer_letters, "candidate_id")
     await _ensure_index(database.offer_letters, [("status", 1), ("recruiter_id", 1)])

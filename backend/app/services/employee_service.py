@@ -998,6 +998,7 @@ class EmployeeService:
             organization_id=None if current_user.role == "super_admin" else current_user.organization_id,
             recruiter_id=None if current_user.role == "super_admin" else current_user.id,
             is_super_admin=current_user.role == "super_admin",
+            people_scope=await recruiter_people_scope(current_user),
         )
         return {"employee": payload}
 
@@ -1355,6 +1356,7 @@ class EmployeeService:
             organization_id=None if current_user.role == "super_admin" else current_user.organization_id,
             recruiter_id=None if current_user.role == "super_admin" else current_user.id,
             is_super_admin=current_user.role == "super_admin",
+            people_scope=await recruiter_people_scope(current_user),
         )
 
     async def assign_role(self, current_user: CurrentUser, employee_id: str, request) -> dict:
@@ -1500,6 +1502,7 @@ class EmployeeService:
             organization_id=None if current_user.role == "super_admin" else current_user.organization_id,
             recruiter_id=None if current_user.role == "super_admin" else current_user.id,
             is_super_admin=current_user.role == "super_admin",
+            people_scope=await recruiter_people_scope(current_user),
         )
         payload["person_history"] = history
         return {"candidate": payload}

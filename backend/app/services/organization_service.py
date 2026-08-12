@@ -449,7 +449,51 @@ async def recruiter_people_scope(user: CurrentUser) -> dict:
         recruiter_ids.append(str(user.id))
     if not recruiter_ids:
         return org_clause
-    return {"$or": [org_clause, {"recruiter_id": {"$in": recruiter_ids}}]}
+    legacy_owner_clause = {
+        "$and": [
+            {
+                "$or": [
+                    {"organization_id": {"$exists": False}},
+                    {"organization_id": None},
+                    {"organization_id": ""},
+                ]
+            },
+            {"recruiter_id": {"$in": recruiter_ids}},
+        ]
+    }
+    return {"$or": [org_clause, legacy_owner_clause]}
+
+
+async def organization_record_scope(
+    organization_id, *, legacy_owner_field: str | None = None
+) -> dict:
+    """Scope tenant records, optionally including legacy rows owned by org recruiters."""
+    org_clause = _organization_id_clause(organization_id)
+    if not org_clause:
+        return {}
+    if not legacy_owner_field:
+        return org_clause
+    recruiter_ids = await _recruiter_user_ids_for_org(organization_id)
+    if not recruiter_ids:
+        return org_clause
+    legacy_owner_clause = {
+        "$and": [
+            {
+                "$or": [
+                    {"organization_id": {"$exists": False}},
+                    {"organization_id": None},
+                    {"organization_id": ""},
+                ]
+            },
+            {legacy_owner_field: {"$in": recruiter_ids}},
+        ]
+    }
+    return {
+        "$or": [
+            org_clause,
+            legacy_owner_clause,
+        ]
+    }
 
 
 def recruiter_can_access(user: CurrentUser, record: dict) -> bool:
@@ -478,6 +522,8 @@ async def recruiter_can_access_record(user: CurrentUser, record: dict) -> bool:
     if recruiter_can_access(user, record):
         return True
     if user.role != "recruiter" or not user.organization_id:
+        return False
+    if _org_id_str(record.get("organization_id")):
         return False
     owner_id = _org_id_str(record.get("recruiter_id"))
     if not owner_id:

@@ -11,6 +11,7 @@ from app.schemas.invitation import CandidateRegisterRequest, OnboardingSaveReque
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
 from app.services.invitation_service import InvitationService
+from app.services.organization_service import organization_record_scope
 from app.services import storage_service
 
 # ------------------------------------------------------------------------
@@ -862,6 +863,7 @@ class CandidateService:
         onboarding = candidate.get("onboarding") or {}
 
         recruiter_contact = None
+        recruiter = None
         recruiter_id = candidate.get("recruiter_id")
         if recruiter_id:
             recruiter = await database.recruiters.find_one(
@@ -897,6 +899,20 @@ class CandidateService:
         visibility_filter = _announcement_visibility_filter(visibility_cutoff)
         if visibility_filter:
             announcement_query["$and"].append(visibility_filter)
+        organization_id = (
+            candidate.get("organization_id")
+            or current_user.organization_id
+            or (recruiter or {}).get("organization_id")
+        )
+        if organization_id:
+            tenant_scope = await organization_record_scope(
+                organization_id, legacy_owner_field="created_by"
+            )
+        elif recruiter_id:
+            tenant_scope = {"created_by": recruiter_id}
+        else:
+            tenant_scope = {"_id": {"$exists": False}}
+        announcement_query["$and"].insert(0, tenant_scope)
         announcements = (
             await database.announcements.find(
                 announcement_query

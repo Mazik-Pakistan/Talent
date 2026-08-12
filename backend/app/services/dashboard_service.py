@@ -14,7 +14,10 @@ from app.schemas.dashboard import (
     UpdateRecruiterProfileRequest,
 )
 from app.services.email_service import email_service
-from app.services.organization_service import recruiter_people_scope
+from app.services.organization_service import (
+    organization_record_scope,
+    recruiter_people_scope,
+)
 
 UPCOMING_JOINING_WINDOW_DAYS = 30
 RECENT_ACTIVITY_LIMIT_DEFAULT = 20
@@ -486,6 +489,32 @@ class DashboardService:
             "updated_at": _iso(entry.get("updated_at")),
         }
 
+    async def _announcement_tenant_scope(
+        self, current_user: CurrentUser, person: dict | None = None
+    ) -> dict:
+        """Return announcements belonging to the requester's organization."""
+        if current_user.role == "super_admin":
+            return {}
+        if current_user.role == "recruiter" and not current_user.organization_id:
+            return {"created_by": current_user.id}
+
+        person = person or {}
+        organization_id = person.get("organization_id") or current_user.organization_id
+        owner_id = person.get("recruiter_id")
+        if not organization_id and owner_id:
+            recruiter = await database.recruiters.find_one(
+                {"$or": [{"user_id": owner_id}, {"supabase_user_id": owner_id}]},
+                {"organization_id": 1},
+            )
+            organization_id = (recruiter or {}).get("organization_id")
+        if organization_id:
+            return await organization_record_scope(
+                organization_id, legacy_owner_field="created_by"
+            )
+        if owner_id:
+            return {"created_by": owner_id}
+        return {"_id": {"$exists": False}}
+
     async def list_announcements(
         self,
         current_user: CurrentUser,
@@ -495,11 +524,13 @@ class DashboardService:
         limit = max(1, min(limit, 50))
         query: dict = {}
         role = current_user.role
+        person: dict = {}
         if role == "candidate":
             candidate = await database.candidates.find_one(
                 {"$or": [{"user_id": current_user.id}, {"email": current_user.email}]},
-                {"user_id": 1, "created_at": 1},
+                {"user_id": 1, "created_at": 1, "organization_id": 1, "recruiter_id": 1},
             ) or {}
+            person = candidate
             candidate_id = candidate.get("user_id") or current_user.id
             visibility_cutoff = candidate.get("created_at") or await self._user_created_at(candidate_id)
             visibility_filter = _announcement_visibility_filter(visibility_cutoff)
@@ -516,8 +547,9 @@ class DashboardService:
         elif role == "employee":
             employee = await database.employees.find_one(
                 {"$or": [{"user_id": current_user.id}, {"email": current_user.email}, {"company_email": current_user.email}]},
-                {"department": 1, "job_title": 1, "created_at": 1},
+                {"department": 1, "job_title": 1, "created_at": 1, "organization_id": 1, "recruiter_id": 1},
             ) or {}
+            person = employee
             recipient_filters = [{"target_employee_ids": current_user.id}]
             if employee.get("department"):
                 recipient_filters.append({"target_departments": employee["department"]})
@@ -545,6 +577,9 @@ class DashboardService:
         elif audience in ("candidates", "employees", "both"):
             query["audience"] = audience
 
+        tenant_scope = await self._announcement_tenant_scope(current_user, person)
+        if tenant_scope:
+            query = {"$and": [tenant_scope, query]} if query else tenant_scope
         cursor = database.announcements.find(query).sort("created_at", -1).limit(limit)
         entries = await cursor.to_list(length=limit)
         return {"announcements": [self._public_announcement(entry) for entry in entries]}
@@ -561,6 +596,7 @@ class DashboardService:
             "target_candidate_ids": request.target_candidate_ids,
             "created_by": current_user.id,
             "created_by_name": current_user.full_name,
+            "organization_id": current_user.organization_id,
             "created_at": now,
             "updated_at": now,
         }
@@ -831,6 +867,7 @@ class DashboardService:
             "target_departments": [], "target_designations": [], "target_employee_ids": [],
             "target_candidate_ids": [candidate_id], "reminder_type": "candidate_onboarding",
             "created_by": current_user.id, "created_by_name": current_user.full_name,
+            "organization_id": current_user.organization_id,
             "created_at": now, "updated_at": now,
         }
         result = await database.announcements.insert_one(document)
