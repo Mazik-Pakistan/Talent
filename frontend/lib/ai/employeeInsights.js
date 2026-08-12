@@ -133,8 +133,8 @@ const LEARNING_SECTION_HELP = {
     fields: ["Add skill", "Proficiency level", "Skill categories"],
   },
   career: {
-    message: "Career Path compares your skills to target roles and suggests the shortest learning path forward.",
-    fields: ["Career goal", "Role matches", "Skill gaps"],
+    message: "Career Path shows your role ladder and one promotion checklist — complete those items to become eligible for the next role.",
+    fields: ["Role path", "Promotion checklist", "Optional extras"],
   },
   certificates: {
     message: "Upload certificates here so they appear on your talent journey and profile.",

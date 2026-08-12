@@ -152,10 +152,10 @@ function EmployeeLearningPageInner() {
         }
         if (tab === "skills") {
           return {
-            message: "Your skill profile drives recommendations. I can open Career Path next so you can see role matches and gaps.",
+            message: "Your skill profile drives recommendations. I can open Career Path so you can work through your promotion checklist.",
             applyLabel: "Open Career Path",
             busyMessage: "Opening Career Path…",
-            doneMessage: "✓ Career Path is open — review matches and gaps.",
+            doneMessage: "✓ Career Path is open — work the promotion checklist for your next role.",
             meta: { tab: "career" },
           };
         }
@@ -1607,6 +1607,7 @@ function CareerTab() {
   const [designationReadiness, setDesignationReadiness] = useState(null);
   const [designationLoading, setDesignationLoading] = useState(false);
   const [showExplore, setShowExplore] = useState(false);
+  const [showRemaining, setShowRemaining] = useState(false);
   const [bootLoading, setBootLoading] = useState(true);
 
   function loadGapAndPath(role, refresh = true) {
@@ -1830,6 +1831,97 @@ function CareerTab() {
           ? "AI + course catalog"
           : null;
 
+  const checklistItems = (() => {
+    const reqs = [...(designationReadiness?.requirements || [])];
+    const alreadyListed = (uid, title) =>
+      reqs.some(
+        (r) =>
+          (uid && r.course_uid && r.course_uid === uid) ||
+          (title && r.title && r.title.toLowerCase() === String(title).toLowerCase())
+      );
+
+    for (const step of path?.path || []) {
+      const uid = step.course?.uid;
+      const title = step.course?.title || step.skill;
+      if (!title || alreadyListed(uid, title)) continue;
+      reqs.push({
+        type: step.kind === "certification" ? "certification" : "course",
+        title,
+        course_uid: uid,
+        mandatory: true,
+        status: step.completed ? "completed" : "not_started",
+      });
+    }
+
+    if (!reqs.some((r) => r.type === "skill")) {
+      for (const s of gap?.matched_skills || []) {
+        reqs.push({ type: "skill", title: s, mandatory: true, status: "acquired" });
+      }
+      for (const g of gap?.skill_gaps || (gap?.missing_skills || []).map((s) => ({ skill: s })) || []) {
+        const title = g.skill || g;
+        if (!title) continue;
+        reqs.push({ type: "skill", title, mandatory: true, status: "missing" });
+      }
+    }
+    if (!reqs.some((r) => r.type === "certification")) {
+      for (const c of gap?.missing_certifications || []) {
+        const title = typeof c === "string" ? c : c.title || c.name;
+        if (!title) continue;
+        reqs.push({ type: "certification", title, mandatory: true, status: "missing" });
+      }
+    }
+    return reqs;
+  })();
+
+  const pathByKey = (() => {
+    const map = new Map();
+    for (const step of path?.path || []) {
+      const uid = step.course?.uid;
+      const title = (step.course?.title || "").toLowerCase();
+      if (uid) map.set(uid, step);
+      if (title) map.set(title, step);
+    }
+    return map;
+  })();
+
+  function findPathStep(req) {
+    if (req.course_uid && pathByKey.has(req.course_uid)) return pathByKey.get(req.course_uid);
+    const title = (req.title || "").toLowerCase();
+    if (title && pathByKey.has(title)) return pathByKey.get(title);
+    return null;
+  }
+
+  function requirementStatusLabel(status) {
+    if (["acquired", "verified", "completed"].includes(status)) return "Done";
+    if (status === "certificate_pending") return "Cert pending";
+    if (status === "in_progress") return "In progress";
+    if (status === "assigned") return "Assigned";
+    return "Incomplete";
+  }
+
+  function requirementStatusKind(status) {
+    if (["acquired", "verified", "completed"].includes(status)) return "done";
+    if (["certificate_pending", "in_progress", "assigned"].includes(status)) return "pending";
+    return "incomplete";
+  }
+
+  const doneStatuses = new Set(["acquired", "verified", "completed"]);
+  const doneCount = checklistItems.filter((r) => doneStatuses.has(r.status)).length;
+  const visibleChecklist = showRemaining
+    ? checklistItems.filter((r) => !doneStatuses.has(r.status))
+    : checklistItems;
+  const readinessPct =
+    designationReadiness?.readiness_percent ??
+    gap?.readiness_percentage ??
+    path?.progress_percent ??
+    0;
+  const checklistKeys = new Set(
+    checklistItems.flatMap((i) => [i.course_uid, (i.title || "").toLowerCase()].filter(Boolean))
+  );
+  const extraRecs = (recs?.recommendations || []).filter(
+    (c) => !checklistKeys.has(c.uid) && !checklistKeys.has((c.title || "").toLowerCase())
+  );
+
   return (
     <>
       <div className={dashStyles.section}>
@@ -1840,10 +1932,10 @@ function CareerTab() {
               <div className={dashStyles.sectionTitle}>Your role path</div>
               <p className={dashStyles.sectionDesc}>
                 {currentRole && nextRole && currentRole.toLowerCase() !== nextRole.toLowerCase()
-                  ? `From ${currentRole} toward ${nextRole} — from Organization Setup for your job title, not other roles.`
+                  ? `${currentRole} → ${nextRole}`
                   : currentRole
-                    ? `Analysis for your role: ${currentRole}.`
-                    : "Loaded from your job title in Organization Setup."}
+                    ? `Your role: ${currentRole}`
+                    : "From your job title in Organization Setup."}
               </p>
             </div>
           </div>
@@ -1877,18 +1969,6 @@ function CareerTab() {
                         )}
                       </div>
                       {rung.description && <div className={styles.ladderRungMeta}>{rung.description}</div>}
-                      {(rung.missing_skills?.length > 0 || rung.missing_certifications?.length > 0) && (
-                        <div className={styles.ladderRungGaps}>
-                          {(rung.missing_skills || []).slice(0, 6).map((s) => (
-                            <span key={s} className={styles.missingSkillTag}>{s}</span>
-                          ))}
-                          {(rung.missing_certifications || []).slice(0, 4).map((c) => (
-                            <span key={typeof c === "string" ? c : c.title || c.name} className={styles.missingSkillTag}>
-                              {typeof c === "string" ? c : c.title || c.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
                     </div>
                     <div className={styles.ladderRungProgress}>
                       <div className={styles.ladderRungPct}>{Math.round(rung.progress_percentage ?? 0)}%</div>
@@ -1902,92 +1982,37 @@ function CareerTab() {
         </div>
       </div>
 
-      {savedGoal && (
-        <div className={dashStyles.section}>
-          <div className={dashStyles.sectionHead}>
-            <div className={dashStyles.sectionHeadLeft}>
-              <span className={`${dashStyles.bar} ${dashStyles.green}`} />
-              <div>
-                <div className={dashStyles.sectionTitle}>Promotion checklist</div>
-                <p className={dashStyles.sectionDesc}>
-                  Courses, skills, and certifications from your Career Roadmap toward {savedGoal}.
-                  These are designation requirements for eligibility — complete them in My Learning and get certificates verified.
-                </p>
+      <div className={dashStyles.section}>
+        <div className={dashStyles.sectionHead}>
+          <div className={dashStyles.sectionHeadLeft}>
+            <span className={`${dashStyles.bar} ${dashStyles.green}`} />
+            <div>
+              <div className={dashStyles.sectionTitle}>
+                {nextRole ? `Path to ${nextRole}` : "Promotion checklist"}
               </div>
+              <p className={dashStyles.sectionDesc}>
+                One checklist for promotion — courses, skills, and certifications from your Career Roadmap.
+                Start a course here, then finish it in My Learning.
+              </p>
             </div>
+          </div>
+          <div className={styles.checklistHeadActions}>
+            <button type="button" className={styles.smallBtn} onClick={() => setShowExplore((v) => !v)}>
+              {showExplore ? "Hide explore" : "Explore another role"}
+            </button>
             <button
               type="button"
               className={styles.smallBtn}
-              disabled={designationLoading}
-              onClick={() => loadDesignationReadiness(savedGoal)}
+              disabled={designationLoading || gapLoading || !savedGoal}
+              onClick={() => {
+                if (!savedGoal) return;
+                loadDesignationReadiness(savedGoal);
+                loadGapAndPath(savedGoal, true);
+              }}
             >
               Refresh
             </button>
           </div>
-          <div className={dashStyles.sectionBody}>
-            {designationLoading && <p className={styles.inlineNote}>Loading checklist…</p>}
-            {designationReadiness?.message && (designationReadiness.total_count ?? 0) === 0 && (
-              <p className={styles.inlineNote}>{designationReadiness.message}</p>
-            )}
-            {designationReadiness && (designationReadiness.total_count ?? 0) > 0 && (
-              <>
-                <div className={styles.readinessWrap} style={{ marginBottom: 16 }}>
-                  <ReadinessRing percentage={designationReadiness.readiness_percent ?? 0} />
-                  <div className={styles.readinessSummary}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: "var(--navy)", marginBottom: 4 }}>
-                      {designationReadiness.eligible ? (
-                        <span style={{ color: "var(--green)" }}>Eligible</span>
-                      ) : (
-                        <span style={{ color: "var(--red)" }}>Not eligible yet</span>
-                      )}
-                    </div>
-                    <div className={styles.inlineNote}>
-                      {designationReadiness.completed_count ?? 0} of {designationReadiness.total_count ?? 0} requirements completed · {designationReadiness.missing_count ?? 0} remaining
-                      {designationReadiness.source === "career_assignment" ? " · From your org career path" : ""}
-                    </div>
-                  </div>
-                </div>
-                <div className={styles.requirementsList}>
-                  {(designationReadiness.requirements || []).map((req, idx) => (
-                    <div key={idx} className={styles.requirementRow}>
-                      <span className={`${styles.requirementStatus} ${styles[req.status] || styles.not_started}`}>
-                        {req.status === "acquired" && "✓"}
-                        {req.status === "verified" && "✓"}
-                        {req.status === "completed" && "✓"}
-                        {req.status === "certificate_pending" && "◐"}
-                        {req.status === "in_progress" && "◐"}
-                        {req.status === "assigned" && "○"}
-                        {req.status === "missing" && "○"}
-                        {req.status === "not_started" && "○"}
-                      </span>
-                      <span className={styles.requirementType}>{req.type}</span>
-                      <span className={styles.requirementTitle}>{req.title}</span>
-                      {req.mandatory && <span className={styles.requirementMandatory}>Required</span>}
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className={dashStyles.section}>
-        <div className={dashStyles.sectionHead}>
-          <div className={dashStyles.sectionHeadLeft}>
-            <span className={`${dashStyles.bar} ${dashStyles.orange}`} />
-            <div>
-              <div className={dashStyles.sectionTitle}>Roadmap skills for your next role</div>
-              <p className={dashStyles.sectionDesc}>
-                {nextRole
-                  ? `Only skills and certs from your Organization Setup Career Roadmap toward ${nextRole} — not generic AI suggestions.`
-                  : "Only skills from your official Career Roadmap."}
-              </p>
-            </div>
-          </div>
-          <button type="button" className={styles.smallBtn} onClick={() => setShowExplore((v) => !v)}>
-            {showExplore ? "Hide explore" : "Explore another role"}
-          </button>
         </div>
         <div className={dashStyles.sectionBody}>
           {showExplore && (
@@ -2004,161 +2029,108 @@ function CareerTab() {
             </div>
           )}
 
-          {gapLoading && !gap && <p className={styles.inlineNote}>Analyzing your role…</p>}
-          {!savedGoal && !gapLoading && !bootLoading && (
+          {(designationLoading || (gapLoading && checklistItems.length === 0)) && (
+            <p className={styles.inlineNote}>Loading checklist…</p>
+          )}
+          {!savedGoal && !gapLoading && !bootLoading && checklistItems.length === 0 && (
             <p className={styles.inlineNote}>
               No career path assigned yet. Ask your recruiter to map your job title in Organization Setup.
             </p>
           )}
+          {designationReadiness?.message && checklistItems.length === 0 && (
+            <p className={styles.inlineNote}>{designationReadiness.message}</p>
+          )}
 
-          {gap && (
+          {checklistItems.length > 0 && (
             <>
-              <div className={styles.readinessWrap}>
-                <ReadinessRing percentage={gap.readiness_percentage ?? orgAssignment?.readiness_score ?? 0} />
+              <div className={styles.readinessWrap} style={{ marginBottom: 16 }}>
+                <ReadinessRing percentage={readinessPct} />
                 <div className={styles.readinessSummary}>
-                  {gap.summary}
-                  {(gap.skill_match_percent != null || gap.certification_match_percent != null) && (
-                    <div className={styles.inlineNote}>
-                      Skills {gap.skill_match_percent ?? "—"}% · Certs {gap.certification_match_percent ?? "—"}%
-                      {gap.learning_priority ? ` · Priority: ${gap.learning_priority}` : ""}
-                    </div>
-                  )}
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "var(--navy)", marginBottom: 4 }}>
+                    {designationReadiness?.eligible ? (
+                      <span style={{ color: "var(--green)" }}>Eligible</span>
+                    ) : (
+                      <span style={{ color: "var(--red)" }}>Not eligible yet</span>
+                    )}
+                  </div>
+                  <div className={styles.inlineNote}>
+                    {doneCount} of {checklistItems.length} requirements completed
+                    {designationReadiness?.source === "career_assignment" ? " · From your org career path" : ""}
+                  </div>
                 </div>
               </div>
-              {gap.matched_skills?.length > 0 && (
-                <>
-                  <div className={dashStyles.fieldLabel} style={{ marginBottom: 6 }}>Roadmap skills you already have</div>
-                  <div className={styles.missingSkillsRow}>
-                    {gap.matched_skills.map((s) => <span key={s} className={styles.matchedSkillTag}>{s}</span>)}
-                  </div>
-                </>
-              )}
-              {(gap.skill_gaps?.length > 0 || gap.missing_skills?.length > 0) && (
-                <>
-                  <div className={dashStyles.fieldLabel} style={{ marginBottom: 6 }}>Roadmap skills still to build</div>
-                  <div className={styles.missingSkillsRow}>
-                    {(gap.skill_gaps || gap.missing_skills.map((s) => ({ skill: s, priority: "medium" }))).map((g) => (
-                      <span key={g.skill || g} className={`${styles.priorityChip} ${styles[g.priority] || styles.medium}`} title={g.reason || ""}>
-                        {(g.priority || "medium").toUpperCase()}: {g.skill || g}
+              <div className={styles.checklistToolbar}>
+                <span className={styles.checklistHint}>
+                  {showRemaining ? `${visibleChecklist.length} remaining` : `${checklistItems.length} items`}
+                </span>
+                {doneCount > 0 && (
+                  <button type="button" className={styles.smallBtn} onClick={() => setShowRemaining((v) => !v)}>
+                    {showRemaining ? "Show all" : "Show remaining"}
+                  </button>
+                )}
+              </div>
+              <div className={styles.requirementsList}>
+                {visibleChecklist.map((req, idx) => {
+                  const step = findPathStep(req);
+                  const uid = req.course_uid || step?.course?.uid;
+                  const busy = Boolean(startingStep && uid && startingStep === uid);
+                  const kind = requirementStatusKind(req.status);
+                  const done = doneStatuses.has(req.status);
+                  const canStart = req.type === "course" && step && !done;
+                  return (
+                    <div
+                      key={`${req.type}-${req.title}-${idx}`}
+                      className={`${styles.requirementRow} ${done ? styles.requirementRowDone : ""}`}
+                    >
+                      <span className={`${styles.requirementStatus} ${styles[req.status] || styles.not_started}`}>
+                        {req.status === "acquired" && "✓"}
+                        {req.status === "verified" && "✓"}
+                        {req.status === "completed" && "✓"}
+                        {req.status === "certificate_pending" && "◐"}
+                        {req.status === "in_progress" && "◐"}
+                        {req.status === "assigned" && "○"}
+                        {req.status === "missing" && "○"}
+                        {req.status === "not_started" && "○"}
                       </span>
-                    ))}
-                  </div>
-                </>
-              )}
-              {gap.source === "career_assignment"
-                && !(gap.skill_gaps?.length || gap.missing_skills?.length)
-                && !(gap.missing_certifications || []).length && (
-                <p className={styles.inlineNote} style={{ marginTop: 8 }}>
-                  No remaining roadmap skill gaps — finish any open courses on the checklist above.
-                </p>
-              )}
-              {(gap.missing_certifications || []).length > 0 && (
-                <>
-                  <div className={dashStyles.fieldLabel} style={{ marginBottom: 6, marginTop: 12 }}>Missing certifications</div>
-                  <div className={styles.missingSkillsRow}>
-                    {gap.missing_certifications.map((c) => {
-                      const label = typeof c === "string" ? c : c.title || c.name;
-                      return <span key={label} className={`${styles.priorityChip} ${styles.immediate}`}>{label}</span>;
-                    })}
-                  </div>
-                </>
-              )}
+                      <span className={styles.requirementType}>{req.type}</span>
+                      <span className={styles.requirementTitle}>{req.title}</span>
+                      {req.mandatory && <span className={styles.requirementMandatory}>Required</span>}
+                      <span className={`${styles.requirementStatusLabel} ${
+                        kind === "done"
+                          ? styles.requirementStatusLabelDone
+                          : kind === "pending"
+                            ? styles.requirementStatusLabelPending
+                            : styles.requirementStatusLabelIncomplete
+                      }`}>
+                        {requirementStatusLabel(req.status)}
+                      </span>
+                      {canStart && (
+                        <button
+                          type="button"
+                          className={styles.smallBtnPrimary}
+                          disabled={busy}
+                          onClick={() => startPathStep(step)}
+                        >
+                          {busy ? "Starting…" : step.kind === "certification" ? "Open / earn cert" : "Start learning"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </>
           )}
         </div>
       </div>
-
-      {path && path.path && path.path.length > 0 && (
-        <div className={dashStyles.section}>
-          <div className={dashStyles.sectionHead}>
-            <div className={dashStyles.sectionHeadLeft}>
-              <span className={`${dashStyles.bar} ${dashStyles.navy}`} />
-              <div>
-                <div className={dashStyles.sectionTitle}>Your Career Roadmap courses</div>
-                <p className={dashStyles.sectionDesc}>
-                  Toward: {path.target_role}
-                  {path.progress_percent != null ? ` · ${path.progress_percent}% complete` : ""}
-                  {path.source === "career_assignment"
-                    ? " · Same courses as your promotion checklist and My Learning"
-                    : path.estimated_total_hours
-                      ? ` · ~${path.estimated_total_hours}h`
-                      : ""}
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              className={styles.smallBtn}
-              disabled={gapLoading || !savedGoal}
-              onClick={() => savedGoal && loadGapAndPath(savedGoal, true)}
-            >
-              Refresh path
-            </button>
-          </div>
-          <div className={dashStyles.sectionBody}>
-            {path.progress_percent != null && (
-              <div className={styles.matrixTrack} style={{ marginBottom: 16, height: 8 }}>
-                <div className={styles.matrixFill} style={{ width: `${path.progress_percent}%` }} />
-              </div>
-            )}
-            <div className={styles.pathTimeline}>
-              {path.path.map((step) => {
-                const uid = step.course?.uid;
-                const busy = startingStep && startingStep === uid;
-                return (
-                  <div key={step.step} className={`${styles.pathStep} ${step.completed ? styles.pathStepDone : ""}`}>
-                    <div className={styles.pathStepMarker}>
-                      <div className={`${styles.pathStepNum} ${step.completed ? styles.pathStepNumDone : ""}`}>
-                        {step.completed ? "✓" : step.step}
-                      </div>
-                      <div className={styles.pathStepLine} />
-                    </div>
-                    <div className={styles.pathStepBody}>
-                      <div className={styles.pathSkillLabel}>
-                        Step {step.step}: {step.skill}
-                        {step.completed ? " · Done" : ""}
-                        {step.kind === "certification" ? " · Certification" : ""}
-                      </div>
-                      <div className={styles.pathCourseTitle}>{step.course?.title}</div>
-                      <div className={styles.pathCourseMeta}>
-                        {step.course?.source || step.course?.provider || "Catalog"}
-                        {step.course?.duration_minutes ? ` · ${step.course.duration_minutes} min` : ""}
-                      </div>
-                      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                        {!step.completed && (
-                          <button
-                            type="button"
-                            className={styles.smallBtnPrimary}
-                            disabled={busy}
-                            onClick={() => startPathStep(step)}
-                          >
-                            {busy ? "Starting…" : step.kind === "certification" ? "Open / earn cert" : "Start step"}
-                          </button>
-                        )}
-                        {step.course?.url ? (
-                          <a href={step.course.url} target="_blank" rel="noopener noreferrer" className={styles.smallBtn}>
-                            Open resource
-                          </a>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className={dashStyles.section}>
         <div className={dashStyles.sectionHead}>
           <div className={dashStyles.sectionHeadLeft}>
             <span className={`${dashStyles.bar} ${dashStyles.cyan}`} />
             <div>
-              <div className={dashStyles.sectionTitle}>Course recommendations</div>
+              <div className={dashStyles.sectionTitle}>Optional extras</div>
               <p className={dashStyles.sectionDesc}>
-                {recs?.basis ||
-                  "About 10 new courses mixed across providers — matched to your skills to raise proficiency."}
+                Extra courses beyond your promotion checklist — pick these only after the required items above.
               </p>
             </div>
           </div>
@@ -2167,23 +2139,24 @@ function CareerTab() {
           </button>
         </div>
         <div className={dashStyles.sectionBody}>
-          {recSourceLabel && !recsLoading && (
+          {recSourceLabel && !recsLoading && extraRecs.length > 0 && (
             <p className={styles.inlineNote} style={{ marginBottom: 12 }}>
               Source: {recSourceLabel}
               {recs?.cached ? " · Saved for you — click Refresh to regenerate" : ""}
             </p>
           )}
           {recsLoading && <p className={styles.inlineNote}>Thinking…</p>}
-          {!recsLoading && (!recs?.recommendations || recs.recommendations.length === 0) && (
+          {!recsLoading && extraRecs.length === 0 && (
             <div className={dashStyles.emptyState}>
-              <div className={dashStyles.emptyTitle}>No recommendations yet</div>
+              <div className={dashStyles.emptyTitle}>No extra courses right now</div>
               <div className={dashStyles.emptySub}>
-                Finish a few roadmap courses or refresh after your skill profile has gaps to close.
+                Focus on the promotion checklist above. Refresh later for optional courses that are not already required.
               </div>
             </div>
           )}
+          {extraRecs.length > 0 && (
           <div className={styles.aiGrid}>
-            {(recs?.recommendations || []).map((course) => {
+            {extraRecs.slice(0, 6).map((course) => {
               const providerLabel = (
                 course.provider
                 || (course.source === "microsoft_learn" ? "Microsoft Learn"
@@ -2235,6 +2208,7 @@ function CareerTab() {
               );
             })}
           </div>
+          )}
         </div>
       </div>
     </>
