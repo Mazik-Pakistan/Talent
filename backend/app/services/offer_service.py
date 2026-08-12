@@ -26,7 +26,7 @@ from app.schemas.offer import (
 )
 from app.services.dashboard_service import create_notification
 from app.services.email_service import email_service
-from app.services.organization_service import recruiter_can_access, recruiter_scope
+from app.services.organization_service import recruiter_can_access_record, recruiter_people_scope
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class OfferService:
         candidate = await self._find_candidate(request.candidate_id)
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found.")
-        self._assert_recruiter_can_access(current_user, candidate, detail="You can only send offers to your own candidates.")
+        await self._assert_recruiter_can_access(current_user, candidate, detail="You can only send offers to candidates within your organization.")
         if candidate.get("status") == "converted":
             raise HTTPException(status_code=409, detail="This candidate is already an employee.")
 
@@ -322,18 +322,18 @@ class OfferService:
 
     async def list_pending_negotiations(self, current_user: CurrentUser) -> dict:
         query: dict = {"negotiation.status": "pending", "status": {"$in": ["sent", "viewed", "expired"]}}
-        scope = recruiter_scope(current_user)
+        scope = await recruiter_people_scope(current_user)
         if scope:
-            query.update(scope)
+            query = {"$and": [query, scope]}
         docs = await database.offer_letters.find(query).sort("negotiation.requested_at", -1).to_list(length=50)
         return {"offers": [self._public(o) for o in docs], "count": len(docs)}
 
     async def list_awaiting_offer_response(self, current_user: CurrentUser) -> dict:
         """Registered candidates with an unsigned active offer."""
         query: dict = {"status": {"$in": ["sent", "viewed", "expired"]}, "candidate_id": {"$ne": None}}
-        scope = recruiter_scope(current_user)
+        scope = await recruiter_people_scope(current_user)
         if scope:
-            query.update(scope)
+            query = {"$and": [query, scope]}
         docs = await database.offer_letters.find(query).sort("sent_at", -1).to_list(length=100)
         out = []
         for offer in docs:
@@ -574,7 +574,7 @@ class OfferService:
         self, current_user: CurrentUser, offer_id: str, request: NegotiationRespondRequest
     ) -> dict:
         offer = await self._find(offer_id)
-        self._assert_recruiter(current_user, offer)
+        await self._assert_recruiter(current_user, offer)
         negotiation = offer.get("negotiation") or {}
         if negotiation.get("status") != "pending":
             raise HTTPException(status_code=409, detail="There is no pending clarification on this offer.")
@@ -641,7 +641,7 @@ class OfferService:
         self, current_user: CurrentUser, offer_id: str, request: NegotiationRespondRequest
     ) -> dict:
         offer = await self._find(offer_id)
-        self._assert_recruiter(current_user, offer)
+        await self._assert_recruiter(current_user, offer)
         negotiation = offer.get("negotiation") or {}
         if negotiation.get("status") != "pending":
             raise HTTPException(status_code=409, detail="There is no pending clarification on this offer.")
@@ -652,7 +652,7 @@ class OfferService:
         self, current_user: CurrentUser, offer_id: str, request: NegotiationRespondRequest
     ) -> dict:
         offer = await self._find(offer_id)
-        self._assert_recruiter(current_user, offer)
+        await self._assert_recruiter(current_user, offer)
         negotiation = offer.get("negotiation") or {}
         if negotiation.get("status") != "pending":
             raise HTTPException(status_code=409, detail="There is no pending clarification on this offer.")
@@ -719,7 +719,7 @@ class OfferService:
     ) -> dict:
         """Edit any offer terms after clarification and resend as a new unsigned version."""
         offer = await self._find(offer_id)
-        self._assert_recruiter(current_user, offer)
+        await self._assert_recruiter(current_user, offer)
         if offer.get("signed_at") or offer.get("status") == "signed":
             raise HTTPException(status_code=409, detail="Signed offers cannot be edited. Create a new invitation instead.")
         if offer.get("status") not in ("sent", "viewed", "expired"):
@@ -934,7 +934,7 @@ class OfferService:
         from app.services.employee_service import EmployeeService
 
         offer = await self._find(offer_id)
-        self._assert_recruiter_can_access(current_user, offer, detail="Not authorized to approve this offer.")
+        await self._assert_recruiter_can_access(current_user, offer, detail="Not authorized to approve this offer.")
         signed_at = offer.get("signed_at")
         is_signed_offer = bool(signed_at) or offer.get("status") == "signed"
         if not is_signed_offer:
@@ -986,7 +986,7 @@ class OfferService:
     ) -> dict:
         """Recruiter extends an expired unsigned offer — updates letter dates, emails, and notifies."""
         offer = await self._find(offer_id)
-        self._assert_recruiter(current_user, offer)
+        await self._assert_recruiter(current_user, offer)
         if offer.get("signed_at"):
             raise HTTPException(status_code=409, detail="Signed offers cannot have their validity extended here.")
         if offer.get("status") not in ("sent", "viewed", "expired"):
@@ -1177,10 +1177,10 @@ class OfferService:
         return offer
 
     @staticmethod
-    def _assert_recruiter_can_access(current_user: CurrentUser, record: dict, detail: str = "Not authorized.") -> None:
+    async def _assert_recruiter_can_access(current_user: CurrentUser, record: dict, detail: str = "Not authorized.") -> None:
         if current_user.role == "super_admin":
             return
-        if not recruiter_can_access(current_user, record):
+        if not await recruiter_can_access_record(current_user, record):
             raise HTTPException(status_code=403, detail=detail)
 
     def _assert_owner(self, current_user: CurrentUser, offer: dict) -> None:
@@ -1189,8 +1189,8 @@ class OfferService:
         if offer.get("candidate_id") != current_user.id and offer.get("candidate_email") != current_user.email:
             raise HTTPException(status_code=403, detail="Not authorized for this offer letter.")
 
-    def _assert_recruiter(self, current_user: CurrentUser, offer: dict) -> None:
-        self._assert_recruiter_can_access(current_user, offer, detail="Not authorized for this offer letter.")
+    async def _assert_recruiter(self, current_user: CurrentUser, offer: dict) -> None:
+        await self._assert_recruiter_can_access(current_user, offer, detail="Not authorized for this offer letter.")
 
     @staticmethod
     def _empty_negotiation_state() -> dict:
