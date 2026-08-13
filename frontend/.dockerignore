@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+.env
+.env.local
+.env.docker
+.git
+.gitignore
+README.md
+.DS_Store
+Thumbs.db
