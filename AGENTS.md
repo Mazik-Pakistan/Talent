@@ -3,6 +3,8 @@
 > Field guide for AI coding agents working in **TalentAI** — a multi-tenant FastAPI + MongoDB backend, a Next.js 16 / React 19 frontend, and an in-app conversational agent that calls this same backend through a permission-checked tool layer.
 >
 > Two AI systems live in this repo: **you**, editing the code, and **the product's own agent** (`agent_service.py`), which you may be asked to extend. This document is for you. Read it fully before touching anything — this is a ~130k-line codebase with real auth, real tenants, and real money-adjacent flows (offers, banking data). Skimming costs more time than it saves.
+>
+> **Deep knowledge layer:** [`.agents/AGENTS.md`](.agents/AGENTS.md) (master rules) · [`.agents/skills/README.md`](.agents/skills/README.md) (fine-grained skills) · [`.agents/architecture/`](.agents/architecture/) (cross-cutting architecture). Load the matching skill before changing a module.
 
 ---
 
