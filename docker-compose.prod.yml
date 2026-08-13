@@ -1,0 +1,29 @@
+# Optional single-public-port gateway (:80) via nginx. OmniRoute stays on its
+# own port (20128) so its dashboard is reachable directly; the backend reaches
+# OmniRoute internally via the `omniroute` service name.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+#   # app: http://localhost  |  OmniRoute dashboard: http://localhost:20128
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+
+  backend:
+    ports: []   # reach the API through nginx /api instead
+
+  frontend:
+    ports: []
+
+  omniroute:
+    ports:
+      - "20128:20128"

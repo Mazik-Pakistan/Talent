@@ -1,5 +1,7 @@
 # Frontend
 frontend/node_modules/
+# Docker runtime secrets (compose reads the repo-root .env for ${VAR} interpolation)
+.env
 frontend/.next/
 frontend/.env
 
