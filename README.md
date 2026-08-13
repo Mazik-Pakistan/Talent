@@ -1,4 +1,4 @@
-# TalentAI
+# TalentAI — Technical Reference
 
 > A multi-tenant HR operating system covering the complete employee lifecycle — **invite → offer → onboarding → IT provisioning → employee lifecycle → learning → talent/career growth** — with a role-aware conversational agent built directly into the permission-checked service layer.
 
@@ -8,45 +8,47 @@
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Core Capabilities](#core-capabilities)
-- [User Roles & Permissions](#user-roles--permissions)
-- [The Conversational Agent Layer](#the-conversational-agent-layer)
-- [System Architecture](#system-architecture)
-- [Technology Stack](#technology-stack)
-- [Repository Structure](#repository-structure)
-- [Domain Module Map](#domain-module-map)
-- [Authentication System](#authentication-system)
-- [Authorization & RBAC](#authorization--rbac)
-- [Multi-Tenancy](#multi-tenancy)
-- [Database Design](#database-design)
-- [Integrations](#integrations)
-- [Getting Started](#getting-started)
-- [Environment Variables](#environment-variables)
-- [Testing & Validation](#testing--validation)
-- [Security](#security)
-- [Design Decisions](#design-decisions)
-- [Troubleshooting](#troubleshooting)
-- [Roadmap](#roadmap)
+1. [Overview](#1-overview)
+2. [Core Capabilities — Deep Dive](#2-core-capabilities--deep-dive)
+3. [User Roles & Permission Model](#3-user-roles--permission-model)
+4. [The Conversational Agent Layer](#4-the-conversational-agent-layer)
+5. [System Architecture](#5-system-architecture)
+6. [Technology Stack](#6-technology-stack)
+7. [Repository Structure](#7-repository-structure)
+8. [Domain Module Map](#8-domain-module-map)
+9. [Authentication System](#9-authentication-system)
+10. [Authorization & RBAC](#10-authorization--rbac)
+11. [Multi-Tenancy](#11-multi-tenancy)
+12. [Database Design](#12-database-design)
+13. [API Reference](#13-api-reference)
+14. [Integrations](#14-integrations)
+15. [Getting Started](#15-getting-started)
+16. [Environment Variables](#16-environment-variables)
+17. [Testing & Validation](#17-testing--validation)
+18. [Security](#18-security)
+19. [Design Decisions](#19-design-decisions)
+20. [Deployment Architecture](#20-deployment-architecture)
+21. [Monitoring & Observability](#21-monitoring--observability)
+22. [Extensibility Points](#22-extensibility-points)
+23. [Troubleshooting](#23-troubleshooting)
+24. [Roadmap](#24-roadmap)
 
 ---
 
-## Overview
+## 1. Overview
 
-Most HR platforms separate their user-facing forms from any conversational layer, forcing the AI on top to duplicate business logic. **TalentAI is built the other way around**: the same permission-checked service layer that powers every dashboard button also powers the in-app conversational agent, so a request like *"send Sarah's offer and extend it 3 days"* executes through the exact code path a button click would. There is no shadow logic, no parallel rule set, and no second backend for the conversational interface.
+### 1.1 What Is TalentAI?
 
-The platform is organized around four roles — Super Admin, Recruiter, Candidate, Employee — each with its own dashboard, its own permission set, and its own conversational persona scoped to what that role is allowed to see and do.
+TalentAI is a **multi-tenant HR operating system** that unifies hiring, onboarding, IT provisioning, employee lifecycle management, learning & development, talent management, and internal communication into a single platform. Its defining architectural characteristic: the **same permission-checked service layer** that powers the REST API also powers the in-app conversational agent. There is no shadow logic, no parallel rule set, and no second backend for the conversational interface.
 
-### Core Business Purpose
+### 1.2 Core Philosophy
 
-- Run hiring and onboarding for an organization (recruiter)
-- Capture candidate data and documents with OCR assistance
-- Provision IT accounts/assets via public token links
-- Graduate candidates into employees without re-entry
-- Develop people via learning catalogs, skill gaps, career frameworks, internal opportunities
-- Operate multiple tenant organizations from a hidden Super Admin portal
+- **Single Source of Truth**: Business logic lives once — in `backend/app/services/`. Routers, agent tools, and frontend services all delegate to these functions.
+- **Zero Trust by Default**: Every data access is scoped by `organization_id`. Every endpoint is gated by RBAC + capability checks. The agent inherits the exact same constraints as a human user.
+- **Degrade Gracefully**: Optional subsystems (OCR, embeddings, LLM) lazy-import and fail soft. The platform remains functional without them.
+- **Tenant Isolation is Non-Negotiable**: A missing `organization_id` filter is treated as a critical security bug.
 
-### Hiring Lifecycle Flow
+### 1.3 Hiring Lifecycle Flow
 
 ```
 Invite (+ required offer)
@@ -59,827 +61,1014 @@ Invite (+ required offer)
   → Learning / Talent / Career / IT service requests / HR messages
 ```
 
-Cross-cutting flows: Document OCR → profile fields → recruitment verification · Organization Framework ↔ Learning course sync · Agent tools → same services as the UI. Each stage is reachable through the UI **or** through natural language.
+Cross-cutting flows: Document OCR → profile fields → recruitment verification · Organization Framework ↔ Learning course sync · Agent tools → same services as the UI.
 
 ---
 
-## Core Capabilities
+## 2. Core Capabilities — Deep Dive
 
-### Recruitment & Invitation Management
+### 2.1 Recruitment & Invitation Management
 
-**Individual Invitations** — Recruiters create invitations with an attached offer letter (mandatory coupling). Each invitation generates a unique, unguessable token sent via email. The candidate accepts via `/invite/[token]`, registers with OTP verification, and proceeds to offer review.
+#### Individual Invitations
+- **Mandatory Offer Coupling**: An invitation cannot be created without an associated offer letter (`offer_service.create_for_invitation`).
+- **Token Generation**: Cryptographically secure, unguessable tokens (`secrets.token_urlsafe(32)`) stored in `invitations.token` with unique index.
+- **Expiry**: Configurable via `INVITATION_EXPIRE_HOURS` (default 168h/7 days). Expired invitations are filtered by `expires_at` index.
+- **Status Lifecycle**: `pending` → `accepted` → `completed` / `expired` / `revoked`.
+- **Candidate Creation**: On acceptance, a `candidates` document is created with `organization_id` inherited from the inviting recruiter.
 
-**Bulk Invite Import** — Spreadsheet-based bulk import (`.xlsx`) with preview, validation, and dry-run capabilities. Supports mapping columns to candidate fields, required offer templates per row, and agent-assisted upload parsing.
+#### Bulk Invite Import
+- **Format**: `.xlsx` spreadsheets parsed via `xlsx` library (`bulk_invite_service.py`).
+- **Preview/Dry-Run**: Validates all rows before sending — checks email format, duplicate detection, required columns.
+- **Column Mapping**: Flexible mapping (email, first_name, last_name, role, department, custom fields).
+- **Per-Row Offer Templates**: Each row can specify a different offer template or inherit a default.
+- **Agent-Assisted Upload**: The conversational agent can parse uploaded spreadsheets and present a confirmation card before sending.
 
-**Pipeline Tracking** — End-to-end candidate pipeline with statuses: `invited` → `registered` → `offer_sent` → `offer_viewed` → `negotiating` → `signed` → `onboarding` → `documents_pending` → `documents_verified` → `it_provisioning` → `hired`. Global search across candidates, employees, offers, and documents with taxonomy-based filters.
+#### Pipeline Tracking
+- **Statuses**: `invited` → `registered` → `offer_sent` → `offer_viewed` → `negotiating` → `signed` → `onboarding` → `documents_pending` → `documents_verified` → `it_provisioning` → `hired` / `declined` / `withdrawn`.
+- **Global Search**: `/api/search` with taxonomy-based filters (department, role, location, status, date range, skill tags).
+- **Recruiter Scope**: All lists filtered by `recruiter_people_scope(user)` which includes legacy rows missing `organization_id` but owned by recruiters in the same org.
 
-**Offer Lifecycle** — Full offer letter generation from templates with merge fields, digital signature capture (draw/upload), configurable expiry (default 7 days), extensions (max 3 negotiation rounds with audit trail), and automated reminders. Offer statuses: `draft` → `sent` → `viewed` → `negotiating` → `signed` / `declined` / `expired`.
+#### Offer Lifecycle
+- **Templates**: Organization-configurable templates with merge fields (`{{candidate_name}}`, `{{role}}`, `{{salary}}`, `{{start_date}}`, etc.).
+- **Digital Signature**: Draw (canvas) or upload image. Stored in Cloudinary, reference saved on `offer_letters.signature_url`.
+- **Expiry**: Default 7 days (`OFFER_EXPIRE_DAYS`), configurable per offer.
+- **Negotiation**: Max 3 rounds (`offer_service.negotiate`). Each round creates an `audit_logs` entry with old/new values.
+- **Reminders**: Automated via `reminder_service` (1h throttle per candidate).
+- **Statuses**: `draft` → `sent` → `viewed` → `negotiating` → `signed` / `declined` / `expired` / `revoked`.
 
-### Onboarding Wizard
+### 2.2 Onboarding Wizard
 
-**Multi-Step Candidate Wizard** — Progressive onboarding with the following steps: `personal_info` → `contact_info` → `education` → `experience` → `documents` → `banking` → `review`. Each step autosaves to MongoDB with optimistic concurrency control. Required keys per step are enforced server-side.
+#### Multi-Step Progressive Wizard
+Steps (enforced server-side via `onboarding_service.get_required_keys`):
+1. **personal_info** — Legal name, DOB, gender, nationality, CNIC/passport
+2. **contact_info** — Personal email, phone, address, emergency contact
+3. **education** — Degrees, institutions, graduation years, certificates
+4. **experience** — Employers, roles, dates, responsibilities
+5. **documents** — Identity, education, bank slip, resume uploads
+6. **banking** — Account holder name, bank name, account number, IBAN, SWIFT
+7. **review** — Summary with edit links per section
 
-**AI-Assisted Form Filling** — Typewriter-style auto-fill coach, field-level help from per-role context builders, and OCR-driven pre-population from uploaded documents.
+#### Autosave & Concurrency
+- **Mechanism**: `PATCH /api/onboarding/progress` with `step` + `data` + `version` (optimistic locking).
+- **Conflict Resolution**: 409 if version mismatch; frontend fetches latest and merges.
+- **AI-Assisted Fill**: Typewriter-style coach (`frontend/lib/ai/formCoach.js`) + per-field insights from `*Insights.js` builders.
 
-**Document Upload with OCR** — Candidates upload identity documents (CNIC/passport), educational certificates, bank slips, and resumes. OCR pipeline (lazy-imported, `ENABLE_OCR` flag) extracts structured fields: CNIC number, IBAN, bank name, degree details, experience dates. Extracted data pre-fills onboarding steps with confidence scores.
+#### Document Upload & OCR Pipeline
+- **Upload**: Direct to Cloudinary via signed URL (`storage_service.get_upload_signature`), then `POST /api/documents` with `cloudinary_public_id`.
+- **OCR Trigger**: `document_extraction_service.process_document` (lazy-imported, `ENABLE_OCR`).
+- **Extractors**:
+  - **CNIC/Passport**: Regex + EasyOCR/Pytesseract → `cnic`, `passport_number`, `expiry`
+  - **Bank Slip**: Table extraction → `bank_name`, `account_title`, `account_number`, `iban`
+  - **Resume**: PDF/DOCX parsing → skills, experience, education (feeds `embedding_service` if `ENABLE_EMBEDDINGS`)
+  - **Certificates**: Degree name, institution, year, credential ID
+- **Confidence Scoring**: Each extracted field has `confidence` (0–1). Fields < 0.7 flagged for manual review.
+- **Pre-fill**: Extracted data auto-populates onboarding steps via `document_extraction_service.apply_to_onboarding`.
 
-**Recruiter Verification Queue** — Recruiters review uploaded documents with side-by-side viewer, approve/reject per document type, add notes, and trigger re-upload requests. Verification status gates downstream flows (offer signing, IT provisioning).
+#### Recruiter Verification Queue
+- **Endpoint**: `GET /api/documents?status=pending_verification` (requires `documents.review` permission).
+- **Viewer**: Side-by-side document image + extracted fields with confidence badges.
+- **Actions**: `Approve` (sets `status=verified`), `Reject` (sets `status=rejected`, requires `rejection_reason`), `Request Re-upload`.
+- **Audit**: Every action writes to `audit_logs` with recruiter ID, document ID, old/new status.
 
-### IT Provisioning
+### 2.3 IT Provisioning
 
-**Provisioning Kits** — Recruiters define IT kits (laptop, phone, access cards, software licenses) with quantity and specifications. Kits are assigned during the hiring flow.
+#### Provisioning Kits
+- **Definition**: `it_kits` collection — `name`, `description`, `category` (laptop/phone/access/software), `specifications` (JSON), `default_quantity`.
+- **Assignment**: Recruiter assigns kits to a candidate during hiring flow; creates `it_provisioning_requests` with `kit_items` array.
 
-**Public Token Provisioning** — Once an offer is signed, the system generates a public `/it-setup/[token]` link. The candidate enters company email preferences, asset selections, and receives an encrypted temporary password for their company email account. Batch provisioning (`/it-setup/batch/[token]`) handles multiple hires simultaneously.
+#### Public Token Provisioning
+- **Single**: `GET /api/it-provisioning/{token}` → candidate selects company email prefix, asset preferences, receives encrypted temp password.
+- **Batch**: `GET /api/it-provisioning/batch/{token}` → handles multiple hires in one session (used for cohort onboarding).
+- **Token**: Unique, unguessable, stored in `it_provisioning_requests.token` with `expires_at` (default 30 days, `IT_PROVISIONING_EXPIRE_DAYS`).
 
-**Encrypted Temporary Passwords** — Company email passwords are Fernet-encrypted at rest. Reveal requires OTP sent to the candidate's personal email, with audit logging.
+#### Encrypted Temporary Passwords
+- **Generation**: `crypto.fernet_encrypt(generated_password)` stored in `it_provisioning_requests.temp_password_enc`.
+- **Reveal**: Candidate requests reveal → OTP sent to personal email → `crypto.fernet_decrypt` returned in response (never logged).
+- **Rotation**: On first login, candidate sets permanent password via `/api/auth/change-password`.
 
-**IT Service Requests** — Post-hire, employees raise IT tickets via `/it-support/[token]` (public token). IT fulfills requests with status tracking, SLA timers, and satisfaction surveys.
+#### IT Service Requests (Post-Hire)
+- **Public Intake**: `GET|POST /api/it-service-requests/public/{token}` — employee raises request without login.
+- **Categories**: Hardware, Software, Access, Network, Security, Other.
+- **SLA**: Priority-based (Critical: 4h, High: 8h, Medium: 24h, Low: 72h).
+- **Fulfillment**: IT staff update status, add resolution notes, close with satisfaction survey.
 
-### Employee Lifecycle
+### 2.4 Employee Lifecycle
 
-**Candidate-to-Employee Conversion** — On approval, candidates transition to employees with a new `EMP-######` ID format. All onboarding data carries forward without re-entry. Legacy ID migration is handled at startup.
+#### Candidate-to-Employee Conversion
+- **Trigger**: `employee_service.create_from_candidate(candidate_id, recruiter_id)` called after offer signed + documents verified + IT provisioned.
+- **ID Format**: `EMP-######` (6-digit zero-padded, from `counters` collection atomic increment).
+- **Data Migration**: All onboarding data copied to `employees` document; `candidate.status = 'converted'`.
+- **History Preservation**: Original `candidate` document retained; `people_history` entry created with `cycle_group_key`.
 
-**Complete Profile** — Post-hire profile completion wizard for emergency contacts, tax info, benefits enrollment, and policy acknowledgments.
+#### Complete Profile (Post-Hire)
+- **Steps**: Emergency contacts → Tax info → Benefits enrollment → Policy acknowledgments → Equipment receipt.
+- **Validation**: Required fields per org config (`organization_framework` roadmaps).
 
-**Directory & Org Chart** — Searchable employee directory with department, role, manager, and location filters. Org chart visualization with drill-down.
+#### Directory & Org Chart
+- **Search**: `GET /api/employees?search=&dept=&role=&location=` (recruiter: org-scoped; employee: own org).
+- **Org Chart**: Hierarchical rendering from `manager_id` references; drill-down to profile.
 
-**Career Events Timeline** — Tracks promotions, role changes, department transfers, compensation adjustments, and certifications with effective dates.
+#### Career Events Timeline
+- **Collection**: `employee_career_events` — `employee_id`, `event_type` (promotion/transfer/role_change/compensation/certification), `effective_date`, `details` (JSON), `approved_by`.
+- **Readiness Reports**: `career_framework_service.get_promotion_readiness(employee_id)` computes gap against next level.
 
-### Learning & Development
+### 2.5 Learning & Development
 
-**Live Catalog Sync** — Automated synchronization with Coursera (`https://api.coursera.org/api/courses.v1`) and Microsoft Learn (`https://learn.microsoft.com/api/catalog/`). In-process and Mongo-persisted caches with background refresh (non-DEBUG).
+#### Live Catalog Sync
+- **Coursera**: `coursera_service.sync_catalog()` → `https://api.coursera.org/api/courses.v1` → upserts `learning_courses` with `provider_id=coursera`.
+- **Microsoft Learn**: `ms_learn_service.sync_catalog()` → `https://learn.microsoft.com/api/catalog/` → upserts with `provider_id=ms_learn`.
+- **Caching**: In-process LRU + Mongo `learning_catalog_cache` (snapshot ID for invalidation).
+- **Background Refresh**: Non-DEBUG mode starts `coursera_service.start_background_refresh()` (interval: 6h).
 
-**Managed Providers & Generic API Providers** — Extensible provider framework. Generic API providers store encrypted secrets and support custom catalog endpoints.
+#### Provider Framework
+- **Managed Providers**: `learning_providers` collection — `name`, `slug`, `type` (coursera/ms_learn/generic_api), `config` (encrypted secrets for generic).
+- **Generic API Providers**: Custom catalog endpoints with auth headers, pagination config, field mapping.
+- **Import Engine**: `learning_service.import_courses_from_provider(provider_id)` with progress tracking in `learning_import_history`.
 
-**Enrollment & Assignments** — Employees self-enroll; recruiters assign mandatory courses with due dates. Progress tracking with completion certificates.
+#### Enrollment & Assignments
+- **Self-Enroll**: `POST /api/learning/enroll` — employee selects course, creates `learning_enrollments` with `status=enrolled`.
+- **Recruiter Assignment**: `POST /api/learning/assign` — mandatory courses with `due_date`, creates `learning_assignments`.
+- **Progress**: `PATCH /api/learning/progress` — updates `completion_percentage`, `last_accessed_at`.
+- **Completion**: Auto-creates `learning_certificates` on 100% (if course offers certificate).
 
-**Skill-Gap Analysis** — LLM-powered analysis comparing employee skills against role requirements from the career framework. Outputs prioritized course recommendations with real course UIDs.
+#### Skill-Gap Analysis (LLM-Powered)
+- **Input**: Employee skills (`employee_skills`) + target role requirements (`org_framework_roles.skills` + `career_framework` tracks).
+- **Service**: `learning_ai_service.analyze_skill_gap(employee_id, target_role_id)`.
+- **Output**: Prioritized gaps with `severity`, `recommended_courses` (real `learning_courses._id`), `estimated_hours`.
+- **Caching**: Results stored in `learning_skill_gaps` with TTL; invalidated on skill/role change.
 
-**Certificate Management** — Upload, OCR extraction, recruiter verification, and expiry tracking for professional certifications.
+#### Certificate Management
+- **Upload**: `POST /api/learning/certificates` — file to Cloudinary, OCR extracts `credential_id`, `issuer`, `issue_date`, `expiry_date`.
+- **Verification**: Recruiter reviews (`documents.review` permission) → `status=verified`.
+- **Expiry Tracking**: `reminder_service` nudges 30/7/1 days before expiry.
 
-**Career Framework** — Departments, roles, skills, certifications, courses, roadmaps, and promotion rules defined per organization. Tracks/levels with assignment history and readiness reports.
+#### Career Framework
+- **Entities**: `career_tracks` → `career_levels` (per track) → `employee_career_assignments` (employee ↔ level).
+- **Promotion Rules**: `career_framework_promotion_rules` — `from_level`, `to_level`, `required_skills`, `required_certifications`, `min_tenure_months`.
+- **Readiness**: `career_framework_service.get_readiness_report(employee_id)` — % complete per rule, blockers.
 
-### Talent & Internal Mobility
+### 2.6 Talent & Internal Mobility
 
-**Internal Opportunities** — Recruiters post internal roles with requirements. Employees browse, match against their profile, and apply. Application tracking with recruiter review workflow.
+#### Internal Opportunities
+- **Posting**: Recruiter creates `internal_opportunities` — `title`, `department`, `role_id`, `description`, `requirements`, `application_deadline`, `hiring_manager_id`.
+- **Matching**: `talent_service.match_opportunities(employee_id)` scores against profile skills, career goals, tenure.
+- **Application**: `POST /api/talent/opportunities/{id}/apply` → `internal_opportunity_applications` with `status=applied`.
+- **Review**: Hiring manager reviews, interviews, hires/rejects with feedback.
 
-**Competency Evaluations** — Structured evaluations against role competencies with rating scales, evidence, and development plan linkage.
+#### Competency Evaluations
+- **Structure**: `talent_competency_evaluations` — `employee_id`, `evaluator_id`, `competency_id`, `rating` (1–5), `evidence`, `evaluation_date`.
+- **Aggregation**: Department/role-level heatmaps via `talent_service.get_skill_matrix(department_id)`.
 
-**Development Plans** — Actionable plans with milestones, assigned courses, mentor pairing, and progress tracking.
+#### Development Plans
+- **Creation**: `talent_service.create_development_plan(employee_id, goals[])` → `talent_development_plans` with milestones.
+- **Milestones**: `course_id` / `certification_id` / `experience_target` + `target_date` + `status`.
+- **Tracking**: Dashboard shows % complete, overdue items, mentor check-ins.
 
-**Skill Matrix & Journey** — Visual skill matrix per department/role, individual skill journeys with achievement badges.
+#### Skill Matrix & Journey
+- **Matrix**: `talent_service.get_skill_matrix()` — rows=employees, columns=skills, cells=proficiency (1–5).
+- **Journey**: Per-employee timeline of skill acquisitions, certifications, role changes with achievement badges.
 
-### Support & Communication
+### 2.7 Support & Communication
 
-**HR Threads** — Direct messaging between candidates/employees and recruiters. Thread-based with status (open/closed), priority, and email notifications.
+#### HR Threads
+- **Model**: `hr_threads` — `participants[]` (candidate/employee + recruiter), `subject`, `status` (open/closed), `priority`, `created_at`, `last_message_at`.
+- **Messages**: Embedded `messages[]` array with `sender_id`, `sender_role`, `body`, `attachments[]`, `read_by[]`.
+- **Notifications**: Real-time via polling (`useNotificationsCenter` hook) + email fanout for high priority.
 
-**Tickets** — Recruiter support tickets (internal) and Super Admin platform tickets. Full activity log, audit trail, SLA tracking, and assignment.
+#### Tickets
+- **Recruiter Support**: `/api/tickets` — categories (Platform, Billing, Feature, Bug), SLA by priority.
+- **Super Admin Platform**: `/api/admin/tickets` — cross-org, escalation from recruiter tickets.
+- **Audit**: `ticket_audit_logs` — every status change, assignment, comment, SLA breach.
 
-**Announcements** — Organization-wide or targeted announcements with audience filters (role, department, location), scheduling, and email fanout.
+#### Announcements
+- **Audience Targeting**: `announcements.audience` — `roles[]`, `departments[]`, `locations[]`, `organization_id` (for Super Admin cross-org).
+- **Scheduling**: `publish_at`, `expire_at`; draft → scheduled → published → expired.
+- **Email Fanout**: `email_service.send_announcement` with unsubscribe link.
 
-**Notifications** — Real-time notification center with read/unread, dismiss, and deep-link to relevant pages.
+#### Notifications
+- **Types**: `info`, `success`, `warning`, `error`, `action_required`.
+- **Channels**: In-app (real-time poll), email (for `action_required` + high priority).
+- **Grouping**: Deduplication via `toastId` (frontend) + `notification_key` (backend).
 
-### Super Admin Platform Operations
+### 2.8 Super Admin Platform Operations
 
-**Organization Management** — CRUD for tenant organizations: name, slug, status, module enablement, branding, custom email templates. Organization purge (irreversible) with summary report.
+#### Organization Management
+- **CRUD**: `POST|GET|PUT|DELETE /api/super-admin/organizations` — `name`, `slug`, `status` (active/suspended/archived), `modules` (object of 14 boolean flags), `branding` (logo, colors), `custom_email_templates`.
+- **Purge**: `DELETE /api/super-admin/organizations/{id}?confirm=yes` → `organization_service.purge_organization()` (irreversible, returns summary).
 
-**Recruiter Management** — Invite recruiters to organizations, set per-module capabilities, bulk capability updates, capability templates.
+#### Recruiter Management
+- **Invite**: `POST /api/super-admin/recruiters` — email, org_id, capabilities[] → sends invitation with `/portal-root-x9f3` link.
+- **Capabilities**: `PUT /api/super-admin/recruiters/{id}/capabilities` — full replace or `PATCH` for incremental.
+- **Templates**: `POST /api/super-admin/capability-templates` — named presets (e.g., "Hiring Only", "Full Access").
 
-**Platform Health** — Cross-organization statistics, audit log aggregation, system-wide search.
+#### Platform Health
+- **Stats**: `GET /api/super-admin/stats` — org count, recruiter count, candidate/employee totals, active offers, storage usage.
+- **Audit Aggregation**: `GET /api/super-admin/audit-logs` — cross-org filterable by date, action, actor.
 
 ---
 
-## User Roles & Permissions
+## 3. User Roles & Permission Model
 
-TalentAI defines four roles in code (`backend/app/core/rbac.py`). The `roles`/`permissions` MongoDB collections are a seeded mirror for querying — **code is always the source of truth**.
+### 3.1 Role Definitions (Code-Sourced)
 
-| Role | Home Dashboard | Primary Scope |
-|------|----------------|---------------|
-| `super_admin` | `/dashboard/super-admin` | Platform orgs, recruiters, admin tickets. Logs in at the deliberately hidden `/portal-root-x9f3`. |
-| `recruiter` | `/dashboard/recruiter` | Hiring, employees, IT, learning admin, org config, talent. Gated by per-module capabilities. |
-| `candidate` | `/dashboard/candidate` | Offer, onboarding, documents, messages. |
-| `employee` | `/dashboard/employee` | Profile, learning, career, talent, IT support, messages. |
+Defined in `backend/app/core/rbac.py`:
 
-### Recruiter Capabilities (Module-Level Gates)
+| Role | Home | `ROLE_HOME` | Permissions (from `ROLE_PERMISSIONS`) |
+|------|------|-------------|---------------------------------------|
+| `super_admin` | `/dashboard/super-admin` | `/dashboard/super-admin` | `ALL_PERMISSIONS` |
+| `recruiter` | `/dashboard/recruiter` | `/dashboard/recruiter` | `recruitment.*`, `onboarding.manage`, `documents.review`, `offers.manage`, `learning.access`, `ai.access`, `reporting.view`, `profile.view` |
+| `candidate` | `/dashboard/candidate` | `/dashboard/candidate` | `onboarding.self`, `documents.self`, `offers.self`, `profile.view` |
+| `employee` | `/dashboard/employee` | `/dashboard/employee` | `onboarding.self`, `documents.self`, `offers.self`, `learning.access`, `ai.coach`, `profile.view` |
 
-Recruiters carry a second, finer-grained permission layer: **per-module capabilities**. An organization can disable a module for a specific recruiter without changing their base role.
+**Mongo Mirror**: `roles`/`permissions` collections seeded at startup via `rbac_seed.py` for querying only.
 
-**Org module keys:** `overview`, `candidates`, `invite`, `employees`, `talent`, `learning`, `org_config`, `assistant`, `messages`, `announcements`, `it`, `reporting`, `profile`, `support`
+### 3.2 Recruiter Capabilities (Module-Level Gates)
 
+**Org Module Keys** (`ORG_MODULE_KEYS` in `organization_service.py`):
 ```
-effective capability = organization.modules ∩ recruiter.capabilities
+overview, candidates, invite, employees, talent, learning, org_config,
+assistant, messages, announcements, it, reporting, profile, support
 ```
 
-Legacy recruiters with empty personal capabilities inherit org defaults (`DEFAULT_ORG_MODULES` all true). The `has_capability(key)` method on `CurrentUser` enforces this intersection.
+**Effective Capability Calculation**:
+```python
+effective = org.modules ∩ recruiter.capabilities
+```
+
+**`CurrentUser.has_capability(key)` Logic**:
+```python
+if user.role != "recruiter": return True
+if not user.capabilities: return True  # backward compat
+return user.capabilities.get(key, True)
+```
+
+**Enforcement Pattern** (always pair with role check):
+```python
+RequireRecruiterWithTalent = Annotated[
+    CurrentUser,
+    Depends(require_roles("recruiter", "super_admin")),
+    Depends(require_capabilities("talent")),
+]
+```
+
+### 3.3 Permission Codes (Full List)
+
+| Code | Description | Roles |
+|------|-------------|-------|
+| `recruitment.view` | View recruitment dashboard | recruiter, super_admin |
+| `recruitment.invite` | Create/send invitations | recruiter, super_admin |
+| `onboarding.self` | Complete own onboarding | candidate, employee, super_admin |
+| `onboarding.manage` | Manage candidate onboarding | recruiter, super_admin |
+| `documents.self` | Upload/view own documents | candidate, employee, super_admin |
+| `documents.review` | Verify others' documents | recruiter, super_admin |
+| `offers.self` | View/sign own offer | candidate, employee, super_admin |
+| `offers.manage` | Create/send/approve offers | recruiter, super_admin |
+| `learning.access` | Access learning modules | recruiter, employee, super_admin |
+| `ai.access` | Recruiter AI modules | recruiter, super_admin |
+| `ai.coach` | Employee AI coach | employee, super_admin |
+| `reporting.view` | View reports/analytics | recruiter, super_admin |
+| `profile.view` | View profile | all |
+| `admin.access` | Platform administration | super_admin |
 
 ---
 
-## The Conversational Agent Layer
+## 4. The Conversational Agent Layer
 
-TalentAI ships with an in-app conversational agent that executes real business operations through the same permission-checked service layer as the REST API. It is not a support chatbot layered on top — it is a first-class product interface.
+### 4.1 Architecture Overview
 
-### Agent Loop (`backend/app/services/agent_service.py`)
+The agent is a **tool-calling loop** (`agent_service.py`) that executes real business operations through the same service layer as the REST API. It is not a chatbot — it is a first-class product interface with full RBAC enforcement.
 
-1. **Build Prompt** — Role-specific system prompt + shared cross-role rules (`SHARED_AGENT_RULES`) + tool catalog (filtered by role) + fresh state snapshot (dashboard data) + recent conversation history (last 8 turns) + the new user message.
-2. **Ask the LLM** — OpenRouter primary, Gemini fallback. The model must return **strict JSON** via `call_llm_json` (`llm_service.py`): one tool call, or a final reply.
-3. **Execute** — Tool executes against real, permission-checked service functions. Never a shortcut path or direct DB read. The tool receives the `CurrentUser` context and enforces the same RBAC as the REST endpoint.
-4. **Observe & Loop** — The tool result feeds back as an observation. Bounded at `MAX_TOOL_STEPS = 4` so the agent cannot wander.
-5. **Persist & Return** — The turn is saved to `agent_conversations`; the reply and light UI hints (`ui_hint`, `suggested_replies`) are returned.
+### 4.2 Agent Loop (Detailed)
 
-### Graceful Degradation
+```python
+# Pseudocode from agent_service.py
+async def agent_chat(session_id, user_message, user: CurrentUser):
+    for step in range(MAX_TOOL_STEPS):  # = 4
+        # 1. Build prompt
+        prompt = build_prompt(
+            role_system_prompt=user.role,
+            shared_rules=SHARED_AGENT_RULES,
+            tool_catalog=get_tools_for_role(user.role),
+            state_snapshot=await get_state_snapshot(user),
+            history=await get_recent_history(session_id, turns=8),
+            user_message=user_message
+        )
+        
+        # 2. Call LLM (strict JSON)
+        response = await call_llm_json(prompt)
+        
+        # 3. Parse action
+        if response.type == "reply":
+            return persist_and_return(session_id, response)
+        
+        # 4. Execute tool
+        tool = TOOL_REGISTRY[response.tool_name]
+        if tool.read_only and tool.name in recent_read_only_calls:
+            continue  # skip duplicate read-only
+        result = await tool.execute(response.arguments, user)
+        
+        # 5. Observe & loop
+        user_message = format_observation(tool.name, result)
+    
+    return persist_and_return(session_id, Reply("Max steps reached"))
+```
 
-If no LLM key is configured, `_fallback_reply` in `agent_service.py` still answers status-style questions deterministically (e.g., "How many candidates do I have?"). This is a hard degrade-gracefully requirement — the agent must not crash the dashboard when the LLM is unavailable.
+### 4.3 Prompt Construction
 
-### Tool Files (Intentional Split — Do Not Merge)
+| Component | Source |
+|-----------|--------|
+| Role System Prompt | `agent_tools.py` → `ROLE_SYSTEM_PROMPTS[role]` |
+| Shared Rules | `SHARED_AGENT_RULES` (no raw paths, no secrets, confirm destructive) |
+| Tool Catalog | Filtered by role: `RECRUITER_TOOLS`, `CANDIDATE_TOOLS`, `EMPLOYEE_TOOLS`, `SUPER_ADMIN_TOOLS` |
+| State Snapshot | `agent_tools.get_state_snapshot(user)` — dashboard summary, pending counts, recent items |
+| History | Last 8 turns from `agent_conversations` |
+| User Message | Current input |
 
-| File | Purpose |
-|------|---------|
-| `agent_tools.py` | Core tools, `SELF_SERVE_TOOLS`, `RECRUITER_TOOLS` base, role list assembly |
-| `agent_tools_parity.py` | Dashboard-parity extras — brings the agent to full feature parity with the UI (deliberate module split, not duplication) |
-| `agent_tools_super_admin.py` | Platform-level tools for the Super Admin persona (lazy-loaded) |
+### 4.4 Tool Registry (Three Files — Intentional Split)
 
-Role lists assembled in `agent_tools.py`:
-- `RECRUITER_TOOLS` = base + parity
-- `CANDIDATE_TOOLS` = self-serve + candidate parity
-- `EMPLOYEE_TOOLS` = self-serve + employee parity
-- Super Admin = super-admin tools + recruiter tools
+| File | Contents | Role Lists |
+|------|----------|------------|
+| `agent_tools.py` | Core tools, `SELF_SERVE_TOOLS`, `RECRUITER_TOOLS` base, role list assembly | All roles |
+| `agent_tools_parity.py` | Dashboard-parity extras (brings agent to full UI feature parity) | Recruiter/Candidate/Employee parity |
+| `agent_tools_super_admin.py` | Platform-level tools (lazy-loaded) | Super Admin only |
 
-### Read-Only Tool Tracking
+**Role List Composition** (`agent_tools.py`):
+```python
+RECRUITER_TOOLS = RECRUITER_BASE_TOOLS + RECRUITER_PARITY_TOOLS
+CANDIDATE_TOOLS = SELF_SERVE_TOOLS + CANDIDATE_PARITY_TOOLS
+EMPLOYEE_TOOLS = SELF_SERVE_TOOLS + EMPLOYEE_PARITY_TOOLS
+SUPER_ADMIN_TOOLS = SUPER_ADMIN_BASE_TOOLS + RECRUITER_TOOLS
+```
 
-Read-only tools are tracked in `READONLY_TOOLS` (`agent_service.py`) so the agent does not waste a step re-fetching the same state mid-turn. Any new read-only tool **must** be added to this set.
+### 4.5 Read-Only Tool Tracking
 
-Current set: `get_status`, `get_my_offer`, `get_my_profile`, `list_documents`, `list_candidate_documents`, `list_person_documents`, `list_candidates`, `list_employees`, `get_candidate_status`, `get_employee_detail`, `get_dashboard_summary`, `my_learning_dashboard`, `list_opportunities`, `list_my_announcements`, `list_notifications`, `list_hr_threads`, `get_my_day1_info`.
+`READONLY_TOOLS` set in `agent_service.py` prevents the agent from wasting steps re-fetching identical state. **Any new read-only tool must be added here.**
 
-### Agent Rules (Do Not Weaken)
+Current set:
+```
+get_status, get_my_offer, get_my_profile, list_documents,
+list_candidate_documents, list_person_documents, list_candidates,
+list_employees, get_candidate_status, get_employee_detail,
+get_dashboard_summary, my_learning_dashboard, list_opportunities,
+list_my_announcements, list_notifications, list_hr_threads,
+get_my_day1_info
+```
 
-- No raw routes/paths in prose (`/offer`, `offer_page=`, "open page offer") — navigation travels via UI hints/buttons.
-- Never expose passwords or OTPs.
-- Confirm before destructive/irreversible tools (`needs_confirm` gate with `__CONFIRM__:` prefix).
-- Do not re-call the same read-only tool twice in one turn.
+### 4.6 Tool Development Rules
 
-### Frontend AI Surfaces (Distinct from the Agent)
+1. **Service-First**: Every tool calls an existing service function. If data isn't exposed, extend the service.
+2. **RBAC Parity**: Tool enforces same permissions as the equivalent REST endpoint.
+3. **Registration**: Add to correct role list in `agent_tools.py` assembly.
+4. **Read-Only**: If tool only reads, add name to `READONLY_TOOLS`.
+5. **Confirm Gate**: Destructive/bulk tools set `needs_confirm=True` → agent returns `__CONFIRM__:` prefix.
+6. **No Raw Paths**: Agent prose never contains `/offer`, `offer_page=`, etc. Navigation via `ui_hint` buttons only.
 
-| Surface | Path | Role |
-|---------|------|------|
-| Context / insights builders | `frontend/lib/ai/*Context.js`, `*Insights.js`, field help, OCR helpers | Feed the floating orb / guide UX |
-| AI experience components | `frontend/components/ai-experience/` (AiOrb, confirm cards, OCR overlays) | In-page UX chrome |
-| Full agent chat | `components/ai/AgentChatCore.js` + per-role `ai-assistant` pages | Calls `/api/agent/*` via `agentService.js` |
-| Recruiter mascot brief | Recruiter overview dashboard | `POST /api/dashboard/recruiter-mascot/brief` |
+### 4.7 Graceful Degradation
 
-> **Mascot ≠ Conversational Agent.** The floating mascot produces tips/insights/OCR chrome and short LLM briefs — it is not the tool-calling agent. Do not route mascot calls through the agent tool loop.
+If `llm_configured()` returns `False` (no OpenRouter/Gemini keys), `_fallback_reply()` handles:
+- Status queries ("How many candidates?")
+- Count queries ("Show my pending documents")
+- Simple lookups ("What's my offer status?")
 
-**What distinguishes the agent from a support chatbot:** every tool call passes through the same RBAC dependency chain a REST request would. The agent cannot see another organization's data, act outside its role's permission set, or be prompted into bypassing a check the UI itself could not bypass.
+The dashboard remains functional; agent degrades to deterministic read-only assistant.
+
+### 4.8 Frontend AI Surfaces (Distinct from Agent)
+
+| Surface | Path | Purpose |
+|---------|------|---------|
+| Context Builders | `frontend/lib/ai/*Context.js` | Aggregate dashboard data for orb |
+| Insight Builders | `frontend/lib/ai/*Insights.js` | Generate tips, field help, summaries |
+| AI Experience | `frontend/components/ai-experience/` | AiOrb, confirm cards, OCR overlays, activity panel |
+| Full Agent Chat | `components/ai/AgentChatCore.js` + `*/ai-assistant` pages | Tool-calling chat interface |
+| Mascot Brief | Recruiter overview → `POST /api/dashboard/recruiter-mascot/brief` | Short LLM summary, not tool loop |
+
+> **Mascot ≠ Conversational Agent.** The mascot produces tips/briefs; the agent executes tools. Do not conflate.
 
 ---
 
-## System Architecture
+## 5. System Architecture
 
-### Request Lifecycle
+### 5.1 Request Lifecycle (End-to-End)
 
 ```
-Browser
-  └─ Next.js App Router (frontend/app/)
-       └─ proxy.js (cookie gate: access_token)
-            └─ frontend/services/*.js + lib/apiClient.js (axios + Bearer)
-                 └─ FastAPI routers (backend/app/api/*.py)
-                      └─ Depends(require_roles / require_permissions / require_capabilities)
-                           └─ Services (backend/app/services/*.py)
-                                ├─ MongoDB (Motor) — app/core/database.py
-                                ├─ Cloudinary — storage_service.py
-                                ├─ SMTP — email_service.py
-                                └─ OpenRouter / OmniRoute / Gemini — llm_service.py
+┌─────────────┐     ┌──────────────────┐     ┌─────────────────────┐
+│   Browser   │────▶│  Next.js App     │────▶│  FastAPI Backend    │
+│             │     │  Router + proxy  │     │  Routers + Services │
+└─────────────┘     └──────────────────┘     └─────────────────────┘
+       │                    │                        │
+       │ 1. Request         │ 2. Cookie check        │ 3. JWT verify
+       │                    │    (proxy.js)          │    (get_current_user)
+       │                    │                        │
+       ▼                    ▼                        ▼
+┌─────────────┐     ┌──────────────────┐     ┌─────────────────────┐
+│  localStorage│     │  PUBLIC_PATHS    │     │  Depends(Require*)  │
+│  (JWTs)      │     │  allowlist       │     │  RBAC + Caps        │
+└─────────────┘     └──────────────────┘     └─────────────────────┘
+       │                    │                        │
+       │ 4. Bearer token    │                        │ 5. Service call
+       │    (apiClient.js)  │                        │    (business logic)
+       ▼                    ▼                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      MongoDB (Motor)                             │
+│  organization_id-scoped queries + indexes                        │
+└─────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  External: Cloudinary │ SMTP │ OpenRouter/Gemini │ Coursera/MS  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-1. Browser hits a Next route. `frontend/proxy.js` redirects to `/login` if no `access_token` cookie and the path is not public.
-2. Client code stores JWTs in **localStorage** and mirrors `access_token` into a cookie for the proxy.
-3. `lib/apiClient.js` attaches `Authorization: Bearer <access_token>`; on 401 it posts `/api/auth/refresh`.
-4. FastAPI `get_current_user` rejects non-`access` tokens, resolves profile + role, and loads org modules ∩ recruiter capabilities.
-5. Router dependency (`RequireRecruiter`, local capability deps, etc.) may deny — audited where wired.
-6. Service runs Mongo queries scoped by `organization_id` / `recruiter_people_scope` as appropriate.
-7. Response shape must match what the corresponding `frontend/services/*.js` caller expects.
+**Step-by-Step**:
+1. Browser requests a route. `proxy.js` middleware checks `access_token` cookie. Missing + non-public → 302 `/login`.
+2. `lib/apiClient.js` attaches `Authorization: Bearer <access_token>` from localStorage.
+3. FastAPI `get_current_user` decodes JWT, validates `type="access"`, resolves profile from Mongo, loads `effective_capabilities`.
+4. Router dependency (`RequireRecruiter`, `RequireRecruiterWithInvite`, etc.) authorizes or denies (audited).
+5. Service executes business logic with tenant-scoped queries.
+6. Response serialized via Pydantic schema → JSON → frontend service → component.
 
-### Layer Rules (Hard)
+### 5.2 Layer Rules (Hard Constraints)
 
-| Layer | Path | Responsibility |
-|-------|------|----------------|
-| **Routers** | `backend/app/api/` | Parse request → auth dependency → call one service → return. No business `if` that decides outcomes. |
-| **Services** | `backend/app/services/` | All business logic, DB access, emails, notifications. |
-| **Schemas** | `backend/app/schemas/` | Pydantic request/response contracts. Frontend has **no** shared codegen — contract drift fails at runtime, not build time. |
-| **Core** | `backend/app/core/` | `config` (env), `database` (Mongo/Supabase + indexes), `security` (JWT + shared auth deps), `rbac` (source of truth), `crypto` (Fernet). |
-| **Frontend pages** | `frontend/app/dashboard/{role}/` | Call `services/*.js` only — never inline `fetch`/`axios` for backend APIs. |
-| **Agent tools** | `backend/app/services/agent_tools*.py` | Call services (same as REST) — never shortcut DB reads that bypass RBAC. |
+| Layer | Path | Responsibility | Forbidden |
+|-------|------|----------------|-----------|
+| **Routers** | `backend/app/api/` | Parse → auth dep → call ONE service → return | Business `if` deciding outcomes |
+| **Services** | `backend/app/services/` | All business logic, DB, emails, notifications | HTTP concerns, request parsing |
+| **Schemas** | `backend/app/schemas/` | Request/response contracts (Pydantic) | Business logic |
+| **Core** | `backend/app/core/` | Config, DB, Security, RBAC, Crypto | Domain logic |
+| **Frontend Pages** | `frontend/app/dashboard/{role}/` | Call `services/*.js` only | Raw `axios`/`fetch` to backend |
+| **Agent Tools** | `backend/app/services/agent_tools*.py` | Call services (same as REST) | Direct `collection.find` |
 
-### Forbidden Shortcuts
+### 5.3 Forbidden Shortcuts
 
 - Router → raw Mongo business logic
 - Agent tool → `collection.find` without service RBAC
-- Frontend page → axios to backend bypassing `services/` (for domain APIs)
+- Frontend page → axios to backend bypassing `services/`
 - Cross-org queries without Super Admin intent
 
-### Dependency Direction (Allowed)
+### 5.4 Dependency Direction
 
 ```
 api → services → (database | crypto | email | storage | llm)
 frontend pages → services/*.js → apiClient → api
-lib/ai (UX) ↛ agent_tools   (context only; chat uses the agent API)
+lib/ai (UX) ↛ agent_tools   (context only; chat uses agent API)
 ```
 
 ---
 
-## Technology Stack
+## 6. Technology Stack
 
-### Frontend
+### 6.1 Frontend
+
+| Category | Technology | Version/Notes |
+|----------|------------|---------------|
+| Framework | Next.js (App Router) | 16.x |
+| Runtime | React | 19.x |
+| Styling | CSS Modules + Tailwind | v4 (PostCSS plugin) |
+| Animation | framer-motion | Latest |
+| Icons | lucide-react | Latest |
+| HTTP Client | axios | With interceptors |
+| Notifications | react-toastify | Toast containers per shell |
+| Spreadsheets | xlsx | Bulk invite import/export |
+| Session | Cookie + localStorage | `proxy.js` middleware |
+| Linting | ESLint | Next.js core-web-vitals config |
+| Build | `npm run build` | Production bundle |
+
+### 6.2 Backend
+
+| Category | Technology | Version/Notes |
+|----------|------------|---------------|
+| Framework | FastAPI | Async, Uvicorn |
+| Database Driver | Motor | Async MongoDB |
+| Validation | Pydantic | v2 |
+| Auth | python-jose (JWT) + passlib (bcrypt) | |
+| Rate Limiting | slowapi | |
+| Logging | loguru / rich | Structured |
+| File Storage | Cloudinary (primary) + Supabase (optional) | |
+| LLM | OpenRouter (primary) + Gemini (fallback) | Via `llm_service` |
+| Document Intelligence | PyMuPDF, python-docx, EasyOCR, Pytesseract, openpyxl | All lazy-imported |
+| Task Scheduling | APScheduler (reminders) | Background |
+
+### 6.3 Infrastructure
 
 | Component | Technology |
-|-----------|-----------|
-| Framework | Next.js 16 (App Router) + React 19 |
-| Styling | CSS Modules + Tailwind v4 (PostCSS plugin) |
-| Animation | framer-motion |
-| Icons | lucide-react |
-| HTTP Client | axios |
-| Notifications | react-toastify |
-| Spreadsheets | xlsx (bulk invite import/export) |
-| Session | Cookie-based, enforced by `proxy.js` middleware |
-
-### Backend
-
-| Component | Technology |
-|-----------|-----------|
-| Framework | FastAPI (async) on Uvicorn |
-| Database | MongoDB via Motor (async driver) — no ORM abstraction |
-| Auth | JWT (python-jose) + bcrypt (passlib) |
-| Validation | Pydantic (request/response contracts) |
-| LLM | OpenRouter (primary) + Gemini (fallback) via `llm_service` |
-| Storage | Cloudinary (primary) + optional Supabase |
-| Email | SMTP HTML via `email_service` + org-overridable templates |
-| Document Intelligence | PyMuPDF, python-docx, EasyOCR, Pytesseract, openpyxl — all lazy-imported |
-| Rate Limiting | slowapi |
-
-### Infrastructure
-
-| Component | Technology |
-|-----------|-----------|
+|-----------|------------|
 | Containerization | Docker Compose (`docker-compose.yml` + `docker-compose.prod.yml`) |
-| Services | MongoDB 7, Redis (config-only), OmniRoute (LLM gateway), backend, frontend |
-| Gateway | Optional nginx reverse proxy |
+| Database | MongoDB 7 (replica set for transactions) |
+| Cache/Config | Redis (config-only — no client yet) |
+| LLM Gateway | OmniRoute (local) / OpenRouter (cloud) |
+| Reverse Proxy | nginx (optional, production) |
+| Process Manager | Uvicorn (dev), Docker (prod) |
 
 ---
 
-## Repository Structure
+## 7. Repository Structure
 
 ```
 TalentAI/
-├── AGENTS.md                         # Short agent field guide (workspace rule)
-├── README.md                         # This file — product/architecture overview
+├── AGENTS.md                         # Short agent field guide
+├── README.md                         # This file
 ├── .agents/                          # Engineering knowledge layer
 │   ├── AGENTS.md                     # Master instructions
-│   ├── architecture/                 # Cross-cutting architecture docs
-│   │   ├── system-overview.md        # Layers, request lifecycle, module map
-│   │   ├── backend.md                # main.py, lifespan, core spine
-│   │   ├── frontend.md               # App Router, proxy, hooks, services
-│   │   ├── api.md                    # Full router inventory
-│   │   ├── authentication.md         # JWT typing, OTP, lockout, dual-role
-│   │   ├── authorization.md          # RBAC, capabilities, audit
-│   │   ├── database.md               # Collections, indexes, encryption
-│   │   ├── ai.md                     # Agent loop, tool split, fallbacks
-│   │   ├── integrations.md           # SMTP, Cloudinary, LLM, catalogs
-│   │   ├── multi-tenancy.md          # organization_id, scopes, purge
-│   │   └── dependency-map.md         # Cross-module wiring
-│   └── skills/                       # Fine-grained module skills (load per task)
-│       └── README.md                 # Skill index / navigation
+│   ├── architecture/                 # Cross-cutting architecture
+│   │   ├── system-overview.md
+│   │   ├── backend.md
+│   │   ├── frontend.md
+│   │   ├── api.md
+│   │   ├── authentication.md
+│   │   ├── authorization.md
+│   │   ├── database.md
+│   │   ├── ai.md
+│   │   ├── integrations.md
+│   │   ├── multi-tenancy.md
+│   │   └── dependency-map.md
+│   └── skills/                       # Module skills (load per task)
+│       └── README.md                 # Skill index
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                   # App factory, CORS, lifespan seeds, router mount
-│   │   ├── api/                      # Thin routers (one per domain)
-│   │   │   ├── auth.py               # /api/auth
-│   │   │   ├── invitations.py        # /api/invitations
-│   │   │   ├── offers.py             # /api/offers
-│   │   │   ├── onboarding.py         # /api/onboarding
-│   │   │   ├── employees.py          # /api/employees
-│   │   │   ├── documents.py          # /api/documents
-│   │   │   ├── learning.py           # /api/learning
-│   │   │   ├── talent.py             # /api/talent
-│   │   │   ├── career_framework.py   # /api/career-framework
-│   │   │   ├── organization_framework.py # /api/org-framework
-│   │   │   ├── it_provisioning.py    # /api/it-provisioning
-│   │   │   ├── it_service_requests.py # /api/it-service-requests
-│   │   │   ├── messages.py           # /api/messages
-│   │   │   ├── dashboard.py          # /api/dashboard/*, notifications, search, announcements
-│   │   │   ├── agent.py              # /api/agent
-│   │   │   ├── tickets.py            # /api/tickets (recruiter support)
-│   │   │   ├── admin_tickets.py      # /api/admin/tickets (super admin)
-│   │   │   ├── super_admin.py        # /api/super-admin
-│   │   │   ├── email_templates.py    # /api/email-templates
-│   │   │   ├── rbac.py               # /api/rbac (me, catalog)
-│   │   │   └── universities.py       # /api/universities/search
-│   │   ├── core/                     # Application spine
-│   │   │   ├── config.py             # Pydantic Settings, JWT validation, link builders
-│   │   │   ├── database.py           # Motor client, _ensure_index, create_database_indexes
-│   │   │   ├── security.py           # Password hash, JWT, get_current_user, Require* aliases
-│   │   │   ├── rbac.py               # PERMISSIONS, ROLE_PERMISSIONS, ROLE_HOME, CurrentUser
-│   │   │   ├── rbac_seed.py          # Seed Mongo mirror at startup
-│   │   │   └── crypto.py             # Fernet encrypt/decrypt for sensitive fields
-│   │   ├── schemas/                  # Pydantic request/response contracts (one per domain)
-│   │   ├── services/                 # All business logic
-│   │   │   ├── agent_service.py      # Agent loop, READONLY_TOOLS, fallback reply
-│   │   │   ├── agent_tools.py        # Core tools + role list assembly
-│   │   │   ├── agent_tools_parity.py # Dashboard-parity tools (intentional split)
-│   │   │   ├── agent_tools_super_admin.py # Platform-level tools
-│   │   │   ├── auth_service.py       # Login, OTP, lockout, refresh
-│   │   │   ├── invitation_service.py # Invites + required offer
-│   │   │   ├── offer_service.py      # Offer lifecycle, negotiation, signing
-│   │   │   ├── employee_service.py   # Convert/activate, complete profile, banking
-│   │   │   ├── document_service.py   # Uploads, verify, signed downloads
-│   │   │   ├── learning_service.py   # Large learning domain
-│   │   │   ├── learning_ai_service.py# Course ranking, skill gaps, readiness
-│   │   │   ├── talent_service.py     # Deterministic talent domain
-│   │   │   ├── career_framework_service.py
-│   │   │   ├── organization_framework_service.py
-│   │   │   ├── organization_service.py # Org modules, recruiter_scope helpers
-│   │   │   ├── it_provisioning_service.py
-│   │   │   ├── it_service_requests_service.py
-│   │   │   ├── message_service.py    # hr_threads
-│   │   │   ├── dashboard_service.py
-│   │   │   ├── ticket_service.py
-│   │   │   ├── email_service.py      # SMTP + templates
-│   │   │   ├── storage_service.py    # Cloudinary
-│   │   │   ├── llm_service.py        # call_llm_json, OpenRouter→Gemini
-│   │   │   ├── ocr_service.py        # Lazy OCR (ENABLE_OCR)
-│   │   │   ├── document_extraction_service.py
-│   │   │   ├── embedding_service.py  # Lazy embeddings (ENABLE_EMBEDDINGS)
-│   │   │   ├── coursera_service.py   # Live catalog + cache
-│   │   │   ├── ms_learn_service.py   # Live catalog + cache
-│   │   │   ├── recruiter_mascot_service.py
-│   │   │   ├── reminder_service.py   # Throttled nudges
-│   │   │   └── ...
+│   │   ├── main.py                   # App factory, CORS, lifespan
+│   │   ├── api/                      # 18 thin routers
+│   │   ├── core/                     # Spine: config, db, security, rbac, crypto
+│   │   ├── schemas/                  # Pydantic contracts (per domain)
+│   │   ├── services/                 # 30+ business logic modules
 │   │   └── static/
-│   ├── scripts/                      # Seeds, backfills, smoke tests (manual)
-│   │   ├── seed_super_admin.py       # Bootstrap first Super Admin
-│   │   ├── backfill_dual_role_recruiters.py
-│   │   ├── reconcile_dual_role_profiles.py
-│   │   ├── verify_dual_role.py
-│   │   ├── backfill_org_scoping.py
-│   │   ├── backfill_organization_tenancy.py
-│   │   ├── migrate_providers.py
-│   │   ├── check_career_data.py
-│   │   └── test_api_endpoints.py     # Manual e2e checks (not pytest-collected)
+│   ├── scripts/                      # Seeds, backfills, smoke tests
 │   ├── tests/                        # pytest suite
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
-│   ├── app/                          # Next.js App Router pages
-│   │   ├── login/page.js
-│   │   ├── register/page.js
-│   │   ├── forgot-password/page.js
-│   │   ├── reset-password/page.js
-│   │   ├── invite/[token]/page.js    # Accept invite / register
-│   │   ├── onboarding/page.js        # Candidate wizard
-│   │   ├── offer/page.js             # Offer viewing/signing
-│   │   ├── documents/page.js         # Standalone document flow
-│   │   ├── it-setup/[token]/page.js  # IT provisioning intake
-│   │   ├── it-setup/batch/[token]/page.js
-│   │   ├── it-support/[token]/page.js
-│   │   ├── portal-root-x9f3/page.js  # Hidden Super Admin login
-│   │   ├── dashboard/
-│   │   │   ├── recruiter/            # Recruiter dashboard pages
-│   │   │   ├── candidate/            # Candidate dashboard pages
-│   │   │   ├── employee/             # Employee dashboard pages
-│   │   │   └── super-admin/          # Super Admin dashboard pages
-│   │   └── ...
-│   ├── components/                    # React components
-│   │   ├── recruiter/                 # RecruiterShell etc.
-│   │   ├── employee/                  # EmployeeShell etc.
-│   │   ├── candidate/                 # CandidateShell etc.
-│   │   ├── super-admin/               # SuperAdminShell etc.
-│   │   ├── shared/shell/              # Cross-role chrome + CSS Modules (composes:)
-│   │   ├── ai/                        # AgentChatCore, AssistantPageShell
-│   │   ├── ai-experience/             # AiOrb, confirm cards, OCR overlays
-│   │   ├── onboarding/                # Wizard steps
-│   │   ├── offers/                    # Offer letter components
-│   │   ├── documents/                 # DocumentManager
-│   │   ├── learning/                  # Learning UI
-│   │   ├── talent/                    # Talent management UI
-│   │   ├── it/                        # IT provisioning UI
-│   │   └── ui/                        # Generic primitives
-│   ├── services/                      # API wrapper modules — the only layer that calls the backend
-│   │   ├── authService.js
-│   │   ├── invitationService.js
-│   │   ├── offerService.js
-│   │   ├── employeeService.js
-│   │   ├── documentService.js
-│   │   ├── learningService.js
-│   │   ├── talentService.js
-│   │   ├── careerService.js
-│   │   ├── orgFrameworkService.js
-│   │   ├── messageService.js
-│   │   ├── agentService.js
-│   │   ├── ticketService.js
-│   │   ├── rbac.js
-│   │   └── ...
-│   ├── hooks/                         # Shared React hooks (edit once, not per shell)
-│   │   ├── useUserSession.js
-│   │   ├── useSidebarCollapse.js
-│   │   ├── useNotificationsCenter.js
-│   │   ├── useLogout.js
-│   │   ├── useRoleSwitch.js
-│   │   ├── useGlobalSearch.js
-│   │   ├── useDocumentProcessing.js
-│   │   ├── useOrgFrameworkOptions.js
-│   │   └── useTalentIntelligenceData.js
-│   ├── lib/                           # Utilities + AI context builders
-│   │   ├── apiClient.js               # Axios instance, Bearer, refresh on 401
-│   │   ├── formFeedback.js            # FieldError helpers
-│   │   └── ai/                        # Per-role context/insight builders
-│   ├── utils/                         # Nav configs, validation helpers
-│   │   ├── recruiterNav.js            # Capability-filtered
-│   │   ├── employeeNav.js
-│   │   ├── candidateNav.js
-│   │   └── ...
-│   ├── proxy.js                       # Auth cookie gate (Next middleware)
+│   ├── app/                          # Next.js App Router
+│   │   ├── (public routes)           # login, register, invite, onboarding, offer, documents, it-setup, it-support, portal-root-x9f3
+│   │   └── dashboard/
+│   │       ├── recruiter/
+│   │       ├── candidate/
+│   │       ├── employee/
+│   │       └── super-admin/
+│   ├── components/                   # React components by role/domain
+│   ├── services/                     # API wrappers (ONLY layer calling backend)
+│   ├── hooks/                        # Shared hooks (session, sidebar, notifications, etc.)
+│   ├── lib/                          # apiClient + ai/ context builders
+│   ├── utils/                        # Nav configs, validation
+│   ├── proxy.js                      # Auth cookie gate
 │   ├── Dockerfile
-│   ├── package.json
-│   └── .env.example
-├── docker-compose.yml                 # Local development
-├── docker-compose.prod.yml            # Production overlay
-├── nginx/
-│   └── nginx.conf                     # Reverse proxy config
-└── .env.docker.example                # Docker env template
+│   └── package.json
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── nginx/nginx.conf
+└── .env.docker.example
 ```
 
-### Notable Frontend Routes
+### 7.1 Key Backend Services (Alphabetical)
 
-| Path | Purpose |
-|------|---------|
-| `/login`, `/register` | Standard auth |
-| `/portal-root-x9f3` | Unguessable Super Admin login, never linked from the public UI |
-| `/invite/[token]` | Candidate accepts a recruiter's invitation |
-| `/onboarding` | Candidate onboarding wizard |
-| `/offer` | Offer letter viewing/signing |
-| `/documents` | Standalone document upload/verification flow |
-| `/it-setup/[token]`, `/it-setup/batch/[token]` | IT provisioning intake |
-| `/it-support/[token]` | IT service-request intake |
-| `/dashboard/{role}/...` | Authenticated dashboards, one tree per role |
+| Service | Domain |
+|---------|--------|
+| `agent_service.py` | Agent loop, fallback |
+| `agent_tools.py` | Core tools + role assembly |
+| `agent_tools_parity.py` | Dashboard-parity tools |
+| `agent_tools_super_admin.py` | Super Admin tools |
+| `auth_service.py` | Login, OTP, lockout, refresh |
+| `bulk_invite_service.py` | Spreadsheet import |
+| `career_framework_service.py` | Tracks, levels, readiness |
+| `coursera_service.py` | Coursera catalog sync |
+| `dashboard_service.py` | Summary, activity, announcements |
+| `document_extraction_service.py` | OCR field extraction |
+| `document_service.py` | Uploads, verify, downloads |
+| `email_service.py` | SMTP + templates |
+| `embedding_service.py` | Resume embeddings |
+| `employee_service.py` | Convert, profile, banking, directory |
+| `invitation_service.py` | Invites + required offer |
+| `it_provisioning_service.py` | Kits, tokens, passwords |
+| `it_service_requests_service.py` | IT tickets |
+| `learning_ai_service.py` | Skill gaps, recommendations |
+| `learning_service.py` | Catalog, enrollments, assignments |
+| `llm_service.py` | `call_llm_json`, OpenRouter→Gemini |
+| `message_service.py` | HR threads |
+| `ms_learn_service.py` | MS Learn catalog sync |
+| `offer_service.py` | Lifecycle, negotiation, signing |
+| `organization_framework_service.py` | Departments, roles, skills, roadmaps |
+| `organization_service.py` | Org modules, scopes, purge |
+| `ocr_service.py` | Lazy OCR pipeline |
+| `recruiter_mascot_service.py` | Dashboard brief |
+| `reminder_service.py` | Throttled nudges |
+| `storage_service.py` | Cloudinary uploads, signed URLs |
+| `talent_service.py` | Opportunities, evaluations, plans |
 
 ---
 
-## Domain Module Map
+## 8. Domain Module Map
 
-| Domain | Backend Router | Backend Service(s) | Frontend Pages |
-|--------|----------------|--------------------|----------------|
-| Auth / Session | `api/auth.py` | `auth_service.py` | `/login`, `/register`, verify/reset |
+| Domain | Router | Service(s) | Frontend |
+|--------|--------|------------|----------|
+| Auth/Session | `api/auth.py` | `auth_service.py` | `/login`, `/register`, verify/reset |
 | Invitations | `api/invitations.py` | `invitation_service.py`, `bulk_invite_service.py` | `/dashboard/recruiter/invite`, `/invite/[token]` |
-| Offers | `api/offers.py` | `offer_service.py` | `/offer`, recruiter invite/candidates |
-| Onboarding | `api/onboarding.py` | `candidate_service.py`, `employee_service.py` | `/onboarding`, candidate/employee profile |
-| Documents / OCR | `api/documents.py` | `document_service.py`, `ocr_service.py`, `document_extraction_service.py` | `/documents`, DocumentManager |
+| Offers | `api/offers.py` | `offer_service.py` | `/offer`, recruiter pages |
+| Onboarding | `api/onboarding.py` | `candidate_service.py`, `employee_service.py` | `/onboarding`, profiles |
+| Documents/OCR | `api/documents.py` | `document_service.py`, `ocr_service.py`, `document_extraction_service.py` | `/documents`, DocumentManager |
 | Employees | `api/employees.py` | `employee_service.py` | `/dashboard/recruiter/employees` |
-| IT Provisioning | `api/it_provisioning.py` | `it_provisioning_service.py` | `/it-setup/[token]`, recruiter IT pages |
+| IT Provisioning | `api/it_provisioning.py` | `it_provisioning_service.py` | `/it-setup/[token]`, recruiter IT |
 | IT Service Requests | `api/it_service_requests.py` | `it_service_requests_service.py` | `/it-support/[token]` |
-| Learning | `api/learning.py` | `learning_service.py`, `learning_ai_service.py` | Recruiter/employee learning pages |
-| Organization Framework | `api/organization_framework.py` | `organization_framework_service.py` | `/dashboard/recruiter/organization-config` |
-| Career Framework | `api/career_framework.py` | `career_framework_service.py` | Employee career, talent readiness |
-| Talent | `api/talent.py` | `talent_service.py` (deterministic; no LLM) | Recruiter/employee talent pages |
+| Learning | `api/learning.py` | `learning_service.py`, `learning_ai_service.py` | Recruiter/employee learning |
+| Org Framework | `api/organization_framework.py` | `organization_framework_service.py` | `/dashboard/recruiter/organization-config` |
+| Career Framework | `api/career_framework.py` | `career_framework_service.py` | Employee career, readiness |
+| Talent | `api/talent.py` | `talent_service.py` | Recruiter/employee talent |
 | Messages | `api/messages.py` | `message_service.py` | Recruiter/employee messages |
-| Dashboard / Notifications | `api/dashboard.py` | `dashboard_service.py` | Overview, announcements, search |
-| AI Agent | `api/agent.py` | `agent_service.py`, `agent_tools*.py` | `*/ai-assistant` pages |
-| Tickets | `api/tickets.py`, `api/admin_tickets.py` | `ticket_service.py` | Recruiter support; super-admin tickets |
+| Dashboard/Notifs | `api/dashboard.py` | `dashboard_service.py` | Overview, announcements, search |
+| AI Agent | `api/agent.py` | `agent_service.py`, `agent_tools*.py` | `*/ai-assistant` |
+| Tickets | `api/tickets.py`, `api/admin_tickets.py` | `ticket_service.py` | Recruiter support; SA tickets |
 | Super Admin | `api/super_admin.py` | `organization_service.py` | Orgs, recruiter caps |
 | Universities | `api/universities.py` | — | Onboarding education autocomplete |
 
 ---
 
-## Authentication System
+## 9. Authentication System
 
-### JWT Token System
+### 9.1 JWT Token System
 
-Authentication uses **typed** JWT tokens to prevent token confusion attacks.
+**Typed Tokens** — Prevents token confusion attacks.
 
-| Token Type | Claim `type` | Use |
-|-----------|--------------|-----|
-| Access | `"access"` | API `Authorization: Bearer` header |
-| Refresh | `"refresh"` | `POST /api/auth/refresh` only |
+| Token | Claim `type` | Use | Expiry |
+|-------|--------------|-----|--------|
+| Access | `"access"` | `Authorization: Bearer` | `ACCESS_TOKEN_EXPIRE` (default 30m) |
+| Refresh | `"refresh"` | `POST /api/auth/refresh` only | `JWT_EXPIRE_MINUTES` (7d/30d with `remember_me`) |
 
-`get_current_user` (**`backend/app/core/security.py`**) **rejects** any JWT whose `type != "access"`. This check must be preserved when touching verification code — a refresh token must never be accepted where an access token is expected.
+**Validation** (`security.get_current_user`):
+```python
+payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+if payload.get("type") != "access":
+    raise HTTPException(401, "Invalid token type")
+```
 
-Token payload carries: `user_id`, `email`, `role`. The full profile is re-resolved from MongoDB on each request via `_resolve_active_user` across `super_admins`, `recruiters`, `candidates`, `employees` collections.
+### 9.2 Session Flow (Frontend)
 
-### Session Flow (Frontend)
+1. **Login/Verify/Switch** → Store in localStorage: `access_token`, `refresh_token`, `token_expires_at`, `user`.
+2. **Cookie Mirror** → `document.cookie = "access_token=...; path=/; SameSite=Lax"` for `proxy.js`.
+3. **API Calls** → `apiClient.js` attaches Bearer from localStorage.
+4. **401 Handling** → Interceptor calls `/api/auth/refresh`, updates localStorage + cookie, retries original request.
+5. **Logout** → `clearLocalSession()` clears localStorage + sets cookie `max-age=0`.
 
-1. On login/verify/switch: store `access_token`, `refresh_token`, `token_expires_at`, `user` in **localStorage**.
-2. Mirror `access_token` into `document.cookie` so `proxy.js` can gate routes.
-3. API calls use Bearer from localStorage; 401 triggers automatic `/api/auth/refresh` via axios interceptor in `lib/apiClient.js`.
-4. Logout clears localStorage **and** cookies (`max-age=0`).
+### 9.3 Auth Endpoints (`/api/auth`)
 
-### Auth Endpoints (`/api/auth`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/register` | General signup (creates pending user + OTP) |
+| POST | `/candidate/register` | Candidate-specific signup |
+| POST | `/recruiter/register` | Recruiter-specific signup (requires invite token) |
+| POST | `/verify-otp` | Activates pending user, returns session |
+| POST | `/verify-email` | Email verification for existing users |
+| POST | `/resend-otp` | Resend OTP (cooldown: `OTP_RESEND_COOLDOWN_SECONDS`) |
+| POST | `/resend-verification` | Resend email verification |
+| POST | `/login` | Password auth; `remember_me` extends refresh |
+| POST | `/refresh` | Rotates access token |
+| POST | `/forgot-password` | Sends 6-digit reset code |
+| POST | `/reset-password` | Resets with code |
+| POST | `/change-password` | Authenticated password change |
+| POST | `/logout` | Revokes refresh tokens |
+| POST | `/bootstrap-super-admin` | First SA only, OTP-gated |
+| POST | `/switch-role` | Dual-role recruiter↔employee; rotates tokens |
+| GET | `/me` | Returns current user profile |
 
-| Flow | Endpoints | Notes |
-|------|-----------|-------|
-| Signup | `POST /register`, `/candidate/register`, `/recruiter/register` | Creates pending user + sends SMTP OTP |
-| Verify | `POST /verify-otp`, `/verify-email` | Activates account, returns session tokens |
-| Resend | `/resend-otp`, `/resend-verification` | Cooldown: `OTP_RESEND_COOLDOWN_SECONDS` |
-| Login | `POST /login` | Password verify; optional `remember_me` → refresh 30d vs 7d |
-| Refresh | `POST /refresh` | Rotates access token (+ refresh as implemented) |
-| Password | `/forgot-password`, `/reset-password`, `/change-password` | 6-digit code path for forgot password |
-| Logout | `POST /logout` | Revokes refresh tokens in DB |
-| Bootstrap | `POST /bootstrap-super-admin` | First super admin only, OTP-gated |
-| Switch Role | `POST /switch-role` | Dual-role recruiter↔employee; rotates refresh tokens |
+### 9.4 OTP & Lockout
 
-### OTP & Lockout Policy
+| Parameter | Default | Config |
+|-----------|---------|--------|
+| OTP Length | 6 digits | — |
+| OTP Expiry | 10 min | `OTP_EXPIRE_MINUTES` |
+| Max OTP Attempts | 5 | `OTP_MAX_ATTEMPTS` |
+| Resend Cooldown | 60 sec | `OTP_RESEND_COOLDOWN_SECONDS` |
+| Login Lockout Threshold | 5 failures | — |
+| Lockout Duration | 15 min | — |
 
-- **OTP**: 6-digit codes, `OTP_EXPIRE_MINUTES` (default 10), `OTP_MAX_ATTEMPTS` (5)
-- **Lockout**: 5 failed login attempts → 15-minute lockout. Counter keyed by canonical email in `login_attempts` collection. Company email and personal email can map to the same employee account; lockout uses the canonical identity.
-- **Unlock**: Forgot-password OTP flow is the designated unlock/reset path.
+**Lockout Key**: Canonical email in `login_attempts` collection. Company + personal email map to same employee → shared lockout.
 
-### Public Token Routes (No JWT)
+### 9.5 Public Token Routes (No JWT)
 
-These bypass login but use unguessable, capability-equivalent tokens:
+| Route | Frontend | Purpose |
+|-------|----------|---------|
+| `GET /api/invitations/{token}` | `/invite/[token]` | Accept invite, register |
+| `GET|POST /api/it-provisioning/{token}` | `/it-setup/[token]` | IT setup, encrypted password |
+| `GET|POST /api/it-provisioning/batch/{token}` | `/it-setup/batch/[token]` | Batch provisioning |
+| `GET|POST /api/it-service-requests/public/{token}` | `/it-support/[token]` | Employee IT request |
 
-| Backend | Frontend | Purpose |
-|---------|----------|---------|
-| `GET /api/invitations/{token}` | `/invite/[token]` | Accept invite / register |
-| `GET|POST /api/it-provisioning/{token}`, `/batch/{token}` | `/it-setup/...` | IT assigns email/assets |
-| `GET|POST /api/it-service-requests/public/{token}` | `/it-support/[token]` | IT fulfills employee request |
+### 9.6 Super Admin Login
 
-The frontend public allowlist lives in `proxy.js` `PUBLIC_PATHS` (`/invite`, `/it-setup`, `/it-support`, `/offer`, `/onboarding`, `/documents`, `/portal-root-x9f3`, etc.). Any new **public** top-level route must be listed there or it will incorrectly force a login redirect.
-
-### Super Admin Login
-
-The Super Admin login UI is at **`/portal-root-x9f3`** — deliberately unguessable and unlinked from public UI. Never link to it from public pages, and never rename it to something guessable without explicit request.
+**Route**: `/portal-root-x9f3` (hardcoded in `proxy.js` `PUBLIC_PATHS`).
+- Deliberately unguessable, unlinked from public UI.
+- Never rename without explicit request.
+- Only accessible via direct navigation or invitation email.
 
 ---
 
-## Authorization & RBAC
+## 10. Authorization & RBAC
 
-### RBAC Permission Model (`backend/app/core/rbac.py`)
+### 10.1 Shared Dependencies (`security.py`)
 
-| Permission Code | Intent |
-|----------------|--------|
-| `recruitment.view` | View recruitment modules |
-| `recruitment.invite` | Create invitations |
-| `onboarding.self` | Complete personal onboarding |
-| `onboarding.manage` | Manage candidate onboarding |
-| `documents.self` | Own documents |
-| `documents.review` | Verify others' documents |
-| `offers.self` | View/sign own offer |
-| `offers.manage` | Create/send/approve offers |
-| `learning.access` | Learning modules |
-| `ai.access` | AI modules (recruiter-facing) |
-| `ai.coach` | AI Coach (employee) |
-| `reporting.view` | Reporting |
-| `profile.view` | Profile |
-| `admin.access` | Platform administration |
-
-### Role → Permission Mapping
-
-| Role | Permissions |
-|------|-------------|
-| `super_admin` | All (`ALL_PERMISSIONS`) |
-| `recruiter` | `recruitment.*`, `onboarding.manage`, `documents.review`, `offers.manage`, `learning.access`, `ai.access`, `reporting.view`, `profile.view` |
-| `candidate` | `onboarding.self`, `documents.self`, `offers.self`, `profile.view` |
-| `employee` | `onboarding.self`, `documents.self`, `offers.self`, `learning.access`, `ai.coach`, `profile.view` |
-
-`CurrentUser.permissions` is derived from role only. Capability checks are a separate layer.
-
-### Shared Auth Dependencies (`backend/app/core/security.py`)
-
-Import these — never redeclare the same check locally:
-
-| Alias | Behavior |
-|-------|----------|
-| `RequireUser` | Any authenticated user |
-| `RequireRecruiter` | `recruiter` or `super_admin` |
-| `RequireEmployee` | `employee` or `super_admin` |
-| `RequireAny` | `employee` or `recruiter` or `super_admin` |
-| `RequireOnboardingSelf` | Permission `onboarding.self` |
-
-### Recruiter Capabilities (Module-Level Gates)
-
-Recruiters carry **per-module capabilities** — a finer toggle layer on top of role permissions.
-
-**Org module keys (`ORG_MODULE_KEYS`):** `overview`, `candidates`, `invite`, `employees`, `talent`, `learning`, `org_config`, `assistant`, `messages`, `announcements`, `it`, `reporting`, `profile`, `support`
-
-```
-effective capability = organization.modules ∩ recruiter.capabilities
+```python
+# Import these — never redeclare locally
+RequireUser = Annotated[CurrentUser, Depends(require_roles("super_admin", "recruiter", "candidate", "employee"))]
+RequireRecruiter = Annotated[CurrentUser, Depends(require_roles("recruiter", "super_admin"))]
+RequireEmployee = Annotated[CurrentUser, Depends(require_roles("employee", "super_admin"))]
+RequireAny = Annotated[CurrentUser, Depends(require_roles("employee", "recruiter", "super_admin"))]
+RequireOnboardingSelf = Annotated[CurrentUser, Depends(require_permissions("onboarding.self"))]
 ```
 
-`CurrentUser.has_capability(key)`:
-- Non-recruiters → always `True` (role deps must still restrict them)
-- Recruiter with no caps dict → `True` (backward compatible)
-- Else → `capabilities.get(key, True)`
+### 10.2 Capability Dependencies
 
-**Critical pattern:** `require_capabilities(...)` alone does **not** block candidates/employees (it early-returns for non-recruiters). Always pair capability checks with `require_roles("recruiter", "super_admin")` or use a combined `Annotated` type (e.g. `RequireRecruiterWithInvite` in `offers.py`).
+```python
+# Always pair with role check!
+require_capabilities("learning")  # alone does NOT block candidate/employee
 
-### RequireCandidate Naming Gotcha
+# Correct pattern:
+RequireRecruiterWithLearning = Annotated[
+    CurrentUser,
+    Depends(require_roles("recruiter", "super_admin")),
+    Depends(require_capabilities("learning")),
+]
+```
 
-Two routers define dependencies with similar names but **different predicates** — never assume they are interchangeable:
+### 10.3 RequireCandidate Naming Gotcha
 
-| Location | Definition | Meaning |
-|----------|------------|---------|
-| `api/offers.py` | `Depends(require_roles("candidate", "super_admin"))` | Role gate for offer self-service |
-| `api/employees.py` | `RequireOnboardingSelf as RequireCandidate` → `require_permissions("onboarding.self")` | Permission gate for onboarding/profile self endpoints |
+| Router | Alias | Actual Check |
+|--------|-------|--------------|
+| `offers.py` | `RequireCandidate` | `require_roles("candidate", "super_admin")` |
+| `employees.py` | `RequireCandidate` | `RequireOnboardingSelf` → `require_permissions("onboarding.self")` |
 
-Prefer the explicit name `RequireOnboardingSelf` for new code.
+**Never assume interchangeable.** Use explicit names for new code.
 
-### Audit on Deny
+### 10.4 Audit on Deny
 
-`_audit_denied(user, permission, detail)` in `security.py` records denied access attempts. Denied permission/capability failures and recruiter actions write to `audit_logs`. Do not remove audit calls when adjusting dependencies.
+`_audit_denied(user, permission, detail)` in `security.py` writes to `audit_logs` for:
+- Permission failures (`require_permissions`)
+- Capability failures (`require_capabilities`)
+- Recruiter actions (create, update, delete)
 
 ---
 
-## Multi-Tenancy
+## 11. Multi-Tenancy
 
-Organizations are the tenant boundary. All tenant data carries `organization_id`.
+### 11.1 Tenant Field Rules
 
-### Tenant Field Rules
+- **Field**: `organization_id` on all tenant-scoped collections.
+- **Population**: `get_current_user` attaches `organization_id` + `organization_name` to `CurrentUser`.
+- **Indexing**: Created in `create_database_indexes()` for hot collections.
+- **Rule**: Every list/search **must** filter by `organization_id` (or scope helper). Missing filter = critical bug.
 
-- Present on people + ops records: recruiters, candidates, employees, invitations, tickets, learning courses, career/org-framework documents, announcements, etc.
-- Indexed in `create_database_indexes()` for hot collections.
-- `CurrentUser.organization_id` / `organization_name` populated in `get_current_user` for recruiter/employee/candidate.
+### 11.2 Scope Helpers (`organization_service.py`)
 
-**Rule:** any new list/search aggregation over tenant data **must** scope by organization (or a people-scope helper). A missing tenant filter is treated as a critical security bug — it is the easiest way to leak one org's data into another's dashboard.
+| Helper | Returns | Use Case |
+|--------|---------|----------|
+| `recruiter_scope(user)` | Filter dict | Org-scoped records (no legacy) |
+| `recruiter_people_scope(user)` | Filter dict | People queries including legacy rows |
+| `recruiter_can_access(user, record)` | Bool | Single-record access check |
+| `recruiter_can_access_record(user, record)` | Bool | + legacy owner check |
+| `organization_record_scope(org_id, legacy_field?)` | Filter dict | Generic org + optional legacy |
 
-### Tenant Scope Helpers (`organization_service.py`)
-
-| Helper | Filter Behavior |
-|--------|-----------------|
-| `recruiter_scope(user)` | `super_admin` → all; recruiter with org → org filter; recruiter without org → personal ownership |
-| `recruiter_people_scope(user)` | Org-wide people query **including legacy rows missing `organization_id`** but owned by a recruiter in the same org (`$or: [org_clause, legacy_owner_clause]`) |
-| `recruiter_can_access` | Same-org or personal ownership |
-| `recruiter_can_access_record` | Plus legacy same-org owners |
-| `organization_record_scope` | Optional legacy owner field |
-
-Prefer these helpers over hand-rolled `$or` copies.
-
-### Organization Modules
-
-Created/updated via Super Admin (`/api/super-admin/organizations`). Keys: `ORG_MODULE_KEYS` — `overview`, `candidates`, `invite`, `employees`, `talent`, `learning`, `org_config`, `assistant`, `messages`, `announcements`, `it`, `reporting`, `profile`, `support`. `DEFAULT_ORG_MODULES` = all `True`.
-
-Effective recruiter access:
-```
-effective = org.modules ∩ recruiter.capabilities
+**`recruiter_people_scope` Logic**:
+```python
+# super_admin: {}
+# recruiter with org: $or[ {organization_id: org_id}, {recruiter_id: {$in: org_recruiters}} ]
+# recruiter without org: {recruiter_id: user.id}
 ```
 
-Implemented by `resolve_org_modules` + `effective_capabilities`. Enforced at API via `require_capabilities` **paired with** role checks.
+### 11.3 Organization Modules
 
-### Lifecycle Binding
+| Module Key | Controls |
+|------------|----------|
+| `overview` | Dashboard summary |
+| `candidates` | Candidate pipeline |
+| `invite` | Create invitations |
+| `employees` | Employee directory |
+| `talent` | Talent management |
+| `learning` | Learning admin |
+| `org_config` | Organization framework |
+| `assistant` | AI agent access |
+| `messages` | HR threads |
+| `announcements` | Announcements CRUD |
+| `it` | IT provisioning/requests |
+| `reporting` | Analytics/reports |
+| `profile` | Recruiter profile |
+| `support` | Tickets |
 
-1. Super Admin creates organization (+ modules).
-2. Recruiter invited/bound with `organization_id` (+ personal capability toggles).
-3. Invitations/candidates/employees inherit org from acting recruiter.
-4. Org framework collections are keyed solely by `organization_id` (departments/roles/skills/…).
+**Default**: All `True` (`DEFAULT_ORG_MODULES`).
 
-Default org: `create_default_organization_if_needed()` on lifespan so local/dev recruiters can bind.
+### 11.4 Purge Flow
 
-### Purge
+```python
+# Super Admin only, irreversible
+result = await purge_organization(organization_id)
+# Returns: {deleted_counts: {...}, summary: "..."}
+```
 
-`purge_organization(organization_id)` — destructive, irreversible wipe of tenant data:
-- Recruiters, candidates, employees, invitations for the org (plus legacy recruiter-owned people)
-- Auth users / refresh tokens / pending_users / login_attempts for those identities
-- Offers, IT requests/batches/kits, HR threads, learning artifacts, documents, notifications, agent conversations, announcements, audit logs, org-framework docs, etc.
-
-Exposed through Super Admin delete flows. Returns a deletion summary dict. Agent tools must confirm before invoking.
-
-### What Is Not Tenant-Scoped
-
-Global/shared data: `universities` (seeded catalog), `super_admins`, some learning provider catalog caches, platform RBAC seed collections. Do not put org secrets into global collections without an org key.
+Deletes: recruiters, candidates, employees, invitations, auth users, refresh tokens, offers, IT, learning, documents, agent conversations, audit logs, org-framework, announcements, notifications, tickets, HR threads.
 
 ---
 
-## Database Design
+## 12. Database Design
 
-MongoDB is accessed directly through Motor — no ORM, no schema-migration tool. There is **no in-memory/mock DB mode** — a live `MONGODB_URI` + `DATABASE_NAME` are required for boot.
+### 12.1 Collections by Domain (65+ Total)
 
-### Key Collections (65+ Total)
-
-| Group | Collections |
-|-------|------------|
+| Domain | Collections |
+|--------|-------------|
 | **Identity & Access** | `users`, `recruiters`, `candidates`, `employees`, `super_admins`, `pending_users`, `organizations`, `roles`, `permissions`, `refresh_tokens`, `login_attempts`, `otp_verifications`, `company_email_password_otps`, `invitations` |
 | **Hiring & Onboarding** | `offer_letters`, `documents`, `it_provisioning_batches`, `it_provisioning_requests`, `it_kits`, `audit_logs` |
 | **Learning** | `learning_courses`, `learning_enrollments`, `learning_assignments`, `learning_certificates`, `learning_skill_gaps`, `learning_skill_assessments`, `learning_ai_recommendations`, `learning_catalog_cache`, `learning_providers`, `learning_role_matches`, `learning_career_goals`, `learning_bookmarks`, `learning_import_history`, `learning_recruiter_profile_cache`, `employee_skills` |
 | **Career & Org Framework** | `career_tracks`, `career_levels`, `employee_career_assignments`, `employee_career_events`, `org_framework_departments`, `org_framework_roles`, `org_framework_skills`, `org_framework_courses`, `org_framework_certifications`, `org_framework_promotion_rules`, `org_framework_roadmaps`, `org_framework_versions`, `org_taxonomy` |
-| **Talent Management** | `talent_competency_evaluations`, `talent_development_plans`, `internal_opportunities`, `internal_opportunity_applications` |
+| **Talent** | `talent_competency_evaluations`, `talent_development_plans`, `internal_opportunities`, `internal_opportunity_applications` |
 | **AI Agent** | `agent_conversations` |
 | **Support & Comms** | `tickets`, `ticket_replies`, `ticket_activity`, `ticket_audit_logs`, `it_service_requests`, `hr_threads`, `notifications`, `announcements`, `org_email_templates` |
 | **Ops** | `audit_logs`, `counters`, `migrations`, `universities` |
 
-### Encryption at Rest
+### 12.2 Key Indexes (Created via `_ensure_index`)
 
-Sensitive fields (banking account numbers, IBANs, SWIFT codes, IT temp passwords, provider API secrets) are **Fernet-encrypted** using `BANKING_ENCRYPTION_KEY`, or deterministically derived from `SECRET_KEY` if unset.
+| Collection | Indexes |
+|------------|---------|
+| `users` | unique `email`, `original_email`, `status` |
+| `recruiters` | unique `email`, sparse unique `supabase_user_id`, `organization_id` |
+| `candidates` | `email`, `organization_id`, `recruiter_id`, sparse unique `user_id`/`invitation_token`/`supabase_user_id` |
+| `employees` | `email`, `organization_id`, unique sparse `employee_id`, `iban_hash`, `job_title` |
+| `offer_letters` | `candidate_id`, `status+recruiter`, `email`, `invitation_token` |
+| `documents` | `owner+active`, `owner+doc_type`, `status` |
+| `it_provisioning_requests` | unique `token`, `offer_id+candidate_id+status`, `expires_at` |
+| `learning_courses` | unique `course_key`, partial unique `external_id+provider_id` |
+| `notifications` | `recipient+created/read` |
+| `agent_conversations` | unique `session_id`, `user+updated` |
 
-- IBAN uniqueness is enforced via `iban_hash` (SHA-256 fingerprint), indexed at `employees.onboarding.employment.iban_hash`.
-- Never log, print, or return decrypted banking fields outside designated decrypt/mask paths.
+### 12.3 Encryption at Rest
 
-### Index Management
+**Fields**: `account_number`, `iban`, `swift_code`, IT temp passwords, provider API secrets.
 
-All indexes are created via `_ensure_index()` inside `create_database_indexes()` (`app/core/database.py`). The helper ignores benign Atlas race/conflict error codes (68, 85, 86, 276). Never use a raw `create_index` call — it can abort startup. New collections with tenant data must index + filter by `organization_id`.
+**Mechanism**: Fernet via `BANKING_ENCRYPTION_KEY` (or derived from `SECRET_KEY`).
 
-Partial unique indexes (e.g., learning courses `external_id`+`provider_id`) drop-and-recreate quietly when migrating sparse → partial.
+**IBAN Uniqueness**: `iban_hash = sha256(iban)` stored at `employees.onboarding.employment.iban_hash` with unique sparse index.
 
-### DNS Shim
+**Rules**:
+- Never log/print decrypted fields.
+- Decrypt only in designated service methods (`employee_service.get_banking_details`).
+- API responses return masked values (`****1234`).
 
-`mongodb+srv://` connections automatically swap in public DNS resolvers (8.8.8.8 / 1.1.1.1) because some networks block SRV lookups. If Mongo connections mysteriously hang locally, this is often why — do not remove the shim.
+### 12.4 DNS Shim
+
+`database.py` forces `mongodb+srv://` resolution via `8.8.8.8` / `1.1.1.1` (some networks block SRV). Do not remove.
 
 ---
 
-## Integrations
+## 13. API Reference
 
-### SMTP (Email)
+### 13.1 Router Inventory
 
-Settings: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `MAIL_USE_TLS`, `MAIL_USE_SSL`, `EMAIL_LOGO_URL`
+| Router | Prefix | Auth |
+|--------|--------|------|
+| `auth.py` | `/api/auth` | Mixed public + authenticated |
+| `invitations.py` | `/api/invitations` | Recruiter + `invite` cap; `GET /{token}` public |
+| `offers.py` | `/api/offers` | Recruiter+`invite` / local `RequireCandidate` |
+| `onboarding.py` | `/api/onboarding` | `onboarding.self` permission |
+| `employees.py` | `/api/employees` | Recruiter caps `employees`/`candidates`; self via `RequireOnboardingSelf` |
+| `documents.py` | `/api/documents` | Recruiter+`candidates`; self roles |
+| `learning.py` | `/api/learning` | Recruiter+`learning`; employees; shared reads |
+| `talent.py` | `/api/talent` | Recruiter+`talent`; employee self |
+| `career_framework.py` | `/api/career-framework` | Recruiter (employee reads as wired) |
+| `organization_framework.py` | `/api/org-framework` | Recruiter / roles with org |
+| `it_provisioning.py` | `/api/it-provisioning` | Recruiter+`it`; **public token routes** |
+| `it_service_requests.py` | `/api/it-service-requests` | Recruiter+`it`; employee; **public token** |
+| `messages.py` | `/api/messages` | Recruiter+caps / employee |
+| `dashboard.py` | *(no prefix)* | Role-dependent |
+| `agent.py` | `/api/agent` | Authenticated role tools |
+| `tickets.py` | `/api/tickets` | `RequireRecruiter` |
+| `admin_tickets.py` | `/api/admin/tickets` | `super_admin` |
+| `super_admin.py` | `/api/super-admin` | `super_admin` |
+| `email_templates.py` | `/api/email-templates` | Recruiter (+ capability as wired) |
+| `rbac.py` | `/api/rbac` | Authenticated (`/me`, `/catalog`) |
+| `universities.py` | `/api/universities` | Public search |
 
-- Services: `email_service.py` + `email_template_service.py`; org-overridable templates in `org_email_templates` (~23 template keys).
-- Used for: OTP, invites, offers, IT links, notifications, password reset, reminders.
-- Password validator strips spaces (Gmail app-password paste quirk).
-- Link builders on `settings`: `invitation_link`, `it_provisioning_link`, `it_provisioning_batch_link`, `it_service_request_link` (use `FRONTEND_URL`).
+### 13.2 Dashboard Routes (`dashboard.py` — No Prefix)
 
-### Cloudinary (Primary File Storage)
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/dashboard/summary` | Role-dependent |
+| GET | `/api/dashboard/activity` | Role-dependent |
+| GET | `/api/dashboard/candidate` | Candidate/Recruiter |
+| GET | `/api/notifications` | Any authenticated |
+| PUT | `/api/notifications/read` | Any authenticated |
+| GET | `/api/search` | Recruiter |
+| GET|POST|PUT|DELETE | `/api/announcements` | Recruiter caps |
+| GET|PUT | `/api/recruiters/me` | Recruiter |
+| POST | `/api/dashboard/recruiter-mascot/brief` | Recruiter+`assistant` |
 
-Settings: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `CLOUDINARY_FOLDER` (default `talent`)
+### 13.3 Agent Routes (`/api/agent`)
 
-- Service: `storage_service.py` — uploads, signed URLs (`SIGNED_URL_EXPIRE_SECONDS`), document/photo assets.
-- Used by: documents, offer signatures, profile photos, ticket attachments, certificates.
-- File access: signed URLs with ownership/org verification on download/verify.
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/chat` | Main agent interaction |
+| GET | `/sessions` | List conversation sessions |
+| GET | `/history` | Get session history |
+| POST | `/reset` | Clear session |
+| POST | `/recruiter/bulk-invite` | Agent-assisted bulk invite |
 
-### LLM (OpenRouter / OmniRoute / Gemini)
+---
 
-| Setting | Role |
-|---------|------|
-| `OPENROUTER_API_KEY` | Bearer for primary OpenAI-compatible endpoint |
-| `OPENROUTER_BASE_URL` | Default OpenRouter URL; Docker Compose points at OmniRoute (`http://omniroute:20128/v1/chat/completions`) |
-| `OPENROUTER_MODEL` | e.g. `openrouter/free` |
-| `OPENROUTER_MAX_TOKENS` | Default 4096; 402 handling may lower |
-| `GEMINI_API_KEY` / `GEMINI_MODEL` / `GEMINI_BASE_URL` | Fallback provider |
+## 14. Integrations
 
-- Client: `llm_service.py`. `call_llm_json(prompt)` parses/salvages strict JSON; used by the agent, learning AI, and mascot brief.
-- `llm_configured()` — true if either key present.
+### 14.1 SMTP (Email)
 
-### Coursera
+| Setting | Description |
+|---------|-------------|
+| `SMTP_HOST` / `SMTP_PORT` | Server |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | Credentials (spaces auto-stripped) |
+| `SMTP_FROM_EMAIL` / `SMTP_FROM_NAME` | Sender |
+| `MAIL_USE_TLS` / `MAIL_USE_SSL` | Encryption |
+| `EMAIL_LOGO_URL` | Branding |
 
-- Service: `coursera_service.py` — live catalog from `https://api.coursera.org/api/courses.v1`.
-- In-process + Mongo-persisted cache (`learning_catalog_cache` / coursera snapshot id).
-- Lifespan: load persisted cache when not `DEBUG`; `start_background_refresh` / stop on shutdown.
-- No dedicated API key — public catalog API pattern.
+**Templates**: ~23 keys in `org_email_templates` (invite, offer, OTP, reminder, announcement, etc.). Org overrides via Super Admin.
 
-### Microsoft Learn
+**Link Builders** (on `settings`):
+- `invitation_link(token)`
+- `it_provisioning_link(token)`
+- `it_provisioning_batch_link(token)`
+- `it_service_request_link(token)`
 
-- Service: `ms_learn_service.py` — `https://learn.microsoft.com/api/catalog/`.
-- In-process cache TTL ~6 hours; employee "open on MS Learn" redirects to learn.microsoft.com.
-- Mirrors the Coursera service shape for catalog search.
+### 14.2 Cloudinary (Primary Storage)
 
-### Redis (Config-Only)
+| Setting | Description |
+|---------|-------------|
+| `CLOUDINARY_CLOUD_NAME` | Cloud name |
+| `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Credentials |
+| `CLOUDINARY_FOLDER` | Default `talent` |
 
-- `REDIS_URL` is required by Settings validation.
-- The backend has **no Redis client usage today** — the service is kept so the env resolves in containers.
-- Do not assume caching/queues on Redis unless a real client is added and documented.
+**Service**: `storage_service.py`
+- `get_upload_signature(folder, resource_type)` → signed upload params
+- `get_signed_url(public_id, expires=SIGNED_URL_EXPIRE_SECONDS)` → private download
+- `delete_asset(public_id)` → cleanup
 
-### Supabase (Optional)
+**Used By**: Documents, offer signatures, profile photos, ticket attachments, certificates.
 
-Settings: `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_BUCKET`
+### 14.3 LLM (OpenRouter / OmniRoute / Gemini)
 
-- Client created in `database.py` only when URL + key are set.
-- Legacy/alternate storage path; Cloudinary is the primary upload path.
-- Sparse unique indexes still reference `supabase_user_id` on people collections.
+| Setting | Description |
+|---------|-------------|
+| `OPENROUTER_API_KEY` | Primary Bearer token |
+| `OPENROUTER_BASE_URL` | Default: OpenRouter; Docker: `http://omniroute:20128/v1/chat/completions` |
+| `OPENROUTER_MODEL` | e.g., `openrouter/free` |
+| `OPENROUTER_MAX_TOKENS` | Default 4096 |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` / `GEMINI_BASE_URL` | Fallback |
 
-### OCR / Embeddings
+**Client**: `llm_service.call_llm_json(prompt)` → strict JSON parsing/salvage.
 
-| Flag | Default | Purpose |
+### 14.4 Coursera
+
+- **Endpoint**: `https://api.coursera.org/api/courses.v1`
+- **Cache**: In-process + `learning_catalog_cache` (snapshot ID)
+- **Refresh**: Background job (6h interval, non-DEBUG)
+
+### 14.5 Microsoft Learn
+
+- **Endpoint**: `https://learn.microsoft.com/api/catalog/`
+- **Cache**: In-process TTL ~6h
+- **Redirect**: Employee "open on MS Learn" → `learn.microsoft.com`
+
+### 14.6 Redis (Config-Only)
+
+- `REDIS_URL` required by Settings.
+- **No client usage** — service exists for container env resolution only.
+
+### 14.7 Supabase (Optional)
+
+- Client created in `database.py` only when `SUPABASE_URL` + `SUPABASE_KEY` set.
+- Legacy/alternate storage; Cloudinary is primary.
+
+### 14.8 Feature Flags
+
+| Flag | Default | Service |
 |------|---------|---------|
-| `ENABLE_OCR` | `True` | Document extraction (PyMuPDF, python-docx, EasyOCR, Pytesseract) |
-| `ENABLE_EMBEDDINGS` | `False` | Resume embeddings (BGE model) |
-| `ENABLE_AI_COACH` | `True` | Legacy AI Coach settings still present |
-
-Heavy libraries are **lazy-imported** — keep boot safe when packages are missing. Never turn a lazy import into a hard top-level import.
+| `ENABLE_OCR` | `True` | `ocr_service`, `document_extraction_service` |
+| `ENABLE_EMBEDDINGS` | `False` | `embedding_service` (BGE) |
+| `ENABLE_AI_COACH` | `True` | Legacy coach (indexes retained) |
 
 ---
 
-## Getting Started
+## 15. Getting Started
 
-### Prerequisites
+### 15.1 Prerequisites
 
-- Node.js (compatible with Next.js 16 / React 19)
-- Python 3.11+
-- A live MongoDB instance (required — no mock mode)
-- Optional: Redis, Cloudinary or Supabase account, OpenRouter or Gemini API key, SMTP credentials
+- Node.js ≥ 20 (Next.js 16 / React 19 compatible)
+- Python ≥ 3.11
+- MongoDB 7+ (live URI required — **no mock mode**)
+- Optional: Redis, Cloudinary, Supabase, OpenRouter/Gemini API keys, SMTP
 
-### 1 · Backend
+### 15.2 Backend (Local)
 
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate    # Windows: venv\Scripts\activate
+source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-cp .env.example .env        # fill in — see Environment Variables below
+cp .env.example .env              # Fill all required vars
+# CRITICAL: JWT_SECRET must be ≥32 chars, not a placeholder
+python -c "import secrets; print(secrets.token_urlsafe(64))"
+
 uvicorn app.main:app --reload --port 8000
 ```
 
-**Hard gotcha:** `app/core/config.py` validates `JWT_SECRET` at import time. Under 32 characters, or a known placeholder (`secret`, `changeme`, `test`, `password`, …), the app **raises and crashes on boot**. Generate a real one:
-
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(64))"
-```
-
-### 2 · Frontend
+### 15.3 Frontend (Local)
 
 ```bash
 cd frontend
@@ -889,22 +1078,27 @@ cp .env.example .env.local
 npm run dev
 ```
 
-### 3 · First Login
-
-Run `backend/scripts/seed_super_admin.py` to create the first Super Admin account, sign in at `/portal-root-x9f3`, then invite recruiters, who in turn invite candidates through the normal `/login` flow.
-
-### 4 · Docker (Alternative)
+### 15.4 First Login
 
 ```bash
-# Start all services
+# Backend must be running
+cd backend
+python -m scripts.seed_super_admin
+# Follow prompts → creates first Super Admin
+# Sign in at http://localhost:3000/portal-root-x9f3
+```
+
+### 15.5 Docker (Full Stack)
+
+```bash
+# From repo root
 docker compose up --build
 
-# Seed first super admin
+# Seed Super Admin
 docker compose exec backend python -m scripts.seed_super_admin
 ```
 
-Docker Compose services:
-
+**Services**:
 | Service | Port | Purpose |
 |---------|------|---------|
 | `mongo` | 27017 | MongoDB 7 |
@@ -913,144 +1107,362 @@ Docker Compose services:
 | `backend` | 8000 | FastAPI |
 | `frontend` | 3000 | Next.js |
 
-Production overlay: `docker-compose.prod.yml`. Optional nginx gateway: `nginx/nginx.conf`.
+**Production**: `docker-compose.prod.yml` + `nginx/nginx.conf`.
 
-### 5 · Startup Seeding (Backend Lifespan)
+### 15.6 Startup Lifespan (Automatic)
 
-On every boot, the backend automatically runs, in order:
-
-1. Creates MongoDB indexes.
-2. Migrates legacy employee IDs to the `EMP-xxxx` format.
-3. Seeds RBAC roles/permissions, org taxonomy, and universities reference data.
-4. Seeds default learning providers.
-5. Creates a default organization if none exists yet.
-6. Hydrates and starts a background refresh loop for the Coursera catalog cache (non-DEBUG).
-
----
-
-## Environment Variables
-
-Documented for reference — **never commit real secret values**. Secrets belong in local, git-ignored `.env` files. Root `.env` is for Docker Compose overrides only.
-
-### Backend — `backend/.env`
-
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `SECRET_KEY`, `JWT_SECRET` | Yes | `JWT_SECRET` validated at startup — under 32 chars or a known placeholder crashes boot |
-| `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE`, `JWT_EXPIRE_MINUTES` | Yes | Token config |
-| `MONGODB_URI`, `DATABASE_NAME` | Yes | Supports `mongodb+srv://`; auto-switches to public DNS (8.8.8.8 / 1.1.1.1) for SRV lookups |
-| `REDIS_URL` | Yes | Required by Settings; no client usage yet |
-| `ALLOWED_ORIGINS` | Yes | Comma-separated; first entry also builds email/redirect links |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `MAIL_USE_TLS`, `MAIL_USE_SSL` | Yes | Gmail app-password spaces auto-stripped |
-| `FRONTEND_URL`, `BACKEND_URL` | Yes | Builds invite/offer/IT-setup links |
-| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `CLOUDINARY_FOLDER` | Optional | Primary file/image storage |
-| `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_BUCKET` | Optional | Alternate storage backend; degrades gracefully if unset |
-| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `OPENROUTER_MAX_TOKENS` | Optional | Primary LLM; without either key the agent falls back to deterministic replies |
-| `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_BASE_URL` | Optional | Fallback LLM provider |
-| `ENABLE_OCR`, `OCR_LANG`, `OCR_USE_GPU` | Optional | Document extraction toggles |
-| `ENABLE_EMBEDDINGS`, `EMBEDDING_MODEL` | Optional | Forward-looking embeddings prep, off by default |
-| `BANKING_ENCRYPTION_KEY` | Optional | Fernet key for banking-detail encryption; derived from `SECRET_KEY` if unset |
-| `IT_MANAGER_EMAIL`, `IT_PROVISIONING_EXPIRE_DAYS` | Optional | IT provisioning defaults |
-| `OFFER_EXPIRE_DAYS`, `OTP_EXPIRE_MINUTES`, `OTP_MAX_ATTEMPTS`, `OTP_RESEND_COOLDOWN_SECONDS`, `INVITATION_EXPIRE_HOURS` | Optional | Business-rule defaults with sensible fallbacks |
-
-### Frontend — `frontend/.env.local`
-
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `NEXT_PUBLIC_API_BASE_URL` | Yes | Base URL of the FastAPI backend, no trailing slash (default `http://localhost:8000`) |
+On every backend boot:
+1. `create_database_indexes()` — all collections
+2. `migrate_employee_ids_to_emp_format()` — legacy ID migration
+3. `seed_rbac_collections()` — roles/permissions mirror
+4. `seed_org_taxonomy()` — reference data
+5. `seed_universities()` — autocomplete catalog
+6. `seed_learning_providers()` — Coursera/MS Learn/generic
+7. `create_default_organization_if_needed()` — dev org
+8. `coursera_service.load_persisted_cache()` + `start_background_refresh()` (non-DEBUG)
 
 ---
 
-## Testing & Validation
+## 16. Environment Variables
 
-### Backend
+### 16.1 Backend (`backend/.env`)
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `SECRET_KEY` | Yes | Base secret |
+| `JWT_SECRET` | Yes | **Validated at import** — <32 chars or placeholder crashes boot |
+| `JWT_ALGORITHM` | Yes | e.g., `HS256` |
+| `ACCESS_TOKEN_EXPIRE` | Yes | Minutes (e.g., 30) |
+| `JWT_EXPIRE_MINUTES` | Yes | Refresh expiry (e.g., 10080 = 7d) |
+| `MONGODB_URI` | Yes | `mongodb+srv://...` or `mongodb://...` |
+| `DATABASE_NAME` | Yes | DB name |
+| `REDIS_URL` | Yes | Required by Settings (no client yet) |
+| `ALLOWED_ORIGINS` | Yes | Comma-separated; first builds links |
+| `SMTP_HOST` | Yes | |
+| `SMTP_PORT` | Yes | |
+| `SMTP_USERNAME` | Yes | |
+| `SMTP_PASSWORD` | Yes | Spaces stripped |
+| `SMTP_FROM_EMAIL` | Yes | |
+| `SMTP_FROM_NAME` | Yes | |
+| `MAIL_USE_TLS` | Yes | `true`/`false` |
+| `MAIL_USE_SSL` | Yes | `true`/`false` |
+| `FRONTEND_URL` | Yes | e.g., `http://localhost:3000` |
+| `BACKEND_URL` | Yes | e.g., `http://localhost:8000` |
+| `CLOUDINARY_CLOUD_NAME` | Optional | |
+| `CLOUDINARY_API_KEY` | Optional | |
+| `CLOUDINARY_API_SECRET` | Optional | |
+| `CLOUDINARY_FOLDER` | Optional | Default `talent` |
+| `SUPABASE_URL` | Optional | |
+| `SUPABASE_KEY` | Optional | |
+| `SUPABASE_BUCKET` | Optional | |
+| `OPENROUTER_API_KEY` | Optional | Without LLM key → agent falls back |
+| `OPENROUTER_MODEL` | Optional | |
+| `OPENROUTER_BASE_URL` | Optional | |
+| `OPENROUTER_MAX_TOKENS` | Optional | Default 4096 |
+| `GEMINI_API_KEY` | Optional | Fallback |
+| `GEMINI_MODEL` | Optional | |
+| `GEMINI_BASE_URL` | Optional | |
+| `ENABLE_OCR` | Optional | Default `true` |
+| `OCR_LANG` | Optional | Default `eng` |
+| `OCR_USE_GPU` | Optional | Default `false` |
+| `ENABLE_EMBEDDINGS` | Optional | Default `false` |
+| `EMBEDDING_MODEL` | Optional | |
+| `BANKING_ENCRYPTION_KEY` | Optional | Fernet; derived from `SECRET_KEY` if unset |
+| `IT_MANAGER_EMAIL` | Optional | |
+| `IT_PROVISIONING_EXPIRE_DAYS` | Optional | Default 30 |
+| `OFFER_EXPIRE_DAYS` | Optional | Default 7 |
+| `OTP_EXPIRE_MINUTES` | Optional | Default 10 |
+| `OTP_MAX_ATTEMPTS` | Optional | Default 5 |
+| `OTP_RESEND_COOLDOWN_SECONDS` | Optional | Default 60 |
+| `INVITATION_EXPIRE_HOURS` | Optional | Default 168 |
+
+### 16.2 Frontend (`frontend/.env.local`)
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `NEXT_PUBLIC_API_BASE_URL` | Yes | Backend base, no trailing slash |
+
+---
+
+## 17. Testing & Validation
+
+### 17.1 Backend
 
 ```bash
 cd backend
-python -m py_compile app/main.py app/api/<touched>.py app/services/<touched>.py   # syntax/import check
-pytest                                                                             # full suite
+
+# Syntax/import check (fast)
+python -m py_compile app/main.py app/api/<touched>.py app/services/<touched>.py
+
+# Full test suite
+pytest
+
+# Run specific test file
+pytest tests/test_authorization_audit.py -v
+
+# Check OpenAPI spec
+uvicorn app.main:app --port 8001 &
+curl http://localhost:8001/openapi.json | jq '.paths | keys'
 ```
 
-The pytest suite covers: agent support-ticket tools, authorization/audit behavior, banking-endpoint security, career-framework logic, JWT token typing, org-wide recruiter access scoping, profile/email flows, provider support, and search taxonomy.
+**Pytest Coverage**:
+- Agent support-ticket tools
+- Authorization/audit behavior
+- Banking-endpoint security
+- Career-framework logic
+- JWT token typing
+- Org-wide recruiter access scoping
+- Profile/email flows
+- Provider support
+- Search taxonomy
 
-### Frontend
+**Note**: Record pre-existing failures before changes.
+
+### 17.2 Frontend
 
 ```bash
 cd frontend
-npm run lint    # ESLint (Next.js core-web-vitals config)
-npm run build   # Production build
+
+npm run lint      # ESLint (Next.js core-web-vitals)
+npm run build     # Production build (typecheck + compile)
 ```
 
-There is no automated frontend suite yet; lint + build are the available static checks.
+No automated test suite yet; lint + build are the gates.
 
-### Critical Regression Areas
+### 17.3 Critical Regression Areas
 
-Auth token typing · capability + role composition · tenant isolation · banking encrypt/mask · offer signing gate · agent confirm flow. Note pre-existing test failures *before* starting a change so you do not misattribute an unrelated, already-broken test.
+| Area | Why Critical |
+|------|--------------|
+| Auth token typing | Refresh token replay vulnerability |
+| Capability + role composition | Over-permissioning recruiters |
+| Tenant isolation | Cross-org data leak |
+| Banking encrypt/mask | PII exposure |
+| Offer signing gate | Bypassing signed offer requirement |
+| Agent confirm flow | Unconfirmed destructive actions |
 
-### Operational Scripts — `backend/scripts/`
-
-Run manually; not part of the request lifecycle, and not a substitute for pytest.
+### 17.4 Operational Scripts (`backend/scripts/`)
 
 | Script | Purpose |
 |--------|---------|
-| `seed_super_admin.py` | Bootstrap the first Super Admin account |
-| `backfill_dual_role_recruiters.py`, `reconcile_dual_role_profiles.py`, `verify_dual_role.py` | Recruiter/employee dual-role data migrations |
-| `backfill_org_scoping.py`, `backfill_organization_tenancy.py` | Multi-tenancy backfills |
+| `seed_super_admin.py` | Bootstrap first Super Admin |
+| `backfill_dual_role_recruiters.py` | Dual-role recruiter migration |
+| `reconcile_dual_role_profiles.py` | Profile sync reconciliation |
+| `verify_dual_role.py` | Verify dual-role integrity |
+| `backfill_org_scoping.py` | Add `organization_id` to legacy rows |
+| `backfill_organization_tenancy.py` | Tenancy backfill |
 | `migrate_providers.py` | Learning provider migration |
-| `check_career_data.py` | Career framework data sanity check |
-| `test_api_endpoints.py`, `test_learning_ai.py`, `test_openrouter.py`, `e2e_import_single_course_test.py`, `e2e_step2_backfill_match_test.py` | Manual integration/e2e checks (not pytest-collected) |
+| `check_career_data.py` | Career framework sanity |
+| `test_api_endpoints.py` | Manual e2e (not pytest) |
+| `test_learning_ai.py` | Learning AI manual test |
+| `test_openrouter.py` | LLM connectivity test |
+| `e2e_import_single_course_test.py` | Course import test |
+| `e2e_step2_backfill_match_test.py` | Backfill matching test |
 
 ---
 
-## Security
+## 18. Security
 
-- **JWT_SECRET validation** — weak or placeholder values crash the app at startup rather than run insecurely.
-- **Typed tokens** — access vs refresh; refresh tokens are rejected on API auth, blocking replay.
-- **Password hashing** — bcrypt via passlib; accounts lock 15 minutes after 5 failed logins.
-- **Encryption at rest** — banking and other sensitive fields Fernet-encrypted; IBAN uniqueness via `iban_hash`.
-- **Hidden Super Admin path** — `/portal-root-x9f3` instead of `/admin`; never linked from public UI.
-- **Token secrecy** — OTP, invite tokens, and IT tokens are capability-equivalent secrets; never expose passwords/OTPs via the agent.
-- **Tenant isolation** — every list/search query filters by `organization_id`; a missing filter is a critical bug.
-- **Audit trail** — authz failures and recruiter actions write to `audit_logs`; audit calls are not removed casually.
-- **Signed file access** — Cloudinary signed URLs with ownership/org verification on download/verify.
-- **Agent hard-scoping** — every tool call passes through the same RBAC chain as REST; the agent cannot see another org's data or bypass checks regardless of conversation content.
-- **CORS** — currently `allow_origins=["*"]`, `allow_credentials=False` (`backend/app/main.py`). Intentional for the current deployment stage; tighten for production deployments handling real user data. Do not "fix" this incidentally.
-- **Provider API secrets** — stored encrypted (`api_key_enc`, etc.) — never returned on connection tests.
-
----
-
-## Design Decisions
-
-- **No ORM.** MongoDB is accessed directly through Motor, with Pydantic schemas doing shape validation at the API boundary. This keeps queries close to the metal but makes index management and data-shape discipline manual — see `app/core/database.py`.
-- **RBAC lives in code, not the database.** The `roles`/`permissions` collections are a seeded, queryable mirror of `app/core/rbac.py`, refreshed on every boot. If they disagree, code wins.
-- **The agent has no privileged path.** Every tool it calls is the same service function a REST endpoint would call, behind the same permission dependency — a deliberate constraint that keeps the agent auditable.
-- **Multi-tenancy is row-level, not database-level.** All organizations share one MongoDB database, isolated by an `organization_id` field per document. Keeps operations simple at current scale, but every new query must scope by tenant.
-- **Optional dependencies degrade, they don't block.** OCR, embeddings, and LLM integrations lazy-import and fail soft, so the platform stays usable without those optional pieces configured.
-- **Large single-file services are normal.** `learning_service.py`, `agent_tools_parity.py`, `agent_tools.py`, and `employee_service.py` run tens of thousands of lines by design. Splitting them is a deliberate, out-of-scope refactor, not a cleanup.
-- **`agent_tools.py` vs `agent_tools_parity.py` is an intentional split** (core vs dashboard-parity). Do not merge them.
-- **No shared type generation** between frontend and backend — contract changes must be mirrored manually in `services/*.js` and schemas.
+| Control | Implementation |
+|---------|----------------|
+| **JWT Secret Validation** | Crashes boot if <32 chars or placeholder |
+| **Typed Tokens** | `type="access"` required; refresh rejected on API |
+| **Password Hashing** | bcrypt via passlib (cost 12) |
+| **Account Lockout** | 5 failures → 15min lockout (`login_attempts`) |
+| **Encryption at Rest** | Fernet for banking, IT passwords, provider secrets |
+| **IBAN Uniqueness** | `iban_hash` (SHA-256) + unique sparse index |
+| **Hidden SA Path** | `/portal-root-x9f3` unlinked, unguessable |
+| **Token Secrecy** | OTP, invite, IT tokens never exposed via agent |
+| **Tenant Isolation** | Every list filters by `organization_id` |
+| **Audit Trail** | `audit_logs` for authz failures + recruiter actions |
+| **Signed File Access** | Cloudinary signed URLs + ownership/org verify |
+| **Agent Hard-Scoping** | Same RBAC chain as REST; no bypass possible |
+| **CORS** | `allow_origins=["*"]`, `allow_credentials=False` (intentional for stage) |
+| **Provider Secrets** | Stored encrypted (`api_key_enc`); never returned on test |
 
 ---
 
-## Troubleshooting
+## 19. Design Decisions
 
-| Symptom | Likely Cause / Fix |
-|---------|-------------------|
-| Backend crashes on boot with a JWT error | `JWT_SECRET` is under 32 characters or a placeholder. Generate a real one: `python -c "import secrets; print(secrets.token_urlsafe(64))"` |
-| Backend won't start | A live `MONGODB_URI` is required — there is no in-memory/mock DB mode |
-| Mongo connections hang locally | `mongodb+srv://` SRV lookups blocked on the network; `database.py` swaps in public DNS resolvers (8.8.8.8 / 1.1.1.1) — verify this shim is intact |
-| New public page forces a login redirect | The route is missing from `PUBLIC_PATHS` in `frontend/proxy.js` |
-| Agent returns generic/status-only answers | No LLM key configured; `_fallback_reply` is the expected degrade-gracefully path |
-| Contract mismatch between UI and API | Backend schema + `services/*.js` + component were not updated together — there is no shared codegen between stacks |
-| Redis errors in containers | `REDIS_URL` is required by Settings but the backend has no Redis client yet — the service exists so env resolves |
+| Decision | Rationale |
+|----------|-----------|
+| **No ORM** | Direct Motor access keeps queries explicit; Pydantic validates at API boundary |
+| **RBAC in Code** | `roles`/`permissions` collections are seeded mirrors; code is source of truth |
+| **Agent = Service Client** | Every tool calls service functions; same RBAC as REST; auditable |
+| **Row-Level Tenancy** | Single MongoDB, `organization_id` per doc; simpler ops, but every query must scope |
+| **Optional Deps Degrade** | OCR/embeddings/LLM lazy-import; platform works without them |
+| **Large Services OK** | `learning_service.py`, `agent_tools*.py`, `employee_service.py` are intentional monoliths |
+| **Tool Split Intentional** | `agent_tools.py` (core) vs `agent_tools_parity.py` (dashboard parity) — do not merge |
+| **No Shared Types** | Frontend/backend contracts mirrored manually; drift fails at runtime |
 
 ---
 
-## Roadmap
+## 20. Deployment Architecture
 
-The following are potential directions based on the current architecture, not scheduled deliverables:
+### 20.1 Docker Compose (Local)
 
-- Tighten CORS to an explicit allowlist for production deployments.
-- Introduce a shared type contract (e.g. TypeScript types generated from the FastAPI OpenAPI schema) so frontend/backend contract drift fails at build time instead of runtime.
-- Add automated frontend test coverage alongside the existing pytest backend suite.
-- Offer a formal database-per-tenant option for organizations that need harder data isolation than row-level scoping provides.
+```yaml
+services:
+  mongo:
+    image: mongo:7
+    ports: ["27017:27017"]
+    volumes: [mongo_data:/data/db]
+  
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  
+  omniroute:
+    image: omniroute:latest
+    ports: ["20128:20128"]
+  
+  backend:
+    build: ./backend
+    ports: ["8000:8000"]
+    env_file: ./backend/.env
+    depends_on: [mongo, redis, omniroute]
+  
+  frontend:
+    build: ./frontend
+    ports: ["3000:3000"]
+    env_file: ./frontend/.env.local
+    depends_on: [backend]
+```
+
+### 20.2 Production Overlay (`docker-compose.prod.yml`)
+
+- Removes port mappings (internal networking)
+- Adds resource limits
+- Enables nginx gateway
+- Uses production env files
+
+### 20.3 Nginx Gateway (`nginx/nginx.conf`)
+
+- TLS termination
+- Rate limiting
+- Static asset caching
+- Proxy to backend/frontend
+
+### 20.4 Environment Strategy
+
+- **Local**: `backend/.env`, `frontend/.env.local`
+- **Docker**: Root `.env` (compose overrides only)
+- **Secrets**: Never committed; injected via CI/CD or Docker secrets
+
+---
+
+## 21. Monitoring & Observability
+
+### 21.1 Logging
+
+- **Backend**: `loguru` structured JSON logs (level: INFO default)
+- **Frontend**: Console + `react-toastify` for user-facing errors
+- **Audit**: `audit_logs` collection for security events
+
+### 21.2 Key Metrics to Monitor
+
+| Metric | Source | Alert Threshold |
+|--------|--------|-----------------|
+| API latency (p95) | FastAPI middleware | >2s |
+| Auth failure rate | `login_attempts` | >10% |
+| Mongo connection pool | Motor | >80% |
+| Agent fallback rate | `agent_conversations` | >50% |
+| Email queue depth | `email_service` | >100 |
+| Coursera sync failures | `coursera_service` | Any |
+
+### 21.3 Health Checks
+
+- `GET /health` (backend) — Mongo, Redis, LLM connectivity
+- `GET /api/rbac/me` — Auth validity
+
+---
+
+## 22. Extensibility Points
+
+### 22.1 Adding a New Domain Module
+
+1. **Schema**: `backend/app/schemas/<domain>.py` — request/response models
+2. **Service**: `backend/app/services/<domain>_service.py` — business logic
+3. **Router**: `backend/app/api/<domain>.py` — thin endpoints with `Require*` deps
+4. **Register**: Add `app.include_router(<domain>.router)` in `main.py`
+5. **Indexes**: Add `_ensure_index` calls in `create_database_indexes()`
+6. **Frontend Service**: `frontend/services/<domain>Service.js` — axios wrapper
+7. **Pages**: `frontend/app/dashboard/{role}/<domain>/page.js`
+8. **Agent Tool** (if needed): Add to `agent_tools*.py` + role list + `READONLY_TOOLS`
+
+### 22.2 Adding an Agent Tool
+
+1. Implement in correct `agent_tools*.py` calling a service function
+2. Register in appropriate role list (`RECRUITER_TOOLS`, etc.)
+3. If read-only, add name to `READONLY_TOOLS` in `agent_service.py`
+4. If destructive, set `needs_confirm=True`
+
+### 22.3 Adding a Learning Provider
+
+1. Add provider type to `learning_providers` schema
+2. Implement sync in `learning_service.py` (mirror Coursera/MS Learn pattern)
+3. Add encrypted config fields for API secrets
+4. Register in provider factory
+
+### 22.4 Adding an OCR Extractor
+
+1. Add extractor function in `document_extraction_service.py`
+2. Register in `EXTRACTOR_MAP` keyed by `doc_type`
+3. Ensure lazy import of heavy libs
+
+---
+
+## 23. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Backend crashes on boot: `ValueError: JWT_SECRET` | `<32 chars` or placeholder (`secret`, `changeme`, `test`, `password`) | Generate: `python -c "import secrets; print(secrets.token_urlsafe(64))"` |
+| Backend won't start | No live `MONGODB_URI` | Provide valid MongoDB connection string |
+| Mongo hangs on `mongodb+srv://` | SRV lookup blocked by network | Verify `database.py` DNS shim (8.8.8.8/1.1.1.1) intact |
+| New public page → 302 `/login` | Route missing from `proxy.js` `PUBLIC_PATHS` | Add to `PUBLIC_PATHS` or `PUBLIC_EXTENSIONS` |
+| Agent returns generic status answers | No LLM keys configured | `_fallback_reply` is expected behavior; add `OPENROUTER_API_KEY` or `GEMINI_API_KEY` |
+| UI shows stale/wrong data | Backend schema + `services/*.js` + component not updated together | No shared codegen — mirror all three |
+| Redis errors in containers | `REDIS_URL` required but no client | Expected — service exists for env resolution only |
+| `RequireCandidate` permission denied | Using wrong alias (offers vs employees) | Check `api.md` — two different predicates |
+| Tenant data leak in list endpoint | Missing `organization_id` filter | Use `recruiter_people_scope` or `recruiter_scope` helper |
+| OCR not extracting fields | `ENABLE_OCR=false` or libs not installed | Set `ENABLE_OCR=true`; install `easyocr`, `pytesseract`, `pymupdf` |
+| Coursera catalog empty | `DEBUG=true` (no background refresh) | Set `DEBUG=false` or call `coursera_service.sync_catalog()` manually |
+| `IBAN already exists` on new employee | `iban_hash` collision | Check `employees.onboarding.employment.iban_hash` index |
+
+---
+
+## 24. Roadmap
+
+| Item | Description | Priority |
+|------|-------------|----------|
+| **CORS Hardening** | Replace `allow_origins=["*"]` with explicit allowlist for production | High |
+| **Shared Type Contract** | Generate TypeScript from FastAPI OpenAPI schema → catch drift at build | High |
+| **Frontend Test Suite** | Add Vitest/Playwright coverage alongside backend pytest | Medium |
+| **Database-per-Tenant Option** | Formal support for isolated DBs per org (beyond row-level) | Medium |
+| **Webhook Framework** | Outbound webhooks for offer signed, employee hired, etc. | Low |
+| **Advanced Analytics** | Pre-aggregated materialized views for dashboard metrics | Low |
+| **Mobile App** | React Native wrapper sharing `services/*.js` logic | Low |
+
+---
+
+## Appendix: Key File References
+
+| Concern | File(s) |
+|---------|---------|
+| App entry & lifespan | `backend/app/main.py` |
+| Configuration | `backend/app/core/config.py` |
+| Database & indexes | `backend/app/core/database.py` |
+| JWT & auth deps | `backend/app/core/security.py` |
+| RBAC definitions | `backend/app/core/rbac.py` |
+| Encryption | `backend/app/core/crypto.py` |
+| Agent loop | `backend/app/services/agent_service.py` |
+| Agent tools | `backend/app/services/agent_tools*.py` |
+| LLM client | `backend/app/services/llm_service.py` |
+| Frontend auth gate | `frontend/proxy.js` |
+| API client | `frontend/lib/apiClient.js` |
+| Role shells | `frontend/components/{role}/*Shell.js` |
+| Shared hooks | `frontend/hooks/` |
+| AI context builders | `frontend/lib/ai/` |
+
+---
+
+*This document is the authoritative technical reference for TalentAI. For AI agent development guidance, see `.agents/AGENTS.md` and `.agents/skills/README.md`. The repository code is always the source of truth over documentation.*
