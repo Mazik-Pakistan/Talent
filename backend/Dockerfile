@@ -17,7 +17,7 @@ WORKDIR /app
 
 # Install dependencies first (better layer caching).
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --default-timeout=300 --retries=10 -r requirements.txt
 
 # Copy application source. backend/.env and backend/venv are excluded via
 # .dockerignore so no local secrets leak into the image.
