@@ -73,8 +73,80 @@ def _upload_public_id(owner_id: str, category: str) -> str:
     return f"{_cloudinary_folder(owner_id, category)}/{uuid.uuid4().hex}"
 
 
+# ── Local storage helpers ────────────────────────────────────────────────────
+
+
+def _local_folder(owner_id: str, category: str) -> Path:
+    base = _clean_segment(settings.CLOUDINARY_FOLDER or "talent")
+    owner = _clean_segment(owner_id)
+    cat = _clean_segment(category)
+    return Path("uploads") / base / owner / cat
+
+
+def _local_file_url(object_path: str) -> str:
+    base_url = (settings.BACKEND_URL or "http://localhost:8000").rstrip("/")
+    return f"{base_url}/uploads/{object_path}"
+
+
+async def _local_save_file(owner_id: str, category: str, filename: str, content: bytes) -> dict:
+    folder = _local_folder(owner_id, category)
+    folder.mkdir(parents=True, exist_ok=True)
+    ext = Path(filename).suffix.lower()
+    name = f"{uuid.uuid4().hex}{ext}"
+    path = folder / name
+    path.write_bytes(content)
+    object_path = path.relative_to(Path("uploads")).as_posix()
+    return {
+        "backend": "local",
+        "object_path": object_path,
+        "file_url": _local_file_url(object_path),
+        "resource_type": "raw",
+    }
+
+
+async def _local_get_signed_url(document: dict) -> str | None:
+    return document.get("file_url")
+
+
+async def _local_materialize_local_file(document: dict) -> str:
+    object_path = document.get("object_path") or ""
+    if not object_path:
+        raise FileNotFoundError("Stored document file is unavailable.")
+    path = (Path("uploads") / object_path).resolve()
+    if not str(path).startswith(str(Path("uploads").resolve())):
+        raise FileNotFoundError("Stored document file is unavailable.")
+    if not path.exists():
+        raise FileNotFoundError(f"Local file not found: {path}")
+    return str(path)
+
+
+async def _local_delete_file(document: dict) -> None:
+    object_path = document.get("object_path") or ""
+    if not object_path:
+        return
+    path = (Path("uploads") / object_path).resolve()
+    if not str(path).startswith(str(Path("uploads").resolve())):
+        return
+    try:
+        path.unlink(missing_ok=True)
+        parent = path.parent
+        while parent != Path("uploads") and parent.parent != Path("uploads"):
+            if not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
+            else:
+                break
+    except OSError:
+        pass
+
+
+# ── Public API ──────────────────────────────────────────────────────────────
+
+
 async def save_file(owner_id: str, category: str, filename: str, content: bytes) -> dict:
     """Upload a file to Cloudinary and return the metadata used by MongoDB."""
+    if not settings.USE_CLOUDINARY:
+        return await _local_save_file(owner_id, category, filename, content)
     _require_cloudinary_settings()
     content_type = _guess_content_type(filename)
     public_id = _upload_public_id(owner_id, category)
@@ -117,12 +189,16 @@ async def save_file(owner_id: str, category: str, filename: str, content: bytes)
 
 async def get_signed_url(document: dict) -> str | None:
     """Return a browser-safe URL for the stored document."""
+    if not settings.USE_CLOUDINARY:
+        return await _local_get_signed_url(document)
     file_url = document.get("file_url")
     return file_url
 
 
 async def materialize_local_file(document: dict) -> str:
     """Return a readable local path for OCR or re-extraction."""
+    if not settings.USE_CLOUDINARY:
+        return await _local_materialize_local_file(document)
     object_path = document.get("object_path") or ""
     file_url = document.get("file_url") or ""
     if not file_url:
@@ -136,6 +212,9 @@ async def materialize_local_file(document: dict) -> str:
 
 async def delete_file(document: dict) -> None:
     """Best-effort removal from Cloudinary."""
+    if not settings.USE_CLOUDINARY:
+        await _local_delete_file(document)
+        return
     object_path = document.get("object_path") or ""
     if not object_path:
         return
